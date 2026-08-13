@@ -1,0 +1,69 @@
+{
+  "id": "nexus.plugin.microsoft-project",
+  "name": "Microsoft Project Integration",
+  "version": "1.0.0",
+  "description": "Import and export Microsoft Project MPP and XML files. Supports project import wizard, task and resource mapping, baseline comparison, and version history.",
+  "author": "NEXUS PMO",
+  "dependencies": [
+    "nexus.module.project-management",
+    "nexus.module.resource-management"
+  ],
+  "permissions": [
+    "Project.Import",
+    "Project.Export",
+    "Project.ManageBaseline"
+  ],
+  "configurationSchema": {
+    "type": "object",
+    "properties": {
+      "mppFilePath": {
+        "type": "string",
+        "description": "Default directory path for MPP file imports"
+      },
+      "defaultTaskMapping": {
+        "type": "object",
+        "description": "Default field mappings from MS Project to NEXUS"
+      },
+      "baselineComparisonEnabled": {
+        "type": "boolean",
+        "default": true,
+        "description": "Enable baseline comparison on import"
+      }
+    }
+  },
+  "navigationContributions": [
+    {
+      "id": "nav.ms-project.integrations",
+      "label": "Microsoft Project",
+      "parentId": "nav.integrations",
+      "route": "/integrations/microsoft-project",
+      "icon": "file-text"
+    }
+  ],
+  "dashboardWidgetContributions": [
+    {
+      "id": "widget.ms-project.recent-imports",
+      "label": "Recent MS Project Imports",
+      "type": "list",
+      "size": "small"
+    },
+    {
+      "id": "widget.ms-project.baseline-summary",
+      "label": "Baseline Comparison Summary",
+      "type": "summary",
+      "size": "small"
+    }
+  ],
+  "eventSubscriptions": [
+    "project.created",
+    "project.updated"
+  ],
+  "featureFlags": [
+    "microsoftProjectImport"
+  ],
+  "minApiVersion": "1.0.0",
+  "requiredModules": [
+    "nexus.module.project-management",
+    "nexus.module.resource-management"
+  ]
+}

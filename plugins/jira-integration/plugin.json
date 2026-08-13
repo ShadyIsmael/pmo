@@ -1,0 +1,83 @@
+{
+  "id": "nexus.plugin.jira-integration",
+  "name": "Jira Integration",
+  "version": "1.0.0",
+  "description": "Two-way synchronization with Jira. Supports issue type mapping, status mapping, user mapping, JQL filters, webhook handling, and sync conflict resolution.",
+  "author": "NEXUS PMO",
+  "dependencies": [
+    "nexus.module.integrations",
+    "nexus.module.work-items"
+  ],
+  "permissions": [
+    "Integration.Manage",
+    "Task.Create",
+    "Task.Edit"
+  ],
+  "configurationSchema": {
+    "type": "object",
+    "properties": {
+      "jiraUrl": {
+        "type": "string",
+        "description": "Jira instance URL"
+      },
+      "apiToken": {
+        "type": "string",
+        "description": "Jira API token or personal access token"
+      },
+      "issueTypeMappings": {
+        "type": "object",
+        "description": "Mapping of Jira issue types to NEXUS task types"
+      },
+      "statusMappings": {
+        "type": "object",
+        "description": "Mapping of Jira statuses to NEXUS statuses"
+      },
+      "jqlFilter": {
+        "type": "string",
+        "description": "Default JQL filter for synced issues"
+      },
+      "syncDirection": {
+        "type": "string",
+        "enum": ["bidirectional", "jiraToNexus", "nexusToJira"],
+        "default": "bidirectional",
+        "description": "Direction of synchronization"
+      }
+    }
+  },
+  "navigationContributions": [
+    {
+      "id": "nav.jira.integrations",
+      "label": "Jira Integration",
+      "parentId": "nav.integrations",
+      "route": "/integrations/jira",
+      "icon": "git-merge"
+    }
+  ],
+  "dashboardWidgetContributions": [
+    {
+      "id": "widget.jira.sync-status",
+      "label": "Jira Sync Status",
+      "type": "status",
+      "size": "small"
+    },
+    {
+      "id": "widget.jira.recent-syncs",
+      "label": "Recent Sync Activity",
+      "type": "list",
+      "size": "small"
+    }
+  ],
+  "eventSubscriptions": [
+    "task.created",
+    "task.updated",
+    "task.deleted"
+  ],
+  "featureFlags": [
+    "jiraIntegration"
+  ],
+  "minApiVersion": "1.0.0",
+  "requiredModules": [
+    "nexus.module.integrations",
+    "nexus.module.work-items"
+  ]
+}

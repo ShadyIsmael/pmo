@@ -1,0 +1,18 @@
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+COPY *.sln ./
+COPY src/NEXUS.Api/*.csproj src/NEXUS.Api/
+COPY src/NEXUS.SharedKernel/*.csproj src/NEXUS.SharedKernel/
+COPY src/NEXUS.Persistence/*.csproj src/NEXUS.Persistence/
+RUN for f in src/NEXUS.Modules.*/*.csproj; do dir=$(dirname $f); mkdir -p $dir && cp $f $dir/; done
+RUN dotnet restore
+COPY . .
+WORKDIR /src/src/NEXUS.Api
+RUN dotnet publish -c Release -o /app
+
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+WORKDIR /app
+COPY --from=build /app .
+EXPOSE 5000
+ENV ASPNETCORE_URLS=http://+:5000
+ENTRYPOINT ["dotnet", "NEXUS.Api.dll"]

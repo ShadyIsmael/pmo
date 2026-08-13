@@ -1,0 +1,17 @@
+version: '3.8'
+services:
+  api:
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      DemoAuth__Enabled: true
+      DemoAuth__DemoMode: true
+    volumes:
+      - ./apps/api:/src
+
+  web:
+    environment:
+      NODE_ENV: development
+    volumes:
+      - ./apps/web:/app
+      - /app/node_modules
+      - /app/.next

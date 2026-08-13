@@ -1,0 +1,80 @@
+export const Permissions = {
+  Projects: {
+    View: "projects:view",
+    Create: "projects:create",
+    Edit: "projects:edit",
+    Delete: "projects:delete",
+    ManageTeam: "projects:manage_team",
+    ViewCosts: "projects:view_costs",
+    ApproveChanges: "projects:approve_changes",
+  },
+  Portfolios: {
+    View: "portfolios:view",
+    Create: "portfolios:create",
+    Edit: "portfolios:edit",
+    Delete: "portfolios:delete",
+    ManageHealth: "portfolios:manage_health",
+  },
+  Resources: {
+    View: "resources:view",
+    Allocate: "resources:allocate",
+    Edit: "resources:edit",
+    ManageSkills: "resources:manage_skills",
+    ViewRateCards: "resources:view_rate_cards",
+    EditRateCards: "resources:edit_rate_cards",
+  },
+  Costs: {
+    View: "costs:view",
+    Create: "costs:create",
+    Approve: "costs:approve",
+    ViewBudgets: "costs:view_budgets",
+    EditBudgets: "costs:edit_budgets",
+  },
+  Risks: {
+    View: "risks:view",
+    Create: "risks:create",
+    Edit: "risks:edit",
+    Mitigate: "risks:mitigate",
+  },
+  Issues: {
+    View: "issues:view",
+    Create: "issues:create",
+    Edit: "issues:edit",
+    Resolve: "issues:resolve",
+  },
+  Meetings: {
+    View: "meetings:view",
+    Create: "meetings:create",
+    Edit: "meetings:edit",
+    ManageMinutes: "meetings:manage_minutes",
+  },
+  Documents: {
+    View: "documents:view",
+    Upload: "documents:upload",
+    Edit: "documents:edit",
+    Delete: "documents:delete",
+    Review: "documents:review",
+  },
+  Workflows: {
+    View: "workflows:view",
+    Create: "workflows:create",
+    Edit: "workflows:edit",
+    Approve: "workflows:approve",
+  },
+  Approvals: {
+    View: "approvals:view",
+    Approve: "approvals:approve",
+    Delegate: "approvals:delegate",
+  },
+  Admin: {
+    ManageUsers: "admin:manage_users",
+    ManageRoles: "admin:manage_roles",
+    ManageTenant: "admin:manage_tenant",
+    ViewAuditLog: "admin:view_audit_log",
+    ManageIntegrations: "admin:manage_integrations",
+    ManagePlugins: "admin:manage_plugins",
+    SystemConfig: "admin:system_config",
+  },
+} as const;
+
+export type PermissionCode = (typeof Permissions)[keyof typeof Permissions][keyof (typeof Permissions)[keyof typeof Permissions]];

@@ -1,0 +1,98 @@
+{
+  "id": "nexus.plugin.internal-ticketing",
+  "name": "Internal Ticketing",
+  "version": "1.0.0",
+  "description": "Built-in ticketing system for organizations without Jira. Supports tickets, queues, SLAs, escalations, and custom ticket types.",
+  "author": "NEXUS PMO",
+  "dependencies": [
+    "nexus.module.work-items",
+    "nexus.module.workflow-engine"
+  ],
+  "permissions": [
+    "Task.Create",
+    "Task.Edit",
+    "Task.Assign",
+    "Workflow.Design"
+  ],
+  "configurationSchema": {
+    "type": "object",
+    "properties": {
+      "defaultTicketType": {
+        "type": "string",
+        "default": "task",
+        "description": "Default ticket type for new tickets"
+      },
+      "slaEnabled": {
+        "type": "boolean",
+        "default": true,
+        "description": "Enable SLA tracking on tickets"
+      },
+      "escalationEnabled": {
+        "type": "boolean",
+        "default": true,
+        "description": "Enable automatic escalation on breached SLAs"
+      },
+      "queues": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "List of ticket queue names"
+      }
+    }
+  },
+  "navigationContributions": [
+    {
+      "id": "nav.tickets",
+      "label": "Tickets",
+      "parentId": null,
+      "route": "/tickets",
+      "icon": "ticket"
+    },
+    {
+      "id": "nav.tickets.queues",
+      "label": "Queues",
+      "parentId": "nav.tickets",
+      "route": "/tickets/queues",
+      "icon": "inbox"
+    },
+    {
+      "id": "nav.tickets.sla",
+      "label": "SLAs",
+      "parentId": "nav.tickets",
+      "route": "/tickets/sla",
+      "icon": "clock"
+    }
+  ],
+  "dashboardWidgetContributions": [
+    {
+      "id": "widget.tickets.open-by-priority",
+      "label": "Open Tickets by Priority",
+      "type": "chart",
+      "size": "medium"
+    },
+    {
+      "id": "widget.tickets.sla-breach",
+      "label": "SLA Breach Alerts",
+      "type": "alert-list",
+      "size": "small"
+    },
+    {
+      "id": "widget.tickets.my-tickets",
+      "label": "My Open Tickets",
+      "type": "list",
+      "size": "small"
+    }
+  ],
+  "eventSubscriptions": [
+    "task.created",
+    "task.updated",
+    "task.assigned"
+  ],
+  "featureFlags": [
+    "internalTicketing"
+  ],
+  "minApiVersion": "1.0.0",
+  "requiredModules": [
+    "nexus.module.work-items",
+    "nexus.module.workflow-engine"
+  ]
+}

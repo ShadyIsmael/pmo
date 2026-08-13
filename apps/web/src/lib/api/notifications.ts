@@ -1,0 +1,1 @@
+import { api } from "@/lib/api/client"; export const notificationKeys={all:["notifications"] as const}; export const notificationApi={list:<T>(path:string,p?:Record<string,unknown>)=>api.get<T>(path,p as never)};

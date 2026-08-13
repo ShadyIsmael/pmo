@@ -1,0 +1,55 @@
+{
+  "id": "nexus.plugin.enterprise-identity",
+  "name": "Enterprise Identity (Placeholder)",
+  "version": "0.1.0",
+  "description": "Enterprise identity provider integration for Microsoft Entra ID, Active Directory, SAML, OpenID Connect, and SCIM. This plugin is a placeholder and not yet implemented.",
+  "author": "NEXUS PMO",
+  "dependencies": [
+    "nexus.module.identity"
+  ],
+  "permissions": [
+    "Administration.Manage"
+  ],
+  "configurationSchema": {
+    "type": "object",
+    "properties": {
+      "provider": {
+        "type": "string",
+        "enum": ["entra-id", "active-directory", "saml", "oidc"],
+        "description": "Identity provider type"
+      },
+      "tenantId": {
+        "type": "string",
+        "description": "Tenant ID for the identity provider"
+      },
+      "clientId": {
+        "type": "string",
+        "description": "Client ID for OAuth/OIDC flows"
+      },
+      "scimEnabled": {
+        "type": "boolean",
+        "default": false,
+        "description": "Enable SCIM provisioning"
+      }
+    }
+  },
+  "navigationContributions": [
+    {
+      "id": "nav.enterprise-identity",
+      "label": "Enterprise Identity",
+      "parentId": "nav.administration",
+      "route": "/administration/identity",
+      "icon": "shield"
+    }
+  ],
+  "dashboardWidgetContributions": [],
+  "eventSubscriptions": [],
+  "featureFlags": [
+    "enterpriseIdentity"
+  ],
+  "minApiVersion": "1.0.0",
+  "requiredModules": [
+    "nexus.module.identity"
+  ],
+  "status": "placeholder"
+}

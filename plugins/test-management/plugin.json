@@ -1,0 +1,94 @@
+{
+  "id": "nexus.plugin.test-management",
+  "name": "Test Management",
+  "version": "1.0.0",
+  "description": "Test case management with test suites, plans, cycles, executions, results, defects, and requirement coverage tracking.",
+  "author": "NEXUS PMO",
+  "dependencies": [
+    "nexus.module.project-management"
+  ],
+  "permissions": [
+    "Task.Create",
+    "Task.Edit",
+    "Report.View"
+  ],
+  "configurationSchema": {
+    "type": "object",
+    "properties": {
+      "defaultTestSuiteTemplate": {
+        "type": "string",
+        "description": "Default template for new test suites"
+      },
+      "defectWorkflowId": {
+        "type": "string",
+        "description": "Workflow ID for defect lifecycle"
+      },
+      "requirementCoverageEnabled": {
+        "type": "boolean",
+        "default": true,
+        "description": "Enable requirement coverage tracking"
+      }
+    }
+  },
+  "navigationContributions": [
+    {
+      "id": "nav.test-management",
+      "label": "Test Management",
+      "parentId": null,
+      "route": "/test-management",
+      "icon": "check-square"
+    },
+    {
+      "id": "nav.test-management.suites",
+      "label": "Test Suites",
+      "parentId": "nav.test-management",
+      "route": "/test-management/suites",
+      "icon": "folder"
+    },
+    {
+      "id": "nav.test-management.cycles",
+      "label": "Test Cycles",
+      "parentId": "nav.test-management",
+      "route": "/test-management/cycles",
+      "icon": "rotate-cw"
+    },
+    {
+      "id": "nav.test-management.coverage",
+      "label": "Requirement Coverage",
+      "parentId": "nav.test-management",
+      "route": "/test-management/coverage",
+      "icon": "target"
+    }
+  ],
+  "dashboardWidgetContributions": [
+    {
+      "id": "widget.test.pass-fail-rate",
+      "label": "Test Pass/Fail Rate",
+      "type": "chart",
+      "size": "medium"
+    },
+    {
+      "id": "widget.test.coverage-summary",
+      "label": "Requirement Coverage Summary",
+      "type": "summary",
+      "size": "small"
+    },
+    {
+      "id": "widget.test.recent-executions",
+      "label": "Recent Test Executions",
+      "type": "list",
+      "size": "small"
+    }
+  ],
+  "eventSubscriptions": [
+    "project.phase.changed",
+    "task.updated"
+  ],
+  "featureFlags": [
+    "testManagement"
+  ],
+  "minApiVersion": "1.0.0",
+  "requiredModules": [
+    "nexus.module.project-management"
+  ]
+}

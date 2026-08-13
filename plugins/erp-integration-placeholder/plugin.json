@@ -1,0 +1,59 @@
+{
+  "id": "nexus.plugin.erp-integration",
+  "name": "ERP Integration (Placeholder)",
+  "version": "0.1.0",
+  "description": "Enterprise resource planning integration for SAP, Oracle, Microsoft Dynamics, and other ERP systems. This plugin is a placeholder and not yet implemented.",
+  "author": "NEXUS PMO",
+  "dependencies": [
+    "nexus.module.integrations",
+    "nexus.module.cost-management"
+  ],
+  "permissions": [
+    "Integration.Manage"
+  ],
+  "configurationSchema": {
+    "type": "object",
+    "properties": {
+      "erpSystem": {
+        "type": "string",
+        "enum": ["sap", "oracle", "dynamics", "other"],
+        "description": "Target ERP system"
+      },
+      "apiEndpoint": {
+        "type": "string",
+        "description": "ERP API base URL"
+      },
+      "syncSchedule": {
+        "type": "string",
+        "pattern": "^([0-9]+\\s+(minute|hour|day)s?)$",
+        "default": "1 hour",
+        "description": "Synchronization interval"
+      },
+      "costCategories": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Cost categories to sync from ERP"
+      }
+    }
+  },
+  "navigationContributions": [
+    {
+      "id": "nav.erp-integration",
+      "label": "ERP Integration",
+      "parentId": "nav.integrations",
+      "route": "/integrations/erp",
+      "icon": "database"
+    }
+  ],
+  "dashboardWidgetContributions": [],
+  "eventSubscriptions": [],
+  "featureFlags": [
+    "erpIntegration"
+  ],
+  "minApiVersion": "1.0.0",
+  "requiredModules": [
+    "nexus.module.integrations",
+    "nexus.module.cost-management"
+  ],
+  "status": "placeholder"
+}

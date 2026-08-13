@@ -1,0 +1,27 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/NEXUS.Api/NEXUS.Api.csproj" />
+    <Project Path="src/NEXUS.Modules.AIPlanning/NEXUS.Modules.AIPlanning.csproj" />
+    <Project Path="src/NEXUS.Modules.Approvals/NEXUS.Modules.Approvals.csproj" />
+    <Project Path="src/NEXUS.Modules.Audit/NEXUS.Modules.Audit.csproj" />
+    <Project Path="src/NEXUS.Modules.CostManagement/NEXUS.Modules.CostManagement.csproj" />
+    <Project Path="src/NEXUS.Modules.Documents/NEXUS.Modules.Documents.csproj" />
+    <Project Path="src/NEXUS.Modules.Identity/NEXUS.Modules.Identity.csproj" />
+    <Project Path="src/NEXUS.Modules.Integrations/NEXUS.Modules.Integrations.csproj" />
+    <Project Path="src/NEXUS.Modules.IssueManagement/NEXUS.Modules.IssueManagement.csproj" />
+    <Project Path="src/NEXUS.Modules.Meetings/NEXUS.Modules.Meetings.csproj" />
+    <Project Path="src/NEXUS.Modules.Notifications/NEXUS.Modules.Notifications.csproj" />
+    <Project Path="src/NEXUS.Modules.Organization/NEXUS.Modules.Organization.csproj" />
+    <Project Path="src/NEXUS.Modules.PluginManagement/NEXUS.Modules.PluginManagement.csproj" />
+    <Project Path="src/NEXUS.Modules.Portfolio/NEXUS.Modules.Portfolio.csproj" />
+    <Project Path="src/NEXUS.Modules.ProjectManagement/NEXUS.Modules.ProjectManagement.csproj" />
+    <Project Path="src/NEXUS.Modules.ProjectPlanning/NEXUS.Modules.ProjectPlanning.csproj" />
+    <Project Path="src/NEXUS.Modules.Reporting/NEXUS.Modules.Reporting.csproj" />
+    <Project Path="src/NEXUS.Modules.ResourceManagement/NEXUS.Modules.ResourceManagement.csproj" />
+    <Project Path="src/NEXUS.Modules.RiskManagement/NEXUS.Modules.RiskManagement.csproj" />
+    <Project Path="src/NEXUS.Modules.WorkflowEngine/NEXUS.Modules.WorkflowEngine.csproj" />
+    <Project Path="src/NEXUS.Modules.WorkItems/NEXUS.Modules.WorkItems.csproj" />
+    <Project Path="src/NEXUS.Persistence/NEXUS.Persistence.csproj" />
+    <Project Path="src/NEXUS.SharedKernel/NEXUS.SharedKernel.csproj" />
+  </Folder>
+</Solution>

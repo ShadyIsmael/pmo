@@ -1,0 +1,3 @@
+import { api } from "@/lib/api/client"; import { endpoints } from "@/lib/api/endpoints";
+export const resourceKeys={all:["resources"] as const,list:(filters:unknown={})=>["resources","list",filters] as const,detail:(id:string)=>["resources","detail",id] as const,capacity:(filters:unknown={})=>["capacity",filters] as const};
+export const resourceApi={list:<T>(p?:Record<string,unknown>)=>api.get<T>(endpoints.resources.root,p as never),detail:<T>(id:string)=>api.get<T>(endpoints.resources.detail(id)),create:<T>(b:unknown)=>api.post<T>(endpoints.resources.root,b),update:<T>(id:string,b:unknown)=>api.put<T>(endpoints.resources.detail(id),b),remove:<T>(id:string)=>api.delete<T>(endpoints.resources.detail(id))};

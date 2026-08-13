@@ -1,0 +1,31 @@
+{
+  "name": "nexus-pmo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "NEXUS PMO - Enterprise Project Portfolio Management Platform",
+  "scripts": {
+    "dev": "npm run dev:web",
+    "dev:web": "cd apps/web && npm run dev",
+    "dev:api": "cd apps/api && dotnet run",
+    "build:web": "cd apps/web && npm run build",
+    "build:api": "cd apps/api && dotnet build",
+    "lint": "npm run lint:web",
+    "lint:web": "cd apps/web && npm run lint",
+    "typecheck": "cd apps/web && npm run typecheck",
+    "test": "npm run test:web && npm run test:api",
+    "test:web": "cd apps/web && npm run test",
+    "test:api": "cd apps/api && dotnet test",
+    "seed": "cd apps/api && dotnet run -- seed",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "clean": "npm run clean:web && npm run clean:api",
+    "clean:web": "cd apps/web && npm run clean",
+    "clean:api": "cd apps/api && dotnet clean"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "typescript": "^7.0.2"
+  }
+}

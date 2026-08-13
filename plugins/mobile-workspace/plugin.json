@@ -1,0 +1,74 @@
+{
+  "id": "nexus.plugin.mobile-workspace",
+  "name": "Mobile Workspace",
+  "version": "1.0.0",
+  "description": "Mobile-optimized workspace for task management, approvals, notifications, and quick updates on the go.",
+  "author": "NEXUS PMO",
+  "dependencies": [
+    "nexus.module.work-items",
+    "nexus.module.notifications",
+    "nexus.module.approvals"
+  ],
+  "permissions": [
+    "Task.Create",
+    "Task.Edit",
+    "Task.Complete"
+  ],
+  "configurationSchema": {
+    "type": "object",
+    "properties": {
+      "pushNotificationsEnabled": {
+        "type": "boolean",
+        "default": true,
+        "description": "Enable push notifications for mobile devices"
+      },
+      "offlineModeEnabled": {
+        "type": "boolean",
+        "default": true,
+        "description": "Enable offline mode with local caching"
+      },
+      "approvalActionRequired": {
+        "type": "string",
+        "enum": ["swipe", "tap", "both"],
+        "default": "swipe",
+        "description": "Gesture required for approval actions"
+      }
+    }
+  },
+  "navigationContributions": [],
+  "dashboardWidgetContributions": [
+    {
+      "id": "widget.mobile.pending-approvals",
+      "label": "Pending Approvals",
+      "type": "list",
+      "size": "small"
+    },
+    {
+      "id": "widget.mobile.my-tasks",
+      "label": "My Tasks",
+      "type": "list",
+      "size": "small"
+    },
+    {
+      "id": "widget.mobile.recent-notifications",
+      "label": "Recent Notifications",
+      "type": "list",
+      "size": "small"
+    }
+  ],
+  "eventSubscriptions": [
+    "task.assigned",
+    "task.updated",
+    "approval.requested",
+    "notification.sent"
+  ],
+  "featureFlags": [
+    "mobileWorkspace"
+  ],
+  "minApiVersion": "1.0.0",
+  "requiredModules": [
+    "nexus.module.work-items",
+    "nexus.module.notifications",
+    "nexus.module.approvals"
+  ]
+}

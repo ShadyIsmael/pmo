@@ -1,0 +1,340 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Light mode: dark gray + green brand identity */
+    --background: 220 18% 97%;
+    --foreground: 222 25% 15%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 25% 15%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 25% 15%;
+    --primary: 162 72% 34%;
+    --primary-foreground: 0 0% 100%;
+    --primary-hover: 162 75% 28%;
+    --primary-light: 162 60% 95%;
+    --secondary: 220 15% 92%;
+    --secondary-foreground: 222 25% 18%;
+    --muted: 220 18% 94%;
+    --muted-foreground: 222 12% 42%;
+    --accent: 220 15% 92%;
+    --accent-foreground: 222 25% 18%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --destructive-light: 0 72% 95%;
+    --success: 160 65% 38%;
+    --success-foreground: 0 0% 100%;
+    --success-light: 160 65% 94%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+    --warning-light: 38 92% 95%;
+    --info: 200 90% 45%;
+    --info-light: 200 90% 95%;
+    --border: 220 15% 86%;
+    --input: 220 15% 86%;
+    --ring: 162 72% 34%;
+    --radius: 0.75rem;
+
+    --sidebar-background: 222 20% 16%;
+    --sidebar-foreground: 220 15% 78%;
+    --sidebar-accent: 222 18% 22%;
+    --sidebar-active: 162 72% 42%;
+    --sidebar-border: 222 18% 24%;
+    --sidebar-ring: 162 72% 42%;
+
+    --chart-1: 162 72% 34%;
+    --chart-2: 200 90% 45%;
+    --chart-3: 280 60% 50%;
+    --chart-4: 38 92% 50%;
+    --chart-5: 0 72% 51%;
+  }
+
+  .dark {
+    /* Dark mode: dark navy blue + green brand identity */
+    --background: 225 45% 7%;
+    --foreground: 215 25% 92%;
+    --card: 225 40% 10%;
+    --card-foreground: 215 25% 92%;
+    --popover: 225 40% 10%;
+    --popover-foreground: 215 25% 92%;
+    --primary: 160 70% 45%;
+    --primary-foreground: 0 0% 100%;
+    --primary-hover: 160 75% 52%;
+    --primary-light: 160 45% 16%;
+    --secondary: 225 35% 16%;
+    --secondary-foreground: 215 25% 92%;
+    --muted: 225 35% 14%;
+    --muted-foreground: 215 18% 62%;
+    --accent: 225 35% 16%;
+    --accent-foreground: 215 25% 92%;
+    --destructive: 0 70% 48%;
+    --destructive-foreground: 0 0% 100%;
+    --destructive-light: 0 70% 16%;
+    --success: 158 65% 45%;
+    --success-foreground: 0 0% 100%;
+    --success-light: 158 45% 15%;
+    --warning: 38 90% 52%;
+    --warning-foreground: 0 0% 100%;
+    --warning-light: 38 90% 16%;
+    --info: 200 85% 55%;
+    --info-light: 200 60% 16%;
+    --border: 225 35% 19%;
+    --input: 225 35% 19%;
+    --ring: 160 70% 45%;
+
+    --sidebar-background: 226 50% 8%;
+    --sidebar-foreground: 215 22% 72%;
+    --sidebar-accent: 225 38% 15%;
+    --sidebar-active: 160 70% 50%;
+    --sidebar-border: 225 38% 15%;
+    --sidebar-ring: 160 70% 50%;
+
+    --chart-1: 160 70% 45%;
+    --chart-2: 200 85% 55%;
+    --chart-3: 280 60% 60%;
+    --chart-4: 38 90% 52%;
+    --chart-5: 0 70% 50%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    @apply antialiased;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    @apply font-sans;
+    font-feature-settings: "rlig" 1, "calt" 1, "ss01" 1, "cv02" 1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  ::selection {
+    @apply bg-primary/20 text-primary;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+}
+
+@layer components {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.2) transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--muted-foreground) / 0.25);
+    border-radius: 9999px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(var(--muted-foreground) / 0.4);
+  }
+
+  .scrollbar-none {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+
+  .kpi-card {
+    @apply relative overflow-hidden rounded-xl border bg-card p-0 shadow-sm transition-all duration-200 hover:shadow-md;
+  }
+
+  .kpi-card:hover {
+    @apply border-primary/15;
+  }
+
+  .section-header {
+    @apply mb-4 text-xs font-semibold uppercase tracking-widest text-muted-foreground/70;
+  }
+
+  .table-header {
+    @apply border-b bg-muted/40 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground;
+  }
+
+  .table-cell {
+    @apply border-b px-4 py-3 text-sm;
+  }
+
+  .filter-bar {
+    @apply flex flex-wrap items-center gap-2 rounded-lg border bg-card px-4 py-3 shadow-sm;
+  }
+
+  .card-accent-top {
+    @apply relative overflow-hidden;
+  }
+
+  .card-accent-top::before {
+    content: '';
+    @apply absolute inset-x-0 top-0 h-[3px] rounded-t-xl;
+    background: linear-gradient(90deg, hsl(var(--primary)), hsl(var(--info)));
+  }
+
+  .card-accent-side {
+    @apply relative;
+  }
+
+  .card-accent-side::before {
+    content: '';
+    @apply absolute left-0 top-4 bottom-4 w-[3px] rounded-r-full;
+    background: linear-gradient(180deg, hsl(var(--primary)), hsl(var(--info) / 0.3));
+  }
+
+  .kpi-value {
+    @apply text-xl font-bold tracking-tight motion-safe:animate-kpi-enter;
+  }
+
+  .glow-primary {
+    box-shadow: 0 0 24px hsl(var(--primary) / 0.15);
+  }
+
+  .bg-primary-gradient {
+    background: linear-gradient(135deg, hsl(var(--primary)), hsl(175 65% 38%));
+  }
+
+  .bg-navy-gradient {
+    background: linear-gradient(160deg, hsl(226 45% 12%) 0%, hsl(226 50% 7%) 60%, hsl(228 55% 5%) 100%);
+  }
+
+  .text-primary-gradient {
+    background: linear-gradient(135deg, hsl(var(--primary)), hsl(175 65% 38%));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .section-divider {
+    @apply relative flex items-center gap-3;
+  }
+
+  .section-divider::after {
+    content: '';
+    @apply h-[0.5px] flex-1;
+    background: linear-gradient(90deg, hsl(var(--border)), transparent);
+  }
+
+  .blur-bg {
+    @apply absolute rounded-full blur-3xl;
+  }
+
+  .surface {
+    @apply rounded-xl border bg-card shadow-sm;
+  }
+
+  .surface-elevated {
+    @apply rounded-xl border bg-card shadow-md;
+  }
+
+  .input-field {
+    @apply flex h-9 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm transition-all duration-200 placeholder:text-muted-foreground/50 focus:border-ring focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .label-text {
+    @apply text-sm font-medium text-foreground;
+  }
+
+  .badge-base {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium transition-all duration-200;
+  }
+
+  .divider {
+    @apply h-px bg-border;
+  }
+
+  /* ── Semantic status colors for component types (unified, not hardcoded) ── */
+  .tone-green {
+    @apply bg-success-light text-success;
+  }
+  .tone-amber {
+    @apply bg-warning-light text-warning;
+  }
+  .tone-red {
+    @apply bg-destructive-light text-destructive;
+  }
+  .tone-blue {
+    @apply bg-info-light text-info;
+  }
+  .tone-primary {
+    @apply bg-primary-light text-primary;
+  }
+  .tone-neutral {
+    @apply bg-muted text-muted-foreground;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .bg-grid {
+    background-image: linear-gradient(
+        to right,
+        hsl(var(--border)) 1px,
+        transparent 1px
+      ),
+      linear-gradient(to bottom, hsl(var(--border)) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+
+  .bg-subtle-gradient {
+    background: linear-gradient(
+      135deg,
+      hsl(var(--primary) / 0.03) 0%,
+      hsl(var(--primary) / 0.01) 100%
+    );
+  }
+
+  .text-gradient {
+    background: linear-gradient(
+      135deg,
+      hsl(var(--primary)) 0%,
+      hsl(175 65% 38%) 100%
+    );
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .animate-in {
+    animation: animate-in 0.3s ease-out forwards;
+  }
+
+  @keyframes animate-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .stagger-1 { animation-delay: 0.05s; }
+  .stagger-2 { animation-delay: 0.1s; }
+  .stagger-3 { animation-delay: 0.15s; }
+  .stagger-4 { animation-delay: 0.2s; }
+  .stagger-5 { animation-delay: 0.25s; }
+}

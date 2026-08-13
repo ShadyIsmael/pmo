@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.10" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.10">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.10" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="10.0.10">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\NEXUS.SharedKernel\NEXUS.SharedKernel.csproj" />
+    <ProjectReference Include="..\NEXUS.Modules.Identity\NEXUS.Modules.Identity.csproj" />
+    <ProjectReference Include="..\NEXUS.Modules.Organization\NEXUS.Modules.Organization.csproj" />
+    <ProjectReference Include="..\NEXUS.Modules.Portfolio\NEXUS.Modules.Portfolio.csproj" />
+    <ProjectReference Include="..\NEXUS.Modules.ProjectManagement\NEXUS.Modules.ProjectManagement.csproj" />
+    <ProjectReference Include="..\NEXUS.Modules.ProjectPlanning\NEXUS.Modules.ProjectPlanning.csproj" />
+    <ProjectReference Include="..\NEXUS.Modules.WorkItems\NEXUS.Modules.WorkItems.csproj" />
+    <ProjectReference Include="..\NEXUS.Modules.ResourceManagement\NEXUS.Modules.ResourceManagement.csproj" />
+    <ProjectReference Include="..\NEXUS.Modules.CostManagement\NEXUS.Modules.CostManagement.csproj" />
+    <ProjectReference Include="..\NEXUS.Modules.RiskManagement\NEXUS.Modules.RiskManagement.csproj" />
+    <ProjectReference Include="..\NEXUS.Modules.IssueManagement\NEXUS.Modules.IssueManagement.csproj" />
+    <ProjectReference Include="..\NEXUS.Modules.Meetings\NEXUS.Modules.Meetings.csproj" />
+    <ProjectReference Include="..\NEXUS.Modules.WorkflowEngine\NEXUS.Modules.WorkflowEngine.csproj" />
+    <ProjectReference Include="..\NEXUS.Modules.Approvals\NEXUS.Modules.Approvals.csproj" />
+    <ProjectReference Include="..\NEXUS.Modules.Notifications\NEXUS.Modules.Notifications.csproj" />
+    <ProjectReference Include="..\NEXUS.Modules.Documents\NEXUS.Modules.Documents.csproj" />
+    <ProjectReference Include="..\NEXUS.Modules.Reporting\NEXUS.Modules.Reporting.csproj" />
+    <ProjectReference Include="..\NEXUS.Modules.Audit\NEXUS.Modules.Audit.csproj" />
+    <ProjectReference Include="..\NEXUS.Modules.Integrations\NEXUS.Modules.Integrations.csproj" />
+    <ProjectReference Include="..\NEXUS.Modules.PluginManagement\NEXUS.Modules.PluginManagement.csproj" />
+    <ProjectReference Include="..\NEXUS.Modules.AIPlanning\NEXUS.Modules.AIPlanning.csproj" />
+  </ItemGroup>
+</Project>

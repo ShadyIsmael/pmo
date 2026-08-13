@@ -1,0 +1,6 @@
+namespace NEXUS.SharedKernel;
+
+public interface ITenantEntity
+{
+    Guid TenantId { get; set; }
+}
