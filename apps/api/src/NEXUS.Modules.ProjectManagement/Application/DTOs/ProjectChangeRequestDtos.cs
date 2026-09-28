@@ -9,6 +9,7 @@ public class CreateProjectChangeRequestDto
     public string Reason { get; set; } = string.Empty;
     public string? Justification { get; set; }
     public string? Impact { get; set; }
+    public decimal? BudgetChangeAmount { get; set; }
     public string? Attachments { get; set; }
 }
 
@@ -24,6 +25,9 @@ public class RejectProjectChangeRequestDto
 
 public class ProjectChangeRequestDto
 {
+    public decimal? BudgetBeforeChange { get; set; }
+    public decimal? BudgetChangeAmount { get; set; }
+    public decimal? ProposedProjectBudget { get; set; }
     public Guid Id { get; set; }
     public Guid ProjectId { get; set; }
     public string ProjectName { get; set; } = string.Empty;

@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using NEXUS.Modules.Organization.Domain;
 using NEXUS.Modules.ResourceManagement.Domain;
 
 namespace NEXUS.Persistence.Configurations;
@@ -19,6 +20,11 @@ public class VendorConfiguration : IEntityTypeConfiguration<Vendor>
         builder.Property(v => v.Status).HasMaxLength(50);
         builder.HasIndex(v => v.Name);
         builder.HasIndex(v => v.TenantId);
+        builder.HasIndex(v => new { v.TenantId, v.Code }).IsUnique().HasFilter("[Code] IS NOT NULL");
+        builder.HasOne<Lookup>()
+            .WithMany()
+            .HasForeignKey(v => v.VendorCategoryId)
+            .OnDelete(DeleteBehavior.Restrict);
         builder.Property(v => v.RowVersion).IsRowVersion();
     }
 }

@@ -12,11 +12,11 @@ public class AllocationDto
     public Guid? ProjectId { get; set; }
     public string? ProjectName { get; set; }
     public Guid? WorkItemId { get; set; }
-    public string Role { get; set; } = string.Empty;
+    public Guid? ProjectRoleId { get; set; }
     public decimal AllocationPercentage { get; set; }
     public decimal? HoursPerWeek { get; set; }
     public decimal? PlannedHours { get; set; }
-    public decimal? ActualHours { get; set; }
+    public decimal? PlannedLaborCost { get; set; }
     public DateTime StartDate { get; set; }
     public DateTime EndDate { get; set; }
     public string Status { get; set; } = string.Empty;
@@ -32,7 +32,7 @@ public class CreateAllocationDto
     public Guid? ProjectId { get; set; }
     public string? ProjectName { get; set; }
     public Guid? WorkItemId { get; set; }
-    public string Role { get; set; } = string.Empty;
+    public Guid? ProjectRoleId { get; set; }
     public decimal AllocationPercentage { get; set; }
     public decimal? HoursPerWeek { get; set; }
     public DateTime StartDate { get; set; }
@@ -47,7 +47,7 @@ public class UpdateAllocationDto
     public Guid? ProjectId { get; set; }
     public string? ProjectName { get; set; }
     public Guid? WorkItemId { get; set; }
-    public string? Role { get; set; }
+    public Guid? ProjectRoleId { get; set; }
     public decimal? AllocationPercentage { get; set; }
     public decimal? HoursPerWeek { get; set; }
     public DateTime? StartDate { get; set; }

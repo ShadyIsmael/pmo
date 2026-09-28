@@ -15,6 +15,7 @@
     <ProjectReference Include="..\NEXUS.Modules.Organization\NEXUS.Modules.Organization.csproj" />
     <ProjectReference Include="..\NEXUS.Modules.Portfolio\NEXUS.Modules.Portfolio.csproj" />
     <ProjectReference Include="..\NEXUS.Modules.ResourceManagement\NEXUS.Modules.ResourceManagement.csproj" />
+    <ProjectReference Include="..\NEXUS.Modules.ProjectPlanning\NEXUS.Modules.ProjectPlanning.csproj" />
     <ProjectReference Include="..\NEXUS.Modules.WorkItems\NEXUS.Modules.WorkItems.csproj" />
     <ProjectReference Include="..\NEXUS.Modules.RiskManagement\NEXUS.Modules.RiskManagement.csproj" />
     <ProjectReference Include="..\NEXUS.Modules.IssueManagement\NEXUS.Modules.IssueManagement.csproj" />

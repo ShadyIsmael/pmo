@@ -5,9 +5,11 @@ namespace NEXUS.Modules.ResourceManagement.Application;
 
 public interface IVendorService
 {
-    Task<PagedResult<VendorDto>> GetPagedAsync(int page, int pageSize, string? search = null, CancellationToken cancellationToken = default);
+    Task<PagedResult<VendorDto>> GetPagedAsync(int page, int pageSize, string? search = null, Guid? categoryId = null, bool? isActive = null, CancellationToken cancellationToken = default);
     Task<Result<VendorDto>> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
     Task<Result<VendorDto>> CreateAsync(CreateVendorDto dto, string userId, CancellationToken cancellationToken = default);
     Task<Result<VendorDto>> UpdateAsync(Guid id, UpdateVendorDto dto, string userId, CancellationToken cancellationToken = default);
+    Task<Result<VendorDto>> DeactivateAsync(Guid id, string userId, CancellationToken cancellationToken = default);
+    Task<Result<VendorDto>> ReactivateAsync(Guid id, string userId, CancellationToken cancellationToken = default);
     Task<Result> DeleteAsync(Guid id, string userId, CancellationToken cancellationToken = default);
 }

@@ -5,8 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Download, FileText } from "lucide-react";
-import { formatCurrency } from "@/lib/utils";
-import { mockProjects } from "@/lib/mock-data";
 
 export default function ExecutiveReportsPage() {
   return (

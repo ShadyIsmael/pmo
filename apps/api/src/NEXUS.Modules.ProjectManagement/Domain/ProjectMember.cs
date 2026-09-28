@@ -15,4 +15,6 @@ public class ProjectMember : BaseEntity
     public string Status { get; set; } = "Active";
     public bool IsBillable { get; set; } = true;
     public string? Notes { get; set; }
+    public string CalendarPolicy { get; set; } = CalendarPolicyConstants.UseResourceCalendar;
+    public ICollection<ProjectMemberRole> FunctionalRoles { get; set; } = new List<ProjectMemberRole>();
 }

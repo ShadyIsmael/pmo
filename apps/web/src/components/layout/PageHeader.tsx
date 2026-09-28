@@ -11,17 +11,17 @@ interface PageHeaderProps {
 
 export function PageHeader({ title, description, actions, className, children }: PageHeaderProps) {
   return (
-    <div className={cn("flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between", className)}>
-      <div className="space-y-0.5">
+    <div className={cn("nexus-page-header flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between", className)}>
+      <div className="space-y-1">
         <div className="flex items-center gap-3">
-          <h1 className="text-lg font-bold tracking-tight sm:text-xl">{title}</h1>
+          <h1 className="text-xl font-bold tracking-tight sm:text-2xl">{title}</h1>
           {children}
         </div>
         {description && (
-          <p className="text-xs text-muted-foreground/80">{description}</p>
+          <p className="text-sm text-muted-foreground">{description}</p>
         )}
       </div>
-      {actions && <div className="flex items-center gap-1.5 shrink-0">{actions}</div>}
+      {actions && <div className="flex items-center gap-2 shrink-0">{actions}</div>}
     </div>
   );
 }

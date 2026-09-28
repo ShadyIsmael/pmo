@@ -16,6 +16,7 @@ public class ProjectBaselineController : ControllerBase
         _baselineService = baselineService;
     }
 
+    [Authorize(Policy = "Project.Edit")]
     [HttpPost("initial")]
     public async Task<IActionResult> CreateInitialBaseline(Guid projectId, CancellationToken cancellationToken)
     {

@@ -47,3 +47,31 @@ public class PlanDependencyDto
     public int? Lag { get; set; }
     public byte[] RowVersion { get; set; } = Array.Empty<byte>();
 }
+
+public sealed class ReplacePlanPredecessorsDto
+{
+    public Guid ActivityId { get; set; }
+    public IReadOnlyList<PlanPredecessorInputDto> Predecessors { get; set; } = [];
+}
+
+public sealed class PlanPredecessorInputDto
+{
+    public Guid PredecessorActivityId { get; set; }
+    public PlanDependencyType Type { get; set; } = PlanDependencyType.FinishToStart;
+    public int? Lag { get; set; }
+}
+
+public sealed class ReplacePlanPredecessorsResultDto
+{
+    public IReadOnlyList<PlanDependencyDto> Dependencies { get; init; } = [];
+    public IReadOnlyList<PlanScheduledActivityStateDto> ScheduledActivities { get; init; } = [];
+    public bool SchedulingRecalculated { get; init; }
+}
+
+public sealed class PlanScheduledActivityStateDto
+{
+    public Guid ActivityId { get; init; }
+    public DateTime? StartDate { get; init; }
+    public DateTime? EndDate { get; init; }
+    public int Duration { get; init; }
+}

@@ -17,6 +17,7 @@ public class PlanController : ControllerBase
         _planService = planService;
     }
 
+    [Authorize(Policy = "Planning.View")]
     [HttpGet]
     public async Task<IActionResult> GetByProject(Guid projectId, CancellationToken cancellationToken)
     {
@@ -25,6 +26,16 @@ public class PlanController : ControllerBase
         return Ok(result.Value);
     }
 
+    [Authorize(Policy = "Planning.View")]
+    [HttpGet("bootstrap")]
+    public async Task<IActionResult> GetBootstrap(Guid projectId, CancellationToken cancellationToken)
+    {
+        var result = await _planService.GetBootstrapAsync(projectId, cancellationToken);
+        if (result.IsFailure) return NotFound(new { error = result.Error?.Message });
+        return Ok(result.Value);
+    }
+
+    [Authorize(Policy = "Planning.Manage")]
     [HttpPost]
     public async Task<IActionResult> Create(Guid projectId, [FromBody] CreatePlanDto dto, CancellationToken cancellationToken)
     {
@@ -40,6 +51,7 @@ public class PlanController : ControllerBase
         return CreatedAtAction(nameof(GetById), new { projectId, id = result.Value!.Id }, result.Value);
     }
 
+    [Authorize(Policy = "Planning.View")]
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid projectId, Guid id, CancellationToken cancellationToken)
     {
@@ -48,6 +60,7 @@ public class PlanController : ControllerBase
         return Ok(result.Value);
     }
 
+    [Authorize(Policy = "Planning.View")]
     [HttpGet("{id:guid}/working-version")]
     public async Task<IActionResult> GetActiveWorkingVersion(Guid projectId, Guid id, CancellationToken cancellationToken)
     {

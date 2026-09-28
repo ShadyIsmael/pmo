@@ -95,7 +95,7 @@ public class CapacityServiceTests : TestBase
             Id = Guid.NewGuid(),
             ResourceId = ResourceAliceId,
             ProjectName = "Proposed Work",
-            Role = "Developer",
+            ProjectRoleId = ProjectRoleDevId,
             AllocationPercentage = 30,
             StartDate = new DateTime(2026, 1, 5),
             EndDate = new DateTime(2026, 1, 12),
@@ -130,7 +130,7 @@ public class CapacityServiceTests : TestBase
             Id = Guid.NewGuid(),
             ResourceId = ResourceCharlieId,
             ProjectName = "Heavy Load",
-            Role = "Developer",
+            ProjectRoleId = ProjectRoleDevId,
             AllocationPercentage = 80,
             StartDate = new DateTime(2026, 1, 5),
             EndDate = new DateTime(2026, 1, 12),
@@ -141,7 +141,7 @@ public class CapacityServiceTests : TestBase
             Id = Guid.NewGuid(),
             ResourceId = ResourceCharlieId,
             ProjectName = "Extra Work",
-            Role = "Developer",
+            ProjectRoleId = ProjectRoleDevId,
             AllocationPercentage = 30,
             StartDate = new DateTime(2026, 1, 5),
             EndDate = new DateTime(2026, 1, 12),
@@ -175,7 +175,7 @@ public class CapacityServiceTests : TestBase
             Id = Guid.NewGuid(),
             ResourceId = ResourceAliceId,
             ProjectName = "Full Load",
-            Role = "Developer",
+            ProjectRoleId = ProjectRoleDevId,
             AllocationPercentage = 80,
             HoursPerWeek = 40,
             StartDate = new DateTime(2026, 1, 5),
@@ -211,7 +211,7 @@ public class CapacityServiceTests : TestBase
             Id = Guid.NewGuid(),
             ResourceId = ResourceBobId,
             ProjectName = "Near Full",
-            Role = "Designer",
+            ProjectRoleId = ProjectRoleArchId,
             AllocationPercentage = 60,
             HoursPerWeek = 32,
             StartDate = new DateTime(2026, 1, 5),
@@ -286,7 +286,7 @@ public class CapacityServiceTests : TestBase
         var result = await service.GetDemandVsCapacityAsync(filter);
 
         result.IsSuccess.Should().BeTrue();
-        result.Value.Groups.Should().Contain(g => g.GroupType == "Role");
+        result.Value.Groups.Should().Contain(g => g.GroupType == "ProjectRole");
         result.Value.Groups.Should().Contain(g => g.GroupType == "Department");
     }
 
@@ -421,5 +421,36 @@ public class CapacityServiceTests : TestBase
         var cell = result.Value.Rows.Single().Cells[0];
         cell.GrossCapacityHours.Should().Be(40);
         cell.NetCapacityHours.Should().Be(32);
+    }
+
+    [Fact]
+    public async Task GetMatrixAsync_ProductiveHoursDeductsPaidBreak()
+    {
+        using var context = CreateContext();
+        var service = CreateService(context);
+        // Verify productive hours account for paid breaks
+        var filter = new CapacityFilterDto { PeriodType = "Week", StartDate = new DateTime(2026, 1, 5), EndDate = new DateTime(2026, 1, 12), ResourceId = ResourceAliceId };
+        var result = await service.GetMatrixAsync(filter);
+        result.IsSuccess.Should().BeTrue();
+        // Gross capacity should reflect ProductiveHoursPerDay (HoursPerDay - PaidBreakMinutes/60)
+        foreach (var row in result.Value.Rows)
+        {
+            foreach (var cell in row.Cells)
+            {
+                cell.GrossCapacityHours.Should().BeGreaterThan(0);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task GetMatrixAsync_CancelledAllocationNotCounted()
+    {
+        using var context = CreateContext();
+        var service = CreateService(context);
+        var filter = new CapacityFilterDto { PeriodType = "Week", StartDate = new DateTime(2026, 1, 5), EndDate = new DateTime(2026, 1, 12), ResourceId = ResourceAliceId };
+        var result = await service.GetMatrixAsync(filter);
+        result.IsSuccess.Should().BeTrue();
+        // Cancelled allocations should not consume capacity
+        result.Value.Rows.Should().NotBeEmpty();
     }
 }

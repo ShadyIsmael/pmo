@@ -2,6 +2,8 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api-client";
+import { endpoints } from "@/lib/api/endpoints";
+import { capacityKeys } from "@/lib/api/resources";
 
 export interface CapacityCellDto {
   periodKey: string;
@@ -15,6 +17,7 @@ export interface CapacityCellDto {
   availableHours: number;
   utilizationPercent: number;
   heatmapState: string;
+  overallocatedHours: number;
   allocations: AllocationBreakdownDto[];
 }
 
@@ -24,8 +27,11 @@ export interface AllocationBreakdownDto {
   projectName: string;
   percentage: number;
   hours: number;
+  plannedHours?: number;
+  plannedLaborCost?: number;
   status: string;
   isBillable: boolean;
+  currency?: string;
 }
 
 export interface CapacityMatrixRowDto {
@@ -37,6 +43,8 @@ export interface CapacityMatrixRowDto {
   weeklyCapacityHours: number;
   currentUtilization: number;
   earliestAvailableDate?: string;
+  costPerHour?: number;
+  currency?: string;
   cells: CapacityCellDto[];
 }
 
@@ -71,6 +79,8 @@ export interface ResourceAvailabilityDto {
   currentUtilization: number;
   availableCapacityHours: number;
   earliestAvailableDate?: string;
+  costPerHour?: number;
+  currency?: string;
   conflicts?: AllocationConflictDto[];
 }
 
@@ -134,60 +144,60 @@ function toParams(filter: CapacityFilterParams): Record<string, string | number 
 }
 
 async function fetchCapacityMatrix(filter: CapacityFilterParams): Promise<CapacityMatrixDto> {
-  return api.get<CapacityMatrixDto>("/api/capacity/matrix", toParams(filter));
+  return api.get<CapacityMatrixDto>(endpoints.capacity.matrix, toParams(filter));
 }
 
 export function useCapacityMatrix(filter: CapacityFilterParams = {}) {
   return useQuery({
-    queryKey: ["capacity", "matrix", filter],
+    queryKey: capacityKeys.matrix(filter),
     queryFn: () => fetchCapacityMatrix(filter),
     staleTime: 30_000,
   });
 }
 
 async function fetchAvailability(filter: CapacityFilterParams): Promise<AvailabilityPage> {
-  return api.get<AvailabilityPage>("/api/capacity/availability", toParams(filter));
+  return api.get<AvailabilityPage>(endpoints.capacity.availability, toParams(filter));
 }
 
 export function useCapacityAvailability(filter: CapacityFilterParams = {}) {
   return useQuery({
-    queryKey: ["capacity", "availability", filter],
+    queryKey: capacityKeys.availability(filter),
     queryFn: () => fetchAvailability(filter),
     staleTime: 30_000,
   });
 }
 
 async function fetchDemandVsCapacity(filter: CapacityFilterParams): Promise<DemandVsCapacityDto> {
-  return api.get<DemandVsCapacityDto>("/api/capacity/demand-vs-capacity", toParams(filter));
+  return api.get<DemandVsCapacityDto>(endpoints.capacity.demand, toParams(filter));
 }
 
 export function useDemandVsCapacity(filter: CapacityFilterParams = {}) {
   return useQuery({
-    queryKey: ["capacity", "demand-vs-capacity", filter],
+    queryKey: capacityKeys.demand(filter),
     queryFn: () => fetchDemandVsCapacity(filter),
     staleTime: 30_000,
   });
 }
 
 async function fetchGanttData(filter: CapacityFilterParams): Promise<import("./useAllocations").AllocationDto[]> {
-  return api.get<import("./useAllocations").AllocationDto[]>("/api/capacity/gantt", toParams(filter));
+  return api.get<import("./useAllocations").AllocationDto[]>(endpoints.capacity.gantt, toParams(filter));
 }
 
 export function useCapacityGantt(filter: CapacityFilterParams = {}) {
   return useQuery({
-    queryKey: ["capacity", "gantt", filter],
+    queryKey: capacityKeys.gantt(filter),
     queryFn: () => fetchGanttData(filter),
     staleTime: 30_000,
   });
 }
 
 async function fetchResourceAvailability(resourceId: string, startDate: string, endDate: string): Promise<ResourceAvailabilityDto> {
-  return api.get<ResourceAvailabilityDto>(`/api/capacity/resource/${resourceId}/availability`, { startDate, endDate });
+  return api.get<ResourceAvailabilityDto>(endpoints.capacity.resourceAvailability(resourceId), { startDate, endDate });
 }
 
 export function useResourceAvailability(resourceId: string, startDate: string, endDate: string) {
   return useQuery({
-    queryKey: ["capacity", "resource-availability", resourceId, startDate, endDate],
+    queryKey: capacityKeys.resourceAvailability(resourceId, startDate, endDate),
     queryFn: () => fetchResourceAvailability(resourceId, startDate, endDate),
     enabled: !!resourceId && !!startDate && !!endDate,
     staleTime: 30_000,

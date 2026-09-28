@@ -7,9 +7,12 @@
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.10" />
+    <PackageReference Include="net.sf.mpxj-for-csharp" Version="13.12.0" />
+    <PackageReference Include="System.Drawing.Common" Version="10.0.0" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\NEXUS.SharedKernel\NEXUS.SharedKernel.csproj" />
     <ProjectReference Include="..\NEXUS.Modules.Audit\NEXUS.Modules.Audit.csproj" />
+    <ProjectReference Include="..\NEXUS.Modules.ResourceManagement\NEXUS.Modules.ResourceManagement.csproj" />
   </ItemGroup>
 </Project>

@@ -27,6 +27,9 @@ public class ProjectChangeRequest : BaseEntity
     public string Reason { get; set; } = string.Empty;
     public string? Justification { get; set; }
     public string? Impact { get; set; }
+    // Null on historical/non-financial CRs. Immutable request-time ceiling and signed impact.
+    public decimal? BudgetBeforeChange { get; set; }
+    public decimal? BudgetChangeAmount { get; set; }
     public string? Attachments { get; set; }
 
     public Statuses Status { get; set; } = Statuses.Pending;

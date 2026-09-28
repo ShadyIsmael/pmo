@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -8,27 +9,41 @@ using NEXUS.Modules.AIPlanning.ModuleRegistration;
 using NEXUS.Modules.Approvals.ModuleRegistration;
 using NEXUS.Modules.Audit.ModuleRegistration;
 using NEXUS.Modules.CostManagement.ModuleRegistration;
+using NEXUS.Modules.Documents.Application;
 using NEXUS.Modules.Documents.ModuleRegistration;
 using NEXUS.Modules.Identity.ModuleRegistration;
 using NEXUS.Modules.Integrations.ModuleRegistration;
 using NEXUS.Modules.IssueManagement.ModuleRegistration;
 using NEXUS.Modules.Meetings.ModuleRegistration;
+using NEXUS.Modules.Meetings.Application;
 using NEXUS.Modules.Notifications.ModuleRegistration;
 using NEXUS.Modules.Organization.ModuleRegistration;
 using NEXUS.Modules.PluginManagement.ModuleRegistration;
 using NEXUS.Modules.Portfolio.ModuleRegistration;
 using NEXUS.Modules.ProjectManagement.ModuleRegistration;
+using NEXUS.Modules.ProjectManagement.Application;
 using NEXUS.Modules.ProjectPlanning.ModuleRegistration;
 using NEXUS.Modules.Reporting.ModuleRegistration;
 using NEXUS.Modules.ResourceManagement.ModuleRegistration;
 using NEXUS.Modules.RiskManagement.ModuleRegistration;
+using NEXUS.Modules.WorkItems.Application;
 using NEXUS.Modules.WorkItems.ModuleRegistration;
 using NEXUS.Modules.WorkflowEngine.ModuleRegistration;
 using NEXUS.Persistence;
+using NEXUS.Persistence.Management;
+using NEXUS.SharedKernel;
+using NEXUS.SharedKernel.Management;
+using NEXUS.Api.Management;
+using NEXUS.Api.ProgramManagement;
+using NEXUS.Api.PortfolioManagement;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+    })
     .ConfigureApiBehaviorOptions(options =>
     {
         options.SuppressModelStateInvalidFilter = false;
@@ -86,6 +101,67 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("Users.Write", policy => policy.RequireClaim("permission", "users.write"));
     options.AddPolicy("Settings.Read", policy => policy.RequireClaim("permission", "settings.read", "settings.write"));
     options.AddPolicy("Settings.Write", policy => policy.RequireClaim("permission", "settings.write"));
+    options.AddPolicy("Finances.Read", policy => policy.RequireClaim("permission", "finances.read", "finances.write"));
+    options.AddPolicy("Finances.Write", policy => policy.RequireClaim("permission", "finances.write"));
+
+    options.AddPolicy("Project.View", policy => policy.RequireClaim("permission", "Project.View"));
+    options.AddPolicy("Project.Create", policy => policy.RequireClaim("permission", "Project.Create"));
+    options.AddPolicy("Project.Edit", policy => policy.RequireClaim("permission", "Project.Edit"));
+    options.AddPolicy("Project.Delete", policy => policy.RequireClaim("permission", "Project.Delete"));
+    options.AddPolicy("Stakeholders.Read", policy => policy.RequireClaim("permission", "Stakeholders.Read"));
+    options.AddPolicy("Stakeholders.Manage", policy => policy.RequireClaim("permission", "Stakeholders.Manage"));
+    options.AddPolicy("ChangeRequest.View", policy => policy.RequireClaim("permission", "ChangeRequest.View"));
+    options.AddPolicy("ChangeRequest.Manage", policy => policy.RequireClaim("permission", "ChangeRequest.Manage"));
+    options.AddPolicy("ChangeRequest.Approve", policy => policy.RequireClaim("permission", "ChangeRequest.Approve"));
+
+    options.AddPolicy("Handover.View", policy => policy.RequireClaim("permission", "Handover.View"));
+    options.AddPolicy("Handover.Manage", policy => policy.RequireClaim("permission", "Handover.Manage"));
+    options.AddPolicy("Handover.Approve", policy => policy.RequireClaim("permission", "Handover.Approve"));
+
+    options.AddPolicy("Risk.View", policy => policy.RequireClaim("permission", "Risk.View"));
+    options.AddPolicy("Risk.Create", policy => policy.RequireClaim("permission", "Risk.Create"));
+    options.AddPolicy("Risk.Edit", policy => policy.RequireClaim("permission", "Risk.Edit"));
+    options.AddPolicy("Risk.Delete", policy => policy.RequireClaim("permission", "Risk.Delete"));
+    options.AddPolicy("Risk.Mitigate", policy => policy.RequireClaim("permission", "Risk.Mitigate"));
+
+    options.AddPolicy("Planning.View", policy => policy.RequireClaim("permission", "Planning.View"));
+    options.AddPolicy("Planning.Manage", policy => policy.RequireClaim("permission", "Planning.Manage"));
+    options.AddPolicy("Planning.Lifecycle", policy => policy.RequireClaim("permission", "Planning.Lifecycle"));
+
+    options.AddPolicy("Portfolio.View", policy => policy.RequireClaim("permission", "Portfolio.View"));
+    options.AddPolicy("Portfolio.Manage", policy => policy.RequireClaim("permission", "Portfolio.Manage"));
+    options.AddPolicy("Program.View", policy => policy.RequireClaim("permission", "Program.View"));
+    options.AddPolicy("Program.Manage", policy => policy.RequireClaim("permission", "Program.Manage"));
+    options.AddPolicy("WorkItem.View", policy => policy.RequireClaim("permission", "WorkItem.View"));
+    options.AddPolicy("WorkItem.Create", policy => policy.RequireClaim("permission", "WorkItem.Create"));
+    options.AddPolicy("WorkItem.Edit", policy => policy.RequireClaim("permission", "WorkItem.Edit"));
+    options.AddPolicy("WorkItem.Delete", policy => policy.RequireClaim("permission", "WorkItem.Delete"));
+    options.AddPolicy("TimeTracking.View", policy => policy.RequireAssertion(context =>
+        context.User.HasClaim("permission", TimeTrackingPermissions.ViewOwn)
+        || context.User.HasClaim("permission", TimeTrackingPermissions.ManageOwn)
+        || context.User.HasClaim("permission", TimeTrackingPermissions.ViewTeam)
+        || context.User.HasClaim("permission", TimeTrackingPermissions.ManageTeam)));
+    options.AddPolicy("TimeTracking.Manage", policy => policy.RequireAssertion(context =>
+        context.User.HasClaim("permission", TimeTrackingPermissions.ManageOwn)
+        || context.User.HasClaim("permission", TimeTrackingPermissions.ManageTeam)));
+    options.AddPolicy(MeetingPermissions.View, policy => policy.RequireClaim("permission", MeetingPermissions.View));
+    options.AddPolicy(MeetingPermissions.Create, policy => policy.RequireClaim("permission", MeetingPermissions.Create));
+    options.AddPolicy(MeetingPermissions.Edit, policy => policy.RequireClaim("permission", MeetingPermissions.Edit));
+    options.AddPolicy(MeetingPermissions.Manage, policy => policy.RequireClaim("permission", MeetingPermissions.Manage));
+    options.AddPolicy(MeetingPermissions.Delete, policy => policy.RequireClaim("permission", MeetingPermissions.Delete));
+    options.AddPolicy(DocumentPermissions.View, policy => policy.RequireClaim("permission", DocumentPermissions.View));
+    options.AddPolicy(DocumentPermissions.Create, policy => policy.RequireClaim("permission", DocumentPermissions.Create));
+    options.AddPolicy(DocumentPermissions.Edit, policy => policy.RequireClaim("permission", DocumentPermissions.Edit));
+    options.AddPolicy(DocumentPermissions.Archive, policy => policy.RequireClaim("permission", DocumentPermissions.Archive));
+    options.AddPolicy(DocumentPermissions.TemplateManage, policy => policy.RequireClaim("permission", DocumentPermissions.TemplateManage));
+    options.AddPolicy("WorkItemStatus.View", policy => policy.RequireClaim("permission", "WorkItem.View", "settings.read", "settings.write"));
+    options.AddPolicy("WorkItemStatus.Manage", policy => policy.RequireClaim("permission", "settings.write"));
+    options.AddPolicy("VendorCategory.View", policy => policy.RequireAssertion(context =>
+        context.User.HasClaim("permission", "Resource.View") || context.User.HasClaim("permission", "Resource.Allocate") || context.User.HasClaim("permission", "Resource.Manage") || context.User.HasClaim("permission", "settings.read") || context.User.HasClaim("permission", "settings.write")));
+    options.AddPolicy("VendorCategory.Manage", policy => policy.RequireClaim("permission", "settings.write"));
+    options.AddPolicy("Workflow.View", policy => policy.RequireClaim("permission", "Workflow.View"));
+    options.AddPolicy("Workflow.Manage", policy => policy.RequireClaim("permission", "Workflow.Manage"));
+    options.AddPolicy("Workflow.Publish", policy => policy.RequireClaim("permission", "Workflow.Publish"));
 });
 
 builder.Services.AddDbContext<AppDbContext>(options =>
@@ -94,7 +170,18 @@ builder.Services.AddDbContext<AppDbContext>(options =>
         ?? "Server=localhost;Database=NexusPmo;Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=true";
     options.UseSqlServer(connectionString);
 });
+builder.Services.Configure<TimeTrackingOptions>(builder.Configuration.GetSection("TimeTracking"));
 builder.Services.AddScoped<DbContext>(sp => sp.GetRequiredService<AppDbContext>());
+builder.Services.AddScoped<IWorkItemCommentAccess, WorkItemCommentAccess>();
+builder.Services.AddScoped<IWorkItemCommentAuthorLookup, WorkItemCommentAuthorLookup>();
+builder.Services.AddScoped<IWorkItemAssigneeLookup, WorkItemAssigneeLookup>();
+builder.Services.AddScoped<IWorkItemStatusReferenceLookup, WorkItemStatusReferenceLookup>();
+builder.Services.AddScoped<IWorkItemStatusUsageLookup, WorkItemStatusUsageLookup>();
+builder.Services.Configure<WorkItemAttachmentOptions>(builder.Configuration.GetSection("WorkItemAttachments"));
+builder.Services.AddScoped<IWorkItemAttachmentStorage, WorkItemAttachmentStorage>();
+builder.Services.AddScoped<IMeetingMinutesAttachmentStorage, MeetingMinutesAttachmentStorage>();
+builder.Services.AddScoped<IMeetingMinutesAttachmentPolicy, MeetingMinutesAttachmentPolicy>();
+builder.Services.AddHostedService<MeetingReminderScheduler>();
 
 var corsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? Array.Empty<string>();
 
@@ -117,6 +204,10 @@ builder.Services.AddCors(options =>
 builder.Services.AddHealthChecks();
 
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<IManagementContextAccessor, ManagementContextAccessor>();
+builder.Services.AddScoped<IManagementScopeResolver, ManagementScopeResolver>();
+builder.Services.AddScoped<IProgramManagementService, ProgramManagementService>();
+builder.Services.AddScoped<IPortfolioManagementService, PortfolioManagementService>();
 
 builder.Services.AddIdentityModule();
 builder.Services.AddOrganizationModule();
@@ -155,16 +246,24 @@ if (app.Environment.IsDevelopment())
     if (args.Contains("--seed-identity"))
     {
         await SeedDataProvider.SeedIdentityOnlyAsync(context);
-        Console.WriteLine("Identity seed completed.");
         return;
     }
 
     await SeedDataProvider.SeedAsync(context);
+
+    var workItemWorkflowProvisioning = scope.ServiceProvider.GetRequiredService<IWorkItemWorkflowProvisioningService>();
+    var workflowProvisioning = await workItemWorkflowProvisioning.EnsureCurrentTenantAsync("System", CancellationToken.None);
+    if (workflowProvisioning.IsFailure)
+        throw new InvalidOperationException(workflowProvisioning.Error?.Message ?? "Work Item workflow provisioning failed.");
+    var workflowOnboarding = await workItemWorkflowProvisioning.OnboardCurrentTenantAsync("System", CancellationToken.None);
+    if (workflowOnboarding.IsSuccess && workflowOnboarding.Value!.Exceptions.Count > 0)
+        app.Logger.LogWarning("Work Item workflow onboarding completed with {Count} exceptions.", workflowOnboarding.Value.Exceptions.Count);
 }
 
 app.UseRouting();
 app.UseCors("FrontendCors");
 app.UseAuthentication();
+app.UseMiddleware<ManagementContextMiddleware>();
 app.UseAuthorization();
 app.MapControllers();
 app.MapHealthChecks("/health");

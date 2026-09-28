@@ -1,7 +1,6 @@
 "use client";
 
 import { PageHeader } from "@/components/layout/PageHeader";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -22,11 +21,11 @@ export default function MeetingActionsPage() {
         </TabsList>
 
         <TabsContent value="open">
-          <div className="rounded-md border">
+          <div className="nexus-table-surface">
             {mockMeetingActions.filter(a => a.status === "Open").map((action) => {
               const owner = mockUsers.find(u => u.id === action.owner);
               return (
-                <div key={action.id} className="flex items-start gap-4 border-b px-4 py-3 last:border-0 hover:bg-muted/30">
+                <div key={action.id} className="nexus-table-row flex items-start gap-4 px-4 py-3 last:border-0">
                   <AlertCircle className="mt-1 h-4 w-4 text-status-red shrink-0" />
                   <div className="flex-1">
                     <p className="text-sm font-medium">{action.description}</p>
@@ -36,7 +35,7 @@ export default function MeetingActionsPage() {
                       <span>· Due {formatDate(action.dueDate)}</span>
                     </div>
                   </div>
-                  <Badge variant="destructive" className="text-[10px]">Open</Badge>
+                  <Badge status="Open" className="text-[10px]">Open</Badge>
                 </div>
               );
             })}
@@ -44,11 +43,11 @@ export default function MeetingActionsPage() {
         </TabsContent>
 
         <TabsContent value="in-progress">
-          <div className="rounded-md border">
+          <div className="nexus-table-surface">
             {mockMeetingActions.filter(a => a.status === "In Progress").map((action) => {
               const owner = mockUsers.find(u => u.id === action.owner);
               return (
-                <div key={action.id} className="flex items-start gap-4 border-b px-4 py-3 last:border-0 hover:bg-muted/30">
+                <div key={action.id} className="nexus-table-row flex items-start gap-4 px-4 py-3 last:border-0">
                   <Clock className="mt-1 h-4 w-4 text-status-amber shrink-0" />
                   <div className="flex-1">
                     <p className="text-sm font-medium">{action.description}</p>
@@ -58,7 +57,7 @@ export default function MeetingActionsPage() {
                       <span>· Due {formatDate(action.dueDate)}</span>
                     </div>
                   </div>
-                  <Badge variant="secondary" className="text-[10px]">In Progress</Badge>
+                  <Badge status="In Progress" className="text-[10px]">In Progress</Badge>
                 </div>
               );
             })}
@@ -66,17 +65,17 @@ export default function MeetingActionsPage() {
         </TabsContent>
 
         <TabsContent value="completed">
-          <div className="rounded-md border">
+          <div className="nexus-table-surface">
             {mockMeetingActions.filter(a => a.status === "Completed").map((action) => {
               const owner = mockUsers.find(u => u.id === action.owner);
               return (
-                <div key={action.id} className="flex items-start gap-4 border-b px-4 py-3 last:border-0 hover:bg-muted/30">
+                <div key={action.id} className="nexus-table-row flex items-start gap-4 px-4 py-3 last:border-0">
                   <CheckCircle2 className="mt-1 h-4 w-4 text-status-green shrink-0" />
                   <div className="flex-1">
                     <p className="text-sm font-medium line-through text-muted-foreground">{action.description}</p>
                     <div className="mt-1 text-xs text-muted-foreground">{owner?.name} · Due {formatDate(action.dueDate)}</div>
                   </div>
-                  <Badge variant="outline" className="text-[10px]">Completed</Badge>
+                  <Badge status="Completed" className="text-[10px]">Completed</Badge>
                 </div>
               );
             })}

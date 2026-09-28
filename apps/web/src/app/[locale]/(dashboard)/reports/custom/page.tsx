@@ -2,7 +2,7 @@
 
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Plus, FileText } from "lucide-react";
 
 export default function CustomReportsPage() {

@@ -7,4 +7,9 @@ export * from "@/lib/api/users";
 export * from "@/lib/api/handover";
 export * from "@/lib/api/notifications";
 export * from "@/lib/api/project-change-requests";
+export * from "@/lib/api/risks";
+export * from "@/lib/api/planning";
+export * from "@/lib/api/work-items";
+export * from "@/lib/api/meetings";
+export * from "@/lib/api/costs";
 

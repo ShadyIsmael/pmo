@@ -8,10 +8,11 @@ import { Toaster } from "@/components/ui/toaster";
 import { QUERY_STALE_TIME } from "@/lib/constants";
 import { AuthProvider } from "@/lib/auth";
 import { ApiError } from "@/lib/api/client";
+import { ManagementPerspectiveBridge } from "@/lib/perspective-context";
 
 function shouldRetry(failureCount: number, error: unknown): boolean {
   if (error instanceof ApiError) {
-    if (error.status === 401 || error.status === 403) return false;
+    if (error.status === 401 || error.status === 403 || (error.status >= 400 && error.status < 500)) return false;
   }
   return failureCount < 1;
 }
@@ -42,9 +43,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
         disableTransitionOnChange
       >
         <AuthProvider>
-          <TooltipProvider delayDuration={300}>
-            {children}
-          </TooltipProvider>
+          <ManagementPerspectiveBridge>
+            <TooltipProvider delayDuration={300}>{children}</TooltipProvider>
+          </ManagementPerspectiveBridge>
         </AuthProvider>
         <Toaster />
       </ThemeProvider>

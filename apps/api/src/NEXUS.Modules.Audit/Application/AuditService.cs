@@ -25,8 +25,14 @@ public class AuditService : IAuditService
 
     public async Task<Result> LogAsync(AuditEntry entry, CancellationToken cancellationToken = default)
     {
-        _context.Set<AuditEntry>().Add(entry);
+        await AppendAsync(entry, cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
         return Result.Success();
+    }
+
+    public Task<Result> AppendAsync(AuditEntry entry, CancellationToken cancellationToken = default)
+    {
+        _context.Set<AuditEntry>().Add(entry);
+        return Task.FromResult(Result.Success());
     }
 }

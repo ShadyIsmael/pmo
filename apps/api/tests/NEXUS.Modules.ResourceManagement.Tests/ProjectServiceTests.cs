@@ -5,6 +5,7 @@ using Xunit;
 using Microsoft.EntityFrameworkCore;
 using Moq;
 using NEXUS.Modules.Audit.Application;
+using NEXUS.Modules.Organization.Domain;
 using NEXUS.Modules.ProjectManagement.Application;
 using NEXUS.Modules.ProjectManagement.Application.DTOs;
 using NEXUS.Modules.ProjectManagement.Domain;
@@ -22,6 +23,7 @@ public class ProjectServiceTests
             .Options;
 
         await using var context = new AppDbContext(options);
+        context.Currencies.Add(new Currency { Code = "GBP", Name = "British Pound", Symbol = "£", IsBase = true, TenantId = Guid.Parse("11111111-1111-1111-1111-111111111111") });
         context.Projects.Add(new Project { Id = Guid.NewGuid(), Name = "Existing Project", Code = "PRJ-1001", TenantId = Guid.Parse("11111111-1111-1111-1111-111111111111") });
         await context.SaveChangesAsync();
 
@@ -37,11 +39,12 @@ public class ProjectServiceTests
             }
         };
 
-        var service = new ProjectService(context, auditService.Object, httpContextAccessor);
+        var service = new ProjectService(context, auditService.Object, httpContextAccessor, new ProjectManagerMembershipSynchronizer(context));
 
         var result = await service.CreateAsync(new CreateProjectDto
         {
             Name = "New Project",
+            Currency = "GBP",
             ProjectManagerId = Guid.NewGuid()
         }, "user-1");
 

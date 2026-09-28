@@ -30,12 +30,11 @@ public static class ProjectMapping
             ActualCost = project.ActualCost,
             PlannedValue = project.PlannedValue,
             EarnedValue = project.EarnedValue,
-            CostVariance = project.CostVariance,
-            ScheduleVariance = project.ScheduleVariance,
             Progress = project.Progress,
             Health = project.Health,
             RagStatus = project.RagStatus,
             ConfidenceLevel = project.ConfidenceLevel,
+            WorkingCalendarId = project.WorkingCalendarId,
             Phase = project.Phase,
             RiskRating = project.RiskRating,
             BusinessCase = project.BusinessCase,
@@ -65,6 +64,7 @@ public static class ProjectMapping
             Budget = project.Budget,
             ActualCost = project.ActualCost,
             Currency = project.Currency,
+            WorkingCalendarId = project.WorkingCalendarId,
             ProjectManagerId = project.ProjectManagerId,
         };
     }
@@ -107,12 +107,13 @@ public static class ProjectMapping
             StartDate = dto.StartDate,
             EndDate = dto.EndDate,
             Budget = dto.Budget,
-            Currency = dto.Currency,
+            Currency = dto.Currency ?? string.Empty,
             BusinessCase = dto.BusinessCase,
             Notes = dto.Notes,
             ConfidenceLevel = string.IsNullOrWhiteSpace(dto.ConfidenceLevel) ? "Green" : dto.ConfidenceLevel,
-            Health = "Green",
-            RagStatus = "Green",
+            WorkingCalendarId = dto.WorkingCalendarId,
+            Health = "Unknown",
+            RagStatus = "Unknown",
             Progress = 0,
             CreatedBy = userId
         };
@@ -133,11 +134,15 @@ public static class ProjectMapping
         if (dto.DepartmentId.HasValue) project.DepartmentId = dto.DepartmentId;
         if (dto.StartDate.HasValue) project.StartDate = dto.StartDate;
         if (dto.EndDate.HasValue) project.EndDate = dto.EndDate;
-        if (dto.Budget.HasValue) project.Budget = dto.Budget;
+        // Project.Budget is governed by creation and approved Change Requests only.
         if (dto.Currency != null) project.Currency = dto.Currency;
+        if (dto.PlannedValue.HasValue) project.PlannedValue = dto.PlannedValue;
+        if (dto.EarnedValue.HasValue) project.EarnedValue = dto.EarnedValue;
+        if (dto.ActualCost.HasValue) project.ActualCost = dto.ActualCost;
         if (dto.BusinessCase != null) project.BusinessCase = dto.BusinessCase;
         if (dto.Notes != null) project.Notes = dto.Notes;
         if (dto.ConfidenceLevel != null) project.ConfidenceLevel = dto.ConfidenceLevel;
+        if (dto.WorkingCalendarId.HasValue) project.WorkingCalendarId = dto.WorkingCalendarId;
         project.UpdatedBy = userId;
     }
 
@@ -203,6 +208,9 @@ public static class ProjectMapping
             Reason = request.Reason,
             Justification = request.Justification,
             Impact = request.Impact,
+            BudgetBeforeChange = request.BudgetBeforeChange,
+            BudgetChangeAmount = request.BudgetChangeAmount,
+            ProposedProjectBudget = request.BudgetBeforeChange + request.BudgetChangeAmount,
             Attachments = request.Attachments,
             Status = request.Status,
             RequestedBy = request.RequestedBy,

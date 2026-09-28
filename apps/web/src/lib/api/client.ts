@@ -1,5 +1,6 @@
 import { config } from "@/lib/config";
 import { endpoints } from "@/lib/api/endpoints";
+import type { ManagementRequestContext, PerspectiveSnapshot } from "@/lib/perspective";
 
 const ACCESS_TOKEN_KEY = "nexus_access_token";
 const REFRESH_TOKEN_KEY = "nexus_refresh_token";
@@ -7,12 +8,20 @@ const REFRESH_TOKEN_KEY = "nexus_refresh_token";
 export class ApiError extends Error {
   status: number;
   data?: unknown;
+  /** Per-field messages from an ASP.NET `ValidationProblemDetails` response. */
+  fieldErrors: Record<string, string[]>;
 
-  constructor(status: number, message: string, data?: unknown) {
+  constructor(status: number, message: string, data?: unknown, fieldErrors: Record<string, string[]> = {}) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.data = data;
+    this.fieldErrors = fieldErrors;
+  }
+
+  /** First message reported for a field, if the server sent one. */
+  fieldError(field: string): string | undefined {
+    return this.fieldErrors[field]?.[0];
   }
 }
 
@@ -66,10 +75,20 @@ interface RequestOptions {
   headers?: Record<string, string>;
   body?: unknown;
   params?: Record<string, string | number | boolean | undefined>;
+  responseType?: "json" | "blob";
 }
 
 let accessToken: string | null = null;
 let refreshToken: string | null = null;
+let perspectiveRequestContext: ManagementRequestContext | null = null;
+
+export function setPerspectiveRequestContext(context: ManagementRequestContext): void {
+  perspectiveRequestContext = context;
+}
+
+export function clearPerspectiveRequestContext(): void {
+  perspectiveRequestContext = null;
+}
 
 type TokenSubscriber = () => void;
 let tokenSubscribers: TokenSubscriber[] = [];
@@ -156,6 +175,14 @@ function isAuthEndpoint(path: string): boolean {
   return path.includes(endpoints.auth.login) || path.includes(endpoints.auth.refresh);
 }
 
+function isWorkItemEndpoint(path: string): boolean {
+  return path === endpoints.workItems.root || path.startsWith(`${endpoints.workItems.root}/`);
+}
+
+function isMeetingEndpoint(path: string): boolean {
+  return path === endpoints.meetings.root || path.startsWith(`${endpoints.meetings.root}/`);
+}
+
 function handleSessionExpired(): void {
   clearTokens();
   if (typeof window !== "undefined") {
@@ -181,6 +208,33 @@ function buildUrl(path: string, params?: Record<string, string | number | boolea
   return url.toString();
 }
 
+/** Normalises an ASP.NET `ValidationProblemDetails.errors` map. */
+function readFieldErrors(data: unknown): Record<string, string[]> {
+  const errors = (data as { errors?: unknown } | undefined)?.errors;
+  if (!errors || typeof errors !== "object") return {};
+
+  return Object.entries(errors as Record<string, unknown>).reduce<Record<string, string[]>>(
+    (accumulator, [field, messages]) => {
+      const list = Array.isArray(messages)
+        ? messages.filter((entry): entry is string => typeof entry === "string")
+        : typeof messages === "string"
+          ? [messages]
+          : [];
+      if (list.length) accumulator[field] = list;
+      return accumulator;
+    },
+    {},
+  );
+}
+
+/** Turns a model-binding path such as `$.baseCalendarId` into `baseCalendarId`. */
+function toFieldName(path: string): string {
+  return path
+    .replace(/^\$\.?/, "")
+    .replace(/\[[^\]]*\]/g, "")
+    .replace(/\..*$/, "");
+}
+
 async function toApiError(response: Response): Promise<ApiError> {
   let data: unknown;
   try {
@@ -188,20 +242,43 @@ async function toApiError(response: Response): Promise<ApiError> {
   } catch {
     data = undefined;
   }
+
+  const fieldErrors = Object.entries(readFieldErrors(data)).reduce<Record<string, string[]>>(
+    (accumulator, [field, messages]) => {
+      const name = toFieldName(field);
+      if (!name) return accumulator;
+      accumulator[name] = [...(accumulator[name] ?? []), ...messages];
+      return accumulator;
+    },
+    {},
+  );
+
+  // Model-binding 400s carry a generic `title` ("One or more validation errors
+  // occurred.") plus the real cause in `errors`, so prefer the field detail.
+  const fieldMessages = Object.values(fieldErrors).flat();
   const message =
     (data as { message?: string } | undefined)?.message ??
+    (data as { error?: string } | undefined)?.error ??
+    (fieldMessages.length ? fieldMessages.join(" ") : undefined) ??
     (data as { title?: string } | undefined)?.title ??
     response.statusText;
-  return new ApiError(response.status, message, data);
+
+  return new ApiError(response.status, message, data, fieldErrors);
 }
 
 async function request<T>(path: string, options: RequestOptions, alreadyRetried = false): Promise<T> {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    ...options.headers,
-  };
+  const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
+  const headers: Record<string, string> = { ...options.headers };
+  if (!isFormData) headers["Content-Type"] = "application/json";
 
   if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`;
+  if (perspectiveRequestContext) {
+    headers["X-Nexus-Perspective"] = perspectiveRequestContext.perspective;
+    headers["X-Nexus-View-Mode"] = perspectiveRequestContext.viewMode;
+    if (perspectiveRequestContext.portfolioId) headers["X-Nexus-Portfolio-Id"] = perspectiveRequestContext.portfolioId;
+    if (perspectiveRequestContext.programId) headers["X-Nexus-Program-Id"] = perspectiveRequestContext.programId;
+    if (perspectiveRequestContext.projectId) headers["X-Nexus-Project-Id"] = perspectiveRequestContext.projectId;
+  }
 
   const url = buildUrl(path, options.params);
 
@@ -210,7 +287,7 @@ async function request<T>(path: string, options: RequestOptions, alreadyRetried 
     response = await fetch(url, {
       method: options.method,
       headers,
-      body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+      body: options.body !== undefined ? (isFormData ? options.body as FormData : JSON.stringify(options.body)) : undefined,
     });
   } catch {
     throw new ApiError(0, "Network error");
@@ -222,9 +299,19 @@ async function request<T>(path: string, options: RequestOptions, alreadyRetried 
     handleSessionExpired();
   }
 
+  // Permission changes are reflected in newly issued JWTs. Retry protected
+  // module requests once so an existing session picks up newly seeded role
+  // permissions. A genuine denial remains a 403 after the retry and is not
+  // bypassed.
+  if (response.status === 403 && !alreadyRetried && (isWorkItemEndpoint(path) || isMeetingEndpoint(path)) && getRefreshToken()) {
+    const refreshed = await refreshAccessToken();
+    if (refreshed) return request<T>(path, options, true);
+  }
+
   if (!response.ok) throw await toApiError(response);
 
   if (response.status === 204) return undefined as T;
+  if (options.responseType === "blob") return (await response.blob()) as T;
   return (await response.json()) as T;
 }
 
@@ -235,11 +322,20 @@ export const api = {
   post: <T>(path: string, body?: unknown, headers?: Record<string, string>) =>
     request<T>(path, { method: "POST", body, headers }),
 
+  upload: <T>(path: string, body: FormData) =>
+    request<T>(path, { method: "POST", body }),
+
+  download: <T = Blob>(path: string) =>
+    request<T>(path, { method: "GET", responseType: "blob" }),
+
   put: <T>(path: string, body?: unknown, headers?: Record<string, string>) =>
     request<T>(path, { method: "PUT", body, headers }),
 
-  delete: <T>(path: string, headers?: Record<string, string>) =>
-    request<T>(path, { method: "DELETE", headers }),
+  patch: <T>(path: string, body?: unknown, headers?: Record<string, string>) =>
+    request<T>(path, { method: "PATCH", body, headers }),
+
+  delete: <T>(path: string, headers?: Record<string, string>, body?: unknown) =>
+    request<T>(path, { method: "DELETE", headers, body }),
 
   login: (email: string, password: string) => api.post<AuthResponse>(endpoints.auth.login, { email, password }),
 
@@ -248,6 +344,7 @@ export const api = {
   refresh: (token: string) => api.post<AuthResponse>(endpoints.auth.refresh, { refreshToken: token }),
 
   getMe: () => api.get<CurrentUser>(endpoints.auth.me),
+  getPerspectives: () => api.get<PerspectiveSnapshot>(endpoints.auth.perspectives),
 };
 
 

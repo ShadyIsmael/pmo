@@ -300,17 +300,19 @@ NEXUS PMO consists of 19 backend modules, each organized in Clean Architecture l
 | Attribute | Detail |
 |-----------|--------|
 | **Namespace** | `NEXUS.Modules.RiskManagement` |
-| **Business responsibility** | Risk register, impact/likelihood assessment, mitigation, contingency planning |
+| **Business responsibility** | Tenant-scoped project risk workflow, action ownership, follow-up planning, and progress history |
 | **Maturity** | Implemented |
-| **Evidence** | `AppDbContext.cs:84-87` (4 DbSets), `SeedDataProvider.cs:442-462` (28 risks seeded), `RiskController.cs`, `Program.cs:106` (`AddRiskManagementModule()`) |
+| **Evidence** | `AppDbContext.cs:84-87,114-116` (Risk and workflow DbSets), `RiskController.cs`, `Program.cs:106` (`AddRiskManagementModule()`) |
 
 ### Domain Entities
 | Entity | DbSet | Verified |
 |--------|-------|----------|
 | Risk | `Risks` | `AppDbContext.cs:84` |
 | RiskCategory | `RiskCategories` | `AppDbContext.cs:85` |
-| RiskMitigation | `RiskMitigations` | `AppDbContext.cs:86` |
-| RiskContingency | `RiskContingencies` | `AppDbContext.cs:87` |
+| RiskAction | `RiskActions` | `AppDbContext.cs:114` |
+| RiskFollowUp | `RiskFollowUps` | `AppDbContext.cs:115` |
+| RiskFollowUpUpdate | `RiskFollowUpUpdates` | `AppDbContext.cs:116` |
+| RiskMitigation / RiskContingency | legacy tables | compatibility only |
 
 ### Application Services
 | Service | File | Verified |
@@ -321,7 +323,7 @@ NEXUS PMO consists of 19 backend modules, each organized in Clean Architecture l
 ### API Endpoints
 | Endpoint | Controller File | Verified |
 |----------|----------------|----------|
-| `GET/POST/PUT/DELETE /api/risks` | `RiskController.cs` | Yes |
+| `GET/POST/PUT /api/risks`, status, actions, follow-up, updates | `RiskController.cs` | Yes |
 
 ### Dependencies
 - Project Management (project reference)
@@ -395,6 +397,8 @@ NEXUS PMO consists of 19 backend modules, each organized in Clean Architecture l
 ### Dependencies
 - Project Management (project reference)
 - Identity (organizer, participants)
+
+Meeting participants support either an active internal user (`UserId`) or an external email (`Email`); attendee resolution, email normalization, duplicate checks, and soft-delete synchronization are enforced by `MeetingService`.
 
 ---
 
@@ -726,7 +730,7 @@ NEXUS PMO consists of 19 backend modules, each organized in Clean Architecture l
 | 5 | Work Items | 2 | 1 (WorkItem) | 2 | Implemented |
 | 6 | Resource Management | 9 | 2 (Resource, Allocation) | 4 | Implemented |
 | 7 | Cost Management | 6 | 2 (Budget, Cost) | 4 | Implemented |
-| 8 | Risk Management | 4 | 1 (Risk) | 2 | Implemented |
+| 8 | Risk Management | 7 (3 legacy) | 1 (Risk) | 2 | Implemented |
 | 9 | Issue Management | 3 | 1 (Issue) | 2 | Implemented |
 | 10 | Meetings | 5 | 1 (Meeting) | 2 | Implemented |
 | 11 | Workflow Engine | 8 | 1 (Workflow) | 4 | Partial |

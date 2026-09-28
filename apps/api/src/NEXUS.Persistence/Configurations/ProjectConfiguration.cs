@@ -21,6 +21,8 @@ public class ProjectConfiguration : IEntityTypeConfiguration<Project>
         builder.HasIndex(p => p.TenantId);
         builder.HasIndex(p => p.Status);
         builder.HasIndex(p => p.ProjectManagerId);
+        builder.Property(p => p.WorkingCalendarId).HasColumnType("uniqueidentifier");
+        builder.HasIndex(p => p.WorkingCalendarId);
         builder.Property(p => p.RowVersion).IsRowVersion();
     }
 }

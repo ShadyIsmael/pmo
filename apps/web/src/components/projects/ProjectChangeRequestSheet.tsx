@@ -8,13 +8,14 @@ import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { FormSheet, FormSheetBody, FormSheetFooter } from "@/components/ui/form-sheet";
 import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useCreateProjectChangeRequest } from "@/hooks/projects/useProjectChangeRequests";
 import type { ProjectDto } from "@/hooks/projects/useProjects";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { ProjectChangeRequestTypeHelper, ProjectChangeRequestType } from "@/lib/enums";
+import { useAuth } from "@/lib/auth";
+import { hasPermission, Permissions } from "@/lib/permissions";
+import { Input } from "@/components/ui/input";
 
 // Define the Zod schema using the centralized enum so labels and values stay in sync
 const changeRequestSchema = z.object({
@@ -22,6 +23,7 @@ const changeRequestSchema = z.object({
   reason: z.string().trim().min(1, "Reason is required").max(500, "Reason cannot exceed 500 characters"),
   justification: z.string().trim().max(2000, "Justification cannot exceed 2000 characters").optional(),
   impact: z.string().trim().max(2000, "Impact cannot exceed 2000 characters").optional(),
+  budgetChangeAmount: z.coerce.number().optional().nullable(),
   attachments: z.string().trim().max(4000, "Attachments cannot exceed 4000 characters").optional(),
 });
 
@@ -37,17 +39,19 @@ export function ProjectChangeRequestSheet({ open, onOpenChange, project }: Proje
   const t = useTranslations("projects");
   const common = useTranslations("common");
   const tEnums = useTranslations();
+  const { user } = useAuth();
+  const canManageChangeRequests = Boolean(user && hasPermission(user.permissions, Permissions.ChangeRequest.Manage));
   const createRequest = useCreateProjectChangeRequest(project.id);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const form = useForm<ChangeRequestFormData>({
     resolver: zodResolver(changeRequestSchema),
-    defaultValues: { type: ProjectChangeRequestType.Administrative, reason: "", justification: "", impact: "", attachments: "" },
+    defaultValues: { type: ProjectChangeRequestType.Administrative, reason: "", justification: "", impact: "", budgetChangeAmount: null, attachments: "" },
   });
 
   useEffect(() => {
     if (!open) return;
-    form.reset({ type: ProjectChangeRequestType.Administrative, reason: "", justification: "", impact: "", attachments: "" });
+    form.reset({ type: ProjectChangeRequestType.Administrative, reason: "", justification: "", impact: "", budgetChangeAmount: null, attachments: "" });
     setErrorMessage(null);
   }, [open, form]);
 
@@ -60,18 +64,21 @@ export function ProjectChangeRequestSheet({ open, onOpenChange, project }: Proje
         reason: data.reason,
         justification: data.justification?.trim() || null,
         impact: data.impact?.trim() || null,
+        budgetChangeAmount: data.budgetChangeAmount ?? null,
         attachments: data.attachments?.trim() || null,
       });
       onOpenChange(false);
       form.reset();
-    } catch (err: any) {
-      const apiData = err?.data as { error?: string; message?: string } | undefined;
-      setErrorMessage(apiData?.error ?? apiData?.message ?? err?.message ?? t("changeRequestFailed"));
+    } catch (err: unknown) {
+      const error = err as { data?: { error?: string; message?: string }; message?: string };
+      setErrorMessage(error?.data?.error ?? error?.data?.message ?? error?.message ?? t("changeRequestFailed"));
     }
   };
 
   // Get the options from the centralized helper
   const typeOptions = ProjectChangeRequestTypeHelper.allOptions();
+
+  if (!canManageChangeRequests) return null;
 
   return (
     <FormSheet open={open} onOpenChange={onOpenChange} title={t("changeRequestTitle")} description={t("changeRequestDescription")}>
@@ -111,7 +118,69 @@ export function ProjectChangeRequestSheet({ open, onOpenChange, project }: Proje
               )}
             />
 
-            {/* ... rest of the form fields remain the same ... */}
+            <FormField
+              control={form.control}
+              name="reason"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t("changeReason")} <span className="text-destructive">*</span></FormLabel>
+                  <FormControl>
+                    <Input {...field} placeholder={t("changeReasonPlaceholder")} maxLength={500} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="budgetChangeAmount"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t("budgetChangeAmount")}</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      {...field}
+                      value={field.value ?? ""}
+                      onChange={(e) => field.onChange(e.target.value === "" ? null : parseFloat(e.target.value))}
+                      placeholder={t("budgetChangeAmountPlaceholder")}
+                    />
+                  </FormControl>
+                  <p className="text-[10px] text-muted-foreground">{t("budgetChangeAmountHint")}</p>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="justification"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t("justification")}</FormLabel>
+                  <FormControl>
+                    <textarea {...field} rows={3} maxLength={2000} className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" placeholder={t("justificationPlaceholder")} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="impact"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t("impactDescription")}</FormLabel>
+                  <FormControl>
+                    <textarea {...field} rows={3} maxLength={2000} className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" placeholder={t("impactPlaceholder")} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
           </FormSheetBody>
 
           <FormSheetFooter>

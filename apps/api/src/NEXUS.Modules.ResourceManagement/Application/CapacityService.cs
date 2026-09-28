@@ -9,7 +9,6 @@ namespace NEXUS.Modules.ResourceManagement.Application;
 public class CapacityService : ICapacityService
 {
     private readonly DbContext _context;
-    private const decimal DefaultHoursPerDay = 8m;
     private const int DefaultDaysPerWeek = 5;
 
     public CapacityService(DbContext context)
@@ -55,12 +54,19 @@ public class CapacityService : ICapacityService
             .Where(c => c.Status == "Active")
             .ToListAsync(cancellationToken);
 
+        var costProfiles = await _context.Set<ResourceCostProfile>()
+            .Where(cp => cp.EffectiveFrom <= endDate && (!cp.EffectiveTo.HasValue || cp.EffectiveTo.Value >= startDate))
+            .ToListAsync(cancellationToken);
+
         var rows = new List<CapacityMatrixRowDto>();
-        decimal totalGross = 0, totalNet = 0, totalConfirmed = 0, totalProposed = 0;
+        decimal totalGross = 0, totalNet = 0, totalConfirmed = 0, totalProposed = 0, totalPlanned = 0;
 
         foreach (var resource in resources)
         {
             var resourceAllocs = allocations.Where(a => a.ResourceId == resource.Id).ToList();
+            var resourceCalendar = resource.BaseCalendarId.HasValue
+                ? calendars.FirstOrDefault(c => c.Id == resource.BaseCalendarId) ?? defaultCalendar
+                : defaultCalendar;
             var cells = new List<CapacityCellDto>();
 
             foreach (var period in periods)
@@ -79,11 +85,12 @@ public class CapacityService : ICapacityService
                 decimal grossHours, nonWorkingHours, netHours, leaveHours;
                 if (effectiveStart < effectiveEnd)
                 {
-                    grossHours = CalculateGrossCapacity(resource, effectiveStart, effectiveEnd, defaultCalendar);
-                    nonWorkingHours = GetNonWorkingHours(effectiveStart, effectiveEnd, defaultCalendar, calendars);
+                    grossHours = CalculateGrossCapacity(resource, effectiveStart, effectiveEnd, resourceCalendar);
+                    nonWorkingHours = GetNonWorkingHours(effectiveStart, effectiveEnd, resourceCalendar, calendars);
+                    var paidBreakHours = resourceCalendar.PaidBreakMinutesPerDay / 60m;
                     leaveHours = resourceCalendars
                         .Where(rc => rc.ResourceId == resource.Id && rc.Date >= effectiveStart && rc.Date < effectiveEnd)
-                        .Sum(rc => rc.AvailableHours ?? defaultCalendar.HoursPerDay);
+                        .Sum(rc => rc.AvailableHours ?? Math.Max(0, resourceCalendar.ProductiveHoursPerDay - paidBreakHours));
                     netHours = grossHours - nonWorkingHours - leaveHours;
                 }
                 else
@@ -100,11 +107,14 @@ public class CapacityService : ICapacityService
 
                 var confirmedHours = periodAllocs
                     .Where(a => a.Status == ResourceAllocation.StatusConfirmed)
-                    .Sum(a => a.HoursPerWeek ?? (a.AllocationPercentage / 100m * grossHours));
+                    .Sum(a => a.PlannedHours ?? a.HoursPerWeek ?? (a.AllocationPercentage / 100m * grossHours));
 
                 var proposedHours = periodAllocs
                     .Where(a => a.Status == ResourceAllocation.StatusProposed || a.Status == ResourceAllocation.StatusTentative)
-                    .Sum(a => a.HoursPerWeek ?? (a.AllocationPercentage / 100m * grossHours));
+                    .Sum(a => a.PlannedHours ?? a.HoursPerWeek ?? (a.AllocationPercentage / 100m * grossHours));
+
+                var plannedHoursTotal = periodAllocs.Sum(a => a.PlannedHours ?? 0m);
+                totalPlanned += plannedHoursTotal;
 
                 var availableHours = netHours - confirmedHours - (filter.IncludeProposed ? proposedHours : 0);
                 var utilizationPercent = netHours > 0 ? Math.Round((confirmedHours + proposedHours) / netHours * 100, 1) : 0;
@@ -113,6 +123,20 @@ public class CapacityService : ICapacityService
                 totalNet += netHours;
                 totalConfirmed += confirmedHours;
                 totalProposed += proposedHours;
+
+                var overallocatedHours = Math.Max(0, confirmedHours + proposedHours - netHours);
+                var resourceActiveCostProfile = costProfiles
+                    .Where(cp => cp.ResourceId == resource.Id)
+                    .OrderByDescending(cp => cp.EffectiveFrom)
+                    .FirstOrDefault();
+                var allocCurrency = resourceActiveCostProfile?.Currency;
+
+                var allocCosts = new List<(Guid allocationId, decimal? plannedLaborCost, string? currency)>();
+                foreach (var alloc in periodAllocs)
+                {
+                    var cost = await CalculatePlannedLaborCostAsync(alloc.ResourceId, alloc.PlannedHours ?? 0m, alloc.StartDate, alloc.EndDate, cancellationToken);
+                    allocCosts.Add((alloc.Id, cost > 0 ? cost : null, allocCurrency));
+                }
 
                 cells.Add(new CapacityCellDto
                 {
@@ -127,22 +151,35 @@ public class CapacityService : ICapacityService
                     AvailableHours = Math.Round(Math.Max(0, availableHours), 1),
                     UtilizationPercent = utilizationPercent,
                     HeatmapState = GetHeatmapState(utilizationPercent, confirmedHours, proposedHours, grossHours),
-                    Allocations = periodAllocs.Select(a => new AllocationBreakdownDto
+                    OverallocatedHours = Math.Round(overallocatedHours, 1),
+                    Allocations = periodAllocs.Select(a =>
                     {
-                        AllocationId = a.Id,
-                        ProjectId = a.ProjectId,
-                        ProjectName = a.ProjectName ?? "Unnamed",
-                        Percentage = a.AllocationPercentage,
-                        Hours = Math.Round(a.HoursPerWeek ?? (a.AllocationPercentage / 100m * grossHours), 1),
-                        Status = a.Status,
-                        IsBillable = a.IsBillable
+                        var costInfo = allocCosts.FirstOrDefault(c => c.allocationId == a.Id);
+                        return new AllocationBreakdownDto
+                        {
+                            AllocationId = a.Id,
+                            ProjectId = a.ProjectId,
+                            ProjectName = a.ProjectName ?? "Unnamed",
+                            Percentage = a.AllocationPercentage,
+                            Hours = Math.Round(a.PlannedHours ?? a.HoursPerWeek ?? (a.AllocationPercentage / 100m * grossHours), 1),
+                            PlannedHours = a.PlannedHours,
+                            PlannedLaborCost = costInfo.plannedLaborCost,
+                            Status = a.Status,
+                            IsBillable = a.IsBillable,
+                            Currency = costInfo.currency
+                        };
                     }).ToList()
                 });
             }
 
-            var weeklyHours = CalculateWeeklyCapacity(resource, defaultCalendar);
+            var weeklyHours = CalculateWeeklyCapacity(resource, resourceCalendar);
             var currentUtil = resource.CurrentUtilization ?? 0;
             var earliestDate = CalculateEarliestAvailableDate(resource, resourceAllocs, startDate);
+
+            var activeCostProfile = costProfiles
+                .Where(cp => cp.ResourceId == resource.Id)
+                .OrderByDescending(cp => cp.EffectiveFrom)
+                .FirstOrDefault();
 
             rows.Add(new CapacityMatrixRowDto
             {
@@ -154,7 +191,9 @@ public class CapacityService : ICapacityService
                 WeeklyCapacityHours = Math.Round(weeklyHours, 1),
                 CurrentUtilization = currentUtil,
                 EarliestAvailableDate = earliestDate,
-                Cells = cells
+                Cells = cells,
+                CostPerHour = activeCostProfile?.Amount,
+                Currency = activeCostProfile?.Currency
             });
         }
 
@@ -204,9 +243,16 @@ public class CapacityService : ICapacityService
             .Where(c => c.Status == "Active")
             .ToListAsync(cancellationToken);
 
+        var resourceCostProfiles = await _context.Set<ResourceCostProfile>()
+            .Where(cp => cp.EffectiveFrom <= endDate && (!cp.EffectiveTo.HasValue || cp.EffectiveTo.Value >= startDate))
+            .ToListAsync(cancellationToken);
+
         var items = resources.Select(r =>
         {
             var allocs = allAllocations.Where(a => a.ResourceId == r.Id).ToList();
+            var resourceCalendar = r.BaseCalendarId.HasValue
+                ? calendars.FirstOrDefault(c => c.Id == r.BaseCalendarId) ?? defaultCalendar
+                : defaultCalendar;
 
             var activeContract = contracts.FirstOrDefault(c => c.ResourceId == r.Id);
             var effectiveStart = startDate;
@@ -222,11 +268,12 @@ public class CapacityService : ICapacityService
             decimal grossCapacity, netCapacity;
             if (effectiveStart < effectiveEnd)
             {
-                grossCapacity = CalculateGrossCapacity(r, effectiveStart, effectiveEnd, defaultCalendar);
-                var nonWorking = GetNonWorkingHours(effectiveStart, effectiveEnd, defaultCalendar, calendars);
+                grossCapacity = CalculateGrossCapacity(r, effectiveStart, effectiveEnd, resourceCalendar);
+                var nonWorking = GetNonWorkingHours(effectiveStart, effectiveEnd, resourceCalendar, calendars);
+                var paidBreakHours = resourceCalendar.PaidBreakMinutesPerDay / 60m;
                 var leaveHours = resourceCalendars
                     .Where(rc => rc.ResourceId == r.Id && rc.Date >= effectiveStart && rc.Date < effectiveEnd)
-                    .Sum(rc => rc.AvailableHours ?? defaultCalendar.HoursPerDay);
+                    .Sum(rc => rc.AvailableHours ?? Math.Max(0, resourceCalendar.ProductiveHoursPerDay - paidBreakHours));
                 netCapacity = grossCapacity - nonWorking - leaveHours;
             }
             else
@@ -236,19 +283,22 @@ public class CapacityService : ICapacityService
             }
 
             var confirmed = allocs.Where(a => a.Status == ResourceAllocation.StatusConfirmed)
-                .Sum(a => a.HoursPerWeek ?? (a.AllocationPercentage / 100m * grossCapacity));
+                .Sum(a => a.PlannedHours ?? a.HoursPerWeek ?? (a.AllocationPercentage / 100m * grossCapacity));
             var available = netCapacity - confirmed;
             var utilization = netCapacity > 0 ? Math.Round(confirmed / netCapacity * 100, 1) : 0;
+            var activeCostProfile = resourceCostProfiles.Where(cp => cp.ResourceId == r.Id).OrderByDescending(cp => cp.EffectiveFrom).FirstOrDefault();
 
             return new ResourceAvailabilityDto
             {
                 ResourceId = r.Id,
                 ResourceName = r.Name,
                 JobTitle = r.JobTitle,
-                WeeklyCapacityHours = Math.Round(CalculateWeeklyCapacity(r, defaultCalendar), 1),
+                WeeklyCapacityHours = Math.Round(CalculateWeeklyCapacity(r, resourceCalendar), 1),
                 CurrentUtilization = r.CurrentUtilization ?? utilization,
                 AvailableCapacityHours = Math.Round(Math.Max(0, available), 1),
-                EarliestAvailableDate = CalculateEarliestAvailableDate(r, allocs, startDate)
+                EarliestAvailableDate = CalculateEarliestAvailableDate(r, allocs, startDate),
+                CostPerHour = activeCostProfile?.Amount,
+                Currency = activeCostProfile?.Currency
             };
         }).OrderByDescending(r => r.AvailableCapacityHours).ToList();
 
@@ -268,14 +318,42 @@ public class CapacityService : ICapacityService
 
         var groups = new List<DemandVsCapacityGroupDto>();
 
-        var roleGroups = allocations.GroupBy(a => a.Role);
-        foreach (var group in roleGroups)
+        // Group by ProjectRoleId instead of free-text Role
+        var roleIds = allocations.Where(a => a.ProjectRoleId.HasValue).Select(a => a.ProjectRoleId.Value).Distinct().ToList();
+        var roleNames = new Dictionary<Guid, string>();
+        if (roleIds.Count > 0)
         {
-            var demand = group.Sum(a => a.HoursPerWeek ?? CalculateHoursFromPercentage(a));
+            var lookups = await _context.Set<NEXUS.Modules.Organization.Domain.Lookup>()
+                .AsNoTracking()
+                .Where(l => roleIds.Contains(l.Id) && l.Category == "ProjectRole")
+                .ToDictionaryAsync(l => l.Id, l => string.IsNullOrWhiteSpace(l.NameEn) ? l.Name : l.NameEn, cancellationToken);
+            foreach (var kvp in lookups) roleNames[kvp.Key] = kvp.Value;
+        }
+
+        var projectRoleGroups = allocations.Where(a => a.ProjectRoleId.HasValue).GroupBy(a => a.ProjectRoleId.Value);
+        foreach (var group in projectRoleGroups)
+        {
+            var demand = group.Sum(a => a.PlannedHours ?? a.HoursPerWeek ?? CalculateHoursFromPercentage(a));
             groups.Add(new DemandVsCapacityGroupDto
             {
-                GroupType = "Role",
-                GroupName = group.Key,
+                GroupType = "ProjectRole",
+                GroupName = roleNames.TryGetValue(group.Key, out var name) ? name : group.Key.ToString(),
+                DemandHours = Math.Round(demand, 1),
+                CapacityHours = Math.Round(demand * 0.85m, 1),
+                GapHours = Math.Round(demand - demand * 0.85m, 1),
+                Status = demand > 0 ? "Under" : "Balanced"
+            });
+        }
+
+        // Include allocations without ProjectRoleId as "Unassigned Role"
+        var unassigned = allocations.Where(a => !a.ProjectRoleId.HasValue).ToList();
+        if (unassigned.Count > 0)
+        {
+            var demand = unassigned.Sum(a => a.PlannedHours ?? a.HoursPerWeek ?? CalculateHoursFromPercentage(a));
+            groups.Add(new DemandVsCapacityGroupDto
+            {
+                GroupType = "ProjectRole",
+                GroupName = "Unassigned Role",
                 DemandHours = Math.Round(demand, 1),
                 CapacityHours = Math.Round(demand * 0.85m, 1),
                 GapHours = Math.Round(demand - demand * 0.85m, 1),
@@ -288,7 +366,7 @@ public class CapacityService : ICapacityService
         {
             if (!group.Key.HasValue) continue;
             var deptName = await ResolveDepartmentName(group.Key, cancellationToken);
-            var demand = group.Sum(a => a.HoursPerWeek ?? CalculateHoursFromPercentage(a));
+            var demand = group.Sum(a => a.PlannedHours ?? a.HoursPerWeek ?? CalculateHoursFromPercentage(a));
             groups.Add(new DemandVsCapacityGroupDto
             {
                 GroupType = "Department",
@@ -356,6 +434,10 @@ public class CapacityService : ICapacityService
         var activeContract = await _context.Set<Contract>()
             .FirstOrDefaultAsync(c => c.ResourceId == resourceId && c.Status == "Active", cancellationToken);
 
+        var resourceCalendar = resource.BaseCalendarId.HasValue
+            ? calendars.FirstOrDefault(c => c.Id == resource.BaseCalendarId) ?? defaultCalendar
+            : defaultCalendar;
+
         var effectiveStart = startDate;
         var effectiveEnd = endDate;
         if (activeContract != null)
@@ -369,11 +451,12 @@ public class CapacityService : ICapacityService
         decimal grossCapacity, netCapacity;
         if (effectiveStart < effectiveEnd)
         {
-            grossCapacity = CalculateGrossCapacity(resource, effectiveStart, effectiveEnd, defaultCalendar);
-            var nonWorking = GetNonWorkingHours(effectiveStart, effectiveEnd, defaultCalendar, calendars);
+            grossCapacity = CalculateGrossCapacity(resource, effectiveStart, effectiveEnd, resourceCalendar);
+            var nonWorking = GetNonWorkingHours(effectiveStart, effectiveEnd, resourceCalendar, calendars);
+            var paidBreakHours = resourceCalendar.PaidBreakMinutesPerDay / 60m;
             var leaveHours = resourceCalendars
                 .Where(rc => rc.Date >= effectiveStart && rc.Date < effectiveEnd)
-                .Sum(rc => rc.AvailableHours ?? defaultCalendar.HoursPerDay);
+                .Sum(rc => rc.AvailableHours ?? Math.Max(0, resourceCalendar.ProductiveHoursPerDay - paidBreakHours));
             netCapacity = grossCapacity - nonWorking - leaveHours;
         }
         else
@@ -383,17 +466,24 @@ public class CapacityService : ICapacityService
         }
 
         var confirmed = allocations.Where(a => a.Status == ResourceAllocation.StatusConfirmed)
-            .Sum(a => a.HoursPerWeek ?? (a.AllocationPercentage / 100m * grossCapacity));
+            .Sum(a => a.PlannedHours ?? a.HoursPerWeek ?? (a.AllocationPercentage / 100m * grossCapacity));
+
+        var activeCostProfile = await _context.Set<ResourceCostProfile>()
+            .Where(cp => cp.ResourceId == resourceId && cp.EffectiveFrom <= endDate && (!cp.EffectiveTo.HasValue || cp.EffectiveTo.Value >= startDate))
+            .OrderByDescending(cp => cp.EffectiveFrom)
+            .FirstOrDefaultAsync(cancellationToken);
 
         return Result<ResourceAvailabilityDto>.Success(new ResourceAvailabilityDto
         {
             ResourceId = resource.Id,
             ResourceName = resource.Name,
             JobTitle = resource.JobTitle,
-            WeeklyCapacityHours = Math.Round(CalculateWeeklyCapacity(resource, defaultCalendar), 1),
+            WeeklyCapacityHours = Math.Round(CalculateWeeklyCapacity(resource, resourceCalendar), 1),
             CurrentUtilization = netCapacity > 0 ? Math.Round(confirmed / netCapacity * 100, 1) : 0,
             AvailableCapacityHours = Math.Round(Math.Max(0, netCapacity - confirmed), 1),
-            EarliestAvailableDate = CalculateEarliestAvailableDate(resource, allocations, startDate)
+            EarliestAvailableDate = CalculateEarliestAvailableDate(resource, allocations, startDate),
+            CostPerHour = activeCostProfile?.Amount,
+            Currency = activeCostProfile?.Currency
         });
     }
 
@@ -403,22 +493,22 @@ public class CapacityService : ICapacityService
         var workingDays = days > 7
             ? (days / 7) * calendar.WorkingDaysPerWeek + Math.Min(days % 7, calendar.WorkingDaysPerWeek)
             : Math.Min(days, calendar.WorkingDaysPerWeek);
-        return workingDays * calendar.HoursPerDay;
+        return workingDays * calendar.ProductiveHoursPerDay;
     }
 
     private decimal CalculateWeeklyCapacity(Resource resource, WorkingCalendar calendar)
     {
-        return calendar.WorkingDaysPerWeek * calendar.HoursPerDay;
+        return calendar.WorkingDaysPerWeek * calendar.ProductiveHoursPerDay;
     }
 
-    private decimal GetNonWorkingHours(DateTime start, DateTime end, WorkingCalendar defaultCalendar, List<WorkingCalendar> calendars)
+    private decimal GetNonWorkingHours(DateTime start, DateTime end, WorkingCalendar calendar, List<WorkingCalendar> calendars)
     {
         var holidays = calendars.SelectMany(c => c.Holidays ?? new List<Holiday>())
             .Where(h => h.Date >= start && h.Date < end)
             .Select(h => h.Date)
             .Distinct()
             .Count();
-        return holidays * defaultCalendar.HoursPerDay;
+        return holidays * calendar.ProductiveHoursPerDay;
     }
 
     private DateTime? CalculateEarliestAvailableDate(Resource resource, List<ResourceAllocation> allocations, DateTime from)
@@ -517,11 +607,11 @@ public class CapacityService : ICapacityService
             ProjectId = a.ProjectId,
             ProjectName = a.ProjectName,
             WorkItemId = a.WorkItemId,
-            Role = a.Role,
+            ProjectRoleId = a.ProjectRoleId,
             AllocationPercentage = a.AllocationPercentage,
             HoursPerWeek = a.HoursPerWeek,
             PlannedHours = a.PlannedHours,
-            ActualHours = a.ActualHours,
+            PlannedLaborCost = null,
             StartDate = a.StartDate,
             EndDate = a.EndDate,
             Status = a.Status,
@@ -530,5 +620,86 @@ public class CapacityService : ICapacityService
             CreatedAt = a.CreatedAt,
             UpdatedAt = a.UpdatedAt
         };
+    }
+
+    private async Task<ResourceCostProfile?> GetEffectiveCostProfileAsync(Guid resourceId, DateTime date, CancellationToken cancellationToken)
+    {
+        return await _context.Set<ResourceCostProfile>()
+            .Where(cp => cp.ResourceId == resourceId
+                && cp.EffectiveFrom <= date
+                && (!cp.EffectiveTo.HasValue || cp.EffectiveTo.Value >= date)
+                && !cp.IsDeleted)
+            .OrderByDescending(cp => cp.EffectiveFrom)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    private async Task<decimal> CalculatePlannedLaborCostAsync(
+        Guid resourceId, decimal plannedHours, DateTime startDate, DateTime endDate, CancellationToken cancellationToken)
+    {
+        if (plannedHours <= 0) return 0m;
+
+        // Period-aware cost profile resolution: split across profile boundaries
+        var totalCost = 0m;
+        var currentDate = startDate;
+
+        while (currentDate < endDate)
+        {
+            var profile = await GetEffectiveCostProfileAsync(resourceId, currentDate, cancellationToken);
+            if (profile is null)
+            {
+                currentDate = currentDate.AddDays(1);
+                continue;
+            }
+
+            var periodEnd = profile.EffectiveTo.HasValue
+                ? profile.EffectiveTo.Value.AddDays(1)
+                : endDate;
+            var effectiveEnd = periodEnd > endDate ? endDate : periodEnd;
+
+            if (profile.CompensationType == "Hourly")
+            {
+                totalCost += plannedHours * profile.Amount;
+            }
+            else if (profile.CompensationType == "Weekly")
+            {
+                var productiveHoursPerWeek = profile.EffectiveFrom.DayOfWeek == DayOfWeek.Saturday
+                    ? 5m * profile.Amount
+                    : profile.Amount;
+                var weeksInPeriod = Math.Max(1m, (effectiveEnd - currentDate).Days / 7m);
+                totalCost += productiveHoursPerWeek * weeksInPeriod / 5m * profile.Amount / 5m;
+            }
+            else if (profile.CompensationType == "Monthly")
+            {
+                var productiveHoursPerMonth = 22m * profile.Amount;
+                var daysInMonth = (effectiveEnd - currentDate).Days;
+                totalCost += (daysInMonth / 30m) * profile.Amount;
+            }
+
+            currentDate = effectiveEnd;
+        }
+
+        return Math.Round(totalCost, 2);
+    }
+
+    private async Task<decimal> CalculateEffectiveHourlyCostAsync(
+        Guid resourceId, DateTime date, CancellationToken cancellationToken)
+    {
+        var profile = await GetEffectiveCostProfileAsync(resourceId, date, cancellationToken);
+        if (profile is null) return 0m;
+
+        if (profile.CompensationType == "Hourly")
+        {
+            return profile.Amount;
+        }
+        else if (profile.CompensationType == "Weekly")
+        {
+            return profile.Amount / 5m / 8m;
+        }
+        else if (profile.CompensationType == "Monthly")
+        {
+            return profile.Amount / 22m / 8m;
+        }
+
+        return 0m;
     }
 }

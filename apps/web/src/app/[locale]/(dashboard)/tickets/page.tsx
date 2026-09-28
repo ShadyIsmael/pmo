@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Filter, Search, Ticket, CheckCircle2, Clock, AlertCircle } from "lucide-react";
+import { Plus, Filter, Search, CheckCircle2, Clock, AlertCircle } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import { mockTickets } from "@/lib/mock-data";
 
@@ -63,8 +63,8 @@ export default function TicketsPage() {
         </TabsList>
 
         <TabsContent value="all">
-          <div className="rounded-md border">
-            <div className="grid grid-cols-12 gap-2 border-b bg-muted/50 px-4 py-3 text-xs font-medium text-muted-foreground">
+          <div className="nexus-table-surface">
+            <div className="nexus-table-header grid grid-cols-12 gap-2">
               <div className="col-span-4">Title</div>
               <div className="col-span-2">Priority</div>
               <div className="col-span-2">Assignee</div>
@@ -72,15 +72,15 @@ export default function TicketsPage() {
               <div className="col-span-2">Status</div>
             </div>
             {mockTickets.map((ticket) => (
-              <div key={ticket.id} className="grid grid-cols-12 gap-2 border-b px-4 py-3 text-sm hover:bg-muted/30">
+              <div key={ticket.id} className="nexus-table-row grid grid-cols-12 gap-2 px-4 py-3 text-sm">
                 <div className="col-span-4 font-medium">{ticket.title}</div>
                 <div className="col-span-2">
-                  <Badge variant={ticket.priority === "Critical" ? "destructive" : ticket.priority === "High" ? "destructive" : "secondary"} className="text-[10px]">{ticket.priority}</Badge>
+                  <Badge status={ticket.priority} className="text-[10px]">{ticket.priority}</Badge>
                 </div>
                 <div className="col-span-2 text-muted-foreground">{ticket.assignee}</div>
                 <div className="col-span-2 text-muted-foreground text-xs">{formatDate(ticket.createdAt)}</div>
                 <div className="col-span-2">
-                  <Badge variant={ticket.status === "Resolved" ? "default" : ticket.status === "Closed" ? "outline" : "destructive"} className="text-[10px]">{ticket.status}</Badge>
+                  <Badge status={ticket.status} className="text-[10px]">{ticket.status}</Badge>
                 </div>
               </div>
             ))}
@@ -88,25 +88,25 @@ export default function TicketsPage() {
         </TabsContent>
 
         <TabsContent value="open">
-          <div className="rounded-md border">
+          <div className="nexus-table-surface">
             {mockTickets.filter(t => t.status === "Open" || t.status === "In Progress").map((ticket) => (
-              <div key={ticket.id} className="grid grid-cols-12 gap-2 border-b px-4 py-3 text-sm hover:bg-muted/30">
+              <div key={ticket.id} className="nexus-table-row grid grid-cols-12 gap-2 px-4 py-3 text-sm">
                 <div className="col-span-4 font-medium">{ticket.title}</div>
-                <div className="col-span-2"><Badge variant={ticket.priority === "Critical" ? "destructive" : "secondary"} className="text-[10px]">{ticket.priority}</Badge></div>
+                <div className="col-span-2"><Badge status={ticket.priority} className="text-[10px]">{ticket.priority}</Badge></div>
                 <div className="col-span-3 text-muted-foreground">{ticket.assignee}</div>
-                <div className="col-span-3"><Badge variant="destructive" className="text-[10px]">{ticket.status}</Badge></div>
+                <div className="col-span-3"><Badge status={ticket.status} className="text-[10px]">{ticket.status}</Badge></div>
               </div>
             ))}
           </div>
         </TabsContent>
 
         <TabsContent value="resolved">
-          <div className="rounded-md border">
+          <div className="nexus-table-surface">
             {mockTickets.filter(t => t.status === "Resolved" || t.status === "Closed").map((ticket) => (
-              <div key={ticket.id} className="grid grid-cols-12 gap-2 border-b px-4 py-3 text-sm hover:bg-muted/30">
+              <div key={ticket.id} className="nexus-table-row grid grid-cols-12 gap-2 px-4 py-3 text-sm">
                 <div className="col-span-6 font-medium">{ticket.title}</div>
                 <div className="col-span-3 text-muted-foreground">{ticket.assignee}</div>
-                <div className="col-span-3"><Badge variant="outline" className="text-[10px]">{ticket.status}</Badge></div>
+                <div className="col-span-3"><Badge status={ticket.status} className="text-[10px]">{ticket.status}</Badge></div>
               </div>
             ))}
           </div>

@@ -31,7 +31,7 @@ public class AllocationServiceTests : TestBase
             ResourceId = ResourceAliceId,
             ProjectId = Guid.NewGuid(),
             ProjectName = "Test Project",
-            Role = "Developer",
+            ProjectRoleId = ProjectRoleDevId,
             AllocationPercentage = 40,
             StartDate = new DateTime(2026, 2, 1),
             EndDate = new DateTime(2026, 2, 15),
@@ -57,7 +57,7 @@ public class AllocationServiceTests : TestBase
         var dto = new CreateAllocationDto
         {
             ResourceId = Guid.NewGuid(),
-            Role = "Developer",
+            ProjectRoleId = ProjectRoleDevId,
             AllocationPercentage = 40,
             StartDate = new DateTime(2026, 2, 1),
             EndDate = new DateTime(2026, 2, 15)
@@ -78,7 +78,7 @@ public class AllocationServiceTests : TestBase
         var dto = new CreateAllocationDto
         {
             ResourceId = ResourceDianaId,
-            Role = "Developer",
+            ProjectRoleId = ProjectRoleDevId,
             AllocationPercentage = 40,
             StartDate = new DateTime(2026, 2, 1),
             EndDate = new DateTime(2026, 2, 15)
@@ -100,7 +100,7 @@ public class AllocationServiceTests : TestBase
         var dto = new CreateAllocationDto
         {
             ResourceId = ResourceAliceId,
-            Role = "Developer",
+            ProjectRoleId = ProjectRoleDevId,
             AllocationPercentage = 40,
             StartDate = new DateTime(2026, 2, 1),
             EndDate = new DateTime(2026, 2, 1)
@@ -121,7 +121,7 @@ public class AllocationServiceTests : TestBase
         var dto = new CreateAllocationDto
         {
             ResourceId = ResourceAliceId,
-            Role = "Developer",
+            ProjectRoleId = ProjectRoleDevId,
             AllocationPercentage = 150,
             StartDate = new DateTime(2026, 2, 1),
             EndDate = new DateTime(2026, 2, 15)
@@ -145,7 +145,7 @@ public class AllocationServiceTests : TestBase
             Id = Guid.NewGuid(),
             ResourceId = ResourceCharlieId,
             ProjectName = "Project X",
-            Role = "Developer",
+            ProjectRoleId = ProjectRoleDevId,
             AllocationPercentage = 60,
             StartDate = new DateTime(2026, 3, 1),
             EndDate = new DateTime(2026, 3, 31),
@@ -157,7 +157,7 @@ public class AllocationServiceTests : TestBase
         var dto = new CreateAllocationDto
         {
             ResourceId = ResourceCharlieId,
-            Role = "Developer",
+            ProjectRoleId = ProjectRoleDevId,
             AllocationPercentage = 50,
             StartDate = new DateTime(2026, 3, 10),
             EndDate = new DateTime(2026, 3, 20)
@@ -181,7 +181,7 @@ public class AllocationServiceTests : TestBase
             Id = Guid.NewGuid(),
             ResourceId = ResourceCharlieId,
             ProjectName = "Project X",
-            Role = "Developer",
+            ProjectRoleId = ProjectRoleDevId,
             AllocationPercentage = 40,
             StartDate = new DateTime(2026, 3, 1),
             EndDate = new DateTime(2026, 3, 31),
@@ -193,7 +193,7 @@ public class AllocationServiceTests : TestBase
         var dto = new CreateAllocationDto
         {
             ResourceId = ResourceCharlieId,
-            Role = "Developer",
+            ProjectRoleId = ProjectRoleDevId,
             AllocationPercentage = 50,
             StartDate = new DateTime(2026, 3, 10),
             EndDate = new DateTime(2026, 3, 20)
@@ -214,14 +214,14 @@ public class AllocationServiceTests : TestBase
         var dto = new UpdateAllocationDto
         {
             AllocationPercentage = 75,
-            Role = "Lead Developer"
+            ProjectRoleId = ProjectRoleArchId
         };
 
         var result = await service.UpdateAsync(ExistingAllocationId, dto, "11111111-1111-1111-1111-111111111111");
 
         result.IsSuccess.Should().BeTrue();
         result.Value.AllocationPercentage.Should().Be(75);
-        result.Value.Role.Should().Be("Lead Developer");
+        result.Value.ProjectRoleId.Should().Be(ProjectRoleArchId);
     }
 
     [Fact]
@@ -273,7 +273,7 @@ public class AllocationServiceTests : TestBase
             Id = Guid.NewGuid(),
             ResourceId = ResourceAliceId,
             ProjectName = "Project B",
-            Role = "Developer",
+            ProjectRoleId = ProjectRoleDevId,
             AllocationPercentage = 30,
             StartDate = new DateTime(2026, 4, 1),
             EndDate = new DateTime(2026, 4, 15),

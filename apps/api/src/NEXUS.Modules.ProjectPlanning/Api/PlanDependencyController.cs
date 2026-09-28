@@ -17,6 +17,7 @@ public class PlanDependencyController : ControllerBase
         _dependencyService = dependencyService;
     }
 
+    [Authorize(Policy = "Planning.View")]
     [HttpGet]
     public async Task<IActionResult> GetByPlan(Guid projectId, Guid planId, CancellationToken cancellationToken)
     {
@@ -30,6 +31,7 @@ public class PlanDependencyController : ControllerBase
         return Ok(result.Value);
     }
 
+    [Authorize(Policy = "Planning.Manage")]
     [HttpPost]
     public async Task<IActionResult> Create(Guid projectId, Guid planId, [FromBody] CreatePlanDependencyDto dto, CancellationToken cancellationToken)
     {
@@ -45,6 +47,7 @@ public class PlanDependencyController : ControllerBase
         return CreatedAtAction(nameof(GetByPlan), new { projectId, planId }, result.Value);
     }
 
+    [Authorize(Policy = "Planning.Manage")]
     [HttpPut("{dependencyId:guid}")]
     public async Task<IActionResult> Update(Guid projectId, Guid planId, Guid dependencyId, [FromBody] UpdatePlanDependencyDto dto, CancellationToken cancellationToken)
     {
@@ -60,6 +63,7 @@ public class PlanDependencyController : ControllerBase
         return Ok(result.Value);
     }
 
+    [Authorize(Policy = "Planning.Manage")]
     [HttpDelete("{dependencyId:guid}")]
     public async Task<IActionResult> Delete(Guid projectId, Guid planId, Guid dependencyId, [FromQuery] byte[] rowVersion, CancellationToken cancellationToken)
     {
@@ -73,5 +77,21 @@ public class PlanDependencyController : ControllerBase
                 _ => BadRequest(new { error = result.Error?.Message })
             };
         return NoContent();
+    }
+
+    [Authorize(Policy = "Planning.Manage")]
+    [HttpPut("predecessors")]
+    public async Task<IActionResult> ReplacePredecessors(Guid projectId, Guid planId, [FromBody] ReplacePlanPredecessorsDto dto, CancellationToken cancellationToken)
+    {
+        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        var result = await _dependencyService.ReplacePredecessorsAsync(planId, dto, userId, cancellationToken);
+        if (result.IsFailure)
+            return result.Error?.StatusCode switch
+            {
+                404 => NotFound(new { error = result.Error.Message }),
+                409 => Conflict(new { error = result.Error.Message }),
+                _ => BadRequest(new { error = result.Error?.Message })
+            };
+        return Ok(result.Value);
     }
 }

@@ -16,6 +16,9 @@ public interface IPlanActivityService
     /// </summary>
     Task<Result<PlanActivityDto>> UpdateAsync(Guid planId, Guid activityId, UpdatePlanActivityDto dto, string userId, CancellationToken cancellationToken = default);
 
+    /// <summary>Moves an activity/WBS node atomically within its Working version.</summary>
+    Task<Result<PlanActivityDto>> MoveAsync(Guid planId, Guid activityId, MovePlanActivityDto dto, string userId, CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Soft-deletes an activity from the active Working version. Enforces optimistic
     /// concurrency via RowVersion.

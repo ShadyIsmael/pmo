@@ -1,6 +1,7 @@
 export type PointOfView =
   | "Executive"
   | "Project Manager"
+  | "Program Manager"
   | "Portfolio Manager"
   | "Team Member"
   | "Resource Manager"

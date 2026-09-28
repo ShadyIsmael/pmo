@@ -1,4 +1,4 @@
-import type { WidgetConfig, WidgetDefinition, WidgetConfigField, ChartType } from "./dashboard-types";
+import type { WidgetConfig, WidgetDefinition, WidgetConfigField, PointOfView } from "./dashboard-types";
 import type { ComponentType } from "react";
 
 interface RegistryEntry {
@@ -34,7 +34,7 @@ export function getDefinitionsByCategory(category: string): WidgetDefinition[] {
 
 export function getDefinitionsByPOV(pov: string): WidgetDefinition[] {
   return getAllDefinitions().filter((d) =>
-    d.supportedPOVs.includes(pov as any),
+    d.supportedPOVs.includes(pov as PointOfView),
   );
 }
 

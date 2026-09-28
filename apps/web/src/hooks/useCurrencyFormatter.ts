@@ -12,7 +12,7 @@ interface CurrencyFormatter {
  * This ensures that all currency formatting respects the configured symbol, position, decimal places, etc.
  */
 export function useCurrencyFormatter(): CurrencyFormatter {
-  const { data: currencies, isLoading, isError } = useCurrencies();
+  const { data: currencies } = useCurrencies();
 
   const formatter = useMemo(() => {
     // Create a map of currency codes to their definitions for fast lookup
@@ -36,8 +36,6 @@ export function useCurrencyFormatter(): CurrencyFormatter {
         }
 
         // Try to get the currency definition
-        const currencyDef = currencyMap.get(currencyCode);
-
         // If we have a currency definition, we can potentially use more specific formatting
         // For now, we'll use the standard formatCurrency function which leverages Intl
         // In the future, this could be enhanced to use the specific formatting rules
@@ -60,7 +58,7 @@ export function useCurrencyFormatter(): CurrencyFormatter {
 export function formatCurrencyWithCurrencies(
   amount: number | null | undefined,
   currencyCode: string | null | undefined,
-  currencies: CurrencyDto[] | undefined
+  _currencies: CurrencyDto[] | undefined
 ): string {
   if (amount == null || isNaN(Number(amount))) {
     return "—";

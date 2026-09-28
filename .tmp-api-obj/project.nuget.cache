@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "dgSpecHash": "qXaR9Twn+T4=",
+  "success": true,
+  "projectFilePath": "C:\\Projects\\pmo\\apps\\api\\src\\NEXUS.Modules.PluginManagement\\NEXUS.Modules.PluginManagement.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\shady\\.nuget\\packages\\fluentvalidation\\11.11.0\\fluentvalidation.11.11.0.nupkg.sha512",
+    "C:\\Users\\shady\\.nuget\\packages\\mediatr\\12.2.0\\mediatr.12.2.0.nupkg.sha512",
+    "C:\\Users\\shady\\.nuget\\packages\\mediatr.contracts\\2.0.1\\mediatr.contracts.2.0.1.nupkg.sha512",
+    "C:\\Users\\shady\\.nuget\\packages\\microsoft.entityframeworkcore\\10.0.10\\microsoft.entityframeworkcore.10.0.10.nupkg.sha512",
+    "C:\\Users\\shady\\.nuget\\packages\\microsoft.entityframeworkcore.abstractions\\10.0.10\\microsoft.entityframeworkcore.abstractions.10.0.10.nupkg.sha512",
+    "C:\\Users\\shady\\.nuget\\packages\\microsoft.entityframeworkcore.analyzers\\10.0.10\\microsoft.entityframeworkcore.analyzers.10.0.10.nupkg.sha512"
+  ],
+  "logs": []
+}

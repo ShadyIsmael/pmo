@@ -17,6 +17,7 @@ public class PlanWbsController : ControllerBase
         _wbsService = wbsService;
     }
 
+    [Authorize(Policy = "Planning.View")]
     [HttpGet]
     public async Task<IActionResult> GetTree(Guid projectId, Guid planId, CancellationToken cancellationToken)
     {
@@ -30,6 +31,7 @@ public class PlanWbsController : ControllerBase
         return Ok(result.Value);
     }
 
+    [Authorize(Policy = "Planning.Manage")]
     [HttpPost]
     public async Task<IActionResult> Create(Guid projectId, Guid planId, [FromBody] CreatePlanWbsNodeDto dto, CancellationToken cancellationToken)
     {
@@ -45,6 +47,7 @@ public class PlanWbsController : ControllerBase
         return CreatedAtAction(nameof(GetTree), new { projectId, planId }, result.Value);
     }
 
+    [Authorize(Policy = "Planning.Manage")]
     [HttpPut("{nodeId:guid}")]
     public async Task<IActionResult> Update(Guid projectId, Guid planId, Guid nodeId, [FromBody] UpdatePlanWbsNodeDto dto, CancellationToken cancellationToken)
     {
@@ -60,6 +63,7 @@ public class PlanWbsController : ControllerBase
         return Ok(result.Value);
     }
 
+    [Authorize(Policy = "Planning.Manage")]
     [HttpDelete("{nodeId:guid}")]
     public async Task<IActionResult> Delete(Guid projectId, Guid planId, Guid nodeId, [FromQuery] byte[] rowVersion, CancellationToken cancellationToken)
     {

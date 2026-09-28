@@ -40,6 +40,24 @@ public class AllocationService : IAllocationService
         return await ToPagedResultAsync(query, page, pageSize, cancellationToken);
     }
 
+    public async Task<ProjectAllocationOverviewDto> GetProjectOverviewAsync(Guid projectId, CancellationToken cancellationToken = default)
+    {
+        var now = DateTime.UtcNow;
+        var query = _context.Set<ResourceAllocation>().AsNoTracking()
+            .Where(allocation => allocation.ProjectId == projectId
+                && !allocation.IsDeleted
+                && allocation.Status != ResourceAllocation.StatusCancelled
+                && allocation.StartDate <= now
+                && allocation.EndDate >= now);
+
+        return new ProjectAllocationOverviewDto
+        {
+            ActiveAllocationCount = await query.CountAsync(cancellationToken),
+            ActiveResourceCount = await query.Select(allocation => allocation.ResourceId).Distinct().CountAsync(cancellationToken),
+            AllocatedHoursPerWeek = await query.Select(allocation => allocation.HoursPerWeek ?? 0m).SumAsync(cancellationToken)
+        };
+    }
+
     public async Task<Result<AllocationDto>> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var allocation = await BuildQuery().FirstOrDefaultAsync(a => a.Id == id, cancellationToken);
@@ -80,7 +98,7 @@ public class AllocationService : IAllocationService
             ProjectId = dto.ProjectId,
             ProjectName = dto.ProjectName ?? await ResolveProjectNameAsync(dto.ProjectId, cancellationToken),
             WorkItemId = dto.WorkItemId,
-            Role = dto.Role,
+            ProjectRoleId = dto.ProjectRoleId,
             AllocationPercentage = dto.AllocationPercentage,
             HoursPerWeek = dto.HoursPerWeek,
             StartDate = dto.StartDate,
@@ -127,7 +145,7 @@ public class AllocationService : IAllocationService
         if (dto.ProjectId.HasValue) allocation.ProjectId = dto.ProjectId;
         if (dto.ProjectName != null) allocation.ProjectName = dto.ProjectName;
         if (dto.WorkItemId.HasValue) allocation.WorkItemId = dto.WorkItemId;
-        if (dto.Role != null) allocation.Role = dto.Role;
+        if (dto.ProjectRoleId.HasValue) allocation.ProjectRoleId = dto.ProjectRoleId.Value;
         if (dto.AllocationPercentage.HasValue) allocation.AllocationPercentage = dto.AllocationPercentage.Value;
         if (dto.HoursPerWeek.HasValue) allocation.HoursPerWeek = dto.HoursPerWeek;
         if (dto.StartDate.HasValue) allocation.StartDate = dto.StartDate.Value;
@@ -257,11 +275,10 @@ public class AllocationService : IAllocationService
             ProjectId = a.ProjectId,
             ProjectName = a.ProjectName,
             WorkItemId = a.WorkItemId,
-            Role = a.Role,
+            ProjectRoleId = a.ProjectRoleId,
             AllocationPercentage = a.AllocationPercentage,
             HoursPerWeek = a.HoursPerWeek,
             PlannedHours = a.PlannedHours,
-            ActualHours = a.ActualHours,
             StartDate = a.StartDate,
             EndDate = a.EndDate,
             Status = a.Status,

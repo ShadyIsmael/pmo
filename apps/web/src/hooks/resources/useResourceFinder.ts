@@ -2,6 +2,8 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api-client";
+import { endpoints } from "@/lib/api/endpoints";
+import { resourceFinderKeys } from "@/lib/api/resources";
 
 export interface ResourceFinderQueryDto {
   projectId?: string;
@@ -62,12 +64,12 @@ export interface ResourceFinderResponse {
 }
 
 async function findResources(query: ResourceFinderQueryDto): Promise<ResourceFinderResponse> {
-  return api.post<ResourceFinderResponse>("/api/resource-finder/find", query);
+  return api.post<ResourceFinderResponse>(endpoints.resourceFinder, query);
 }
 
 export function useResourceFinder(query: ResourceFinderQueryDto, enabled = true) {
   return useQuery({
-    queryKey: ["resource-finder", query],
+    queryKey: resourceFinderKeys.find(query),
     queryFn: () => findResources(query),
     enabled,
     staleTime: 15_000,

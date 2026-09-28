@@ -6,12 +6,12 @@ using NEXUS.Modules.Notifications.Domain;
 using NEXUS.Modules.ProjectManagement.Application.DTOs;
 using NEXUS.Modules.ProjectManagement.Domain;
 using NEXUS.SharedKernel;
+using NEXUS.SharedKernel.Helpers;
 
 namespace NEXUS.Modules.ProjectManagement.Application;
 
 public class ProjectHandoverRequestService : IProjectHandoverRequestService
 {
-    private static readonly Guid DemoTenantId = Guid.Parse("11111111-1111-1111-1111-111111111111");
     private const string PmoAdminRole = "pmo.admin";
 
     private readonly DbContext _context;
@@ -316,7 +316,7 @@ public class ProjectHandoverRequestService : IProjectHandoverRequestService
             await _notificationService.SendAsync(new Notification
             {
                 TenantId = GetCurrentTenantId(),
-                UserId = stakeholder.UserId,
+                UserId = stakeholder.UserId!.Value,
                 Title = "Project manager handover",
                 Body = $"A Project Manager handover request has been submitted. Project: {project.Name}",
                 Type = "ProjectHandover",
@@ -332,8 +332,10 @@ public class ProjectHandoverRequestService : IProjectHandoverRequestService
     {
         var project = await _context.Set<Project>().FirstOrDefaultAsync(p => p.Id == request.ProjectId, cancellationToken);
         var projectName = project?.Name ?? string.Empty;
+        var currentManagerExists = await _context.Set<User>()
+            .AnyAsync(user => user.Id == request.CurrentProjectManagerId && !user.IsDeleted, cancellationToken);
 
-        if (request.CurrentProjectManagerId != request.RespondedBy)
+        if (currentManagerExists && request.CurrentProjectManagerId != request.RespondedBy)
         {
             await _notificationService.SendAsync(new Notification
             {
@@ -354,7 +356,7 @@ public class ProjectHandoverRequestService : IProjectHandoverRequestService
             await _notificationService.SendAsync(new Notification
             {
                 TenantId = GetCurrentTenantId(),
-                UserId = stakeholder.UserId,
+                UserId = stakeholder.UserId!.Value,
                 Title = "Project manager handover completed",
                 Body = $"The project manager handover for {projectName} has been completed.",
                 Type = "ProjectHandover",
@@ -370,6 +372,8 @@ public class ProjectHandoverRequestService : IProjectHandoverRequestService
     {
         var project = await _context.Set<Project>().FirstOrDefaultAsync(p => p.Id == request.ProjectId, cancellationToken);
         var projectName = project?.Name ?? string.Empty;
+        var currentManagerExists = await _context.Set<User>()
+            .AnyAsync(user => user.Id == request.CurrentProjectManagerId && !user.IsDeleted, cancellationToken);
 
         await _notificationService.SendAsync(new Notification
         {
@@ -384,7 +388,7 @@ public class ProjectHandoverRequestService : IProjectHandoverRequestService
             SentAt = DateTime.UtcNow
         }, cancellationToken);
 
-        if (request.CurrentProjectManagerId != request.RequestedBy)
+        if (currentManagerExists && request.CurrentProjectManagerId != request.RequestedBy)
         {
             await _notificationService.SendAsync(new Notification
             {
@@ -404,7 +408,7 @@ public class ProjectHandoverRequestService : IProjectHandoverRequestService
     private async Task<List<ProjectStakeholder>> GetActiveStakeholdersAsync(Guid projectId, CancellationToken cancellationToken)
     {
         return await _context.Set<ProjectStakeholder>()
-            .Where(s => s.ProjectId == projectId && !s.IsDeleted)
+            .Where(s => s.ProjectId == projectId && s.Status == ProjectStakeholderStatus.Active && s.RelationshipType == "Stakeholder" && s.UserId.HasValue && _context.Set<User>().Any(user => user.Id == s.UserId.Value && user.IsActive))
             .ToListAsync(cancellationToken);
     }
 
@@ -416,11 +420,11 @@ public class ProjectHandoverRequestService : IProjectHandoverRequestService
             return parsed;
         }
 
-        return DemoTenantId;
+        return TenantConstants.DemoTenantId;
     }
 
     private static Guid? TryParseGuid(string value)
     {
-        return Guid.TryParse(value, out var parsed) ? parsed : null;
+        return GuidHelper.TryParse(value);
     }
 }

@@ -10,7 +10,7 @@ public static class ResourceMapping
         return new ResourceDto
         {
             Id = resource.Id,
-            UserId = resource.UserId,
+            UserId = resource.UserId == Guid.Empty ? null : resource.UserId,
             Name = resource.Name,
             EmployeeId = resource.EmployeeId,
             JobTitle = resource.JobTitle,
@@ -19,9 +19,6 @@ public static class ResourceMapping
             AvatarUrl = resource.AvatarUrl,
             Type = resource.Type,
             Status = resource.Status,
-            CostPerHour = resource.CostPerHour,
-            BillableRate = resource.BillableRate,
-            Currency = resource.Currency,
             EmploymentType = resource.EmploymentType,
             Seniority = resource.Seniority,
             DateOfJoining = resource.DateOfJoining,
@@ -31,6 +28,8 @@ public static class ResourceMapping
             LocationId = resource.LocationId,
             VendorId = resource.VendorId,
             VendorName = resource.Vendor?.Name,
+            BaseCalendarId = resource.BaseCalendarId,
+            BaseCalendarName = resource.BaseCalendar?.Name,
             Timezone = resource.Timezone,
             UtilizationTarget = resource.UtilizationTarget,
             CurrentUtilization = resource.CurrentUtilization,
@@ -39,7 +38,23 @@ public static class ResourceMapping
             CreatedAt = resource.CreatedAt,
             UpdatedAt = resource.UpdatedAt,
             Skills = resource.Skills?.Select(s => s.ToDto()).ToList() ?? new(),
-            Allocations = resource.Allocations?.Select(a => a.ToDto()).ToList() ?? new()
+            Allocations = resource.Allocations?.Select(a => a.ToDto()).ToList() ?? new(),
+            CostProfiles = resource.CostProfiles?.Where(cp => !cp.IsDeleted).Select(cp => new ResourceCostProfileDto
+            {
+                Id = cp.Id,
+                ResourceId = cp.ResourceId,
+                EffectiveFrom = cp.EffectiveFrom,
+                EffectiveTo = cp.EffectiveTo,
+                CompensationType = cp.CompensationType,
+                Amount = cp.Amount,
+                Currency = cp.Currency,
+                OvertimeEligible = cp.OvertimeEligible,
+                OvertimeRateType = cp.OvertimeRateType,
+                OvertimeRateValue = cp.OvertimeRateValue,
+                CreatedAt = cp.CreatedAt,
+                UpdatedAt = cp.UpdatedAt,
+                RowVersion = cp.RowVersion
+            }).ToList() ?? new()
         };
     }
 
@@ -63,10 +78,8 @@ public static class ResourceMapping
             Id = allocation.Id,
             ProjectId = allocation.ProjectId,
             ProjectName = allocation.ProjectName,
-            Role = allocation.Role,
             AllocationPercentage = allocation.AllocationPercentage,
             PlannedHours = allocation.PlannedHours,
-            ActualHours = allocation.ActualHours,
             StartDate = allocation.StartDate,
             EndDate = allocation.EndDate,
             Status = allocation.Status
@@ -77,7 +90,7 @@ public static class ResourceMapping
     {
         return new Resource
         {
-            UserId = dto.UserId ?? Guid.NewGuid(),
+            UserId = dto.UserId,
             Name = dto.Name,
             EmployeeId = dto.EmployeeId,
             JobTitle = dto.JobTitle,
@@ -86,9 +99,6 @@ public static class ResourceMapping
             AvatarUrl = dto.AvatarUrl,
             Type = dto.Type,
             Status = dto.Status,
-            CostPerHour = dto.CostPerHour,
-            BillableRate = dto.BillableRate,
-            Currency = dto.Currency,
             EmploymentType = dto.EmploymentType,
             Seniority = dto.Seniority,
             DateOfJoining = dto.DateOfJoining,
@@ -97,6 +107,7 @@ public static class ResourceMapping
             TeamId = dto.TeamId,
             LocationId = dto.LocationId,
             VendorId = dto.VendorId,
+            BaseCalendarId = dto.BaseCalendarId,
             Timezone = dto.Timezone,
             UtilizationTarget = dto.UtilizationTarget,
             Notes = dto.Notes,
@@ -104,8 +115,10 @@ public static class ResourceMapping
         };
     }
 
-    public static void ApplyUpdate(this Resource resource, UpdateResourceDto dto)
+public static void ApplyUpdate(this Resource resource, UpdateResourceDto dto)
     {
+        if (dto.RemoveUserAssociation == true) resource.UserId = null;
+        else if (dto.UserId.HasValue) resource.UserId = dto.UserId.Value;
         if (dto.Name != null) resource.Name = dto.Name;
         if (dto.EmployeeId != null) resource.EmployeeId = dto.EmployeeId;
         if (dto.JobTitle != null) resource.JobTitle = dto.JobTitle;
@@ -114,9 +127,6 @@ public static class ResourceMapping
         if (dto.AvatarUrl != null) resource.AvatarUrl = dto.AvatarUrl;
         if (dto.Type != null) resource.Type = dto.Type;
         if (dto.Status != null) resource.Status = dto.Status;
-        if (dto.CostPerHour.HasValue) resource.CostPerHour = dto.CostPerHour;
-        if (dto.BillableRate.HasValue) resource.BillableRate = dto.BillableRate;
-        if (dto.Currency != null) resource.Currency = dto.Currency;
         if (dto.EmploymentType != null) resource.EmploymentType = dto.EmploymentType;
         if (dto.Seniority != null) resource.Seniority = dto.Seniority;
         if (dto.DateOfJoining.HasValue) resource.DateOfJoining = dto.DateOfJoining;
@@ -125,6 +135,7 @@ public static class ResourceMapping
         if (dto.TeamId.HasValue) resource.TeamId = dto.TeamId;
         if (dto.LocationId.HasValue) resource.LocationId = dto.LocationId;
         if (dto.VendorId.HasValue) resource.VendorId = dto.VendorId;
+        if (dto.BaseCalendarId.HasValue) resource.BaseCalendarId = dto.BaseCalendarId;
         if (dto.Timezone != null) resource.Timezone = dto.Timezone;
         if (dto.UtilizationTarget.HasValue) resource.UtilizationTarget = dto.UtilizationTarget;
         if (dto.Notes != null) resource.Notes = dto.Notes;

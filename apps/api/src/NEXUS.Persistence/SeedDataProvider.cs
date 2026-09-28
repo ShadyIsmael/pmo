@@ -2,9 +2,12 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using NEXUS.Modules.Approvals.Domain;
 using NEXUS.Modules.CostManagement.Domain;
+using NEXUS.Modules.Documents.Application;
+using NEXUS.Modules.Documents.Domain;
 using NEXUS.Modules.Identity.Domain;
 using NEXUS.Modules.IssueManagement.Domain;
 using NEXUS.Modules.Meetings.Domain;
+using NEXUS.Modules.Meetings.Application;
 using NEXUS.Modules.Notifications.Domain;
 using NEXUS.Modules.Organization.Domain;
 using NEXUS.Modules.Portfolio.Domain;
@@ -13,6 +16,7 @@ using NEXUS.Modules.ProjectManagement.Domain;
 using NEXUS.Modules.ResourceManagement.Domain;
 using NEXUS.Modules.RiskManagement.Domain;
 using NEXUS.Modules.WorkItems.Domain;
+using NEXUS.SharedKernel;
 
 namespace NEXUS.Persistence;
 
@@ -35,6 +39,8 @@ public static class SeedDataProvider
     private static readonly Guid PmoAdminUserId = Guid.Parse("ffffffff-ffff-ffff-ffff-ffffffffffff");
     private static readonly Guid FinanceControllerUserId = Guid.Parse("11111111-2222-3333-4444-555555555555");
     private static readonly Guid ResourceManagerUserId = Guid.Parse("22222222-3333-4444-5555-666666666666");
+
+    private static readonly Guid SeedProjectMarkerId = Guid.Parse("e0000001-0000-0000-0000-000000000001");
 
     private static readonly Guid AdminRoleId = Guid.Parse("a0000001-0000-0000-0000-000000000001");
     private static readonly Guid ExecutiveRoleId = Guid.Parse("a0000002-0000-0000-0000-000000000002");
@@ -60,10 +66,23 @@ public static class SeedDataProvider
 
         await EnsurePortfolioAndProgramSeedDataAsync(context);
         await EnsureOrganizationSeedDataAsync(context);
+        await EnsureWorkItemStatusSeedDataAsync(context);
         await EnsureCurrencySeedDataAsync(context);
-        await EnsureResourceCatalogSeedDataAsync(context);
         await EnsureVendorAndOutsourcedSeedDataAsync(context);
-        await ResetProjectSeedDataAsync(context);
+        await EnsureDocumentCatalogAsync(context);
+        // Project seed data used to be reset on every Development startup. That
+        // reset cascaded into user-created Risks (and their workflow children),
+        // leaving previously returned Risk IDs permanently stale after a restart.
+        // Seed project data once and leave it, including user-owned records, intact.
+        // An explicit opt-in remains available for rebuilding a disposable demo DB.
+        var resetRequested = string.Equals(Environment.GetEnvironmentVariable("NEXUS_RESET_PROJECT_SEED"), "true", StringComparison.OrdinalIgnoreCase);
+        var hasSeedProject = await context.Projects.IgnoreQueryFilters()
+            .AnyAsync(project => project.TenantId == TenantId && project.Id == SeedProjectMarkerId);
+        if (hasSeedProject && !resetRequested)
+            return;
+
+        if (resetRequested && hasSeedProject)
+            await ResetProjectSeedDataAsync(context);
 
         var projectDefinitions = new[]
         {
@@ -165,11 +184,10 @@ public static class SeedDataProvider
             }
         }
 
+        // Project team seeding is best-effort: an empty catalog is a valid state, so
+        // skip members/allocations instead of failing the whole seed.
         var resourceCatalog = await context.Resources.IgnoreQueryFilters().Where(resource => resource.TenantId == TenantId).OrderBy(resource => resource.Name).ToListAsync();
-        if (resourceCatalog.Count < 6)
-        {
-            throw new InvalidOperationException("At least six seeded resources are required to create project teams.");
-        }
+        var hasResourceCatalog = resourceCatalog.Count > 0;
 
         var projectTeamTemplates = new[]
         {
@@ -194,11 +212,10 @@ public static class SeedDataProvider
         {
             var project = projects[index];
             var template = projectTeamTemplates[index];
-            for (var memberIndex = 0; memberIndex < template.Length; memberIndex++)
+            for (var memberIndex = 0; hasResourceCatalog && memberIndex < template.Length; memberIndex++)
             {
                 var (roleName, allocationPercentage, hoursPerWeek) = template[memberIndex];
-                var resourceIndex = (index + memberIndex) % resourceCatalog.Count;
-                var resource = resourceCatalog[resourceIndex];
+                var resource = resourceCatalog[(index + memberIndex) % resourceCatalog.Count];
                 projectMembers.Add(new ProjectMember
                 {
                     Id = CreateDeterministicGuid("f0000001", index, memberIndex, 1),
@@ -217,22 +234,22 @@ public static class SeedDataProvider
                 });
 
                 projectAllocations.Add(new ResourceAllocation
-                {
-                    Id = CreateDeterministicGuid("9f000001", index, memberIndex, 2),
-                    TenantId = TenantId,
-                    ResourceId = resource.Id,
-                    ProjectId = project.Id,
-                    ProjectName = project.Name,
-                    Role = roleName,
-                    AllocationPercentage = allocationPercentage,
-                    HoursPerWeek = hoursPerWeek,
-                    StartDate = project.StartDate!.Value,
-                    EndDate = project.EndDate!.Value,
-                    Status = ResourceAllocation.StatusConfirmed,
-                    IsBillable = true,
-                    Notes = $"Allocation for {project.Name}",
-                    CreatedBy = "System"
-                });
+{
+                        Id = CreateDeterministicGuid("9f000001", index, memberIndex, 2),
+                        TenantId = TenantId,
+                        ResourceId = resource.Id,
+                        ProjectId = project.Id,
+                        ProjectName = project.Name,
+                        ProjectRoleId = null,
+                        AllocationPercentage = allocationPercentage,
+                        HoursPerWeek = hoursPerWeek,
+                        StartDate = project.StartDate!.Value,
+                        EndDate = project.EndDate!.Value,
+                        Status = ResourceAllocation.StatusConfirmed,
+                        IsBillable = true,
+                        Notes = $"Allocation for {project.Name}",
+                        CreatedBy = "System"
+                    });
             }
 
             var phaseNames = new[] { "Initiation", "Planning", "Analysis and Design", "Implementation", "Testing", "Deployment", "Closure" };
@@ -269,6 +286,45 @@ public static class SeedDataProvider
                     Progress = milestoneName == "Go Live" ? project.Progress : 100m,
                     CreatedBy = "System"
                 });
+            }
+        }
+
+        // Ensure Alex Admin's canonical Resource (Mina Patel) has at least one Active ProjectMember
+        // for the current work date so timer finalization can succeed.
+        var adminResource = resourceCatalog.FirstOrDefault(r => r.UserId == AdminUserId);
+        if (adminResource is not null)
+        {
+            var activeProject = projects.FirstOrDefault(p => p.Status == "InProgress" && p.StartDate <= DateTime.UtcNow && p.EndDate >= DateTime.UtcNow)
+                               ?? projects.FirstOrDefault(p => p.Status == "InProgress")
+                               ?? projects.FirstOrDefault();
+            if (activeProject is not null)
+            {
+                var existingAdminMember = projectMembers.FirstOrDefault(m => m.ResourceId == adminResource.Id && m.ProjectId == activeProject.Id);
+                if (existingAdminMember is null)
+                {
+                    projectMembers.Add(new ProjectMember
+                    {
+                        Id = CreateDeterministicGuid("f0000100", 0, 0, 0),
+                        TenantId = TenantId,
+                        ProjectId = activeProject.Id,
+                        ResourceId = adminResource.Id,
+                        Role = "Project Administrator",
+                        AllocationPercentage = 100m,
+                        HoursPerWeek = 40m,
+                        StartDate = activeProject.StartDate!.Value,
+                        EndDate = activeProject.EndDate!.Value,
+                        Status = "Active",
+                        IsBillable = true,
+                        Notes = "Admin resource membership for time tracking UAT",
+                        CreatedBy = "System"
+                    });
+                }
+                else
+                {
+                    existingAdminMember.Status = "Active";
+                    existingAdminMember.AllocationPercentage = 100m;
+                    existingAdminMember.HoursPerWeek = 40m;
+                }
             }
         }
 
@@ -322,8 +378,8 @@ public static class SeedDataProvider
                 ActualCost = project.ActualCost,
                 PlannedValue = project.PlannedValue,
                 EarnedValue = project.EarnedValue,
-                CostVariance = project.CostVariance,
-                ScheduleVariance = project.ScheduleVariance,
+                CostVariance = null,
+                ScheduleVariance = null,
                 Progress = project.Progress,
                 Health = project.Health,
                 RagStatus = project.RagStatus,
@@ -369,6 +425,66 @@ public static class SeedDataProvider
         await context.SaveChangesAsync();
     }
 
+    private static async Task EnsureWorkItemStatusSeedDataAsync(AppDbContext context)
+    {
+        var definitions = new[]
+        {
+            new { Code = "Backlog", NameEn = "Backlog", NameAr = "المتراكم", DisplayOrder = 10, Color = "slate", IsDefault = false },
+            new { Code = "ToDo", NameEn = "To Do", NameAr = "للتنفيذ", DisplayOrder = 20, Color = "blue", IsDefault = true },
+            new { Code = "InProgress", NameEn = "In Progress", NameAr = "قيد التنفيذ", DisplayOrder = 30, Color = "amber", IsDefault = false },
+            new { Code = "InReview", NameEn = "In Review", NameAr = "قيد المراجعة", DisplayOrder = 40, Color = "violet", IsDefault = false },
+            new { Code = "Done", NameEn = "Done", NameAr = "مكتمل", DisplayOrder = 50, Color = "emerald", IsDefault = false },
+            new { Code = "Cancelled", NameEn = "Cancelled", NameAr = "ملغى", DisplayOrder = 60, Color = "rose", IsDefault = false },
+            new { Code = "OnHold", NameEn = "On Hold", NameAr = "معلّق", DisplayOrder = 70, Color = "orange", IsDefault = false }
+        };
+
+        var statuses = await context.Lookups.IgnoreQueryFilters()
+            .Where(lookup => lookup.TenantId == TenantId && lookup.Category == ReferenceDataCategories.WorkItemStatus && !lookup.IsDeleted)
+            .ToListAsync();
+
+        foreach (var definition in definitions)
+        {
+            var status = statuses.FirstOrDefault(candidate => candidate.Code == definition.Code);
+            if (status is null)
+            {
+                context.Lookups.Add(new Lookup
+                {
+                    Id = CreateDeterministicGuid("b0000001", Array.IndexOf(definitions, definition), 0, 7),
+                    TenantId = TenantId,
+                    Category = ReferenceDataCategories.WorkItemStatus,
+                    Code = definition.Code,
+                    Name = definition.NameEn,
+                    NameEn = definition.NameEn,
+                    NameAr = definition.NameAr,
+                    DisplayOrder = definition.DisplayOrder,
+                    IsActive = true,
+                    Color = definition.Color,
+                    IsDefault = definition.IsDefault,
+                    CreatedBy = "System"
+                });
+            }
+            else
+            {
+                if (string.IsNullOrWhiteSpace(status.NameEn)) status.NameEn = status.Name;
+                if (string.IsNullOrWhiteSpace(status.NameAr)) status.NameAr = status.NameEn;
+            }
+        }
+
+        await context.SaveChangesAsync();
+
+        var activeStatuses = await context.Lookups
+            .Where(lookup => lookup.Category == ReferenceDataCategories.WorkItemStatus && lookup.IsActive && !lookup.IsDeleted)
+            .OrderBy(lookup => lookup.DisplayOrder)
+            .ThenBy(lookup => lookup.Code)
+            .ToListAsync();
+        var defaultStatus = activeStatuses.FirstOrDefault(status => status.IsDefault) ?? activeStatuses.FirstOrDefault(status => status.Code == "ToDo") ?? activeStatuses.FirstOrDefault();
+        if (defaultStatus is not null)
+        {
+            foreach (var status in activeStatuses) status.IsDefault = status.Id == defaultStatus.Id;
+            await context.SaveChangesAsync();
+        }
+    }
+
     private static string BuildSeedSnapshotData(
         Project project,
         List<ProjectMember> members,
@@ -398,7 +514,7 @@ public static class SeedDataProvider
                 OriginalId = a.Id,
                 ResourceId = a.ResourceId,
                 ResourceName = resourceNames.TryGetValue(a.ResourceId, out var name) ? name : null,
-                Role = a.Role,
+                ProjectRoleId = a.ProjectRoleId,
                 AllocationPercentage = a.AllocationPercentage,
                 HoursPerWeek = a.HoursPerWeek,
                 StartDate = a.StartDate,
@@ -576,7 +692,7 @@ public static class SeedDataProvider
         }
 
         var risks = await context.Risks.IgnoreQueryFilters()
-            .Where(risk => risk.TenantId == TenantId && risk.ProjectId.HasValue && projectIds.Contains(risk.ProjectId.Value))
+            .Where(risk => risk.TenantId == TenantId && projectIds.Contains(risk.ProjectId))
             .ToListAsync();
         if (risks.Count > 0)
         {
@@ -757,159 +873,120 @@ public static class SeedDataProvider
         await context.SaveChangesAsync();
     }
 
-    private static async Task EnsureResourceCatalogSeedDataAsync(AppDbContext context)
+    /// <summary>
+    /// Seeds the canonical VendorCategory reference-data set (Supplier, Consultant,
+    /// Technology, Outsourcing, Other) using deterministic ids. Idempotent: re-running
+    /// the seed never duplicates or overwrites categories managed through Reference Data.
+    /// </summary>
+    private static async Task EnsureVendorCategorySeedDataAsync(AppDbContext context)
     {
-        var existingResources = await context.Resources.IgnoreQueryFilters().Where(resource => resource.TenantId == TenantId).ToListAsync();
-        if (existingResources.Count > 0)
+        var definitions = new[]
         {
-            return;
-        }
-
-        var resourceDefinitions = new[]
-        {
-            new { Id = Guid.Parse("70000001-0000-0000-0000-000000000001"), UserId = ProjectManagerUserId, Name = "Alicia Chen", JobTitle = "Project Manager", Email = "alicia@nexus.com", DepartmentId = Guid.Parse("a1000001-0000-0000-0000-000000000001") },
-            new { Id = Guid.Parse("70000001-0000-0000-0000-000000000002"), UserId = TeamMemberUserId, Name = "Marcus Lee", JobTitle = "Business Analyst", Email = "marcus@nexus.com", DepartmentId = Guid.Parse("a1000002-0000-0000-0000-000000000002") },
-            new { Id = Guid.Parse("70000001-0000-0000-0000-000000000003"), UserId = Guid.Parse("11111111-2222-3333-4444-555555555555"), Name = "Priya Shah", JobTitle = "Technical Lead", Email = "priya@nexus.com", DepartmentId = Guid.Parse("a1000001-0000-0000-0000-000000000001") },
-            new { Id = Guid.Parse("70000001-0000-0000-0000-000000000004"), UserId = Guid.Parse("22222222-3333-4444-5555-666666666666"), Name = "Jonas Rivera", JobTitle = "Developer", Email = "jonas@nexus.com", DepartmentId = Guid.Parse("a1000001-0000-0000-0000-000000000001") },
-            new { Id = Guid.Parse("70000001-0000-0000-0000-000000000005"), UserId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"), Name = "Mina Patel", JobTitle = "QA Engineer", Email = "mina@nexus.com", DepartmentId = Guid.Parse("a1000003-0000-0000-0000-000000000003") },
-            new { Id = Guid.Parse("70000001-0000-0000-0000-000000000006"), UserId = ExecutiveUserId, Name = "Thomas Brooks", JobTitle = "Enterprise Architect", Email = "thomas@nexus.com", DepartmentId = Guid.Parse("a1000004-0000-0000-0000-000000000004") }
+            new { Code = "SUP", NameEn = "Supplier", NameAr = "مورّد", DisplayOrder = 10 },
+            new { Code = "CON", NameEn = "Consultant", NameAr = "مستشار", DisplayOrder = 20 },
+            new { Code = "TEC", NameEn = "Technology", NameAr = "تقنية", DisplayOrder = 30 },
+            new { Code = "OUT", NameEn = "Outsourcing", NameAr = "تعاقد خارجي", DisplayOrder = 40 },
+            new { Code = "OTH", NameEn = "Other", NameAr = "أخرى", DisplayOrder = 50 }
         };
 
-        context.Resources.AddRange(resourceDefinitions.Select(definition => new Resource
+        var existing = await context.Lookups.IgnoreQueryFilters()
+            .Where(lookup => lookup.TenantId == TenantId && lookup.Category == ReferenceDataCategories.VendorCategory && !lookup.IsDeleted)
+            .ToListAsync();
+
+        for (var index = 0; index < definitions.Length; index++)
         {
-            Id = definition.Id,
-            TenantId = TenantId,
-            UserId = definition.UserId,
-            Name = definition.Name,
-            JobTitle = definition.JobTitle,
-            Email = definition.Email,
-            DepartmentId = definition.DepartmentId,
-            Type = "Employee",
-            Status = "Active",
-            CostPerHour = 90m,
-            BillableRate = 140m,
-            EmploymentType = "Permanent",
-            IsActive = true,
-            CreatedBy = "System"
-        }));
+            var definition = definitions[index];
+            if (existing.Any(candidate => candidate.Code == definition.Code))
+                continue;
+
+            context.Lookups.Add(new Lookup
+            {
+                Id = CreateDeterministicGuid("b0000002", index, 0, 7),
+                TenantId = TenantId,
+                Category = ReferenceDataCategories.VendorCategory,
+                Code = definition.Code,
+                Name = definition.NameEn,
+                NameEn = definition.NameEn,
+                NameAr = definition.NameAr,
+                DisplayOrder = definition.DisplayOrder,
+                IsActive = true,
+                CreatedBy = "System"
+            });
+        }
 
         await context.SaveChangesAsync();
     }
 
     /// <summary>
-    /// Seeds two deterministic vendors and five outsourced resources per vendor (ten total),
-    /// each linked to its vendor via Resource.VendorId, plus the contracts and skills that
-    /// back the Resource Finder and Outsourced Resource screens. Idempotent: only rows that
-    /// do not already exist for the tenant are added, so re-running the seed never duplicates.
+    /// Seeds vendor reference data only: the canonical VendorCategory set and the Skill
+    /// catalog. No demo vendors, outsourced resources, contracts, or resource-skill links are
+    /// created, so a fresh tenant starts with an empty vendor and resource list. Rows left
+    /// behind by an earlier seed revision are purged so the demo data cannot come back.
+    /// Idempotent: reference data is only added when missing.
     /// </summary>
     private static async Task EnsureVendorAndOutsourcedSeedDataAsync(AppDbContext context)
     {
-        var vendorDefinitions = new[]
-        {
-            new { Id = Guid.Parse("b3000001-0000-0000-0000-000000000001"), Name = "CloudNova Solutions", Code = "CLOUDNOVA", Category = "Cloud Infrastructure", ContactName = "Marta Kowalski", ContactEmail = "marta@cloudnova.com", ContactPhone = "+1 415 555 0111", ContractValue = 850000m, ContractStart = new DateTime(2026, 1, 1), ContractEnd = new DateTime(2027, 12, 31) },
-            new { Id = Guid.Parse("b3000001-0000-0000-0000-000000000002"), Name = "DataWorks Consulting", Code = "DATAWORKS", Category = "Data & Analytics", ContactName = "Peter Jensen", ContactEmail = "peter@dataworks.io", ContactPhone = "+44 20 5555 0123", ContractValue = 620000m, ContractStart = new DateTime(2026, 3, 1), ContractEnd = new DateTime(2027, 3, 31) }
-        };
-
-        var existingVendors = await context.Vendors.IgnoreQueryFilters().Where(v => v.TenantId == TenantId).ToListAsync();
-        var vendors = new List<Vendor>();
-        foreach (var definition in vendorDefinitions)
-        {
-            if (existingVendors.Any(v => v.Id == definition.Id))
-                continue;
-
-            var vendor = new Vendor
-            {
-                Id = definition.Id,
-                TenantId = TenantId,
-                Name = definition.Name,
-                Code = definition.Code,
-                Category = definition.Category,
-                ContactName = definition.ContactName,
-                ContactEmail = definition.ContactEmail,
-                ContactPhone = definition.ContactPhone,
-                ContractValue = definition.ContractValue,
-                ContractStart = definition.ContractStart,
-                ContractEnd = definition.ContractEnd,
-                Status = "Active",
-                IsActive = true,
-                CreatedBy = "System"
-            };
-            context.Vendors.Add(vendor);
-            vendors.Add(vendor);
-        }
-        await context.SaveChangesAsync();
-
-        // Determine the authoritative vendor rows (reload so newly-added ones are tracked).
-        var trackedVendors = await context.Vendors.IgnoreQueryFilters().Where(v => v.TenantId == TenantId).ToListAsync();
-        var vendorById = trackedVendors.ToDictionary(v => v.Id);
-        var cloudNovaId = Guid.Parse("b3000001-0000-0000-0000-000000000001");
-        var dataWorksId = Guid.Parse("b3000001-0000-0000-0000-000000000002");
-
-        var outsourcedDefinitions = new[]
-        {
-            // CloudNova Solutions (5)
-            new { Id = Guid.Parse("70000002-0000-0000-0000-000000000001"), VendorId = cloudNovaId, Name = "Nadia Hassan", JobTitle = "Cloud Engineer", Email = "nadia.hassan@cloudnova.com", Seniority = "Senior", CostPerHour = 95m, BillableRate = 165m, Timezone = "Europe/London" },
-            new { Id = Guid.Parse("70000002-0000-0000-0000-000000000002"), VendorId = cloudNovaId, Name = "Ravi Kumar", JobTitle = "DevOps Engineer", Email = "ravi.kumar@cloudnova.com", Seniority = "Mid", CostPerHour = 80m, BillableRate = 145m, Timezone = "Asia/Kolkata" },
-            new { Id = Guid.Parse("70000002-0000-0000-0000-000000000003"), VendorId = cloudNovaId, Name = "Lena Fischer", JobTitle = "Solutions Architect", Email = "lena.fischer@cloudnova.com", Seniority = "Lead", CostPerHour = 120m, BillableRate = 195m, Timezone = "Europe/Berlin" },
-            new { Id = Guid.Parse("70000002-0000-0000-0000-000000000004"), VendorId = cloudNovaId, Name = "Diego Ramírez", JobTitle = "Platform Engineer", Email = "diego.ramirez@cloudnova.com", Seniority = "Senior", CostPerHour = 90m, BillableRate = 155m, Timezone = "America/Mexico_City" },
-            new { Id = Guid.Parse("70000002-0000-0000-0000-000000000005"), VendorId = cloudNovaId, Name = "Amara Okafor", JobTitle = "Network Engineer", Email = "amara.okafor@cloudnova.com", Seniority = "Mid", CostPerHour = 75m, BillableRate = 135m, Timezone = "Africa/Lagos" },
-            // DataWorks Consulting (5)
-            new { Id = Guid.Parse("70000002-0000-0000-0000-000000000006"), VendorId = dataWorksId, Name = "Priya Patel", JobTitle = "Data Engineer", Email = "priya.patel@dataworks.io", Seniority = "Senior", CostPerHour = 100m, BillableRate = 175m, Timezone = "Europe/London" },
-            new { Id = Guid.Parse("70000002-0000-0000-0000-000000000007"), VendorId = dataWorksId, Name = "Jonas Weber", JobTitle = "Data Analyst", Email = "jonas.weber@dataworks.io", Seniority = "Mid", CostPerHour = 70m, BillableRate = 130m, Timezone = "Europe/Amsterdam" },
-            new { Id = Guid.Parse("70000002-0000-0000-0000-000000000008"), VendorId = dataWorksId, Name = "Mei Lin", JobTitle = "BI Developer", Email = "mei.lin@dataworks.io", Seniority = "Senior", CostPerHour = 85m, BillableRate = 150m, Timezone = "Asia/Singapore" },
-            new { Id = Guid.Parse("70000002-0000-0000-0000-000000000009"), VendorId = dataWorksId, Name = "Tomás Silva", JobTitle = "ETL Developer", Email = "tomas.silva@dataworks.io", Seniority = "Mid", CostPerHour = 68m, BillableRate = 125m, Timezone = "Europe/Lisbon" },
-            new { Id = Guid.Parse("70000002-0000-0000-0000-000000000010"), VendorId = dataWorksId, Name = "Sarah Ahmed", JobTitle = "Data Architect", Email = "sarah.ahmed@dataworks.io", Seniority = "Lead", CostPerHour = 115m, BillableRate = 190m, Timezone = "Europe/London" }
-        };
-
-        var existingOutsourced = await context.Resources.IgnoreQueryFilters().Where(r => r.TenantId == TenantId).ToListAsync();
-        for (var index = 0; index < outsourcedDefinitions.Length; index++)
-        {
-            var definition = outsourcedDefinitions[index];
-            if (existingOutsourced.Any(r => r.Id == definition.Id))
-                continue;
-
-            var resource = new Resource
-            {
-                Id = definition.Id,
-                TenantId = TenantId,
-                UserId = Guid.Empty,
-                Name = definition.Name,
-                JobTitle = definition.JobTitle,
-                Email = definition.Email,
-                VendorId = definition.VendorId,
-                Type = "Outsourced",
-                Status = "Active",
-                EmploymentType = "Contractor",
-                Seniority = definition.Seniority,
-                CostPerHour = definition.CostPerHour,
-                BillableRate = definition.BillableRate,
-                Currency = "GBP",
-                Timezone = definition.Timezone,
-                IsActive = true,
-                CreatedBy = "System"
-            };
-            context.Resources.Add(resource);
-
-            var vendorName = vendorById.TryGetValue(definition.VendorId, out var vendor) ? vendor.Name : "Unknown Vendor";
-            context.Contracts.Add(new Contract
-            {
-                Id = CreateDeterministicGuid("c2000001", index, 0, 1),
-                TenantId = TenantId,
-                ResourceId = definition.Id,
-                Type = "Outsourcing",
-                StartDate = new DateTime(2026, 1, 1),
-                EndDate = new DateTime(2027, 12, 31),
-                Value = 120000m,
-                Currency = "GBP",
-                Terms = "Managed services agreement with quarterly reviews.",
-                VendorName = vendorName,
-                Status = "Active",
-                CreatedBy = "System"
-            });
-        }
-        await context.SaveChangesAsync();
-
+        await EnsureVendorCategorySeedDataAsync(context);
         await EnsureSkillSeedDataAsync(context);
+
+        await PurgeSeededDemoDataAsync(context);
+    }
+
+    /// <summary>
+    /// Hard-deletes the demo rows created by earlier seed revisions: the CloudNova and
+    /// DataWorks vendors, the six internal employee resources, the ten outsourced resources,
+    /// and the contracts, allocations, project memberships and resource-skill links that
+    /// pointed at them. Matching is done on the deterministic seed ids only, so resources
+    /// and vendors created by users are never touched.
+    /// </summary>
+    private static async Task PurgeSeededDemoDataAsync(AppDbContext context)
+    {
+        var seededVendorIds = new[]
+        {
+            Guid.Parse("b3000001-0000-0000-0000-000000000001"),
+            Guid.Parse("b3000001-0000-0000-0000-000000000002")
+        };
+
+        var seededResourceIds = Enumerable.Range(1, 6)
+            .Select(i => Guid.Parse($"70000001-0000-0000-0000-{i:D12}"))
+            .Concat(Enumerable.Range(1, 10).Select(i => Guid.Parse($"70000002-0000-0000-0000-{i:D12}")))
+            .ToList();
+
+        var resources = await context.Resources.IgnoreQueryFilters()
+            .Where(r => r.TenantId == TenantId && seededResourceIds.Contains(r.Id))
+            .ToListAsync();
+
+        var seededResourceIdSet = seededResourceIds.ToHashSet();
+
+        var skillLinks = await context.ResourceSkills.IgnoreQueryFilters()
+            .Where(rs => rs.TenantId == TenantId && seededResourceIdSet.Contains(rs.ResourceId))
+            .ToListAsync();
+        context.ResourceSkills.RemoveRange(skillLinks);
+
+        var contracts = await context.Contracts.IgnoreQueryFilters()
+            .Where(c => c.TenantId == TenantId && seededResourceIdSet.Contains(c.ResourceId))
+            .ToListAsync();
+        context.Contracts.RemoveRange(contracts);
+
+        var allocations = await context.ResourceAllocations.IgnoreQueryFilters()
+            .Where(a => a.TenantId == TenantId && seededResourceIdSet.Contains(a.ResourceId))
+            .ToListAsync();
+        context.ResourceAllocations.RemoveRange(allocations);
+
+        var members = await context.ProjectMembers.IgnoreQueryFilters()
+            .Where(m => m.TenantId == TenantId && seededResourceIdSet.Contains(m.ResourceId))
+            .ToListAsync();
+        context.ProjectMembers.RemoveRange(members);
+
+        context.Resources.RemoveRange(resources);
+
+        var vendors = await context.Vendors.IgnoreQueryFilters()
+            .Where(v => v.TenantId == TenantId && seededVendorIds.Contains(v.Id))
+            .ToListAsync();
+        context.Vendors.RemoveRange(vendors);
+
+        if (skillLinks.Count > 0 || contracts.Count > 0 || allocations.Count > 0 || members.Count > 0 || resources.Count > 0 || vendors.Count > 0)
+            await context.SaveChangesAsync();
     }
 
     private static async Task EnsureSkillSeedDataAsync(AppDbContext context)
@@ -947,55 +1024,6 @@ public static class SeedDataProvider
         }
         await context.SaveChangesAsync();
 
-        await EnsureResourceSkillsAsync(context);
-    }
-
-    private static async Task EnsureResourceSkillsAsync(AppDbContext context)
-    {
-        // Attach a small deterministic skill set to the outsourced resources so the
-        // Resource Directory and Resource Finder render meaningful skill data.
-        var skillSets = new Dictionary<Guid, (string Skill, string Proficiency, int Years)[]>
-        {
-            [Guid.Parse("70000002-0000-0000-0000-000000000001")] = new[] { ("Cloud Architecture", "Advanced", 5), ("Kubernetes", "Advanced", 4), ("Terraform", "Intermediate", 3) },
-            [Guid.Parse("70000002-0000-0000-0000-000000000002")] = new[] { ("CI/CD", "Advanced", 4), ("Kubernetes", "Intermediate", 3), ("Python", "Intermediate", 3) },
-            [Guid.Parse("70000002-0000-0000-0000-000000000003")] = new[] { ("Cloud Architecture", "Expert", 8), ("Terraform", "Advanced", 6) },
-            [Guid.Parse("70000002-0000-0000-0000-000000000004")] = new[] { ("Kubernetes", "Advanced", 4), ("Terraform", "Advanced", 4), ("CI/CD", "Intermediate", 3) },
-            [Guid.Parse("70000002-0000-0000-0000-000000000005")] = new[] { ("Networking", "Advanced", 5), ("Cloud Architecture", "Intermediate", 2) },
-            [Guid.Parse("70000002-0000-0000-0000-000000000006")] = new[] { ("Data Engineering", "Advanced", 5), ("SQL", "Advanced", 6), ("Python", "Intermediate", 4) },
-            [Guid.Parse("70000002-0000-0000-0000-000000000007")] = new[] { ("SQL", "Advanced", 4), ("Power BI", "Advanced", 4) },
-            [Guid.Parse("70000002-0000-0000-0000-000000000008")] = new[] { ("Power BI", "Expert", 6), ("SQL", "Advanced", 5) },
-            [Guid.Parse("70000002-0000-0000-0000-000000000009")] = new[] { ("ETL", "Advanced", 4), ("SQL", "Intermediate", 3) },
-            [Guid.Parse("70000002-0000-0000-0000-000000000010")] = new[] { ("Data Engineering", "Expert", 8), ("Cloud Architecture", "Advanced", 6), ("SQL", "Advanced", 7) }
-        };
-
-        var skills = await context.Skills.IgnoreQueryFilters().Where(s => s.TenantId == TenantId).ToListAsync();
-        var skillByName = skills.ToDictionary(s => s.Name);
-        var existingLinks = await context.ResourceSkills.IgnoreQueryFilters().Where(rs => rs.TenantId == TenantId).ToListAsync();
-
-        foreach (var (resourceId, entries) in skillSets)
-        {
-            foreach (var (skillName, proficiency, years) in entries)
-            {
-                if (!skillByName.TryGetValue(skillName, out var skill))
-                    continue;
-
-                if (existingLinks.Any(rs => rs.ResourceId == resourceId && rs.SkillId == skill.Id))
-                    continue;
-
-                context.ResourceSkills.Add(new ResourceSkill
-                {
-                    Id = Guid.NewGuid(),
-                    TenantId = TenantId,
-                    ResourceId = resourceId,
-                    SkillId = skill.Id,
-                    Proficiency = proficiency,
-                    YearsOfExperience = years,
-                    CreatedBy = "System"
-                });
-            }
-        }
-
-        await context.SaveChangesAsync();
     }
 
     public static async Task SeedIdentityOnlyAsync(AppDbContext context)
@@ -1042,7 +1070,52 @@ public static class SeedDataProvider
             new() { Id = Guid.Parse("b0000020-0000-0000-0000-000000000020"), TenantId = TenantId, Name = "Resource.ManageRates", Resource = "Resource", Action = "ManageRates", Description = "Manage resource rate cards", CreatedBy = "System" },
             new() { Id = Guid.Parse("b0000021-0000-0000-0000-000000000021"), TenantId = TenantId, Name = "Resource.ViewCostRate", Resource = "Resource", Action = "ViewCostRate", Description = "View resource cost rates", CreatedBy = "System" },
             new() { Id = Guid.Parse("b0000022-0000-0000-0000-000000000022"), TenantId = TenantId, Name = "Resource.EditCostRate", Resource = "Resource", Action = "EditCostRate", Description = "Edit resource cost rates", CreatedBy = "System" }
-            ,new() { Id = Guid.Parse("b0000023-0000-0000-0000-000000000023"), TenantId = TenantId, Name = "manager.handover", Resource = "manager", Action = "handover", Description = "Request and respond to manager handovers", CreatedBy = "System" }
+            ,new() { Id = Guid.Parse("b0000023-0000-0000-0000-000000000023"), TenantId = TenantId, Name = "manager.handover", Resource = "manager", Action = "handover", Description = "Request and respond to manager handovers", CreatedBy = "System" },
+            new() { Id = Guid.Parse("b0000101-0000-0000-0000-000000000101"), TenantId = TenantId, Name = "Project.View", Resource = "Project", Action = "View", Description = "View projects", CreatedBy = "System" },
+            new() { Id = Guid.Parse("b0000102-0000-0000-0000-000000000102"), TenantId = TenantId, Name = "Project.Create", Resource = "Project", Action = "Create", Description = "Create projects", CreatedBy = "System" },
+            new() { Id = Guid.Parse("b0000103-0000-0000-0000-000000000103"), TenantId = TenantId, Name = "Project.Edit", Resource = "Project", Action = "Edit", Description = "Edit project data", CreatedBy = "System" },
+            new() { Id = Guid.Parse("b0000104-0000-0000-0000-000000000104"), TenantId = TenantId, Name = "Project.Delete", Resource = "Project", Action = "Delete", Description = "Delete projects", CreatedBy = "System" },
+            new() { Id = Guid.Parse("b0000105-0000-0000-0000-000000000105"), TenantId = TenantId, Name = "ChangeRequest.View", Resource = "ChangeRequest", Action = "View", Description = "View project change requests", CreatedBy = "System" },
+            new() { Id = Guid.Parse("b0000106-0000-0000-0000-000000000106"), TenantId = TenantId, Name = "ChangeRequest.Manage", Resource = "ChangeRequest", Action = "Manage", Description = "Create, update, and cancel project change requests", CreatedBy = "System" },
+            new() { Id = Guid.Parse("b0000107-0000-0000-0000-000000000107"), TenantId = TenantId, Name = "ChangeRequest.Approve", Resource = "ChangeRequest", Action = "Approve", Description = "Approve or reject project change requests", CreatedBy = "System" },
+            new() { Id = Guid.Parse("b0000108-0000-0000-0000-000000000108"), TenantId = TenantId, Name = "Handover.View", Resource = "Handover", Action = "View", Description = "View project and manager handovers", CreatedBy = "System" },
+            new() { Id = Guid.Parse("b0000109-0000-0000-0000-000000000109"), TenantId = TenantId, Name = "Handover.Manage", Resource = "Handover", Action = "Manage", Description = "Request or cancel project and manager handovers", CreatedBy = "System" },
+            new() { Id = Guid.Parse("b0000110-0000-0000-0000-000000000110"), TenantId = TenantId, Name = "Handover.Approve", Resource = "Handover", Action = "Approve", Description = "Accept or reject project and manager handovers", CreatedBy = "System" },
+            new() { Id = Guid.Parse("b0000111-0000-0000-0000-000000000111"), TenantId = TenantId, Name = "Risk.View", Resource = "Risk", Action = "View", Description = "View project risks", CreatedBy = "System" },
+            new() { Id = Guid.Parse("b0000112-0000-0000-0000-000000000112"), TenantId = TenantId, Name = "Risk.Create", Resource = "Risk", Action = "Create", Description = "Create project risks", CreatedBy = "System" },
+            new() { Id = Guid.Parse("b0000113-0000-0000-0000-000000000113"), TenantId = TenantId, Name = "Risk.Edit", Resource = "Risk", Action = "Edit", Description = "Edit project risks and follow-through", CreatedBy = "System" },
+            new() { Id = Guid.Parse("b0000114-0000-0000-0000-000000000114"), TenantId = TenantId, Name = "Risk.Delete", Resource = "Risk", Action = "Delete", Description = "Delete risk children", CreatedBy = "System" },
+            new() { Id = Guid.Parse("b0000115-0000-0000-0000-000000000115"), TenantId = TenantId, Name = "Risk.Mitigate", Resource = "Risk", Action = "Mitigate", Description = "Transition and mitigate project risks", CreatedBy = "System" },
+            new() { Id = Guid.Parse("b0000116-0000-0000-0000-000000000116"), TenantId = TenantId, Name = "Planning.View", Resource = "Planning", Action = "View", Description = "View project planning data", CreatedBy = "System" },
+            new() { Id = Guid.Parse("b0000117-0000-0000-0000-000000000117"), TenantId = TenantId, Name = "Planning.Manage", Resource = "Planning", Action = "Manage", Description = "Manage project planning data", CreatedBy = "System" },
+            new() { Id = Guid.Parse("b0000118-0000-0000-0000-000000000118"), TenantId = TenantId, Name = "Planning.Lifecycle", Resource = "Planning", Action = "Lifecycle", Description = "Manage planning working and baseline lifecycle", CreatedBy = "System" },
+            new() { Id = Guid.Parse("b0000119-0000-0000-0000-000000000119"), TenantId = TenantId, Name = "Portfolio.View", Resource = "Portfolio", Action = "View", Description = "View portfolios", CreatedBy = "System" },
+            new() { Id = Guid.Parse("b0000120-0000-0000-0000-000000000120"), TenantId = TenantId, Name = "Portfolio.Manage", Resource = "Portfolio", Action = "Manage", Description = "Manage portfolios", CreatedBy = "System" },
+            new() { Id = Guid.Parse("b0000121-0000-0000-0000-000000000121"), TenantId = TenantId, Name = "Program.View", Resource = "Program", Action = "View", Description = "View programs", CreatedBy = "System" },
+            new() { Id = Guid.Parse("b0000122-0000-0000-0000-000000000122"), TenantId = TenantId, Name = "Program.Manage", Resource = "Program", Action = "Manage", Description = "Manage programs", CreatedBy = "System" },
+            new() { Id = Guid.Parse("b0000123-0000-0000-0000-000000000123"), TenantId = TenantId, Name = "WorkItem.View", Resource = "WorkItem", Action = "View", Description = "View task and issue work items", CreatedBy = "System" },
+            new() { Id = Guid.Parse("b0000124-0000-0000-0000-000000000124"), TenantId = TenantId, Name = "WorkItem.Create", Resource = "WorkItem", Action = "Create", Description = "Create task and issue work items", CreatedBy = "System" },
+            new() { Id = Guid.Parse("b0000125-0000-0000-0000-000000000125"), TenantId = TenantId, Name = "WorkItem.Edit", Resource = "WorkItem", Action = "Edit", Description = "Edit task and issue work items", CreatedBy = "System" },
+            new() { Id = Guid.Parse("b0000126-0000-0000-0000-000000000126"), TenantId = TenantId, Name = "WorkItem.Delete", Resource = "WorkItem", Action = "Delete", Description = "Delete task and issue work items", CreatedBy = "System" },
+            new() { Id = Guid.Parse("b0000127-0000-0000-0000-000000000127"), TenantId = TenantId, Name = MeetingPermissions.View, Resource = "Meeting", Action = "View", Description = "View meetings and meeting minutes", CreatedBy = "System" },
+            new() { Id = Guid.Parse("b0000128-0000-0000-0000-000000000128"), TenantId = TenantId, Name = MeetingPermissions.Create, Resource = "Meeting", Action = "Create", Description = "Create meetings", CreatedBy = "System" },
+            new() { Id = Guid.Parse("b0000129-0000-0000-0000-000000000129"), TenantId = TenantId, Name = MeetingPermissions.Edit, Resource = "Meeting", Action = "Edit", Description = "Edit meetings and attendees", CreatedBy = "System" },
+            new() { Id = Guid.Parse("b0000130-0000-0000-0000-000000000130"), TenantId = TenantId, Name = MeetingPermissions.Manage, Resource = "Meeting", Action = "Manage", Description = "Manage minutes, comments, and work item links", CreatedBy = "System" },
+            new() { Id = Guid.Parse("b0000131-0000-0000-0000-000000000131"), TenantId = TenantId, Name = MeetingPermissions.Delete, Resource = "Meeting", Action = "Delete", Description = "Delete meetings", CreatedBy = "System" },
+            new() { Id = Guid.Parse("b0000132-0000-0000-0000-000000000132"), TenantId = TenantId, Name = "Stakeholders.Read", Resource = "Stakeholders", Action = "Read", Description = "View project stakeholders", CreatedBy = "System" },
+            new() { Id = Guid.Parse("b0000133-0000-0000-0000-000000000133"), TenantId = TenantId, Name = "Stakeholders.Manage", Resource = "Stakeholders", Action = "Manage", Description = "Manage project stakeholders", CreatedBy = "System" },
+            new() { Id = Guid.Parse("b0000134-0000-0000-0000-000000000134"), TenantId = TenantId, Name = DocumentPermissions.View, Resource = "Document", Action = "View", Description = "View documents and templates", CreatedBy = "System" },
+            new() { Id = Guid.Parse("b0000135-0000-0000-0000-000000000135"), TenantId = TenantId, Name = DocumentPermissions.Create, Resource = "Document", Action = "Create", Description = "Upload documents", CreatedBy = "System" },
+            new() { Id = Guid.Parse("b0000136-0000-0000-0000-000000000136"), TenantId = TenantId, Name = DocumentPermissions.Edit, Resource = "Document", Action = "Edit", Description = "Upload document versions", CreatedBy = "System" },
+            new() { Id = Guid.Parse("b0000137-0000-0000-0000-000000000137"), TenantId = TenantId, Name = DocumentPermissions.Archive, Resource = "Document", Action = "Archive", Description = "Archive documents", CreatedBy = "System" },
+            new() { Id = Guid.Parse("b0000138-0000-0000-0000-000000000138"), TenantId = TenantId, Name = DocumentPermissions.TemplateManage, Resource = "Document", Action = "TemplateManage", Description = "Manage reusable document templates", CreatedBy = "System" },
+            new() { Id = Guid.Parse("b0000139-0000-0000-0000-000000000139"), TenantId = TenantId, Name = "Workflow.View", Resource = "Workflow", Action = "View", Description = "View workflow definitions and versions", CreatedBy = "System" },
+            new() { Id = Guid.Parse("b0000140-0000-0000-0000-000000000140"), TenantId = TenantId, Name = "Workflow.Manage", Resource = "Workflow", Action = "Manage", Description = "Edit workflow drafts", CreatedBy = "System" },
+            new() { Id = Guid.Parse("b0000141-0000-0000-0000-000000000141"), TenantId = TenantId, Name = "Workflow.Publish", Resource = "Workflow", Action = "Publish", Description = "Publish and retire workflow versions", CreatedBy = "System" }
+            ,new() { Id = Guid.Parse("b0000142-0000-0000-0000-000000000142"), TenantId = TenantId, Name = TimeTrackingPermissions.ViewOwn, Resource = "TimeTracking", Action = "ViewOwn", Description = "View own manual time entries", CreatedBy = "System" }
+            ,new() { Id = Guid.Parse("b0000143-0000-0000-0000-000000000143"), TenantId = TenantId, Name = TimeTrackingPermissions.ManageOwn, Resource = "TimeTracking", Action = "ManageOwn", Description = "Create, update, and delete own manual time entries", CreatedBy = "System" }
+            ,new() { Id = Guid.Parse("b0000144-0000-0000-0000-000000000144"), TenantId = TenantId, Name = TimeTrackingPermissions.ViewTeam, Resource = "TimeTracking", Action = "ViewTeam", Description = "View team manual time entries within management scope", CreatedBy = "System" }
+            ,new() { Id = Guid.Parse("b0000145-0000-0000-0000-000000000145"), TenantId = TenantId, Name = TimeTrackingPermissions.ManageTeam, Resource = "TimeTracking", Action = "ManageTeam", Description = "Manage team manual time entries within management scope", CreatedBy = "System" }
         };
 
         var permissionsByKey = permissions.ToDictionary(p => $"{p.Resource}|{p.Action}");
@@ -1068,14 +1141,14 @@ public static class SeedDataProvider
         // Permission-to-role mapping by role name.
         var rolePermissionKeys = new Dictionary<string, List<string>>
         {
-            ["admin"] = new() { "projects|read", "projects|write", "projects|delete", "portfolios|read", "portfolios|write", "resources|read", "resources|write", "users|read", "users|write", "finances|read", "finances|write", "reports|read", "reports|export", "settings|read", "settings|write", "manager|handover", "Resource|View", "Resource|Assign", "Resource|Allocate", "Resource|Manage", "Resource|ManageRates", "Resource|ViewCostRate", "Resource|EditCostRate" },
-            ["executive"] = new() { "projects|read", "projects|write", "projects|delete", "portfolios|read", "portfolios|write", "resources|read", "resources|write", "users|read", "users|write", "finances|read", "finances|write", "reports|read", "reports|export" },
-            ["portfolio.manager"] = new() { "portfolios|read", "portfolios|write", "projects|read", "projects|write", "reports|read", "manager|handover" },
-            ["project.manager"] = new() { "projects|read", "projects|write", "resources|read", "reports|read", "manager|handover" },
-            ["team.member"] = new() { "projects|read" },
-            ["pmo.admin"] = new() { "projects|read", "projects|write", "projects|delete", "portfolios|read", "portfolios|write", "resources|read", "resources|write", "users|read", "users|write", "finances|read", "finances|write", "reports|read", "reports|export", "settings|read", "settings|write", "manager|handover" },
-            ["finance.controller"] = new() { "finances|read", "finances|write", "reports|read", "reports|export", "projects|read" },
-            ["resource.manager"] = new() { "resources|read", "resources|write", "projects|read" }
+            ["admin"] = new() { "projects|read", "projects|write", "projects|delete", "portfolios|read", "portfolios|write", "resources|read", "resources|write", "users|read", "users|write", "finances|read", "finances|write", "reports|read", "reports|export", "settings|read", "settings|write", "manager|handover", "Resource|View", "Resource|Assign", "Resource|Allocate", "Resource|Manage", "Resource|ManageRates", "Resource|ViewCostRate", "Resource|EditCostRate", "WorkItem|View", "WorkItem|Create", "WorkItem|Edit", "WorkItem|Delete", "Stakeholders|Read", "Stakeholders|Manage", MeetingPermissions.ViewKey, MeetingPermissions.CreateKey, MeetingPermissions.EditKey, MeetingPermissions.ManageKey, MeetingPermissions.DeleteKey },
+            ["executive"] = new() { "projects|read", "projects|write", "projects|delete", "portfolios|read", "portfolios|write", "resources|read", "resources|write", "users|read", "users|write", "finances|read", "finances|write", "reports|read", "reports|export", "Resource|View", "Resource|Assign", "Resource|Allocate", "Resource|Manage", "Resource|ManageRates", "Resource|ViewCostRate", "Resource|EditCostRate", "Project|View", "Project|Create", "Project|Edit", "Project|Delete", "Stakeholders|Read", "Stakeholders|Manage", "ChangeRequest|View", "ChangeRequest|Manage", "ChangeRequest|Approve", "Handover|View", "Handover|Manage", "Handover|Approve", "Risk|View", "Risk|Create", "Risk|Edit", "Risk|Delete", "Risk|Mitigate", "Planning|View", "Planning|Manage", "Planning|Lifecycle", "Portfolio|View", "Portfolio|Manage", "Program|View", "Program|Manage", "WorkItem|View", "TimeTracking|ViewOwn", "TimeTracking|ManageOwn", "TimeTracking|ViewTeam", "TimeTracking|ManageTeam", MeetingPermissions.ViewKey, DocumentPermissions.View },
+            ["portfolio.manager"] = new() { "portfolios|read", "portfolios|write", "projects|read", "projects|write", "reports|read", "manager|handover", "Project|View", "Project|Edit", "Stakeholders|Read", "Stakeholders|Manage", "ChangeRequest|View", "Handover|View", "Handover|Manage", "Handover|Approve", "Planning|View", "Risk|View", "Portfolio|View", "Portfolio|Manage", "Program|View", "Program|Manage", "WorkItem|View", "WorkItem|Create", "WorkItem|Edit", "TimeTracking|ViewOwn", "TimeTracking|ManageOwn", "TimeTracking|ViewTeam", "TimeTracking|ManageTeam", MeetingPermissions.ViewKey, MeetingPermissions.CreateKey, MeetingPermissions.EditKey, DocumentPermissions.View, DocumentPermissions.Create, DocumentPermissions.Edit },
+            ["project.manager"] = new() { "projects|read", "projects|write", "resources|read", "reports|read", "manager|handover", "Resource|View", "Resource|Allocate", "Project|View", "Project|Create", "Project|Edit", "Project|Delete", "Stakeholders|Read", "Stakeholders|Manage", "ChangeRequest|View", "ChangeRequest|Manage", "Handover|View", "Handover|Manage", "Handover|Approve", "Risk|View", "Risk|Create", "Risk|Edit", "Risk|Delete", "Risk|Mitigate", "Planning|View", "Planning|Manage", "Program|View", "WorkItem|View", "WorkItem|Create", "WorkItem|Edit", "TimeTracking|ViewOwn", "TimeTracking|ManageOwn", "TimeTracking|ViewTeam", "TimeTracking|ManageTeam", MeetingPermissions.ViewKey, MeetingPermissions.CreateKey, MeetingPermissions.EditKey, MeetingPermissions.ManageKey, MeetingPermissions.DeleteKey, DocumentPermissions.View, DocumentPermissions.Create, DocumentPermissions.Edit },
+            ["team.member"] = new() { "projects|read", "Project|View", "Stakeholders|Read", "Risk|View", "Planning|View", "Portfolio|View", "Program|View", "WorkItem|View", "WorkItem|Create", "WorkItem|Edit", "TimeTracking|ViewOwn", "TimeTracking|ManageOwn", MeetingPermissions.ViewKey, DocumentPermissions.View, DocumentPermissions.Create },
+            ["pmo.admin"] = new() { "projects|read", "projects|write", "projects|delete", "portfolios|read", "portfolios|write", "resources|read", "resources|write", "users|read", "users|write", "finances|read", "finances|write", "reports|read", "reports|export", "settings|read", "settings|write", "manager|handover", "Resource|View", "Resource|Assign", "Resource|Allocate", "Resource|Manage", "Resource|ManageRates", "Resource|ViewCostRate", "Resource|EditCostRate", "Project|View", "Project|Create", "Project|Edit", "Project|Delete", "Stakeholders|Read", "Stakeholders|Manage", "ChangeRequest|View", "ChangeRequest|Manage", "ChangeRequest|Approve", "Handover|View", "Handover|Manage", "Handover|Approve", "Risk|View", "Risk|Create", "Risk|Edit", "Risk|Delete", "Risk|Mitigate", "Planning|View", "Planning|Manage", "Planning|Lifecycle", "Portfolio|View", "Portfolio|Manage", "Program|View", "Program|Manage", "WorkItem|View", "WorkItem|Create", "WorkItem|Edit", "WorkItem|Delete", "Workflow|View", "Workflow|Manage", "Workflow|Publish", "TimeTracking|ViewOwn", "TimeTracking|ManageOwn", "TimeTracking|ViewTeam", "TimeTracking|ManageTeam", MeetingPermissions.ViewKey, MeetingPermissions.CreateKey, MeetingPermissions.EditKey, MeetingPermissions.ManageKey, MeetingPermissions.DeleteKey, DocumentPermissions.View, DocumentPermissions.Create, DocumentPermissions.Edit, DocumentPermissions.Archive, DocumentPermissions.TemplateManage },
+            ["finance.controller"] = new() { "finances|read", "finances|write", "reports|read", "reports|export", "projects|read", "Project|View", "Stakeholders|Read", "Portfolio|View", "Program|View", DocumentPermissions.View },
+            ["resource.manager"] = new() { "resources|read", "resources|write", "projects|read", "Resource|View", "Resource|Assign", "Resource|Allocate", "Resource|Manage", "Resource|ManageRates", "Resource|ViewCostRate", "Resource|EditCostRate", "Project|View", "Stakeholders|Read", "Risk|View", "Planning|View", "WorkItem|View", "TimeTracking|ViewOwn", "TimeTracking|ManageOwn", "TimeTracking|ViewTeam", "TimeTracking|ManageTeam", MeetingPermissions.ViewKey, DocumentPermissions.View }
         };
 
         foreach (var role in roles)
@@ -1114,62 +1187,15 @@ public static class SeedDataProvider
 
         await context.SaveChangesAsync();
 
-        // Users.
+        // Users: only the single administrator account. Demo role accounts (executive,
+        // portfolio.manager, project.manager, team.member, pmo.admin, finance.controller,
+        // resource.manager), the named Project Manager accounts and the generated
+        // user1..user80 accounts are intentionally not seeded, so a fresh tenant has no
+        // user accounts beyond the administrator.
         var users = new List<User>
         {
-            new() { Id = AdminUserId, TenantId = TenantId, Email = "admin@nexus.com", PasswordHash = passwordHash, FirstName = "Alex", LastName = "Admin", JobTitle = "System Administrator", IsActive = true, CreatedBy = "System" },
-            new() { Id = ExecutiveUserId, TenantId = TenantId, Email = "executive@nexus.com", PasswordHash = passwordHash, FirstName = "Sarah", LastName = "Executive", JobTitle = "Chief Portfolio Officer", IsActive = true, CreatedBy = "System" },
-            new() { Id = PortfolioManagerUserId, TenantId = TenantId, Email = "portfolio.manager@nexus.com", PasswordHash = passwordHash, FirstName = "James", LastName = "Portfolio", JobTitle = "Portfolio Manager", IsActive = true, CreatedBy = "System" },
-            new() { Id = ProjectManagerUserId, TenantId = TenantId, Email = "project.manager@nexus.com", PasswordHash = passwordHash, FirstName = "Emily", LastName = "Project", JobTitle = "Senior Project Manager", IsActive = true, CreatedBy = "System" },
-            new() { Id = TeamMemberUserId, TenantId = TenantId, Email = "team.member@nexus.com", PasswordHash = passwordHash, FirstName = "Michael", LastName = "Member", JobTitle = "Software Developer", IsActive = true, CreatedBy = "System" },
-            new() { Id = PmoAdminUserId, TenantId = TenantId, Email = "pmo.admin@nexus.com", PasswordHash = passwordHash, FirstName = "Rachel", LastName = "PMO", JobTitle = "PMO Director", IsActive = true, CreatedBy = "System" },
-            new() { Id = FinanceControllerUserId, TenantId = TenantId, Email = "finance.controller@nexus.com", PasswordHash = passwordHash, FirstName = "David", LastName = "Finance", JobTitle = "Financial Controller", IsActive = true, CreatedBy = "System" },
-            new() { Id = ResourceManagerUserId, TenantId = TenantId, Email = "resource.manager@nexus.com", PasswordHash = passwordHash, FirstName = "Lisa", LastName = "Resource", JobTitle = "Resource Manager", IsActive = true, CreatedBy = "System" }
+            new() { Id = AdminUserId, TenantId = TenantId, Email = "admin@nexus.com", PasswordHash = passwordHash, FirstName = "Alex", LastName = "Admin", JobTitle = "System Administrator", IsActive = true, CreatedBy = "System" }
         };
-
-        // Five named, deterministic Project Manager accounts. The ID scheme below is
-        // referenced by the handover seed (previous/pending managers), so it must be
-        // kept stable: 90000001-0000..90000001-0004.
-        var projectManagerUsers = new[]
-        {
-            new { Id = Guid.Parse("90000001-0000-0000-0000-000000000000"), Email = "alex.morgan@nexus.com", FirstName = "Alex", LastName = "Morgan" },
-            new { Id = Guid.Parse("90000001-0001-0000-0000-000000000000"), Email = "priya.rao@nexus.com", FirstName = "Priya", LastName = "Rao" },
-            new { Id = Guid.Parse("90000001-0002-0000-0000-000000000000"), Email = "liam.chen@nexus.com", FirstName = "Liam", LastName = "Chen" },
-            new { Id = Guid.Parse("90000001-0003-0000-0000-000000000000"), Email = "sophia.novak@nexus.com", FirstName = "Sophia", LastName = "Novak" },
-            new { Id = Guid.Parse("90000001-0004-0000-0000-000000000000"), Email = "omar.haddad@nexus.com", FirstName = "Omar", LastName = "Haddad" }
-        };
-
-        foreach (var pm in projectManagerUsers)
-        {
-            users.Add(new User
-            {
-                Id = pm.Id,
-                TenantId = TenantId,
-                Email = pm.Email,
-                PasswordHash = passwordHash,
-                FirstName = pm.FirstName,
-                LastName = pm.LastName,
-                JobTitle = "Project Manager",
-                IsActive = true,
-                CreatedBy = "System"
-            });
-        }
-
-        for (int i = 0; i < 80; i++)
-        {
-            users.Add(new User
-            {
-                Id = Guid.Parse($"80000001-{i:D4}-0000-0000-000000000000"),
-                TenantId = TenantId,
-                Email = $"user{i + 1}@nexus.com",
-                PasswordHash = passwordHash,
-                FirstName = "User",
-                LastName = $"{i + 1}",
-                JobTitle = i % 3 == 0 ? "Senior Developer" : i % 3 == 1 ? "QA Engineer" : "Business Analyst",
-                IsActive = true,
-                CreatedBy = "System"
-            });
-        }
 
         foreach (var user in users)
         {
@@ -1205,23 +1231,12 @@ public static class SeedDataProvider
 
         await context.SaveChangesAsync();
 
-        // User-role assignments (deterministic IDs, idempotent).
+        // User-role assignments (deterministic IDs, idempotent). Only the administrator
+        // gets a seeded role; the other roles stay defined so they can be assigned later.
         var assignments = new List<(Guid id, Guid userId, Guid roleId)>
         {
-            (Guid.Parse("f1000001-0000-0000-0000-000000000001"), AdminUserId, AdminRoleId),
-            (Guid.Parse("f1000002-0000-0000-0000-000000000002"), ExecutiveUserId, ExecutiveRoleId),
-            (Guid.Parse("f1000003-0000-0000-0000-000000000003"), PortfolioManagerUserId, PortfolioManagerRoleId),
-            (Guid.Parse("f1000004-0000-0000-0000-000000000004"), ProjectManagerUserId, ProjectManagerRoleId),
-            (Guid.Parse("f1000005-0000-0000-0000-000000000005"), TeamMemberUserId, TeamMemberRoleId),
-            (Guid.Parse("f1000006-0000-0000-0000-000000000006"), PmoAdminUserId, PmoAdminRoleId),
-            (Guid.Parse("f1000007-0000-0000-0000-000000000007"), FinanceControllerUserId, FinanceControllerRoleId),
-            (Guid.Parse("f1000008-0000-0000-0000-000000000008"), ResourceManagerUserId, ResourceManagerRoleId)
+            (Guid.Parse("f1000001-0000-0000-0000-000000000001"), AdminUserId, AdminRoleId)
         };
-
-        for (int i = 0; i < 5; i++)
-        {
-            assignments.Add((Guid.Parse($"f2000001-{i:D4}-0000-0000-000000000000"), Guid.Parse($"90000001-{i:D4}-0000-0000-000000000000"), ProjectManagerRoleId));
-        }
 
         foreach (var (id, userId, roleId) in assignments)
         {
@@ -1240,24 +1255,59 @@ public static class SeedDataProvider
 
         await context.SaveChangesAsync();
 
-        // Remove legacy generic Project Manager accounts (pm1..pm12) that predate the
-        // named PM seed, so role lookups only return the deterministic named set.
-        // Match the exact legacy "pmNN@nexus.com" shape so accounts such as
-        // pmo.admin@nexus.com (which also starts with "pm") are never removed.
-        var namedPmEmails = new HashSet<string>(projectManagerUsers.Select(p => p.Email));
+        // Purge every account created by an earlier seed revision so demo users cannot
+        // survive a re-seed. Matching is done on the deterministic seed id ranges
+        // (80000001-* generated, 90000001-* named PMs) and the legacy "pmNN@nexus.com"
+        // shape. The administrator is always kept, and the pattern for legacy accounts
+        // is anchored so pmo.admin@nexus.com is never matched.
         var legacyPmEmailPattern = new System.Text.RegularExpressions.Regex(@"^pm\d+@nexus\.com$", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
-        var legacyPmUsers = existingUsers
-            .Where(u => legacyPmEmailPattern.IsMatch(u.Email) && !namedPmEmails.Contains(u.Email))
+
+        var demoRoleUserIds = new[]
+        {
+            ExecutiveUserId, PortfolioManagerUserId, ProjectManagerUserId, TeamMemberUserId,
+            PmoAdminUserId, FinanceControllerUserId, ResourceManagerUserId
+        };
+
+        var namedPmUserIds = Enumerable.Range(0, 5)
+            .Select(i => Guid.Parse($"90000001-{i:D4}-0000-0000-000000000000"))
             .ToList();
 
-        foreach (var legacy in legacyPmUsers)
+        var generatedUserIds = Enumerable.Range(0, 80)
+            .Select(i => Guid.Parse($"80000001-{i:D4}-0000-0000-000000000000"))
+            .ToList();
+
+        var demoUsers = existingUsers
+            .Where(u => u.Id != AdminUserId &&
+                        (demoRoleUserIds.Contains(u.Id) || namedPmUserIds.Contains(u.Id) || generatedUserIds.Contains(u.Id) || legacyPmEmailPattern.IsMatch(u.Email)))
+            .ToList();
+
+        foreach (var demo in demoUsers)
         {
-            var stale = existingAssignments.Where(a => a.UserId == legacy.Id).ToList();
+            var stale = existingAssignments.Where(a => a.UserId == demo.Id).ToList();
             context.UserRoles.RemoveRange(stale);
-            context.Users.Remove(legacy);
+            context.Users.Remove(demo);
         }
 
-        if (legacyPmUsers.Count > 0)
+        if (demoUsers.Count > 0)
             await context.SaveChangesAsync();
+    }
+
+    private static async Task EnsureDocumentCatalogAsync(AppDbContext context)
+    {
+        var definitions = new[]
+        {
+            new { Id = Guid.Parse("d0000201-0000-0000-0000-000000000001"), Code = "GOV", Name = "Governance", Description = "Charters, decisions, and governance records" },
+            new { Id = Guid.Parse("d0000201-0000-0000-0000-000000000002"), Code = "TECH", Name = "Technical", Description = "Architecture, design, and engineering records" },
+            new { Id = Guid.Parse("d0000201-0000-0000-0000-000000000003"), Code = "FIN", Name = "Financial", Description = "Budgets, forecasts, and financial records" },
+            new { Id = Guid.Parse("d0000201-0000-0000-0000-000000000004"), Code = "MEET", Name = "Meeting", Description = "Agendas, minutes, and meeting outputs" },
+            new { Id = Guid.Parse("d0000201-0000-0000-0000-000000000005"), Code = "RISK", Name = "Risk", Description = "Risk and assurance records" }
+        };
+        var existing = await context.DocumentCategories.IgnoreQueryFilters().Where(c => c.TenantId == TenantId).ToListAsync();
+        foreach (var definition in definitions)
+        {
+            if (existing.Any(c => c.Id == definition.Id)) continue;
+            context.DocumentCategories.Add(new DocumentCategory { Id = definition.Id, TenantId = TenantId, Code = definition.Code, Name = definition.Name, Description = definition.Description, SortOrder = Array.IndexOf(definitions, definition), CreatedBy = "System" });
+        }
+        await context.SaveChangesAsync();
     }
 }

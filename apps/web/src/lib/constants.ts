@@ -8,8 +8,6 @@ export const API_BASE_URL = config.apiBaseUrl;
 export const DEFAULT_LOCALE = config.defaultLocale;
 
 // Locale configuration — single source of truth for enabled locales.
-// Arabic is temporarily disabled: keep ONLY "en" here.
-// To re-enable Arabic later, restore: export const SUPPORTED_LOCALES = ["en", "ar"] as const;
 export const SUPPORTED_LOCALES = config.supportedLocales;
 
 // Full set of locales the app is translated to. Used by the middleware to
@@ -33,15 +31,8 @@ export const VIEW_LABELS: Record<string, string> = {
   "team-member": "Team Member",
 };
 export const DEFAULT_PAGE_SIZE = config.defaultPageSize;
+export const PROJECT_DETAIL_PREVIEW_SIZE = Number.isFinite(config.projectDetailPreviewSize)
+  ? Math.min(100, Math.max(1, config.projectDetailPreviewSize))
+  : 5;
 export const DEBOUNCE_DELAY = 300;
 export const QUERY_STALE_TIME = config.queryStaleTime;
-
-
-
-
-export const PROJECT_STATUSES = ["Initiation", "Planning", "InProgress", "OnHold", "Completed", "Cancelled", "Closed"] as const;
-export const PROJECT_PRIORITIES = ["Low", "Medium", "High", "Critical"] as const;
-export const RAG_VALUES = ["Green", "Amber", "Red"] as const;
-export const CONFIDENCE_LEVELS = ["Low", "Medium", "High"] as const;
-export const HANDOVER_STATUSES = ["Pending", "Accepted", "Rejected", "Cancelled"] as const;
-export const RESOURCE_TYPES = ["Employee", "Contractor", "Vendor"] as const;

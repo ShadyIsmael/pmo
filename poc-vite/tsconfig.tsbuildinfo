@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/api/client.ts","./src/hooks/userisks.ts","./src/lib/enums.ts","./src/lib/risk-presentation.ts","./src/lib/utils.ts","./src/pages/riskregister.tsx","./src/types/risk.ts"],"version":"5.9.3"}

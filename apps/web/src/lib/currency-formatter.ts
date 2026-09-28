@@ -154,7 +154,7 @@ function getCurrencySymbol(currencyCode: string, locale: string): string {
   return (0).toLocaleString(
     locale,
     { style: "currency", currency: currencyCode, minimumFractionDigits: 0, maximumFractionDigits: 0 }
-  ).replace(/\d/g, '').trim();
+  ).replace(/[\d\u0660-\u0669\u06F0-\u06F9]/g, '').trim();
 }
 
 /**

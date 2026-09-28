@@ -18,11 +18,10 @@ public class CreateVendorValidator : AbstractValidator<CreateVendorDto>
     public CreateVendorValidator()
     {
         RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
-        RuleFor(x => x.Code).MaximumLength(50);
+        RuleFor(x => x.VendorCategoryId).NotNull().NotEmpty().WithMessage("Vendor category is required");
         RuleFor(x => x.ContactName).MaximumLength(200);
         RuleFor(x => x.ContactEmail).EmailAddress().When(x => !string.IsNullOrEmpty(x.ContactEmail));
         RuleFor(x => x.ContactPhone).MaximumLength(50);
-        RuleFor(x => x.Category).MaximumLength(100);
         RuleFor(x => x.ContractValue).GreaterThanOrEqualTo(0).When(x => x.ContractValue.HasValue);
     }
 }

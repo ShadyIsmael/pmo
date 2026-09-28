@@ -4,11 +4,9 @@ import { useState } from "react";
 import Link from "next/link";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Bot, Send, Sparkles, ArrowRight, FileText, MessageSquare, BarChart3 } from "lucide-react";
+import { Bot, Send, Sparkles, ArrowRight, FileText, BarChart3 } from "lucide-react";
 
 const suggestions = [
   "Create a project plan for a cloud migration initiative",

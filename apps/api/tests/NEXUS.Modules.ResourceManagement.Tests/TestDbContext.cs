@@ -17,4 +17,7 @@ public class TestDbContext : DbContext
     public DbSet<Contract> Contracts => Set<Contract>();
     public DbSet<Department> Departments => Set<Department>();
     public DbSet<ResourceCalendar> ResourceCalendars => Set<ResourceCalendar>();
+    public DbSet<Vendor> Vendors => Set<Vendor>();
+    public DbSet<ResourceCostProfile> ResourceCostProfiles => Set<ResourceCostProfile>();
+    public DbSet<Lookup> Lookups => Set<Lookup>();
 }

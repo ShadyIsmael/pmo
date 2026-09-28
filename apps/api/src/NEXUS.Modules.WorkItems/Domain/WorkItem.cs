@@ -10,6 +10,11 @@ public class WorkItem : BaseEntity
     public string Priority { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
     public string Source { get; set; } = string.Empty;
+    public string? Severity { get; set; }
+    public DateTime? IdentifiedDate { get; set; }
+    public DateTime? TargetResolutionDate { get; set; }
+    public DateTime? ResolvedDate { get; set; }
+    public string? Resolution { get; set; }
     public Guid? ProjectId { get; set; }
     public Guid? AssigneeId { get; set; }
     public Guid? ReporterId { get; set; }
@@ -23,21 +28,26 @@ public class WorkItem : BaseEntity
     public string? Tags { get; set; }
     public string? Labels { get; set; }
     public int SortOrder { get; set; }
+
+    /// <summary>
+    /// Updates the status projection from the Workflow Engine. Callers must not use
+    /// the regular WorkItem update path to change lifecycle status.
+    /// </summary>
+    public void ApplyWorkflowStatusProjection(string statusCode, string userId)
+    {
+        Status = statusCode;
+        UpdatedBy = userId;
+    }
 }
 
 public enum WorkItemType
 {
-    Task, Subtask, Bug, Feature, Epic, Story, Ticket, TestCase
+    Task, Issue, Subtask, Bug, Feature, Epic, Story, Ticket, TestCase
 }
 
 public enum WorkItemPriority
 {
     Critical, High, Medium, Low, Backlog
-}
-
-public enum WorkItemStatus
-{
-    Backlog, ToDo, InProgress, InReview, Done, Cancelled, OnHold
 }
 
 public enum WorkItemSource

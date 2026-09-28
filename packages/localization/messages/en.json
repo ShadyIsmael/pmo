@@ -251,7 +251,41 @@
       "currency": "Currency",
       "progress": "Progress",
       "phase": "Phase"
-    }
+    },
+    "changeRequestTitle": "Change Request",
+    "changeRequestDescription": "Submit a change request for this project. Budget changes require an approved Change Request.",
+    "changeRequestFailed": "Failed to submit change request",
+    "submitChangeRequest": "Submit Change Request",
+    "submitting": "Submitting...",
+    "changeType": "Change Type",
+    "selectChangeType": "Select change type",
+    "changeTypeAdministrative": "Administrative",
+    "changeTypeBaseline": "Baseline",
+    "changeNumber": "CR #",
+    "changeReason": "Reason",
+    "changeReasonPlaceholder": "Describe the reason for this change request",
+    "budgetChangeAmount": "Budget Impact",
+    "budgetChangeAmountPlaceholder": "Enter amount (positive to increase, negative to decrease)",
+    "budgetChangeAmountHint": "Leave blank for non-financial changes. A positive value increases the project budget ceiling; a negative value decreases it.",
+    "justification": "Justification",
+    "justificationPlaceholder": "Provide justification for this change request",
+    "impactDescription": "Impact Description",
+    "impactPlaceholder": "Describe the impact of this change",
+    "proposedBudget": "Proposed Budget",
+    "changeTracker": "Change Requests",
+    "changeTrackerDescription": "All change requests for this project, including budget impact changes.",
+    "changeTrackerError": "Failed to load change requests",
+    "changeTrackerErrorDescription": "Could not retrieve the change request history.",
+    "noChangeRequests": "No change requests",
+    "noChangeRequestsDescription": "Change requests will be recorded here.",
+    "cancelChangeRequest": "Cancel",
+    "cancelChangeRequestTitle": "Cancel Change Request",
+    "cancelChangeRequestDescription": "Are you sure you want to cancel this change request? This action cannot be undone.",
+    "confirmCancel": "Confirm Cancel",
+    "changeRequests": "Change Requests",
+    "openChangeRequests": "Open",
+    "requestChanges": "Request Changes",
+    "changesRequested": "Changes Requested"
   },
   "tasks": {
     "taskStatuses": {
@@ -579,7 +613,8 @@
       "delegate": "Delegate",
       "revoke": "Revoke",
       "requestChanges": "Request Changes",
-      "addComment": "Add Comment"
+      "addComment": "Add Comment",
+      "approvalFailed": "Failed to approve change request"
     },
     "fields": {
       "requestor": "Requestor",

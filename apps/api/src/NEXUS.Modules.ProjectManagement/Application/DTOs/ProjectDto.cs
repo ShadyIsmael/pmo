@@ -29,8 +29,6 @@ public class ProjectDto
     public decimal? ActualCost { get; set; }
     public decimal? PlannedValue { get; set; }
     public decimal? EarnedValue { get; set; }
-    public decimal? CostVariance { get; set; }
-    public decimal? ScheduleVariance { get; set; }
     public decimal Progress { get; set; }
     public string Health { get; set; } = string.Empty;
     public string RagStatus { get; set; } = string.Empty;
@@ -44,6 +42,7 @@ public class ProjectDto
     public string CreatedBy { get; set; } = string.Empty;
     public string? UpdatedBy { get; set; }
     public bool IsDeleted { get; set; }
+    public Guid? WorkingCalendarId { get; set; }
     public IReadOnlyList<ProjectMemberDto> Members { get; set; } = Array.Empty<ProjectMemberDto>();
 }
 
@@ -82,10 +81,11 @@ public class CreateProjectDto
     public DateTime? StartDate { get; set; }
     public DateTime? EndDate { get; set; }
     public decimal? Budget { get; set; }
-    public string Currency { get; set; } = "GBP";
+    public string? Currency { get; set; }
     public string? BusinessCase { get; set; }
     public string? Notes { get; set; }
     public string ConfidenceLevel { get; set; } = "Green";
+    public Guid? WorkingCalendarId { get; set; }
 }
 
 public class UpdateProjectDto
@@ -105,9 +105,13 @@ public class UpdateProjectDto
     public DateTime? EndDate { get; set; }
     public decimal? Budget { get; set; }
     public string? Currency { get; set; }
+    public decimal? PlannedValue { get; set; }
+    public decimal? EarnedValue { get; set; }
+    public decimal? ActualCost { get; set; }
     public string? BusinessCase { get; set; }
     public string? Notes { get; set; }
     public string? ConfidenceLevel { get; set; }
+    public Guid? WorkingCalendarId { get; set; }
     public ProjectHandoverDto? Handover { get; set; }
 }
 
@@ -179,6 +183,7 @@ public class ProjectSummaryDto
     public string Currency { get; set; } = "GBP";
     public Guid? ProjectManagerId { get; set; }
     public string? ProjectManagerName { get; set; }
+    public Guid? WorkingCalendarId { get; set; }
 }
 
 public class ProjectTeamMemberAllocationDto

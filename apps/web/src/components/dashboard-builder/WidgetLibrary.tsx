@@ -10,12 +10,6 @@ import { getAllDefinitions } from "./widget-registry";
 import { usePermissions } from "@/lib/permissions";
 import type { WidgetDefinition, WidgetCategory, PointOfView } from "./dashboard-types";
 import { Search, Plus, Eye } from "lucide-react";
-import "./widgets/kpi-widgets";
-import "./widgets/chart-widgets";
-import "./widgets/list-widgets";
-import "./widgets/integration-widgets";
-import "./widgets/ai-widgets";
-import "./widgets/extra-widgets";
 
 interface WidgetLibraryProps {
   open: boolean;

@@ -32,8 +32,8 @@ public class CreateProjectValidator : AbstractValidator<CreateProjectDto>
             .When(x => !string.IsNullOrWhiteSpace(x.ConfidenceLevel));
 
         RuleFor(x => x.Currency)
-            .NotEmpty().WithMessage("Currency is required")
-            .Length(3).WithMessage("Currency must be a 3-letter code");
+            .Length(3).WithMessage("Currency must be a 3-letter code")
+            .When(x => !string.IsNullOrWhiteSpace(x.Currency));
 
         RuleFor(x => x.StartDate)
             .LessThanOrEqualTo(x => x.EndDate).When(x => x.StartDate.HasValue && x.EndDate.HasValue)

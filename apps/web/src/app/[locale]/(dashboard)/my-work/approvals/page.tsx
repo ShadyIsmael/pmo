@@ -39,6 +39,7 @@ export default function ApprovalsPage() {
   const [managerRejectionReason, setManagerRejectionReason] = useState("");
   const [changeRejectingId, setChangeRejectingId] = useState<string | null>(null);
   const [changeRejectionReason, setChangeRejectionReason] = useState("");
+  const [changeApprovalError, setChangeApprovalError] = useState<string | null>(null);
   const managerAccept = useAcceptManagerHandover("programs");
   const managerAcceptPortfolio = useAcceptManagerHandover("portfolios");
   const managerReject = useRejectManagerHandover("programs");
@@ -61,7 +62,13 @@ export default function ApprovalsPage() {
   };
 
   const handleApproveChange = async (id: string) => {
-    await approveChange.mutateAsync({ id, dto: {} });
+    setChangeApprovalError(null);
+    try {
+      await approveChange.mutateAsync({ id, dto: {} });
+    } catch (err: unknown) {
+      const error = err as { data?: { error?: string; message?: string }; message?: string };
+      setChangeApprovalError(error?.data?.error ?? error?.data?.message ?? error?.message ?? t("approvalFailed"));
+    }
   };
 
   const handleRejectChange = async (id: string) => {
@@ -90,16 +97,16 @@ export default function ApprovalsPage() {
               <p className="text-sm">{t("noPending")}</p>
             </div>
           ) : (
-            <div className="rounded-md border">
+            <div className="nexus-table-surface">
               {pending.map((request) => (
-                <div key={request.id} className="flex items-start gap-4 border-b px-4 py-4 last:border-0">
+                <div key={request.id} className="nexus-table-row flex items-start gap-4 px-4 py-4 last:border-0">
                   <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
                     <ArrowRightLeft className="h-5 w-5" />
                   </div>
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium">{t("handoverRequest")}</span>
-                      <Badge variant="default">{t("statusPending")}</Badge>
+                      <Badge status="Pending">{t("statusPending")}</Badge>
                     </div>
                     <p className="mt-1 text-sm">
                       {request.currentProjectManagerName} → <span className="font-medium">{request.newProjectManagerName}</span>
@@ -134,7 +141,7 @@ export default function ApprovalsPage() {
                 </div>
               ))}
               {managerPending.map((request) => <ManagerApproval key={`${request.entityType}-${request.id}`} request={request} accepting={managerAccept.isPending || managerAcceptPortfolio.isPending} onAccept={() => request.entityType === "Program" ? managerAccept.mutate(request.id) : managerAcceptPortfolio.mutate(request.id)} onReject={() => setManagerRejectingId(request.id)} />)}
-              {changePending.map((request) => <ChangeRequestApproval key={request.id} request={request} approving={approveChange.isPending} rejecting={rejectChange.isPending} onApprove={() => handleApproveChange(request.id)} onReject={() => setChangeRejectingId(request.id)} />)}
+              {changePending.map((request) => <ChangeRequestApproval key={request.id} request={request} approving={approveChange.isPending} rejecting={rejectChange.isPending} onApprove={() => handleApproveChange(request.id)} onReject={() => setChangeRejectingId(request.id)} approvalError={changeApprovalError} />)}
             </div>
           )}
         </TabsContent>
@@ -146,17 +153,16 @@ export default function ApprovalsPage() {
               <p className="text-sm">{t("noHistory")}</p>
             </div>
           ) : (
-            <div className="rounded-md border">
+            <div className="nexus-table-surface">
               {history.map((request) => {
                 // Determine badge variant based on status string from API
-                const badgeVariant = request.status === "Accepted" ? "default" : "destructive";
                 return (
-                  <div key={request.id} className="flex items-start gap-4 border-b px-4 py-3 last:border-0">
+                  <div key={request.id} className="nexus-table-row flex items-start gap-4 px-4 py-3 last:border-0">
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium">{request.projectName}</span>
                         {/* Original rendering for handover status */}
-                        <Badge variant={badgeVariant}>{request.status}</Badge>
+                        <Badge status={request.status}>{request.status}</Badge>
                       </div>
                       <p className="mt-1 text-xs text-muted-foreground">
                         {request.currentProjectManagerName} → {request.newProjectManagerName} · {formatDate(request.requestedAt)}
@@ -243,7 +249,7 @@ export default function ApprovalsPage() {
   );
 }
 
-function ChangeRequestApproval({ request, approving, rejecting, onApprove, onReject }: { request: ProjectChangeRequestDto; approving: boolean; rejecting: boolean; onApprove: () => void; onReject: () => void }) {
+function ChangeRequestApproval({ request, approving, rejecting, onApprove, onReject, approvalError }: { request: ProjectChangeRequestDto; approving: boolean; rejecting: boolean; onApprove: () => void; onReject: () => void; approvalError?: string | null }) {
   const t = useTranslations("approvals");
   const getStatusLabel = useEnumLabel('projectChangeRequestStatus');
   const getTypeLabel = useEnumLabel('projectChangeRequestType');
@@ -257,7 +263,7 @@ function ChangeRequestApproval({ request, approving, rejecting, onApprove, onRej
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium">{t("changeRequest")}</span>
           {/* Using the new helper to get the translated status label */}
-          <Badge variant="default">{getStatusLabel(request.status)}</Badge>
+          <Badge status={request.status}>{getStatusLabel(request.status)}</Badge>
         </div>
         <p className="mt-1 text-xs text-muted-foreground">
           <Link href={`/projects/${request.projectId}`} className="font-medium hover:underline">
@@ -274,6 +280,9 @@ function ChangeRequestApproval({ request, approving, rejecting, onApprove, onRej
         <p className="mt-1 text-xs text-muted-foreground">
           {t("requestedBy")}: {request.requestedByName} · {formatDate(request.requestedAt)}
         </p>
+        {approvalError && (
+          <p className="mt-2 text-xs text-destructive">{approvalError}</p>
+        )}
       </div>
       <div className="flex gap-2">
         <Button size="sm" disabled={approving || rejecting} onClick={onApprove}>
@@ -289,5 +298,5 @@ function ChangeRequestApproval({ request, approving, rejecting, onApprove, onRej
 
 function ManagerApproval({ request, accepting, onAccept, onReject }: { request: ManagerHandoverRequestDto; accepting: boolean; onAccept: () => void; onReject: () => void }) {
   const t = useTranslations("approvals");
-  return <div className="flex items-start gap-4 border-t px-4 py-4"><div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted"><ArrowRightLeft className="h-5 w-5" /></div><div className="flex-1"><div className="flex items-center gap-2"><span className="text-sm font-medium">{request.entityType} {t("handoverRequest")}</span><Badge variant="default">{t("statusPending")}</Badge></div><p className="mt-1 text-sm">{request.currentManagerName} → <span className="font-medium">{request.newManagerName}</span></p><p className="text-xs text-muted-foreground">{request.entityName} · {request.reason}</p><p className="mt-1 text-xs text-muted-foreground">{t("effectiveDate")}: {formatDate(request.effectiveHandoverDate)} · {t("requestedBy")}: {request.requestedByName}</p></div><div className="flex gap-2"><Button size="sm" disabled={accepting} onClick={onAccept}><CheckCircle2 className="mr-1 h-4 w-4" />{t("approve")}</Button><Button size="sm" variant="outline" onClick={onReject}><XCircle className="mr-1 h-4 w-4" />{t("reject")}</Button></div></div>;
+  return <div className="flex items-start gap-4 border-t px-4 py-4"><div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted"><ArrowRightLeft className="h-5 w-5" /></div><div className="flex-1"><div className="flex items-center gap-2"><span className="text-sm font-medium">{request.entityType} {t("handoverRequest")}</span><Badge status="Pending">{t("statusPending")}</Badge></div><p className="mt-1 text-sm">{request.currentManagerName} → <span className="font-medium">{request.newManagerName}</span></p><p className="text-xs text-muted-foreground">{request.entityName} · {request.reason}</p><p className="mt-1 text-xs text-muted-foreground">{t("effectiveDate")}: {formatDate(request.effectiveHandoverDate)} · {t("requestedBy")}: {request.requestedByName}</p></div><div className="flex gap-2"><Button size="sm" disabled={accepting} onClick={onAccept}><CheckCircle2 className="mr-1 h-4 w-4" />{t("approve")}</Button><Button size="sm" variant="outline" onClick={onReject}><XCircle className="mr-1 h-4 w-4" />{t("reject")}</Button></div></div>;
 }

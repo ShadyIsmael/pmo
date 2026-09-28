@@ -15,6 +15,8 @@ public class WorkItemConfiguration : IEntityTypeConfiguration<WorkItem>
         builder.Property(w => w.Priority).HasMaxLength(50).IsRequired();
         builder.Property(w => w.Status).HasMaxLength(50).IsRequired();
         builder.Property(w => w.Source).HasMaxLength(50);
+        builder.Property(w => w.Severity).HasMaxLength(50);
+        builder.Property(w => w.Resolution).HasMaxLength(4000);
         builder.Property(w => w.Tags).HasMaxLength(500);
         builder.Property(w => w.Labels).HasMaxLength(500);
         builder.HasIndex(w => w.ProjectId);

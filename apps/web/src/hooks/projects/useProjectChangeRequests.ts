@@ -24,11 +24,11 @@ function invalidateChangeRequestQueries(queryClient: ReturnType<typeof useQueryC
   queryClient.invalidateQueries({ queryKey: projectKeys.detail(request.projectId), exact: true });
 }
 
-export function useProjectChangeRequests(projectId: string) {
+export function useProjectChangeRequests(projectId: string, enabled = true) {
   return useQuery({
     queryKey: projectChangeRequestKeys.byProject(projectId),
     queryFn: () => getProjectChangeRequests(projectId),
-    enabled: !!projectId,
+    enabled: !!projectId && enabled,
     staleTime: 30_000,
   });
 }

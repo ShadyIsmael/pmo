@@ -99,6 +99,72 @@ public class PlanDependencyServiceTests : IDisposable
         return result.Value!.Id;
     }
 
+    [Fact]
+    public async Task DurationChange_RecalculatesAndPersistsTheDownstreamChain()
+    {
+        var planId = await CreatePlanAsync();
+        var predecessor = await _activityService.CreateAsync(planId, new CreatePlanActivityDto
+        {
+            Code = "SCHEDULE-A",
+            Name = "Schedule A",
+            StartDate = new DateTime(2026, 1, 5, 8, 0, 0),
+            Duration = 1
+        }, _userA.ToString());
+        var successor = await _activityService.CreateAsync(planId, new CreatePlanActivityDto
+        {
+            Code = "SCHEDULE-B",
+            Name = "Schedule B",
+            StartDate = new DateTime(2026, 1, 5, 8, 0, 0),
+            Duration = 1
+        }, _userA.ToString());
+        Assert.True(predecessor.IsSuccess);
+        Assert.True(successor.IsSuccess);
+
+        await CreateDependencyAsync(planId, successor.Value!.Id, predecessor.Value!.Id);
+        var current = (await _activityService.GetByPlanAsync(planId)).Value!.Single(item => item.Id == predecessor.Value.Id);
+        var updated = await _activityService.UpdateAsync(planId, current.Id, new UpdatePlanActivityDto
+        {
+            Code = current.Code,
+            Name = current.Name,
+            Type = current.Type,
+            StartDate = current.StartDate,
+            EndDate = current.EndDate,
+            Duration = 2,
+            SortOrder = current.SortOrder,
+            RowVersion = current.RowVersion
+        }, _userA.ToString());
+        Assert.True(updated.IsSuccess, updated.Error?.Message);
+
+        _context.ChangeTracker.Clear();
+        var reloaded = await _activityService.GetByPlanAsync(planId);
+        var persistedSuccessor = reloaded.Value!.Single(item => item.Id == successor.Value.Id);
+        Assert.Equal(new DateTime(2026, 1, 7, 8, 0, 0), persistedSuccessor.StartDate);
+    }
+
+    [Fact]
+    public async Task ReplacePredecessors_RestoresSoftDeletedEdgeWithoutDuplicateKeyFailure()
+    {
+        var planId = await CreatePlanAsync();
+        var predecessor = await CreateActivityAsync(planId, "RESTORE-A");
+        var successor = await CreateActivityAsync(planId, "RESTORE-B");
+        var dependencyId = await CreateDependencyAsync(planId, successor, predecessor);
+
+        var dependency = await _context.PlanDependencies.SingleAsync(item => item.Id == dependencyId);
+        var deleted = await _dependencyService.DeleteAsync(planId, dependencyId, dependency.RowVersion, _userA.ToString());
+        Assert.True(deleted.IsSuccess, deleted.Error?.Message);
+
+        var restored = await _dependencyService.ReplacePredecessorsAsync(planId, new ReplacePlanPredecessorsDto
+        {
+            ActivityId = successor,
+            Predecessors = [new PlanPredecessorInputDto { PredecessorActivityId = predecessor }],
+        }, _userA.ToString());
+
+        Assert.True(restored.IsSuccess, restored.Error?.Message);
+        Assert.Single(restored.Value!.Dependencies);
+        Assert.Equal(dependencyId, restored.Value.Dependencies[0].Id);
+        Assert.Single(_context.PlanDependencies.IgnoreQueryFilters().Where(item => item.ActivityId == successor && item.PredecessorActivityId == predecessor));
+    }
+
     private async Task<PlanVersion> CreateBaselineVersionAsync(Guid planId, Guid workingVersionId)
     {
         var baseline = new PlanVersion
@@ -401,6 +467,83 @@ public class PlanDependencyServiceTests : IDisposable
 
         Assert.True(result.IsSuccess);
         Assert.Equal(2, result.Value!.Count);
+    }
+
+    [Fact]
+    public async Task ReplacePredecessors_ReconcilesTheCompleteSetInOneOperation()
+    {
+        var planId = await CreatePlanAsync();
+        var a = await CreateActivityAsync(planId, "A1");
+        var b = await CreateActivityAsync(planId, "A2");
+        var c = await CreateActivityAsync(planId, "A3");
+        var successor = await CreateActivityAsync(planId, "A4");
+
+        var first = await _dependencyService.ReplacePredecessorsAsync(planId, new ReplacePlanPredecessorsDto
+        {
+            ActivityId = successor,
+            Predecessors =
+            [
+                new PlanPredecessorInputDto { PredecessorActivityId = a, Type = PlanDependencyType.FinishToStart, Lag = 1 },
+                new PlanPredecessorInputDto { PredecessorActivityId = b, Type = PlanDependencyType.StartToStart, Lag = -2 },
+            ],
+        }, _userA.ToString());
+
+        Assert.True(first.IsSuccess, first.Error?.Message);
+        Assert.Equal(2, first.Value!.Dependencies.Count);
+        Assert.True(first.Value.SchedulingRecalculated);
+        Assert.Equal(2, _context.PlanDependencies.Count());
+
+        var second = await _dependencyService.ReplacePredecessorsAsync(planId, new ReplacePlanPredecessorsDto
+        {
+            ActivityId = successor,
+            Predecessors =
+            [
+                new PlanPredecessorInputDto { PredecessorActivityId = a, Type = PlanDependencyType.FinishToFinish, Lag = 3 },
+                new PlanPredecessorInputDto { PredecessorActivityId = c, Type = PlanDependencyType.StartToFinish },
+            ],
+        }, _userA.ToString());
+
+        Assert.True(second.IsSuccess, second.Error?.Message);
+        Assert.Equal(2, second.Value!.Dependencies.Count);
+        Assert.Contains(second.Value.Dependencies, item => item.PredecessorActivityId == a && item.Type == PlanDependencyType.FinishToFinish && item.Lag == 3);
+        Assert.Contains(second.Value.Dependencies, item => item.PredecessorActivityId == c && item.Type == PlanDependencyType.StartToFinish);
+        Assert.Equal(3, _context.PlanDependencies.IgnoreQueryFilters().Count());
+        Assert.Single(_context.PlanDependencies.IgnoreQueryFilters().Where(item => item.IsDeleted));
+        Assert.Equal(2, _context.Set<AuditEntry>().Count(entry => entry.EntityType == "PlanDependency" && entry.Action == "ReplacePredecessors"));
+    }
+
+    [Fact]
+    public async Task ReplacePredecessors_ValidatesDuplicatesAndCyclesBeforePersisting()
+    {
+        var planId = await CreatePlanAsync();
+        var a = await CreateActivityAsync(planId, "A1");
+        var b = await CreateActivityAsync(planId, "A2");
+        var successor = await CreateActivityAsync(planId, "A3");
+        await CreateDependencyAsync(planId, b, a);
+
+        var duplicate = await _dependencyService.ReplacePredecessorsAsync(planId, new ReplacePlanPredecessorsDto
+        {
+            ActivityId = successor,
+            Predecessors =
+            [
+                new PlanPredecessorInputDto { PredecessorActivityId = a },
+                new PlanPredecessorInputDto { PredecessorActivityId = a },
+            ],
+        }, _userA.ToString());
+
+        Assert.True(duplicate.IsFailure);
+        Assert.Equal("VALIDATION_ERROR", duplicate.Error!.Code, ignoreCase: true);
+        Assert.Contains("duplicate", duplicate.Error.Message, StringComparison.OrdinalIgnoreCase);
+
+        var cycle = await _dependencyService.ReplacePredecessorsAsync(planId, new ReplacePlanPredecessorsDto
+        {
+            ActivityId = a,
+            Predecessors = [new PlanPredecessorInputDto { PredecessorActivityId = b }],
+        }, _userA.ToString());
+
+        Assert.True(cycle.IsFailure);
+        Assert.Equal("VALIDATION_ERROR", cycle.Error!.Code, ignoreCase: true);
+        Assert.Equal(1, _context.PlanDependencies.Count());
     }
 
     [Fact]

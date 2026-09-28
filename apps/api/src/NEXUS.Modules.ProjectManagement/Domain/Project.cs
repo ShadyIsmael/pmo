@@ -15,20 +15,21 @@ public class Project : BaseEntity
     public Guid? SponsorId { get; set; }
     public Guid? PortfolioId { get; set; }
     public Guid? DepartmentId { get; set; }
+    public Guid? WorkingCalendarId { get; set; }
     public DateTime? StartDate { get; set; }
     public DateTime? EndDate { get; set; }
     public DateTime? ActualStartDate { get; set; }
     public DateTime? ActualEndDate { get; set; }
+    /// <summary>Current approved project budget ceiling. Set at project creation; subsequently changed only by an approved Project Change Request. Never derived from Budget Lines.</summary>
     public decimal? Budget { get; set; }
     public string Currency { get; set; } = "GBP";
     public decimal? ActualCost { get; set; }
     public decimal? PlannedValue { get; set; }
     public decimal? EarnedValue { get; set; }
-    public decimal? CostVariance { get; set; }
-    public decimal? ScheduleVariance { get; set; }
     public decimal Progress { get; set; }
-    public string Health { get; set; } = "Green";
-    public string RagStatus { get; set; } = "Green";
+    // Newly created projects have no assessed delivery health until execution/status reporting begins.
+    public string Health { get; set; } = "Unknown";
+    public string RagStatus { get; set; } = "Unknown";
     public string ConfidenceLevel { get; set; } = "Green";
     public string? Phase { get; set; }
     public string? RiskRating { get; set; }

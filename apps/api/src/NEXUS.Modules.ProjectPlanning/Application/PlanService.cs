@@ -6,21 +6,33 @@ using NEXUS.Modules.ProjectPlanning.Application.DTOs;
 using NEXUS.Modules.ProjectPlanning.Application.Mapping;
 using NEXUS.Modules.ProjectPlanning.Domain;
 using NEXUS.SharedKernel;
+using NEXUS.SharedKernel.Helpers;
 
 namespace NEXUS.Modules.ProjectPlanning.Application;
 
 public class PlanService : IPlanService
 {
-    private static readonly Guid DemoTenantId = Guid.Parse("11111111-1111-1111-1111-111111111111");
     private readonly DbContext _context;
     private readonly IAuditService _auditService;
     private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly IPlanWbsService _wbsService;
+    private readonly IPlanActivityService _activityService;
+    private readonly IPlanDependencyService _dependencyService;
 
-    public PlanService(DbContext context, IAuditService auditService, IHttpContextAccessor httpContextAccessor)
+    public PlanService(
+        DbContext context,
+        IAuditService auditService,
+        IHttpContextAccessor httpContextAccessor,
+        IPlanWbsService wbsService,
+        IPlanActivityService activityService,
+        IPlanDependencyService dependencyService)
     {
         _context = context;
         _auditService = auditService;
         _httpContextAccessor = httpContextAccessor;
+        _wbsService = wbsService;
+        _activityService = activityService;
+        _dependencyService = dependencyService;
     }
 
     public async Task<Result<PlanDto>> CreateAsync(CreatePlanDto dto, string userId, CancellationToken cancellationToken = default)
@@ -105,23 +117,67 @@ public class PlanService : IPlanService
         var plans = await _context.Set<Plan>()
             .Where(p => p.ProjectId == projectId)
             .OrderByDescending(p => p.CreatedAt)
+            .AsNoTracking()
+            .Select(plan => new PlanSummaryDto
+            {
+                Id = plan.Id,
+                ProjectId = plan.ProjectId,
+                PlanType = plan.PlanType,
+                Name = plan.Name,
+                Description = plan.Description,
+                Status = plan.Status,
+                VersionCount = plan.Versions.Count(version => !version.IsDeleted),
+                CreatedAt = plan.CreatedAt,
+                UpdatedAt = plan.UpdatedAt,
+            })
             .ToListAsync(cancellationToken);
 
-        var summaries = new List<PlanSummaryDto>(plans.Count);
-        foreach (var plan in plans)
+        return Result<IReadOnlyList<PlanSummaryDto>>.Success(plans);
+    }
+
+    public async Task<Result<PlanningBootstrapDto>> GetBootstrapAsync(Guid projectId, CancellationToken cancellationToken = default)
+    {
+        var plansResult = await GetByProjectAsync(projectId, cancellationToken);
+        if (plansResult.IsFailure) return Result<PlanningBootstrapDto>.Failure(plansResult.Error!);
+
+        var plans = plansResult.Value!;
+        if (plans.Count == 0)
         {
-            var versionCount = await _context.Set<PlanVersion>()
-                .CountAsync(v => v.PlanId == plan.Id, cancellationToken);
-            summaries.Add(plan.ToSummaryDto(versionCount));
+            return Result<PlanningBootstrapDto>.Success(new PlanningBootstrapDto { Plans = plans });
         }
 
-        return Result<IReadOnlyList<PlanSummaryDto>>.Success(summaries);
+        // Preserve the workspace's existing default selection: newest plan first.
+        var selectedPlanId = plans[0].Id;
+        var planResult = await GetByIdAsync(selectedPlanId, cancellationToken);
+        if (planResult.IsFailure) return Result<PlanningBootstrapDto>.Failure(planResult.Error!);
+
+        var workingVersion = planResult.Value!.Versions
+            .FirstOrDefault(version => version.Type == PlanVersionType.Working && version.Status == PlanVersionStatus.Active);
+        if (workingVersion is null) return Result<PlanningBootstrapDto>.Failure(Error.NotFound("No active working version found"));
+
+        var wbsResult = await _wbsService.GetTreeAsync(selectedPlanId, cancellationToken);
+        if (wbsResult.IsFailure) return Result<PlanningBootstrapDto>.Failure(wbsResult.Error!);
+        var activitiesResult = await _activityService.GetByPlanAsync(selectedPlanId, cancellationToken);
+        if (activitiesResult.IsFailure) return Result<PlanningBootstrapDto>.Failure(activitiesResult.Error!);
+        var dependenciesResult = await _dependencyService.GetByPlanAsync(selectedPlanId, cancellationToken);
+        if (dependenciesResult.IsFailure) return Result<PlanningBootstrapDto>.Failure(dependenciesResult.Error!);
+
+        return Result<PlanningBootstrapDto>.Success(new PlanningBootstrapDto
+        {
+            Plans = plans,
+            SelectedPlan = planResult.Value,
+            WorkingVersion = workingVersion,
+            Wbs = wbsResult.Value!,
+            Activities = activitiesResult.Value!,
+            Dependencies = dependenciesResult.Value!,
+        });
     }
 
     public async Task<Result<PlanDto>> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var plan = await _context.Set<Plan>()
             .Include(p => p.Versions)
+            .AsNoTracking()
             .FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
         if (plan is null) return Result<PlanDto>.Failure(Error.NotFound("Plan not found"));
 
@@ -134,6 +190,7 @@ public class PlanService : IPlanService
         if (!plan) return Result<PlanVersionDto>.Failure(Error.NotFound("Plan not found"));
 
         var version = await _context.Set<PlanVersion>()
+            .AsNoTracking()
             .FirstOrDefaultAsync(v => v.PlanId == planId && v.Type == PlanVersionType.Working && v.Status == PlanVersionStatus.Active, cancellationToken);
         if (version is null) return Result<PlanVersionDto>.Failure(Error.NotFound("No active working version found"));
 
@@ -148,11 +205,11 @@ public class PlanService : IPlanService
             return parsed;
         }
 
-        return DemoTenantId;
+        return TenantConstants.DemoTenantId;
     }
 
     private static Guid? TryParseGuid(string value)
     {
-        return Guid.TryParse(value, out var parsed) ? parsed : null;
+        return GuidHelper.TryParse(value);
     }
 }

@@ -5,7 +5,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button";
 import { X } from "lucide-react";
 import type { GlobalFilters } from "./dashboard-types";
-import { mockPortfolios, mockProjects } from "@/lib/mock-data";
+import { useDashboardPortfolios, useDashboardPrograms, useDashboardProjects } from "./dashboard-data";
 
 interface DashboardFiltersProps {
   filters: GlobalFilters;
@@ -15,18 +15,12 @@ interface DashboardFiltersProps {
 
 export function DashboardFilters({ filters: _filters, onFiltersChange, compact }: DashboardFiltersProps) {
   const filters = _filters;
-  const programs = React.useMemo(() => {
-    const progs = new Set(mockProjects.filter((p) => !filters.portfolio || p.portfolio === filters.portfolio).map((p) => p.program));
-    return Array.from(progs);
-  }, [filters.portfolio]);
-
-  const projects = React.useMemo(() => {
-    return mockProjects.filter((p) => {
-      if (filters.portfolio && p.portfolio !== filters.portfolio) return false;
-      if (filters.program && p.program !== filters.program) return false;
-      return true;
-    });
-  }, [filters.portfolio, filters.program]);
+  const portfoliosQuery = useDashboardPortfolios();
+  const programsQuery = useDashboardPrograms();
+  const projectsQuery = useDashboardProjects();
+  const portfolios = portfoliosQuery.data?.items ?? [];
+  const programs = programsQuery.data?.items ?? [];
+  const projects = React.useMemo(() => projectsQuery.data?.items ?? [], [projectsQuery.data?.items]);
 
   const hasFilters = filters.portfolio || filters.program || filters.project;
 
@@ -39,7 +33,7 @@ export function DashboardFilters({ filters: _filters, onFiltersChange, compact }
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="_all" className="text-xs">All Portfolios</SelectItem>
-            {mockPortfolios.map((pf) => (
+            {portfolios.map((pf) => (
               <SelectItem key={pf.id} value={pf.id} className="text-xs">{pf.name}</SelectItem>
             ))}
           </SelectContent>
@@ -51,7 +45,7 @@ export function DashboardFilters({ filters: _filters, onFiltersChange, compact }
           <SelectContent>
             <SelectItem value="_all" className="text-xs">All Programs</SelectItem>
             {programs.map((prog) => (
-              <SelectItem key={prog} value={prog} className="text-xs">{prog}</SelectItem>
+              <SelectItem key={prog.id} value={prog.id} className="text-xs">{prog.name}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -83,7 +77,7 @@ export function DashboardFilters({ filters: _filters, onFiltersChange, compact }
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="_all" className="text-xs">All Portfolios</SelectItem>
-          {mockPortfolios.map((pf) => (
+          {portfolios.map((pf) => (
             <SelectItem key={pf.id} value={pf.id} className="text-xs">{pf.name}</SelectItem>
           ))}
         </SelectContent>
@@ -95,7 +89,7 @@ export function DashboardFilters({ filters: _filters, onFiltersChange, compact }
         <SelectContent>
           <SelectItem value="_all" className="text-xs">All Programs</SelectItem>
           {programs.map((prog) => (
-            <SelectItem key={prog} value={prog} className="text-xs">{prog}</SelectItem>
+            <SelectItem key={prog.id} value={prog.id} className="text-xs">{prog.name}</SelectItem>
           ))}
         </SelectContent>
       </Select>

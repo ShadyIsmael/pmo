@@ -1,12 +1,11 @@
 "use client";
 
-import Link from "next/link";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { BarChart3, FileText, Plus, Download, Clock, ArrowRight } from "lucide-react";
+import { FileText, Plus, Download, Clock, ArrowRight } from "lucide-react";
 
 const reportCategories = [
   { id: "executive", name: "Executive Reports", count: 4, icon: "📊" },
@@ -59,9 +58,9 @@ export default function ReportsPage() {
         </TabsList>
 
         <TabsContent value="recent">
-          <div className="rounded-md border">
+          <div className="nexus-table-surface">
             {recentReports.map((rpt) => (
-              <div key={rpt.id} className="flex items-center gap-4 border-b px-4 py-3 last:border-0 hover:bg-muted/30">
+              <div key={rpt.id} className="nexus-table-row flex items-center gap-4 px-4 py-3 last:border-0">
                 <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted">
                   <FileText className="h-4 w-4" />
                 </div>
@@ -69,7 +68,7 @@ export default function ReportsPage() {
                   <p className="text-sm font-medium">{rpt.name}</p>
                   <p className="text-xs text-muted-foreground">{rpt.type} · Last run: {rpt.lastRun}</p>
                 </div>
-                <Badge variant={rpt.status === "Ready" ? "default" : "secondary"} className="text-[10px]">{rpt.status}</Badge>
+                <Badge status={rpt.status} className="text-[10px]">{rpt.status}</Badge>
                 <Button size="sm" variant="outline"><Download className="mr-1 h-4 w-4" />Download</Button>
                 <Button size="sm" variant="ghost"><ArrowRight className="h-4 w-4" /></Button>
               </div>

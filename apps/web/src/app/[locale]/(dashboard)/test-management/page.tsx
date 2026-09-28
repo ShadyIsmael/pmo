@@ -64,8 +64,8 @@ export default function TestManagementPage() {
         </TabsList>
 
         <TabsContent value="all">
-          <div className="rounded-md border">
-            <div className="grid grid-cols-12 gap-2 border-b bg-muted/50 px-4 py-3 text-xs font-medium text-muted-foreground">
+          <div className="nexus-table-surface">
+            <div className="nexus-table-header grid grid-cols-12 gap-2">
               <div className="col-span-4">Test Case</div>
               <div className="col-span-2">Priority</div>
               <div className="col-span-2">Assigned To</div>
@@ -73,15 +73,15 @@ export default function TestManagementPage() {
               <div className="col-span-2">Status</div>
             </div>
             {mockTestCases.map((tc) => (
-              <div key={tc.id} className="grid grid-cols-12 gap-2 border-b px-4 py-3 text-sm hover:bg-muted/30">
+              <div key={tc.id} className="nexus-table-row grid grid-cols-12 gap-2 px-4 py-3 text-sm">
                 <div className="col-span-4 font-medium">{tc.title}</div>
                 <div className="col-span-2">
-                  <Badge variant={tc.priority === "Critical" ? "destructive" : "secondary"} className="text-[10px]">{tc.priority}</Badge>
+                  <Badge status={tc.priority} className="text-[10px]">{tc.priority}</Badge>
                 </div>
                 <div className="col-span-2 text-muted-foreground">{tc.assignedTo}</div>
                 <div className="col-span-2 text-muted-foreground text-xs">{formatDate(tc.lastRun)}</div>
                 <div className="col-span-2">
-                  <Badge variant={tc.status === "Passed" ? "default" : tc.status === "Failed" ? "destructive" : tc.status === "Blocked" ? "destructive" : "secondary"} className="text-[10px]">{tc.status}</Badge>
+                  <Badge status={tc.status} className="text-[10px]">{tc.status}</Badge>
                 </div>
               </div>
             ))}
@@ -89,37 +89,37 @@ export default function TestManagementPage() {
         </TabsContent>
 
         <TabsContent value="passed">
-          <div className="rounded-md border">
+          <div className="nexus-table-surface">
             {mockTestCases.filter(t => t.status === "Passed").map(tc => (
-              <div key={tc.id} className="flex items-center gap-4 border-b px-4 py-3 text-sm hover:bg-muted/30">
+              <div key={tc.id} className="nexus-table-row flex items-center gap-4 px-4 py-3 text-sm">
                 <CheckCircle2 className="h-4 w-4 text-status-green shrink-0" />
                 <span className="flex-1 font-medium">{tc.title}</span>
                 <span className="text-xs text-muted-foreground">{tc.assignedTo}</span>
-                <Badge variant="default" className="text-[10px]">Passed</Badge>
+                <Badge status="Passed" className="text-[10px]">Passed</Badge>
               </div>
             ))}
           </div>
         </TabsContent>
 
         <TabsContent value="failed">
-          <div className="rounded-md border">
+          <div className="nexus-table-surface">
             {mockTestCases.filter(t => t.status === "Failed").map(tc => (
-              <div key={tc.id} className="flex items-center gap-4 border-b px-4 py-3 text-sm hover:bg-muted/30">
+              <div key={tc.id} className="nexus-table-row flex items-center gap-4 px-4 py-3 text-sm">
                 <XCircle className="h-4 w-4 text-status-red shrink-0" />
                 <span className="flex-1 font-medium">{tc.title}</span>
-                <Badge variant="destructive" className="text-[10px]">Failed</Badge>
+                <Badge status="Failed" className="text-[10px]">Failed</Badge>
               </div>
             ))}
           </div>
         </TabsContent>
 
         <TabsContent value="blocked">
-          <div className="rounded-md border">
+          <div className="nexus-table-surface">
             {mockTestCases.filter(t => t.status === "Blocked").map(tc => (
-              <div key={tc.id} className="flex items-center gap-4 border-b px-4 py-3 text-sm hover:bg-muted/30">
+              <div key={tc.id} className="nexus-table-row flex items-center gap-4 px-4 py-3 text-sm">
                 <AlertCircle className="h-4 w-4 text-status-amber shrink-0" />
                 <span className="flex-1 font-medium">{tc.title}</span>
-                <Badge variant="destructive" className="text-[10px]">Blocked</Badge>
+                <Badge status="Blocked" className="text-[10px]">Blocked</Badge>
               </div>
             ))}
           </div>

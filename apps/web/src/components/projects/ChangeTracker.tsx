@@ -15,27 +15,20 @@ import { useCancelProjectChangeRequest, useProjectChangeRequests } from "@/hooks
 import type { ProjectChangeRequestDto } from "@/lib/api/project-change-requests";
 import { ProjectChangeRequestStatus, ProjectChangeRequestType } from "@/lib/enums";
 import { formatDate } from "@/lib/utils";
+import { getStatusBadgeVariant, type StatusBadgeVariant } from "@/lib/status-presentation";
 import { AlertTriangle, Ban, GitBranch, Loader2, RefreshCw } from "lucide-react";
 import { useEnumLabel } from "@/hooks/useEnumLabels";
 
 interface ChangeTrackerProps {
   projectId: string;
+  currency?: string | null;
 }
 
-function getStatusVariant(status: ProjectChangeRequestStatus): "default" | "destructive" | "secondary" | "outline" {
-  switch (status) {
-    case "Rejected":
-      return "destructive";
-    case "Approved":
-      return "default";
-    case "Cancelled":
-      return "secondary";
-    default:
-      return "outline";
-  }
+function getStatusVariant(status: ProjectChangeRequestStatus): StatusBadgeVariant {
+  return getStatusBadgeVariant(status);
 }
 
-function ChangeTrackerTable({ t, requests, userId, onCancel, getStatusLabel }: { t: ReturnType<typeof useTranslations>; requests: ProjectChangeRequestDto[]; userId: string | undefined; onCancel: (_request: ProjectChangeRequestDto) => void; getStatusLabel: (_status: ProjectChangeRequestStatus) => string }) {
+function ChangeTrackerTable({ t, requests, userId, onCancel, getStatusLabel, currency }: { t: ReturnType<typeof useTranslations>; requests: ProjectChangeRequestDto[]; userId: string | undefined; onCancel: (_request: ProjectChangeRequestDto) => void; getStatusLabel: (_status: ProjectChangeRequestStatus) => string; currency?: string | null }) {
   return (
     <Table>
       <TableHeader>
@@ -43,6 +36,7 @@ function ChangeTrackerTable({ t, requests, userId, onCancel, getStatusLabel }: {
           <TableHead>{t("changeType")}</TableHead>
           <TableHead>{t("changeNumber")}</TableHead>
           <TableHead>{t("changeReason")}</TableHead>
+          <TableHead>{t("budgetChangeAmount")}</TableHead>
           <TableHead>{t("status")}</TableHead>
           <TableHead>{t("requestedBy")}</TableHead>
           <TableHead>{t("requestedAt")}</TableHead>
@@ -59,6 +53,20 @@ function ChangeTrackerTable({ t, requests, userId, onCancel, getStatusLabel }: {
             </TableCell>
             <TableCell>#{request.number}</TableCell>
             <TableCell className="max-w-[260px] truncate">{request.reason}</TableCell>
+            <TableCell>
+              {request.budgetChangeAmount != null ? (
+                <div>
+                  <span className={`font-medium ${request.budgetChangeAmount >= 0 ? "text-green-600" : "text-destructive"}`}>
+                    {request.budgetChangeAmount >= 0 ? "+" : ""}{request.budgetChangeAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                  {request.proposedProjectBudget != null && (
+                    <p className="text-[10px] text-muted-foreground">
+                      {t("proposedBudget")}: {request.proposedProjectBudget.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {currency ?? ""}
+                    </p>
+                  )}
+                </div>
+              ) : "—"}
+            </TableCell>
             <TableCell>
               <Badge variant={getStatusVariant(request.status)} className="w-fit text-[10px]">
                 {getStatusLabel(request.status)}
@@ -83,7 +91,7 @@ function ChangeTrackerTable({ t, requests, userId, onCancel, getStatusLabel }: {
   );
 }
 
-export function ChangeTracker({ projectId }: ChangeTrackerProps) {
+export function ChangeTracker({ projectId, currency }: ChangeTrackerProps) {
   const t = useTranslations("projects");
   const { user } = useAuth();
   const getStatusLabel = useEnumLabel("projectChangeRequestStatus");
@@ -133,7 +141,7 @@ export function ChangeTracker({ projectId }: ChangeTrackerProps) {
       </CardHeader>
       <CardContent>
         {hasRequests ? (
-          <ChangeTrackerTable t={t} requests={requests ?? []} userId={user?.id} onCancel={setCancellingRequest} getStatusLabel={getStatusLabel} />
+          <ChangeTrackerTable t={t} requests={requests ?? []} userId={user?.id} onCancel={setCancellingRequest} getStatusLabel={getStatusLabel} currency={currency} />
         ) : (
           <div className="flex flex-col items-center gap-2 py-12 text-center">
             <GitBranch className="h-10 w-10 text-muted-foreground/40" />

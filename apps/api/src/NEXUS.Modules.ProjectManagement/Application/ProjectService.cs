@@ -8,28 +8,55 @@ using NEXUS.Modules.ProjectManagement.Application.DTOs;
 using NEXUS.Modules.ProjectManagement.Application.Mapping;
 using NEXUS.Modules.ProjectManagement.Domain;
 using NEXUS.Modules.ResourceManagement.Domain;
+using ProgramEntity = NEXUS.Modules.Portfolio.Domain.Program;
 using NEXUS.SharedKernel;
+using NEXUS.SharedKernel.Helpers;
+using NEXUS.SharedKernel.Management;
 using PortfolioEntity = NEXUS.Modules.Portfolio.Domain.Portfolio;
 
 namespace NEXUS.Modules.ProjectManagement.Application;
 
-public class ProjectService : IProjectService
+public class ProjectService : IProjectService, IProjectReferenceLookup
 {
-    private static readonly Guid DemoTenantId = Guid.Parse("11111111-1111-1111-1111-111111111111");
     private readonly DbContext _context;
     private readonly IAuditService _auditService;
     private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly IManagementContextAccessor? _managementContext;
+    private readonly ProjectManagerMembershipSynchronizer _membershipSynchronizer;
 
-    public ProjectService(DbContext context, IAuditService auditService, IHttpContextAccessor httpContextAccessor)
+    public ProjectService(DbContext context, IAuditService auditService, IHttpContextAccessor httpContextAccessor, ProjectManagerMembershipSynchronizer membershipSynchronizer, IManagementContextAccessor? managementContext = null)
     {
         _context = context;
         _auditService = auditService;
         _httpContextAccessor = httpContextAccessor;
+        _membershipSynchronizer = membershipSynchronizer;
+        _managementContext = managementContext;
+    }
+
+    public async Task<ProjectReference?> FindAsync(Guid projectId, CancellationToken cancellationToken = default)
+    {
+        return await InScope(_context.Set<Project>())
+            .Where(project => project.Id == projectId)
+            .Select(project => new ProjectReference(project.Id, project.Name, project.Currency, project.Budget))
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<ProjectReference>> GetFinancialReferencesAsync(CancellationToken cancellationToken = default)
+        => await InScope(_context.Set<Project>().AsNoTracking())
+            .Select(p => new ProjectReference(p.Id, p.Name, p.Currency, p.Budget)).ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyDictionary<Guid, string>> GetNamesAsync(IEnumerable<Guid> projectIds, CancellationToken cancellationToken = default)
+    {
+        var ids = projectIds.Distinct().ToList();
+        if (ids.Count == 0) return new Dictionary<Guid, string>();
+        return await InScope(_context.Set<Project>())
+            .Where(project => ids.Contains(project.Id))
+            .ToDictionaryAsync(project => project.Id, project => project.Name, cancellationToken);
     }
 
     public async Task<Result<ProjectDto>> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var project = await _context.Set<Project>()
+        var project = await InScope(_context.Set<Project>())
             .Include(p => p.Members)
             .Include(p => p.Phases)
             .Include(p => p.Milestones)
@@ -44,7 +71,7 @@ public class ProjectService : IProjectService
 
     public async Task<PagedResult<ProjectSummaryDto>> GetPagedAsync(int page, int pageSize, string? status = null, string? priority = null, Guid? portfolioId = null, CancellationToken cancellationToken = default)
     {
-        var query = _context.Set<Project>().AsQueryable();
+        var query = InScope(_context.Set<Project>());
         if (!string.IsNullOrWhiteSpace(status)) query = query.Where(p => p.Status == status);
         if (!string.IsNullOrWhiteSpace(priority)) query = query.Where(p => p.Priority == priority);
         if (portfolioId.HasValue) query = query.Where(p => p.PortfolioId == portfolioId.Value);
@@ -97,10 +124,24 @@ public class ProjectService : IProjectService
             return Result<ProjectDto>.Failure(Error.Conflict("A project with this code already exists"));
         }
 
+        var hierarchy = await ResolveHierarchyAsync(dto.ProgramId, dto.PortfolioId, dto.Currency, cancellationToken);
+        if (hierarchy.Error is not null) return Result<ProjectDto>.Failure(hierarchy.Error);
         var project = dto.ToEntity(userId);
+        project.Currency = hierarchy.Currency!;
+        project.PortfolioId = hierarchy.PortfolioId;
         project.Code = finalCode;
         project.TenantId = GetCurrentTenantId();
         project.ProjectManagerId = dto.ProjectManagerId.Value;
+
+        // Set default WorkingCalendarId if not provided
+        if (!project.WorkingCalendarId.HasValue)
+        {
+            var defaultCalendar = await _context.Set<WorkingCalendar>()
+                .Where(c => c.TenantId == project.TenantId && c.IsDefault && !c.IsDeleted)
+                .FirstOrDefaultAsync(cancellationToken);
+            project.WorkingCalendarId = defaultCalendar?.Id;
+        }
+
         _context.Set<Project>().Add(project);
 
         _context.Set<ProjectManagerAssignment>().Add(new ProjectManagerAssignment
@@ -139,12 +180,18 @@ public class ProjectService : IProjectService
             return parsed;
         }
 
-        return DemoTenantId;
+        return TenantConstants.DemoTenantId;
+    }
+
+    private IQueryable<Project> InScope(IQueryable<Project> query)
+    {
+        var scope = _managementContext?.Current?.Scope;
+        return scope is null ? query : query.Where(project => scope.ProjectIds.Contains(project.Id));
     }
 
     private static Guid? TryParseGuid(string value)
     {
-        return Guid.TryParse(value, out var parsed) ? parsed : null;
+        return GuidHelper.TryParse(value);
     }
 
     private async Task<string> GenerateUniqueProjectCodeAsync(CancellationToken cancellationToken)
@@ -172,6 +219,14 @@ public class ProjectService : IProjectService
         var project = await _context.Set<Project>().FirstOrDefaultAsync(p => p.Id == id && !p.IsDeleted, cancellationToken);
         if (project is null) return Result<ProjectDto>.Failure(Error.NotFound("Project not found"));
 
+        // Creation is the existing setup/approval boundary; Status is not a draft approval gate.
+        if (dto.Budget.HasValue && dto.Budget != project.Budget)
+            return Result<ProjectDto>.Failure(Error.Validation("Project budget changes require an approved Project Change Request."));
+        var hierarchy = await ResolveHierarchyAsync(dto.ProgramId, dto.PortfolioId, dto.Currency, cancellationToken, project);
+        if (hierarchy.Error is not null) return Result<ProjectDto>.Failure(hierarchy.Error);
+        if (dto.Currency != null && !await IsValidCurrencyAsync(dto.Currency.Trim(), cancellationToken))
+            return Result<ProjectDto>.Failure(Error.Validation("Currency must be an active configured currency"));
+
         var oldValues = System.Text.Json.JsonSerializer.Serialize(project.ToDto());
 
         var managerChanged = dto.ProjectManagerId.HasValue && dto.ProjectManagerId.Value != project.ProjectManagerId;
@@ -179,6 +234,7 @@ public class ProjectService : IProjectService
         if (!managerChanged)
         {
             dto.UpdateEntity(project, userId);
+            if (hierarchy.PortfolioId.HasValue) project.PortfolioId = hierarchy.PortfolioId;
             await _context.SaveChangesAsync(cancellationToken);
 
             await _auditService.LogAsync(new AuditEntry
@@ -205,8 +261,22 @@ public class ProjectService : IProjectService
             return Result<ProjectDto>.Failure(Error.Validation("Cannot hand over the project manager because the project does not have a current project manager"));
         }
 
-        var currentAssignment = await _context.Set<ProjectManagerAssignment>()
-            .FirstOrDefaultAsync(a => a.ProjectId == id && a.IsCurrent && !a.IsDeleted, cancellationToken);
+        var newManager = await _context.Set<User>()
+            .FirstOrDefaultAsync(user => user.Id == newManagerId && !user.IsDeleted, cancellationToken);
+        if (newManager is null)
+            return Result<ProjectDto>.Failure(Error.Validation("The new project manager could not be found"));
+
+        var previousManager = await _context.Set<User>()
+            .FirstOrDefaultAsync(user => user.Id == previousManagerId.Value && !user.IsDeleted, cancellationToken);
+        if (previousManager is null)
+            return Result<ProjectDto>.Failure(Error.Validation("The current project manager could not be found"));
+
+        var currentAssignments = await _context.Set<ProjectManagerAssignment>()
+            .Where(a => a.ProjectId == id && a.IsCurrent && !a.IsDeleted)
+            .OrderByDescending(a => a.StartDate)
+            .ThenByDescending(a => a.CreatedAt)
+            .ToListAsync(cancellationToken);
+        var currentAssignment = currentAssignments.FirstOrDefault();
 
         var handover = dto.Handover ?? new ProjectHandoverDto();
         var handoverDate = handover.HandoverDate?.Date;
@@ -227,13 +297,16 @@ public class ProjectService : IProjectService
             return Result<ProjectDto>.Failure(Error.Validation("Handover date cannot be before the current project manager's start date"));
         }
 
-        dto.UpdateEntity(project, userId);
+        await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
 
-        if (currentAssignment is not null)
+        dto.UpdateEntity(project, userId);
+        if (hierarchy.PortfolioId.HasValue) project.PortfolioId = hierarchy.PortfolioId;
+
+        foreach (var assignment in currentAssignments)
         {
-            currentAssignment.EndDate = handoverDate;
-            currentAssignment.IsCurrent = false;
-            currentAssignment.UpdatedBy = userId;
+            assignment.EndDate = handoverDate;
+            assignment.IsCurrent = false;
+            assignment.UpdatedBy = userId;
         }
 
         _context.Set<ProjectManagerAssignment>().Add(new ProjectManagerAssignment
@@ -250,18 +323,27 @@ public class ProjectService : IProjectService
             CreatedBy = userId
         });
 
+        await _membershipSynchronizer.SynchronizeAsync(project, previousManagerId.Value, newManagerId, handoverDate.Value, userId, cancellationToken);
+
         await _context.SaveChangesAsync(cancellationToken);
+
+        var managerChange = $"Project Manager: {previousManager.FullName} → {newManager.FullName}";
 
         await _auditService.LogAsync(new AuditEntry
         {
             EntityType = "Project",
             EntityId = project.Id,
             Action = "ManagerHandover",
+            TenantId = project.TenantId,
             UserId = TryParseGuid(userId),
+            Changes = managerChange,
             OriginalValues = oldValues,
             NewValues = System.Text.Json.JsonSerializer.Serialize(new
             {
                 dto.ProjectManagerId,
+                ProjectManagerName = newManager.FullName,
+                PreviousProjectManagerId = previousManagerId,
+                PreviousProjectManagerName = previousManager.FullName,
                 HandoverDate = handoverDate,
                 HandoverReason = handoverReason,
                 HandoverNotes = handover.HandoverNotes
@@ -269,6 +351,8 @@ public class ProjectService : IProjectService
             Timestamp = DateTime.UtcNow,
             CreatedBy = userId
         }, cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
 
         var updatedDto = project.ToDto();
         await ResolveProjectNamesAsync(updatedDto, cancellationToken);
@@ -351,6 +435,38 @@ public class ProjectService : IProjectService
             dto.DepartmentName = department?.Name;
         }
     }
+
+    private async Task<(Error? Error, Guid? PortfolioId, string? Currency)> ResolveHierarchyAsync(Guid? programId, Guid? portfolioId, string? requestedCurrency, CancellationToken ct, Project? existing = null)
+    {
+        var tenant = GetCurrentTenantId();
+        programId ??= existing?.ProgramId;
+        portfolioId ??= existing?.PortfolioId;
+        Guid? resolvedPortfolio = portfolioId;
+        if (programId.HasValue)
+        {
+            var program = await _context.Set<ProgramEntity>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == programId.Value && !x.IsDeleted, ct);
+            if (program is null || program.TenantId != tenant) return (Error.Validation("Program must exist in the current tenant"), null, null);
+            if (portfolioId.HasValue && portfolioId.Value != program.PortfolioId) return (Error.Validation("Project Portfolio must match the selected Program Portfolio"), null, null);
+            resolvedPortfolio = program.PortfolioId;
+            var currency = string.IsNullOrWhiteSpace(requestedCurrency) ? (existing?.Currency ?? program.Currency) : requestedCurrency.Trim().ToUpperInvariant();
+            if (!await IsValidCurrencyAsync(currency, ct)) return (Error.Validation("Currency must be an active configured currency"), null, null);
+            return (null, resolvedPortfolio, currency);
+        }
+        if (portfolioId.HasValue)
+        {
+            var portfolio = await _context.Set<PortfolioEntity>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == portfolioId.Value && !x.IsDeleted, ct);
+            if (portfolio is null || portfolio.TenantId != tenant) return (Error.Validation("Portfolio must exist in the current tenant"), null, null);
+            var currency = string.IsNullOrWhiteSpace(requestedCurrency) ? (existing?.Currency ?? portfolio.Currency) : requestedCurrency.Trim().ToUpperInvariant();
+            if (!await IsValidCurrencyAsync(currency, ct)) return (Error.Validation("Currency must be an active configured currency"), null, null);
+            return (null, portfolioId, currency);
+        }
+        if (existing is not null && string.IsNullOrWhiteSpace(requestedCurrency)) return (null, existing.PortfolioId, existing.Currency);
+        var standaloneCurrency = requestedCurrency?.Trim().ToUpperInvariant();
+        if (string.IsNullOrWhiteSpace(standaloneCurrency) || !await IsValidCurrencyAsync(standaloneCurrency, ct)) return (Error.Validation("Currency is required and must be an active configured currency"), null, null);
+        return (null, existing?.PortfolioId, standaloneCurrency);
+    }
+
+    private async Task<bool> IsValidCurrencyAsync(string code, CancellationToken ct) => await _context.Set<Currency>().AnyAsync(x => x.Code == code.ToUpper() && !x.IsDeleted, ct);
 
     public async Task<Result> DeleteAsync(Guid id, string userId, CancellationToken cancellationToken = default)
     {

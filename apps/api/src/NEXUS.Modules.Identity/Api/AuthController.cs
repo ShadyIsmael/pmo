@@ -39,7 +39,8 @@ public class AuthController : ControllerBase
     public async Task<IActionResult> GetCurrentUser(CancellationToken cancellationToken)
     {
         var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-        var result = await _authenticationService.GetCurrentUserAsync(userId, cancellationToken);
+        var tenantId = Guid.TryParse(User.FindFirstValue("tenantId"), out var parsedTenantId) ? parsedTenantId : (Guid?)null;
+        var result = await _authenticationService.GetCurrentUserAsync(userId, tenantId, cancellationToken);
         if (result.IsFailure)
             return NotFound(new ProblemDetails { Title = result.Error?.Message, Status = 404 });
         return Ok(result.Value);

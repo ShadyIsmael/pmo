@@ -1,66 +1,43 @@
 "use client";
 
+import { useState } from "react";
+import { useLocale, useTranslations } from "next-intl";
+import { useRouter } from "next/navigation";
+import { Plus, Search } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { ProgramSheet } from "@/components/portfolios/ProgramSheet";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
-import { Plus, Filter, FolderKanban } from "lucide-react";
-import { formatCurrency } from "@/lib/utils";
-import { mockPortfolios, mockProjects } from "@/lib/mock-data";
-
-const mockPrograms = [
-  { id: "program-1", name: "Core Banking Transformation", portfolio: "portfolio-1", manager: "user-5", progress: 65, projects: 4 },
-  { id: "program-2", name: "Digital Customer Experience", portfolio: "portfolio-2", manager: "user-6", progress: 45, projects: 4 },
-  { id: "program-3", name: "Infrastructure Modernisation", portfolio: "portfolio-3", manager: "user-7", progress: 72, projects: 4 },
-  { id: "program-4", name: "Business Process Optimisation", portfolio: "portfolio-4", manager: "user-8", progress: 50, projects: 4 },
-  { id: "program-5", name: "Digital Lending & Channels", portfolio: "portfolio-2", manager: "user-6", progress: 55, projects: 3 },
-  { id: "program-6", name: "Strategic Data & Analytics", portfolio: "portfolio-1", manager: "user-5", progress: 42, projects: 3 },
-  { id: "program-7", name: "Security & Resilience", portfolio: "portfolio-3", manager: "user-7", progress: 58, projects: 3 },
-];
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useManagedPrograms, type ProgramManagementListItem } from "@/hooks/portfolios/useProgramManagement";
+import { useAuth } from "@/lib/auth";
+import { hasPermission, Permissions } from "@/lib/permissions";
+import { useManagementPerspective } from "@/lib/perspective-context";
 
 export default function ProgramsPage() {
-  return (
-    <div className="space-y-6">
-      <PageHeader
-        title="Programs"
-        description="Programmes within each portfolio"
-        actions={<Button size="sm"><Plus className="mr-2 h-4 w-4" />New Program</Button>}
-      />
+  const t = useTranslations("programManager");
+  const locale = useLocale();
+  const router = useRouter();
+  const { user } = useAuth();
+  const { canMutate } = useManagementPerspective();
+  const [search, setSearch] = useState("");
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const canManage = Boolean(user && hasPermission(user.permissions, Permissions.Program.Manage) && canMutate);
+  const programs = useManagedPrograms(search);
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {mockPrograms.map((program) => {
-          const portfolio = mockPortfolios.find(p => p.id === program.portfolio);
-          return (
-            <Card key={program.id}>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base">{program.name}</CardTitle>
-                  <FolderKanban className="h-4 w-4 text-muted-foreground" />
-                </div>
-                <CardDescription>{portfolio?.name}</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Manager</span>
-                  <span className="font-medium">{program.manager}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Projects</span>
-                  <span className="font-medium">{program.projects}</span>
-                </div>
-                <div className="space-y-1">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Progress</span>
-                    <span>{program.progress}%</span>
-                  </div>
-                  <Progress value={program.progress} className="h-2" />
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
-    </div>
-  );
+  return <div className="space-y-5">
+    <PageHeader title={t("myPrograms")} description={t("myProgramsDescription")} actions={canManage ? <Button size="sm" onClick={() => setSheetOpen(true)}><Plus className="me-2 h-4 w-4" />{t("program")}</Button> : undefined} />
+    <div className="relative max-w-sm"><Search className="pointer-events-none absolute start-3 top-2.5 h-4 w-4 text-muted-foreground" /><Input value={search} onChange={event => setSearch(event.target.value)} placeholder={t("searchPrograms")} className="ps-9" /></div>
+    {programs.isLoading ? <div className="space-y-2"><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /></div> : programs.isError ? <Card><CardContent className="py-10 text-center text-sm text-destructive">{t("loadFailed")}</CardContent></Card> : programs.data?.items.length ? <Card><CardContent className="p-0"><div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>{t("program")}</TableHead><TableHead>{t("health")}</TableHead><TableHead>{t("status")}</TableHead><TableHead>{t("manager")}</TableHead><TableHead>{t("portfolio")}</TableHead><TableHead>{t("start")}</TableHead><TableHead>{t("end")}</TableHead><TableHead>{t("projectCount")}</TableHead><TableHead>{t("attention")}</TableHead><TableHead>{t("schedule")}</TableHead><TableHead>{t("financial")}</TableHead></TableRow></TableHeader><TableBody>{programs.data.items.map(program => <ProgramListRow key={program.id} program={program} t={t} onOpen={() => router.push(`/${locale}/portfolios/programs/${program.id}`)} />)}</TableBody></Table></div></CardContent></Card> : <Card><CardContent className="py-12 text-center text-sm text-muted-foreground">{t("noPrograms")}</CardContent></Card>}
+    <ProgramSheet open={sheetOpen} onOpenChange={setSheetOpen} />
+  </div>;
+}
+
+function ProgramListRow({ program, t, onOpen }: { program: ProgramManagementListItem; t: ReturnType<typeof useTranslations>; onOpen: () => void }) {
+  const date = (value?: string) => value ? new Date(value).toLocaleDateString() : "—";
+  const label = (value: string) => ({ OnTrack: t("onTrack"), Delayed: t("overdue"), Unknown: t("unknown"), Available: t("financial"), Unavailable: t("notAvailable") }[value] ?? value);
+  return <TableRow className="cursor-pointer" onClick={onOpen}><TableCell><button type="button" className="text-start font-medium hover:text-primary" onClick={event => { event.stopPropagation(); onOpen(); }}>{program.name}<span className="ms-1 text-xs text-muted-foreground">{program.code ?? ""}</span></button></TableCell><TableCell><Badge status={program.health}>{program.health ?? t("unknown")}</Badge></TableCell><TableCell><Badge status={program.status}>{program.status ?? t("unknown")}</Badge></TableCell><TableCell>{program.programManagerName ?? "—"}</TableCell><TableCell>{program.portfolioName ?? "—"}</TableCell><TableCell>{date(program.startDate)}</TableCell><TableCell>{date(program.endDate)}</TableCell><TableCell className="text-center">{program.projectCount}</TableCell><TableCell><Badge status={program.projectsRequiringAttention > 0 ? "Amber" : "Green"}>{program.projectsRequiringAttention}</Badge></TableCell><TableCell><Badge status={program.scheduleIndicator}>{label(program.scheduleIndicator)}</Badge></TableCell><TableCell><Badge status={program.financialIndicator}>{label(program.financialIndicator)}</Badge></TableCell></TableRow>;
 }

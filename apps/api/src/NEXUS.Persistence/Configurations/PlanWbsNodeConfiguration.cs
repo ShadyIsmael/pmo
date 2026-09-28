@@ -37,6 +37,20 @@ public class PlanWbsNodeConfiguration : IEntityTypeConfiguration<PlanWbsNode>
             .IsRowVersion()
             .IsConcurrencyToken();
 
+        builder.OwnsOne(e => e.TextFormat, format =>
+        {
+            format.Property(f => f.IsSpecified)
+                .HasColumnName("TextFormatSpecified")
+                .IsRequired();
+            format.Property(f => f.IsBold).HasColumnName("TextFormatBold").IsRequired();
+            format.Property(f => f.IsItalic).HasColumnName("TextFormatItalic").IsRequired();
+            format.Property(f => f.IsUnderline).HasColumnName("TextFormatUnderline").IsRequired();
+            format.Property(f => f.TextColorToken).HasColumnName("TextFormatTextColor");
+            format.Property(f => f.HighlightColorToken).HasColumnName("TextFormatHighlightColor");
+            format.Property(f => f.FontSizeToken).HasColumnName("TextFormatFontSize");
+        });
+        builder.Navigation(e => e.TextFormat).IsRequired(false);
+
         builder.HasIndex(e => new { e.TenantId, e.PlanVersionId, e.ParentWbsId, e.Code })
             .IsUnique()
             .HasDatabaseName("IX_PlanWbsNodes_Tenant_Version_Parent_Code");

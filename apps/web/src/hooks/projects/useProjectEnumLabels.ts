@@ -12,7 +12,7 @@ import {
  * Reused by the project list, project detail, and create/edit sheet.
  */
 export function useProjectEnumLabels() {
-  const t = useTranslations("projects");
+  const t = useTranslations("enums");
 
   const statusLabel = (status?: string | null): string => {
     const key = ProjectStatusHelper.getLabelKey(status);

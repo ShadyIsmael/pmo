@@ -41,7 +41,6 @@ public class ResourceFinderConflictDto
 {
     public Guid AllocationId { get; set; }
     public string ProjectName { get; set; } = string.Empty;
-    public string Role { get; set; } = string.Empty;
     public decimal AllocationPercentage { get; set; }
     public DateTime StartDate { get; set; }
     public DateTime EndDate { get; set; }

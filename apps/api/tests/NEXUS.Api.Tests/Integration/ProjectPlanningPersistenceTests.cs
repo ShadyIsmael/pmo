@@ -386,7 +386,7 @@ public class ProjectPlanningPersistenceTests : IDisposable
     }
 
     [Fact]
-    public async Task SecondApprovedBaseline_SamePlan_FailsUniqueConstraint()
+    public async Task SecondApprovedBaseline_SamePlan_RemainsImmutableHistory()
     {
         SetTenant(_tenantA, _userA);
         var plan = NewPlan();
@@ -417,8 +417,8 @@ public class ProjectPlanningPersistenceTests : IDisposable
         });
         var exception = await Record.ExceptionAsync(() => _context.SaveChangesAsync());
 
-        Assert.NotNull(exception);
-        Assert.IsType<DbUpdateException>(exception);
+        Assert.Null(exception);
+        Assert.Equal(2, await _context.PlanVersions.CountAsync(value => value.PlanId == plan.Id && value.Type == PlanVersionType.Baseline && value.Status == PlanVersionStatus.Approved));
     }
 
     [Fact]

@@ -7,6 +7,7 @@ public interface IAllocationService
 {
     Task<PagedResult<AllocationDto>> GetByResourceAsync(Guid resourceId, int page, int pageSize, CancellationToken cancellationToken = default);
     Task<PagedResult<AllocationDto>> GetByProjectAsync(Guid projectId, int page, int pageSize, CancellationToken cancellationToken = default);
+    Task<ProjectAllocationOverviewDto> GetProjectOverviewAsync(Guid projectId, CancellationToken cancellationToken = default);
     Task<Result<List<AllocationDto>>> GetConflictsAsync(Guid resourceId, DateTime startDate, DateTime endDate, decimal? excludeAllocationId, CancellationToken cancellationToken = default);
     Task<Result<AllocationDto>> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
     Task<Result<AllocationDto>> CreateAsync(CreateAllocationDto dto, string userId, CancellationToken cancellationToken = default);

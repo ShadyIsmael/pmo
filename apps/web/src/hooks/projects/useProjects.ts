@@ -3,8 +3,9 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, type PagedResult, type PaginationParams } from "@/lib/api";
 import { endpoints } from "@/lib/api/endpoints";
-import { projectKeys } from "@/lib/api/projects";
+import { projectApi, projectKeys, type ProjectOverviewDto } from "@/lib/api/projects";
 import { handoverKeys } from "@/lib/api/handover";
+import { allocationKeys } from "@/lib/api/resources";
 import { useAuth } from "@/lib/auth";
 
 export interface ProjectDto {
@@ -33,8 +34,6 @@ export interface ProjectDto {
   actualCost?: number;
   plannedValue?: number;
   earnedValue?: number;
-  costVariance?: number;
-  scheduleVariance?: number;
   progress: number;
   health: string;
   ragStatus: string;
@@ -86,6 +85,74 @@ export interface ProjectMemberDto {
   updatedAt?: string;
 }
 
+export interface ProjectPersonDto {
+  id: string;
+  projectId: string;
+  resourceId?: string | null;
+  name: string;
+  email?: string | null;
+  jobTitle?: string | null;
+  resourceType: string;
+  userId?: string | null;
+  hasSystemUser: boolean;
+  source: string;
+  relationshipType: "ProjectManager" | "TeamMember" | "Sponsor" | "Stakeholder" | "Other" | string;
+  status: string;
+  allocationPercentage?: number | null;
+  hoursPerWeek?: number | null;
+  startDate?: string | null;
+  endDate?: string | null;
+  isBillable?: boolean | null;
+  role?: string | null;
+  interest?: string | null;
+  influence?: string | null;
+  isLegacy: boolean;
+  calendarPolicy?: string;
+  functionalRoles?: ProjectRoleRefDto[];
+  rowVersion: string;
+  createdAt: string;
+  updatedAt?: string | null;
+}
+
+export interface ProjectRoleRefDto {
+  id: string;
+  code: string;
+  nameEn: string;
+  nameAr: string;
+  isPrimary: boolean;
+}
+
+export interface CreateProjectPersonDto {
+  resourceId: string;
+  relationshipType: string;
+  role?: string;
+  allocationPercentage?: number;
+  hoursPerWeek?: number;
+  startDate?: string;
+  endDate?: string;
+  isBillable?: boolean;
+  interest?: string;
+  influence?: string;
+  projectRoleIds?: string[];
+  calendarPolicy?: string;
+}
+
+export interface UpdateProjectPersonDto {
+  source: string;
+  relationshipType?: string;
+  role?: string;
+  allocationPercentage?: number;
+  hoursPerWeek?: number;
+  startDate?: string;
+  endDate?: string;
+  isBillable?: boolean;
+  interest?: string;
+  influence?: string;
+  rowVersion?: string;
+  projectRoleIds?: string[];
+  calendarPolicy?: string;
+}
+
 export interface CreateProjectDto {
   name: string;
   code?: string;
@@ -123,6 +190,9 @@ export interface UpdateProjectDto {
   endDate?: string;
   budget?: number;
   currency?: string;
+  plannedValue?: number;
+  earnedValue?: number;
+  actualCost?: number;
   businessCase?: string;
   notes?: string;
   confidenceLevel?: string;
@@ -297,7 +367,7 @@ export interface SnapshotDeliverableDto {
 
 export interface SnapshotStakeholderDto {
   originalId: string;
-  userId: string;
+  userId?: string;
   name: string;
   email?: string;
   role: string;
@@ -498,8 +568,6 @@ export interface ProjectSnapshotDto extends ProjectSnapshotSummaryDto {
   actualCost?: number;
   plannedValue?: number;
   earnedValue?: number;
-  costVariance?: number;
-  scheduleVariance?: number;
   progress: number;
   health: string;
   ragStatus: string;
@@ -513,11 +581,12 @@ export interface ProjectSnapshotDto extends ProjectSnapshotSummaryDto {
 
 type ProjectPage = PagedResult<ProjectSummaryDto>;
 
-export function useProjects(params: PaginationParams & { status?: string; priority?: string; portfolioId?: string } = {}) {
+export function useProjects(params: PaginationParams & { status?: string; priority?: string; portfolioId?: string } = {}, enabled = true) {
   return useQuery({
     queryKey: projectKeys.list(params),
     queryFn: () => api.get<ProjectPage>(endpoints.projects.root, params),
     staleTime: 30_000,
+    enabled,
   });
 }
 
@@ -530,12 +599,61 @@ export function useProject(id: string) {
   });
 }
 
+export function useProjectOverview(id: string, enabled = true) {
+  return useQuery({
+    queryKey: projectKeys.overview(id),
+    queryFn: () => projectApi.overview<ProjectOverviewDto>(id),
+    enabled: !!id && enabled,
+    staleTime: 30_000,
+  });
+}
+
 export function useProjectTeam(projectId: string) {
   return useQuery({
     queryKey: projectKeys.team(projectId),
     queryFn: () => api.get<ProjectMemberDto[]>(endpoints.projects.team(projectId)),
     enabled: !!projectId,
     staleTime: 30_000,
+  });
+}
+
+export function useProjectPeople(projectId: string, enabled = true) {
+  return useQuery({
+    queryKey: projectKeys.people(projectId),
+    queryFn: () => api.get<ProjectPersonDto[]>(endpoints.projects.people(projectId)),
+    enabled: !!projectId && enabled,
+    staleTime: 30_000,
+  });
+}
+
+function invalidateProjectPeople(queryClient: ReturnType<typeof useQueryClient>, projectId: string) {
+  queryClient.invalidateQueries({ queryKey: projectKeys.people(projectId) });
+  queryClient.invalidateQueries({ queryKey: projectKeys.detail(projectId), exact: true });
+  queryClient.invalidateQueries({ queryKey: projectKeys.team(projectId) });
+  queryClient.invalidateQueries({ queryKey: allocationKeys.all });
+}
+
+export function useAddProjectPerson(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: CreateProjectPersonDto) => api.post<ProjectPersonDto>(endpoints.projects.people(projectId), data),
+    onSuccess: () => invalidateProjectPeople(queryClient, projectId),
+  });
+}
+
+export function useUpdateProjectPerson(projectId: string, personId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: UpdateProjectPersonDto) => api.put<ProjectPersonDto>(`${endpoints.projects.people(projectId)}/${encodeURIComponent(personId)}`, data),
+    onSuccess: () => invalidateProjectPeople(queryClient, projectId),
+  });
+}
+
+export function useRemoveProjectPerson(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ personId, source, rowVersion }: { personId: string; source: string; rowVersion?: string }) => api.post<ProjectPersonDto>(`${endpoints.projects.people(projectId)}/${encodeURIComponent(personId)}/remove`, { source, rowVersion }),
+    onSuccess: () => invalidateProjectPeople(queryClient, projectId),
   });
 }
 
@@ -557,6 +675,8 @@ export function useUpdateProject(id: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: projectKeys.detail(id), exact: true });
       queryClient.invalidateQueries({ queryKey: projectKeys.list() });
+      queryClient.invalidateQueries({ queryKey: projectKeys.people(id) });
+      queryClient.invalidateQueries({ queryKey: projectKeys.team(id) });
     },
   });
 }
@@ -600,7 +720,7 @@ export function useAddTeamMember(projectId: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: projectKeys.detail(projectId), exact: true });
       queryClient.invalidateQueries({ queryKey: projectKeys.team(projectId) });
-      queryClient.invalidateQueries({ queryKey: ["allocations"] });
+      queryClient.invalidateQueries({ queryKey: allocationKeys.all });
     },
   });
 }
@@ -612,7 +732,7 @@ export function useUpdateTeamMember(projectId: string, memberId: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: projectKeys.detail(projectId), exact: true });
       queryClient.invalidateQueries({ queryKey: projectKeys.team(projectId) });
-      queryClient.invalidateQueries({ queryKey: ["allocations"] });
+      queryClient.invalidateQueries({ queryKey: allocationKeys.all });
     },
   });
 }
@@ -624,7 +744,7 @@ export function useRemoveTeamMember(projectId: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: projectKeys.detail(projectId), exact: true });
       queryClient.invalidateQueries({ queryKey: projectKeys.team(projectId) });
-      queryClient.invalidateQueries({ queryKey: ["allocations"] });
+      queryClient.invalidateQueries({ queryKey: allocationKeys.all });
     },
   });
 }
@@ -721,6 +841,8 @@ export function useAcceptHandoverRequest() {
       queryClient.invalidateQueries({ queryKey: handoverKeys.pendingForMe });
       queryClient.invalidateQueries({ queryKey: projectKeys.detail(request.projectId), exact: true });
       queryClient.invalidateQueries({ queryKey: projectKeys.list() });
+      queryClient.invalidateQueries({ queryKey: projectKeys.people(request.projectId) });
+      queryClient.invalidateQueries({ queryKey: projectKeys.team(request.projectId) });
       queryClient.invalidateQueries({ queryKey: projectKeys.history(request.projectId) });
       queryClient.invalidateQueries({ queryKey: projectKeys.snapshots(request.projectId) });
       queryClient.invalidateQueries({ queryKey: projectKeys.handovers(request.projectId) });

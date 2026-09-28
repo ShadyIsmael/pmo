@@ -8,6 +8,8 @@ import { useTranslations } from "next-intl";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { KpiCard } from "@/components/ui/kpi-card";
+import { EmptyState, ErrorState } from "@/components/ui/state-display";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -160,9 +162,9 @@ function UserFormSheet({ open, onOpenChange, user }: UserFormSheetProps) {
         toast({ variant: "success", title: t("createSuccess") });
       }
       onOpenChange(false);
-    } catch (err: any) {
-      const apiData = err?.data as { error?: string; message?: string } | undefined;
-      const message = apiData?.error ?? apiData?.message ?? err?.message;
+    } catch (err: unknown) {
+      const error = err as { data?: { error?: string; message?: string }; message?: string };
+      const message = error?.data?.error ?? error?.data?.message ?? error?.message;
       if (message && /email/i.test(message)) {
         form.setError("email", { type: "server", message });
       } else {
@@ -377,25 +379,10 @@ export default function AdminUsersPage() {
       />
 
       <div className="grid gap-4 md:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{t("totalUsers")}</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent><div className="text-2xl font-bold">{totalUsers}</div></CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">{t("activeUsers")}</CardTitle><Users className="h-4 w-4 text-muted-foreground" /></CardHeader>
-          <CardContent><div className="text-2xl font-bold text-status-green">{activeCount}</div></CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">{t("projectManagers")}</CardTitle><UserRoundCheck className="h-4 w-4 text-muted-foreground" /></CardHeader>
-          <CardContent><div className="text-2xl font-bold">{pmCount}</div></CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">{t("executives")}</CardTitle><Crown className="h-4 w-4 text-muted-foreground" /></CardHeader>
-          <CardContent><div className="text-2xl font-bold">{executiveCount}</div></CardContent>
-        </Card>
+        <KpiCard label={t("totalUsers")} value={totalUsers} icon={Users} semantic="primary" />
+        <KpiCard label={t("activeUsers")} value={activeCount} icon={Users} semantic="green" accent="success" />
+        <KpiCard label={t("projectManagers")} value={pmCount} icon={UserRoundCheck} semantic="indigo" />
+        <KpiCard label={t("executives")} value={executiveCount} icon={Crown} semantic="amber" />
       </div>
 
       <div className="flex items-center gap-2">
@@ -404,7 +391,7 @@ export default function AdminUsersPage() {
       </div>
 
       <div className="rounded-md border">
-        <div className="grid grid-cols-12 gap-2 border-b bg-muted/50 px-4 py-3 text-xs font-medium text-muted-foreground">
+        <div className="nexus-table-header grid grid-cols-12 gap-2">
           <div className="col-span-3">{t("name")}</div>
           <div className="col-span-2">{t("email")}</div>
           <div className="col-span-2">{t("role")}</div>
@@ -421,12 +408,12 @@ export default function AdminUsersPage() {
             <Skeleton className="h-10 w-full" />
           </div>
         ) : isError ? (
-          <div className="p-8 text-center text-sm text-muted-foreground">{t("error")}</div>
+          <ErrorState title={t("error")} />
         ) : users.length === 0 ? (
-          <div className="p-8 text-center text-sm text-muted-foreground">{t("noUsers")}</div>
+          <EmptyState title={t("noUsers")} icon={Users} />
         ) : (
           users.map((user) => (
-            <div key={user.id} className="grid grid-cols-12 gap-2 border-b px-4 py-3 text-sm hover:bg-muted/30">
+            <div key={user.id} className="nexus-table-row grid grid-cols-12 gap-2 px-4 py-3 text-sm">
               <div className="col-span-3 flex items-center gap-2 font-medium">
                 <Avatar className="h-7 w-7"><AvatarFallback className="text-[10px]">{getInitials(user.fullName)}</AvatarFallback></Avatar>
                 {user.fullName}
@@ -445,7 +432,7 @@ export default function AdminUsersPage() {
               </div>
               <div className="col-span-2 text-muted-foreground">{user.jobTitle || "-"}</div>
               <div className="col-span-2">
-                <Badge variant={user.isActive ? "secondary" : "destructive"} className="text-[10px]">
+                <Badge status={user.isActive ? "Active" : "Inactive"} className="text-[10px]">
                   {user.isActive ? t("active") : t("inactive")}
                 </Badge>
               </div>

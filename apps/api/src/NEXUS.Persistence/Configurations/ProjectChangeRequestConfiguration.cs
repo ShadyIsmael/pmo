@@ -28,6 +28,8 @@ public class ProjectChangeRequestConfiguration : IEntityTypeConfiguration<Projec
             .HasMaxLength(2000);
 
         builder.Property(x => x.Impact);
+        builder.Property(x => x.BudgetBeforeChange).HasPrecision(18, 2);
+        builder.Property(x => x.BudgetChangeAmount).HasPrecision(18, 2);
 
         builder.Property(x => x.Attachments)
             .HasMaxLength(4000);

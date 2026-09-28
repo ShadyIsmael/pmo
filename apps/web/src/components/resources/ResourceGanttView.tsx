@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef } from "react";
 import { useTranslations } from "next-intl";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,8 @@ import { ExternalLink, Edit, AlertTriangle, Users } from "lucide-react";
 import { AllocationDto } from "@/hooks/resources/useAllocations";
 import { AllocationDialog } from "./AllocationDialog";
 import { formatDate } from "@/lib/utils";
+import { useAuth } from "@/lib/auth";
+import { hasPermission, Permissions } from "@/lib/permissions";
 
 interface ResourceGroup {
   resourceId: string;
@@ -90,6 +92,9 @@ function hasConflict(group: ResourceGroup): boolean {
 export function ResourceGanttView({ data, isLoading, periodType, startDate, endDate }: ResourceGanttViewProps) {
   const t = useTranslations("resources.gantt");
   const tc = useTranslations("common");
+  const { user } = useAuth();
+  const canAssignResources = !!user && [Permissions.Resources.Assign, Permissions.Resources.Allocate, Permissions.Resources.Manage]
+    .some((permission) => hasPermission(user.permissions, permission));
   const [editingAllocation, setEditingAllocation] = useState<AllocationDto | null>(null);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -103,7 +108,6 @@ export function ResourceGanttView({ data, isLoading, periodType, startDate, endD
   const todayOffset = ((today.getTime() - timelineStart.getTime()) / (1000 * 60 * 60 * 24) / totalDays) * 100;
 
   const monthLabels = useMemo(() => {
-    const labels: { label: string; left: number; width: number }[] = [];
     if (periodType === "quarter") {
       const quarters: Record<string, { left: number; width: number }> = {};
       for (const d of days) {
@@ -235,14 +239,14 @@ export function ResourceGanttView({ data, isLoading, periodType, startDate, endD
                                     <a href={`/projects/${a.projectId}`}><ExternalLink className="mr-1 h-3 w-3" />{t("openProject")}</a>
                                   </Button>
                                 )}
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-7 text-xs"
-                                  onClick={() => { setEditingAllocation(a); setShowEditDialog(true); }}
-                                >
-                                  <Edit className="mr-1 h-3 w-3" />{t("edit")}
-                                </Button>
+                                {canAssignResources && <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 text-xs"
+                                    onClick={() => { setEditingAllocation(a); setShowEditDialog(true); }}
+                                  >
+                                    <Edit className="mr-1 h-3 w-3" />{t("edit")}
+                                  </Button>}
                               </div>
                             </div>
                           </PopoverContent>

@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using NEXUS.Modules.RiskManagement.Domain;
 using NEXUS.Persistence;
 using Xunit;
 
@@ -27,6 +28,37 @@ public class SeedDataProviderTests
         projects.Should().HaveCount(10);
         projects.Select(p => p.Code).Should().OnlyHaveUniqueItems();
         projects.Select(p => p.Id).Should().OnlyHaveUniqueItems();
+    }
+
+    [Fact]
+    public async Task SeedAsync_Rerun_DoesNotDeleteUserCreatedRisks()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        await using var context = new AppDbContext(options);
+
+        await SeedDataProvider.SeedAsync(context);
+        var projectId = Guid.Parse("e0000001-0000-0000-0000-000000000001");
+        var risk = new Risk
+        {
+            TenantId = SeedDataProvider.TenantId,
+            ProjectId = projectId,
+            Title = "User-created risk",
+            Description = "Must survive a development restart",
+            RiskLevel = RiskLevel.Medium,
+            Status = RiskStatus.Identified,
+            CreatedBy = "user"
+        };
+        context.Risks.Add(risk);
+        await context.SaveChangesAsync();
+
+        await SeedDataProvider.SeedAsync(context);
+
+        var persisted = await context.Risks.IgnoreQueryFilters().SingleOrDefaultAsync(item => item.Id == risk.Id);
+        persisted.Should().NotBeNull();
+        persisted!.Title.Should().Be("User-created risk");
     }
 
     [Fact]
@@ -99,6 +131,38 @@ public class SeedDataProviderTests
         var dataWorksId = vendors.First(v => v.Name == "DataWorks Consulting").Id;
         outsourced.Count(r => r.VendorId == cloudNovaId).Should().Be(5);
         outsourced.Count(r => r.VendorId == dataWorksId).Should().Be(5);
+    }
+
+    [Fact]
+    public async Task SeedAsync_Rerun_ShouldSeedVendorCategoriesAndAssignThemToVendors()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        await using var context = new AppDbContext(options);
+
+        await SeedDataProvider.SeedAsync(context);
+        await SeedDataProvider.SeedAsync(context);
+
+        var categories = await context.Lookups
+            .IgnoreQueryFilters()
+            .Where(l => l.TenantId == SeedDataProvider.TenantId && l.Category == NEXUS.SharedKernel.ReferenceDataCategories.VendorCategory && !l.IsDeleted)
+            .ToListAsync();
+
+        categories.Should().HaveCount(5);
+        categories.Select(c => c.Code).Should().OnlyHaveUniqueItems();
+        categories.Should().OnlyContain(c => c.IsActive);
+
+        var vendors = await context.Vendors
+            .IgnoreQueryFilters()
+            .Where(v => v.TenantId == SeedDataProvider.TenantId)
+            .ToListAsync();
+
+        vendors.Should().HaveCount(2);
+        vendors.Should().OnlyContain(v => v.VendorCategoryId.HasValue);
+        var categoryIds = categories.Select(c => c.Id).ToHashSet();
+        vendors.Should().OnlyContain(v => categoryIds.Contains(v.VendorCategoryId!.Value));
     }
 
     [Fact]

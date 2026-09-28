@@ -3,12 +3,11 @@
 import { useState } from "react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Filter, Search, Download, ShieldCheck, UserCheck, AlertTriangle, Info } from "lucide-react";
+import { Filter, Search, Download, AlertTriangle, Info } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 
 const auditLogs = [
@@ -87,8 +86,8 @@ export default function AuditLogPage() {
         </TabsList>
 
         <TabsContent value="all">
-          <div className="rounded-md border">
-            <div className="grid grid-cols-12 gap-2 border-b bg-muted/50 px-4 py-3 text-xs font-medium text-muted-foreground">
+          <div className="nexus-table-surface">
+            <div className="nexus-table-header grid grid-cols-12 gap-2">
               <div className="col-span-2">Timestamp</div>
               <div className="col-span-2">User</div>
               <div className="col-span-2">Action</div>
@@ -99,7 +98,7 @@ export default function AuditLogPage() {
             {filtered.map((log) => {
               const Icon = severityIcons[log.severity] ?? Info;
               return (
-                <div key={log.id} className="grid grid-cols-12 gap-2 border-b px-4 py-3 text-sm hover:bg-muted/30">
+                <div key={log.id} className="nexus-table-row grid grid-cols-12 gap-2 px-4 py-3 text-sm">
                   <div className="col-span-2 text-xs text-muted-foreground">{formatDate(log.timestamp)}</div>
                   <div className="col-span-2 font-medium">{log.user}</div>
                   <div className="col-span-2 text-muted-foreground">{log.action}</div>
@@ -115,32 +114,32 @@ export default function AuditLogPage() {
         </TabsContent>
 
         <TabsContent value="critical">
-          <div className="rounded-md border">
+          <div className="nexus-table-surface">
             {auditLogs.filter(l => l.severity === "critical").map((log) => (
-              <div key={log.id} className="flex items-start gap-4 border-b px-4 py-3 last:border-0 hover:bg-muted/30">
+              <div key={log.id} className="nexus-table-row flex items-start gap-4 px-4 py-3 last:border-0">
                 <AlertTriangle className="mt-1 h-5 w-5 text-status-red shrink-0" />
                 <div className="flex-1">
                   <p className="text-sm font-medium">{log.action}</p>
                   <p className="text-xs text-muted-foreground">{log.resource} · {log.details}</p>
                   <p className="text-xs text-muted-foreground mt-1">{log.user} · {formatDate(log.timestamp)}</p>
                 </div>
-                <Badge variant="destructive" className="text-[10px]">Critical</Badge>
+                <Badge status="Critical" className="text-[10px]">Critical</Badge>
               </div>
             ))}
           </div>
         </TabsContent>
 
         <TabsContent value="warning">
-          <div className="rounded-md border">
+          <div className="nexus-table-surface">
             {auditLogs.filter(l => l.severity === "warning").map((log) => (
-              <div key={log.id} className="flex items-start gap-4 border-b px-4 py-3 last:border-0 hover:bg-muted/30">
+              <div key={log.id} className="nexus-table-row flex items-start gap-4 px-4 py-3 last:border-0">
                 <AlertTriangle className="mt-1 h-5 w-5 text-status-amber shrink-0" />
                 <div className="flex-1">
                   <p className="text-sm font-medium">{log.action}</p>
                   <p className="text-xs text-muted-foreground">{log.resource}</p>
                   <p className="text-xs text-muted-foreground">{log.user} · {formatDate(log.timestamp)}</p>
                 </div>
-                <Badge variant="secondary" className="text-[10px]">Warning</Badge>
+                <Badge status="Warning" className="text-[10px]">Warning</Badge>
               </div>
             ))}
           </div>

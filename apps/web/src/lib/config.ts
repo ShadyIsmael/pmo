@@ -19,8 +19,9 @@ function requireApiUrl(): string {
 export const config = {
   apiBaseUrl: requireApiUrl(),
   defaultPageSize: Number(process.env.NEXT_PUBLIC_DEFAULT_PAGE_SIZE ?? 20),
+  projectDetailPreviewSize: Number(process.env.NEXT_PUBLIC_PROJECT_DETAIL_PREVIEW_SIZE ?? 5),
   defaultLocale: (process.env.NEXT_PUBLIC_DEFAULT_LOCALE ?? "en") as "en",
-  supportedLocales: ["en"] as const,
+  supportedLocales: ["en", "ar"] as const,
   queryStaleTime: Number(process.env.NEXT_PUBLIC_QUERY_STALE_TIME ?? 30_000),
   features: { arabic: process.env.NEXT_PUBLIC_FEATURE_ARABIC === "true" },
 } as const;

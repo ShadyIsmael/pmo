@@ -12,7 +12,7 @@ public class PlanVersion : BaseEntity
     public Guid PlanId { get; set; }
     public Plan? Plan { get; set; }
 
-    /// <summary>1-based, unique per <c>(TenantId, PlanId)</c>.</summary>
+    /// <summary>1-based, unique within a version type for <c>(TenantId, PlanId)</c>.</summary>
     public int VersionNumber { get; set; }
 
     public PlanVersionType Type { get; set; }
@@ -32,4 +32,5 @@ public class PlanVersion : BaseEntity
     public ICollection<PlanDeliverable> Deliverables { get; set; } = new List<PlanDeliverable>();
     public ICollection<PlanDependency> Dependencies { get; set; } = new List<PlanDependency>();
     public ICollection<PlanAssignment> Assignments { get; set; } = new List<PlanAssignment>();
+    public ICollection<PlanCalendar> Calendars { get; set; } = new List<PlanCalendar>();
 }

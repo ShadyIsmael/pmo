@@ -18,6 +18,11 @@ public class Document : BaseEntity
     public string Status { get; set; } = string.Empty;
     public int Version { get; set; } = 1;
     public Guid? OwnerId { get; set; }
+    public Guid? CategoryId { get; set; }
+    public bool IsTemplate { get; set; }
+    public bool IsArchived { get; set; }
+    public Guid? SourceTemplateId { get; set; }
+    public int? SourceTemplateVersionNumber { get; set; }
     public ICollection<DocumentVersion> Versions { get; set; } = new List<DocumentVersion>();
     public ICollection<DocumentReview> Reviews { get; set; } = new List<DocumentReview>();
 }

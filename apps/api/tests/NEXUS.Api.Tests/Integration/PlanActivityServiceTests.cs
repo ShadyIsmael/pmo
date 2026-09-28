@@ -217,6 +217,22 @@ public class PlanActivityServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Create_ActualFinishWithoutStart_ReturnsValidationError()
+    {
+        var planId = await CreatePlanAsync();
+
+        var result = await _activityService.CreateAsync(planId, new CreatePlanActivityDto
+        {
+            Code = "A1",
+            Name = "Executed",
+            ActualFinish = new DateTime(2026, 1, 5)
+        }, _userA.ToString());
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("VALIDATION_ERROR", result.Error!.Code, ignoreCase: true);
+    }
+
+    [Fact]
     public async Task Create_AutoAssignsNextSortOrder()
     {
         var planId = await CreatePlanAsync();
@@ -334,6 +350,69 @@ public class PlanActivityServiceTests : IDisposable
         Assert.Equal("After", result.Value!.Name);
         Assert.Equal(0.5m, result.Value.Progress);
         Assert.Equal(3, result.Value.SortOrder);
+    }
+
+    [Fact]
+    public async Task Update_FinishDateOnly_UsesFinishAnchorWhenStoredTimesDiffer()
+    {
+        var planId = await CreatePlanAsync();
+        var activity = (await _activityService.CreateAsync(planId, new CreatePlanActivityDto
+        {
+            Code = "SCHEDULE-FINISH",
+            Name = "Finish date",
+            StartDate = new DateTime(2026, 1, 5, 8, 0, 0),
+            Duration = 3
+        }, _userA.ToString())).Value!;
+
+        var result = await _activityService.UpdateAsync(planId, activity.Id, new UpdatePlanActivityDto
+        {
+            Code = activity.Code,
+            Name = activity.Name,
+            Type = activity.Type,
+            StartDate = new DateTime(2026, 1, 5),
+            EndDate = new DateTime(2026, 1, 12),
+            Duration = activity.Duration,
+            SchedulingMode = activity.SchedulingMode,
+            ConstraintType = activity.ConstraintType,
+            SortOrder = activity.SortOrder,
+            RowVersion = activity.RowVersion
+        }, _userA.ToString());
+
+        Assert.True(result.IsSuccess, result.Error?.Message);
+        Assert.Equal(new DateTime(2026, 1, 12).Date, result.Value!.EndDate?.Date);
+    }
+
+    [Fact]
+    public async Task Update_ActualDates_PersistWithoutChangingPlannedSchedule()
+    {
+        var planId = await CreatePlanAsync();
+        var activity = (await _activityService.CreateAsync(planId, new CreatePlanActivityDto
+        {
+            Code = "A1",
+            Name = "Executed",
+            StartDate = new DateTime(2026, 1, 1),
+            EndDate = new DateTime(2026, 1, 5),
+            Duration = 5
+        }, _userA.ToString())).Value!;
+
+        var result = await _activityService.UpdateAsync(planId, activity.Id, new UpdatePlanActivityDto
+        {
+            Code = "A1",
+            Name = "Executed",
+            StartDate = new DateTime(2026, 1, 1),
+            EndDate = new DateTime(2026, 1, 5),
+            Duration = 5,
+            ActualStart = new DateTime(2026, 1, 2),
+            ActualFinish = new DateTime(2026, 1, 6),
+            RowVersion = activity.RowVersion
+        }, _userA.ToString());
+
+        Assert.True(result.IsSuccess, result.Error?.Message);
+        Assert.Equal(new DateTime(2026, 1, 2), result.Value!.ActualStart);
+        Assert.Equal(new DateTime(2026, 1, 6), result.Value.ActualFinish);
+        var stored = await _context.PlanActivities.SingleAsync(value => value.Id == activity.Id);
+        Assert.Equal(new DateTime(2026, 1, 1), stored.StartDate);
+        Assert.Equal(new DateTime(2026, 1, 5), stored.EndDate);
     }
 
     [Fact]

@@ -52,6 +52,20 @@ public class PlanSummaryDto
 }
 
 /// <summary>
+/// Focused first-render payload for the Project Plan workspace. It intentionally
+/// contains only the active plan data needed to render the initial grid.
+/// </summary>
+public class PlanningBootstrapDto
+{
+    public IReadOnlyList<PlanSummaryDto> Plans { get; set; } = Array.Empty<PlanSummaryDto>();
+    public PlanDto? SelectedPlan { get; set; }
+    public PlanVersionDto? WorkingVersion { get; set; }
+    public IReadOnlyList<PlanWbsNodeDto> Wbs { get; set; } = Array.Empty<PlanWbsNodeDto>();
+    public IReadOnlyList<PlanActivityDto> Activities { get; set; } = Array.Empty<PlanActivityDto>();
+    public IReadOnlyList<PlanDependencyDto> Dependencies { get; set; } = Array.Empty<PlanDependencyDto>();
+}
+
+/// <summary>
 /// Projection of a single <see cref="PlanVersion"/>.
 /// </summary>
 public class PlanVersionDto
@@ -64,6 +78,8 @@ public class PlanVersionDto
     public string? Name { get; set; }
     public Guid? SourceVersionId { get; set; }
     public Guid? SourceBaselineId { get; set; }
+    public string CreatedBy { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
+    public byte[] RowVersion { get; set; } = Array.Empty<byte>();
 }

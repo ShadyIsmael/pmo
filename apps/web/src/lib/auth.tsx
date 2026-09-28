@@ -16,6 +16,18 @@ interface AuthContextValue {
 
 const AuthContext = React.createContext<AuthContextValue | null>(null);
 
+let sessionBootstrapPromise: Promise<CurrentUser> | null = null;
+
+function bootstrapSession(): Promise<CurrentUser> {
+  if (sessionBootstrapPromise) return sessionBootstrapPromise;
+
+  sessionBootstrapPromise = api.getMe().finally(() => {
+    sessionBootstrapPromise = null;
+  });
+
+  return sessionBootstrapPromise;
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = React.useState<AuthStatus>("loading");
   const [user, setUser] = React.useState<CurrentUser | null>(null);
@@ -30,7 +42,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       try {
-        const me = await api.getMe();
+        const me = await bootstrapSession();
         if (!cancelled) {
           setUser(me);
           setStatus("authenticated");

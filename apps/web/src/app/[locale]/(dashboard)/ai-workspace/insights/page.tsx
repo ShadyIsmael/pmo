@@ -2,10 +2,10 @@
 
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { BarChart3, Lightbulb, TrendingUp, TrendingDown, AlertTriangle, Sparkles } from "lucide-react";
+import { BarChart3, Lightbulb, TrendingUp, AlertTriangle, Sparkles } from "lucide-react";
 
 const insights = [
   { id: "ins-1", title: "Resource Overallocation Detected", description: "Engineering department is overallocated by 120 hours this month. Consider redistributing tasks or adjusting deadlines.", type: "warning", category: "Resources", date: "2026-07-29" },
@@ -89,7 +89,7 @@ export default function AIInsightsPage() {
                         <h3 className="font-medium">{insight.title}</h3>
                         <p className="text-sm text-muted-foreground mt-1">{insight.description}</p>
                       </div>
-                      <Badge variant={insight.type === "warning" ? "destructive" : insight.type === "positive" ? "default" : "secondary"} className="text-[10px] shrink-0">
+                      <Badge status={insight.type === "warning" ? "Warning" : insight.type === "positive" ? "Completed" : "Info"} className="text-[10px] shrink-0">
                         {insight.type}
                       </Badge>
                     </div>

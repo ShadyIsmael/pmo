@@ -16,6 +16,8 @@ public class CreatePlanWbsNodeDto
 
     /// <summary>Optional ordering among siblings. When null, appended after existing siblings.</summary>
     public int? SortOrder { get; set; }
+
+    public PlanTextFormatDto? TextFormat { get; set; }
 }
 
 /// <summary>
@@ -30,6 +32,8 @@ public class UpdatePlanWbsNodeDto
     public Guid? ParentWbsId { get; set; }
 
     public int SortOrder { get; set; }
+
+    public PlanTextFormatDto? TextFormat { get; set; }
 
     /// <summary>The RowVersion observed by the client; enforces optimistic concurrency.</summary>
     public byte[] RowVersion { get; set; } = Array.Empty<byte>();
@@ -49,6 +53,7 @@ public class PlanWbsNodeDto
     public string Name { get; set; } = string.Empty;
     public Guid? ActivityId { get; set; }
     public Guid? DeliverableId { get; set; }
+    public PlanTextFormatDto? TextFormat { get; set; }
     public byte[] RowVersion { get; set; } = Array.Empty<byte>();
     public IReadOnlyList<PlanWbsNodeDto> Children { get; set; } = Array.Empty<PlanWbsNodeDto>();
 }

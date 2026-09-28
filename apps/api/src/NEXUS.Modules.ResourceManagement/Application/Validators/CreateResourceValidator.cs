@@ -14,9 +14,6 @@ public class CreateResourceValidator : AbstractValidator<CreateResourceDto>
         RuleFor(x => x.Status).NotEmpty().MaximumLength(50);
         RuleFor(x => x.EmploymentType).MaximumLength(50);
         RuleFor(x => x.Seniority).MaximumLength(50);
-        RuleFor(x => x.Currency).MaximumLength(10);
-        RuleFor(x => x.CostPerHour).GreaterThanOrEqualTo(0).When(x => x.CostPerHour.HasValue);
-        RuleFor(x => x.BillableRate).GreaterThanOrEqualTo(0).When(x => x.BillableRate.HasValue);
         RuleFor(x => x.UtilizationTarget).InclusiveBetween(0, 100).When(x => x.UtilizationTarget.HasValue);
         RuleForEach(x => x.Skills).ChildRules(s =>
         {
@@ -38,7 +35,5 @@ public class UpdateResourceValidator : AbstractValidator<UpdateResourceDto>
         RuleFor(x => x.Status).MaximumLength(50).When(x => x.Status != null);
         RuleFor(x => x.EmploymentType).MaximumLength(50);
         RuleFor(x => x.Seniority).MaximumLength(50);
-        RuleFor(x => x.CostPerHour).GreaterThanOrEqualTo(0).When(x => x.CostPerHour.HasValue);
-        RuleFor(x => x.BillableRate).GreaterThanOrEqualTo(0).When(x => x.BillableRate.HasValue);
     }
 }

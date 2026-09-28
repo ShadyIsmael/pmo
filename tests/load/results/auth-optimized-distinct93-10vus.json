@@ -1,0 +1,154 @@
+{
+    "metrics": {
+        "data_sent": {
+            "count": 2183,
+            "rate": 142.5195624094502
+        },
+        "http_req_receiving": {
+            "med": 0.3299,
+            "max": 1.7635,
+            "p(90)": 1.1637399999999998,
+            "p(95)": 1.4636199999999993,
+            "p(99)": 1.7035240000000003,
+            "avg": 0.50762,
+            "min": 0
+        },
+        "iteration_duration": {
+            "p(99)": 1175.4228659999997,
+            "avg": 1018.9453706666662,
+            "min": 1000.138,
+            "med": 1000.58715,
+            "max": 1187.2544,
+            "p(90)": 1042.51346,
+            "p(95)": 1145.6233
+        },
+        "login_duration": {
+            "p(90)": 184.22941,
+            "p(95)": 185.514655,
+            "p(99)": 186.542851,
+            "avg": 159.23758,
+            "min": 142.2548,
+            "med": 156.08775,
+            "max": 186.7999
+        },
+        "vus": {
+            "value": 10,
+            "min": 10,
+            "max": 10
+        },
+        "iterations": {
+            "count": 150,
+            "rate": 9.792915419797312
+        },
+        "http_req_blocked": {
+            "p(90)": 0,
+            "p(95)": 0,
+            "p(99)": 0,
+            "avg": 0,
+            "min": 0,
+            "med": 0,
+            "max": 0
+        },
+        "vus_max": {
+            "max": 10,
+            "value": 10,
+            "min": 10
+        },
+        "http_req_duration": {
+            "avg": 159.23758,
+            "min": 142.2548,
+            "med": 156.08775,
+            "max": 186.7999,
+            "p(90)": 184.22941,
+            "p(95)": 185.514655,
+            "p(99)": 186.542851
+        },
+        "http_req_duration{expected_response:true}": {
+            "min": 142.2548,
+            "med": 156.08775,
+            "max": 186.7999,
+            "p(90)": 184.22941,
+            "p(95)": 185.514655,
+            "p(99)": 186.542851,
+            "avg": 159.23758
+        },
+        "http_req_waiting": {
+            "avg": 158.72995999999998,
+            "min": 142.2548,
+            "med": 154.65744999999998,
+            "max": 185.9886,
+            "p(90)": 184.14828,
+            "p(95)": 185.06844,
+            "p(99)": 185.804568
+        },
+        "http_req_connecting": {
+            "min": 0,
+            "med": 0,
+            "max": 0,
+            "p(90)": 0,
+            "p(95)": 0,
+            "p(99)": 0,
+            "avg": 0
+        },
+        "http_req_sending": {
+            "avg": 0,
+            "min": 0,
+            "med": 0,
+            "max": 0,
+            "p(90)": 0,
+            "p(95)": 0,
+            "p(99)": 0
+        },
+        "http_req_tls_handshaking": {
+            "avg": 0,
+            "min": 0,
+            "med": 0,
+            "max": 0,
+            "p(90)": 0,
+            "p(95)": 0,
+            "p(99)": 0
+        },
+        "http_req_failed": {
+            "fails": 10,
+            "passes": 0,
+            "value": 0
+        },
+        "login_requests": {
+            "count": 10,
+            "rate": 0.6528610279864875
+        },
+        "login_failure_rate": {
+            "passes": 0,
+            "fails": 10,
+            "value": 0
+        },
+        "checks": {
+            "passes": 10,
+            "fails": 0,
+            "value": 1
+        },
+        "data_received": {
+            "count": 18019,
+            "rate": 1176.3902863288517
+        },
+        "http_reqs": {
+            "count": 10,
+            "rate": 0.6528610279864875
+        }
+    },
+    "root_group": {
+        "path": "",
+        "id": "d41d8cd98f00b204e9800998ecf8427e",
+        "groups": {},
+        "checks": {
+                "login returned 2xx": {
+                    "path": "::login returned 2xx",
+                    "id": "f8e5036545189332a514bba7d90680dd",
+                    "passes": 10,
+                    "fails": 0,
+                    "name": "login returned 2xx"
+                }
+            },
+        "name": ""
+    }
+}

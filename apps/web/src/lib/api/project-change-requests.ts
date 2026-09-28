@@ -8,6 +8,7 @@ export interface CreateProjectChangeRequestDto {
   reason: string;
   justification?: string | null;
   impact?: string | null;
+  budgetChangeAmount?: number | null;
   attachments?: string | null;
 }
 
@@ -20,6 +21,9 @@ export interface ProjectChangeRequestDto {
   reason: string;
   justification?: string | null;
   impact?: string | null;
+  budgetBeforeChange?: number | null;
+  budgetChangeAmount?: number | null;
+  proposedProjectBudget?: number | null;
   attachments?: string | null;
   status: ProjectChangeRequestStatus;
   requestedBy: string;

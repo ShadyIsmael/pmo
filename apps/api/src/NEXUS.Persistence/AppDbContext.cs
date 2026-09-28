@@ -65,8 +65,10 @@ public class AppDbContext : DbContext
     public DbSet<ProjectSnapshot> ProjectSnapshots => Set<ProjectSnapshot>();
     public DbSet<ProjectHandoverRequest> ProjectHandoverRequests => Set<ProjectHandoverRequest>();
     public DbSet<ProjectMember> ProjectMembers => Set<ProjectMember>();
+    public DbSet<ProjectMemberRole> ProjectMemberRoles => Set<ProjectMemberRole>();
     public DbSet<ProjectPhase> ProjectPhases => Set<ProjectPhase>();
     public DbSet<ProjectStakeholder> ProjectStakeholders => Set<ProjectStakeholder>();
+    public DbSet<StakeholderInvitation> StakeholderInvitations => Set<StakeholderInvitation>();
     public DbSet<WorkBreakdownStructure> WorkBreakdownStructures => Set<WorkBreakdownStructure>();
     public DbSet<ProjectSchedule> ProjectSchedules => Set<ProjectSchedule>();
     public DbSet<Milestone> Milestones => Set<Milestone>();
@@ -75,6 +77,9 @@ public class AppDbContext : DbContext
     public DbSet<global::NEXUS.Modules.ProjectManagement.Domain.Entities.ProjectPlanDraft> ProjectPlanDrafts => Set<global::NEXUS.Modules.ProjectManagement.Domain.Entities.ProjectPlanDraft>();
     public DbSet<Deliverable> Deliverables => Set<Deliverable>();
     public DbSet<ProjectStatusReport> ProjectStatusReports => Set<ProjectStatusReport>();
+    public DbSet<ProjectStatusReportRiskSnapshot> ProjectStatusReportRiskSnapshots => Set<ProjectStatusReportRiskSnapshot>();
+    public DbSet<ProjectStatusReportIssueSnapshot> ProjectStatusReportIssueSnapshots => Set<ProjectStatusReportIssueSnapshot>();
+    public DbSet<ProjectStatusReportChangeRequestSnapshot> ProjectStatusReportChangeRequestSnapshots => Set<ProjectStatusReportChangeRequestSnapshot>();
     public DbSet<ProjectChangeRequest> ProjectChangeRequests => Set<ProjectChangeRequest>();
 
     public DbSet<Plan> Plans => Set<Plan>();
@@ -84,9 +89,16 @@ public class AppDbContext : DbContext
     public DbSet<PlanDeliverable> PlanDeliverables => Set<PlanDeliverable>();
     public DbSet<PlanDependency> PlanDependencies => Set<PlanDependency>();
     public DbSet<PlanAssignment> PlanAssignments => Set<PlanAssignment>();
+    public DbSet<CalendarTemplate> CalendarTemplates => Set<CalendarTemplate>();
+    public DbSet<PlanCalendar> PlanCalendars => Set<PlanCalendar>();
+    public DbSet<CalendarDayRule> CalendarDayRules => Set<CalendarDayRule>();
+    public DbSet<CalendarHoliday> CalendarHolidays => Set<CalendarHoliday>();
+    public DbSet<PlanningTablePreference> PlanningTablePreferences => Set<PlanningTablePreference>();
 
     public DbSet<WorkItem> WorkItems => Set<WorkItem>();
     public DbSet<WorkItemAssignment> WorkItemAssignments => Set<WorkItemAssignment>();
+    public DbSet<WorkItemComment> WorkItemComments => Set<WorkItemComment>();
+    public DbSet<WorkItemAttachment> WorkItemAttachments => Set<WorkItemAttachment>();
 
     public DbSet<Resource> Resources => Set<Resource>();
     public DbSet<ResourceSkill> ResourceSkills => Set<ResourceSkill>();
@@ -97,8 +109,13 @@ public class AppDbContext : DbContext
     public DbSet<Contract> Contracts => Set<Contract>();
     public DbSet<ResourceCalendar> ResourceCalendars => Set<ResourceCalendar>();
     public DbSet<Vendor> Vendors => Set<Vendor>();
+    public DbSet<ResourceCostProfile> ResourceCostProfiles => Set<ResourceCostProfile>();
+    public DbSet<TimeEntry> TimeEntries => Set<TimeEntry>();
+    public DbSet<TimerSession> TimerSessions => Set<TimerSession>();
+    public DbSet<TimerSegment> TimerSegments => Set<TimerSegment>();
 
     public DbSet<Budget> Budgets => Set<Budget>();
+    public DbSet<BudgetRevision> BudgetRevisions => Set<BudgetRevision>();
     public DbSet<CostEntry> CostEntries => Set<CostEntry>();
     public DbSet<CostCategory> CostCategories => Set<CostCategory>();
     public DbSet<CostApproval> CostApprovals => Set<CostApproval>();
@@ -106,6 +123,10 @@ public class AppDbContext : DbContext
     public DbSet<PurchaseCommitment> PurchaseCommitments => Set<PurchaseCommitment>();
 
     public DbSet<Risk> Risks => Set<Risk>();
+    public DbSet<RiskAction> RiskActions => Set<RiskAction>();
+    public DbSet<RiskActionUpdate> RiskActionUpdates => Set<RiskActionUpdate>();
+    public DbSet<RiskImpactAssessment> RiskImpactAssessments => Set<RiskImpactAssessment>();
+    public DbSet<RiskImpactAssessmentType> RiskImpactAssessmentTypes => Set<RiskImpactAssessmentType>();
     public DbSet<RiskCategory> RiskCategories => Set<RiskCategory>();
     public DbSet<RiskMitigation> RiskMitigations => Set<RiskMitigation>();
     public DbSet<RiskContingency> RiskContingencies => Set<RiskContingency>();
@@ -118,16 +139,21 @@ public class AppDbContext : DbContext
     public DbSet<MeetingAgenda> MeetingAgendas => Set<MeetingAgenda>();
     public DbSet<MeetingParticipant> MeetingParticipants => Set<MeetingParticipant>();
     public DbSet<MeetingMinutes> MeetingMinutes => Set<MeetingMinutes>();
+    public DbSet<MeetingMinutesComment> MeetingMinutesComments => Set<MeetingMinutesComment>();
+    public DbSet<MeetingMinutesChecklistItem> MeetingMinutesChecklistItems => Set<MeetingMinutesChecklistItem>();
+    public DbSet<MeetingMinutesAttachment> MeetingMinutesAttachments => Set<MeetingMinutesAttachment>();
+    public DbSet<MeetingReminderDispatch> MeetingReminderDispatches => Set<MeetingReminderDispatch>();
+    public DbSet<MeetingMinutesWorkItemLink> MeetingMinutesWorkItemLinks => Set<MeetingMinutesWorkItemLink>();
     public DbSet<MeetingAction> MeetingActions => Set<MeetingAction>();
 
-    public DbSet<WorkflowTemplate> WorkflowTemplates => Set<WorkflowTemplate>();
-    public DbSet<WorkflowVersion> WorkflowVersions => Set<WorkflowVersion>();
-    public DbSet<WorkflowInstance> WorkflowInstances => Set<WorkflowInstance>();
+    public DbSet<WorkflowDefinition> WorkflowDefinitions => Set<WorkflowDefinition>();
+    public DbSet<WorkflowDefinitionVersion> WorkflowDefinitionVersions => Set<WorkflowDefinitionVersion>();
     public DbSet<WorkflowState> WorkflowStates => Set<WorkflowState>();
     public DbSet<WorkflowTransition> WorkflowTransitions => Set<WorkflowTransition>();
-    public DbSet<WorkflowCondition> WorkflowConditions => Set<WorkflowCondition>();
-    public DbSet<SLA> SLAs => Set<SLA>();
-    public DbSet<Escalation> Escalations => Set<Escalation>();
+    public DbSet<WorkflowTransitionGuard> WorkflowTransitionGuards => Set<WorkflowTransitionGuard>();
+    public DbSet<WorkflowTransitionAction> WorkflowTransitionActions => Set<WorkflowTransitionAction>();
+    public DbSet<WorkflowInstance> WorkflowInstances => Set<WorkflowInstance>();
+    public DbSet<WorkflowTransitionHistory> WorkflowTransitionHistories => Set<WorkflowTransitionHistory>();
 
     public DbSet<ApprovalRequest> ApprovalRequests => Set<ApprovalRequest>();
     public DbSet<ApprovalAction> ApprovalActions => Set<ApprovalAction>();
@@ -166,6 +192,8 @@ public class AppDbContext : DbContext
     {
         base.OnModelCreating(modelBuilder);
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
+        modelBuilder.Entity<Document>().HasIndex(document => document.CategoryId);
+        modelBuilder.Entity<Document>().HasIndex(document => document.SourceTemplateId);
 
         // SQLite has no rowversion type: a byte[] concurrency token configured with
         // IsRowVersion() is store-generated and SQLite never fills it, so inserts would
@@ -185,8 +213,13 @@ public class AppDbContext : DbContext
 
         foreach (var entityType in modelBuilder.Model.GetEntityTypes())
         {
-            var isSoftDeletable = typeof(ISoftDeletable).IsAssignableFrom(entityType.ClrType);
-            var isTenantEntity = typeof(ITenantEntity).IsAssignableFrom(entityType.ClrType);
+            // EF Core permits a query filter only on the root of an inheritance
+            // hierarchy. Filters defined on the root are automatically applied to
+            // derived queries, so registering them again on a derived type (for
+            // example CalendarTemplate/PlanCalendar) makes model construction fail.
+            var isHierarchyRoot = entityType.BaseType is null;
+            var isSoftDeletable = isHierarchyRoot && typeof(ISoftDeletable).IsAssignableFrom(entityType.ClrType);
+            var isTenantEntity = isHierarchyRoot && typeof(ITenantEntity).IsAssignableFrom(entityType.ClrType);
 
             // Apply tenant isolation and soft-delete as a SINGLE query filter. Calling
             // HasQueryFilter twice would have the second call replace the first, so

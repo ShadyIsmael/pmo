@@ -1,20 +1,18 @@
 "use client"
 
-import { useParams, useSearchParams } from "next/navigation"
-import { PlanningWorkspace } from "@/components/planning/PlanningWorkspace"
-import { useEffect } from "react"
+import { useParams } from "next/navigation"
+import dynamic from "next/dynamic"
+
+const LazyProjectPlanningWorkspace = dynamic(
+  () => import("@/components/projects/ProjectPlanningWorkspace").then((mod) => mod.ProjectPlanningWorkspace),
+  { ssr: false }
+)
 
 export default function ProjectPlanPage() {
   const params = useParams()
-  const searchParams = useSearchParams()
-
-  useEffect(() => {
-    document.title = `Plan - Core Banking Modernisation — NEXUS PMO`
-  }, [])
-
   return (
-    <div className="flex h-[calc(100vh-3rem)] flex-col">
-      <PlanningWorkspace />
+    <div className="flex min-h-[calc(100vh-8rem)] flex-col">
+      <LazyProjectPlanningWorkspace projectId={params.id as string} />
     </div>
   )
 }

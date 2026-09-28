@@ -60,7 +60,7 @@ export default function BoardPage() {
                   <Card key={task.id} className="cursor-grab active:cursor-grabbing">
                     <CardHeader className="p-3 pb-0">
                       <div className="flex items-start justify-between">
-                        <Badge variant={task.priority === "Critical" ? "destructive" : "secondary"} className="text-[10px]">{task.priority}</Badge>
+                        <Badge status={task.priority} className="text-[10px]">{task.priority}</Badge>
                         <Button variant="ghost" size="icon" className="h-5 w-5"><MoreHorizontal className="h-3 w-3" /></Button>
                       </div>
                       <p className="mt-1 text-sm font-medium">{task.title}</p>

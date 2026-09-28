@@ -32,6 +32,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { ApiError } from "@/lib/api";
 import { PROJECT_HEALTHS, PROJECT_PRIORITIES, PROJECT_STATUSES } from "@/lib/enums";
+import { toDateInput } from "@/lib/utils";
 
 const projectSchema = z
   .object({
@@ -49,11 +50,11 @@ const projectSchema = z
     departmentId: z.string().optional(),
     startDate: z.string().optional(),
     endDate: z.string().optional(),
+    currency: z.string().trim().length(3, "Currency must be a 3-letter code"),
     budget: z.preprocess(
       (value) => (value === "" || value === null || value === undefined ? undefined : value),
       z.coerce.number().min(0, "Budget must be non-negative").optional()
     ),
-    currency: z.string().trim().length(3, "Currency must be a 3-letter code"),
     businessCase: z.string().trim().optional(),
     notes: z.string().trim().optional(),
   })
@@ -88,10 +89,6 @@ function generateAutoProjectCode() {
   return `PRJ-${Date.now().toString().slice(-6)}`;
 }
 
-function toDateInputValue(value?: string | null): string {
-  if (!value) return "";
-  return value.slice(0, 10);
-}
 
 function createDefaultValues(defaultCurrency = ""): ProjectFormData {
   return {
@@ -109,8 +106,8 @@ function createDefaultValues(defaultCurrency = ""): ProjectFormData {
     departmentId: "",
     startDate: "",
     endDate: "",
-    budget: undefined,
     currency: defaultCurrency,
+    budget: undefined,
     businessCase: "",
     notes: "",
   };
@@ -129,10 +126,10 @@ function toEditDefaultValues(project: ProjectDto): ProjectFormData {
     sponsorId: project.sponsorId ?? "",
     portfolioId: project.portfolioId ?? "",
     departmentId: project.departmentId ?? "",
-    startDate: toDateInputValue(project.startDate),
-    endDate: toDateInputValue(project.endDate),
-    budget: project.budget ?? undefined,
+    startDate: toDateInput(project.startDate),
+    endDate: toDateInput(project.endDate),
     currency: project.currency || "",
+    budget: project.budget ?? undefined,
     businessCase: project.businessCase ?? "",
     notes: project.notes ?? "",
   };
@@ -159,6 +156,8 @@ export function ProjectSheet({ open, onOpenChange, project }: ProjectSheetProps)
   const projectManagerOptions = toUserSelectOptions(projectManagers ?? []);
   const portfolioOptions = (portfolioPage?.items ?? []).map((p) => ({ value: p.id, label: p.name }));
   const programOptions = (programPage?.items ?? []).map((p) => ({ value: p.id, label: p.name }));
+  const portfolioCurrencyMap = useMemo(() => Object.fromEntries((portfolioPage?.items ?? []).map((p) => [p.id, p.currency ?? ""])), [portfolioPage]);
+  const programLookupMap = useMemo(() => Object.fromEntries((programPage?.items ?? []).map((p) => [p.id, p])), [programPage]);
   const departmentOptions = (departmentPage?.items ?? []).map((d) => ({ value: d.id, label: d.name }));
   const baseCurrencyCode = currencies?.find((currency) => currency.isBase)?.code ?? currencies?.[0]?.code ?? "";
   const currentProjectCurrency = project?.currency ?? "";
@@ -184,6 +183,7 @@ export function ProjectSheet({ open, onOpenChange, project }: ProjectSheetProps)
     resolver: zodResolver(projectSchema),
     defaultValues: isEdit && project ? toEditDefaultValues(project) : createDefaultValues(baseCurrencyCode),
   });
+  const selectedProgramId = form.watch("programId");
 
   useEffect(() => {
     if (!open) return;
@@ -192,6 +192,10 @@ export function ProjectSheet({ open, onOpenChange, project }: ProjectSheetProps)
 
   const onSubmit = async (data: ProjectFormData) => {
     if (isSubmittingRef.current) return;
+    if (!isEdit && !data.projectManagerId) {
+      form.setError("projectManagerId", { type: "manual", message: t("projectManagerRequired") });
+      return;
+    }
     isSubmittingRef.current = true;
     setErrorMessage(null);
     form.clearErrors();
@@ -206,11 +210,10 @@ export function ProjectSheet({ open, onOpenChange, project }: ProjectSheetProps)
         startDate: data.startDate || undefined,
         endDate: data.endDate || undefined,
         code: data.code?.trim() || undefined,
-        budget: data.budget === undefined || data.budget === null ? undefined : Number(data.budget),
         currency: data.currency,
+        budget: data.budget === undefined || data.budget === null ? undefined : Number(data.budget),
         businessCase: data.businessCase || undefined,
         notes: data.notes || undefined,
-        confidenceLevel: data.confidenceLevel,
       };
 
       if (isEdit && project) {
@@ -220,13 +223,16 @@ export function ProjectSheet({ open, onOpenChange, project }: ProjectSheetProps)
           status: data.status,
           priority: data.priority,
           projectManagerId: data.projectManagerId || undefined,
+          category: data.category || undefined,
+          sponsorId: data.sponsorId || undefined,
+          departmentId: data.departmentId || undefined,
+          confidenceLevel: data.confidenceLevel,
         };
         await updateMutation.mutateAsync(payload);
       } else {
         const payload: CreateProjectDto = {
           ...base,
           name: data.name,
-          status: data.status,
           priority: data.priority,
           projectManagerId: data.projectManagerId || undefined,
         };
@@ -283,7 +289,13 @@ export function ProjectSheet({ open, onOpenChange, project }: ProjectSheetProps)
               </div>
             )}
 
-            <div className="grid gap-5 sm:grid-cols-2">
+            <section className="space-y-4">
+              <div className="space-y-1">
+                <h3 className="text-sm font-semibold">{t("basicInformation")}</h3>
+                <p className="text-xs text-muted-foreground">{t("basicInformationDescription")}</p>
+              </div>
+
+              <div className="grid gap-5 sm:grid-cols-2">
               <FormField
                 control={form.control}
                 name="code"
@@ -316,24 +328,31 @@ export function ProjectSheet({ open, onOpenChange, project }: ProjectSheetProps)
                   </FormItem>
                 )}
               />
-            </div>
+              </div>
 
-            <FormField
+              <FormField
               control={form.control}
               name="description"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>{t("description")}</FormLabel>
+                  <FormLabel>{t("projectDescription")}</FormLabel>
                   <FormControl>
                     <Textarea placeholder={t("descriptionPlaceholder")} rows={3} value={field.value ?? ""} onChange={field.onChange} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
-            />
+              />
+            </section>
 
-            <div className="grid gap-5 sm:grid-cols-2">
-              <FormField
+            <section className="space-y-4">
+              <div className="space-y-1">
+                <h3 className="text-sm font-semibold">{t("classification")}</h3>
+                <p className="text-xs text-muted-foreground">{t("classificationDescription")}</p>
+              </div>
+
+              <div className="grid gap-5 sm:grid-cols-2">
+              {isEdit && <FormField
                 control={form.control}
                 name="status"
                 render={({ field }) => (
@@ -356,7 +375,7 @@ export function ProjectSheet({ open, onOpenChange, project }: ProjectSheetProps)
                     <FormMessage />
                   </FormItem>
                 )}
-              />
+              />}
               <FormField
                 control={form.control}
                 name="priority"
@@ -381,9 +400,23 @@ export function ProjectSheet({ open, onOpenChange, project }: ProjectSheetProps)
                   </FormItem>
                 )}
               />
-            </div>
+              <FormField
+                control={form.control}
+                name="category"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t("category")}</FormLabel>
+                    <FormControl>
+                      <Input placeholder={t("categoryPlaceholder")} value={field.value ?? ""} onChange={field.onChange} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              </div>
+            </section>
 
-            <FormField
+            {isEdit && <FormField
               control={form.control}
               name="confidenceLevel"
               render={({ field }) => (
@@ -406,9 +439,15 @@ export function ProjectSheet({ open, onOpenChange, project }: ProjectSheetProps)
                   <FormMessage />
                 </FormItem>
               )}
-            />
+            />}
 
-            <div className="grid gap-5 sm:grid-cols-2">
+            <section className="space-y-4">
+              <div className="space-y-1">
+                <h3 className="text-sm font-semibold">{t("ownershipHierarchy")}</h3>
+                <p className="text-xs text-muted-foreground">{t("ownershipHierarchyDescription")}</p>
+              </div>
+
+              <div className="grid gap-5 sm:grid-cols-2">
               <FormField
                 control={form.control}
                 name="projectManagerId"
@@ -450,7 +489,7 @@ export function ProjectSheet({ open, onOpenChange, project }: ProjectSheetProps)
                   </FormItem>
                 )}
               />
-            </div>
+              </div>
 
             <div className="grid gap-5 sm:grid-cols-2">
               <FormField
@@ -463,11 +502,16 @@ export function ProjectSheet({ open, onOpenChange, project }: ProjectSheetProps)
                       <SearchableSelect
                         options={portfolioOptions}
                         value={field.value ?? ""}
-                        onValueChange={field.onChange}
+                        onValueChange={(value) => {
+                          field.onChange(value);
+                          if (!isEdit && !form.getValues("programId")) form.setValue("currency", portfolioCurrencyMap[value] || baseCurrencyCode, { shouldValidate: true });
+                        }}
                         placeholder={t("selectPortfolio")}
                         searchPlaceholder={t("searchPortfolioPlaceholder")}
+                        disabled={!!selectedProgramId}
                       />
                     </FormControl>
+                    {selectedProgramId && <p className="text-xs text-muted-foreground">{t("portfolioDerivedFromProgram")}</p>}
                     <FormMessage />
                   </FormItem>
                 )}
@@ -482,7 +526,14 @@ export function ProjectSheet({ open, onOpenChange, project }: ProjectSheetProps)
                       <SearchableSelect
                         options={programOptions}
                         value={field.value ?? ""}
-                        onValueChange={field.onChange}
+                        onValueChange={(value) => {
+                          field.onChange(value);
+                          const selected = programLookupMap[value];
+                          if (selected) {
+                            form.setValue("portfolioId", selected.portfolioId, { shouldValidate: true });
+                            if (!isEdit) form.setValue("currency", selected.currency || portfolioCurrencyMap[selected.portfolioId] || baseCurrencyCode, { shouldValidate: true });
+                          }
+                        }}
                         placeholder={t("selectProgram")}
                         searchPlaceholder={t("searchProgramPlaceholder")}
                       />
@@ -511,15 +562,22 @@ export function ProjectSheet({ open, onOpenChange, project }: ProjectSheetProps)
                   <FormMessage />
                 </FormItem>
               )}
-            />
+              />
+            </section>
 
-            <div className="grid gap-5 sm:grid-cols-2">
+            <section className="space-y-4">
+              <div className="space-y-1">
+                <h3 className="text-sm font-semibold">{t("scheduleSection")}</h3>
+                <p className="text-xs text-muted-foreground">{t("scheduleSectionDescription")}</p>
+              </div>
+
+              <div className="grid gap-5 sm:grid-cols-2">
               <FormField
                 control={form.control}
                 name="startDate"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{t("startDate")}</FormLabel>
+                    <FormLabel>{t("plannedStartDate")}</FormLabel>
                     <FormControl>
                       <Input type="date" value={field.value ?? ""} onChange={field.onChange} />
                     </FormControl>
@@ -532,7 +590,7 @@ export function ProjectSheet({ open, onOpenChange, project }: ProjectSheetProps)
                 name="endDate"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{t("endDate")}</FormLabel>
+                    <FormLabel>{t("plannedEndDate")}</FormLabel>
                     <FormControl>
                       <Input type="date" value={field.value ?? ""} onChange={field.onChange} />
                     </FormControl>
@@ -540,22 +598,16 @@ export function ProjectSheet({ open, onOpenChange, project }: ProjectSheetProps)
                   </FormItem>
                 )}
               />
-            </div>
+              </div>
+            </section>
 
-            <div className="grid gap-5 sm:grid-cols-2">
-              <FormField
-                control={form.control}
-                name="budget"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t("budget")}</FormLabel>
-                    <FormControl>
-                      <Input type="number" step="0.01" min="0" placeholder="0" value={field.value ?? ""} onChange={(event) => field.onChange(event.target.value === "" ? undefined : event.target.value)} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+            <section className="space-y-4">
+              <div className="space-y-1">
+                <h3 className="text-sm font-semibold">{t("financialFoundation")}</h3>
+                <p className="text-xs text-muted-foreground">{t("financialFoundationDescription")}</p>
+              </div>
+
+              <div className="grid gap-5 sm:grid-cols-2">
               <FormField
                 control={form.control}
                 name="currency"
@@ -584,35 +636,66 @@ export function ProjectSheet({ open, onOpenChange, project }: ProjectSheetProps)
                   </FormItem>
                 )}
               />
+              <FormField
+                control={form.control}
+                name="budget"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t("budgetCeiling")}</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        placeholder="0"
+                        value={field.value ?? ""}
+                        onChange={(event) => field.onChange(event.target.value === "" ? undefined : event.target.value)}
+                        disabled={isEdit}
+                        readOnly={isEdit}
+                      />
+                    </FormControl>
+                    <p className="text-xs text-muted-foreground">{t("budgetCeilingHint")}</p>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             </div>
+            </section>
 
-            <FormField
-              control={form.control}
-              name="businessCase"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t("businessCase")}</FormLabel>
-                  <FormControl>
-                    <Textarea placeholder={t("businessCasePlaceholder")} rows={3} value={field.value ?? ""} onChange={field.onChange} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            <section className="space-y-4">
+              <div className="space-y-1">
+                <h3 className="text-sm font-semibold">{t("initiationSummary")}</h3>
+                <p className="text-xs text-muted-foreground">{t("initiationSummaryDescription")}</p>
+              </div>
 
-            <FormField
-              control={form.control}
-              name="notes"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t("notes")}</FormLabel>
-                  <FormControl>
-                    <Textarea placeholder={t("notesPlaceholder")} rows={2} value={field.value ?? ""} onChange={field.onChange} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+              <FormField
+                control={form.control}
+                name="businessCase"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t("businessCase")}</FormLabel>
+                    <FormControl>
+                      <Textarea placeholder={t("businessCasePlaceholder")} rows={3} value={field.value ?? ""} onChange={field.onChange} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {isEdit && <FormField
+                control={form.control}
+                name="notes"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t("notes")}</FormLabel>
+                    <FormControl>
+                      <Textarea placeholder={t("notesPlaceholder")} rows={2} value={field.value ?? ""} onChange={field.onChange} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />}
+            </section>
           </FormSheetBody>
 
           <FormSheetFooter>

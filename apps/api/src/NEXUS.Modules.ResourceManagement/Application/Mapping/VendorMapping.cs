@@ -16,6 +16,7 @@ public static class VendorMapping
             ContactEmail = vendor.ContactEmail,
             ContactPhone = vendor.ContactPhone,
             Category = vendor.Category,
+            VendorCategoryId = vendor.VendorCategoryId,
             Status = vendor.Status,
             ContractValue = vendor.ContractValue,
             ContractStart = vendor.ContractStart,
@@ -29,11 +30,10 @@ public static class VendorMapping
         return new Vendor
         {
             Name = dto.Name,
-            Code = dto.Code,
             ContactName = dto.ContactName,
             ContactEmail = dto.ContactEmail,
             ContactPhone = dto.ContactPhone,
-            Category = dto.Category,
+            VendorCategoryId = dto.VendorCategoryId,
             Status = dto.Status ?? "Active",
             ContractValue = dto.ContractValue,
             ContractStart = dto.ContractStart,
@@ -45,11 +45,11 @@ public static class VendorMapping
     public static void ApplyUpdate(this Vendor vendor, UpdateVendorDto dto)
     {
         if (dto.Name != null) vendor.Name = dto.Name;
-        if (dto.Code != null) vendor.Code = dto.Code;
         if (dto.ContactName != null) vendor.ContactName = dto.ContactName;
         if (dto.ContactEmail != null) vendor.ContactEmail = dto.ContactEmail;
         if (dto.ContactPhone != null) vendor.ContactPhone = dto.ContactPhone;
-        if (dto.Category != null) vendor.Category = dto.Category;
+        if (dto.VendorCategoryId.HasValue && dto.VendorCategoryId.Value != Guid.Empty && dto.VendorCategoryId.Value != vendor.VendorCategoryId)
+            vendor.VendorCategoryId = dto.VendorCategoryId.Value;
         if (dto.Status != null) vendor.Status = dto.Status;
         if (dto.ContractValue.HasValue) vendor.ContractValue = dto.ContractValue;
         if (dto.ContractStart.HasValue) vendor.ContractStart = dto.ContractStart;

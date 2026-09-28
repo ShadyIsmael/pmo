@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using NEXUS.Modules.AIPlanning.Application;
 
@@ -6,7 +5,6 @@ namespace NEXUS.Modules.AIPlanning.Api;
 
 [ApiController]
 [Route("api/ai-planning")]
-//[Authorize]
 public class AIPlanningController : ControllerBase
 {
     private readonly IAIPlanningService _aiPlanningService;

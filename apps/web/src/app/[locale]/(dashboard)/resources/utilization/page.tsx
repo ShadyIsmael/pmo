@@ -98,8 +98,8 @@ export default function UtilizationPage() {
         </Card>
       </div>
 
-      <div className="rounded-md border">
-        <div className="grid grid-cols-12 gap-2 border-b bg-muted/50 px-4 py-3 text-xs font-medium text-muted-foreground">
+      <div className="nexus-table-surface">
+        <div className="nexus-table-header grid grid-cols-12 gap-2">
           <div className="col-span-3">Resource</div>
           <div className="col-span-2">Role</div>
           <div className="col-span-2">Department</div>
@@ -119,7 +119,7 @@ export default function UtilizationPage() {
           </div>
         ) : (
           sorted.slice(0, 15).map((res) => (
-            <div key={res.resourceId} className="grid grid-cols-12 gap-2 border-b px-4 py-3 text-sm hover:bg-muted/30">
+            <div key={res.resourceId} className="nexus-table-row grid grid-cols-12 gap-2 px-4 py-3 text-sm">
               <div className="col-span-3 flex items-center gap-2 font-medium">
                 <Avatar className="h-6 w-6">
                   <AvatarFallback className="text-[8px]">{getInitials(res.resourceName)}</AvatarFallback>

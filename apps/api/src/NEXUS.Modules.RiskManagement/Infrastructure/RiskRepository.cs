@@ -15,8 +15,8 @@ public class RiskRepository
     public async Task<Risk?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
         return await _context.Set<Risk>()
-            .Include(r => r.Mitigations)
-            .Include(r => r.Contingencies)
+            .Include(r => r.Actions)
+            .ThenInclude(action => action.Updates)
             .FirstOrDefaultAsync(r => r.Id == id, cancellationToken);
     }
 }

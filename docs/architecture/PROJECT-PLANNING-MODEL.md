@@ -192,8 +192,8 @@ Plan ──(impact)── Project ChangeRequest (Project-owned; planning stores 
 |--------|-----------------|
 | `Plan` | ProjectId, PlanType, Name, Description, Status |
 | `PlanVersion` | VersionNumber, Type (Working/Baseline), Status, Name, SourceBaselineId, SourceVersionId |
-| `PlanActivity` | Code, Name, Description, Type (Task/Milestone), StartDate, EndDate, Duration, EstimateHours, Progress, WbsId? |
-| `PlanWbsNode` | ParentWbsId?, SortOrder, Code, Name, ActivityId?, DeliverableId? |
+| `PlanActivity` | Code, Name, Description, Type (Task/Milestone), StartDate, EndDate, Duration, EstimateHours, Progress, WbsId?, TextFormat? |
+| `PlanWbsNode` | ParentWbsId?, SortOrder, Code, Name, ActivityId?, DeliverableId?, TextFormat? |
 | `PlanDeliverable` | Name, Description, AcceptanceCriteria, DueDate, WbsId?, ActivityId? |
 | `PlanDependency` | ActivityId, PredecessorActivityId, Type (FS/SS/FF/SF), Lag |
 | `PlanAssignment` | ActivityId, ResourceId (RM), AllocationPct?, HoursPerWeek, StartDate, EndDate |
@@ -202,6 +202,12 @@ Plan ──(impact)── Project ChangeRequest (Project-owned; planning stores 
 
 All rows inherit `BaseEntity` (Id, TenantId, Created/Updated by/at, IsDeleted,
 RowVersion) and are scoped by a `PlanVersionId`.
+
+`PlanActivity.TextFormat` and `PlanWbsNode.TextFormat` are optional structured
+display metadata. The shared `PlanTextFormat` value object supports only the
+approved bold, italic, underline, semantic text/highlight color tokens, and
+limited font-size tokens. It stores no HTML or arbitrary CSS and is copied with
+the rest of the versioned planning model.
 
 ---
 

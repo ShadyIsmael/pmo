@@ -147,7 +147,7 @@ All entities inherit from `BaseEntity` in `NEXUS.SharedKernel` which provides: `
 |--------|-------|------------|--------|
 | `Meeting` | Meetings | Title, ProjectId, MeetingType (Virtual/InPerson/Hybrid), StartTime, EndTime, Status (Scheduled/Completed/Cancelled), OrganizerId, Location, MeetingLink, RecurrenceRule | Meetings |
 | `MeetingAgenda` | MeetingAgendas | MeetingId, Title, Description, DurationMinutes, Order, OwnerId | Meetings |
-| `MeetingParticipant` | MeetingParticipants | MeetingId, UserId, Attendance (Pending/Accepted/Declined/Tentative), JoinedAt, LeftAt | Meetings |
+| `MeetingParticipant` | MeetingParticipants | MeetingId, nullable UserId or required Email, optional Name snapshot, Attendance (Pending/Accepted/Declined/Tentative), JoinedAt, LeftAt | Meetings |
 | `MeetingMinutes` | MeetingMinutes | MeetingId, Content, ActionItems JSON, CreatedBy, CreatedAt | Meetings |
 | `MeetingAction` | MeetingActions | MeetingId, Description, OwnerId, DueDate, Status (Open/InProgress/Completed), CompletedAt | Meetings |
 

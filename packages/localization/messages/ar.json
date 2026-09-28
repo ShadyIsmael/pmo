@@ -251,7 +251,41 @@
       "currency": "العملة",
       "progress": "التقدم",
       "phase": "المرحلة"
-    }
+    },
+    "changeRequestTitle": "عنوان طلب التغيير",
+    "changeRequestDescription": "وصف طلب التغيير",
+    "changeRequestFailed": "فشل في تقديم طلب التغيير.",
+    "submitChangeRequest": "إرسال طلب التغيير",
+    "submitting": "جارٍ الإرسال...",
+    "changeType": "نوع التغيير",
+    "selectChangeType": "اختر نوع التغيير",
+    "changeTypeAdministrative": "إداري",
+    "changeTypeBaseline": "تغيير الأساس",
+    "changeNumber": "الرقم",
+    "changeReason": "السبب",
+    "changeReasonPlaceholder": "لماذا هذا التغيير مطلوب؟",
+    "budgetChangeAmount": "مبلغ تأثير الميزانية",
+    "budgetChangeAmountPlaceholder": "أدخل المبلغ (موجب للزيادة، سالب للنقصان)",
+    "budgetChangeAmountHint": "اترك الحقل فارغًا للتغييرات غير المالية...",
+    "justification": "المبرر",
+    "justificationPlaceholder": "اشرح لماذا يجب الموافقة على هذا التغيير",
+    "impactDescription": "وصف التأثير",
+    "impactPlaceholder": "صف أثر هذا التغيير",
+    "proposedBudget": "الميزانية المقترحة",
+    "changeTracker": "متعقّب التغييرات",
+    "changeTrackerDescription": "جميع طلبات التغيير المقدمة لهذا المشروع.",
+    "changeTrackerError": "تعذّر تحميل طلبات التغيير",
+    "changeTrackerErrorDescription": "تعذّر تحميل طلبات التغيير. يرجى المحاولة مرة أخرى.",
+    "noChangeRequests": "لا توجد طلبات تغيير",
+    "noChangeRequestsDescription": "ستظهر هنا طلبات التغيير المقدمة لهذا المشروع.",
+    "cancelChangeRequest": "إلغاء الطلب",
+    "cancelChangeRequestTitle": "إلغاء طلب التغيير",
+    "cancelChangeRequestDescription": "هل أنت متأكد من رغبتك في إلغاء طلب التغيير هذا؟ لا يمكن التراجع عن هذا الإجراء.",
+    "confirmCancel": "تأكيد الإلغاء",
+    "changeRequests": "طلبات التغيير",
+    "openChangeRequests": "طلبات التغيير المعلقة",
+    "requestChanges": "طلب التغييرات",
+    "changesRequested": "التغييرات المطلوبة"
   },
   "tasks": {
     "taskStatuses": {
@@ -579,7 +613,8 @@
       "delegate": "تفويض",
       "revoke": "إلغاء",
       "requestChanges": "طلب تغييرات",
-      "addComment": "إضافة تعليق"
+      "addComment": "إضافة تعليق",
+      "approvalFailed": "فشل في الاعتماد"
     },
     "fields": {
       "requestor": "الطالب",

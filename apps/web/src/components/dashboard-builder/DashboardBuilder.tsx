@@ -1,27 +1,45 @@
 "use client";
 
 import * as React from "react";
+import dynamic from "next/dynamic";
+import { useLocale } from "next-intl";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { ArrowUp, ArrowDown, Plus, Layout } from "lucide-react";
 import { DashboardHeader } from "./DashboardHeader";
-import { DashboardGrid } from "./DashboardGrid";
 import { WidgetShell } from "./WidgetShell";
-import { WidgetLibrary } from "./WidgetLibrary";
-import { WidgetSettings } from "./WidgetSettings";
-import { DashboardViewManager } from "./DashboardViewManager";
+import { DashboardWidgetViewport } from "./DashboardWidgetViewport";
 import { saveState, loadState } from "./dashboard-storage";
+import { DashboardRuntimeProvider } from "./dashboard-data";
 import { createDefaultView } from "./default-layouts";
 import { getWidgetDefinition, getWidgetComponent } from "./widget-registry";
+import { isDeferredWidgetType, loadAllDeferredWidgetGroups, loadWidgetGroupsFor } from "./widget-groups";
 import type {
   DashboardState, DashboardView, WidgetInstance,
   PointOfView, WidgetConfig, GlobalFilters, DashboardAccess, DashboardStartMode, DashboardType,
 } from "./dashboard-types";
+import { useAuth } from "@/lib/auth";
+import { useManagementPerspective } from "@/lib/perspective-context";
+import type { ManagementPerspective } from "@/lib/perspective";
 import "./widgets/kpi-widgets";
-import "./widgets/chart-widgets";
 import "./widgets/list-widgets";
-import "./widgets/integration-widgets";
-import "./widgets/ai-widgets";
-import "./widgets/extra-widgets";
+
+const DashboardGrid = dynamic(
+  () => import("./DashboardGrid").then((module) => module.DashboardGrid),
+  { ssr: false },
+);
+const WidgetLibrary = dynamic(
+  () => import("./WidgetLibrary").then((module) => module.WidgetLibrary),
+  { ssr: false },
+);
+const WidgetSettings = dynamic(
+  () => import("./WidgetSettings").then((module) => module.WidgetSettings),
+  { ssr: false },
+);
+const DashboardViewManager = dynamic(
+  () => import("./DashboardViewManager").then((module) => module.DashboardViewManager),
+  { ssr: false },
+);
 
 function wid(): string {
   return `w-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -54,29 +72,55 @@ function createInitialState(pov: PointOfView): DashboardState {
 }
 
 export function DashboardBuilder() {
-  const [state, setState] = React.useState<DashboardState>(() => {
-    const saved = loadState();
-    if (saved) return saved;
-    return createInitialState("Executive");
-  });
+  const locale = useLocale();
+  const { status, user } = useAuth();
+  const { current, availablePerspectives, canMutate, switchPerspective } = useManagementPerspective();
+  const queryClient = useQueryClient();
+  const [state, setState] = React.useState<DashboardState>(() => createInitialState("Portfolio Manager"));
+  const [storageReady, setStorageReady] = React.useState(false);
+  const targetPov: PointOfView = current?.perspective === "ProjectManager" ? "Project Manager" : current?.perspective === "ProgramManager" ? "Program Manager" : "Portfolio Manager";
+  const storageScope = React.useMemo(() => ({ tenantId: user?.tenantId, userId: user?.id, pov: targetPov }), [user?.tenantId, user?.id, targetPov]);
+  const storageScopeKey = `${storageScope.tenantId ?? "unknown"}:${storageScope.userId ?? "unknown"}:${storageScope.pov}`;
+
+  React.useEffect(() => {
+    if (status !== "authenticated") return;
+    const saved = loadState(storageScope);
+    setState(saved ?? createInitialState(targetPov));
+    setStorageReady(true);
+  }, [status, storageScope, storageScopeKey, targetPov]);
 
   const [libraryOpen, setLibraryOpen] = React.useState(false);
   const [settingsWidgetId, setSettingsWidgetId] = React.useState<string | null>(null);
   const [viewsOpen, setViewsOpen] = React.useState(false);
+  const [widgetRegistryVersion, setWidgetRegistryVersion] = React.useState(0);
+  const [refreshing, setRefreshing] = React.useState(false);
 
   const latestStateRef = React.useRef(state);
   React.useEffect(() => {
     latestStateRef.current = state;
-    const timer = setTimeout(() => saveState(state), 300);
+    if (!storageReady || status !== "authenticated") return;
+    const timer = setTimeout(() => saveState(state, storageScope), 300);
     return () => clearTimeout(timer);
-  }, [state]);
+  }, [state, storageReady, status, storageScope, storageScopeKey]);
   React.useEffect(() => {
-    return () => saveState(latestStateRef.current);
-  }, []);
+    return () => { if (storageReady) saveState(latestStateRef.current, storageScope); };
+  }, [storageReady, storageScope, storageScopeKey]);
 
   const povViews = React.useMemo(() => state.views.filter((view) => view.pov === state.pov), [state.views, state.pov]);
   const currentView = (povViews.find((v) => v.id === state.currentViewId) ?? povViews.find((v) => v.isDefault) ?? povViews[0])!;
-  const canEditCurrent = currentView.access === "edit" || currentView.access === "manage-sharing";
+  const canEditCurrent = canMutate && (currentView.access === "edit" || currentView.access === "manage-sharing");
+
+  React.useEffect(() => {
+    if (!canEditCurrent) {
+      setViewsOpen(false);
+      setState((prev) => prev.editMode ? { ...prev, editMode: false } : prev);
+    }
+  }, [canEditCurrent]);
+
+  React.useEffect(() => {
+    if (!state.editMode && !libraryOpen) return;
+    void loadAllDeferredWidgetGroups().then(() => setWidgetRegistryVersion((version) => version + 1));
+  }, [state.editMode, libraryOpen]);
 
   const [windowWidth, setWindowWidth] = React.useState(1200);
   React.useEffect(() => {
@@ -91,7 +135,7 @@ export function DashboardBuilder() {
   const cols = isMobile ? 1 : isTablet ? 6 : 12;
 
   const updateView = React.useCallback(
-    (updater: (view: DashboardView) => DashboardView) => {
+    (updater: (_view: DashboardView) => DashboardView) => {
       setState((prev) => {
         const view = prev.views.find((v) => v.id === prev.currentViewId);
         if (!view) return prev;
@@ -118,6 +162,22 @@ export function DashboardBuilder() {
       return { ...prev, pov, currentViewId: selected.id, lastViewByPOV: { ...prev.lastViewByPOV, [pov]: selected.id }, editMode: false };
     });
   }, []);
+
+  const availablePovs = React.useMemo<PointOfView[]>(() => {
+    const mapped = availablePerspectives.map((item) => item.perspective === "ProjectManager" ? "Project Manager" : item.perspective === "ProgramManager" ? "Program Manager" : item.perspective === "PortfolioManager" ? "Portfolio Manager" : null).filter((value): value is "Project Manager" | "Program Manager" | "Portfolio Manager" => value !== null);
+    return mapped.length ? mapped : ["Project Manager", "Program Manager", "Portfolio Manager"];
+  }, [availablePerspectives]);
+
+  React.useEffect(() => {
+    if (storageReady && state.pov !== targetPov) setPOV(targetPov);
+  }, [storageReady, state.pov, targetPov, setPOV]);
+
+  const handlePOVChange = React.useCallback((pov: PointOfView) => {
+    setPOV(pov);
+    const perspectiveName: ManagementPerspective = pov === "Project Manager" ? "ProjectManager" : pov === "Program Manager" ? "ProgramManager" : "PortfolioManager";
+    const availability = availablePerspectives.find((item) => item.perspective === perspectiveName);
+    if (availability) switchPerspective(perspectiveName, availability.contexts[0]?.id);
+  }, [setPOV, availablePerspectives, switchPerspective]);
 
   const addWidget = React.useCallback(
     (type: string) => {
@@ -190,7 +250,7 @@ export function DashboardBuilder() {
           widgets: v.widgets.map((w) => (w.id === id ? { ...w, loading: true } : w)),
         })),
       }));
-      setTimeout(() => {
+      void queryClient.invalidateQueries().finally(() => {
         setState((prev) => ({
           ...prev,
           lastUpdated: Date.now(),
@@ -201,17 +261,18 @@ export function DashboardBuilder() {
             ),
           })),
         }));
-      }, 800);
+      });
     },
-    [],
+    [queryClient],
   );
 
   const refreshAll = React.useCallback(() => {
+    setRefreshing(true);
     setState((prev) => ({
       ...prev,
       views: prev.views.map((v) => ({ ...v, widgets: v.widgets.map((w) => ({ ...w, loading: true })) })),
     }));
-    setTimeout(() => {
+    void queryClient.invalidateQueries().finally(() => {
       setState((prev) => ({
         ...prev,
         lastUpdated: Date.now(),
@@ -220,10 +281,12 @@ export function DashboardBuilder() {
           widgets: v.widgets.map((w) => ({ ...w, loading: false, lastUpdated: Date.now() })),
         })),
       }));
-    }, 1200);
-  }, []);
+      setRefreshing(false);
+    });
+  }, [queryClient]);
 
   const resetDashboard = React.useCallback(() => {
+    if (typeof window !== "undefined" && !window.confirm("Reset this dashboard to its default widgets and layout?")) return;
     const newView = createDefaultView(state.pov);
     setState((prev) => ({
       ...prev,
@@ -241,6 +304,16 @@ export function DashboardBuilder() {
   const settingsWidget = settingsWidgetId
     ? currentView.widgets.find((w) => w.id === settingsWidgetId)
     : null;
+
+  const deferredWidgetTypesRef = React.useRef(new Set<string>());
+  const handleWidgetVisible = React.useCallback((type: string) => {
+    if (!isDeferredWidgetType(type) || getWidgetComponent(type)) return;
+    if (deferredWidgetTypesRef.current.has(type)) return;
+    deferredWidgetTypesRef.current.add(type);
+    void loadWidgetGroupsFor([type]).then(() => {
+      setWidgetRegistryVersion((version) => version + 1);
+    });
+  }, []);
 
   const handleMoveUp = (index: number) => {
     const expanded = currentView.widgets.filter((w) => !w.collapsed);
@@ -373,22 +446,50 @@ export function DashboardBuilder() {
       "open-risks": "/risks-issues/risks",
       "ai-recommendations": "/ai-workspace",
     };
-    const href = routes[type];
+    const statusHref = current?.perspective === "ProjectManager" && current.projectId
+      ? `/projects/${encodeURIComponent(current.projectId)}?tab=status-reports`
+      : current?.perspective === "ProgramManager" && current.programId
+        ? `/portfolios/programs/${encodeURIComponent(current.programId)}?tab=status`
+        : current?.perspective === "PortfolioManager" && current.portfolioId
+          ? `/portfolios/${encodeURIComponent(current.portfolioId)}?tab=status`
+          : "/reports/portfolio";
+    const href = type === "status-report-freshness" ? statusHref : routes[type];
     if (href) {
-      window.location.href = href;
+      window.location.href = `/${locale}${href}`;
     }
-  }, []);
+  }, [current, locale]);
 
   const widgetNodeCache = React.useRef(new Map<string, { signature: string; node: React.ReactNode }>());
 
   const widgetNodes = React.useMemo(() => {
+    void widgetRegistryVersion;
     const map = new Map<string, React.ReactNode>();
     const liveIds = new Set<string>();
     currentView.widgets.forEach((w) => {
       liveIds.add(w.id);
       const def = getWidgetDefinition(w.type);
       const Component = getWidgetComponent(w.type);
-      if (!def || !Component) return;
+      if (!def || !Component) {
+        if (isDeferredWidgetType(w.type)) {
+          map.set(w.id, (
+            <WidgetShell
+              title={w.title || "Loading widget"}
+              loading
+              collapsed={w.collapsed}
+              editMode={state.editMode}
+              onRefresh={() => refreshWidget(w.id)}
+              onSettings={() => setSettingsWidgetId(w.id)}
+              onDuplicate={() => duplicateWidget(w.id)}
+              onRemove={() => removeWidget(w.id)}
+              onToggleCollapse={() => toggleCollapse(w.id)}
+              onViewDetails={() => handleViewDetails(w.type)}
+            >
+              {null}
+            </WidgetShell>
+          ));
+        }
+        return;
+      }
       const signature = JSON.stringify([
         w.id,
         w.type,
@@ -432,23 +533,39 @@ export function DashboardBuilder() {
       if (!liveIds.has(id)) widgetNodeCache.current.delete(id);
     });
     return map;
-  }, [currentView.widgets, state.editMode, refreshWidget, duplicateWidget, removeWidget, toggleCollapse, handleViewDetails]);
+  }, [currentView.widgets, state.editMode, refreshWidget, duplicateWidget, removeWidget, toggleCollapse, handleViewDetails, widgetRegistryVersion]);
 
   const collapsedWidgets = currentView.widgets.filter((w) => w.collapsed);
 
+  const renderWidgetViewport = React.useCallback(
+    (widget: WidgetInstance) => (
+      <DashboardWidgetViewport
+        key={widget.id}
+        widgetType={widget.type}
+        priority={widget.position.y === 0}
+        onVisible={handleWidgetVisible}
+      >
+        {widgetNodes.get(widget.id)}
+      </DashboardWidgetViewport>
+    ),
+    [handleWidgetVisible, widgetNodes],
+  );
+
   return (
-    <div className="space-y-4">
+    <DashboardRuntimeProvider value={{ filters: currentView.filters, pov: state.pov }}>
+    <div className="nexus-dashboard space-y-4">
       <DashboardHeader
         pov={state.pov}
+        povOptions={availablePovs}
         editMode={state.editMode}
         lastUpdated={state.lastUpdated}
-        refreshing={false}
+        refreshing={refreshing}
         viewName={currentView.name}
         viewCount={povViews.length}
         views={povViews}
         currentViewId={state.currentViewId}
         filters={currentView.filters}
-        onPOVChange={setPOV}
+        onPOVChange={handlePOVChange}
         canEdit={canEditCurrent}
         dashboardType={currentView.type}
         access={currentView.access}
@@ -456,7 +573,7 @@ export function DashboardBuilder() {
         onAddWidget={() => setLibraryOpen(true)}
         onRefreshAll={refreshAll}
         onSaveView={() => updateView((v) => v)}
-        onManageViews={() => setViewsOpen(true)}
+        onManageViews={() => canEditCurrent && setViewsOpen(true)}
         onReset={resetDashboard}
         onFiltersChange={(filters: GlobalFilters) => updateView((view) => ({ ...view, filters }))}
         onSwitchView={switchView}
@@ -479,7 +596,7 @@ export function DashboardBuilder() {
                     </Button>
                   </div>
                 )}
-                {widgetNodes.get(w.id)}
+                {renderWidgetViewport(w)}
               </div>
             ))}
           {collapsedWidgets.length > 0 && (
@@ -488,7 +605,7 @@ export function DashboardBuilder() {
                 Collapsed ({collapsedWidgets.length})
               </h3>
               {collapsedWidgets.map((w) => (
-                <div key={w.id}>{widgetNodes.get(w.id)}</div>
+                <div key={w.id}>{renderWidgetViewport(w)}</div>
               ))}
             </div>
           )}
@@ -498,11 +615,12 @@ export function DashboardBuilder() {
           <DashboardGrid
             widgets={currentView.widgets}
             cols={cols}
-            rowHeight={120}
-            width={windowWidth - 60}
+            rowHeight={96}
+            width={Math.max(320, windowWidth - (windowWidth >= 768 ? 380 : 32))}
             editMode={state.editMode && !isMobile}
             onLayoutChange={onLayoutChange}
             widgetNodes={widgetNodes}
+            onWidgetVisible={handleWidgetVisible}
           />
           {collapsedWidgets.length > 0 && (
             <div className="space-y-2 mt-4">
@@ -530,12 +648,14 @@ export function DashboardBuilder() {
         </div>
       )}
 
-      <WidgetLibrary
-        open={libraryOpen}
-        onClose={() => setLibraryOpen(false)}
-        onAddWidget={addWidget}
-        pov={state.pov}
-      />
+      {libraryOpen && (
+        <WidgetLibrary
+          open
+          onClose={() => setLibraryOpen(false)}
+          onAddWidget={addWidget}
+          pov={state.pov}
+        />
+      )}
 
       {settingsWidget && (
         <WidgetSettings
@@ -548,20 +668,23 @@ export function DashboardBuilder() {
         />
       )}
 
-      <DashboardViewManager
-        open={viewsOpen}
-        onClose={() => setViewsOpen(false)}
-        pov={state.pov}
-        views={povViews}
-        currentViewId={state.currentViewId}
-        onSwitch={switchView}
-        onCreate={createView}
-        onRename={renameView}
-        onDuplicate={duplicateView}
-        onDelete={deleteView}
-        onSetDefault={setDefaultView}
-        onUpdateSharing={updateSharing}
-      />
+      {viewsOpen && (
+        <DashboardViewManager
+          open
+          onClose={() => setViewsOpen(false)}
+          pov={state.pov}
+          views={povViews}
+          currentViewId={state.currentViewId}
+          onSwitch={switchView}
+          onCreate={createView}
+          onRename={renameView}
+          onDuplicate={duplicateView}
+          onDelete={deleteView}
+          onSetDefault={setDefaultView}
+          onUpdateSharing={updateSharing}
+        />
+      )}
     </div>
+    </DashboardRuntimeProvider>
   );
 }

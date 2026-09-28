@@ -5,6 +5,7 @@ import GridLayout, { type Layout, type LayoutItem } from "react-grid-layout/lega
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 import type { WidgetInstance } from "./dashboard-types";
+import { DashboardWidgetViewport } from "./DashboardWidgetViewport";
 
 interface DashboardGridProps {
   widgets: WidgetInstance[];
@@ -13,15 +14,15 @@ interface DashboardGridProps {
   width: number;
   editMode: boolean;
   widgetNodes: Map<string, React.ReactNode>;
-  onLayoutChange: (widgets: WidgetInstance[]) => void;
+  onLayoutChange: (_widgets: WidgetInstance[]) => void;
+  onWidgetVisible: (_widgetType: string) => void;
 }
 
-export function DashboardGrid({ widgets, cols, rowHeight, width, editMode, widgetNodes, onLayoutChange }: DashboardGridProps) {
+export function DashboardGrid({ widgets, cols, rowHeight, width, editMode, widgetNodes, onLayoutChange, onWidgetVisible }: DashboardGridProps) {
+  const visibleWidgets = React.useMemo(() => widgets.filter((w) => !w.collapsed), [widgets]);
   const layout = React.useMemo(
     () =>
-      widgets
-        .filter((w) => !w.collapsed)
-        .map(
+      visibleWidgets.map(
           (w) =>
             ({
               i: w.id,
@@ -33,16 +34,17 @@ export function DashboardGrid({ widgets, cols, rowHeight, width, editMode, widge
               minH: 2,
             }) as LayoutItem,
         ) as Layout,
-    [widgets],
+    [visibleWidgets],
   );
 
   const handleLayoutChange = React.useCallback(
     (newLayout: Layout) => {
       if (!editMode) return;
       let changed = false;
+      const positions = new Map((newLayout as LayoutItem[]).map((item) => [item.i, item]));
       const updated = widgets.map((w) => {
         if (w.collapsed) return w;
-        const match = (newLayout as LayoutItem[]).find((l) => l.i === w.id);
+        const match = positions.get(w.id);
         if (!match) return w;
         const { x, y, w: width, h: height } = match;
         if (x === w.position.x && y === w.position.y && width === w.position.w && height === w.position.h) {
@@ -72,11 +74,15 @@ export function DashboardGrid({ widgets, cols, rowHeight, width, editMode, widge
       margin={[12, 12]}
       containerPadding={[0, 0]}
     >
-      {widgets
-        .filter((w) => !w.collapsed)
-        .map((w) => (
+      {visibleWidgets.map((w) => (
           <div key={w.id} className="overflow-hidden">
-            {widgetNodes.get(w.id)}
+            <DashboardWidgetViewport
+              widgetType={w.type}
+              priority={w.position.y === 0}
+              onVisible={onWidgetVisible}
+            >
+              {widgetNodes.get(w.id)}
+            </DashboardWidgetViewport>
           </div>
         ))}
     </GridLayout>

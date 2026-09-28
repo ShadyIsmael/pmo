@@ -4,9 +4,8 @@ import { useState } from "react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Filter, ZoomIn, ZoomOut, CalendarDays } from "lucide-react";
+import { Filter, ZoomOut, CalendarDays } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import { mockProjects } from "@/lib/mock-data";
 
@@ -84,7 +83,6 @@ export default function GanttPage() {
                   </div>
                   {months.slice(0, 12).map((_, mi) => {
                     const isActive = mi >= phase.start && mi < phase.start + phase.duration;
-                    const isStart = mi === phase.start;
                     const bgClass = phase.isMilestone ? "" :
                       phase.health === "green" ? "bg-status-green" :
                       phase.health === "amber" ? "bg-status-amber" : "bg-status-red";

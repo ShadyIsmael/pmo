@@ -39,6 +39,8 @@ interface SearchableSelectProps {
   emptyAction?: React.ReactNode;
   className?: string;
   disabled?: boolean;
+  error?: boolean;
+  clearable?: boolean;
 }
 
 export function SearchableSelect({
@@ -53,6 +55,8 @@ export function SearchableSelect({
   emptyAction,
   className,
   disabled,
+  error = false,
+  clearable = false,
 }: SearchableSelectProps) {
   const [open, setOpen] = React.useState(false);
   const triggerRef = React.useRef<HTMLButtonElement>(null);
@@ -78,11 +82,15 @@ export function SearchableSelect({
           variant="outline"
           role="combobox"
           aria-expanded={open}
-          className={cn("w-full justify-between font-normal", className)}
+          aria-invalid={error || undefined}
+          className={cn("w-full justify-between font-normal", error && "border-destructive focus-visible:ring-destructive", className)}
           disabled={disabled}
         >
-          {selected ? selected.label : placeholder}
-          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          <span className={cn("min-w-0 truncate", !selected && "text-muted-foreground")}>{selected ? selected.label : placeholder}</span>
+          <span className="ms-2 flex shrink-0 items-center gap-1">
+            {clearable && selected && <X className="h-3.5 w-3.5 opacity-60 hover:opacity-100" onClick={(event) => { event.stopPropagation(); emitValueChange(""); }} aria-label="Clear selection" />}
+            <ChevronsUpDown className="h-4 w-4 opacity-50" />
+          </span>
         </Button>
       </PopoverTrigger>
       <PopoverContent
@@ -119,7 +127,7 @@ export function SearchableSelect({
                     >
                       <Check
                         className={cn(
-                          "mr-2 h-4 w-4",
+                          "me-2 h-4 w-4",
                           value === option.value ? "opacity-100" : "opacity-0"
                         )}
                       />
@@ -147,6 +155,7 @@ interface SearchableMultiSelectProps {
   loading?: boolean;
   className?: string;
   disabled?: boolean;
+  error?: boolean;
 }
 
 export function SearchableMultiSelect({
@@ -160,6 +169,7 @@ export function SearchableMultiSelect({
   loading = false,
   className,
   disabled,
+  error = false,
 }: SearchableMultiSelectProps) {
   const [open, setOpen] = React.useState(false);
   const triggerRef = React.useRef<HTMLButtonElement>(null);
@@ -202,6 +212,7 @@ export function SearchableMultiSelect({
           aria-expanded={open}
           className={cn(
             "w-full justify-between font-normal h-auto min-h-9",
+            error && "border-destructive focus-visible:ring-destructive",
             className
           )}
           disabled={disabled}

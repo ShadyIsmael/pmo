@@ -313,7 +313,8 @@ All entities inherit from `BaseEntity` which provides: `Id` (Guid), `TenantId`, 
 
 ### MeetingParticipant
 | Table: `MeetingParticipants` |
-| Key Properties: MeetingId, UserId, Status (Accepted/Declined/Pending/Tentative), Attended |
+| Key Properties: MeetingId, nullable UserId for internal attendees, required Email for external attendees, optional Name snapshot, Status (Accepted/Declined/Pending/Tentative), Attended |
+| Invariants: exactly one of the internal-user identity or external-email identity is accepted by the API; active attendees are unique per meeting by UserId and case-insensitive Email |
 
 ### MeetingMinutes
 | Table: `MeetingMinutes` |

@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { PuzzleIcon, Star, Download, ExternalLink, CheckCircle2, XCircle } from "lucide-react";
+import { PuzzleIcon, Star, Download, ExternalLink, CheckCircle2 } from "lucide-react";
 
 const plugins = [
   { id: "plg-1", name: "Advanced Gantt Chart", description: "Interactive Gantt chart with drag-and-drop scheduling", version: "2.1.0", status: "Installed", rating: 4.5, downloads: 1234, verified: true },
@@ -54,7 +54,7 @@ export default function PluginsPage() {
                         <CardDescription>v{plugin.version}</CardDescription>
                       </div>
                     </div>
-                    <Badge variant={plugin.status === "Installed" ? "default" : "secondary"} className="text-[10px]">
+                    <Badge status={plugin.status} className="text-[10px]">
                       {plugin.status === "Installed" ? <CheckCircle2 className="mr-1 h-3 w-3" /> : null}
                       {plugin.status}
                     </Badge>
@@ -70,7 +70,7 @@ export default function PluginsPage() {
                       </span>
                       <span className="text-muted-foreground">{plugin.downloads} downloads</span>
                     </div>
-                    {plugin.verified && <Badge variant="outline" className="text-[10px] text-status-green">Verified</Badge>}
+                    {plugin.verified && <Badge status="Verified" className="text-[10px]">Verified</Badge>}
                   </div>
                   <div className="flex gap-2 pt-1">
                     {plugin.status === "Installed" ? (

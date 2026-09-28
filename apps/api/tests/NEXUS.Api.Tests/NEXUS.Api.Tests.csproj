@@ -7,6 +7,8 @@
 
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <FocusedProjectPlanningComparison Condition="'$(FocusedProjectPlanningComparison)' == ''">false</FocusedProjectPlanningComparison>
+    <FocusedProjectPlanningDependencies Condition="'$(FocusedProjectPlanningDependencies)' == ''">false</FocusedProjectPlanningDependencies>
   </PropertyGroup>
 
   <ItemGroup>
@@ -21,6 +23,7 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="Moq" Version="4.20.70" />
+    <PackageReference Include="FluentAssertions" Version="6.12.0" />
     <!-- Use EF Core 10 compatible SQLite packages for integration tests -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.10" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.10" />
@@ -30,9 +33,49 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\NEXUS.Api\NEXUS.Api.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.Identity\NEXUS.Modules.Identity.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.RiskManagement\NEXUS.Modules.RiskManagement.csproj" />
     <ProjectReference Include="..\..\src\NEXUS.Modules.ProjectManagement\NEXUS.Modules.ProjectManagement.csproj" />
     <ProjectReference Include="..\..\src\NEXUS.Modules.ProjectPlanning\NEXUS.Modules.ProjectPlanning.csproj" />
     <ProjectReference Include="..\..\src\NEXUS.Persistence\NEXUS.Persistence.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.WorkflowEngine\NEXUS.Modules.WorkflowEngine.csproj" />
+  </ItemGroup>
+
+  <!-- Focused Project Planning tests deliberately avoid the host API reference.
+       The host transitively loads AIPlanning, which is unrelated to these tests. -->
+  <ItemGroup Condition="'$(FocusedProjectPlanningComparison)' == 'true'">
+    <Compile Remove="**\*.cs" />
+    <Compile Include="Integration\PlanVersionWorkflowServiceTests.cs" />
+    <Compile Include="Integration\PlanVersionComparisonServiceTests.cs" />
+    <Compile Include="Integration\PlanningImportServiceTests.cs" />
+    <Compile Include="Integration\PlanningCalendarServiceTests.cs" />
+    <Compile Include="Unit\AutoSchedulingEngineTests.cs" />
+    <Compile Include="Unit\CriticalPathAnalyzerTests.cs" />
+    <Compile Include="Unit\PlanActivityBaselineComparisonTests.cs" />
+    <ProjectReference Remove="..\..\src\NEXUS.Api\NEXUS.Api.csproj" />
+    <ProjectReference Remove="..\..\src\NEXUS.Modules.ProjectManagement\NEXUS.Modules.ProjectManagement.csproj" />
+    <ProjectReference Remove="..\..\src\NEXUS.Persistence\NEXUS.Persistence.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(FocusedProjectPlanningDependencies)' == 'true'">
+    <Compile Remove="**\*.cs" />
+    <Compile Include="Integration\PlanDependencyServiceTests.cs" />
+    <ProjectReference Remove="..\..\src\NEXUS.Api\NEXUS.Api.csproj" />
+    <ProjectReference Remove="..\..\src\NEXUS.Modules.ProjectManagement\NEXUS.Modules.ProjectManagement.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(FocusedWorkflowValidation)' == 'true'">
+    <Compile Remove="**\*.cs" />
+    <Compile Include="Unit\WorkflowDefinitionValidatorTests.cs" />
+    <Compile Include="Unit\WorkflowExecutionPhase2Tests.cs" />
+    <ProjectReference Remove="..\..\src\NEXUS.Api\NEXUS.Api.csproj" />
+    <ProjectReference Remove="..\..\src\NEXUS.Modules.Identity\NEXUS.Modules.Identity.csproj" />
+    <ProjectReference Remove="..\..\src\NEXUS.Modules.RiskManagement\NEXUS.Modules.RiskManagement.csproj" />
+    <ProjectReference Remove="..\..\src\NEXUS.Modules.ProjectManagement\NEXUS.Modules.ProjectManagement.csproj" />
+    <ProjectReference Remove="..\..\src\NEXUS.Modules.ProjectPlanning\NEXUS.Modules.ProjectPlanning.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.WorkflowEngine\NEXUS.Modules.WorkflowEngine.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Persistence\NEXUS.Persistence.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.Audit\NEXUS.Modules.Audit.csproj" />
   </ItemGroup>
 
 </Project>

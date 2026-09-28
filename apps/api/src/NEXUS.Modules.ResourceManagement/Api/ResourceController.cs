@@ -1,10 +1,11 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using NEXUS.Modules.ResourceManagement.Application;
 using NEXUS.Modules.ResourceManagement.Application.DTOs;
 
 namespace NEXUS.Modules.ResourceManagement.Api;
 
-// TODO: Restore [Authorize] policies when Authentication is implemented
+[Authorize]
 [ApiController]
 [Route("api/resources")]
 public class ResourceController : ControllerBase
@@ -17,6 +18,7 @@ public class ResourceController : ControllerBase
     }
 
     [HttpGet("{id:guid}")]
+    [Authorize(Policy = "Resource.View")]
     public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
     {
         var result = await _resourceService.GetByIdAsync(id, cancellationToken);
@@ -25,22 +27,37 @@ public class ResourceController : ControllerBase
     }
 
     [HttpGet]
+    [Authorize(Policy = "Resource.View")]
     public async Task<IActionResult> GetPaged([FromQuery] ResourceFilterDto filter, CancellationToken cancellationToken)
     {
         var result = await _resourceService.GetPagedAsync(filter, cancellationToken);
         return Ok(result);
     }
 
+    [HttpGet("base-calendars")]
+    [Authorize(Policy = "Resource.View")]
+    public async Task<IActionResult> GetBaseCalendars(CancellationToken cancellationToken)
+    {
+        return Ok(await _resourceService.GetBaseCalendarsAsync(cancellationToken));
+    }
+
     [HttpPost]
+    [Authorize(Policy = "Resource.Manage")]
     public async Task<IActionResult> Create([FromBody] CreateResourceDto dto, CancellationToken cancellationToken)
     {
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
         var result = await _resourceService.CreateAsync(dto, userId, cancellationToken);
-        if (result.IsFailure) return BadRequest(new { error = result.Error?.Message });
+        if (result.IsFailure)
+            return result.Error?.StatusCode switch
+            {
+                409 => Conflict(new { error = result.Error.Message }),
+                _ => BadRequest(new { error = result.Error?.Message })
+            };
         return CreatedAtAction(nameof(GetById), new { id = result.Value!.Id }, result.Value);
     }
 
     [HttpPut("{id:guid}")]
+    [Authorize(Policy = "Resource.Manage")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateResourceDto dto, CancellationToken cancellationToken)
     {
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
@@ -49,12 +66,14 @@ public class ResourceController : ControllerBase
             return result.Error?.StatusCode switch
             {
                 404 => NotFound(new { error = result.Error.Message }),
+                409 => Conflict(new { error = result.Error.Message }),
                 _ => BadRequest(new { error = result.Error?.Message })
             };
         return Ok(result.Value);
     }
 
     [HttpDelete("{id:guid}")]
+    [Authorize(Policy = "Resource.Manage")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";

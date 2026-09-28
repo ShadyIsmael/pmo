@@ -2,9 +2,9 @@
 
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { PuzzleIcon, Trash2, Settings, ExternalLink } from "lucide-react";
+import { PuzzleIcon, Trash2, Settings } from "lucide-react";
 
 export default function AdminPluginsPage() {
   const installed = [
@@ -31,7 +31,7 @@ export default function AdminPluginsPage() {
               <div className="flex-1">
                 <div className="flex items-center gap-2">
                   <p className="font-medium">{plugin.name}</p>
-                  <Badge variant="default" className="text-[10px]">{plugin.status}</Badge>
+              <Badge status={plugin.status} className="text-[10px]">{plugin.status}</Badge>
                 </div>
                 <p className="text-xs text-muted-foreground">v{plugin.version} by {plugin.author}</p>
               </div>

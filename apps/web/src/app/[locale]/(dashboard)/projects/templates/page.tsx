@@ -3,9 +3,8 @@
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, FileText, Copy, CheckCircle2 } from "lucide-react";
+import { Plus, FileText, Copy } from "lucide-react";
 
 const templates = [
   { id: "tpl-1", name: "Software Development (Agile)", category: "Technology", phases: 6, tasks: 24, used: 12 },

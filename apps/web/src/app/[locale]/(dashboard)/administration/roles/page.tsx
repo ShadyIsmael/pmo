@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Shield, CheckCircle2, XCircle } from "lucide-react";
+import { Plus, Shield } from "lucide-react";
 
 const roles = [
   { name: "Executive", users: 4, permissions: 42, description: "Full access to all portfolios and projects" },

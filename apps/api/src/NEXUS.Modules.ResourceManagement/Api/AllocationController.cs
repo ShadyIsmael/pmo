@@ -1,10 +1,11 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using NEXUS.Modules.ResourceManagement.Application;
 using NEXUS.Modules.ResourceManagement.Application.DTOs;
 
 namespace NEXUS.Modules.ResourceManagement.Api;
 
-// TODO: Restore [Authorize] policies when Authentication is implemented
+[Authorize]
 [ApiController]
 [Route("api/allocations")]
 public class AllocationController : ControllerBase
@@ -17,6 +18,7 @@ public class AllocationController : ControllerBase
     }
 
     [HttpGet("{id:guid}")]
+    [Authorize(Policy = "Resource.View")]
     public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
     {
         var result = await _allocationService.GetByIdAsync(id, cancellationToken);
@@ -25,6 +27,7 @@ public class AllocationController : ControllerBase
     }
 
     [HttpGet]
+    [Authorize(Policy = "Resource.View")]
     public async Task<IActionResult> GetPaged(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
@@ -38,6 +41,7 @@ public class AllocationController : ControllerBase
     }
 
     [HttpGet("by-resource/{resourceId:guid}")]
+    [Authorize(Policy = "Resource.View")]
     public async Task<IActionResult> GetByResource(Guid resourceId, [FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken cancellationToken = default)
     {
         var result = await _allocationService.GetByResourceAsync(resourceId, page, pageSize, cancellationToken);
@@ -45,6 +49,7 @@ public class AllocationController : ControllerBase
     }
 
     [HttpGet("by-project/{projectId:guid}")]
+    [Authorize(Policy = "Resource.View")]
     public async Task<IActionResult> GetByProject(Guid projectId, [FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken cancellationToken = default)
     {
         var result = await _allocationService.GetByProjectAsync(projectId, page, pageSize, cancellationToken);
@@ -52,6 +57,7 @@ public class AllocationController : ControllerBase
     }
 
     [HttpGet("conflicts")]
+    [Authorize(Policy = "Resource.View")]
     public async Task<IActionResult> GetConflicts(
         [FromQuery] Guid resourceId,
         [FromQuery] DateTime startDate,
@@ -65,6 +71,7 @@ public class AllocationController : ControllerBase
     }
 
     [HttpPost]
+    [Authorize(Policy = "Resource.Assign")]
     public async Task<IActionResult> Create([FromBody] CreateAllocationDto dto, CancellationToken cancellationToken)
     {
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
@@ -74,6 +81,7 @@ public class AllocationController : ControllerBase
     }
 
     [HttpPut("{id:guid}")]
+    [Authorize(Policy = "Resource.Assign")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateAllocationDto dto, CancellationToken cancellationToken)
     {
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
@@ -88,6 +96,7 @@ public class AllocationController : ControllerBase
     }
 
     [HttpDelete("{id:guid}")]
+    [Authorize(Policy = "Resource.Manage")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";

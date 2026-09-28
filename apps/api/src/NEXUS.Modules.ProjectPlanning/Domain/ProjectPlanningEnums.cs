@@ -33,6 +33,26 @@ public enum PlanActivityType
     Milestone
 }
 
+/// <summary>Controls whether an activity's dates are calculated by auto scheduling.</summary>
+public enum PlanSchedulingMode
+{
+    Automatic,
+    Manual
+}
+
+/// <summary>Rule applied to an automatically scheduled activity's dates.</summary>
+public enum PlanConstraintType
+{
+    AsSoonAsPossible,
+    AsLateAsPossible,
+    MustStartOn,
+    MustFinishOn,
+    StartNoEarlierThan,
+    StartNoLaterThan,
+    FinishNoEarlierThan,
+    FinishNoLaterThan
+}
+
 /// <summary>
 /// Relationship type of a <see cref="PlanDependency"/> between two activities.
 /// </summary>
@@ -69,4 +89,39 @@ public enum PlanType
     Shutdown,
     Scenario,
     Custom
+}
+
+/// <summary>
+/// Approved semantic text colors for Planning row display. These are tokens,
+/// rather than arbitrary CSS values, so the table and Gantt can render them
+/// consistently across themes.
+/// </summary>
+public enum PlanTextColorToken
+{
+    Slate,
+    Blue,
+    Teal,
+    Green,
+    Amber,
+    Red,
+    Violet
+}
+
+/// <summary>Approved semantic highlight colors for Planning row display.</summary>
+public enum PlanHighlightColorToken
+{
+    Yellow,
+    Blue,
+    Green,
+    Orange,
+    Pink
+}
+
+/// <summary>Limited, accessible font-size choices for Planning rows.</summary>
+public enum PlanFontSizeToken
+{
+    Small,
+    Normal,
+    Large,
+    ExtraLarge
 }

@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Puzzle, CheckCircle2, XCircle, RefreshCw, Settings } from "lucide-react";
+import { CheckCircle2, RefreshCw, Settings } from "lucide-react";
 
 const integrations = [
   { id: "int-1", name: "Microsoft Project", description: "Import and sync project plans from Microsoft Project", status: "Connected", type: "Project Management", icon: "📊" },
@@ -47,7 +47,7 @@ export default function IntegrationsPage() {
                         <CardDescription>{integration.description}</CardDescription>
                       </div>
                     </div>
-                    <Badge variant={integration.status === "Connected" ? "default" : "secondary"} className="text-[10px]">
+                    <Badge status={integration.status} className="text-[10px]">
                       {integration.status === "Connected" ? <CheckCircle2 className="mr-1 h-3 w-3" /> : null}
                       {integration.status}
                     </Badge>

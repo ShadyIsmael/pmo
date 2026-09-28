@@ -23,6 +23,66 @@ export const Permissions = {
     ViewCostRate: "Resource.ViewCostRate",
     EditCostRate: "Resource.EditCostRate",
   },
+  Project: {
+    View: "Project.View",
+    Create: "Project.Create",
+    Edit: "Project.Edit",
+    Delete: "Project.Delete",
+  },
+  Stakeholders: {
+    Read: "Stakeholders.Read",
+    Manage: "Stakeholders.Manage",
+  },
+  ChangeRequest: {
+    View: "ChangeRequest.View",
+    Manage: "ChangeRequest.Manage",
+    Approve: "ChangeRequest.Approve",
+  },
+  Handover: {
+    View: "Handover.View",
+    Manage: "Handover.Manage",
+    Approve: "Handover.Approve",
+  },
+  Risk: {
+    View: "Risk.View",
+    Create: "Risk.Create",
+    Edit: "Risk.Edit",
+    Delete: "Risk.Delete",
+    Mitigate: "Risk.Mitigate",
+  },
+  Planning: {
+    View: "Planning.View",
+    Manage: "Planning.Manage",
+    Lifecycle: "Planning.Lifecycle",
+  },
+  Portfolio: {
+    View: "Portfolio.View",
+    Manage: "Portfolio.Manage",
+  },
+  Program: {
+    View: "Program.View",
+    Manage: "Program.Manage",
+  },
+  WorkItem: {
+    View: "WorkItem.View",
+    Create: "WorkItem.Create",
+    Edit: "WorkItem.Edit",
+    Delete: "WorkItem.Delete",
+  },
+  Meeting: {
+    View: "Meeting.View",
+    Create: "Meeting.Create",
+    Edit: "Meeting.Edit",
+    Manage: "Meeting.Manage",
+    Delete: "Meeting.Delete",
+  },
+  Document: {
+    View: "Document.View",
+    Create: "Document.Create",
+    Edit: "Document.Edit",
+    Archive: "Document.Archive",
+    TemplateManage: "Document.TemplateManage",
+  },
   Users: {
     Read: "users.read",
     Write: "users.write",
@@ -38,6 +98,11 @@ export const Permissions = {
   Settings: {
     Read: "settings.read",
     Write: "settings.write",
+  },
+  Workflow: {
+    View: "Workflow.View",
+    Manage: "Workflow.Manage",
+    Publish: "Workflow.Publish",
   },
 } as const;
 

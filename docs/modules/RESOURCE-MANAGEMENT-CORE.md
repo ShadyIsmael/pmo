@@ -54,7 +54,10 @@ The Resource Management core module manages the resource registry, skills taxono
 | Policy | Required Claims |
 |--------|-----------------|
 | `Resource.View` | `Resource.View` OR `Resource.Allocate` OR `Resource.Manage` |
+| `Resource.Assign` | `Resource.Allocate` OR `Resource.Manage` |
 | `Resource.Manage` | `Resource.Manage` |
+| `Resource.ViewCostRate` | `Resource.ViewCostRate` OR `Resource.ManageRates` OR `Resource.Manage` (no isolated rate endpoint currently exists) |
+| `Resource.EditCostRate` | `Resource.EditCostRate` OR `Resource.ManageRates` OR `Resource.Manage` (no isolated rate endpoint currently exists) |
 
 See [permission-model.md](../architecture/permission-model.md) for the full permission model.
 

@@ -1,3 +1,3 @@
 namespace NEXUS.Modules.Identity.Application;
 
-public record LoginCommand(string Email, string Password);
+public record LoginCommand(string Email, string Password, string? TenantId = null);

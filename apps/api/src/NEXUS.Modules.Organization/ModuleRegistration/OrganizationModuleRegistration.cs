@@ -30,6 +30,13 @@ public static class OrganizationModuleRegistration
             var httpContextAccessor = sp.GetRequiredService<Microsoft.AspNetCore.Http.IHttpContextAccessor>();
             return new CurrencyService(context, httpContextAccessor);
         });
+        services.AddScoped<IWorkItemStatusReferenceService>(sp =>
+        {
+            var context = sp.GetRequiredService<DbContext>();
+            var httpContextAccessor = sp.GetRequiredService<Microsoft.AspNetCore.Http.IHttpContextAccessor>();
+            var usageLookup = sp.GetRequiredService<NEXUS.SharedKernel.IWorkItemStatusUsageLookup>();
+            return new WorkItemStatusReferenceService(context, httpContextAccessor, usageLookup);
+        });
         return services;
     }
 }

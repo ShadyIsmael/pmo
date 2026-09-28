@@ -3,7 +3,7 @@ namespace NEXUS.Modules.ResourceManagement.Application.DTOs;
 public class ResourceDto
 {
     public Guid Id { get; set; }
-    public Guid UserId { get; set; }
+    public Guid? UserId { get; set; }
     public string Name { get; set; } = string.Empty;
     public string? EmployeeId { get; set; }
     public string? JobTitle { get; set; }
@@ -12,9 +12,6 @@ public class ResourceDto
     public string? AvatarUrl { get; set; }
     public string Type { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
-    public decimal? CostPerHour { get; set; }
-    public decimal? BillableRate { get; set; }
-    public string? Currency { get; set; }
     public string? EmploymentType { get; set; }
     public string? Seniority { get; set; }
     public DateTime? DateOfJoining { get; set; }
@@ -28,6 +25,8 @@ public class ResourceDto
     public string? LocationName { get; set; }
     public Guid? VendorId { get; set; }
     public string? VendorName { get; set; }
+    public Guid? BaseCalendarId { get; set; }
+    public string? BaseCalendarName { get; set; }
     public string? Timezone { get; set; }
     public decimal? UtilizationTarget { get; set; }
     public decimal? CurrentUtilization { get; set; }
@@ -37,6 +36,14 @@ public class ResourceDto
     public DateTime? UpdatedAt { get; set; }
     public List<ResourceSkillDto> Skills { get; set; } = new();
     public List<ResourceAllocationDto> Allocations { get; set; } = new();
+    public List<ResourceCostProfileDto> CostProfiles { get; set; } = new();
+}
+
+public class ResourceBaseCalendarDto
+{
+    public Guid Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public bool IsDefault { get; set; }
 }
 
 public class ResourceSkillDto
@@ -54,10 +61,8 @@ public class ResourceAllocationDto
     public Guid Id { get; set; }
     public Guid? ProjectId { get; set; }
     public string? ProjectName { get; set; }
-    public string Role { get; set; } = string.Empty;
     public decimal AllocationPercentage { get; set; }
     public decimal? PlannedHours { get; set; }
-    public decimal? ActualHours { get; set; }
     public DateTime StartDate { get; set; }
     public DateTime EndDate { get; set; }
     public string? Status { get; set; }
@@ -72,11 +77,8 @@ public class CreateResourceDto
     public string? Email { get; set; }
     public string? Phone { get; set; }
     public string? AvatarUrl { get; set; }
-    public string Type { get; set; } = "Employee";
+    public string Type { get; set; } = "Staff";
     public string Status { get; set; } = "Active";
-    public decimal? CostPerHour { get; set; }
-    public decimal? BillableRate { get; set; }
-    public string? Currency { get; set; } = "GBP";
     public string? EmploymentType { get; set; }
     public string? Seniority { get; set; }
     public DateTime? DateOfJoining { get; set; }
@@ -85,6 +87,7 @@ public class CreateResourceDto
     public Guid? TeamId { get; set; }
     public Guid? LocationId { get; set; }
     public Guid? VendorId { get; set; }
+    public Guid? BaseCalendarId { get; set; }
     public string? Timezone { get; set; }
     public decimal? UtilizationTarget { get; set; }
     public string? Notes { get; set; }
@@ -93,6 +96,8 @@ public class CreateResourceDto
 
 public class UpdateResourceDto
 {
+    public Guid? UserId { get; set; }
+    public bool? RemoveUserAssociation { get; set; }
     public string? Name { get; set; }
     public string? EmployeeId { get; set; }
     public string? JobTitle { get; set; }
@@ -101,9 +106,6 @@ public class UpdateResourceDto
     public string? AvatarUrl { get; set; }
     public string? Type { get; set; }
     public string? Status { get; set; }
-    public decimal? CostPerHour { get; set; }
-    public decimal? BillableRate { get; set; }
-    public string? Currency { get; set; }
     public string? EmploymentType { get; set; }
     public string? Seniority { get; set; }
     public DateTime? DateOfJoining { get; set; }
@@ -112,6 +114,7 @@ public class UpdateResourceDto
     public Guid? TeamId { get; set; }
     public Guid? LocationId { get; set; }
     public Guid? VendorId { get; set; }
+    public Guid? BaseCalendarId { get; set; }
     public string? Timezone { get; set; }
     public decimal? UtilizationTarget { get; set; }
     public string? Notes { get; set; }
@@ -131,6 +134,7 @@ public class ResourceFilterDto
     public string? Search { get; set; }
     public string? Status { get; set; }
     public string? Type { get; set; }
+    public Guid? UserId { get; set; }
     public Guid? DepartmentId { get; set; }
     public Guid? LocationId { get; set; }
     public Guid? BusinessUnitId { get; set; }

@@ -2,13 +2,11 @@
 
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Filter, Download } from "lucide-react";
-import { formatDate, getInitials, getStatusVariant } from "@/lib/utils";
-import { mockProjects, mockUsers, mockResources, mockTasks } from "@/lib/mock-data";
+import { getInitials } from "@/lib/utils";
+import { mockProjects, mockResources } from "@/lib/mock-data";
 
 export default function ResourceMatrixPage() {
   return (
@@ -26,7 +24,7 @@ export default function ResourceMatrixPage() {
 
       <div className="overflow-x-auto">
         <div className="min-w-[900px] rounded-md border">
-          <div className="grid grid-cols-10 gap-2 border-b bg-muted/50 px-4 py-3 text-xs font-medium text-muted-foreground">
+          <div className="nexus-table-header grid grid-cols-10 gap-2">
             <div className="col-span-2">Resource</div>
             <div className="col-span-1">Role</div>
             <div className="col-span-1">Availability</div>
@@ -37,7 +35,7 @@ export default function ResourceMatrixPage() {
             <div className="col-span-1">Allocation</div>
           </div>
           {mockResources.slice(0, 12).map((res) => (
-            <div key={res.id} className="grid grid-cols-10 gap-2 border-b px-4 py-3 text-sm last:border-0 hover:bg-muted/30">
+            <div key={res.id} className="nexus-table-row grid grid-cols-10 gap-2 px-4 py-3 text-sm last:border-0">
               <div className="col-span-2 flex items-center gap-2 font-medium">
                 <Avatar className="h-6 w-6"><AvatarFallback className="text-[8px]">{getInitials(res.name)}</AvatarFallback></Avatar>
                 {res.name}

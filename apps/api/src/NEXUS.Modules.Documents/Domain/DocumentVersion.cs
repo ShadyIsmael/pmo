@@ -10,7 +10,9 @@ public class DocumentVersion : BaseEntity
     public string? FileName { get; set; }
     public long FileSize { get; set; }
     public string? StoragePath { get; set; }
+    public string? ContentType { get; set; }
     public string? ChangeNotes { get; set; }
     public Guid? UploadedBy { get; set; }
     public DateTime UploadedAt { get; set; } = DateTime.UtcNow;
+    public bool IsCurrent { get; set; }
 }

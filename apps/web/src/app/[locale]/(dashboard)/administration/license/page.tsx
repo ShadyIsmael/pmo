@@ -1,11 +1,9 @@
 "use client";
 
 import { PageHeader } from "@/components/layout/PageHeader";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { FileText, CheckCircle2, AlertTriangle } from "lucide-react";
 
 export default function LicensePage() {
   return (
@@ -17,7 +15,7 @@ export default function LicensePage() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle className="text-lg">Current License</CardTitle>
-              <Badge variant="default" className="text-[10px]">Active</Badge>
+              <Badge status="Active" className="text-[10px]">Active</Badge>
             </div>
             <CardDescription>Enterprise Edition</CardDescription>
           </CardHeader>

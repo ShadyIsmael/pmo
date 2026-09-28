@@ -17,6 +17,7 @@ public class PlanActivityController : ControllerBase
         _activityService = activityService;
     }
 
+    [Authorize(Policy = "Planning.View")]
     [HttpGet]
     public async Task<IActionResult> GetByPlan(Guid projectId, Guid planId, CancellationToken cancellationToken)
     {
@@ -30,6 +31,7 @@ public class PlanActivityController : ControllerBase
         return Ok(result.Value);
     }
 
+    [Authorize(Policy = "Planning.Manage")]
     [HttpPost]
     public async Task<IActionResult> Create(Guid projectId, Guid planId, [FromBody] CreatePlanActivityDto dto, CancellationToken cancellationToken)
     {
@@ -45,6 +47,7 @@ public class PlanActivityController : ControllerBase
         return CreatedAtAction(nameof(GetByPlan), new { projectId, planId }, result.Value);
     }
 
+    [Authorize(Policy = "Planning.Manage")]
     [HttpPut("{activityId:guid}")]
     public async Task<IActionResult> Update(Guid projectId, Guid planId, Guid activityId, [FromBody] UpdatePlanActivityDto dto, CancellationToken cancellationToken)
     {
@@ -60,6 +63,23 @@ public class PlanActivityController : ControllerBase
         return Ok(result.Value);
     }
 
+    [Authorize(Policy = "Planning.Manage")]
+    [HttpPost("{activityId:guid}/move")]
+    public async Task<IActionResult> Move(Guid projectId, Guid planId, Guid activityId, [FromBody] MovePlanActivityDto dto, CancellationToken cancellationToken)
+    {
+        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        var result = await _activityService.MoveAsync(planId, activityId, dto, userId, cancellationToken);
+        if (result.IsFailure)
+            return result.Error?.StatusCode switch
+            {
+                404 => NotFound(new { error = result.Error.Message }),
+                409 => Conflict(new { error = result.Error.Message }),
+                _ => BadRequest(new { error = result.Error?.Message })
+            };
+        return Ok(result.Value);
+    }
+
+    [Authorize(Policy = "Planning.Manage")]
     [HttpDelete("{activityId:guid}")]
     public async Task<IActionResult> Delete(Guid projectId, Guid planId, Guid activityId, [FromQuery] byte[] rowVersion, CancellationToken cancellationToken)
     {

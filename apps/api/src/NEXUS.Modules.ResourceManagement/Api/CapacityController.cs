@@ -1,10 +1,11 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using NEXUS.Modules.ResourceManagement.Application;
 using NEXUS.Modules.ResourceManagement.Application.DTOs;
 
 namespace NEXUS.Modules.ResourceManagement.Api;
 
-// TODO: Restore [Authorize] policies when Authentication is implemented
+[Authorize]
 [ApiController]
 [Route("api/capacity")]
 public class CapacityController : ControllerBase
@@ -17,6 +18,7 @@ public class CapacityController : ControllerBase
     }
 
     [HttpGet("matrix")]
+    [Authorize(Policy = "Resource.View")]
     public async Task<IActionResult> GetMatrix([FromQuery] CapacityFilterDto filter, CancellationToken cancellationToken)
     {
         var result = await _capacityService.GetMatrixAsync(filter, cancellationToken);
@@ -25,6 +27,7 @@ public class CapacityController : ControllerBase
     }
 
     [HttpGet("availability")]
+    [Authorize(Policy = "Resource.View")]
     public async Task<IActionResult> GetAvailability([FromQuery] CapacityFilterDto filter, CancellationToken cancellationToken)
     {
         var result = await _capacityService.GetAvailabilityAsync(filter, cancellationToken);
@@ -32,6 +35,7 @@ public class CapacityController : ControllerBase
     }
 
     [HttpGet("demand-vs-capacity")]
+    [Authorize(Policy = "Resource.View")]
     public async Task<IActionResult> GetDemandVsCapacity([FromQuery] CapacityFilterDto filter, CancellationToken cancellationToken)
     {
         var result = await _capacityService.GetDemandVsCapacityAsync(filter, cancellationToken);
@@ -40,6 +44,7 @@ public class CapacityController : ControllerBase
     }
 
     [HttpGet("gantt")]
+    [Authorize(Policy = "Resource.View")]
     public async Task<IActionResult> GetGanttData([FromQuery] CapacityFilterDto filter, CancellationToken cancellationToken)
     {
         var result = await _capacityService.GetGanttDataAsync(filter, cancellationToken);
@@ -48,6 +53,7 @@ public class CapacityController : ControllerBase
     }
 
     [HttpGet("resource/{resourceId:guid}/availability")]
+    [Authorize(Policy = "Resource.View")]
     public async Task<IActionResult> GetResourceAvailability(Guid resourceId, [FromQuery] DateTime startDate, [FromQuery] DateTime endDate, CancellationToken cancellationToken)
     {
         var result = await _capacityService.GetResourceAvailabilityAsync(resourceId, startDate, endDate, cancellationToken);

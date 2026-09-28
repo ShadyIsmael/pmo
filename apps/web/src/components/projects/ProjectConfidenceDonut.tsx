@@ -1,15 +1,6 @@
 "use client";
 
-type NullableNumber = number | null | undefined;
-
-function isFiniteNumber(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value);
-}
-
-function formatNullablePercentage(value: NullableNumber, fractionDigits = 0, signed = false) {
-  if (!isFiniteNumber(value)) return "—";
-  return `${signed && value > 0 ? "+" : ""}${value.toFixed(fractionDigits)}%`;
-}
+import { isFiniteNumber, formatNullablePercentage, type NullableNumber } from "@/lib/utils";
 
 export function ProjectConfidenceDonut({ value }: { value: NullableNumber }) {
   const pct = isFiniteNumber(value) ? Math.min(100, Math.max(0, value)) : null;

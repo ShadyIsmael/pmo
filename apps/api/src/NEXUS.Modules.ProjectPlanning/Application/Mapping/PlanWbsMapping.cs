@@ -15,6 +15,7 @@ public static class PlanWbsMapping
             SortOrder = dto.SortOrder ?? 0,
             Code = dto.Code?.Trim() ?? string.Empty,
             Name = dto.Name?.Trim() ?? string.Empty,
+            TextFormat = dto.TextFormat.ToEntity(),
             CreatedBy = userId
         };
     }
@@ -31,6 +32,7 @@ public static class PlanWbsMapping
             Name = node.Name,
             ActivityId = node.ActivityId,
             DeliverableId = node.DeliverableId,
+            TextFormat = node.TextFormat.ToDto(),
             RowVersion = node.RowVersion.ToArray(),
             Children = []
         };

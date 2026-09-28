@@ -5,21 +5,19 @@ import { useTranslations } from "next-intl";
 import { Dialog, DialogContent, DialogHeader, DialogBody, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Progress } from "@/components/ui/progress";
+import { Alert } from "@/components/ui/alert";
+import { UserIdentity } from "@/components/ui/user-identity";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Search, Crosshair, List, GitBranch, X } from "lucide-react";
-import { getInitials, formatDate } from "@/lib/utils";
+import { formatDate } from "@/lib/utils";
 import { useResourceFinder, ResourceFinderResultDto } from "@/hooks/resources/useResourceFinder";
 import { useSkills } from "@/hooks/resources/useSkills";
 import { useVendors } from "@/hooks/resources/useVendors";
 import { useResources } from "@/hooks/resources/useResources";
 import { SearchableSelect, SearchableMultiSelect, type SelectOption } from "@/components/ui/searchable-select";
 
-const BAR_HEIGHT = 6;
-const ROW_HEIGHT = 64;
 const STATUS_COLORS: Record<string, string> = {
   Confirmed: "bg-blue-400",
   Proposed: "bg-amber-300",
@@ -39,13 +37,11 @@ function ResourceAvailabilityGantt({ items, startDate, endDate }: { items: Resou
         return (
           <div key={r.resourceId} className="flex items-center gap-3 rounded-md border p-2">
             <div className="w-36 flex-shrink-0">
-              <div className="flex items-center gap-1.5">
-                <Avatar className="h-5 w-5">
-                  <AvatarFallback className="text-[6px]">{getInitials(r.resourceName)}</AvatarFallback>
-                </Avatar>
-                <span className="truncate text-xs font-medium">{r.resourceName}</span>
-              </div>
-              <div className="text-[10px] text-muted-foreground ml-6">{Math.round(r.matchScore)}% match</div>
+              <UserIdentity
+                name={r.resourceName}
+                secondary={`${Math.round(r.matchScore)}% match`}
+                size="sm"
+              />
             </div>
             <div className="relative flex-1 h-6">
               <div className="absolute inset-x-0 bottom-0 h-1.5 rounded-full bg-muted" />
@@ -77,7 +73,6 @@ function ResourceAvailabilityGantt({ items, startDate, endDate }: { items: Resou
 
 export function ResourceFinderDialog() {
   const t = useTranslations("resources.finder");
-  const tc = useTranslations("common");
   const [open, setOpen] = useState(false);
   const [role, setRole] = useState("");
   const [seniority, setSeniority] = useState("");
@@ -209,74 +204,21 @@ export function ResourceFinderDialog() {
         </DialogHeader>
 
         <DialogBody className="flex flex-col gap-3">
-          <div className="flex flex-col gap-3">
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="relative flex-1 min-w-[160px]">
-              <SearchableSelect
-                options={[]}
-                value={role}
-                onValueChange={(val) => setRole(val)}
-                placeholder={t("searchPlaceholder")}
-                searchPlaceholder={t("searchPlaceholder")}
-                className="pl-8"
-              />
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
-            </div>
-            <SearchableSelect
-              options={seniorityOptions}
-              value={seniority}
-              onValueChange={(val) => setSeniority(val)}
-              placeholder={t("seniorityPlaceholder")}
-              searchPlaceholder={t("seniorityPlaceholder")}
-              className="w-28"
-            />
-            <SearchableMultiSelect
-              options={skillOptions}
-              values={skillIds}
-              onSelect={(vals) => setSkillIds(vals)}
-              placeholder={t("selectSkills")}
-              searchPlaceholder={t("selectSkills")}
-              className="w-40"
-            />
-            <SearchableSelect
-              options={departmentOptions}
-              value={departmentId}
-              onValueChange={(val) => setDepartmentId(val)}
-              placeholder={t("selectDepartment")}
-              searchPlaceholder={t("selectDepartment")}
-              className="w-36"
-            />
-            <SearchableSelect
-              options={locationOptions}
-              value={locationId}
-              onValueChange={(val) => setLocationId(val)}
-              placeholder={t("selectLocation")}
-              searchPlaceholder={t("selectLocation")}
-              className="w-32"
-            />
-            <SearchableSelect
-              options={vendorOptions}
-              value={vendorId}
-              onValueChange={(val) => setVendorId(val)}
-              placeholder={t("selectVendor")}
-              searchPlaceholder={t("selectVendor")}
-              className="w-32"
-            />
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <Input placeholder={t("allocPlaceholder")} type="number" className="w-20" value={requiredAllocation} onChange={(e) => setRequiredAllocation(e.target.value)} />
-            <Input type="date" className="w-36" value={finderStartDate} onChange={(e) => setFinderStartDate(e.target.value)} placeholder={t("startPlaceholder")} />
-            <Input type="date" className="w-36" value={finderEndDate} onChange={(e) => setFinderEndDate(e.target.value)} placeholder={t("endPlaceholder")} />
-            <div className="flex items-center rounded-md border p-0.5">
-              <Button variant={viewMode === "list" ? "default" : "ghost"} size="sm" className="h-7 px-2" onClick={() => setViewMode("list")}>
-                <List className="h-3.5 w-3.5" />
-              </Button>
-              <Button variant={viewMode === "gantt" ? "default" : "ghost"} size="sm" className="h-7 px-2" onClick={() => setViewMode("gantt")}>
-                <GitBranch className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-          </div>
-        </div>
+          <ResourceFinderFilterBar
+            role={role} setRole={setRole}
+            seniority={seniority} setSeniority={setSeniority}
+            skillIds={skillIds} setSkillIds={setSkillIds}
+            departmentId={departmentId} setDepartmentId={setDepartmentId}
+            locationId={locationId} setLocationId={setLocationId}
+            vendorId={vendorId} setVendorId={setVendorId}
+            requiredAllocation={requiredAllocation} setRequiredAllocation={setRequiredAllocation}
+            finderStartDate={finderStartDate} setFinderStartDate={setFinderStartDate}
+            finderEndDate={finderEndDate} setFinderEndDate={setFinderEndDate}
+            viewMode={viewMode} setViewMode={setViewMode}
+            skillOptions={skillOptions} seniorityOptions={seniorityOptions}
+            departmentOptions={departmentOptions} locationOptions={locationOptions}
+            vendorOptions={vendorOptions} t={t}
+          />
 
         {activeFilters.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5 px-1">
@@ -309,9 +251,7 @@ export function ResourceFinderDialog() {
           </div>
         )}
 
-        {error && (
-          <div className="rounded-md border bg-destructive/10 p-4 text-sm text-destructive">{t("failedToSearch")}</div>
-        )}
+        {error && <Alert variant="danger">{t("failedToSearch")}</Alert>}
 
         {data && hasFilters && (
           <div className="space-y-2">
@@ -330,10 +270,8 @@ export function ResourceFinderDialog() {
               <div className="space-y-2">
                 {data.items.map((r) => (
                   <div key={r.resourceId} className="flex items-center gap-4 rounded-md border p-3 hover:bg-muted/30">
-                    <Avatar className="h-8 w-8">
-                      <AvatarFallback className="text-xs">{getInitials(r.resourceName)}</AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1 min-w-0">
+                    <UserIdentity name={r.resourceName} size="md" />
+                    <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <span className="font-medium">{r.resourceName}</span>
                         <Badge variant="secondary" className="text-[10px]">{Math.round(r.matchScore)}% {t("matchScore")}</Badge>
@@ -347,7 +285,7 @@ export function ResourceFinderDialog() {
                       {r.skillMatches.length > 0 && (
                         <div className="flex flex-wrap gap-1 mt-1">
                           {r.skillMatches.map((s, i) => (
-                            <Badge key={i} variant={s.isMatch ? "default" : "secondary"} className="text-[10px]">
+                            <Badge key={i} status={s.isMatch ? "Matched" : "Unmatched"} className="text-[10px]">
                               {s.skillName} {s.isMatch ? "✓" : "✗"}
                             </Badge>
                           ))}
@@ -386,4 +324,90 @@ export function ResourceFinderDialog() {
       </DialogContent>
     </Dialog>
   );
+}
+
+function ResourceFinderFilterBar({ role, setRole, seniority, setSeniority, skillIds, setSkillIds, departmentId, setDepartmentId, locationId, setLocationId, vendorId, setVendorId, requiredAllocation, setRequiredAllocation, finderStartDate, setFinderStartDate, finderEndDate, setFinderEndDate, viewMode, setViewMode, skillOptions, seniorityOptions, departmentOptions, locationOptions, vendorOptions, t }: {
+  role: string; setRole: (_v: string) => void;
+  seniority: string; setSeniority: (_v: string) => void;
+  skillIds: string[]; setSkillIds: (_v: string[]) => void;
+  departmentId: string; setDepartmentId: (_v: string) => void;
+  locationId: string; setLocationId: (_v: string) => void;
+  vendorId: string; setVendorId: (_v: string) => void;
+  requiredAllocation: string; setRequiredAllocation: (_v: string) => void;
+  finderStartDate: string; setFinderStartDate: (_v: string) => void;
+  finderEndDate: string; setFinderEndDate: (_v: string) => void;
+  viewMode: "list" | "gantt"; setViewMode: (_v: "list" | "gantt") => void;
+  skillOptions: SelectOption[]; seniorityOptions: SelectOption[];
+  departmentOptions: SelectOption[]; locationOptions: SelectOption[];
+  vendorOptions: SelectOption[];
+  t: ReturnType<typeof useTranslations>;
+}) {
+  return <div className="flex flex-col gap-3">
+    <div className="flex items-center gap-2 flex-wrap">
+      <div className="relative flex-1 min-w-[160px]">
+        <SearchableSelect
+          options={[]}
+          value={role}
+          onValueChange={setRole}
+          placeholder={t("searchPlaceholder")}
+          searchPlaceholder={t("searchPlaceholder")}
+          className="pl-8"
+        />
+        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
+      </div>
+      <SearchableSelect
+        options={seniorityOptions}
+        value={seniority}
+        onValueChange={setSeniority}
+        placeholder={t("seniorityPlaceholder")}
+        searchPlaceholder={t("seniorityPlaceholder")}
+        className="w-28"
+      />
+      <SearchableMultiSelect
+        options={skillOptions}
+        values={skillIds}
+        onSelect={setSkillIds}
+        placeholder={t("selectSkills")}
+        searchPlaceholder={t("selectSkills")}
+        className="w-40"
+      />
+      <SearchableSelect
+        options={departmentOptions}
+        value={departmentId}
+        onValueChange={setDepartmentId}
+        placeholder={t("selectDepartment")}
+        searchPlaceholder={t("selectDepartment")}
+        className="w-36"
+      />
+      <SearchableSelect
+        options={locationOptions}
+        value={locationId}
+        onValueChange={setLocationId}
+        placeholder={t("selectLocation")}
+        searchPlaceholder={t("selectLocation")}
+        className="w-32"
+      />
+      <SearchableSelect
+        options={vendorOptions}
+        value={vendorId}
+        onValueChange={setVendorId}
+        placeholder={t("selectVendor")}
+        searchPlaceholder={t("selectVendor")}
+        className="w-32"
+      />
+    </div>
+    <div className="flex items-center gap-2 flex-wrap">
+      <Input placeholder={t("allocPlaceholder")} type="number" className="w-20" value={requiredAllocation} onChange={(e) => setRequiredAllocation(e.target.value)} />
+      <Input type="date" className="w-36" value={finderStartDate} onChange={(e) => setFinderStartDate(e.target.value)} placeholder={t("startPlaceholder")} />
+      <Input type="date" className="w-36" value={finderEndDate} onChange={(e) => setFinderEndDate(e.target.value)} placeholder={t("endPlaceholder")} />
+      <div className="flex items-center rounded-md border p-0.5">
+        <Button variant={viewMode === "list" ? "default" : "ghost"} size="sm" className="h-7 px-2" onClick={() => setViewMode("list")}>
+          <List className="h-3.5 w-3.5" />
+        </Button>
+        <Button variant={viewMode === "gantt" ? "default" : "ghost"} size="sm" className="h-7 px-2" onClick={() => setViewMode("gantt")}>
+          <GitBranch className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    </div>
+  </div>;
 }

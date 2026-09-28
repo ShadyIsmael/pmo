@@ -66,28 +66,35 @@ export interface CreateManagerHandoverRequestDto {
   notes?: string;
 }
 
-const key = (type: ManagerHandoverEntity, id: string) => ["manager-handovers", type, id] as const;
+export const managerHandoverKeys = {
+  all: ["manager-handovers"] as const,
+  pending: (userId: string) => ["manager-handovers", "pending-for-me", userId] as const,
+  byEntity: (type: ManagerHandoverEntity, id: string) => ["manager-handovers", type, id] as const,
+  requests: (type: ManagerHandoverEntity, id: string) => [...managerHandoverKeys.byEntity(type, id), "requests"] as const,
+  history: (type: ManagerHandoverEntity, id: string) => [...managerHandoverKeys.byEntity(type, id), "history"] as const,
+  snapshots: (type: ManagerHandoverEntity, id: string) => [...managerHandoverKeys.byEntity(type, id), "snapshots"] as const,
+};
 
 export function useManagerHandoverRequests(type: ManagerHandoverEntity, id: string) {
-  return useQuery({ queryKey: [...key(type, id), "requests"], queryFn: () => api.get<ManagerHandoverRequestDto[]>(endpoints.managerHandovers.requests(type, id)), enabled: !!id, staleTime: 15_000 });
+  return useQuery({ queryKey: managerHandoverKeys.requests(type, id), queryFn: () => api.get<ManagerHandoverRequestDto[]>(endpoints.managerHandovers.requests(type, id)), enabled: !!id, staleTime: 15_000 });
 }
 
 export function useManagerHistory(type: ManagerHandoverEntity, id: string) {
-  return useQuery({ queryKey: [...key(type, id), "history"], queryFn: () => api.get<ManagerAssignmentDto[]>(endpoints.managerHandovers.history(type, id)), enabled: !!id, staleTime: 30_000 });
+  return useQuery({ queryKey: managerHandoverKeys.history(type, id), queryFn: () => api.get<ManagerAssignmentDto[]>(endpoints.managerHandovers.history(type, id)), enabled: !!id, staleTime: 30_000 });
 }
 
 export function useManagerSnapshots(type: ManagerHandoverEntity, id: string) {
-  return useQuery({ queryKey: [...key(type, id), "snapshots"], queryFn: () => api.get<ManagerSnapshotDto[]>(endpoints.managerHandovers.snapshots(type, id)), enabled: !!id, staleTime: 30_000 });
+  return useQuery({ queryKey: managerHandoverKeys.snapshots(type, id), queryFn: () => api.get<ManagerSnapshotDto[]>(endpoints.managerHandovers.snapshots(type, id)), enabled: !!id, staleTime: 30_000 });
 }
 
 export function usePendingManagerHandovers() {
   const { user } = useAuth();
-  return useQuery({ queryKey: ["manager-handovers", "pending-for-me", user?.id], queryFn: () => api.get<ManagerHandoverRequestDto[]>(endpoints.managerHandovers.pending), enabled: !!user?.id, staleTime: 15_000 });
+  return useQuery({ queryKey: managerHandoverKeys.pending(user?.id ?? ""), queryFn: () => api.get<ManagerHandoverRequestDto[]>(endpoints.managerHandovers.pending), enabled: !!user?.id, staleTime: 15_000 });
 }
 
 function useHandoverMutation<TVariables>(mutationFn: (_variables: TVariables) => Promise<ManagerHandoverRequestDto>) {
   const queryClient = useQueryClient();
-  return useMutation({ mutationFn, onSuccess: (_data, _variables) => { queryClient.invalidateQueries({ queryKey: ["manager-handovers"] }); } });
+  return useMutation({ mutationFn, onSuccess: (_data, _variables) => { queryClient.invalidateQueries({ queryKey: managerHandoverKeys.all }); } });
 }
 
 export function useCreateManagerHandover(type: ManagerHandoverEntity, id: string) {

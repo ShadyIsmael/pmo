@@ -4,7 +4,7 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Clock, Plus, PauseCircle, FileText } from "lucide-react";
+import { Clock, Plus, PauseCircle } from "lucide-react";
 
 const scheduledReports = [
   { id: "sch-1", name: "Weekly Portfolio Dashboard", frequency: "Every Monday", recipients: 12, nextRun: "2026-08-04", active: true },
@@ -31,7 +31,7 @@ export default function ScheduledReportsPage() {
               <div className="flex-1">
                 <div className="flex items-center gap-2">
                   <p className="text-sm font-medium">{sr.name}</p>
-                  <Badge variant={sr.active ? "default" : "secondary"} className="text-[10px]">{sr.active ? "Active" : "Paused"}</Badge>
+                  <Badge status={sr.active ? "Active" : "Paused"} className="text-[10px]">{sr.active ? "Active" : "Paused"}</Badge>
                 </div>
                 <p className="text-xs text-muted-foreground">{sr.frequency} · {sr.recipients} recipients · Next: {sr.nextRun}</p>
               </div>

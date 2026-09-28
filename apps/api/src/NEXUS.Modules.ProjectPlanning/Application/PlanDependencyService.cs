@@ -5,22 +5,25 @@ using NEXUS.Modules.Audit.Domain;
 using NEXUS.Modules.ProjectPlanning.Application.DTOs;
 using NEXUS.Modules.ProjectPlanning.Application.Mapping;
 using NEXUS.Modules.ProjectPlanning.Domain;
+using NEXUS.Modules.ProjectPlanning.Domain.Scheduling;
 using NEXUS.SharedKernel;
+using NEXUS.SharedKernel.Helpers;
 
 namespace NEXUS.Modules.ProjectPlanning.Application;
 
 public class PlanDependencyService : IPlanDependencyService
 {
-    private static readonly Guid DemoTenantId = Guid.Parse("11111111-1111-1111-1111-111111111111");
     private readonly DbContext _context;
     private readonly IAuditService _auditService;
     private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly IPlanSchedulingService _schedulingService;
 
-    public PlanDependencyService(DbContext context, IAuditService auditService, IHttpContextAccessor httpContextAccessor)
+    public PlanDependencyService(DbContext context, IAuditService auditService, IHttpContextAccessor httpContextAccessor, IPlanSchedulingService? schedulingService = null)
     {
         _context = context;
         _auditService = auditService;
         _httpContextAccessor = httpContextAccessor;
+        _schedulingService = schedulingService ?? new PlanSchedulingService(context, new AutoSchedulingEngine());
     }
 
     public async Task<Result<PlanDependencyDto>> CreateAsync(Guid planId, CreatePlanDependencyDto dto, string userId, CancellationToken cancellationToken = default)
@@ -37,24 +40,39 @@ public class PlanDependencyService : IPlanDependencyService
             return Result<PlanDependencyDto>.Failure(validationError);
         }
 
-        var exists = await _context.Set<PlanDependency>()
-            .AnyAsync(d => d.PlanVersionId == workingVersion.Id &&
-                           d.ActivityId == dto.ActivityId &&
-                           d.PredecessorActivityId == dto.PredecessorActivityId, cancellationToken);
-        if (exists)
+        var tenantId = GetCurrentTenantId();
+        var existing = await _context.Set<PlanDependency>()
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(d => d.TenantId == tenantId &&
+                                      d.PlanVersionId == workingVersion.Id &&
+                                      d.ActivityId == dto.ActivityId &&
+                                      d.PredecessorActivityId == dto.PredecessorActivityId, cancellationToken);
+        if (existing is not null && !existing.IsDeleted)
         {
             return Result<PlanDependencyDto>.Failure(Error.Conflict("This dependency already exists in the plan version"));
         }
 
-        var cycleError = await WouldCreateCycleAsync(dto.ActivityId, dto.PredecessorActivityId, workingVersion.Id, null, cancellationToken);
-        if (cycleError is not null)
+        var dependency = existing ?? dto.ToEntity(tenantId, workingVersion.Id, userId);
+        if (existing is not null)
         {
-            return Result<PlanDependencyDto>.Failure(cycleError);
+            // The unique edge index includes soft-deleted rows. Reuse a deleted
+            // edge when the same predecessor is assigned again instead of
+            // inserting a duplicate database key.
+            dependency.IsDeleted = false;
+            dependency.Type = dto.Type;
+            dependency.Lag = dto.Lag;
+            dependency.UpdatedBy = userId;
         }
-
-        var tenantId = GetCurrentTenantId();
-        var dependency = dto.ToEntity(tenantId, workingVersion.Id, userId);
-        _context.Set<PlanDependency>().Add(dependency);
+        else
+        {
+            _context.Set<PlanDependency>().Add(dependency);
+        }
+        var createSchedule = await _schedulingService.RecalculateAsync(
+            workingVersion.Id,
+            [new SchedulingSeed(dto.ActivityId)],
+            userId,
+            cancellationToken);
+        if (createSchedule.IsFailure) return Result<PlanDependencyDto>.Failure(createSchedule.Error!);
         await _context.SaveChangesAsync(cancellationToken);
 
         await _auditService.LogAsync(new AuditEntry
@@ -96,13 +114,8 @@ public class PlanDependencyService : IPlanDependencyService
             return Result<PlanDependencyDto>.Failure(Error.Conflict("This dependency already exists in the plan version"));
         }
 
-        var cycleError = await WouldCreateCycleAsync(dto.ActivityId, dto.PredecessorActivityId, dependency.PlanVersionId, dependency.Id, cancellationToken);
-        if (cycleError is not null)
-        {
-            return Result<PlanDependencyDto>.Failure(cycleError);
-        }
-
         var originalValues = System.Text.Json.JsonSerializer.Serialize(dependency.ToDto());
+        var originalSuccessorId = dependency.ActivityId;
         dependency.ActivityId = dto.ActivityId;
         dependency.PredecessorActivityId = dto.PredecessorActivityId;
         dependency.Type = dto.Type;
@@ -110,6 +123,13 @@ public class PlanDependencyService : IPlanDependencyService
         dependency.UpdatedBy = userId;
 
         _context.Entry(dependency).Property(d => d.RowVersion).OriginalValue = dto.RowVersion;
+
+        var updateSchedule = await _schedulingService.RecalculateAsync(
+            dependency.PlanVersionId,
+            [new SchedulingSeed(originalSuccessorId), new SchedulingSeed(dependency.ActivityId)],
+            userId,
+            cancellationToken);
+        if (updateSchedule.IsFailure) return Result<PlanDependencyDto>.Failure(updateSchedule.Error!);
 
         try
         {
@@ -149,6 +169,13 @@ public class PlanDependencyService : IPlanDependencyService
 
         _context.Entry(dependency).Property(d => d.RowVersion).OriginalValue = rowVersion;
 
+        var deleteSchedule = await _schedulingService.RecalculateAsync(
+            dependency.PlanVersionId,
+            [new SchedulingSeed(dependency.ActivityId)],
+            userId,
+            cancellationToken);
+        if (deleteSchedule.IsFailure) return Result.Failure(deleteSchedule.Error!);
+
         try
         {
             await _context.SaveChangesAsync(cancellationToken);
@@ -171,6 +198,128 @@ public class PlanDependencyService : IPlanDependencyService
         return Result.Success();
     }
 
+    public async Task<Result<ReplacePlanPredecessorsResultDto>> ReplacePredecessorsAsync(
+        Guid planId,
+        ReplacePlanPredecessorsDto dto,
+        string userId,
+        CancellationToken cancellationToken = default)
+    {
+        var workingVersion = await GetActiveWorkingVersionAsync(planId, cancellationToken);
+        if (workingVersion is null)
+            return Result<ReplacePlanPredecessorsResultDto>.Failure(Error.NotFound(await GetActiveWorkingVersionNotAvailableMessageAsync(planId, cancellationToken)));
+
+        var desired = dto.Predecessors ?? [];
+        var duplicatePredecessor = desired.GroupBy(item => item.PredecessorActivityId).FirstOrDefault(group => group.Count() > 1);
+        if (duplicatePredecessor is not null)
+            return Result<ReplacePlanPredecessorsResultDto>.Failure(Error.Validation("An activity cannot have duplicate predecessors"));
+        if (desired.Any(item => item.PredecessorActivityId == dto.ActivityId))
+            return Result<ReplacePlanPredecessorsResultDto>.Failure(Error.Validation("An activity cannot depend on itself"));
+
+        var activityIds = desired.Select(item => item.PredecessorActivityId).Append(dto.ActivityId).ToHashSet();
+        var existingActivityIds = await _context.Set<PlanActivity>()
+            .Where(activity => activity.PlanVersionId == workingVersion.Id && activityIds.Contains(activity.Id))
+            .Select(activity => activity.Id)
+            .ToListAsync(cancellationToken);
+        if (!existingActivityIds.Contains(dto.ActivityId))
+            return Result<ReplacePlanPredecessorsResultDto>.Failure(Error.Validation("Successor activity must belong to the same plan version"));
+        var missingPredecessor = desired.FirstOrDefault(item => !existingActivityIds.Contains(item.PredecessorActivityId));
+        if (missingPredecessor is not null)
+            return Result<ReplacePlanPredecessorsResultDto>.Failure(Error.Validation("Predecessor activity must belong to the same plan version"));
+
+        var tenantId = GetCurrentTenantId();
+        var current = await _context.Set<PlanDependency>()
+            .IgnoreQueryFilters()
+            .Where(dependency => dependency.TenantId == tenantId &&
+                                 dependency.PlanVersionId == workingVersion.Id &&
+                                 dependency.ActivityId == dto.ActivityId)
+            .ToListAsync(cancellationToken);
+        var currentByPredecessor = current
+            .GroupBy(dependency => dependency.PredecessorActivityId)
+            .ToDictionary(group => group.Key, group => group.OrderBy(dependency => dependency.IsDeleted).First());
+        var desiredIds = desired.Select(item => item.PredecessorActivityId).ToHashSet();
+        var changed = false;
+
+        foreach (var item in desired)
+        {
+            if (currentByPredecessor.TryGetValue(item.PredecessorActivityId, out var existing))
+            {
+                if (!existing.IsDeleted && existing.Type == item.Type && existing.Lag == item.Lag) continue;
+                existing.IsDeleted = false;
+                existing.Type = item.Type;
+                existing.Lag = item.Lag;
+                existing.UpdatedBy = userId;
+                changed = true;
+                continue;
+            }
+
+            var dependency = new PlanDependency
+            {
+                TenantId = GetCurrentTenantId(),
+                PlanVersionId = workingVersion.Id,
+                ActivityId = dto.ActivityId,
+                PredecessorActivityId = item.PredecessorActivityId,
+                Type = item.Type,
+                Lag = item.Lag,
+                CreatedBy = userId,
+            };
+            _context.Set<PlanDependency>().Add(dependency);
+            current.Add(dependency);
+            changed = true;
+        }
+
+        foreach (var existing in current.Where(dependency => !dependency.IsDeleted && !desiredIds.Contains(dependency.PredecessorActivityId)))
+        {
+            existing.IsDeleted = true;
+            existing.UpdatedBy = userId;
+            changed = true;
+        }
+
+        if (!changed)
+        {
+            return Result<ReplacePlanPredecessorsResultDto>.Success(new ReplacePlanPredecessorsResultDto
+            {
+                Dependencies = current.Where(dependency => !dependency.IsDeleted).Select(dependency => dependency.ToDto()).ToList(),
+                SchedulingRecalculated = false,
+            });
+        }
+
+        var schedule = await _schedulingService.RecalculateAsync(
+            workingVersion.Id,
+            [new SchedulingSeed(dto.ActivityId)],
+            userId,
+            cancellationToken);
+        if (schedule.IsFailure)
+            return Result<ReplacePlanPredecessorsResultDto>.Failure(schedule.Error!);
+
+        _context.Set<AuditEntry>().Add(new AuditEntry
+        {
+            TenantId = GetCurrentTenantId(),
+            EntityType = "PlanDependency",
+            EntityId = dto.ActivityId,
+            Action = "ReplacePredecessors",
+            UserId = TryParseGuid(userId),
+            NewValues = System.Text.Json.JsonSerializer.Serialize(dto),
+            Timestamp = DateTime.UtcNow,
+            CreatedBy = userId,
+        });
+
+        try
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Result<ReplacePlanPredecessorsResultDto>.Failure(Error.Conflict("The predecessor set was modified by another user. Reload and try again."));
+        }
+
+        return Result<ReplacePlanPredecessorsResultDto>.Success(new ReplacePlanPredecessorsResultDto
+        {
+            Dependencies = current.Where(dependency => !dependency.IsDeleted).Select(dependency => dependency.ToDto()).ToList(),
+            ScheduledActivities = schedule.Value!.ChangedActivities,
+            SchedulingRecalculated = true,
+        });
+    }
+
     public async Task<Result<IReadOnlyList<PlanDependencyDto>>> GetByPlanAsync(Guid planId, CancellationToken cancellationToken = default)
     {
         var workingVersion = await GetActiveWorkingVersionAsync(planId, cancellationToken);
@@ -183,6 +332,7 @@ public class PlanDependencyService : IPlanDependencyService
             .Where(d => d.PlanVersionId == workingVersion.Id)
             .OrderBy(d => d.PredecessorActivityId)
             .ThenBy(d => d.ActivityId)
+            .AsNoTracking()
             .ToListAsync(cancellationToken);
 
         return Result<IReadOnlyList<PlanDependencyDto>>.Success(dependencies.Select(d => d.ToDto()).ToList());
@@ -215,44 +365,6 @@ public class PlanDependencyService : IPlanDependencyService
         }
 
         return null;
-    }
-
-    /// <summary>
-    /// Checks whether adding (or updating to) the edge
-    /// predecessor -&gt; activity creates a cycle in the dependency graph. A cycle is
-    /// formed exactly when a path already exists from the successor back to the
-    /// predecessor. The dependency being updated (<paramref name="excludedId"/>) is
-    /// ignored so its existing edge does not count against the proposal.
-    /// </summary>
-    private async Task<Error?> WouldCreateCycleAsync(Guid activityId, Guid predecessorActivityId, Guid planVersionId, Guid? excludedId, CancellationToken cancellationToken)
-    {
-        var edges = await _context.Set<PlanDependency>()
-            .Where(d => d.PlanVersionId == planVersionId && d.Id != excludedId)
-            .Select(d => new { d.ActivityId, d.PredecessorActivityId })
-            .ToListAsync(cancellationToken);
-
-        var outgoing = edges
-            .GroupBy(e => e.PredecessorActivityId)
-            .ToDictionary(g => g.Key, g => g.Select(e => e.ActivityId).ToList());
-
-        var visited = new HashSet<Guid>();
-
-        bool Reachable(Guid node)
-        {
-            if (!visited.Add(node)) return false;
-            if (!outgoing.TryGetValue(node, out var next)) return false;
-
-            foreach (var target in next)
-            {
-                if (target == predecessorActivityId || Reachable(target)) return true;
-            }
-
-            return false;
-        }
-
-        // The proposed edge is predecessor -> activity. It creates a cycle only if
-        // the successor can already reach the predecessor.
-        return Reachable(activityId) ? Error.Validation("This dependency would create a cycle") : null;
     }
 
     private async Task<PlanVersion?> GetActiveWorkingVersionAsync(Guid planId, CancellationToken cancellationToken)
@@ -302,11 +414,8 @@ public class PlanDependencyService : IPlanDependencyService
             return parsed;
         }
 
-        return DemoTenantId;
+        return TenantConstants.DemoTenantId;
     }
 
-    private static Guid? TryParseGuid(string value)
-    {
-        return Guid.TryParse(value, out var parsed) ? parsed : null;
-    }
+    private static Guid? TryParseGuid(string value) => GuidHelper.TryParse(value);
 }

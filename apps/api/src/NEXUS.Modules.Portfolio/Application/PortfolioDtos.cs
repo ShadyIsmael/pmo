@@ -15,6 +15,8 @@ public sealed class PortfolioProjectDto
     public decimal? Forecast { get; set; }
     public decimal? ActualCost { get; set; }
     public string Currency { get; set; } = "GBP";
+    public Guid? ProgramId { get; set; }
+    public bool IsDirectProject { get; set; }
 }
 
 public sealed class PortfolioMetricsDto
@@ -23,14 +25,25 @@ public sealed class PortfolioMetricsDto
     public int ActiveProjects { get; set; }
     public int CompletedProjects { get; set; }
     public int DelayedProjects { get; set; }
-    public decimal TotalBudget { get; set; }
-    public decimal TotalForecast { get; set; }
-    public decimal TotalActualCost { get; set; }
+    public decimal? TotalBudget { get; set; }
+    public decimal? TotalForecast { get; set; }
+    public decimal? TotalActualCost { get; set; }
     public decimal AverageProgress { get; set; }
     public DateTime? EarliestStartDate { get; set; }
     public DateTime? LatestEndDate { get; set; }
     public Dictionary<string, int> ProjectsByStatus { get; set; } = new();
     public Dictionary<string, int> ProjectsByHealth { get; set; } = new();
+    public Dictionary<string, CurrencyFinancialSummary> ByCurrency { get; set; } = new();
+}
+
+public sealed class CurrencyFinancialSummary
+{
+    public string Currency { get; set; } = "";
+    public bool IsBaseCurrency { get; set; }
+    public int ProjectCount { get; set; }
+    public decimal Budget { get; set; }
+    public decimal Forecast { get; set; }
+    public decimal ActualCost { get; set; }
 }
 
 public sealed class PortfolioDto
@@ -43,6 +56,7 @@ public sealed class PortfolioDto
     public Guid OwnerId { get; set; }
     public string? OwnerName { get; set; }
     public string? OwnerEmail { get; set; }
+    public string Currency { get; set; } = "USD";
     public PortfolioMetricsDto Metrics { get; set; } = new();
     public IReadOnlyList<PortfolioProjectDto> Projects { get; set; } = Array.Empty<PortfolioProjectDto>();
     public DateTime CreatedAt { get; set; }
@@ -57,4 +71,5 @@ public sealed class SavePortfolioDto
     public string? Description { get; set; }
     public Guid OwnerId { get; set; }
     public string Status { get; set; } = "Active";
+    public string Currency { get; set; } = "USD";
 }

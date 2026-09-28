@@ -21,6 +21,10 @@ public class TestBase : IDisposable
     protected static readonly Guid ResourceCharlieId = Guid.Parse("E3000000-0000-0000-0000-000000000003");
     protected static readonly Guid ResourceDianaId = Guid.Parse("E4000000-0000-0000-0000-000000000004");
     protected static readonly Guid ExistingAllocationId = Guid.Parse("F1000000-0000-0000-0000-000000000001");
+    protected static readonly Guid VendorAcmeId = Guid.Parse("A1000000-0000-0000-0000-000000000010");
+    protected static readonly Guid DefaultCalendarIdRef = Guid.Parse("B1000000-0000-0000-0000-000000000001");
+    protected static readonly Guid ProjectRoleDevId = Guid.Parse("D1000000-0000-0000-0000-000000000010");
+    protected static readonly Guid ProjectRoleArchId = Guid.Parse("D1000000-0000-0000-0000-000000000011");
 
     protected TestDbContext CreateContext()
     {
@@ -43,6 +47,8 @@ public class TestBase : IDisposable
         SeedResourceSkills(context);
         SeedAllocations(context);
         SeedHolidays(context);
+        SeedVendors(context);
+        SeedProjectRoles(context);
     }
 
     private void SeedDepartments(TestDbContext context)
@@ -183,7 +189,7 @@ public class TestBase : IDisposable
             ResourceId = ResourceAliceId,
             ProjectId = Guid.Parse("F2000000-0000-0000-0000-000000000001"),
             ProjectName = "Project Alpha",
-            Role = "Developer",
+            ProjectRoleId = ProjectRoleDevId,
             AllocationPercentage = 50,
             StartDate = new DateTime(2026, 1, 5),
             EndDate = new DateTime(2026, 1, 19),
@@ -196,7 +202,7 @@ public class TestBase : IDisposable
             ResourceId = ResourceBobId,
             ProjectId = Guid.Parse("F2000000-0000-0000-0000-000000000001"),
             ProjectName = "Project Alpha",
-            Role = "Designer",
+            ProjectRoleId = ProjectRoleArchId,
             AllocationPercentage = 40,
             StartDate = new DateTime(2026, 1, 5),
             EndDate = new DateTime(2026, 1, 19),
@@ -214,6 +220,41 @@ public class TestBase : IDisposable
             Name = "New Year",
             Date = new DateTime(2026, 1, 1),
             IsRecurring = true
+        });
+    }
+
+    private void SeedVendors(TestDbContext context)
+    {
+        context.Vendors.Add(new Vendor
+        {
+            Id = VendorAcmeId,
+            Name = "Acme Corp",
+            Code = "ACME",
+            IsActive = true
+        });
+    }
+
+    private void SeedProjectRoles(TestDbContext context)
+    {
+        context.Lookups.Add(new Lookup
+        {
+            Id = ProjectRoleDevId,
+            Category = "ProjectRole",
+            Code = "BackendDeveloper",
+            NameEn = "Backend Developer",
+            NameAr = "مطور خلفية",
+            DisplayOrder = 10,
+            IsActive = true
+        });
+        context.Lookups.Add(new Lookup
+        {
+            Id = ProjectRoleArchId,
+            Category = "ProjectRole",
+            Code = "SolutionArchitect",
+            NameEn = "Solution Architect",
+            NameAr = "مهندس حلول",
+            DisplayOrder = 20,
+            IsActive = true
         });
     }
 

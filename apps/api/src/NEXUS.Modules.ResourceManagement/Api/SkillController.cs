@@ -1,10 +1,11 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using NEXUS.Modules.ResourceManagement.Application;
 using NEXUS.Modules.ResourceManagement.Application.DTOs;
 
 namespace NEXUS.Modules.ResourceManagement.Api;
 
-// TODO: Restore [Authorize] policies when Authentication is implemented
+[Authorize]
 [ApiController]
 [Route("api/skills")]
 public class SkillController : ControllerBase
@@ -17,6 +18,7 @@ public class SkillController : ControllerBase
     }
 
     [HttpGet("{id:guid}")]
+    [Authorize(Policy = "Resource.View")]
     public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
     {
         var result = await _skillService.GetByIdAsync(id, cancellationToken);
@@ -25,6 +27,7 @@ public class SkillController : ControllerBase
     }
 
     [HttpGet]
+    [Authorize(Policy = "Resource.View")]
     public async Task<IActionResult> GetPaged([FromQuery] int page = 1, [FromQuery] int pageSize = 20, [FromQuery] string? search = null, CancellationToken cancellationToken = default)
     {
         var result = await _skillService.GetPagedAsync(page, pageSize, search, cancellationToken);
@@ -32,6 +35,7 @@ public class SkillController : ControllerBase
     }
 
     [HttpPost]
+    [Authorize(Policy = "Resource.Manage")]
     public async Task<IActionResult> Create([FromBody] CreateSkillDto dto, CancellationToken cancellationToken)
     {
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
@@ -41,6 +45,7 @@ public class SkillController : ControllerBase
     }
 
     [HttpPut("{id:guid}")]
+    [Authorize(Policy = "Resource.Manage")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateSkillDto dto, CancellationToken cancellationToken)
     {
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
@@ -50,6 +55,7 @@ public class SkillController : ControllerBase
     }
 
     [HttpDelete("{id:guid}")]
+    [Authorize(Policy = "Resource.Manage")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";

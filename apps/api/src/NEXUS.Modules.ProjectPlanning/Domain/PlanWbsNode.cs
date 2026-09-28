@@ -23,4 +23,7 @@ public class PlanWbsNode : BaseEntity
 
     /// <summary>Optional link to the deliverable mapped onto this node.</summary>
     public Guid? DeliverableId { get; set; }
+
+    /// <summary>Optional structured display formatting for the WBS row.</summary>
+    public PlanTextFormat? TextFormat { get; set; }
 }

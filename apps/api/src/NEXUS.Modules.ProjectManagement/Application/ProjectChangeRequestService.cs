@@ -16,12 +16,14 @@ public class ProjectChangeRequestService : IProjectChangeRequestService
     private readonly DbContext _context;
     private readonly IAuditService _auditService;
     private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly IProjectFinancialLookup _financialLookup;
 
-    public ProjectChangeRequestService(DbContext context, IAuditService auditService, IHttpContextAccessor httpContextAccessor)
+    public ProjectChangeRequestService(DbContext context, IAuditService auditService, IHttpContextAccessor httpContextAccessor, IProjectFinancialLookup financialLookup)
     {
         _context = context;
         _auditService = auditService;
         _httpContextAccessor = httpContextAccessor;
+        _financialLookup = financialLookup;
     }
 
     public async Task<Result<ProjectChangeRequestDto>> CreateAsync(CreateProjectChangeRequestDto dto, string userId, CancellationToken cancellationToken = default)
@@ -47,6 +49,11 @@ public class ProjectChangeRequestService : IProjectChangeRequestService
             return Result<ProjectChangeRequestDto>.Failure(Error.NotFound());
         }
 
+        if (dto.BudgetChangeAmount.HasValue &&
+            (dto.BudgetChangeAmount == 0 || decimal.Round(dto.BudgetChangeAmount.Value, 2) != dto.BudgetChangeAmount ||
+             string.IsNullOrWhiteSpace(dto.Justification) || !project.Budget.HasValue || project.Budget + dto.BudgetChangeAmount < 0))
+            return Result<ProjectChangeRequestDto>.Failure(Error.Validation("Budget impact requires an established project ceiling, a non-zero amount with at most two decimal places, a non-negative resulting budget and justification."));
+
         // Generate a sequential change request number per project.
         var nextNumber = (await _context.Set<ProjectChangeRequest>()
             .Where(pcr => pcr.ProjectId == dto.ProjectId && pcr.TenantId == tenantId)
@@ -56,6 +63,8 @@ public class ProjectChangeRequestService : IProjectChangeRequestService
         var request = dto.ToEntity(actualUserId.ToString()); // Use the resolved user ID
         request.TenantId = tenantId; // Use the resolved tenant ID
         request.Number = nextNumber;
+        request.BudgetChangeAmount = dto.BudgetChangeAmount;
+        request.BudgetBeforeChange = dto.BudgetChangeAmount.HasValue ? project.Budget : null;
 
         _context.Set<ProjectChangeRequest>().Add(request);
         await _context.SaveChangesAsync(cancellationToken);
@@ -217,6 +226,7 @@ public class ProjectChangeRequestService : IProjectChangeRequestService
 
     public async Task<Result<ProjectChangeRequestDto>> ApproveAsync(Guid id, ApproveProjectChangeRequestDto dto, string userId, CancellationToken cancellationToken = default)
     {
+        await using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
         var tenantIdResult = GetCurrentTenantId();
         if (tenantIdResult.IsFailure)
         {
@@ -248,6 +258,29 @@ public class ProjectChangeRequestService : IProjectChangeRequestService
             return Result<ProjectChangeRequestDto>.Failure(Error.Conflict("Only pending change requests can be approved."));
         }
 
+        if (request.BudgetChangeAmount.HasValue)
+        {
+            var project = await _context.Set<Project>().FirstOrDefaultAsync(p => p.Id == request.ProjectId && p.TenantId == tenantId, cancellationToken);
+            if (project is null) return Result<ProjectChangeRequestDto>.Failure(Error.NotFound());
+            if (!request.BudgetBeforeChange.HasValue || project.Budget != request.BudgetBeforeChange)
+                return Result<ProjectChangeRequestDto>.Failure(Error.Conflict("The approved project budget has changed. Cancel and resubmit this Change Request against the current ceiling."));
+            var proposed = request.BudgetBeforeChange.Value + request.BudgetChangeAmount.Value;
+            if (proposed < 0)
+                return Result<ProjectChangeRequestDto>.Failure(Error.Validation("The resulting project budget cannot be negative."));
+            var financials = await _financialLookup.GetAsync(project.Id, project.Currency, cancellationToken);
+            var currency = project.Currency?.Trim().ToUpperInvariant() ?? "GBP";
+            var allocatedBudget = financials?.AllocatedBudget ?? 0;
+            var actualCost = financials?.ActualCost ?? 0;
+            var committedCost = financials?.CommittedCost ?? 0;
+            if (proposed < allocatedBudget)
+                return Result<ProjectChangeRequestDto>.Failure(Error.Validation($"The proposed project budget of {currency} {proposed:N2} is lower than the currently allocated budget of {currency} {allocatedBudget:N2}. Reduce or revise Budget Lines before approving this Change Request."));
+            if (proposed < actualCost + committedCost)
+                return Result<ProjectChangeRequestDto>.Failure(Error.Validation($"The proposed project budget of {currency} {proposed:N2} is below the project's actual costs ({currency} {actualCost:N2}) and outstanding commitments ({currency} {committedCost:N2}). The budget cannot be reduced below current financial obligations."));
+            project.Budget = proposed;
+            project.UpdatedBy = userId;
+            project.UpdatedAt = DateTime.UtcNow;
+        }
+
         request.Status = ProjectChangeRequest.Statuses.Approved;
         request.ReviewedBy = reviewerId;
         request.ReviewedAt = DateTime.UtcNow;
@@ -260,6 +293,7 @@ public class ProjectChangeRequestService : IProjectChangeRequestService
             return Result<ProjectChangeRequestDto>.Failure(saveResult.Error);
         }
 
+        await transaction.CommitAsync(cancellationToken);
         await LogAuditAsync(request, "Approve", reviewerId, dto.DecisionNotes, cancellationToken);
 
         return await BuildDtoAsync(request, cancellationToken);
@@ -396,7 +430,7 @@ public class ProjectChangeRequestService : IProjectChangeRequestService
             EntityId = request.Id,
             Action = action,
             UserId = actorId,
-            NewValues = System.Text.Json.JsonSerializer.Serialize(new { request.Status, request.ReviewedBy, request.ReviewedAt, DecisionNotes = decisionNotes }),
+            NewValues = System.Text.Json.JsonSerializer.Serialize(new { request.Status, request.ReviewedBy, request.ReviewedAt, request.BudgetBeforeChange, request.BudgetChangeAmount, ProposedProjectBudget = request.BudgetBeforeChange + request.BudgetChangeAmount, DecisionNotes = decisionNotes }),
             Timestamp = DateTime.UtcNow,
             CreatedBy = actorId.ToString()
         }, cancellationToken);

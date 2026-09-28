@@ -10,6 +10,7 @@
     <PackageReference Include="FluentValidation" Version="11.11.0" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\NEXUS.Modules.Audit\NEXUS.Modules.Audit.csproj" />
     <ProjectReference Include="..\NEXUS.SharedKernel\NEXUS.SharedKernel.csproj" />
   </ItemGroup>
 </Project>

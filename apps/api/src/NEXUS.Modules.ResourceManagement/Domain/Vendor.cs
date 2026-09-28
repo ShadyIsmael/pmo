@@ -10,6 +10,7 @@ public class Vendor : BaseEntity
     public string? ContactEmail { get; set; }
     public string? ContactPhone { get; set; }
     public string? Category { get; set; }
+    public Guid? VendorCategoryId { get; set; }
     public string? Status { get; set; }
     public decimal? ContractValue { get; set; }
     public DateTime? ContractStart { get; set; }

@@ -6,34 +6,34 @@ Provides capacity planning, resource allocation CRUD, and resource finder capabi
 ## Backend API Endpoints
 
 ### Allocations (`/api/allocations`)
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/` | Paged list (filterable by resourceId, projectId, status) |
-| GET | `/{id}` | Single allocation |
-| GET | `/by-resource/{resourceId}` | Allocations for a resource |
-| GET | `/by-project/{projectId}` | Allocations for a project |
-| GET | `/conflicts` | Conflict detection for a resource + date range |
-| POST | `/` | Create allocation |
-| PUT | `/{id}` | Update allocation |
-| DELETE | `/{id}` | Soft-delete allocation |
+| Method | Path | Auth Policy | Description |
+|--------|------|-------------|-------------|
+| GET | `/` | Resource.View | Paged list (filterable by resourceId, projectId, status) |
+| GET | `/{id}` | Resource.View | Single allocation |
+| GET | `/by-resource/{resourceId}` | Resource.View | Allocations for a resource |
+| GET | `/by-project/{projectId}` | Resource.View | Allocations for a project |
+| GET | `/conflicts` | Resource.View | Conflict detection for a resource + date range |
+| POST | `/` | Resource.Assign | Create allocation |
+| PUT | `/{id}` | Resource.Assign | Update allocation |
+| DELETE | `/{id}` | Resource.Manage | Soft-delete allocation |
 
 **Create/Update DTO fields:** ResourceId, ProjectId, ProjectName, WorkItemId, Role, AllocationPercentage, HoursPerWeek, StartDate, EndDate, Status (Confirmed/Proposed/Tentative/Cancelled), IsBillable, Notes
 
 ### Capacity (`/api/capacity`)
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/matrix` | Capacity matrix with per-resource/per-period cells, heatmap states, summary |
-| GET | `/availability` | Resource availability list sorted by available hours |
-| GET | `/demand-vs-capacity` | Aggregated demand vs capacity by role/department |
-| GET | `/gantt` | Flat list of allocations for Gantt rendering (filtered by date range) |
-| GET | `/resource/{resourceId}/availability` | Single resource availability calculation |
+| Method | Path | Auth Policy | Description |
+|--------|------|-------------|-------------|
+| GET | `/matrix` | Resource.View | Capacity matrix with per-resource/per-period cells, heatmap states, summary |
+| GET | `/availability` | Resource.View | Resource availability list sorted by available hours |
+| GET | `/demand-vs-capacity` | Resource.View | Aggregated demand vs capacity by role/department |
+| GET | `/gantt` | Resource.View | Flat list of allocations for Gantt rendering (filtered by date range) |
+| GET | `/resource/{resourceId}/availability` | Resource.View | Single resource availability calculation |
 
 **Filter params:** periodType (week/month/quarter), startDate, endDate, departmentId, locationId, resourceType, resourceId, includeProposed
 
 ### Resource Finder (`/api/resource-finder`)
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/find` | Search resources by role, skills, seniority, availability with match scoring |
+| Method | Path | Auth Policy | Description |
+|--------|------|-------------|-------------|
+| POST | `/find` | Resource.View | Search resources by role, skills, seniority, availability with match scoring |
 
 **Query fields:** ProjectId, Role, SkillIds, Seniority, StartDate, EndDate, RequiredAllocation, ResourceType, DepartmentId, LocationId, VendorId
 

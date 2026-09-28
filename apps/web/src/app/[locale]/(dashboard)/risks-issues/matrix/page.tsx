@@ -1,9 +1,7 @@
 "use client";
 
 import { PageHeader } from "@/components/layout/PageHeader";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { AlertTriangle } from "lucide-react";
 import { mockRisks, mockProjects } from "@/lib/mock-data";
 
@@ -25,13 +23,6 @@ export default function RiskMatrixPage() {
     if (count <= 1) return "bg-status-green/40";
     if (count <= 3) return "bg-status-amber/40";
     return "bg-status-red/50";
-  };
-
-  const getScoreLabel = (impact: number, probability: number) => {
-    const score = impact * probability;
-    if (score >= 15) return { label: "Critical", class: "text-status-red" };
-    if (score >= 8) return { label: "High", class: "text-status-amber" };
-    return { label: "Low", class: "text-status-green" };
   };
 
   return (
@@ -56,7 +47,6 @@ export default function RiskMatrixPage() {
                   <div className="w-20 text-right text-xs text-muted-foreground">{i + 1}</div>
                   <div className="flex flex-1 gap-1">
                     {row.map((cell, j) => {
-                      const score = getScoreLabel(i + 1, j + 1);
                       return (
                         <div
                           key={j}

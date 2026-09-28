@@ -1,0 +1,6 @@
+C:\Projects\pmo\.tmp-api-obj\Debug\net10.0\NEXUS.SharedKernel.csproj.AssemblyReference.cache
+C:\Projects\pmo\.tmp-api-obj\Debug\net10.0\NEXUS.SharedKernel.GeneratedMSBuildEditorConfig.editorconfig
+C:\Projects\pmo\.tmp-api-obj\Debug\net10.0\NEXUS.SharedKernel.AssemblyInfoInputs.cache
+C:\Projects\pmo\.tmp-api-obj\Debug\net10.0\NEXUS.SharedKernel.AssemblyInfo.cs
+C:\Projects\pmo\.tmp-api-obj\Debug\net10.0\NEXUS.SharedKernel.csproj.CoreCompileInputs.cache
+C:\Projects\pmo\.tmp-api-obj\Debug\net10.0\NEXUS.SharedKernel.sourcelink.json

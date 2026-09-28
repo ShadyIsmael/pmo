@@ -17,6 +17,8 @@ public class CapacityMatrixRowDto
     public decimal WeeklyCapacityHours { get; set; }
     public decimal CurrentUtilization { get; set; }
     public DateTime? EarliestAvailableDate { get; set; }
+    public decimal? CostPerHour { get; set; }
+    public string? Currency { get; set; }
     public List<CapacityCellDto> Cells { get; set; } = new();
 }
 
@@ -33,6 +35,7 @@ public class CapacityCellDto
     public decimal AvailableHours { get; set; }
     public decimal UtilizationPercent { get; set; }
     public string HeatmapState { get; set; } = "Available";
+    public decimal OverallocatedHours { get; set; }
     public List<AllocationBreakdownDto> Allocations { get; set; } = new();
 }
 
@@ -43,8 +46,11 @@ public class AllocationBreakdownDto
     public string ProjectName { get; set; } = string.Empty;
     public decimal Percentage { get; set; }
     public decimal Hours { get; set; }
+    public decimal? PlannedHours { get; set; }
+    public decimal? PlannedLaborCost { get; set; }
     public string Status { get; set; } = string.Empty;
     public bool IsBillable { get; set; }
+    public string? Currency { get; set; }
 }
 
 public class CapacityPeriodDto
@@ -75,6 +81,8 @@ public class ResourceAvailabilityDto
     public decimal CurrentUtilization { get; set; }
     public decimal AvailableCapacityHours { get; set; }
     public DateTime? EarliestAvailableDate { get; set; }
+    public decimal? CostPerHour { get; set; }
+    public string? Currency { get; set; }
     public List<AllocationConflictDto> Conflicts { get; set; } = new();
 }
 

@@ -38,8 +38,9 @@ public class PlanVersionConfiguration : IEntityTypeConfiguration<PlanVersion>
             .IsRowVersion()
             .IsConcurrencyToken();
 
-        // Version number is unique per tenant/plan.
-        builder.HasIndex(e => new { e.TenantId, e.PlanId, e.VersionNumber })
+        // Working and Baseline version sequences may each start at v1; numbers
+        // are therefore unique within a version type for the tenant/plan.
+        builder.HasIndex(e => new { e.TenantId, e.PlanId, e.VersionNumber, e.Type })
             .IsUnique()
             .HasDatabaseName("IX_PlanVersions_Tenant_Plan_Version");
 
@@ -48,14 +49,14 @@ public class PlanVersionConfiguration : IEntityTypeConfiguration<PlanVersion>
         builder.HasIndex(e => new { e.TenantId, e.PlanId, e.Type })
             .IsUnique()
             .HasDatabaseName("IX_PlanVersions_Tenant_Plan_ActiveWorking")
-            .HasFilter("\"Type\" = 0 AND \"Status\" = 0");
+            .HasFilter("\"Type\" = 0 AND \"Status\" = 0 AND \"IsDeleted\" = 0");
 
-        // At most one current approved Baseline per project.
-        // Baseline = Type 1, Approved = Status 3.
+        // Approved Baselines are immutable history. The latest approved row is
+        // the comparison baseline; prior approved snapshots remain queryable.
         builder.HasIndex(e => new { e.TenantId, e.PlanId, e.Status })
-            .IsUnique()
+            .IsUnique(false)
             .HasDatabaseName("IX_PlanVersions_Tenant_Plan_ApprovedBaseline")
-            .HasFilter("\"Type\" = 1 AND \"Status\" = 3");
+            .HasFilter("\"Type\" = 1 AND \"Status\" = 3 AND \"IsDeleted\" = 0");
 
         builder.HasOne(e => e.Plan)
             .WithMany(p => p.Versions)

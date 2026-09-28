@@ -6,21 +6,23 @@ using NEXUS.Modules.ProjectPlanning.Application.DTOs;
 using NEXUS.Modules.ProjectPlanning.Application.Mapping;
 using NEXUS.Modules.ProjectPlanning.Domain;
 using NEXUS.SharedKernel;
+using NEXUS.SharedKernel.Helpers;
 
 namespace NEXUS.Modules.ProjectPlanning.Application;
 
 public class PlanWbsService : IPlanWbsService
 {
-    private static readonly Guid DemoTenantId = Guid.Parse("11111111-1111-1111-1111-111111111111");
     private readonly DbContext _context;
     private readonly IAuditService _auditService;
     private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly SummaryTaskRollupService _summaryRollup;
 
-    public PlanWbsService(DbContext context, IAuditService auditService, IHttpContextAccessor httpContextAccessor)
+    public PlanWbsService(DbContext context, IAuditService auditService, IHttpContextAccessor httpContextAccessor, SummaryTaskRollupService? summaryRollup = null)
     {
         _context = context;
         _auditService = auditService;
         _httpContextAccessor = httpContextAccessor;
+        _summaryRollup = summaryRollup ?? new SummaryTaskRollupService(context);
     }
 
     public async Task<Result<PlanWbsNodeDto>> CreateAsync(Guid planId, CreatePlanWbsNodeDto dto, string userId, CancellationToken cancellationToken = default)
@@ -58,10 +60,12 @@ public class PlanWbsService : IPlanWbsService
 
         var tenantId = GetCurrentTenantId();
         var sortOrder = dto.SortOrder ?? await NextSortOrderAsync(workingVersion.Id, dto.ParentWbsId, cancellationToken);
+        var previousSummaryIds = await _summaryRollup.RecalculateAsync(workingVersion.Id, userId, cancellationToken: cancellationToken);
 
         var node = dto.ToEntity(tenantId, workingVersion.Id, userId);
         node.SortOrder = sortOrder;
         _context.Set<PlanWbsNode>().Add(node);
+        await _summaryRollup.RecalculateAsync(workingVersion.Id, userId, previousSummaryIds, cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
 
         await _auditService.LogAsync(new AuditEntry
@@ -125,11 +129,15 @@ public class PlanWbsService : IPlanWbsService
         }
 
         var originalValues = System.Text.Json.JsonSerializer.Serialize(node.ToDto());
+        var previousSummaryIds = await _summaryRollup.RecalculateAsync(node.PlanVersionId, userId, cancellationToken: cancellationToken);
         node.Name = name;
         node.Code = code;
         node.ParentWbsId = dto.ParentWbsId;
         node.SortOrder = dto.SortOrder;
+        node.TextFormat = dto.TextFormat.ToEntity();
         node.UpdatedBy = userId;
+
+        await _summaryRollup.RecalculateAsync(node.PlanVersionId, userId, previousSummaryIds, cancellationToken);
 
         _context.Entry(node).Property(n => n.RowVersion).OriginalValue = dto.RowVersion;
 
@@ -173,8 +181,11 @@ public class PlanWbsService : IPlanWbsService
             return Result.Failure(Error.Validation("Cannot delete a node that has children. Delete the children first."));
         }
 
+        var previousSummaryIds = await _summaryRollup.RecalculateAsync(node.PlanVersionId, userId, cancellationToken: cancellationToken);
         node.IsDeleted = true;
         node.UpdatedBy = userId;
+
+        await _summaryRollup.RecalculateAsync(node.PlanVersionId, userId, previousSummaryIds, cancellationToken);
 
         _context.Entry(node).Property(n => n.RowVersion).OriginalValue = rowVersion;
 
@@ -210,6 +221,7 @@ public class PlanWbsService : IPlanWbsService
 
         var nodes = await _context.Set<PlanWbsNode>()
             .Where(n => n.PlanVersionId == workingVersion.Id)
+            .AsNoTracking()
             .ToListAsync(cancellationToken);
 
         return Result<IReadOnlyList<PlanWbsNodeDto>>.Success(nodes.ToTree());
@@ -297,11 +309,8 @@ public class PlanWbsService : IPlanWbsService
             return parsed;
         }
 
-        return DemoTenantId;
+        return TenantConstants.DemoTenantId;
     }
 
-    private static Guid? TryParseGuid(string value)
-    {
-        return Guid.TryParse(value, out var parsed) ? parsed : null;
-    }
+    private static Guid? TryParseGuid(string value) => GuidHelper.TryParse(value);
 }

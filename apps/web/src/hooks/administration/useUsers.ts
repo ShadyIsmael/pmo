@@ -2,6 +2,8 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, type PagedResult } from "@/lib/api-client";
+import { endpoints } from "@/lib/api/endpoints";
+import { userKeys } from "@/lib/api/users";
 
 export interface UserAdminDto {
   id: string;
@@ -48,9 +50,9 @@ export interface UpdateUserDto {
 
 export function useAdminUsers(params: { page?: number; pageSize?: number; search?: string } = {}) {
   return useQuery({
-    queryKey: ["users", "admin", params.page, params.pageSize, params.search],
+    queryKey: userKeys.admin(params),
     queryFn: () =>
-      api.get<PagedResult<UserAdminDto>>("/api/users", {
+      api.get<PagedResult<UserAdminDto>>(endpoints.users.root, {
         page: params.page ?? 1,
         pageSize: params.pageSize ?? 20,
         search: params.search || undefined,
@@ -61,8 +63,8 @@ export function useAdminUsers(params: { page?: number; pageSize?: number; search
 
 export function useRoles() {
   return useQuery({
-    queryKey: ["roles"],
-    queryFn: () => api.get<RoleDto[]>("/api/roles"),
+    queryKey: userKeys.roles,
+    queryFn: () => api.get<RoleDto[]>(endpoints.users.roles),
     staleTime: 60_000,
   });
 }
@@ -70,11 +72,9 @@ export function useRoles() {
 export function useCreateUser() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (dto: CreateUserDto) => api.post<UserAdminDto>("/api/users", dto),
+    mutationFn: (dto: CreateUserDto) => api.post<UserAdminDto>(endpoints.users.root, dto),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["users", "admin"] });
-      queryClient.invalidateQueries({ queryKey: ["users", "lookup"] });
-      queryClient.invalidateQueries({ queryKey: ["users", "lookup", "project.manager"] });
+      queryClient.invalidateQueries({ queryKey: userKeys.all });
     },
   });
 }
@@ -83,11 +83,9 @@ export function useUpdateUser() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ id, dto }: { id: string; dto: UpdateUserDto }) =>
-      api.put<UserAdminDto>(`/api/users/${id}`, dto),
+      api.put<UserAdminDto>(endpoints.users.detail(id), dto),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["users", "admin"] });
-      queryClient.invalidateQueries({ queryKey: ["users", "lookup"] });
-      queryClient.invalidateQueries({ queryKey: ["users", "lookup", "project.manager"] });
+      queryClient.invalidateQueries({ queryKey: userKeys.all });
     },
   });
 }

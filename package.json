@@ -11,6 +11,8 @@
     "build:api": "cd apps/api && dotnet build",
     "lint": "npm run lint:web",
     "lint:web": "cd apps/web && npm run lint",
+    "i18n:parity": "node scripts/i18n/check-parity.mjs",
+    "i18n:used-keys": "node scripts/i18n/check-used-keys.mjs",
     "typecheck": "cd apps/web && npm run typecheck",
     "test": "npm run test:web && npm run test:api",
     "test:web": "cd apps/web && npm run test",

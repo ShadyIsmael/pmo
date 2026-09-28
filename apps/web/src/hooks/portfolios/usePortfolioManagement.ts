@@ -1,0 +1,36 @@
+"use client";
+
+import { useQuery } from "@tanstack/react-query";
+import { api, type PagedResult } from "@/lib/api-client";
+import { endpoints } from "@/lib/api/endpoints";
+
+export interface PortfolioManagementListItem { id: string; name: string; code?: string; ownerName?: string; status?: string; health?: string; currency: string; programCount: number; directProjectCount: number; totalProjectCount: number; projectsRequiringAttention: number; programsRequiringAttention: number; financialIndicator: string; riskIndicator: string; reportingIndicator: string; }
+export interface PortfolioManagementOverview { portfolio: PortfolioIdentity; summary: PortfolioSummary; delivery: PortfolioDelivery; financials: PortfolioFinancials; risks: PortfolioRiskSummary; issues: PortfolioIssueSummary; resources: PortfolioResourceSummary; statusReports: PortfolioStatusReports; programs: PortfolioProgram[]; programsPage: number; programsPageSize: number; programsTotalCount: number; programsTotalPages: number; projects: PortfolioProject[]; projectsPage: number; projectsPageSize: number; projectsTotalCount: number; projectsTotalPages: number; milestones: PortfolioMilestone[]; topRisks: PortfolioRisk[]; topIssues: PortfolioIssue[]; attentionItems: PortfolioAttention[]; upcomingMeetings: PortfolioMeeting[]; }
+export interface PortfolioIdentity { id: string; name: string; code?: string; description?: string; status?: string; health?: string; ownerName?: string; currency: string; strategicObjective?: string; priority?: string; confidenceLevel?: string; startDate?: string; endDate?: string; }
+export interface PortfolioSummary { totalPrograms: number; totalProjects: number; programContainedProjects: number; directPortfolioProjects: number; activeProjects: number; completedProjects: number; atRiskProjects: number; criticalProjects: number; averageProjectProgress?: number; programHealthDistribution: Record<string, number>; projectHealthDistribution: Record<string, number>; }
+export interface PortfolioDelivery { programDeliveryConditions: Record<string, number>; projectScheduleConditions: Record<string, number>; delayedProjects: number; delayedPrograms: number; projectsWithScheduleData: number; totalMilestones: number; overdueMilestones: number; dueSoonMilestones: number; onTrackMilestones: number; completedMilestones: number; projectProgressDistribution: Record<string, number>; }
+export interface PortfolioProgram { id: string; name: string; code?: string; programManagerName?: string; status?: string; health?: string; startDate?: string; endDate?: string; currency: string; projectCount: number; projectsAtRisk: number; deliveryIndicator: string; financialIndicator: string; riskIndicator: string; reportingIndicator: string; }
+export interface PortfolioProject { id: string; name: string; code: string; programId?: string; programName?: string; isDirectProject: boolean; projectManagerName?: string; status: string; health: string; startDate?: string; endDate?: string; progress: number; scheduleCondition: string; currency: string; financialCondition: string; riskCondition: string; statusReportFreshness: string; latestStatusReportDate?: string; requiresAttention: boolean; }
+export interface PortfolioFinancials { baseCurrency: string; hasMixedCurrencies: boolean; groups: PortfolioFinancialGroup[]; }
+export interface PortfolioFinancialGroup { currency: string; isBaseCurrency: boolean; projectCount: number; budget: number; allocated: number; actual: number; committed: number; forecast: number; remaining: number; variance: number; contributions: PortfolioFinancialContribution[]; }
+export interface PortfolioFinancialContribution { projectId: string; projectName: string; programId?: string; programName?: string; isDirectProject: boolean; budget: number; allocated: number; actual: number; committed: number; forecast: number; }
+export interface PortfolioRiskSummary { sourceScope: string; openCount: number; criticalCount: number; highCount: number; overdueCount: number; byProgram: Record<string, number>; byProject: Record<string, number>; }
+export interface PortfolioIssueSummary { openCount: number; criticalCount: number; overdueCount: number; byProgram: Record<string, number>; byProject: Record<string, number>; }
+export interface PortfolioRisk { id: string; projectId: string; projectName: string; programId?: string; programName?: string; title: string; severity: string; status: string; identifiedDate?: string; }
+export interface PortfolioIssue { id: string; projectId: string; projectName: string; programId?: string; programName?: string; title: string; severity: string; priority: string; status: string; targetResolutionDate?: string; }
+export interface PortfolioResourceSummary { activeAllocationCount: number; activeResourceCount: number; sharedResourceCount: number; crossProgramResourceCount: number; overAllocatedResourceCount: number; allocatedHoursPerWeek: number; pressure: PortfolioResourcePressure[]; }
+export interface PortfolioResourcePressure { resourceId: string; resourceName: string; allocationPercentage: number; programCount: number; projectCount: number; projects: PortfolioResourceProject[]; }
+export interface PortfolioResourceProject { projectId: string; projectName: string; programId?: string; programName?: string; isDirectProject: boolean; allocationPercentage: number; }
+export interface PortfolioStatusReports { publishedProjectCount: number; currentCount: number; staleCount: number; missingCount: number; freshnessDays: number; programsWithReportingGaps: string[]; projectsWithReportingGaps: string[]; latestPublished: PortfolioStatusReport[]; }
+export interface PortfolioStatusReport { projectId: string; projectName: string; programId?: string; programName?: string; reportDate: string; health?: string; progress?: number; freshness: string; }
+export interface PortfolioMilestone { id: string; projectId: string; projectName: string; programId?: string; programName?: string; name: string; dueDate?: string; completedDate?: string; state: string; status?: string; }
+export interface PortfolioAttention { level: string; kind: string; entityType: string; entityId: string; entityName: string; programId?: string; projectId?: string; reason: string; }
+export interface PortfolioMeeting { id: string; title: string; startTime: string; endTime: string; projectId?: string; projectName?: string; programId?: string; programName?: string; }
+
+export function useManagedPortfolios(search?: string) {
+  return useQuery({ queryKey: ["portfolio-management", "portfolios", search ?? ""], queryFn: () => api.get<PagedResult<PortfolioManagementListItem>>(endpoints.portfolios.management, { page: 1, pageSize: 50, search: search?.trim() || undefined }), staleTime: 30_000 });
+}
+
+export function usePortfolioManagementOverview(portfolioId?: string, programsPage = 1, projectsPage = 1, projectsPageSize = 25) {
+  return useQuery({ queryKey: ["portfolio-management", "overview", portfolioId ?? "", programsPage, projectsPage, projectsPageSize], queryFn: () => api.get<PortfolioManagementOverview>(endpoints.portfolios.managementOverview(portfolioId!), { programsPage, projectsPage, pageSize: projectsPageSize }), enabled: Boolean(portfolioId), staleTime: 30_000 });
+}

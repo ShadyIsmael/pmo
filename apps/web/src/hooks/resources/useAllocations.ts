@@ -2,6 +2,8 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, type PagedResult } from "@/lib/api-client";
+import { endpoints } from "@/lib/api/endpoints";
+import { allocationKeys } from "@/lib/api/resources";
 
 export interface AllocationDto {
   id: string;
@@ -76,18 +78,19 @@ export function useAllocations(params: {
   resourceId?: string;
   projectId?: string;
   status?: string;
-} = {}) {
+} = {}, enabled = true) {
   return useQuery({
-    queryKey: ["allocations", params],
-    queryFn: () => api.get<AllocationPage>("/api/allocations", params),
+    queryKey: allocationKeys.list(params),
+    queryFn: () => api.get<AllocationPage>(endpoints.allocations.root, params),
     staleTime: 30_000,
+    enabled,
   });
 }
 
 export function useAllocation(id: string) {
   return useQuery({
-    queryKey: ["allocation", id],
-    queryFn: () => api.get<AllocationDto>(`/api/allocations/${id}`),
+    queryKey: allocationKeys.detail(id),
+    queryFn: () => api.get<AllocationDto>(endpoints.allocations.detail(id)),
     enabled: !!id,
     staleTime: 30_000,
   });
@@ -95,8 +98,8 @@ export function useAllocation(id: string) {
 
 export function useAllocationsByResource(resourceId: string, page = 1, pageSize = 20) {
   return useQuery({
-    queryKey: ["allocations", "by-resource", resourceId, page, pageSize],
-    queryFn: () => api.get<AllocationPage>("/api/allocations/by-resource/" + resourceId, { page, pageSize }),
+    queryKey: allocationKeys.byResource(resourceId, page, pageSize),
+    queryFn: () => api.get<AllocationPage>(endpoints.allocations.byResource(resourceId), { page, pageSize }),
     enabled: !!resourceId,
     staleTime: 30_000,
   });
@@ -104,8 +107,8 @@ export function useAllocationsByResource(resourceId: string, page = 1, pageSize 
 
 export function useAllocationsByProject(projectId: string, page = 1, pageSize = 20) {
   return useQuery({
-    queryKey: ["allocations", "by-project", projectId, page, pageSize],
-    queryFn: () => api.get<AllocationPage>("/api/allocations/by-project/" + projectId, { page, pageSize }),
+    queryKey: allocationKeys.byProject(projectId, page, pageSize),
+    queryFn: () => api.get<AllocationPage>(endpoints.allocations.byProject(projectId), { page, pageSize }),
     enabled: !!projectId,
     staleTime: 30_000,
   });
@@ -113,8 +116,8 @@ export function useAllocationsByProject(projectId: string, page = 1, pageSize = 
 
 export function useAllocationConflicts(resourceId: string, startDate: string, endDate: string, excludeAllocationId?: string) {
   return useQuery({
-    queryKey: ["allocations", "conflicts", resourceId, startDate, endDate, excludeAllocationId],
-    queryFn: () => api.get<AllocationConflictDto[]>("/api/allocations/conflicts", { resourceId, startDate, endDate, excludeAllocationId }),
+    queryKey: allocationKeys.conflicts(resourceId, startDate, endDate, excludeAllocationId),
+    queryFn: () => api.get<AllocationConflictDto[]>(endpoints.allocations.conflicts, { resourceId, startDate, endDate, excludeAllocationId }),
     enabled: !!resourceId && !!startDate && !!endDate,
     staleTime: 10_000,
   });
@@ -123,9 +126,9 @@ export function useAllocationConflicts(resourceId: string, startDate: string, en
 export function useCreateAllocation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (data: CreateAllocationDto) => api.post<AllocationDto>("/api/allocations", data),
+    mutationFn: async (data: CreateAllocationDto) => api.post<AllocationDto>(endpoints.allocations.root, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["allocations"] });
+      queryClient.invalidateQueries({ queryKey: allocationKeys.all });
     },
   });
 }
@@ -133,10 +136,9 @@ export function useCreateAllocation() {
 export function useUpdateAllocation(id: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (data: UpdateAllocationDto) => api.put<AllocationDto>(`/api/allocations/${id}`, data),
+    mutationFn: async (data: UpdateAllocationDto) => api.put<AllocationDto>(endpoints.allocations.detail(id), data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["allocations"] });
-      queryClient.invalidateQueries({ queryKey: ["allocation", id] });
+      queryClient.invalidateQueries({ queryKey: allocationKeys.all });
     },
   });
 }
@@ -145,10 +147,10 @@ export function useDeleteAllocation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      await api.delete<void>(`/api/allocations/${id}`);
+      await api.delete<void>(endpoints.allocations.detail(id));
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["allocations"] });
+      queryClient.invalidateQueries({ queryKey: allocationKeys.all });
     },
   });
 }

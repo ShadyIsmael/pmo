@@ -9,6 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowLeft, Lock, Users, GanttChartSquare, Milestone, Package, ClipboardList, AlertTriangle, AlertOctagon, Wallet, Banknote, CalendarDays, FileText, BarChart3 } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { useProjectSnapshot } from "@/hooks/projects/useProjects";
+import { RiskLevelText, RiskStatusText } from "@/components/risks/RiskValueText";
 
 function Section({ title, icon, empty, count, children }: { title: string; icon: React.ReactNode; empty: string; count?: number; children: React.ReactNode }) {
   return (
@@ -190,7 +191,10 @@ export function ProjectSnapshotView({ projectId, snapshotId }: { projectId: stri
               {(data.risks ?? []).map((r) => (
                 <div key={r.originalId} className="flex items-center justify-between text-sm">
                   <span className="font-medium truncate">{r.title}</span>
-                  <span className="text-muted-foreground text-xs">{r.riskLevel}{r.status ? ` · ${r.status}` : ""}</span>
+                  <span className="text-muted-foreground text-xs">
+                    <RiskLevelText value={r.riskLevel} />
+                    {r.status && <><span aria-hidden="true"> · </span><RiskStatusText value={r.status} /></>}
+                  </span>
                 </div>
               ))}
             </div>

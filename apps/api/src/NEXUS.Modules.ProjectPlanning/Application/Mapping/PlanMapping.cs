@@ -55,8 +55,10 @@ public static class PlanMapping
             Name = version.Name,
             SourceVersionId = version.SourceVersionId,
             SourceBaselineId = version.SourceBaselineId,
+            CreatedBy = version.CreatedBy,
             CreatedAt = version.CreatedAt,
-            UpdatedAt = version.UpdatedAt
+            UpdatedAt = version.UpdatedAt,
+            RowVersion = version.RowVersion.ToArray()
         };
     }
 }

@@ -19,6 +19,10 @@ public class PlanAssignment : BaseEntity
 
     public decimal? AllocationPct { get; set; }
     public decimal? HoursPerWeek { get; set; }
+    public decimal? PlannedHours { get; set; }
     public DateTime? StartDate { get; set; }
     public DateTime? EndDate { get; set; }
+
+    public Guid? ProjectRoleId { get; set; }
+    public Guid? ResourceAllocationId { get; set; }
 }

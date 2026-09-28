@@ -14,12 +14,17 @@ import { Filter, Users, Briefcase, AlertTriangle, LayoutGrid, GitBranch } from "
 import { useCapacityMatrix, useDemandVsCapacity, useCapacityAvailability, useCapacityGantt } from "@/hooks/resources/useCapacity";
 import { ResourceGanttView } from "@/components/resources/ResourceGanttView";
 import { AllocationDialog } from "@/components/resources/AllocationDialog";
+import { useAuth } from "@/lib/auth";
+import { hasPermission, Permissions } from "@/lib/permissions";
 
 const VIEW_STORAGE_KEY = "nexus_capacity_view";
 
 export default function CapacityPlanningPage() {
   const t = useTranslations("resources.capacity");
   const tc = useTranslations("common");
+  const { user } = useAuth();
+  const canAssignResources = !!user && [Permissions.Resources.Assign, Permissions.Resources.Allocate, Permissions.Resources.Manage]
+    .some((permission) => hasPermission(user.permissions, permission));
   const [periodType, setPeriodType] = useState("month");
   const [departmentId, setDepartmentId] = useState("");
   const [matrixOrGantt, setMatrixOrGantt] = useState<"matrix" | "gantt">(() => {
@@ -60,12 +65,12 @@ export default function CapacityPlanningPage() {
     : [];
 
   return (
-    <div className="space-y-6">
+    <div className="nexus-page nexus-capacity space-y-6">
       <PageHeader
         title={t("title")}
         description={t("description")}
         actions={
-          <div className="flex items-center gap-2">
+          <div className="nexus-page-actions flex flex-wrap items-center justify-end gap-2">
             <div className="flex items-center rounded-md border p-0.5">
               <Button
                 variant={matrixOrGantt === "matrix" ? "default" : "ghost"}
@@ -97,7 +102,7 @@ export default function CapacityPlanningPage() {
             <input type="date" className="h-9 rounded-md border px-2 text-xs" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
             <input type="date" className="h-9 rounded-md border px-2 text-xs" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
             <Button variant="outline" size="sm"><Filter className="mr-2 h-4 w-4" />{t("filter")}</Button>
-            <Button size="sm" onClick={() => setShowCreateDialog(true)}>{t("createAllocation")}</Button>
+            {canAssignResources && <Button size="sm" onClick={() => setShowCreateDialog(true)}>{t("createAllocation")}</Button>}
           </div>
         }
       />
@@ -105,7 +110,7 @@ export default function CapacityPlanningPage() {
       {matrixOrGantt === "matrix" ? (
         <>
           <div className="grid gap-4 md:grid-cols-4">
-            <Card>
+            <Card className="nexus-metric-card">
               <CardHeader className="flex flex-row items-center justify-between pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">{t("totalCapacity")}</CardTitle>
                 <Users className="h-4 w-4 text-muted-foreground" />
@@ -119,7 +124,7 @@ export default function CapacityPlanningPage() {
                 )}
               </CardContent>
             </Card>
-            <Card>
+            <Card className="nexus-metric-card">
               <CardHeader className="flex flex-row items-center justify-between pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">{t("demand")}</CardTitle>
                 <Briefcase className="h-4 w-4 text-muted-foreground" />
@@ -137,7 +142,7 @@ export default function CapacityPlanningPage() {
                 )}
               </CardContent>
             </Card>
-            <Card>
+            <Card className="nexus-metric-card">
               <CardHeader className="flex flex-row items-center justify-between pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">{t("gap")}</CardTitle>
                 <AlertTriangle className="h-4 w-4 text-muted-foreground" />
@@ -153,7 +158,7 @@ export default function CapacityPlanningPage() {
                 )}
               </CardContent>
             </Card>
-            <Card>
+            <Card className="nexus-metric-card">
               <CardHeader className="flex flex-row items-center justify-between pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">{t("utilization")}</CardTitle>
                 <Users className="h-4 w-4 text-muted-foreground" />
@@ -177,8 +182,8 @@ export default function CapacityPlanningPage() {
             </TabsList>
 
             <TabsContent value="matrix" className="mt-4">
-              <div className="rounded-md border">
-                <div className="border-b bg-muted/50 px-4 py-3 text-xs font-medium text-muted-foreground">
+              <div className="nexus-table-surface">
+                <div className="nexus-table-header">
                   {t("departmentOverview")}
                 </div>
                 {matrixLoading ? (
@@ -196,7 +201,7 @@ export default function CapacityPlanningPage() {
                     const avgAvail = latestCells.length > 0 ? Math.round(latestCells.reduce((s, c) => s + c.availableHours, 0) / latestCells.length) : 0;
                     const isOver = avgUtil > 80;
                     return (
-                      <div key={dept} className="flex items-center gap-4 border-b px-4 py-3 text-sm last:border-0 hover:bg-muted/30">
+                      <div key={dept} className="nexus-table-row flex items-center gap-4 px-4 py-3 text-sm last:border-0">
                         <div className="flex-1 font-medium">{dept}</div>
                         <div className="w-20 text-right text-xs text-muted-foreground">{deptRows.length} {t("resources")}</div>
                         <div className="flex items-center gap-2">
@@ -209,7 +214,7 @@ export default function CapacityPlanningPage() {
                           <Progress value={Math.min(avgUtil, 100)} className="h-2 w-16" />
                           <span className={`text-xs font-medium ${isOver ? "text-status-red" : "text-status-green"}`}>{avgUtil}%</span>
                         </div>
-                        <Badge variant={isOver ? "destructive" : "secondary"} className="w-16 justify-center text-[10px]">{isOver ? t("over") : t("ok")}</Badge>
+                        <Badge status={isOver ? "Overdue" : "OK"} className="w-16 justify-center text-[10px]">{isOver ? t("over") : t("ok")}</Badge>
                       </div>
                     );
                   })
@@ -218,8 +223,8 @@ export default function CapacityPlanningPage() {
             </TabsContent>
 
             <TabsContent value="demand" className="mt-4">
-              <div className="rounded-md border">
-                <div className="border-b bg-muted/50 px-4 py-3 text-xs font-medium text-muted-foreground">
+              <div className="nexus-table-surface">
+                <div className="nexus-table-header">
                   {t("demandVsCapacity")}
                 </div>
                 {demandLoading ? (
@@ -230,14 +235,14 @@ export default function CapacityPlanningPage() {
                   <div className="p-6 text-center text-sm text-muted-foreground">{t("noDemandData")}</div>
                 ) : (
                   <>
-                    <div className="grid grid-cols-5 gap-2 border-b bg-muted/50 px-4 py-3 text-xs font-medium text-muted-foreground">
+                    <div className="nexus-table-header grid grid-cols-5 gap-2">
                       <div className="col-span-2">{t("group")}</div>
                       <div className="col-span-1 text-right">{t("demandLabel")}</div>
                       <div className="col-span-1 text-right">{t("capacityLabelShort")}</div>
                       <div className="col-span-1 text-right">{t("gapLabel")}</div>
                     </div>
                     {demandVsCapacity.groups.map((g, i) => (
-                      <div key={i} className="grid grid-cols-5 gap-2 border-b px-4 py-3 text-sm last:border-0 hover:bg-muted/30">
+                      <div key={i} className="nexus-table-row grid grid-cols-5 gap-2 px-4 py-3 text-sm last:border-0">
                         <div className="col-span-2 flex items-center gap-2 font-medium">
                           <Badge variant="outline" className="text-[10px]">{g.groupType}</Badge>
                           {g.groupName}
@@ -257,8 +262,8 @@ export default function CapacityPlanningPage() {
             </TabsContent>
 
             <TabsContent value="availability" className="mt-4">
-              <div className="rounded-md border">
-                <div className="border-b bg-muted/50 px-4 py-3 text-xs font-medium text-muted-foreground">{t("resourceAvailability")}</div>
+              <div className="nexus-table-surface">
+                <div className="nexus-table-header">{t("resourceAvailability")}</div>
                 {availLoading ? (
                   <div className="space-y-2 p-4">
                     {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
@@ -267,7 +272,7 @@ export default function CapacityPlanningPage() {
                   <div className="p-6 text-center text-sm text-muted-foreground">{t("noAvailabilityData")}</div>
                 ) : (
                   <>
-                    <div className="grid grid-cols-12 gap-2 border-b bg-muted/50 px-4 py-3 text-xs font-medium text-muted-foreground">
+                    <div className="nexus-table-header grid grid-cols-12 gap-2">
                       <div className="col-span-3">{t("resourceLabel")}</div>
                       <div className="col-span-2">{t("roleLabel")}</div>
                       <div className="col-span-2">{t("deptLabel")}</div>
@@ -276,7 +281,7 @@ export default function CapacityPlanningPage() {
                       <div className="col-span-1">{t("statusLabel")}</div>
                     </div>
                     {availability.items.slice(0, 15).map((r) => (
-                      <div key={r.resourceId} className="grid grid-cols-12 gap-2 border-b px-4 py-3 text-sm hover:bg-muted/30">
+                      <div key={r.resourceId} className="nexus-table-row grid grid-cols-12 gap-2 px-4 py-3 text-sm">
                         <div className="col-span-3 font-medium">{r.resourceName}</div>
                         <div className="col-span-2 text-muted-foreground">{r.jobTitle ?? "-"}</div>
                         <div className="col-span-2 text-muted-foreground">{r.departmentName ?? "-"}</div>
@@ -310,7 +315,7 @@ export default function CapacityPlanningPage() {
         </div>
       )}
 
-      <AllocationDialog open={showCreateDialog} onOpenChange={setShowCreateDialog} />
+      {canAssignResources && <AllocationDialog open={showCreateDialog} onOpenChange={setShowCreateDialog} />}
     </div>
   );
 }

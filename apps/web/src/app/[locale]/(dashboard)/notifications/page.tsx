@@ -3,11 +3,9 @@
 import { useState } from "react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Bell, CheckCheck, AlertTriangle, FileText, CalendarCheck, UserPlus, Settings, Info } from "lucide-react";
-import { formatDate, formatRelativeDate, getInitials } from "@/lib/utils";
+import { formatRelativeDate } from "@/lib/utils";
 
 const mockNotifications = [
   { id: "not-1", title: "Risk Escalated: Core Banking Modernisation", description: "A critical risk with score 20 has been escalated", type: "risk", read: false, createdAt: "2026-07-29" },
@@ -57,13 +55,13 @@ export default function NotificationsPage() {
         </TabsList>
 
         <TabsContent value="all">
-          <div className="rounded-md border">
+          <div className="nexus-table-surface">
             {mockNotifications.map((notification) => {
               const isUnread = !notification.read && !allRead;
               const iconConfig = typeIcons[notification.type] ?? typeIcons.system!;
               const Icon = iconConfig.icon;
               return (
-                <div key={notification.id} className={`flex items-start gap-4 border-b px-4 py-4 last:border-0 hover:bg-muted/30 ${isUnread ? "bg-muted/20" : ""}`}>
+                <div key={notification.id} className={`nexus-table-row flex items-start gap-4 px-4 py-4 last:border-0 ${isUnread ? "bg-muted/20" : ""}`}>
                   <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${isUnread ? "bg-primary/10" : "bg-muted"}`}>
                     <Icon className={`h-5 w-5 ${iconConfig.color}`} />
                   </div>
@@ -84,7 +82,7 @@ export default function NotificationsPage() {
         </TabsContent>
 
         <TabsContent value="unread">
-          <div className="rounded-md border">
+          <div className="nexus-table-surface">
             {mockNotifications.filter(n => !n.read && !allRead).length === 0 ? (
               <div className="flex flex-col items-center gap-2 py-12 text-muted-foreground">
                 <Bell className="h-12 w-12" />
@@ -95,7 +93,7 @@ export default function NotificationsPage() {
                 const iconConfig = typeIcons[notification.type] ?? typeIcons.system!;
                 const Icon = iconConfig.icon;
                 return (
-                  <div key={notification.id} className="flex items-start gap-4 border-b px-4 py-4 last:border-0 bg-muted/20">
+                <div key={notification.id} className="nexus-table-row flex items-start gap-4 px-4 py-4 last:border-0 bg-muted/20">
                     <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
                       <Icon className={`h-5 w-5 ${iconConfig.color}`} />
                     </div>

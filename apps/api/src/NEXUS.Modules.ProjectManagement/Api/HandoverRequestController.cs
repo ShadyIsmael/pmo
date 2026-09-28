@@ -17,6 +17,7 @@ public class HandoverRequestController : ControllerBase
         _handoverRequestService = handoverRequestService;
     }
 
+    [Authorize(Policy = "Handover.Approve")]
     [HttpGet("pending-for-me")]
     public async Task<IActionResult> GetPendingForMe(CancellationToken cancellationToken)
     {
@@ -26,6 +27,7 @@ public class HandoverRequestController : ControllerBase
         return Ok(result.Value);
     }
 
+    [Authorize(Policy = "Handover.Approve")]
     [HttpPost("{id:guid}/accept")]
     public async Task<IActionResult> Accept(Guid id, CancellationToken cancellationToken)
     {
@@ -41,6 +43,7 @@ public class HandoverRequestController : ControllerBase
         return Ok(result.Value);
     }
 
+    [Authorize(Policy = "Handover.Approve")]
     [HttpPost("{id:guid}/reject")]
     public async Task<IActionResult> Reject(Guid id, [FromBody] RejectProjectHandoverRequestDto dto, CancellationToken cancellationToken)
     {
@@ -56,6 +59,7 @@ public class HandoverRequestController : ControllerBase
         return Ok(result.Value);
     }
 
+    [Authorize(Policy = "Handover.Manage")]
     [HttpPost("{id:guid}/cancel")]
     public async Task<IActionResult> Cancel(Guid id, CancellationToken cancellationToken)
     {

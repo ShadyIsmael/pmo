@@ -12,7 +12,6 @@ import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from "
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { Badge } from "@/components/ui/badge";
 import { AlertCircle, Loader2, UserRoundCheck } from "lucide-react";
 import { useUserLookup } from "@/hooks/projects/useProjectLookups";
 import {
@@ -21,6 +20,8 @@ import {
   type ProjectHandoverRequestDto,
 } from "@/hooks/projects/useProjects";
 import { formatDate } from "@/lib/utils";
+import { useAuth } from "@/lib/auth";
+import { hasPermission, Permissions } from "@/lib/permissions";
 
 const handoverSchema = z.object({
   newProjectManagerId: z.string().min(1, "New project manager is required"),
@@ -42,7 +43,9 @@ export function ProjectHandoverSheet({ open, onOpenChange, project, requests }: 
   const t = useTranslations("projects");
   const common = useTranslations("common");
   const locale = useLocale();
-  const { data: projectManagers, isLoading: managersLoading, isError: managersError } = useUserLookup("project.manager", open);
+  const { user } = useAuth();
+  const canManageHandover = Boolean(user && hasPermission(user.permissions, Permissions.Handover.Manage));
+  const { data: projectManagers, isLoading: managersLoading, isError: managersError } = useUserLookup("project.manager", open && canManageHandover);
   const createRequest = useCreateProjectHandoverRequest(project.id);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -93,9 +96,9 @@ export function ProjectHandoverSheet({ open, onOpenChange, project, requests }: 
       });
       onOpenChange(false);
       form.reset();
-    } catch (err: any) {
-      const apiData = err?.data as { error?: string; message?: string } | undefined;
-      setErrorMessage(apiData?.error ?? apiData?.message ?? err?.message ?? t("handoverFailed"));
+    } catch (err: unknown) {
+      const error = err as { data?: { error?: string; message?: string }; message?: string };
+      setErrorMessage(error?.data?.error ?? error?.data?.message ?? error?.message ?? t("handoverFailed"));
     }
   };
 
@@ -137,6 +140,8 @@ export function ProjectHandoverSheet({ open, onOpenChange, project, requests }: 
       </FormSheet>
     );
   }
+
+  if (!canManageHandover) return null;
 
   return (
     <FormSheet open={open} onOpenChange={onOpenChange} title={t("handoverTitle")} description={t("handoverDescription")}>

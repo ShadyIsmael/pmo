@@ -16,6 +16,7 @@ public class MilestoneController : ControllerBase
         _milestoneService = milestoneService;
     }
 
+    [Authorize(Policy = "Project.View")]
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
     {
@@ -24,6 +25,7 @@ public class MilestoneController : ControllerBase
         return Ok(result.Value);
     }
 
+    [Authorize(Policy = "Project.View")]
     [HttpGet]
     public async Task<IActionResult> GetByProject([FromQuery] Guid projectId, [FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken cancellationToken = default)
     {

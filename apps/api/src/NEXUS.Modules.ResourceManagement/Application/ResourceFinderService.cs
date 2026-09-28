@@ -76,7 +76,6 @@ public class ResourceFinderService : IResourceFinderService
                 {
                     AllocationId = a.Id,
                     ProjectName = a.ProjectName ?? "Unnamed",
-                    Role = a.Role,
                     AllocationPercentage = a.AllocationPercentage,
                     StartDate = a.StartDate,
                     EndDate = a.EndDate

@@ -14,6 +14,7 @@ import { DashboardFilters } from "./DashboardFilters";
 
 interface DashboardHeaderProps {
   pov: PointOfView;
+  povOptions?: PointOfView[];
   editMode: boolean;
   lastUpdated: number | null;
   refreshing: boolean;
@@ -37,7 +38,7 @@ interface DashboardHeaderProps {
 }
 
 export function DashboardHeader({
-  pov, editMode, lastUpdated, refreshing, viewName, viewCount,
+  pov, povOptions, editMode, lastUpdated, refreshing, viewName, viewCount,
   views, currentViewId, canEdit, dashboardType, access, filters, onPOVChange, onToggleEditMode, onAddWidget,
   onRefreshAll, onSaveView, onManageViews, onReset, onFiltersChange, onSwitchView,
 }: DashboardHeaderProps) {
@@ -66,7 +67,7 @@ export function DashboardHeader({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {POV_OPTIONS.map((opt) => (
+              {(povOptions ?? POV_OPTIONS).map((opt) => (
                 <SelectItem key={opt} value={opt} className="text-xs">{opt}</SelectItem>
               ))}
             </SelectContent>
@@ -106,7 +107,7 @@ export function DashboardHeader({
             </Button>
           )}
 
-          {!editMode && (
+          {!editMode && canEdit && (
             <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1" onClick={onManageViews}>
               <Layout className="h-3 w-3" />Manage ({viewCount})
             </Button>

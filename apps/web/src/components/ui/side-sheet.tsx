@@ -28,9 +28,7 @@ export interface SideSheetProps {
   title: React.ReactNode;
   description?: React.ReactNode;
   children: React.ReactNode;
-  /** Content displayed before the title, such as an icon or badge. */
   headerLeading?: React.ReactNode;
-  /** Uses logical page direction: end is right in LTR and left in RTL. */
   side?: "start" | "end";
   size?: SideSheetSize;
   closeLabel?: string;
@@ -68,21 +66,21 @@ export function SideSheet({
       >
         <SheetHeader
           className={cn(
-            "shrink-0 space-y-0 border-b px-4 py-5 text-start sm:px-6",
+            "shrink-0 space-y-0 border-b border-border px-5 py-4 text-start sm:px-6",
             headerClassName
           )}
         >
           <div className="flex items-start gap-3">
             {headerLeading ? <div className="shrink-0">{headerLeading}</div> : null}
             <div className="min-w-0 flex-1">
-              <SheetTitle className={cn("text-base", titleClassName)}>{title}</SheetTitle>
+              <SheetTitle className={cn("text-base font-semibold", titleClassName)}>{title}</SheetTitle>
               {description ? (
-                <SheetDescription className={cn("mt-1", descriptionClassName)}>
+                <SheetDescription className={cn("mt-1 text-sm text-muted-foreground", descriptionClassName)}>
                   {description}
                 </SheetDescription>
               ) : null}
             </div>
-            <SheetClose className="shrink-0 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none">
+            <SheetClose className="shrink-0 inline-flex h-7 w-7 items-center justify-center rounded-md opacity-70 ring-offset-background transition-opacity hover:opacity-100 hover:bg-muted focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none">
               <X className="h-4 w-4" />
               <span className="sr-only">{closeLabel}</span>
             </SheetClose>
@@ -98,7 +96,7 @@ export function SideSheetBody({ className, ...props }: React.HTMLAttributes<HTML
   return (
     <div
       className={cn(
-        "min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 py-5 sm:px-6",
+        "min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-5 py-4 sm:px-6",
         className
       )}
       {...props}
@@ -110,7 +108,7 @@ export function SideSheetFooter({ className, ...props }: React.HTMLAttributes<HT
   return (
     <div
       className={cn(
-        "flex shrink-0 flex-col-reverse gap-2 border-t bg-background px-4 py-4 sm:flex-row sm:justify-end sm:px-6",
+        "flex shrink-0 flex-col-reverse gap-2 border-t border-border bg-background px-5 py-4 sm:flex-row sm:justify-end sm:px-6",
         className
       )}
       {...props}

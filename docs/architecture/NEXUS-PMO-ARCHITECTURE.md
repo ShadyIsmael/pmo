@@ -406,10 +406,10 @@ All 19 modules. Evidence cross-referenced from `docs/architecture/module-catalog
 
 ### 8.8 Risk Management
 | **Responsibility** | Risk register, impact/likelihood assessment, mitigation, contingency |
-| **Entities** | Risk, RiskCategory, RiskMitigation, RiskContingency |
-| **API endpoints** | GET/POST/PUT/DELETE /api/risks |
+| **Entities** | Risk, RiskCategory, RiskAction, RiskFollowUp, RiskFollowUpUpdate (legacy RiskMitigation/RiskContingency retained for compatibility) |
+| **API endpoints** | GET/POST/PUT /api/risks, status transition, project filter, actions, follow-up, and follow-up updates |
 | **Dependencies** | Project Management, Identity |
-| **Maturity** | Implemented (28 risks seeded) |
+| **Maturity** | Workflow v1 implemented; legacy mitigation/target fields migrated into actions |
 
 ### 8.9 Issue Management
 | **Responsibility** | Issue tracking, severity/priority, resolution, action items |
@@ -564,6 +564,9 @@ erDiagram
     Project ||--o{ Deliverable : delivers
     Project ||--o{ Baseline : has
     Project ||--o{ Risk : has
+    Risk ||--o{ RiskAction : plans
+    RiskAction ||--o| RiskFollowUp : reviews
+    RiskFollowUp ||--o{ RiskFollowUpUpdate : records
     Project ||--o{ Issue : has
     Project ||--o{ Meeting : has
     Project ||--o{ Budget : budgets
@@ -1061,7 +1064,7 @@ C4Deployment
 | **Work Items** | Implemented | 320 work items seeded, type/priority/status/source model |
 | **Resources** | Implemented | 120 resources, skills, allocations, rate cards, vendors |
 | **Cost Management** | Implemented | 24 budgets, 50 cost entries, invoices, purchase commitments |
-| **Risks** | Implemented | 28 risks seeded, impact/likelihood/level, mitigations |
+| **Risks** | Implemented | Risk workflow v1, tenant-scoped actions/follow-up/update history, legacy value migration |
 | **Issues** | Implemented | 17 issues seeded, severity/priority, actions |
 | **Meetings** | Implemented | 22 meetings seeded, agendas, minutes, action items |
 | **Workflows** | Partial | Entities exist (8 tables); execution engine not verified |

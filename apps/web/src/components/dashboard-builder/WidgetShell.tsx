@@ -31,7 +31,7 @@ export function WidgetShell({
   dataSource, onRefresh, onSettings, onDuplicate, onRemove, onToggleCollapse, onViewDetails, children,
 }: WidgetShellProps) {
   return (
-    <Card className="h-full overflow-hidden flex flex-col">
+    <Card className="nexus-widget h-full overflow-hidden flex flex-col">
       <CardHeader className="flex flex-row items-center justify-between py-1.5 px-3 shrink-0 gap-2">
         <div className="flex items-center gap-2 min-w-0 flex-1">
           {editMode && (

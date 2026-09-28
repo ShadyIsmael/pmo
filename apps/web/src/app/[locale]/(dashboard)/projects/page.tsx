@@ -8,6 +8,8 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { KpiCard } from "@/components/ui/kpi-card";
+import { EmptyState, ErrorState } from "@/components/ui/state-display";
 import { Progress } from "@/components/ui/progress";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -20,7 +22,10 @@ import { formatDate, getHealthDotColor, getStatusVariant } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useProjects, type ProjectSummaryDto } from "@/hooks/projects/useProjects";
 import { useUserLookup, toUserSelectOptions } from "@/hooks/projects/useProjectLookups";
-import { useCreateProjectSheet } from "@/components/projects/CreateProjectSheetProvider";
+import {
+  CreateProjectSheetProvider,
+  useCreateProjectSheet,
+} from "@/components/projects/CreateProjectSheetProvider";
 import { useProjectEnumLabels } from "@/hooks/projects/useProjectEnumLabels";
 import {
   DropdownMenu,
@@ -31,6 +36,8 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { useCurrencyFormatter } from "@/hooks/useCurrencyFormatter";
+import { useAuth } from "@/lib/auth";
+import { hasPermission, Permissions } from "@/lib/permissions";
 
 // The advanced search form is collapsed by default, so lazy-load it to keep its
 // form/select graph out of the initial route chunk. The fallback mirrors the
@@ -72,7 +79,7 @@ type StatusTab = (typeof STATUS_TAB_VALUES)[number];
 
 const STATUS_TABS: ReadonlyArray<{ value: StatusTab; translationKey: string }> = STATUS_TAB_VALUES.map((value) => ({
   value,
-  translationKey: value,
+  translationKey: `statusTabs.${value}`,
 }));
 
 function isStatusTab(value: string): value is StatusTab {
@@ -97,11 +104,13 @@ function statusMatches(project: ProjectSummaryDto, tab: StatusTab): boolean {
   }
 }
 
-export default function ProjectsPage() {
+function ProjectsPageContent() {
   const t = useTranslations("projects");
   const common = useTranslations("common");
   const locale = useLocale();
   const { toast } = useToast();
+  const { user } = useAuth();
+  const canCreateProject = Boolean(user && hasPermission(user.permissions, Permissions.Project.Create));
   const [filterStatus, setFilterStatus] = useState<StatusTab>("all");
   const [exporting, setExporting] = useState<"excel" | "pdf" | null>(null);
 
@@ -330,35 +339,32 @@ export default function ProjectsPage() {
 
   if (isLoading) {
     return (
-      <div className="space-y-6">
+      <div dir={locale === "ar" ? "rtl" : "ltr"} className="nexus-page nexus-projects space-y-6">
         <PageHeader title={t("title")} description={t("description")} />
         <div className="grid gap-4 md:grid-cols-4">
           {[1,2,3,4].map(i => (
-            <Card key={i}><CardContent className="h-20"><Skeleton className="h-full" /></CardContent></Card>
+            <div key={i} className="h-28 animate-pulse rounded-xl border bg-card" />
           ))}
         </div>
-        <div className="rounded-md border"><Skeleton className="h-64" /></div>
+        <div className="nexus-table-surface"><Skeleton className="h-64" /></div>
       </div>
     );
   }
 
   if (isError) {
     return (
-      <div className="space-y-6">
+      <div dir={locale === "ar" ? "rtl" : "ltr"} className="nexus-page nexus-projects space-y-6">
         <PageHeader title={t("title")} description={t("description")} />
-        <Card>
-          <CardContent className="py-12 text-center">
-            <AlertTriangle className="h-12 w-12 text-status-red mx-auto mb-4" />
-            <p className="text-muted-foreground">{common("errorLoading") || "Failed to load projects"}</p>
-            <Button onClick={() => window.location.reload()} className="mt-4">{common("retry")}</Button>
-          </CardContent>
-        </Card>
+        <ErrorState
+          title={common("errorLoading") || "Failed to load projects"}
+          onRetry={() => window.location.reload()}
+        />
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div dir={locale === "ar" ? "rtl" : "ltr"} className="nexus-page nexus-projects space-y-6">
       <PageHeader
         title={t("title")}
         description={t("description", { count: filtered.length })}
@@ -385,56 +391,39 @@ export default function ProjectsPage() {
               </DropdownMenuContent>
             </DropdownMenu>
             <Link href="/ai-workspace/plan-generator"><Button variant="outline" size="sm"><Plus className="mr-2 h-4 w-4" />AI Plan</Button></Link>
-            <Button size="sm" onClick={openCreateProject}><Plus className="mr-2 h-4 w-4" />{common("create")}</Button>
+            {canCreateProject ? <Button size="sm" onClick={openCreateProject}><Plus className="mr-2 h-4 w-4" />{common("create")}</Button> : null}
           </div>
         }
       />
 
       <div className="grid gap-4 md:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{t("activeProjects")}</CardTitle>
-            <FolderKanban className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{filtered.length}</div>
-            <div className="mt-1 flex gap-2 text-xs">
-              <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-status-green" />{healthCounts.green}</span>
-              <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-status-amber" />{healthCounts.amber}</span>
-              <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-status-red" />{healthCounts.red}</span>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{common("budget")}</CardTitle>
-            <Banknote className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{currencyFormatter.format(totalBudget, budgetCurrency)}</div>
-            <p className="text-xs text-muted-foreground">{common("forecast")}: {currencyFormatter.format(totalForecast, forecastCurrency)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{t("criticalRisks")}</CardTitle>
-            <AlertTriangle className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-status-red">{0}</div>
-            <p className="text-xs text-muted-foreground">{t("acrossAllProjects")}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{t("avgScheduleVariance")}</CardTitle>
-            <Clock className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-status-amber">—</div>
-            <p className="text-xs text-muted-foreground">{t("weightedAverage")}</p>
-          </CardContent>
-        </Card>
+        <KpiCard
+          label={t("activeProjects")}
+          value={filtered.length}
+          icon={FolderKanban}
+          semantic="primary"
+        />
+        <KpiCard
+          label={common("budget")}
+          value={currencyFormatter.format(totalBudget, budgetCurrency)}
+          hint={`${common("forecast")}: ${currencyFormatter.format(totalForecast, forecastCurrency)}`}
+          icon={Banknote}
+          semantic="navy"
+        />
+        <KpiCard
+          label={t("criticalRisks")}
+          value={0}
+          hint={t("acrossAllProjects")}
+          icon={AlertTriangle}
+          semantic="red"
+        />
+        <KpiCard
+          label={t("avgScheduleVariance")}
+          value="—"
+          hint={t("weightedAverage")}
+          icon={Clock}
+          semantic="amber"
+        />
       </div>
 
       <Tabs value={filterStatus} onValueChange={(value) => { if (isStatusTab(value)) setFilterStatus(value); }}>
@@ -488,8 +477,8 @@ export default function ProjectsPage() {
         </TabsList>
 
         <TabsContent value="table">
-          <div className="rounded-md border">
-            <div className="grid grid-cols-12 gap-2 border-b bg-muted/50 px-4 py-3 text-xs font-medium text-muted-foreground">
+          <div className="nexus-table-surface">
+            <div className="nexus-table-header grid grid-cols-12 gap-2">
               <div className="col-span-3">{common("project")}</div>
               <div className="col-span-1">{common("code")}</div>
               <div className="col-span-1">{common("status")}</div>
@@ -505,7 +494,7 @@ export default function ProjectsPage() {
               <div className="px-4 py-12 text-center text-muted-foreground">{common("noResults")}</div>
             ) : (
               filtered.map((project: ProjectSummaryDto) => (
-                <Link key={project.id} href={`/projects/${project.id}`} className="grid grid-cols-12 gap-2 border-b px-4 py-3 text-sm hover:bg-muted/30">
+                <Link key={project.id} href={`/projects/${project.id}`} className="nexus-table-row grid grid-cols-12 gap-2 px-4 py-3 text-sm">
                   <div className="col-span-3 font-medium">{project.name}</div>
                   <div className="col-span-1 text-muted-foreground">{project.code}</div>
                   <div className="col-span-1"><Badge variant={getStatusVariant(project.status)} className="text-[10px]">{statusLabel(project.status)}</Badge></div>
@@ -567,5 +556,13 @@ export default function ProjectsPage() {
         </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+export default function ProjectsPage() {
+  return (
+    <CreateProjectSheetProvider>
+      <ProjectsPageContent />
+    </CreateProjectSheetProvider>
   );
 }

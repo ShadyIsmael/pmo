@@ -103,7 +103,7 @@ public class SnapshotAllocationDto
     public Guid OriginalId { get; set; }
     public Guid ResourceId { get; set; }
     public string? ResourceName { get; set; }
-    public string Role { get; set; } = string.Empty;
+    public Guid? ProjectRoleId { get; set; }
     public decimal AllocationPercentage { get; set; }
     public decimal? HoursPerWeek { get; set; }
     public DateTime StartDate { get; set; }
@@ -155,7 +155,7 @@ public class SnapshotDeliverableDto
 public class SnapshotStakeholderDto
 {
     public Guid OriginalId { get; set; }
-    public Guid UserId { get; set; }
+    public Guid? UserId { get; set; }
     public string Name { get; set; } = string.Empty;
     public string? Email { get; set; }
     public string Role { get; set; } = string.Empty;

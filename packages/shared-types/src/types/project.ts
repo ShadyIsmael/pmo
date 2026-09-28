@@ -62,11 +62,14 @@ export interface ProjectPhase extends BaseEntity {
 
 export interface ProjectStakeholder extends BaseEntity {
   projectId: string;
-  userId: string;
-  interest: "low" | "medium" | "high";
-  influence: "low" | "medium" | "high";
-  communicationPreference?: string;
-  notes?: string;
+  userId?: string;
+  name: string;
+  email?: string;
+  role: string;
+  interest?: string;
+  influence?: string;
+  type: "Internal" | "ContactOnly";
+  status: "Active" | "ContactOnly" | "Revoked" | string;
 }
 
 export interface Milestone extends BaseEntity {

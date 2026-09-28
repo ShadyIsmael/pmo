@@ -2,10 +2,9 @@
 
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ShieldCheck, Plus, CheckCircle2, XCircle } from "lucide-react";
+import { ShieldCheck, Plus } from "lucide-react";
 
 const policies = [
   { name: "Password Complexity", description: "Minimum 12 characters, mixed case, numbers, special chars", status: "Active", scope: "Global" },
@@ -35,7 +34,7 @@ export default function SecurityPoliciesPage() {
               <div className="flex-1">
                 <div className="flex items-center gap-2">
                   <p className="font-medium">{policy.name}</p>
-                  <Badge variant={policy.status === "Active" ? "default" : "secondary"} className="text-[10px]">{policy.status}</Badge>
+                  <Badge status={policy.status} className="text-[10px]">{policy.status}</Badge>
                   <Badge variant="outline" className="text-[10px]">{policy.scope}</Badge>
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">{policy.description}</p>

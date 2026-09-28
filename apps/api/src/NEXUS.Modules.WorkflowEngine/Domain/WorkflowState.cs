@@ -4,11 +4,16 @@ namespace NEXUS.Modules.WorkflowEngine.Domain;
 
 public class WorkflowState : BaseEntity
 {
-    public Guid WorkflowInstanceId { get; set; }
-    public WorkflowInstance WorkflowInstance { get; set; } = null!;
-    public string Name { get; set; } = string.Empty;
-    public string? Type { get; set; }
-    public DateTime EnteredAt { get; set; } = DateTime.UtcNow;
-    public DateTime? ExitedAt { get; set; }
-    public string? EnteredBy { get; set; }
+    public Guid WorkflowDefinitionVersionId { get; set; }
+    public WorkflowDefinitionVersion WorkflowDefinitionVersion { get; set; } = null!;
+    public string Code { get; set; } = string.Empty;
+    public string NameEn { get; set; } = string.Empty;
+    public string NameAr { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public int DisplayOrder { get; set; }
+    public bool IsInitial { get; set; }
+    public bool IsFinal { get; set; }
+    public bool IsActive { get; set; } = true;
+    public ICollection<WorkflowTransition> IncomingTransitions { get; set; } = new List<WorkflowTransition>();
+    public ICollection<WorkflowTransition> OutgoingTransitions { get; set; } = new List<WorkflowTransition>();
 }

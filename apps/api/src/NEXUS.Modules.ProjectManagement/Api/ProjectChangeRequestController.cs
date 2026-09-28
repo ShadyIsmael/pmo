@@ -17,6 +17,7 @@ public class ProjectChangeRequestController : ControllerBase
         _projectChangeRequestService = projectChangeRequestService;
     }
 
+    [Authorize(Policy = "ChangeRequest.Manage")]
     [HttpPost("api/projects/{projectId:guid}/change-requests")]
     public async Task<IActionResult> Create(Guid projectId, [FromBody] CreateProjectChangeRequestDto dto, CancellationToken cancellationToken)
     {
@@ -28,6 +29,7 @@ public class ProjectChangeRequestController : ControllerBase
         return CreatedAtAction(nameof(GetById), new { id = result.Value!.Id }, result.Value);
     }
 
+    [Authorize(Policy = "ChangeRequest.View")]
     [HttpGet("api/projects/{projectId:guid}/change-requests")]
     public async Task<IActionResult> GetByProject(Guid projectId, CancellationToken cancellationToken)
     {
@@ -37,6 +39,7 @@ public class ProjectChangeRequestController : ControllerBase
         return Ok(result.Value);
     }
 
+    [Authorize(Policy = "ChangeRequest.Approve")]
     [HttpGet("api/project-change-requests/pending-for-me")]
     public async Task<IActionResult> GetPending(CancellationToken cancellationToken)
     {
@@ -46,6 +49,7 @@ public class ProjectChangeRequestController : ControllerBase
         return Ok(result.Value);
     }
 
+    [Authorize(Policy = "ChangeRequest.View")]
     [HttpGet("api/project-change-requests/{id:guid}")]
     public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
     {
@@ -55,6 +59,7 @@ public class ProjectChangeRequestController : ControllerBase
         return Ok(result.Value);
     }
 
+    [Authorize(Policy = "ChangeRequest.Approve")]
     [HttpPost("api/project-change-requests/{id:guid}/approve")]
     public async Task<IActionResult> Approve(Guid id, [FromBody] ApproveProjectChangeRequestDto dto, CancellationToken cancellationToken)
     {
@@ -65,6 +70,7 @@ public class ProjectChangeRequestController : ControllerBase
         return Ok(result.Value);
     }
 
+    [Authorize(Policy = "ChangeRequest.Approve")]
     [HttpPost("api/project-change-requests/{id:guid}/reject")]
     public async Task<IActionResult> Reject(Guid id, [FromBody] RejectProjectChangeRequestDto dto, CancellationToken cancellationToken)
     {
@@ -75,6 +81,7 @@ public class ProjectChangeRequestController : ControllerBase
         return Ok(result.Value);
     }
 
+    [Authorize(Policy = "ChangeRequest.Manage")]
     [HttpPost("api/project-change-requests/{id:guid}/cancel")]
     public async Task<IActionResult> Cancel(Guid id, CancellationToken cancellationToken)
     {
