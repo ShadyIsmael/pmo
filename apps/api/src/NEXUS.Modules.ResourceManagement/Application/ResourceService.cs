@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using System.Security.Claims;
 using NEXUS.Modules.Audit.Application;
 using NEXUS.Modules.Audit.Domain;
+using NEXUS.Modules.Organization.Domain;
 using NEXUS.Modules.ResourceManagement.Application.DTOs;
 using NEXUS.Modules.ResourceManagement.Application.Mapping;
 using NEXUS.Modules.ResourceManagement.Domain;
@@ -113,7 +114,9 @@ public class ResourceService : IResourceService, IResourceReferenceLookup, IReso
         if (resource is null)
             return Result<ResourceDto>.Failure(Error.NotFound("Resource not found"));
 
-        return Result<ResourceDto>.Success(resource.ToDto());
+        var detailDto = resource.ToDto();
+        await EnrichOrganizationAsync(new[] { detailDto }, cancellationToken);
+        return Result<ResourceDto>.Success(detailDto);
     }
 
     public async Task<PagedResult<ResourceDto>> GetPagedAsync(ResourceFilterDto filter, CancellationToken cancellationToken = default)
@@ -146,6 +149,8 @@ public class ResourceService : IResourceService, IResourceReferenceLookup, IReso
             query = query.Where(r => r.LocationId == filter.LocationId);
         if (filter.BusinessUnitId.HasValue)
             query = query.Where(r => r.BusinessUnitId == filter.BusinessUnitId);
+        if (filter.OrganizationalUnitId.HasValue)
+            query = query.Where(r => _context.Set<NEXUS.Modules.Organization.Domain.ResourceOrganizationalUnit>().Any(membership => membership.ResourceId == r.Id && membership.OrganizationalUnitId == filter.OrganizationalUnitId.Value && membership.IsPrimary && membership.IsActive && (membership.EffectiveTo == null || membership.EffectiveTo > DateTime.UtcNow)));
         if (filter.VendorId.HasValue)
             query = query.Where(r => r.VendorId == filter.VendorId);
         if (filter.IsActive.HasValue)
@@ -166,7 +171,9 @@ public class ResourceService : IResourceService, IResourceReferenceLookup, IReso
             .Take(filter.PageSize)
             .ToListAsync(cancellationToken);
 
-        return new PagedResult<ResourceDto>(items.Select(r => r.ToDto()).ToList(), filter.Page, filter.PageSize, total);
+        var resultItems = items.Select(r => r.ToDto()).ToList();
+        await EnrichOrganizationAsync(resultItems, cancellationToken);
+        return new PagedResult<ResourceDto>(resultItems, filter.Page, filter.PageSize, total);
     }
 
     public async Task<IReadOnlyList<ResourceBaseCalendarDto>> GetBaseCalendarsAsync(CancellationToken cancellationToken = default)
@@ -214,6 +221,10 @@ public class ResourceService : IResourceService, IResourceReferenceLookup, IReso
                 return Result<ResourceDto>.Failure(Error.Validation("The specified Base Calendar does not exist"));
         }
 
+        var organizationValidation = await ValidateOrganizationalUnitAsync(dto.PrimaryOrganizationalUnitId, cancellationToken);
+        if (organizationValidation.IsFailure)
+            return Result<ResourceDto>.Failure(organizationValidation.Error!);
+
         var resource = dto.ToEntity();
         resource.TenantId = CurrentTenant();
         resource.CreatedBy = userId;
@@ -240,6 +251,12 @@ public class ResourceService : IResourceService, IResourceReferenceLookup, IReso
         _context.Set<Resource>().Add(resource);
         await _context.SaveChangesAsync(cancellationToken);
 
+        if (dto.PrimaryOrganizationalUnitId.HasValue)
+        {
+            var organizationResult = await SetPrimaryOrganizationalUnitAsync(resource.Id, dto.PrimaryOrganizationalUnitId.Value, userId, cancellationToken);
+            if (organizationResult.IsFailure) return Result<ResourceDto>.Failure(organizationResult.Error!);
+        }
+
         await _auditService.LogAsync(new AuditEntry
         {
             EntityType = "Resource",
@@ -255,7 +272,9 @@ public class ResourceService : IResourceService, IResourceReferenceLookup, IReso
             .Include(r => r.Skills).ThenInclude(rs => rs.Skill)
             .FirstAsync(r => r.Id == resource.Id, cancellationToken);
 
-        return Result<ResourceDto>.Success(created.ToDto());
+        var createdDto = created.ToDto();
+        await EnrichOrganizationAsync(new[] { createdDto }, cancellationToken);
+        return Result<ResourceDto>.Success(createdDto);
     }
 
     public async Task<Result<ResourceDto>> UpdateAsync(Guid id, UpdateResourceDto dto, string userId, CancellationToken cancellationToken = default)
@@ -307,6 +326,10 @@ public class ResourceService : IResourceService, IResourceReferenceLookup, IReso
                 return Result<ResourceDto>.Failure(Error.Validation("The specified Base Calendar does not exist"));
         }
 
+        var organizationValidation = await ValidateOrganizationalUnitAsync(dto.PrimaryOrganizationalUnitId, cancellationToken);
+        if (organizationValidation.IsFailure)
+            return Result<ResourceDto>.Failure(organizationValidation.Error!);
+
         resource.ApplyUpdate(dto);
         resource.UpdatedBy = userId;
 
@@ -330,6 +353,12 @@ public class ResourceService : IResourceService, IResourceReferenceLookup, IReso
 
         await _context.SaveChangesAsync(cancellationToken);
 
+        if (dto.PrimaryOrganizationalUnitId.HasValue)
+        {
+            var organizationResult = await SetPrimaryOrganizationalUnitAsync(resource.Id, dto.PrimaryOrganizationalUnitId.Value, userId, cancellationToken);
+            if (organizationResult.IsFailure) return Result<ResourceDto>.Failure(organizationResult.Error!);
+        }
+
         await _auditService.LogAsync(new AuditEntry
         {
             EntityType = "Resource",
@@ -342,7 +371,9 @@ public class ResourceService : IResourceService, IResourceReferenceLookup, IReso
             CreatedBy = userId
         }, cancellationToken);
 
-        return Result<ResourceDto>.Success(resource.ToDto());
+        var updatedDto = resource.ToDto();
+        await EnrichOrganizationAsync(new[] { updatedDto }, cancellationToken);
+        return Result<ResourceDto>.Success(updatedDto);
     }
 
     public async Task<Result> DeleteAsync(Guid id, string userId, CancellationToken cancellationToken = default)
@@ -405,6 +436,59 @@ public class ResourceService : IResourceService, IResourceReferenceLookup, IReso
     }
 
     private static string? NormalizeEmail(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim().ToUpperInvariant();
+
+    private async Task<Result> ValidateOrganizationalUnitAsync(Guid? organizationalUnitId, CancellationToken cancellationToken)
+    {
+        if (!organizationalUnitId.HasValue) return Result.Success();
+        var exists = await _context.Set<OrganizationalUnit>()
+            .AnyAsync(unit => unit.Id == organizationalUnitId.Value && unit.IsActive, cancellationToken);
+        return exists
+            ? Result.Success()
+            : Result.Failure(Error.Validation("The selected organizational unit does not exist or is inactive"));
+    }
+
+    private async Task<Result> SetPrimaryOrganizationalUnitAsync(Guid resourceId, Guid organizationalUnitId, string userId, CancellationToken cancellationToken)
+    {
+        var unit = await _context.Set<OrganizationalUnit>().FirstOrDefaultAsync(item => item.Id == organizationalUnitId && item.IsActive, cancellationToken);
+        if (unit is null) return Result.Failure(Error.Validation("The selected organizational unit does not exist or is inactive"));
+        var now = DateTime.UtcNow;
+        var current = await _context.Set<ResourceOrganizationalUnit>().Where(item => item.ResourceId == resourceId && item.IsPrimary && item.IsActive && (item.EffectiveTo == null || item.EffectiveTo > now)).ToListAsync(cancellationToken);
+        foreach (var membership in current) { membership.EffectiveTo = now; membership.IsActive = false; membership.UpdatedBy = userId; }
+        _context.Set<ResourceOrganizationalUnit>().Add(new ResourceOrganizationalUnit { TenantId = CurrentTenant(), ResourceId = resourceId, OrganizationalUnitId = organizationalUnitId, IsPrimary = true, EffectiveFrom = now, CreatedBy = userId });
+        await _context.SaveChangesAsync(cancellationToken);
+        return Result.Success();
+    }
+
+    private async Task EnrichOrganizationAsync(IReadOnlyList<ResourceDto> resources, CancellationToken cancellationToken)
+    {
+        var ids = resources.Select(resource => resource.Id).ToHashSet();
+        if (ids.Count == 0) return;
+        var memberships = await _context.Set<ResourceOrganizationalUnit>()
+            .Include(membership => membership.OrganizationalUnit)
+            .Where(membership => ids.Contains(membership.ResourceId) && membership.IsPrimary && membership.IsActive && (membership.EffectiveTo == null || membership.EffectiveTo > DateTime.UtcNow))
+            .ToListAsync(cancellationToken);
+        var reporting = await _context.Set<ResourceReportingLine>()
+            .Where(line => ids.Contains(line.ResourceId) && line.IsPrimary && line.IsActive && (line.EffectiveTo == null || line.EffectiveTo > DateTime.UtcNow))
+            .ToListAsync(cancellationToken);
+        var managerIds = reporting.Select(line => line.ManagerResourceId).Distinct().ToList();
+        var managers = await _context.Set<Resource>().Where(resource => managerIds.Contains(resource.Id)).ToDictionaryAsync(resource => resource.Id, resource => resource.Name, cancellationToken);
+        foreach (var resource in resources)
+        {
+            var membership = memberships.FirstOrDefault(item => item.ResourceId == resource.Id);
+            if (membership is not null)
+            {
+                resource.PrimaryOrganizationalUnitId = membership.OrganizationalUnitId;
+                resource.PrimaryOrganizationalUnitName = membership.OrganizationalUnit.Name;
+                resource.PrimaryOrganizationalUnitCode = membership.OrganizationalUnit.Code;
+            }
+            var line = reporting.FirstOrDefault(item => item.ResourceId == resource.Id);
+            if (line is not null)
+            {
+                resource.PrimaryManagerResourceId = line.ManagerResourceId;
+                resource.PrimaryManagerResourceName = managers.TryGetValue(line.ManagerResourceId, out var name) ? name : null;
+            }
+        }
+    }
 
     private Guid CurrentTenant() =>
         Guid.TryParse(_httpContextAccessor.HttpContext?.User.FindFirstValue("tenantId"), out var tenantId)

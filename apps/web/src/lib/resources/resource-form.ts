@@ -40,6 +40,8 @@ export type ResourceFormModel = {
   vendorId: string;
   /** GUID or empty. Binds to `Guid?` server-side, so a non-GUID is a 400. */
   baseCalendarId: string;
+  /** Optional primary organizational unit membership. */
+  organizationalUnitId: string;
 };
 
 export const emptyResourceForm: ResourceFormModel = {
@@ -56,6 +58,7 @@ export const emptyResourceForm: ResourceFormModel = {
   notes: "",
   vendorId: "",
   baseCalendarId: "",
+  organizationalUnitId: "",
 };
 
 const GUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -118,6 +121,7 @@ export type CreateResourceInput = {
   notes?: string;
   vendorId?: string;
   baseCalendarId?: string;
+  primaryOrganizationalUnitId?: string;
 };
 
 export type UpdateResourceInput = {
@@ -134,6 +138,7 @@ export type UpdateResourceInput = {
   notes?: string;
   vendorId?: string;
   baseCalendarId?: string;
+  primaryOrganizationalUnitId?: string;
   isActive?: boolean;
 };
 
@@ -163,6 +168,7 @@ export function toCreatePayload(form: ResourceFormModel): CreateResourceInput {
     notes: optional(form.notes),
     vendorId: form.type === RESOURCE_TYPE_VENDOR ? optional(form.vendorId) : undefined,
     baseCalendarId: optional(form.baseCalendarId),
+    primaryOrganizationalUnitId: optional(form.organizationalUnitId),
   };
 }
 
@@ -189,6 +195,7 @@ export function toUpdatePayload(form: ResourceFormModel): UpdateResourceInput {
     notes: optional(form.notes),
     vendorId: form.type === RESOURCE_TYPE_VENDOR ? optional(form.vendorId) : undefined,
     baseCalendarId: optional(form.baseCalendarId),
+    primaryOrganizationalUnitId: optional(form.organizationalUnitId),
     isActive: form.status === RESOURCE_STATUS_ACTIVE,
   };
 }
@@ -208,6 +215,7 @@ export type ResourceFormSource = {
   notes?: string | null;
   vendorId?: string | null;
   baseCalendarId?: string | null;
+  primaryOrganizationalUnitId?: string | null;
   isActive?: boolean;
 };
 
@@ -234,5 +242,6 @@ export function resourceToForm(resource: ResourceFormSource): ResourceFormModel 
     notes: resource.notes ?? "",
     vendorId: resource.vendorId ?? "",
     baseCalendarId: resource.baseCalendarId ?? "",
+    organizationalUnitId: resource.primaryOrganizationalUnitId ?? "",
   };
 }

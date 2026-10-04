@@ -152,17 +152,6 @@ export interface Approval {
   urgency: "Low" | "Medium" | "High";
 }
 
-export interface Notification {
-  id: string;
-  userId: string;
-  title: string;
-  description: string;
-  type: string;
-  read: boolean;
-  createdAt: string;
-  link: string;
-}
-
 export interface Ticket {
   id: string;
   projectId: string;
@@ -557,26 +546,6 @@ for (let a = 8; a <= 18; a++) {
     requestedAt: new Date(2026, 6, a).toISOString().split("T")[0],
     status: astatuses[a % 3]!,
     urgency: aurgs[a % 3]!,
-  });
-}
-
-export const mockNotifications: Notification[] = [];
-const notifTitles = [
-  "Task assigned to you", "Project status updated", "Meeting reminder", "Risk threshold exceeded", "Approval request", "Milestone approaching", "Budget alert", "New comment on your task", "Report ready for review", "System maintenance notice",
-];
-
-const notifLinks = ["tasks", "projects", "meetings", "risks-issues/risks", "my-work/approvals", "projects", "costs", "projects", "reports", ""];
-const notifTypes = ["task", "project", "meeting", "risk", "approval", "milestone", "budget", "comment", "report", "system"];
-for (let n = 0; n < 30; n++) {
-  mockNotifications.push({
-    id: `notif-${n + 1}`,
-    userId: (mockUsers[1 + (n % 20)] ?? mockUsers[1]!).id,
-    title: notifTitles[n % notifTitles.length]!,
-    description: `Notification details for: ${notifTitles[n % notifTitles.length]!}`,
-    type: notifTypes[n % 10]!,
-    read: n > 15,
-    createdAt: new Date(2026, 6, 30 - n).toISOString().split("T")[0],
-    link: `/${notifLinks[n % 10]!}`,
   });
 }
 

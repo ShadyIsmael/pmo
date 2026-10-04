@@ -7,6 +7,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Filter, Download } from "lucide-react";
 import { getInitials } from "@/lib/utils";
 import { mockProjects, mockResources } from "@/lib/mock-data";
+import { getLookupTextClass } from "@/lib/status-presentation";
 
 export default function ResourceMatrixPage() {
   return (
@@ -40,7 +41,7 @@ export default function ResourceMatrixPage() {
                 <Avatar className="h-6 w-6"><AvatarFallback className="text-[8px]">{getInitials(res.name)}</AvatarFallback></Avatar>
                 {res.name}
               </div>
-              <div className="col-span-1 text-muted-foreground">{res.role}</div>
+              <div className={`col-span-1 font-medium ${getLookupTextClass(res.role)}`}>{res.role}</div>
               <div className="col-span-1">
                 <div className="flex items-center gap-1">
                   <Progress value={res.availability} className="h-1.5 w-10" />

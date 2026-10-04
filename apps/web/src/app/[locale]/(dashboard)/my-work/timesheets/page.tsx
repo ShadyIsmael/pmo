@@ -57,6 +57,7 @@ export default function TimesheetsPage() {
         <MetricCard title={t("variance")} value={`${formatHours(summary?.workVarianceHours ?? 0, locale)} ${t("hours")}`} icon={<Clock3 className="h-4 w-4" />} />
         <MetricCard title={t("utilization")} value={`${formatHours(summary?.actualUtilization ?? 0, locale)}%`} icon={<CalendarDays className="h-4 w-4" />} />
       </div>
+      {summary?.byTeam?.length ? <Card><CardHeader><CardTitle className="text-base">{t("teamActualWork")}</CardTitle></CardHeader><CardContent className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{summary.byTeam.map(team => <div key={team.id ?? team.label} className="flex items-center justify-between rounded-md border border-border/60 px-3 py-2 text-sm"><span className="truncate font-medium" title={team.label}>{team.label}</span><span className="ms-3 shrink-0 tabular-nums text-muted-foreground">{formatHours(team.actualHours, locale)} {t("hours")}</span></div>)}</CardContent></Card> : null}
       <Card>
         <CardHeader><CardTitle className="text-base">{editing ? t("editEntry") : t("newEntry")}</CardTitle></CardHeader>
         <CardContent>

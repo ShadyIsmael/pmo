@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SideSheet, SideSheetBody, SideSheetFooter } from "@/components/ui/side-sheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { getStatusTextClass } from "@/lib/status-presentation";
 import { useAuth } from "@/lib/auth";
 import { hasPermission, Permissions } from "@/lib/permissions";
 import {
@@ -177,7 +178,7 @@ export default function VendorCategoriesPage() {
                   <TableCell>{category.nameEn}</TableCell>
                   <TableCell dir="rtl">{category.nameAr}</TableCell>
                   <TableCell>
-                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${category.isActive ? "bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"}`}>
+                    <span className={`text-xs font-medium ${getStatusTextClass(category.isActive ? "Active" : "Inactive")}`}>
                       {category.isActive ? t("active") : t("inactive")}
                     </span>
                   </TableCell>

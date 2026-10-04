@@ -9,8 +9,8 @@ export function useDocuments(query: DocumentListQuery = {}, enabled = true) {
 export function useDocument(id: string | null) {
   return useQuery({ queryKey: documentKeys.detail(id ?? ""), queryFn: () => documentApi.detail(id!), enabled: !!id, staleTime: 20_000 });
 }
-export function useDocumentCategories() {
-  return useQuery({ queryKey: documentKeys.categories, queryFn: documentApi.categories, staleTime: 60_000 });
+export function useDocumentCategories(enabled = true) {
+  return useQuery({ queryKey: documentKeys.categories, queryFn: documentApi.categories, enabled, staleTime: 60_000 });
 }
 export function useUploadDocument() {
   const client = useQueryClient();

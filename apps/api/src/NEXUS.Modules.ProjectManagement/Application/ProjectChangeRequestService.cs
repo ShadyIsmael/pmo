@@ -16,9 +16,9 @@ public class ProjectChangeRequestService : IProjectChangeRequestService
     private readonly DbContext _context;
     private readonly IAuditService _auditService;
     private readonly IHttpContextAccessor _httpContextAccessor;
-    private readonly IProjectFinancialLookup _financialLookup;
+    private readonly IProjectFinancialLookup? _financialLookup;
 
-    public ProjectChangeRequestService(DbContext context, IAuditService auditService, IHttpContextAccessor httpContextAccessor, IProjectFinancialLookup financialLookup)
+    public ProjectChangeRequestService(DbContext context, IAuditService auditService, IHttpContextAccessor httpContextAccessor, IProjectFinancialLookup? financialLookup = null)
     {
         _context = context;
         _auditService = auditService;
@@ -267,7 +267,9 @@ public class ProjectChangeRequestService : IProjectChangeRequestService
             var proposed = request.BudgetBeforeChange.Value + request.BudgetChangeAmount.Value;
             if (proposed < 0)
                 return Result<ProjectChangeRequestDto>.Failure(Error.Validation("The resulting project budget cannot be negative."));
-            var financials = await _financialLookup.GetAsync(project.Id, project.Currency, cancellationToken);
+            var financials = _financialLookup is null
+                ? null
+                : await _financialLookup.GetAsync(project.Id, project.Currency, cancellationToken);
             var currency = project.Currency?.Trim().ToUpperInvariant() ?? "GBP";
             var allocatedBudget = financials?.AllocatedBudget ?? 0;
             var actualCost = financials?.ActualCost ?? 0;

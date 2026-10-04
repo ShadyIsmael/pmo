@@ -10,7 +10,8 @@ public sealed class CreateWorkItemDto
     public WorkItemPriority Priority { get; set; } = WorkItemPriority.Medium;
     public string? Status { get; set; }
     public Guid? ProjectId { get; set; }
-    public Guid? AssigneeId { get; set; }
+    public Guid? AssignedResourceId { get; set; }
+    public Guid? AssignedTeamId { get; set; }
     public Guid? ParentId { get; set; }
     public int? StoryPoints { get; set; }
     public decimal? EstimatedHours { get; set; }
@@ -30,7 +31,8 @@ public sealed class UpdateWorkItemDto
     public WorkItemPriority Priority { get; set; } = WorkItemPriority.Medium;
     public string? Status { get; set; }
     public Guid? ProjectId { get; set; }
-    public Guid? AssigneeId { get; set; }
+    public Guid? AssignedResourceId { get; set; }
+    public Guid? AssignedTeamId { get; set; }
     public Guid? ParentId { get; set; }
     public int? StoryPoints { get; set; }
     public decimal? EstimatedHours { get; set; }
@@ -57,8 +59,10 @@ public sealed class WorkItemDto
     public string Source { get; set; } = string.Empty;
     public Guid? ProjectId { get; set; }
     public string? ProjectName { get; set; }
-    public Guid? AssigneeId { get; set; }
-    public string? AssigneeName { get; set; }
+    public Guid? AssignedResourceId { get; set; }
+    public string? AssignedResourceName { get; set; }
+    public Guid? AssignedTeamId { get; set; }
+    public string? AssignedTeamName { get; set; }
     public Guid? ReporterId { get; set; }
     public Guid? ParentId { get; set; }
     public int? StoryPoints { get; set; }
@@ -83,8 +87,10 @@ public sealed class WorkItemDto
 
 public sealed class WorkItemAssigneeDto
 {
-    public Guid AssigneeId { get; set; }
-    public Guid ResourceId { get; set; }
+    public string TargetType { get; set; } = string.Empty;
+    public Guid TargetId { get; set; }
+    public Guid? ResourceId { get; set; }
+    public Guid? TeamId { get; set; }
     public string Name { get; set; } = string.Empty;
     public string? Email { get; set; }
     public string? JobTitle { get; set; }

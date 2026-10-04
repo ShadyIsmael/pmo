@@ -16,7 +16,10 @@ public class WorkItem : BaseEntity
     public DateTime? ResolvedDate { get; set; }
     public string? Resolution { get; set; }
     public Guid? ProjectId { get; set; }
-    public Guid? AssigneeId { get; set; }
+    /// <summary>Exactly one of AssignedResourceId and AssignedTeamId may be set.</summary>
+    public Guid? AssignedResourceId { get; set; }
+    /// <summary>Exactly one of AssignedResourceId and AssignedTeamId may be set.</summary>
+    public Guid? AssignedTeamId { get; set; }
     public Guid? ReporterId { get; set; }
     public Guid? ParentId { get; set; }
     public int? StoryPoints { get; set; }

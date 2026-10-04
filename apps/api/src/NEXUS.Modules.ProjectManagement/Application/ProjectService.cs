@@ -69,40 +69,51 @@ public class ProjectService : IProjectService, IProjectReferenceLookup
         return Result<ProjectDto>.Success(dto);
     }
 
+    public async Task<Result<ProjectDto>> GetShellAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        // The project shell is used by the detail route and overview tabs. Keep it
+        // scalar-only: tab data and team collections have their own endpoints.
+        var project = await InScope(_context.Set<Project>().AsNoTracking())
+            .FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
+        if (project is null) return Result<ProjectDto>.Failure(Error.NotFound());
+
+        var dto = project.ToDto();
+        await ResolveProjectNamesAsync(dto, cancellationToken);
+        return Result<ProjectDto>.Success(dto);
+    }
+
     public async Task<PagedResult<ProjectSummaryDto>> GetPagedAsync(int page, int pageSize, string? status = null, string? priority = null, Guid? portfolioId = null, CancellationToken cancellationToken = default)
     {
-        var query = InScope(_context.Set<Project>());
+        var query = InScope(_context.Set<Project>().AsNoTracking());
         if (!string.IsNullOrWhiteSpace(status)) query = query.Where(p => p.Status == status);
         if (!string.IsNullOrWhiteSpace(priority)) query = query.Where(p => p.Priority == priority);
         if (portfolioId.HasValue) query = query.Where(p => p.PortfolioId == portfolioId.Value);
         var total = await query.CountAsync(cancellationToken);
-        var items = await query.OrderByDescending(p => p.CreatedAt)
+        var summaries = await query.OrderByDescending(p => p.CreatedAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .ToListAsync(cancellationToken);
-
-        var managerIds = items.Select(p => p.ProjectManagerId)
-            .Where(id => id.HasValue)
-            .Select(id => id!.Value)
-            .Distinct()
-            .ToList();
-        var managers = new Dictionary<Guid, User>();
-        if (managerIds.Count > 0)
-        {
-            managers = await _context.Set<User>()
-                .Where(u => managerIds.Contains(u.Id))
-                .ToDictionaryAsync(u => u.Id, cancellationToken);
-        }
-
-        var summaries = items.Select(p =>
-        {
-            var summary = p.ToSummaryDto();
-            if (p.ProjectManagerId.HasValue && managers.TryGetValue(p.ProjectManagerId.Value, out var manager))
+            .Select(p => new ProjectSummaryDto
             {
-                summary.ProjectManagerName = manager.FullName;
-            }
-            return summary;
-        }).ToList();
+                Id = p.Id,
+                Name = p.Name,
+                Code = p.Code,
+                Status = p.Status,
+                Health = p.Health,
+                RagStatus = p.RagStatus,
+                Progress = p.Progress,
+                StartDate = p.StartDate,
+                EndDate = p.EndDate,
+                Budget = p.Budget,
+                ActualCost = p.ActualCost,
+                Currency = p.Currency,
+                ProjectManagerId = p.ProjectManagerId,
+                ProjectManagerName = _context.Set<User>()
+                    .Where(user => user.Id == p.ProjectManagerId)
+                    .Select(user => user.FullName)
+                    .FirstOrDefault(),
+                WorkingCalendarId = p.WorkingCalendarId
+            })
+            .ToListAsync(cancellationToken);
 
         return new PagedResult<ProjectSummaryDto>(summaries, page, pageSize, total);
     }

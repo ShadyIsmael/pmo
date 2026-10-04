@@ -4,6 +4,9 @@ using NEXUS.Modules.Audit.Application;
 using NEXUS.Modules.Audit.Domain;
 using NEXUS.Modules.RiskManagement.Application.DTOs;
 using NEXUS.Modules.RiskManagement.Domain;
+using NEXUS.Modules.WorkflowEngine.Application.Contracts;
+using NEXUS.Modules.WorkflowEngine.Application.Services;
+using NEXUS.Modules.WorkflowEngine.Domain;
 using NEXUS.SharedKernel;
 using NEXUS.SharedKernel.Helpers;
 
@@ -16,14 +19,18 @@ public sealed class RiskService : IRiskService
     private readonly IProjectReferenceLookup _projectLookup;
     private readonly IResourceReferenceLookup _resourceLookup;
     private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly IProjectWorkflowConfigurationService? _projectWorkflowConfiguration;
+    private readonly IWorkflowInstanceService? _workflowInstanceService;
 
-    public RiskService(DbContext context, IAuditService auditService, IProjectReferenceLookup projectLookup, IResourceReferenceLookup resourceLookup, IHttpContextAccessor httpContextAccessor)
+    public RiskService(DbContext context, IAuditService auditService, IProjectReferenceLookup projectLookup, IResourceReferenceLookup resourceLookup, IHttpContextAccessor httpContextAccessor, IProjectWorkflowConfigurationService? projectWorkflowConfiguration = null, IWorkflowInstanceService? workflowInstanceService = null)
     {
         _context = context;
         _auditService = auditService;
         _projectLookup = projectLookup;
         _resourceLookup = resourceLookup;
         _httpContextAccessor = httpContextAccessor;
+        _projectWorkflowConfiguration = projectWorkflowConfiguration;
+        _workflowInstanceService = workflowInstanceService;
     }
 
     public async Task<Result<RiskDto>> CreateAsync(CreateRiskDto dto, string userId, CancellationToken cancellationToken = default)
@@ -39,11 +46,18 @@ public sealed class RiskService : IRiskService
         var project = await _projectLookup.FindAsync(dto.ProjectId, cancellationToken);
         if (project is null) return Result<RiskDto>.Failure(Error.NotFound("Project not found"));
         if (!await IsValidResourceAsync(dto.OwnerResourceId, cancellationToken)) return Failure<RiskDto>("Risk owner not found");
+        var workflowSelection = _projectWorkflowConfiguration is null
+            ? Result<ProjectWorkflowSelection?>.Success(null)
+            : await _projectWorkflowConfiguration.ResolveForNewRecordAsync(dto.ProjectId, WorkflowDomains.Risk, RiskWorkflow.EntityType, BuildWorkflowContext(userId), cancellationToken);
+        if (workflowSelection.IsFailure) return Result<RiskDto>.Failure(workflowSelection.Error!);
+        var initialStatus = RiskStatus.Identified;
+        if (workflowSelection.Value is { IsCustom: true } custom && !Enum.TryParse(custom.InitialStateCode, true, out initialStatus))
+            return Failure<RiskDto>("The selected Risk workflow has an unsupported initial state.");
 
         var risk = new Risk
         {
             TenantId = GetCurrentTenantId(), ProjectId = dto.ProjectId, Title = title, Description = description,
-            RiskLevel = dto.RiskLevel, Status = RiskStatus.Identified, OwnerResourceId = dto.OwnerResourceId,
+            RiskLevel = dto.RiskLevel, Status = initialStatus, OwnerResourceId = dto.OwnerResourceId,
             IdentifiedDate = DateTime.UtcNow, CreatedBy = userId
         };
         if (impactAssessment is not null)
@@ -54,6 +68,12 @@ public sealed class RiskService : IRiskService
         }
         _context.Set<Risk>().Add(risk);
         await _context.SaveChangesAsync(cancellationToken);
+        if (workflowSelection.Value is { IsCustom: true } selected)
+        {
+            if (_workflowInstanceService is null) return Failure<RiskDto>("Workflow execution is not configured.");
+            var instance = await _workflowInstanceService.ProvisionAsync(RiskWorkflow.EntityType, risk.Id, selected.WorkflowDefinitionId!.Value, selected.WorkflowVersionId!.Value, BuildWorkflowContext(userId), cancellationToken);
+            if (instance.IsFailure) return Result<RiskDto>.Failure(instance.Error!);
+        }
         await AuditAsync("Risk", risk.Id, "Create", userId, dto, cancellationToken);
         return Result<RiskDto>.Success(await ToRiskDtoAsync(risk, project.Name, cancellationToken));
     }
@@ -87,6 +107,11 @@ public sealed class RiskService : IRiskService
         if (!IsDefined(dto.Status)) return Failure<RiskDto>("Risk status is invalid");
         var risk = await _context.Set<Risk>().FirstOrDefaultAsync(r => r.Id == id, cancellationToken);
         if (risk is null) return Result<RiskDto>.Failure(Error.NotFound("Risk not found"));
+        var workflowSelection = _projectWorkflowConfiguration is null
+            ? Result<ProjectWorkflowSelection?>.Success(null)
+            : await _projectWorkflowConfiguration.ResolveForNewRecordAsync(risk.ProjectId, WorkflowDomains.Risk, RiskWorkflow.EntityType, BuildWorkflowContext(userId), cancellationToken);
+        if (workflowSelection.IsFailure) return Result<RiskDto>.Failure(workflowSelection.Error!);
+        if (workflowSelection.Value is { IsCustom: true }) return Failure<RiskDto>("A custom Risk workflow is active for this project. Change the Risk through a workflow transition.");
         if (dto.RowVersion.Length > 0) _context.Entry(risk).Property(r => r.RowVersion).OriginalValue = dto.RowVersion;
         risk.Status = dto.Status; risk.ClosedDate = dto.Status == RiskStatus.Closed ? DateTime.UtcNow : risk.ClosedDate; risk.UpdatedBy = userId;
         try { await _context.SaveChangesAsync(cancellationToken); }
@@ -329,6 +354,7 @@ public sealed class RiskService : IRiskService
     private static bool IsDefined<T>(T value) where T : struct, Enum => Enum.IsDefined(value);
     private static bool ValidateImpact(IReadOnlyList<RiskImpactType>? types, string? description) => types is not null && types.Count > 0 && types.Distinct().Count() == types.Count && types.All(IsDefined) && !string.IsNullOrWhiteSpace(description);
     private Guid GetCurrentTenantId() => Guid.TryParse(_httpContextAccessor.HttpContext?.User.FindFirst("tenantId")?.Value, out var parsed) ? parsed : TenantConstants.DemoTenantId;
+    private WorkflowExecutionContext BuildWorkflowContext(string userId) => new(GetCurrentTenantId(), userId, _httpContextAccessor.HttpContext?.User.FindFirst("name")?.Value, _httpContextAccessor.HttpContext?.User.FindFirst("readOnly")?.Value == "true");
     private static Result<T> Failure<T>(string message) => Result<T>.Failure(Error.Validation(message));
 
     private async Task<RiskDto> ToRiskDtoAsync(Risk risk, string projectName, CancellationToken cancellationToken)

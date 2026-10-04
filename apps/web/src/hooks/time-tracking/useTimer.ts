@@ -15,6 +15,16 @@ export interface FinalizeTimerInput { projectId: string; planActivityId?: string
 
 export const timerKeys = { all: ["timer"] as const, current: ["timer", "current"] as const, detail: (id: string) => ["timer", id] as const };
 
+export const TIMER_ACTIVE_SYNC_MS = 60_000;
+
+const ACTIVE_TIMER_STATUSES: TimerStatus[] = ["Running", "OnBreak", "Paused", "IdlePaused"];
+
+function currentTimerRefetchInterval(query: { state: { data: TimerSessionDto | null | undefined } }): number | false {
+  const session = query.state.data;
+  if (!isFullSession(session) || !ACTIVE_TIMER_STATUSES.includes(session.status)) return false;
+  return TIMER_ACTIVE_SYNC_MS;
+}
+
 function isFullSession(data: unknown): data is TimerSessionDto {
   if (!data || typeof data !== "object" || Array.isArray(data)) return false;
   const value = data as Partial<TimerSessionDto>;
@@ -29,15 +39,16 @@ function isFullSession(data: unknown): data is TimerSessionDto {
   );
 }
 
-function cacheSession(client: ReturnType<typeof useQueryClient>, data: TimerSessionDto | TimerSessionDto[] | undefined | null): void {
-  if (!isFullSession(data)) return;
+function cacheSession(client: ReturnType<typeof useQueryClient>, data: TimerSessionDto | TimerSessionDto[] | undefined | null): boolean {
+  if (Array.isArray(data) || !isFullSession(data)) return false;
   stampSessionReceived(data);
   if (data.status === "Cancelled" || data.status === "Finished") {
-    client.removeQueries({ queryKey: timerKeys.current });
+    client.setQueryData(timerKeys.current, null);
     clearSessionReceivedStamp(data.id);
-    return;
+    return true;
   }
   client.setQueryData(timerKeys.current, data);
+  return true;
 }
 
 export function useCurrentTimer(enabled = true) {
@@ -50,10 +61,11 @@ export function useCurrentTimer(enabled = true) {
     },
     enabled,
     placeholderData: null,
-    refetchInterval: 30_000,
-    refetchIntervalInBackground: true,
+    refetchInterval: currentTimerRefetchInterval,
+    refetchOnMount: false,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
     staleTime: 5_000,
-    retry: 2,
   });
 }
 
@@ -62,8 +74,7 @@ function useTimerMutation<T>(mutationFn: (_input: T) => Promise<TimerSessionDto 
   return useMutation({
     mutationFn,
     onSuccess: (data) => {
-      cacheSession(client, data);
-      client.invalidateQueries({ queryKey: timerKeys.current });
+      if (!cacheSession(client, data)) client.invalidateQueries({ queryKey: timerKeys.current });
       client.invalidateQueries({ queryKey: timeEntryKeys.all });
     },
     onError: (error: unknown) => { console.error("Timer action failed:", error); },

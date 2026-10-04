@@ -54,8 +54,8 @@ export function TasksWorkspace() {
   const [filter, setFilter] = useState<TaskFilter>("all");
   const [search, setSearch] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
-  const params = useMemo(() => ({ page: 1, pageSize: 100, type: "Task", status: filter === "all" ? undefined : filter === "inProgress" ? inProgressCode : doneCode, search: search.trim() || undefined, assigneeId: user?.id }), [filter, search, inProgressCode, doneCode, user?.id]);
-  const allTasksQuery = useWorkItems({ page: 1, pageSize: 100, type: "Task", search: search.trim() || undefined, assigneeId: user?.id });
+  const params = useMemo(() => ({ page: 1, pageSize: 100, type: "Task", status: filter === "all" ? undefined : filter === "inProgress" ? inProgressCode : doneCode, search: search.trim() || undefined, myWork: true }), [filter, search, inProgressCode, doneCode]);
+  const allTasksQuery = useWorkItems({ page: 1, pageSize: 100, type: "Task", search: search.trim() || undefined, myWork: true });
   const query = useWorkItems(params);
   const tasks = query.data?.items ?? [];
   const allTasks = allTasksQuery.data?.items ?? [];

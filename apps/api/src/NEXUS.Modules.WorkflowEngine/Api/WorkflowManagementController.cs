@@ -17,7 +17,7 @@ public sealed class WorkflowManagementController : ControllerBase
     public WorkflowManagementController(IWorkflowManagementService service) => _service = service;
 
     [HttpGet]
-    public async Task<IActionResult> List([FromQuery] string? search, [FromQuery] bool? isActive, [FromQuery] string? entityType, CancellationToken cancellationToken) => Handle(await _service.ListDefinitionsAsync(search, isActive, entityType, cancellationToken));
+    public async Task<IActionResult> List([FromQuery] string? search, [FromQuery] bool? isActive, [FromQuery] string? entityType, [FromQuery] string? domain, CancellationToken cancellationToken) => Handle(await _service.ListDefinitionsAsync(search, isActive, entityType, domain, cancellationToken));
 
     [HttpGet("metadata")]
     public async Task<IActionResult> Metadata(CancellationToken cancellationToken) => Handle(await _service.GetMetadataAsync(cancellationToken));

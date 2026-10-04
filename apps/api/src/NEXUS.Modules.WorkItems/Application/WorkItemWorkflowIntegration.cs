@@ -107,6 +107,7 @@ public sealed class WorkItemWorkflowProvisioningService : IWorkItemWorkflowProvi
             Code = WorkItemWorkflow.DefinitionCode,
             Name = "Standard Work Item Workflow",
             Description = "Compatibility workflow generated from the tenant's active Work Item statuses.",
+            Domain = WorkflowDomains.Task,
             EntityType = WorkItemWorkflow.EntityType,
             IsActive = true,
             CreatedBy = actor
@@ -358,7 +359,7 @@ public sealed class WorkItemWorkflowAdapter : IWorkflowEntityAdapter
             ["StateNameEn"] = item.Status,
             ["StateNameAr"] = item.Status,
             ["Type"] = item.Type,
-            ["HasAssignee"] = item.AssigneeId.HasValue,
+            ["HasAssignee"] = item.AssignedResourceId.HasValue || item.AssignedTeamId.HasValue,
             ["Priority"] = item.Priority,
             ["HasDueDate"] = item.DueDate.HasValue || item.TargetResolutionDate.HasValue,
             ["HasResolution"] = !string.IsNullOrWhiteSpace(item.Resolution),
@@ -443,6 +444,7 @@ public sealed class WorkItemWorkflowMetadataProvider : IWorkflowEntityMetadataPr
     public string EntityType => WorkItemWorkflow.EntityType;
 
     public WorkflowEntityTypeMetadata GetMetadata() => new(
+        WorkflowDomains.Task,
         WorkItemWorkflow.EntityType,
         "Work Items",
         "عناصر العمل",

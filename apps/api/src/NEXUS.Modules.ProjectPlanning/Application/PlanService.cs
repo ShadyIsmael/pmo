@@ -15,17 +15,17 @@ public class PlanService : IPlanService
     private readonly DbContext _context;
     private readonly IAuditService _auditService;
     private readonly IHttpContextAccessor _httpContextAccessor;
-    private readonly IPlanWbsService _wbsService;
-    private readonly IPlanActivityService _activityService;
-    private readonly IPlanDependencyService _dependencyService;
+    private readonly IPlanWbsService? _wbsService;
+    private readonly IPlanActivityService? _activityService;
+    private readonly IPlanDependencyService? _dependencyService;
 
     public PlanService(
         DbContext context,
         IAuditService auditService,
         IHttpContextAccessor httpContextAccessor,
-        IPlanWbsService wbsService,
-        IPlanActivityService activityService,
-        IPlanDependencyService dependencyService)
+        IPlanWbsService? wbsService = null,
+        IPlanActivityService? activityService = null,
+        IPlanDependencyService? dependencyService = null)
     {
         _context = context;
         _auditService = auditService;
@@ -144,6 +144,11 @@ public class PlanService : IPlanService
         if (plans.Count == 0)
         {
             return Result<PlanningBootstrapDto>.Success(new PlanningBootstrapDto { Plans = plans });
+        }
+
+        if (_wbsService is null || _activityService is null || _dependencyService is null)
+        {
+            return Result<PlanningBootstrapDto>.Failure(Error.Validation("Planning services are not configured."));
         }
 
         // Preserve the workspace's existing default selection: newest plan first.

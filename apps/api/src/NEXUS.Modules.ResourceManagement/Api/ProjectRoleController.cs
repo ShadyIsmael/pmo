@@ -26,6 +26,19 @@ public class ProjectRoleController : ControllerBase
         return Ok(result.Value);
     }
 
+    /// <summary>
+    /// Returns the next generic project-role code so the create form can show a code
+    /// before anything is saved. The {id:guid} route cannot shadow this because "next-code"
+    /// is not a Guid.
+    /// </summary>
+    [HttpGet("next-code")]
+    [Authorize(Policy = "Resource.Manage")]
+    public async Task<IActionResult> GetNextCode(CancellationToken cancellationToken)
+    {
+        var code = await _service.GetNextCodeAsync(cancellationToken);
+        return Ok(new { code });
+    }
+
     [HttpGet("{id:guid}")]
     [Authorize(Policy = "Resource.View")]
     public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)

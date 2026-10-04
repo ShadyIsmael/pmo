@@ -6,7 +6,6 @@ import { Search } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { EmptyState, ErrorState, LoadingSkeleton, PermissionDenied } from "@/components/ui/state-display";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
@@ -23,6 +22,7 @@ import type { VendorStatusFilter } from "@/lib/api/resources";
 import { AddVendorButton } from "@/components/resources/AddVendorButton";
 import { VendorRowActions } from "@/components/resources/VendorRowActions";
 import { cn } from "@/lib/utils";
+import { getLookupTextClass, getStatusTextClass } from "@/lib/status-presentation";
 
 export default function VendorsPage() {
   const t = useTranslations("resources.vendors");
@@ -135,7 +135,7 @@ export default function VendorsPage() {
                   : null);
                 const contact = [vendor.contactName, vendor.contactEmail, vendor.contactPhone].filter(Boolean).join(" · ");
                 return (
-                  <TableRow key={vendor.id} className={cn(!vendor.isActive && "bg-muted/20")}>
+                    <TableRow key={vendor.id}>
                     <TableCell className="w-56 text-start align-middle">
                       <Tooltip>
                         <TooltipTrigger asChild>
@@ -151,9 +151,9 @@ export default function VendorsPage() {
                     </TableCell>
                     <TableCell className="w-44 text-start align-middle">
                       {categoryName ? (
-                        <Badge variant="secondary" className="max-w-full truncate normal-case tracking-normal">
+                        <span className={cn("block max-w-full truncate text-sm font-medium", getLookupTextClass(categoryName))}>
                           {categoryName}
-                        </Badge>
+                        </span>
                       ) : (
                         <span className="text-muted-foreground">—</span>
                       )}
@@ -162,9 +162,9 @@ export default function VendorsPage() {
                       {contact || "—"}
                     </TableCell>
                     <TableCell className="w-28 text-start align-middle">
-                      <Badge status={vendor.isActive ? "Active" : "Inactive"}>
+                      <span className={cn("text-sm font-medium", getStatusTextClass(vendor.isActive ? "Active" : "Inactive"))}>
                         {vendor.isActive ? t("active") : t("inactive")}
-                      </Badge>
+                      </span>
                     </TableCell>
                     <TableCell className="w-14 text-end align-middle">
                       <VendorRowActions vendor={vendor} />

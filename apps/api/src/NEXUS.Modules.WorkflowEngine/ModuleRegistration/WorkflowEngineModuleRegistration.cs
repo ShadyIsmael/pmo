@@ -23,6 +23,7 @@ public static class WorkflowEngineModuleRegistration
         services.AddScoped<IWorkflowInstanceService, WorkflowInstanceService>();
         services.AddScoped<IWorkflowTransitionQueryService, WorkflowTransitionQueryService>();
         services.AddScoped<IWorkflowManagementService, WorkflowManagementService>();
+        services.AddScoped<IProjectWorkflowConfigurationService, ProjectWorkflowConfigurationService>();
 
         services.AddScoped<IWorkflowGuardHandler, RequirePermissionGuardHandler>();
         services.AddScoped<IWorkflowGuardHandler, RequireRoleGuardHandler>();

@@ -4,12 +4,12 @@ import * as React from "react";
 import { Check, ChevronDown, Mail, Search, UserRound, X } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { z } from "zod";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useUserLookup, type UserLookupDto } from "@/hooks/projects/useProjectLookups";
 import { cn } from "@/lib/utils";
+import { getAssociationTextClass } from "@/lib/status-presentation";
 
 export interface MeetingAttendeeSelection {
   userId?: string;
@@ -98,7 +98,7 @@ export function MeetingUserPicker({ id, label, value, selectedUsers = [], attend
           </div>
         </PopoverContent>
       </Popover>
-      {multiple && attendees.length > 0 ? <div className="space-y-2">{attendees.map((attendee) => <div key={attendeeKey(attendee)} className="flex items-start gap-2 rounded-md border bg-muted/20 px-2.5 py-2"><div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted">{attendee.userId ? <UserRound className="h-3.5 w-3.5 text-muted-foreground" /> : <Mail className="h-3.5 w-3.5 text-muted-foreground" />}</div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-1.5"><span className="truncate text-xs font-medium">{attendee.displayName?.trim() || attendee.email}</span><Badge variant="outline" className="text-[9px]">{attendee.userId ? t("internalUser") : t("externalAttendee")}</Badge></div><p className="truncate text-xs text-muted-foreground">{attendee.email}</p>{!attendee.userId ? <Input value={attendee.displayName ?? ""} onChange={(event) => updateDisplayName(attendee, event.target.value)} placeholder={t("optionalDisplayName")} maxLength={200} className="mt-1.5 h-7 text-xs" aria-label={t("optionalDisplayName")} /> : null}</div><button type="button" onClick={() => removeAttendee(attendee)} aria-label={t("removeUser", { name: attendee.displayName?.trim() || attendee.email })} className="mt-1 rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"><X className="h-3.5 w-3.5" /></button></div>)}</div> : null}
+      {multiple && attendees.length > 0 ? <div className="space-y-2">{attendees.map((attendee) => <div key={attendeeKey(attendee)} className="flex items-start gap-2 rounded-md border bg-muted/20 px-2.5 py-2"><div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted">{attendee.userId ? <UserRound className="h-3.5 w-3.5 text-muted-foreground" /> : <Mail className="h-3.5 w-3.5 text-muted-foreground" />}</div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-1.5"><span className="truncate text-xs font-medium">{attendee.displayName?.trim() || attendee.email}</span><span className={`text-[10px] font-medium ${getAssociationTextClass(Boolean(attendee.userId))}`}>{attendee.userId ? t("internalUser") : t("externalAttendee")}</span></div><p className="truncate text-xs text-muted-foreground">{attendee.email}</p>{!attendee.userId ? <Input value={attendee.displayName ?? ""} onChange={(event) => updateDisplayName(attendee, event.target.value)} placeholder={t("optionalDisplayName")} maxLength={200} className="mt-1.5 h-7 text-xs" aria-label={t("optionalDisplayName")} /> : null}</div><button type="button" onClick={() => removeAttendee(attendee)} aria-label={t("removeUser", { name: attendee.displayName?.trim() || attendee.email })} className="mt-1 rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"><X className="h-3.5 w-3.5" /></button></div>)}</div> : null}
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
     </div>
   );

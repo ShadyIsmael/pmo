@@ -9,6 +9,7 @@
     <IsTestProject>true</IsTestProject>
     <FocusedProjectPlanningComparison Condition="'$(FocusedProjectPlanningComparison)' == ''">false</FocusedProjectPlanningComparison>
     <FocusedProjectPlanningDependencies Condition="'$(FocusedProjectPlanningDependencies)' == ''">false</FocusedProjectPlanningDependencies>
+    <FocusedTeamCode Condition="'$(FocusedTeamCode)' == ''">false</FocusedTeamCode>
   </PropertyGroup>
 
   <ItemGroup>
@@ -76,6 +77,20 @@
     <ProjectReference Include="..\..\src\NEXUS.Modules.WorkflowEngine\NEXUS.Modules.WorkflowEngine.csproj" />
     <ProjectReference Include="..\..\src\NEXUS.Persistence\NEXUS.Persistence.csproj" />
     <ProjectReference Include="..\..\src\NEXUS.Modules.Audit\NEXUS.Modules.Audit.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(FocusedTeamCode)' == 'true'">
+    <Compile Remove="**\*.cs" />
+    <Compile Include="Integration\TeamCodeConcurrencyTests.cs" />
+    <ProjectReference Remove="..\..\src\NEXUS.Api\NEXUS.Api.csproj" />
+    <ProjectReference Remove="..\..\src\NEXUS.Modules.Identity\NEXUS.Modules.Identity.csproj" />
+    <ProjectReference Remove="..\..\src\NEXUS.Modules.RiskManagement\NEXUS.Modules.RiskManagement.csproj" />
+    <ProjectReference Remove="..\..\src\NEXUS.Modules.ProjectManagement\NEXUS.Modules.ProjectManagement.csproj" />
+    <ProjectReference Remove="..\..\src\NEXUS.Modules.ProjectPlanning\NEXUS.Modules.ProjectPlanning.csproj" />
+    <ProjectReference Remove="..\..\src\NEXUS.Modules.WorkflowEngine\NEXUS.Modules.WorkflowEngine.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.ResourceManagement\NEXUS.Modules.ResourceManagement.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.Audit\NEXUS.Modules.Audit.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.Organization\NEXUS.Modules.Organization.csproj" />
   </ItemGroup>
 
 </Project>

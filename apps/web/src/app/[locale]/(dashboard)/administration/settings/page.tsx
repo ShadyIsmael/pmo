@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useTranslations } from "next-intl";
+import Link from "next/link";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -9,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { BellRing, Clock3, Globe2, Info, Save, Settings2, ShieldCheck, type LucideIcon } from "lucide-react";
+import { BellRing, Clock3, FileText, Globe2, Info, Save, Settings2, ShieldCheck, type LucideIcon } from "lucide-react";
 
 function SettingsSection({ icon: Icon, title, description, children }: { icon: LucideIcon; title: string; description: string; children: React.ReactNode }) {
   return <Card className="overflow-hidden border-border/70 shadow-sm"><CardHeader className="border-b bg-muted/20 pb-4"><div className="flex items-start gap-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><Icon className="h-4 w-4" /></div><div className="min-w-0"><CardTitle className="text-base">{title}</CardTitle><CardDescription className="mt-1 text-xs leading-5">{description}</CardDescription></div></div></CardHeader><CardContent className="p-5">{children}</CardContent></Card>;
@@ -25,7 +26,7 @@ export default function AdminSettingsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title={t("title")} description={t("description")} actions={<Button size="sm"><Save className="me-2 h-4 w-4" />{t("save")}</Button>} />
+      <PageHeader title={t("title")} description={t("description")} actions={<div className="flex flex-wrap gap-2"><Button asChild size="sm" variant="outline"><Link href="/administration/license"><FileText className="me-2 h-4 w-4" />{t("license")}</Link></Button><Button size="sm"><Save className="me-2 h-4 w-4" />{t("save")}</Button></div>} />
 
       <div className="rounded-2xl border border-primary/15 bg-gradient-to-br from-primary/[0.08] via-card to-card p-5 shadow-sm sm:p-6"><div className="flex items-start gap-4"><div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm"><Settings2 className="h-5 w-5" /></div><div><p className="text-sm font-semibold">{t("overviewTitle")}</p><p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">{t("overviewDescription")}</p></div></div></div>
 

@@ -20,6 +20,7 @@ public sealed class TimeEntryService : ITimeEntryService
     private readonly IResourceReferenceLookup _resources;
     private readonly IProjectResourcePlanningContextLookup _planning;
     private readonly IWorkItemReferenceLookup _workItems;
+    private readonly IWorkItemAssigneeLookup _workItemTargets;
     private readonly IManagementScopeResolver _scopeResolver;
     private readonly IManagementContextAccessor _managementContext;
     private readonly IAuditService _audit;
@@ -30,6 +31,7 @@ public sealed class TimeEntryService : ITimeEntryService
         IResourceReferenceLookup resources,
         IProjectResourcePlanningContextLookup planning,
         IWorkItemReferenceLookup workItems,
+        IWorkItemAssigneeLookup workItemTargets,
         IManagementScopeResolver scopeResolver,
         IManagementContextAccessor managementContext,
         IAuditService audit,
@@ -39,6 +41,7 @@ public sealed class TimeEntryService : ITimeEntryService
         _resources = resources;
         _planning = planning;
         _workItems = workItems;
+        _workItemTargets = workItemTargets;
         _scopeResolver = scopeResolver;
         _managementContext = managementContext;
         _audit = audit;
@@ -206,6 +209,7 @@ public sealed class TimeEntryService : ITimeEntryService
             ByProject = await BuildBreakdownAsync(entries.GroupBy(entry => entry.ProjectId).Select(group => (group.Key, group.Sum(entry => entry.ActualSeconds) / 3600m)), "Project", cancellationToken),
             ByPlanActivity = await BuildBreakdownAsync(entries.Where(entry => entry.PlanActivityId.HasValue).GroupBy(entry => entry.PlanActivityId!.Value).Select(group => (group.Key, group.Sum(entry => entry.ActualSeconds) / 3600m)), "Plan Activity", cancellationToken),
             ByWorkItem = await BuildBreakdownAsync(entries.Where(entry => entry.WorkItemId.HasValue).GroupBy(entry => entry.WorkItemId!.Value).Select(group => (group.Key, group.Sum(entry => entry.ActualSeconds) / 3600m)), "Work Item", cancellationToken),
+            ByTeam = await BuildTeamBreakdownAsync(entries, cancellationToken),
             ByProjectRole = await BuildBreakdownAsync(entries.Where(entry => entry.ProjectRoleId.HasValue).GroupBy(entry => entry.ProjectRoleId!.Value).Select(group => (group.Key, group.Sum(entry => entry.ActualSeconds) / 3600m)), "Project Role", cancellationToken)
         };
         return Result<TimeEntrySummaryDto>.Success(summary);
@@ -287,6 +291,13 @@ public sealed class TimeEntryService : ITimeEntryService
         {
             var workItem = await _workItems.FindAsync(workItemId.Value, cancellationToken);
             if (workItem is null || workItem.ProjectId != projectId) return Result.Failure(Error.Validation("Work Item does not belong to the selected Project"));
+            if (mutation && resource.UserId == actorId && (workItem.AssignedResourceId.HasValue || workItem.AssignedTeamId.HasValue))
+            {
+                var isAssignedResource = workItem.AssignedResourceId == resourceId;
+                var isAssignedTeamMember = workItem.AssignedTeamId.HasValue && await _workItemTargets.IsCurrentTeamMemberAsync(workItem.AssignedTeamId.Value, resourceId, cancellationToken);
+                if (!isAssignedResource && !isAssignedTeamMember)
+                    return Result.Failure(Error.Forbidden("You can only record time against Work Items assigned to you or one of your active Teams"));
+            }
         }
         if (projectRoleId.HasValue && !await _planning.HasActiveProjectMemberRoleAsync(projectId, resourceId, projectRoleId.Value, cancellationToken))
             return Result.Failure(Error.Validation("The selected Project Role is not active for this Resource on the Project"));
@@ -457,8 +468,23 @@ public sealed class TimeEntryService : ITimeEntryService
             names = (await _workItems.GetManyAsync(keys, cancellationToken)).ToDictionary(item => item.Key, item => item.Value.Title);
         else if (label == "Project Role")
             names = await _context.Set<NEXUS.Modules.Organization.Domain.Lookup>().AsNoTracking().Where(item => keys.Contains(item.Id)).ToDictionaryAsync(item => item.Id, item => string.IsNullOrWhiteSpace(item.NameEn) ? item.Name : item.NameEn, cancellationToken);
+        else if (label == "Team")
+            names = await _context.Set<NEXUS.Modules.Organization.Domain.Team>().AsNoTracking().Where(item => keys.Contains(item.Id)).ToDictionaryAsync(item => item.Id, item => item.Name, cancellationToken);
         else
             names = new Dictionary<Guid, string>();
         return keys.Select(id => new ActualWorkBreakdownDto { Id = id, Label = names.GetValueOrDefault(id, $"{label} {id}"), ActualHours = Math.Round(amounts[id], 2) }).ToList();
+    }
+
+    private async Task<List<ActualWorkBreakdownDto>> BuildTeamBreakdownAsync(IReadOnlyList<TimeEntry> entries, CancellationToken cancellationToken)
+    {
+        var workItemIds = entries.Where(entry => entry.WorkItemId.HasValue).Select(entry => entry.WorkItemId!.Value).Distinct().ToList();
+        if (workItemIds.Count == 0) return new List<ActualWorkBreakdownDto>();
+        var teamByWorkItem = await _context.Set<NEXUS.Modules.WorkItems.Domain.WorkItem>().AsNoTracking()
+            .Where(item => workItemIds.Contains(item.Id) && item.AssignedTeamId.HasValue)
+            .ToDictionaryAsync(item => item.Id, item => item.AssignedTeamId!.Value, cancellationToken);
+        var totals = entries.Where(entry => entry.WorkItemId.HasValue && teamByWorkItem.ContainsKey(entry.WorkItemId.Value))
+            .GroupBy(entry => teamByWorkItem[entry.WorkItemId!.Value])
+            .Select(group => (group.Key, group.Sum(entry => entry.ActualSeconds) / 3600m));
+        return await BuildBreakdownAsync(totals, "Team", cancellationToken);
     }
 }

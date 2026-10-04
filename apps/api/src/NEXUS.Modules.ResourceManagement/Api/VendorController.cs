@@ -35,7 +35,7 @@ public class VendorController : ControllerBase
     }
 
     [HttpPost]
-    [Authorize(Policy = "Resource.Manage")]
+    [Authorize(Policy = "Resource.Create")]
     public async Task<IActionResult> Create([FromBody] CreateVendorDto dto, CancellationToken cancellationToken)
     {
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
@@ -50,7 +50,7 @@ public class VendorController : ControllerBase
     }
 
     [HttpPut("{id:guid}")]
-    [Authorize(Policy = "Resource.Manage")]
+    [Authorize(Policy = "Resource.Edit")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateVendorDto dto, CancellationToken cancellationToken)
     {
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
@@ -66,7 +66,7 @@ public class VendorController : ControllerBase
     }
 
     [HttpPut("{id:guid}/deactivate")]
-    [Authorize(Policy = "Resource.Manage")]
+    [Authorize(Policy = "Resource.Delete")]
     public async Task<IActionResult> Deactivate(Guid id, CancellationToken cancellationToken)
     {
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
@@ -81,7 +81,7 @@ public class VendorController : ControllerBase
     }
 
     [HttpPut("{id:guid}/reactivate")]
-    [Authorize(Policy = "Resource.Manage")]
+    [Authorize(Policy = "Resource.Delete")]
     public async Task<IActionResult> Reactivate(Guid id, CancellationToken cancellationToken)
     {
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
@@ -96,7 +96,7 @@ public class VendorController : ControllerBase
     }
 
     [HttpDelete("{id:guid}")]
-    [Authorize(Policy = "Resource.Manage")]
+    [Authorize(Policy = "Resource.Delete")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";

@@ -5,6 +5,9 @@ using NEXUS.Modules.Audit.Application;
 using NEXUS.Modules.Audit.Domain;
 using NEXUS.Modules.CostManagement.Application.DTOs;
 using NEXUS.Modules.CostManagement.Domain;
+using NEXUS.Modules.WorkflowEngine.Application.Contracts;
+using NEXUS.Modules.WorkflowEngine.Application.Services;
+using NEXUS.Modules.WorkflowEngine.Domain;
 using NEXUS.SharedKernel;
 using NEXUS.SharedKernel.Helpers;
 
@@ -16,17 +19,23 @@ public sealed class BudgetRevisionService : IBudgetRevisionService
     private readonly IAuditService _auditService;
     private readonly IProjectReferenceLookup _projectLookup;
     private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly IProjectWorkflowConfigurationService _projectWorkflowConfiguration;
+    private readonly IWorkflowInstanceService _workflowInstanceService;
 
     public BudgetRevisionService(
         DbContext context,
         IAuditService auditService,
         IProjectReferenceLookup projectLookup,
-        IHttpContextAccessor httpContextAccessor)
+        IHttpContextAccessor httpContextAccessor,
+        IProjectWorkflowConfigurationService projectWorkflowConfiguration,
+        IWorkflowInstanceService workflowInstanceService)
     {
         _context = context;
         _auditService = auditService;
         _projectLookup = projectLookup;
         _httpContextAccessor = httpContextAccessor;
+        _projectWorkflowConfiguration = projectWorkflowConfiguration;
+        _workflowInstanceService = workflowInstanceService;
     }
 
     public async Task<Result<BudgetRevisionDto>> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
@@ -149,6 +158,11 @@ public sealed class BudgetRevisionService : IBudgetRevisionService
         var project = budget.ProjectId.HasValue
             ? await _projectLookup.FindAsync(budget.ProjectId.Value, cancellationToken)
             : null;
+        var workflowSelection = await _projectWorkflowConfiguration.ResolveForNewRecordAsync(budget.ProjectId, WorkflowDomains.Finance, FinanceWorkflow.EntityType, BuildWorkflowContext(userId), cancellationToken);
+        if (workflowSelection.IsFailure) return Result<BudgetRevisionDto>.Failure(workflowSelection.Error!);
+        var initialStatus = BudgetRevision.Statuses.Draft;
+        if (workflowSelection.Value is { IsCustom: true } custom && !Enum.TryParse(custom.InitialStateCode, true, out initialStatus))
+            return Result<BudgetRevisionDto>.Failure(Error.Validation("The selected Finance workflow has an unsupported initial state."));
 
         var revision = new BudgetRevision
         {
@@ -160,7 +174,7 @@ public sealed class BudgetRevisionService : IBudgetRevisionService
             ProposedApprovedAmount = dto.ProposedApprovedAmount,
             Reason = dto.Reason.Trim(),
             Justification = dto.Justification?.Trim(),
-            Status = BudgetRevision.Statuses.Draft,
+            Status = initialStatus,
             RequestedBy = ParseUserId(userId),
             RequestedAt = DateTime.UtcNow,
             RowVersion = NewVersion()
@@ -168,6 +182,11 @@ public sealed class BudgetRevisionService : IBudgetRevisionService
 
         _context.Set<BudgetRevision>().Add(revision);
         await _context.SaveChangesAsync(cancellationToken);
+        if (workflowSelection.Value is { IsCustom: true } selected)
+        {
+            var instance = await _workflowInstanceService.ProvisionAsync(FinanceWorkflow.EntityType, revision.Id, selected.WorkflowDefinitionId!.Value, selected.WorkflowVersionId!.Value, BuildWorkflowContext(userId), cancellationToken);
+            if (instance.IsFailure) return Result<BudgetRevisionDto>.Failure(instance.Error!);
+        }
         await AuditAsync("BudgetRevision", revision.Id, "Create", userId, null, dto, cancellationToken);
 
         var requesterName = await ResolveNameAsync(revision.RequestedBy, cancellationToken);
@@ -220,6 +239,9 @@ public sealed class BudgetRevisionService : IBudgetRevisionService
         if (revision is null)
             return Result.Failure(Error.NotFound("Budget revision not found"));
 
+        var workflowGuard = await EnsureStandardFinanceMutationAsync(revision.ProjectId, userId, cancellationToken);
+        if (workflowGuard is not null) return workflowGuard;
+
         if (revision.Status != BudgetRevision.Statuses.Draft)
             return Result.Failure(Error.Validation("Only draft revisions can be submitted"));
 
@@ -247,6 +269,9 @@ public sealed class BudgetRevisionService : IBudgetRevisionService
 
         if (revision is null)
             return Result.Failure(Error.NotFound("Budget revision not found"));
+
+        var workflowGuard = await EnsureStandardFinanceMutationAsync(revision.ProjectId, userId, cancellationToken);
+        if (workflowGuard is not null) return workflowGuard;
 
         if (revision.Status != BudgetRevision.Statuses.Submitted)
             return Result.Failure(Error.Validation("Only submitted revisions can be approved"));
@@ -298,6 +323,9 @@ public sealed class BudgetRevisionService : IBudgetRevisionService
         if (revision is null)
             return Result.Failure(Error.NotFound("Budget revision not found"));
 
+        var workflowGuard = await EnsureStandardFinanceMutationAsync(revision.ProjectId, userId, cancellationToken);
+        if (workflowGuard is not null) return workflowGuard;
+
         if (revision.Status != BudgetRevision.Statuses.Submitted)
             return Result.Failure(Error.Validation("Only submitted revisions can be rejected"));
 
@@ -334,6 +362,9 @@ public sealed class BudgetRevisionService : IBudgetRevisionService
 
         if (revision is null)
             return Result.Failure(Error.NotFound("Budget revision not found"));
+
+        var workflowGuard = await EnsureStandardFinanceMutationAsync(revision.ProjectId, userId, cancellationToken);
+        if (workflowGuard is not null) return workflowGuard;
 
         if (revision.Status != BudgetRevision.Statuses.Draft && revision.Status != BudgetRevision.Statuses.Submitted)
             return Result.Failure(Error.Validation("Only draft or submitted revisions can be cancelled"));
@@ -428,6 +459,17 @@ public sealed class BudgetRevisionService : IBudgetRevisionService
     private Guid CurrentTenant() =>
         Guid.TryParse(_httpContextAccessor.HttpContext?.User.FindFirst("tenantId")?.Value, out var tenant)
             ? tenant : TenantConstants.DemoTenantId;
+
+    private WorkflowExecutionContext BuildWorkflowContext(string userId) => new(CurrentTenant(), userId, _httpContextAccessor.HttpContext?.User.FindFirst("name")?.Value, _httpContextAccessor.HttpContext?.User.FindFirst("readOnly")?.Value == "true");
+
+    private async Task<Result?> EnsureStandardFinanceMutationAsync(Guid projectId, string userId, CancellationToken cancellationToken)
+    {
+        var selection = await _projectWorkflowConfiguration.ResolveForNewRecordAsync(projectId, WorkflowDomains.Finance, FinanceWorkflow.EntityType, BuildWorkflowContext(userId), cancellationToken);
+        if (selection.IsFailure) return Result.Failure(selection.Error!);
+        return selection.Value is { IsCustom: true }
+            ? Result.Failure(Error.Validation("A custom Finance workflow is active for this project. Change the Budget Revision through a workflow transition."))
+            : null;
+    }
 
     private static Guid ParseUserId(string userId) =>
         Guid.TryParse(userId, out var parsed) ? parsed : Guid.Empty;

@@ -33,9 +33,9 @@ public class ProjectSnapshotService : IProjectSnapshotService
     private readonly DbContext _context;
     private readonly IAuditService _auditService;
     private readonly IHttpContextAccessor _httpContextAccessor;
-    private readonly ProjectManagerMembershipSynchronizer _membershipSynchronizer;
+    private readonly ProjectManagerMembershipSynchronizer? _membershipSynchronizer;
 
-    public ProjectSnapshotService(DbContext context, IAuditService auditService, IHttpContextAccessor httpContextAccessor, ProjectManagerMembershipSynchronizer membershipSynchronizer)
+    public ProjectSnapshotService(DbContext context, IAuditService auditService, IHttpContextAccessor httpContextAccessor, ProjectManagerMembershipSynchronizer? membershipSynchronizer = null)
     {
         _context = context;
         _auditService = auditService;
@@ -161,7 +161,10 @@ public class ProjectSnapshotService : IProjectSnapshotService
 
         if (previousManagerId.HasValue)
         {
-            await _membershipSynchronizer.SynchronizeAsync(project, previousManagerId.Value, request.NewProjectManagerId, handoverDate, userId, cancellationToken);
+            if (_membershipSynchronizer is not null)
+            {
+                await _membershipSynchronizer.SynchronizeAsync(project, previousManagerId.Value, request.NewProjectManagerId, handoverDate, userId, cancellationToken);
+            }
         }
 
         request.Status = ProjectHandoverRequest.Statuses.Accepted;
@@ -737,12 +740,14 @@ public class ProjectSnapshotService : IProjectSnapshotService
             .OrderBy(w => w.SortOrder)
             .ToListAsync(cancellationToken);
 
-        var assigneeIds = workItems.Where(w => w.AssigneeId.HasValue).Select(w => w.AssigneeId!.Value).Distinct().ToList();
-        var users = new Dictionary<Guid, User>();
-        if (assigneeIds.Count > 0)
-        {
-            users = await _context.Set<User>().Where(u => assigneeIds.Contains(u.Id)).ToDictionaryAsync(u => u.Id, cancellationToken);
-        }
+        var resourceIds = workItems.Where(w => w.AssignedResourceId.HasValue).Select(w => w.AssignedResourceId!.Value).Distinct().ToList();
+        var resourceNames = resourceIds.Count > 0
+            ? await _context.Set<Resource>().Where(resource => resourceIds.Contains(resource.Id)).ToDictionaryAsync(resource => resource.Id, resource => resource.Name, cancellationToken)
+            : new Dictionary<Guid, string>();
+        var teamIds = workItems.Where(w => w.AssignedTeamId.HasValue).Select(w => w.AssignedTeamId!.Value).Distinct().ToList();
+        var teamNames = teamIds.Count > 0
+            ? await _context.Set<Team>().Where(team => teamIds.Contains(team.Id)).ToDictionaryAsync(team => team.Id, team => team.Name, cancellationToken)
+            : new Dictionary<Guid, string>();
 
         return workItems.Select(w => new SnapshotWorkItemDto
         {
@@ -752,8 +757,12 @@ public class ProjectSnapshotService : IProjectSnapshotService
             Type = w.Type,
             Priority = w.Priority,
             Status = w.Status,
-            AssigneeId = w.AssigneeId,
-            AssigneeName = w.AssigneeId.HasValue && users.TryGetValue(w.AssigneeId.Value, out var user) ? user.FullName : null,
+            AssignedResourceId = w.AssignedResourceId,
+            AssignedResourceName = w.AssignedResourceId.HasValue ? resourceNames.GetValueOrDefault(w.AssignedResourceId.Value) : null,
+            AssignedTeamId = w.AssignedTeamId,
+            AssignedTeamName = w.AssignedTeamId.HasValue ? teamNames.GetValueOrDefault(w.AssignedTeamId.Value) : null,
+            AssigneeId = w.AssignedResourceId,
+            AssigneeName = w.AssignedResourceId.HasValue ? resourceNames.GetValueOrDefault(w.AssignedResourceId.Value) : w.AssignedTeamId.HasValue ? teamNames.GetValueOrDefault(w.AssignedTeamId.Value) : null,
             ParentId = w.ParentId,
             StoryPoints = w.StoryPoints,
             EstimatedHours = w.EstimatedHours,

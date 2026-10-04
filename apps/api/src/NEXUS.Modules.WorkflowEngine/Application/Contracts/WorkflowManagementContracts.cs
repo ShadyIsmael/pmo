@@ -6,6 +6,7 @@ namespace NEXUS.Modules.WorkflowEngine.Application.Contracts;
 public sealed record WorkflowFactMetadata(string Code, string NameEn, string NameAr, string ValueType);
 
 public sealed record WorkflowEntityTypeMetadata(
+    string Domain,
     string EntityType,
     string NameEn,
     string NameAr,

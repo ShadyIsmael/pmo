@@ -20,6 +20,11 @@ public class ResourceDto
     public Guid? DepartmentId { get; set; }
     public string? DepartmentName { get; set; }
     public Guid? TeamId { get; set; }
+    public Guid? PrimaryOrganizationalUnitId { get; set; }
+    public string? PrimaryOrganizationalUnitName { get; set; }
+    public string? PrimaryOrganizationalUnitCode { get; set; }
+    public Guid? PrimaryManagerResourceId { get; set; }
+    public string? PrimaryManagerResourceName { get; set; }
     public string? TeamName { get; set; }
     public Guid? LocationId { get; set; }
     public string? LocationName { get; set; }
@@ -85,6 +90,7 @@ public class CreateResourceDto
     public Guid? BusinessUnitId { get; set; }
     public Guid? DepartmentId { get; set; }
     public Guid? TeamId { get; set; }
+    public Guid? PrimaryOrganizationalUnitId { get; set; }
     public Guid? LocationId { get; set; }
     public Guid? VendorId { get; set; }
     public Guid? BaseCalendarId { get; set; }
@@ -112,6 +118,7 @@ public class UpdateResourceDto
     public Guid? BusinessUnitId { get; set; }
     public Guid? DepartmentId { get; set; }
     public Guid? TeamId { get; set; }
+    public Guid? PrimaryOrganizationalUnitId { get; set; }
     public Guid? LocationId { get; set; }
     public Guid? VendorId { get; set; }
     public Guid? BaseCalendarId { get; set; }
@@ -138,6 +145,7 @@ public class ResourceFilterDto
     public Guid? DepartmentId { get; set; }
     public Guid? LocationId { get; set; }
     public Guid? BusinessUnitId { get; set; }
+    public Guid? OrganizationalUnitId { get; set; }
     public Guid? VendorId { get; set; }
     public bool? IsActive { get; set; }
     public int Page { get; set; } = 1;

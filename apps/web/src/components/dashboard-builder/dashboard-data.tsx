@@ -16,6 +16,7 @@ import { useAllocations, type AllocationDto } from "@/hooks/resources/useAllocat
 import { useCapacityMatrix, type CapacityMatrixDto } from "@/hooks/resources/useCapacity";
 import { useResources, type ResourceDto } from "@/hooks/resources/useResources";
 import { useWorkItems, type WorkItemDto } from "@/lib/api/work-items";
+import { useHomeSummary, type HomeSummary } from "@/hooks/home/useHomeSummary";
 
 export const CLOSED_PROJECT_STATUSES = new Set(["completed", "cancelled", "closed"]);
 
@@ -135,20 +136,21 @@ type DashboardManagementSource =
   | { kind: "portfolio"; data?: PortfolioManagementOverview; query: ReturnType<typeof usePortfolioManagementOverview> }
   | null;
 
-function useDashboardManagementSource(): DashboardManagementSource {
+function useDashboardManagementSource(enabled = true): DashboardManagementSource {
   const { current } = useManagementPerspective();
-  const programQuery = useProgramManagementOverview(current?.programId, 1, 100);
-  const portfolioQuery = usePortfolioManagementOverview(current?.portfolioId, 1, 1, 100);
+  const programQuery = useProgramManagementOverview(current?.programId, 1, 100, enabled);
+  const portfolioQuery = usePortfolioManagementOverview(current?.portfolioId, 1, 1, 100, enabled);
   if (current?.perspective === "ProgramManager") return { kind: "program", data: programQuery.data, query: programQuery };
   if (current?.perspective === "PortfolioManager") return { kind: "portfolio", data: portfolioQuery.data, query: portfolioQuery };
   return null;
 }
 
-export function useDashboardProjects() {
+export function useDashboardProjects(enabled = true) {
+  const authenticated = useDashboardEnabled();
   const runtime = useDashboardRuntime();
   const { current } = useManagementPerspective();
-  const source = useDashboardManagementSource();
-  const query = useProjects({ page: 1, pageSize: 200, portfolioId: runtime.filters.portfolio ?? undefined }, useDashboardEnabled() && !source);
+  const source = useDashboardManagementSource(enabled);
+  const query = useProjects({ page: 1, pageSize: 200, portfolioId: runtime.filters.portfolio ?? undefined }, enabled && authenticated && !source);
   const managementItems = source?.kind === "program" ? source.data?.projects.map(fromProgramProject) : source?.kind === "portfolio" ? source.data?.projects.map(fromPortfolioProject) : undefined;
   const managementTotal = source?.kind === "program" ? source.data?.projectsTotalCount : source?.kind === "portfolio" ? source.data?.projectsTotalCount : undefined;
   const data: DashboardProjectPage | undefined = source
@@ -162,13 +164,24 @@ export function useDashboardProjects() {
   return { ...sourceQuery, data, isLoading: sourceQuery.isLoading, isError: sourceQuery.isError };
 }
 
-export function useDashboardPortfolios() {
-  return usePortfolios();
+export function useDashboardPortfolios(enabled = true) {
+  const authenticated = useDashboardEnabled();
+  return usePortfolios({}, enabled && authenticated);
 }
 
-export function useDashboardPrograms() {
+export function useDashboardPrograms(enabled = true) {
+  const authenticated = useDashboardEnabled();
   const runtime = useDashboardRuntime();
-  return usePrograms({ portfolioId: runtime.filters.portfolio ?? undefined });
+  return usePrograms({ portfolioId: runtime.filters.portfolio ?? undefined }, enabled && authenticated);
+}
+
+export function useDashboardSummary() {
+  const runtime = useDashboardRuntime();
+  return useHomeSummary({
+    portfolioId: runtime.filters.portfolio,
+    programId: runtime.filters.program,
+    projectId: runtime.filters.project,
+  }, useDashboardEnabled());
 }
 
 export function useDashboardRisks() {
@@ -188,9 +201,8 @@ export function useDashboardWorkItems() {
 
 export function useDashboardMyWorkItems() {
   const runtime = useDashboardRuntime();
-  const { user } = useAuth();
   const projects = useDashboardProjects();
-  const query = useWorkItems({ page: 1, pageSize: 200, projectId: runtime.filters.project ?? undefined, assigneeId: user?.id }, useDashboardEnabled());
+  const query = useWorkItems({ page: 1, pageSize: 200, projectId: runtime.filters.project ?? undefined, myWork: true }, useDashboardEnabled());
   const projectIds = new Set(projects.data?.items.map((project) => project.id) ?? []);
   return { ...query, data: query.data && projects.data ? { ...query.data, items: filterByProjectIds(query.data.items, projectIds, (item) => item.projectId) } : undefined, isLoading: query.isLoading || projects.isLoading, isError: query.isError || projects.isError };
 }
@@ -267,8 +279,10 @@ export type DashboardCapacityQuery = ReturnType<typeof useDashboardCapacity>;
 export type DashboardResourceQuery = ReturnType<typeof useDashboardResources>;
 export type DashboardPortfolioQuery = ReturnType<typeof useDashboardPortfolios>;
 export type DashboardProgramQuery = ReturnType<typeof useDashboardPrograms>;
+export type DashboardSummaryQuery = ReturnType<typeof useDashboardSummary>;
 
 export type { AllocationDto, CapacityMatrixDto, PortfolioDto, ProgramDto, ResourceDto, WorkItemDto };
+export type { HomeSummary };
 
 export function useDashboardPerspective() {
   return useManagementPerspective();

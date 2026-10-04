@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using NEXUS.Modules.ResourceManagement.Domain;
 using NEXUS.Modules.RiskManagement.Domain;
 using NEXUS.Persistence;
 using Xunit;
@@ -62,7 +63,7 @@ public class SeedDataProviderTests
     }
 
     [Fact]
-    public async Task SeedAsync_Rerun_ShouldSeedExactlyFiveNamedProjectManagers()
+    public async Task SeedAsync_Rerun_ShouldKeepOnlyTheAdministratorAccount()
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
@@ -73,33 +74,23 @@ public class SeedDataProviderTests
         await SeedDataProvider.SeedAsync(context);
         await SeedDataProvider.SeedAsync(context);
 
-        var managerRole = await context.Roles
+        var users = await context.Users
             .IgnoreQueryFilters()
-            .FirstAsync(r => r.TenantId == SeedDataProvider.TenantId && r.Name == "project.manager");
-
-        var managers = await context.Users
-            .IgnoreQueryFilters()
-            .Where(u => u.TenantId == SeedDataProvider.TenantId &&
-                u.UserRoles.Any(ur => ur.RoleId == managerRole.Id))
+            .Where(u => u.TenantId == SeedDataProvider.TenantId)
             .OrderBy(u => u.Email)
             .ToListAsync();
 
-        // The five named accounts (alex.morgan, priya.rao, liam.chen, sophia.novak, omar.haddad)
-        // plus the primary seeded project.manager@nexus.com account all share the role.
-        managers.Should().HaveCount(6);
-        managers.Select(m => m.Email).Should().Contain(new[]
-        {
-            "alex.morgan@nexus.com",
-            "priya.rao@nexus.com",
-            "liam.chen@nexus.com",
-            "sophia.novak@nexus.com",
-            "omar.haddad@nexus.com"
-        });
-        managers.Select(m => m.Id).Should().OnlyHaveUniqueItems();
+        // Demo accounts (the five named PMs, the per-role accounts, the 80 generated
+        // accounts and the legacy pmNN@nexus.com shape) are purged, so a fresh tenant
+        // starts with the administrator only.
+        users.Should().HaveCount(1);
+        users[0].Email.Should().Be("admin@nexus.com");
+        users.Select(u => u.Email).Should().NotContain(e => e.StartsWith("pm") && e.EndsWith("@nexus.com"));
+        users.Select(u => u.Id).Should().OnlyHaveUniqueItems();
     }
 
     [Fact]
-    public async Task SeedAsync_Rerun_ShouldSeedTwoVendorsAndTenOutsourcedResources()
+    public async Task SeedAsync_Rerun_ShouldNotSeedVendorsOrOutsourcedResources()
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
@@ -114,27 +105,63 @@ public class SeedDataProviderTests
             .IgnoreQueryFilters()
             .Where(v => v.TenantId == SeedDataProvider.TenantId)
             .ToListAsync();
+        vendors.Should().BeEmpty("the CloudNova and DataWorks demo vendors are purged");
 
-        vendors.Should().HaveCount(2);
-        vendors.Select(v => v.Name).Should().Contain(new[] { "CloudNova Solutions", "DataWorks Consulting" });
-
-        var outsourced = await context.Resources
+        var resources = await context.Resources
             .IgnoreQueryFilters()
-            .Where(r => r.TenantId == SeedDataProvider.TenantId && r.Type == "Outsourced")
+            .Where(r => r.TenantId == SeedDataProvider.TenantId)
             .ToListAsync();
-
-        outsourced.Should().HaveCount(10);
-        outsourced.Select(r => r.Id).Should().OnlyHaveUniqueItems();
-        outsourced.Select(r => r.VendorId).Should().NotContainNulls();
-
-        var cloudNovaId = vendors.First(v => v.Name == "CloudNova Solutions").Id;
-        var dataWorksId = vendors.First(v => v.Name == "DataWorks Consulting").Id;
-        outsourced.Count(r => r.VendorId == cloudNovaId).Should().Be(5);
-        outsourced.Count(r => r.VendorId == dataWorksId).Should().Be(5);
+        resources.Should().BeEmpty("the demo employee and outsourced resources are purged");
+        resources.Should().NotContain(r => r.Type == "Outsourced");
     }
 
     [Fact]
-    public async Task SeedAsync_Rerun_ShouldSeedVendorCategoriesAndAssignThemToVendors()
+    public async Task SeedAsync_Rerun_ShouldPreserveUserCreatedVendorsAndResources()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        await using var context = new AppDbContext(options);
+
+        await SeedDataProvider.SeedAsync(context);
+
+        var vendor = new Vendor
+        {
+            TenantId = SeedDataProvider.TenantId,
+            Name = "Acme Consulting",
+            Status = "Active",
+            IsActive = true,
+            CreatedBy = "user"
+        };
+        var resource = new Resource
+        {
+            TenantId = SeedDataProvider.TenantId,
+            Name = "Contract Engineer",
+            Type = "Outsourced",
+            Status = "Active",
+            IsActive = true,
+            VendorId = vendor.Id,
+            CreatedBy = "user"
+        };
+        context.Vendors.Add(vendor);
+        context.Resources.Add(resource);
+        await context.SaveChangesAsync();
+
+        // Re-seeding must not touch rows the purge cannot recognise as demo data.
+        await SeedDataProvider.SeedAsync(context);
+
+        var persistedVendor = await context.Vendors.IgnoreQueryFilters().SingleOrDefaultAsync(v => v.Id == vendor.Id);
+        persistedVendor.Should().NotBeNull();
+        persistedVendor!.Name.Should().Be("Acme Consulting");
+
+        var persistedResource = await context.Resources.IgnoreQueryFilters().SingleOrDefaultAsync(r => r.Id == resource.Id);
+        persistedResource.Should().NotBeNull();
+        persistedResource!.VendorId.Should().Be(vendor.Id);
+    }
+
+    [Fact]
+    public async Task SeedAsync_Rerun_ShouldSeedVendorCategoriesAsReferenceData()
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
@@ -150,6 +177,8 @@ public class SeedDataProviderTests
             .Where(l => l.TenantId == SeedDataProvider.TenantId && l.Category == NEXUS.SharedKernel.ReferenceDataCategories.VendorCategory && !l.IsDeleted)
             .ToListAsync();
 
+        // Categories are reference data and are deliberately kept, unlike the demo
+        // vendors that used to point at them.
         categories.Should().HaveCount(5);
         categories.Select(c => c.Code).Should().OnlyHaveUniqueItems();
         categories.Should().OnlyContain(c => c.IsActive);
@@ -158,15 +187,11 @@ public class SeedDataProviderTests
             .IgnoreQueryFilters()
             .Where(v => v.TenantId == SeedDataProvider.TenantId)
             .ToListAsync();
-
-        vendors.Should().HaveCount(2);
-        vendors.Should().OnlyContain(v => v.VendorCategoryId.HasValue);
-        var categoryIds = categories.Select(c => c.Id).ToHashSet();
-        vendors.Should().OnlyContain(v => categoryIds.Contains(v.VendorCategoryId!.Value));
+        vendors.Should().BeEmpty();
     }
 
     [Fact]
-    public async Task SeedAsync_Rerun_ShouldSeedSkillsAndContracts()
+    public async Task SeedAsync_Rerun_ShouldSeedSkillCatalogWithoutContractsOrResourceLinks()
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
@@ -181,19 +206,18 @@ public class SeedDataProviderTests
             .IgnoreQueryFilters()
             .Where(s => s.TenantId == SeedDataProvider.TenantId)
             .ToListAsync();
-        skills.Should().HaveCount(10);
+        skills.Should().HaveCount(10, "the skill catalog is reference data and is deliberately kept");
 
         var contracts = await context.Contracts
             .IgnoreQueryFilters()
             .Where(c => c.TenantId == SeedDataProvider.TenantId)
             .ToListAsync();
-        contracts.Should().HaveCount(10);
-        contracts.Select(c => c.ResourceId).Should().OnlyHaveUniqueItems();
+        contracts.Should().BeEmpty("demo contracts belonged to the purged demo resources");
 
         var resourceSkills = await context.ResourceSkills
             .IgnoreQueryFilters()
             .Where(rs => rs.TenantId == SeedDataProvider.TenantId)
             .ToListAsync();
-        resourceSkills.Should().HaveCountGreaterThan(0);
+        resourceSkills.Should().BeEmpty("resource-skill links belonged to the purged demo resources");
     }
 }

@@ -105,6 +105,14 @@ public interface IWorkflowInstanceService
         WorkflowExecutionContext context,
         CancellationToken cancellationToken = default);
 
+    Task<Result<WorkflowInstanceSummary>> ProvisionAsync(
+        string entityType,
+        Guid entityId,
+        Guid workflowDefinitionId,
+        Guid workflowVersionId,
+        WorkflowExecutionContext context,
+        CancellationToken cancellationToken = default);
+
     Task<Result<WorkflowInstanceSummary?>> GetInstanceAsync(
         string entityType,
         Guid entityId,

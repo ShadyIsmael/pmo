@@ -70,11 +70,11 @@ export function useManagedPrograms(search?: string) {
   });
 }
 
-export function useProgramManagementOverview(programId?: string, projectsPage = 1, projectsPageSize = 25) {
+export function useProgramManagementOverview(programId?: string, projectsPage = 1, projectsPageSize = 25, enabled = true) {
   return useQuery({
     queryKey: ["program-management", "overview", programId ?? "", projectsPage, projectsPageSize],
     queryFn: () => api.get<ProgramManagementOverview>(endpoints.programs.managementOverview(programId!), { projectsPage, projectsPageSize }),
-    enabled: Boolean(programId),
+    enabled: Boolean(programId) && enabled,
     staleTime: 30_000,
   });
 }

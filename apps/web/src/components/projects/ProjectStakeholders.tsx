@@ -15,6 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ApiError } from "@/lib/api";
 import { useAddContactProjectStakeholder, useAddInternalProjectStakeholder, useProjectStakeholders, useRevokeProjectStakeholder, useStakeholderUserLookup, useUpdateProjectStakeholder } from "@/hooks/projects/useProjectStakeholders";
 import type { ProjectStakeholderDto } from "@/lib/api/stakeholders";
+import { getAssociationTextClass, getLookupTextClass } from "@/lib/status-presentation";
 
 type Mode = "internal" | "contact" | "edit" | null;
 type FormState = { userId: string; name: string; email: string; role: string; interest: string; influence: string };
@@ -76,7 +77,7 @@ export function ProjectStakeholders({ projectId, enabled = true, canManage = fal
             <TableHeader><TableRow><TableHead>{t("stakeholderName")}</TableHead><TableHead>{t("stakeholderEmail")}</TableHead><TableHead>{t("stakeholderRelationship")}</TableHead><TableHead>{t("stakeholderType")}</TableHead><TableHead>{t("stakeholderStatus")}</TableHead>{canManage && <TableHead className="text-end">{t("actions")}</TableHead>}</TableRow></TableHeader>
             <TableBody>{items.map((item) => <TableRow key={item.id} className={item.status === "Revoked" ? "opacity-60" : undefined}>
               <TableCell><div className="flex items-center gap-2"><div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-primary"><UserRound className="h-3.5 w-3.5" /></div><span className="font-medium">{item.name}</span></div></TableCell>
-              <TableCell className="text-muted-foreground">{item.email || "—"}</TableCell><TableCell>{item.role}</TableCell><TableCell>{item.userId ? t("stakeholderInternal") : t("stakeholderContactOnly")}</TableCell>
+              <TableCell className="text-muted-foreground">{item.email || "—"}</TableCell><TableCell className={getLookupTextClass(item.role)}>{item.role}</TableCell><TableCell className={getAssociationTextClass(Boolean(item.userId))}>{item.userId ? t("stakeholderInternal") : t("stakeholderContactOnly")}</TableCell>
               <TableCell><Badge status={item.status}>{item.status === "ContactOnly" ? t("stakeholderContactOnly") : item.status === "Revoked" ? t("stakeholderRevoked") : t("stakeholderActive")}</Badge></TableCell>
               {canManage && <TableCell><div className="flex justify-end gap-1">{item.status !== "Revoked" && <><Button variant="ghost" size="icon" onClick={() => openEdit(item)} aria-label={t("editStakeholder")}><Edit3 className="h-4 w-4" /></Button><Button variant="ghost" size="icon" onClick={() => void handleRevoke(item)} aria-label={t("revokeStakeholder")}><UserX className="h-4 w-4 text-destructive" /></Button></>}</div></TableCell>}
             </TableRow>)}</TableBody>

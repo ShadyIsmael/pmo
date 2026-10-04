@@ -22,6 +22,7 @@ import {
 export type VendorOption = { id: string; name: string; code?: string };
 export type UserOption = { id: string; fullName: string; email: string };
 export type BaseCalendarOption = { id: string; name: string; isDefault?: boolean };
+export type OrganizationalUnitOption = { id: string; name: string; code?: string };
 
 export type ResourceFormLabels = {
   name: string;
@@ -50,6 +51,8 @@ export type ResourceFormLabels = {
   inactive: string;
   optional: string;
   typeReadOnlyHint: string;
+  organizationalUnit: string;
+  selectOrganizationalUnit: string;
 };
 
 export type ResourceFormProps = {
@@ -62,6 +65,7 @@ export type ResourceFormProps = {
   };
   vendorOptions: VendorOption[];
   baseCalendarOptions: BaseCalendarOption[];
+  organizationalUnitOptions: OrganizationalUnitOption[];
   userOptions: UserOption[];
   usersLoading: boolean;
   calendarsLoading: boolean;
@@ -367,6 +371,10 @@ export function BaseCalendarField({
   );
 }
 
+export function OrganizationalUnitField({ id, value, onChange, label, placeholder, options }: { id: string; value: string; onChange: FieldChange; label: string; placeholder: string; options: OrganizationalUnitOption[] }) {
+  return <div className="space-y-1.5"><Label htmlFor={id}>{label}</Label><select id={id} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={value} onChange={(event) => onChange(event.target.value)}><option value="">{placeholder}</option>{options.map((option) => <option key={option.id} value={option.id}>{option.name}{option.code ? ` · ${option.code}` : ""}</option>)}</select></div>;
+}
+
 export function SystemUserField({
   id,
   value,
@@ -421,6 +429,7 @@ export function ResourceForm({
   sectionLabels,
   vendorOptions,
   baseCalendarOptions,
+  organizationalUnitOptions,
   userOptions,
   usersLoading,
   calendarsLoading,
@@ -500,6 +509,7 @@ export function ResourceForm({
         isLoading={calendarsLoading}
         error={errorFor("baseCalendarId")}
       />
+      <OrganizationalUnitField id={`${idPrefix}-organizational-unit`} value={form.organizationalUnitId} onChange={(value) => onChange("organizationalUnitId", value)} label={labels.organizationalUnit} placeholder={labels.selectOrganizationalUnit} options={organizationalUnitOptions} />
 
       {form.type === RESOURCE_TYPES[1] ? (
         <VendorField

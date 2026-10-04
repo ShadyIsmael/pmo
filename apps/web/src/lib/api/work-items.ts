@@ -17,8 +17,10 @@ export interface WorkItemDto {
   source: string;
   projectId?: string;
   projectName?: string;
-  assigneeId?: string;
-  assigneeName?: string;
+  assignedResourceId?: string;
+  assignedResourceName?: string;
+  assignedTeamId?: string;
+  assignedTeamName?: string;
   reporterId?: string;
   parentId?: string;
   storyPoints?: number;
@@ -42,8 +44,10 @@ export interface WorkItemDto {
 }
 
 export interface WorkItemAssigneeDto {
-  assigneeId: string;
-  resourceId: string;
+  targetType: "Resource" | "Team";
+  targetId: string;
+  resourceId?: string;
+  teamId?: string;
   name: string;
   email?: string;
   jobTitle?: string;
@@ -104,7 +108,8 @@ export interface SaveWorkItemDto {
   type: WorkItemType;
   priority: WorkItemPriority;
   projectId?: string;
-  assigneeId?: string;
+  assignedResourceId?: string;
+  assignedTeamId?: string;
   parentId?: string;
   storyPoints?: number;
   estimatedHours?: number;
@@ -134,9 +139,9 @@ export const workItemKeys = {
 };
 
 export const workItemsApi = {
-  list: (params?: Record<string, string | number | undefined>) => api.get<PagedResult<WorkItemDto>>(endpoints.workItems.root, params),
+  list: (params?: Record<string, string | number | boolean | undefined>) => api.get<PagedResult<WorkItemDto>>(endpoints.workItems.root, params),
   assignees: (projectId: string) => api.get<WorkItemAssigneeDto[]>(endpoints.workItems.assignees(projectId)),
-  insights: (params?: Record<string, string | number | undefined>) => api.get<WorkItemInsightsDto>(`${endpoints.workItems.root}/insights`, params),
+  insights: (params?: Record<string, string | number | boolean | undefined>) => api.get<WorkItemInsightsDto>(`${endpoints.workItems.root}/insights`, params),
   detail: (id: string) => api.get<WorkItemDto>(endpoints.workItems.detail(id)),
   activity: (id: string, page = 1, pageSize = 20) => api.get<PagedResult<WorkItemActivityDto>>(endpoints.workItems.activity(id), { page, pageSize }),
   comments: (id: string, page = 1, pageSize = 20) => api.get<PagedResult<WorkItemCommentDto>>(endpoints.workItems.comments(id), { page, pageSize }),
@@ -152,7 +157,7 @@ export const workItemsApi = {
   executeWorkflowTransition: (id: string, transitionCode: string, body: { comment?: string; expectedStateCode?: string; expectedRowVersion?: WorkflowRowVersion }) => api.post<WorkflowTransitionResult>(endpoints.workItems.workflowTransition(id, transitionCode), body),
 };
 
-export function useWorkItems(params: Record<string, string | number | undefined> = {}, enabled = true) {
+export function useWorkItems(params: Record<string, string | number | boolean | undefined> = {}, enabled = true) {
   return useQuery({ queryKey: workItemKeys.list(params), queryFn: () => workItemsApi.list(params), enabled, staleTime: 15_000 });
 }
 
@@ -165,7 +170,7 @@ export function useWorkItemAssignees(projectId?: string, enabled = true) {
   });
 }
 
-export function useWorkItemInsights(params: Record<string, string | number | undefined> = {}, enabled = true) {
+export function useWorkItemInsights(params: Record<string, string | number | boolean | undefined> = {}, enabled = true) {
   return useQuery({ queryKey: ["work-items", "insights", params], queryFn: () => workItemsApi.insights(params), enabled, staleTime: 15_000 });
 }
 

@@ -48,7 +48,7 @@ export function DashboardHeader({
         <div className="space-y-0.5">
           <div className="flex items-center gap-2">
             <h1 className="text-lg font-bold tracking-tight sm:text-xl">{viewName}</h1>
-            <Badge variant="outline" className="h-5 text-[9px] capitalize">{dashboardType}</Badge>
+            <span className="text-xs font-medium capitalize text-info">{dashboardType}</span>
             {!canEdit && <Badge variant="secondary" className="h-5 text-[9px]">{access === "duplicate" ? "Can duplicate" : "View only"}</Badge>}
             {editMode && (
               <Badge variant="default" className="bg-warning text-warning-foreground hover:bg-warning text-[9px] h-5">

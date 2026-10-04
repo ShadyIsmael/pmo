@@ -8,7 +8,7 @@ public class WorkItemConfiguration : IEntityTypeConfiguration<WorkItem>
 {
     public void Configure(EntityTypeBuilder<WorkItem> builder)
     {
-        builder.ToTable("WorkItems");
+        builder.ToTable("WorkItems", table => table.HasCheckConstraint("CK_WorkItems_ExactlyOneAssignmentTarget", "([AssignedResourceId] IS NULL OR [AssignedTeamId] IS NULL)"));
         builder.HasKey(w => w.Id);
         builder.Property(w => w.Title).HasMaxLength(500).IsRequired();
         builder.Property(w => w.Type).HasMaxLength(50).IsRequired();
@@ -20,7 +20,8 @@ public class WorkItemConfiguration : IEntityTypeConfiguration<WorkItem>
         builder.Property(w => w.Tags).HasMaxLength(500);
         builder.Property(w => w.Labels).HasMaxLength(500);
         builder.HasIndex(w => w.ProjectId);
-        builder.HasIndex(w => w.AssigneeId);
+        builder.HasIndex(w => w.AssignedResourceId);
+        builder.HasIndex(w => w.AssignedTeamId);
         builder.HasIndex(w => new { w.Status, w.ProjectId });
         builder.Property(w => w.RowVersion).IsRowVersion();
     }

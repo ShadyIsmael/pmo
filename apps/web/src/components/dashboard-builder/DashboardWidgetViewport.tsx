@@ -48,7 +48,7 @@ export function DashboardWidgetViewport({
         reveal();
         observer.disconnect();
       },
-      { rootMargin: "400px 0px" },
+      { rootMargin: "0px" },
     );
     observer.observe(element);
 

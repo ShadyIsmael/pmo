@@ -4,6 +4,7 @@ public static class ReferenceDataCategories
 {
     public const string WorkItemStatus = "WorkItemStatus";
     public const string VendorCategory = "VendorCategory";
+    public const string OrganizationalUnitType = "OrganizationalUnitType";
 }
 
 public sealed record WorkItemStatusReference(

@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FileText, Plus, Download, Clock, ArrowRight } from "lucide-react";
+import { getLookupTextClass } from "@/lib/status-presentation";
 
 const reportCategories = [
   { id: "executive", name: "Executive Reports", count: 4, icon: "📊" },
@@ -66,7 +67,7 @@ export default function ReportsPage() {
                 </div>
                 <div className="flex-1">
                   <p className="text-sm font-medium">{rpt.name}</p>
-                  <p className="text-xs text-muted-foreground">{rpt.type} · Last run: {rpt.lastRun}</p>
+                  <p className={`text-xs ${getLookupTextClass(rpt.type)}`}>{rpt.type} · <span className="text-muted-foreground">Last run: {rpt.lastRun}</span></p>
                 </div>
                 <Badge status={rpt.status} className="text-[10px]">{rpt.status}</Badge>
                 <Button size="sm" variant="outline"><Download className="mr-1 h-4 w-4" />Download</Button>

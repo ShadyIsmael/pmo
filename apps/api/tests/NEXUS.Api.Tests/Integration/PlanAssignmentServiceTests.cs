@@ -327,7 +327,8 @@ public class PlanAssignmentServiceTests : IDisposable
         }, _userA.ToString());
 
         Assert.True(result.IsSuccess);
-        result.Value!.ResourceAllocationId.ShouldNotBeEmpty();
+        Assert.True(result.Value!.ResourceAllocationId.HasValue);
+        Assert.NotEqual(Guid.Empty, result.Value!.ResourceAllocationId.Value);
     }
 
     // ROLE CONTEXT hardening

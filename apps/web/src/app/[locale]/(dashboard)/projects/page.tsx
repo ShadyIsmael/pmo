@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { KpiCard } from "@/components/ui/kpi-card";
-import { EmptyState, ErrorState } from "@/components/ui/state-display";
+import { ErrorState } from "@/components/ui/state-display";
 import { Progress } from "@/components/ui/progress";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -21,7 +21,6 @@ import {
 import { formatDate, getHealthDotColor, getStatusVariant } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useProjects, type ProjectSummaryDto } from "@/hooks/projects/useProjects";
-import { useUserLookup, toUserSelectOptions } from "@/hooks/projects/useProjectLookups";
 import {
   CreateProjectSheetProvider,
   useCreateProjectSheet,
@@ -125,12 +124,11 @@ function ProjectsPageContent() {
   const [filterForecastMin, setFilterForecastMin] = useState("");
   const [filterForecastMax, setFilterForecastMax] = useState("");
   const [filterProjectManager, setFilterProjectManager] = useState("");
+  const [filterProjectManagerName, setFilterProjectManagerName] = useState("");
   const [filterDueDateFrom, setFilterDueDateFrom] = useState("");
   const [filterDueDateTo, setFilterDueDateTo] = useState("");
   const { openCreateProject } = useCreateProjectSheet();
-  const { data: projectManagers, isLoading: projectManagersLoading } = useUserLookup("project.manager");
-  const projectManagerOptions = toUserSelectOptions(projectManagers);
-  const selectedProjectManager = projectManagers?.find((u) => u.id === filterProjectManager);
+  const selectedProjectManager = filterProjectManagerName ? { fullName: filterProjectManagerName } : undefined;
 
   const { data, isLoading, isError } = useProjects({
     page: 1,
@@ -173,6 +171,7 @@ function ProjectsPageContent() {
     setFilterForecastMin("");
     setFilterForecastMax("");
     setFilterProjectManager("");
+    setFilterProjectManagerName("");
     setFilterDueDateFrom("");
     setFilterDueDateTo("");
   }
@@ -460,13 +459,12 @@ function ProjectsPageContent() {
         setFilterForecastMax={setFilterForecastMax}
         filterProjectManager={filterProjectManager}
         setFilterProjectManager={setFilterProjectManager}
+        setFilterProjectManagerName={setFilterProjectManagerName}
         filterDueDateFrom={filterDueDateFrom}
         setFilterDueDateFrom={setFilterDueDateFrom}
         filterDueDateTo={filterDueDateTo}
         setFilterDueDateTo={setFilterDueDateTo}
         activeFilterCount={activeFilterCount}
-        projectManagerOptions={projectManagerOptions}
-        projectManagersLoading={projectManagersLoading}
         onClearFilters={handleClearFilters}
       />
 

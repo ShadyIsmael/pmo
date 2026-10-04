@@ -1,20 +1,20 @@
 import { registerWidget, commonFields as f } from "../widget-registry";
 import type { WidgetConfig } from "../dashboard-types";
-import { DashboardDataState, formatMoney, groupMoneyByCurrency, isClosedProject, isOpenRisk, projectHealth, useDashboardLabels, useDashboardProjects, useDashboardRisks, useDashboardWorkItems } from "../dashboard-data";
+import { DashboardDataState, formatMoney, isClosedProject, useDashboardLabels, useDashboardProjects, useDashboardSummary, useDashboardWorkItems } from "../dashboard-data";
 
 function ActiveProjectsKPI({ config: _config }: { config: WidgetConfig }) {
-  const query = useDashboardProjects(); const { t } = useDashboardLabels();
-  return <DashboardDataState query={query}>{(page) => { const projects = page.items.filter((project) => !isClosedProject(project.status)); const counts = { green: 0, amber: 0, red: 0, unknown: 0 }; projects.forEach((project) => { counts[projectHealth(project)] += 1; }); return <div className="flex flex-col items-center justify-center h-full gap-1"><span className="text-3xl font-bold">{projects.length}</span><span className="text-xs text-muted-foreground">{t("activeProjects")}</span><div className="flex gap-3 mt-1 text-xs"><span className="text-success">● {counts.green}</span><span className="text-warning">● {counts.amber}</span><span className="text-destructive">● {counts.red}</span>{counts.unknown > 0 && <span className="text-muted-foreground">● {counts.unknown}</span>}</div></div>; }}</DashboardDataState>;
+  const query = useDashboardSummary(); const { t } = useDashboardLabels();
+  return <DashboardDataState query={query}>{(summary) => { const counts = summary.projectHealthCounts; return <div className="flex flex-col items-center justify-center h-full gap-1"><span className="text-3xl font-bold">{summary.activeProjectsCount}</span><span className="text-xs text-muted-foreground">{t("activeProjects")}</span><div className="flex gap-3 mt-1 text-xs"><span className="text-success">● {counts.green ?? 0}</span><span className="text-warning">● {counts.amber ?? 0}</span><span className="text-destructive">● {counts.red ?? 0}</span>{(counts.unknown ?? 0) > 0 && <span className="text-muted-foreground">● {counts.unknown}</span>}</div></div>; }}</DashboardDataState>;
 }
 
 function ProjectsAtRiskKPI({ config: _config }: { config: WidgetConfig }) {
-  const query = useDashboardProjects(); const { t } = useDashboardLabels();
-  return <DashboardDataState query={query}>{(page) => { const projects = page.items.filter((p) => !isClosedProject(p.status)); const atRisk = projects.filter((p) => ["amber", "red"].includes(projectHealth(p))).length; return <div className="flex flex-col items-center justify-center h-full gap-1"><span className="text-3xl font-bold text-warning">{atRisk}</span><span className="text-xs text-muted-foreground">{t("projectsAtRisk")}</span><span className="text-xs text-muted-foreground">{projects.length > 0 ? `${Math.round(atRisk / projects.length * 100)}% ${t("ofActive")}` : t("notAvailable")}</span></div>; }}</DashboardDataState>;
+  const query = useDashboardSummary(); const { t } = useDashboardLabels();
+  return <DashboardDataState query={query}>{(summary) => { const atRisk = summary.projectsAtRiskCount; return <div className="flex flex-col items-center justify-center h-full gap-1"><span className="text-3xl font-bold text-warning">{atRisk}</span><span className="text-xs text-muted-foreground">{t("projectsAtRisk")}</span><span className="text-xs text-muted-foreground">{summary.activeProjectsCount > 0 ? `${Math.round(atRisk / summary.activeProjectsCount * 100)}% ${t("ofActive")}` : t("notAvailable")}</span></div>; }}</DashboardDataState>;
 }
 
 function TotalBudgetKPI({ config: _config }: { config: WidgetConfig }) {
-  const query = useDashboardProjects(); const { t, locale } = useDashboardLabels();
-  return <DashboardDataState query={query}>{(page) => { const projects = page.items.filter((p) => !isClosedProject(p.status)); const totals = groupMoneyByCurrency(projects, (p) => p.budget); const currencies = [...totals.keys()]; return <div className="flex flex-col items-center justify-center h-full gap-1"><span className="text-2xl font-bold">{totals.size === 1 ? formatMoney(totals.get(currencies[0]!)!, currencies[0]!, locale) : totals.size > 1 ? t("multipleCurrencies") : "—"}</span><span className="text-xs text-muted-foreground">{t("totalBudget")}</span>{totals.size > 1 && <span className="text-[10px] text-muted-foreground">{t("groupedByCurrency")}</span>}</div>; }}</DashboardDataState>;
+  const query = useDashboardSummary(); const { t, locale } = useDashboardLabels();
+  return <DashboardDataState query={query}>{(summary) => { const currencies = summary.budgetByCurrency; return <div className="flex flex-col items-center justify-center h-full gap-1"><span className="text-2xl font-bold">{currencies.length === 1 ? formatMoney(currencies[0]!.budget, currencies[0]!.currency, locale) : currencies.length > 1 ? t("multipleCurrencies") : "—"}</span><span className="text-xs text-muted-foreground">{t("totalBudget")}</span>{currencies.length > 1 && <span className="text-[10px] text-muted-foreground">{t("groupedByCurrency")}</span>}</div>; }}</DashboardDataState>;
 }
 
 function ForecastVarianceKPI({ config: _config }: { config: WidgetConfig }) {
@@ -23,8 +23,8 @@ function ForecastVarianceKPI({ config: _config }: { config: WidgetConfig }) {
 }
 
 function OpenRisksKPI({ config: _config }: { config: WidgetConfig }) {
-  const query = useDashboardRisks(); const { t } = useDashboardLabels();
-  return <DashboardDataState query={query}>{(collection) => { const risks = collection.items.filter((r) => isOpenRisk(r.status)); const critical = risks.filter((r) => r.riskLevel === "Critical").length; return <div className="flex flex-col items-center justify-center h-full gap-1"><span className="text-3xl font-bold text-destructive">{risks.length}</span><span className="text-xs text-muted-foreground">{t("openRisks")}</span><span className="text-xs text-destructive">{critical} {t("critical")}</span></div>; }}</DashboardDataState>;
+  const query = useDashboardSummary(); const { t } = useDashboardLabels();
+  return <DashboardDataState query={query}>{(summary) => <div className="flex flex-col items-center justify-center h-full gap-1"><span className="text-3xl font-bold text-destructive">{summary.openRisksCount}</span><span className="text-xs text-muted-foreground">{t("openRisks")}</span><span className="text-xs text-destructive">{summary.criticalOpenRisksCount} {t("critical")}</span></div>}</DashboardDataState>;
 }
 
 function OverdueTasksKPI({ config: _config }: { config: WidgetConfig }) {

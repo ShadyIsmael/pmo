@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { api, hasTokens, setTokens, clearTokens, type CurrentUser } from "@/lib/api/client";
+import { deactivateRegisteredPushDevice } from "@/lib/firebase-messaging";
 
 export type AuthStatus = "loading" | "authenticated" | "unauthenticated";
 
@@ -71,6 +72,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = React.useCallback(async () => {
     const refreshToken = getStoredRefreshToken();
     try {
+      await deactivateRegisteredPushDevice();
       await api.logout(refreshToken);
     } catch {
       // Session is cleared locally even if the server call fails.

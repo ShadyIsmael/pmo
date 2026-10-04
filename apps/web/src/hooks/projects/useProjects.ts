@@ -599,6 +599,15 @@ export function useProject(id: string) {
   });
 }
 
+export function useProjectShell(id: string) {
+  return useQuery({
+    queryKey: projectKeys.shell(id),
+    queryFn: () => api.get<ProjectDto>(endpoints.projects.shell(id)),
+    enabled: !!id,
+    staleTime: 30_000,
+  });
+}
+
 export function useProjectOverview(id: string, enabled = true) {
   return useQuery({
     queryKey: projectKeys.overview(id),
@@ -674,6 +683,8 @@ export function useUpdateProject(id: string) {
     mutationFn: async (data: UpdateProjectDto) => api.put<ProjectDto>(endpoints.projects.detail(id), data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: projectKeys.detail(id), exact: true });
+      queryClient.invalidateQueries({ queryKey: projectKeys.shell(id), exact: true });
+      queryClient.invalidateQueries({ queryKey: projectKeys.overview(id), exact: true });
       queryClient.invalidateQueries({ queryKey: projectKeys.list() });
       queryClient.invalidateQueries({ queryKey: projectKeys.people(id) });
       queryClient.invalidateQueries({ queryKey: projectKeys.team(id) });
@@ -697,6 +708,8 @@ export function useArchiveProject() {
     mutationFn: async (id: string) => api.post<void>(endpoints.projects.archive(id), {}),
     onSuccess: (_data, id) => {
       queryClient.invalidateQueries({ queryKey: projectKeys.detail(id), exact: true });
+      queryClient.invalidateQueries({ queryKey: projectKeys.shell(id), exact: true });
+      queryClient.invalidateQueries({ queryKey: projectKeys.overview(id), exact: true });
       queryClient.invalidateQueries({ queryKey: projectKeys.list() });
     },
   });
@@ -708,6 +721,8 @@ export function useReactivateProject() {
     mutationFn: async (id: string) => api.post<void>(endpoints.projects.reactivate(id), {}),
     onSuccess: (_data, id) => {
       queryClient.invalidateQueries({ queryKey: projectKeys.detail(id), exact: true });
+      queryClient.invalidateQueries({ queryKey: projectKeys.shell(id), exact: true });
+      queryClient.invalidateQueries({ queryKey: projectKeys.overview(id), exact: true });
       queryClient.invalidateQueries({ queryKey: projectKeys.list() });
     },
   });
@@ -840,6 +855,8 @@ export function useAcceptHandoverRequest() {
     onSuccess: (request) => {
       queryClient.invalidateQueries({ queryKey: handoverKeys.pendingForMe });
       queryClient.invalidateQueries({ queryKey: projectKeys.detail(request.projectId), exact: true });
+      queryClient.invalidateQueries({ queryKey: projectKeys.shell(request.projectId), exact: true });
+      queryClient.invalidateQueries({ queryKey: projectKeys.overview(request.projectId), exact: true });
       queryClient.invalidateQueries({ queryKey: projectKeys.list() });
       queryClient.invalidateQueries({ queryKey: projectKeys.people(request.projectId) });
       queryClient.invalidateQueries({ queryKey: projectKeys.team(request.projectId) });

@@ -18,6 +18,7 @@ import {
   History as HistoryIcon,
   LayoutDashboard,
   ShieldAlert,
+  Settings2,
   Users,
   WalletCards,
   type LucideIcon,
@@ -29,7 +30,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  useProject,
+  useProjectShell,
   useProjectHandoverRequests,
   useProjectManagerHistory,
   useProjectSnapshots,
@@ -44,9 +45,9 @@ import { useManagementPerspective } from "@/lib/perspective-context";
 import { useWorkItems } from "@/lib/api/work-items";
 import { getWorkItemStatusName, useWorkItemStatuses } from "@/lib/api/reference-data";
 import { PROJECT_DETAIL_PREVIEW_SIZE } from "@/lib/constants";
-import { usePlanningBootstrap } from "@/lib/api/planning";
 import { ProjectPeople } from "@/components/projects/ProjectPeople";
 import { DocumentCenter } from "@/components/documents/DocumentCenter";
+import { isProjectTabVisible, shouldLoadProjectOverview } from "@/hooks/projects/project-loading";
 
 const TAB_VALUES = [
   "overview",
@@ -181,12 +182,11 @@ export default function ProjectDetailPage() {
   const [showHandoverSheet, setShowHandoverSheet] = useState(false);
   const [showChangeRequestSheet, setShowChangeRequestSheet] = useState(false);
 
-  const { data: project, isLoading: projectLoading, isError: projectError } = useProject(projectId);
-  const { data: managerHistory, isLoading: historyLoading } = useProjectManagerHistory(projectId, activeTab === "history");
-  const { data: snapshots, isLoading: snapshotsLoading } = useProjectSnapshots(projectId, activeTab === "snapshots");
-  const { data: overview, isLoading: overviewLoading, isError: overviewError } = useProjectOverview(projectId, activeTab === "overview" || activeTab === "financials");
-  const { data: planningBootstrap } = usePlanningBootstrap(projectId, activeTab === "overview");
-  const { data: handoverRequests, isLoading: handoverRequestsLoading } = useProjectHandoverRequests(projectId, activeTab === "handover" || showHandoverSheet);
+  const { data: project, isLoading: projectLoading, isError: projectError } = useProjectShell(projectId);
+  const { data: managerHistory, isLoading: historyLoading } = useProjectManagerHistory(projectId, isProjectTabVisible(activeTab, "history"));
+  const { data: snapshots, isLoading: snapshotsLoading } = useProjectSnapshots(projectId, isProjectTabVisible(activeTab, "snapshots"));
+  const { data: overview, isLoading: overviewLoading, isError: overviewError } = useProjectOverview(projectId, shouldLoadProjectOverview(activeTab));
+  const { data: handoverRequests, isLoading: handoverRequestsLoading } = useProjectHandoverRequests(projectId, isProjectTabVisible(activeTab, "handover") || showHandoverSheet);
   const canEditProject = Boolean(user && hasPermission(user.permissions, Permissions.Project.Edit));
   const canManageChangeRequests = Boolean(user && hasPermission(user.permissions, Permissions.ChangeRequest.Manage));
   const canManageHandovers = Boolean(user && hasPermission(user.permissions, Permissions.Handover.Manage));
@@ -196,19 +196,6 @@ export default function ProjectDetailPage() {
   const canViewStakeholders = Boolean(user && hasPermission(user.permissions, Permissions.Stakeholders.Read));
   const canManageStakeholders = Boolean(user && hasPermission(user.permissions, Permissions.Stakeholders.Manage));
   const canManagePeople = canMutate && (canAssignResources || canManageStakeholders);
-  const planMilestones = planningBootstrap?.selectedPlan
-    ? planningBootstrap.activities
-      .filter((activity) => activity.type === "Milestone")
-      .map((activity) => ({
-        id: activity.id,
-        name: activity.name,
-        dueDate: activity.endDate ?? activity.deadline ?? activity.startDate,
-        completedDate: activity.actualFinish,
-        status: activity.actualFinish ? "Completed" : undefined,
-        progress: activity.progress,
-      }))
-    : undefined;
-
   const updateTab = useCallback((value: string) => {
     if (!isTabValue(value)) return;
     const nextParams = new URLSearchParams(searchParamsString);
@@ -254,6 +241,7 @@ export default function ProjectDetailPage() {
 
   return (
     <div dir={locale === "ar" ? "rtl" : "ltr"} className="nexus-project-detail space-y-4">
+      {canEditProject ? <div className="flex justify-end"><Link href={`/${locale}/projects/${projectId}/settings/workflows`}><Button variant="outline" size="sm"><Settings2 className="me-1.5 h-3.5 w-3.5" />{locale === "ar" ? "إعدادات المشروع" : "Project settings"}</Button></Link></div> : null}
       <Tabs value={activeTab} onValueChange={updateTab} className="w-full">
         <div className="sticky top-0 z-20 isolate border-y border-border bg-muted/70 py-1.5 dark:bg-sidebar">
           <TabsList className="flex h-auto w-full min-w-0 items-center justify-start gap-0.5 overflow-x-auto overflow-y-hidden rounded-none bg-transparent p-0">
@@ -269,7 +257,6 @@ export default function ProjectDetailPage() {
           <ProjectOverview
             project={project}
             overview={overview}
-            planMilestones={planMilestones}
             overviewLoading={overviewLoading}
             overviewError={overviewError}
             getTabHref={getTabHref}
@@ -287,14 +274,14 @@ export default function ProjectDetailPage() {
           <LazyProjectPlanningWorkspace projectId={projectId} />
         </TabsContent>
 
-        <TabsContent value="team" className="pt-1"><ProjectPeople projectId={projectId} enabled={activeTab === "team" && (canViewStakeholders || canAssignResources)} canManage={canManagePeople} /></TabsContent>
+        <TabsContent value="team" className="pt-1"><ProjectPeople projectId={projectId} enabled={isProjectTabVisible(activeTab, "team") && (canViewStakeholders || canAssignResources)} canManage={canManagePeople} /></TabsContent>
 
         <TabsContent value="financials" className="pt-1"><LazyProjectFinancials project={project} summary={overview} enabled={activeTab === "financials" && canViewFinances} canManage={canManageFinances} loading={overviewLoading} error={overviewError} /></TabsContent>
 
         <TabsContent value="risks-issues" className="space-y-4 pt-1"><div className="grid gap-4 lg:grid-cols-2"><ProjectRisksList projectId={projectId} projectName={project.name} /><ProjectTasksAndIssues projectId={projectId} /></div></TabsContent>
 
-        <TabsContent value="status-reports" className="pt-1"><LazyProjectStatusReports projectId={projectId} project={project} canManage={canEditProject} enabled={activeTab === "status-reports"} /></TabsContent>
-        <TabsContent value="meetings" className="pt-1"><LazyProjectMeetingsTab projectId={projectId} project={{ id: project.id, name: project.name, code: project.code }} enabled={activeTab === "meetings"} /></TabsContent>
+        <TabsContent value="status-reports" className="pt-1"><LazyProjectStatusReports projectId={projectId} project={project} canManage={canEditProject} enabled={isProjectTabVisible(activeTab, "status-reports")} /></TabsContent>
+        <TabsContent value="meetings" className="pt-1"><LazyProjectMeetingsTab projectId={projectId} project={{ id: project.id, name: project.name, code: project.code }} enabled={isProjectTabVisible(activeTab, "meetings")} /></TabsContent>
         <TabsContent value="documents" className="pt-1"><DocumentCenter projectId={projectId} compact /></TabsContent>
 
         <TabsContent value="handover" className="pt-1"><Card className="shadow-none"><CardHeader><SectionHeader title={t("handover")} description={t("handoverDescription")} /></CardHeader><CardContent>{handoverRequestsLoading ? <Skeleton className="h-24" /> : handoverRequests && handoverRequests.length > 0 ? <div className="divide-y">{handoverRequests.map((request) => <div key={request.id} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between"><div className="flex min-w-0 items-start gap-3"><ArrowRightLeft className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" /><div className="min-w-0"><p className="text-sm font-medium">{request.currentProjectManagerName} → {request.newProjectManagerName}</p><p className="mt-1 text-xs text-muted-foreground">{t("effectiveHandoverDate")}: {displayDate(request.effectiveHandoverDate)} · {t("requestedBy")}: {request.requestedByName}</p>{request.reason && <p className="mt-1 text-xs text-muted-foreground">{request.reason}</p>}{request.rejectionReason && <p className="mt-1 text-xs text-destructive">{t("rejectionReason")}: {request.rejectionReason}</p>}</div></div><Badge status={request.status} className="w-fit text-[10px]">{t(`handoverStatus.${request.status}`) || request.status}</Badge></div>)}</div> : <EmptyState icon={ArrowRightLeft} title={t("noHandoverRequests")} description="Create a handover request when project ownership needs to change." action={<Button size="sm" onClick={() => setShowHandoverSheet(true)}><ArrowRightLeft className="mr-1.5 h-3.5 w-3.5" />{t("handover")}</Button>} />}</CardContent></Card></TabsContent>

@@ -21,6 +21,7 @@ import type {
 import { useAuth } from "@/lib/auth";
 import { useManagementPerspective } from "@/lib/perspective-context";
 import type { ManagementPerspective } from "@/lib/perspective";
+import { homeSummaryKeys } from "@/hooks/home/useHomeSummary";
 import "./widgets/kpi-widgets";
 import "./widgets/list-widgets";
 
@@ -69,6 +70,16 @@ function createInitialState(pov: PointOfView): DashboardState {
     editMode: false,
     lastUpdated: null,
   };
+}
+
+function queryKeyForDashboardWidget(type: string): readonly unknown[] | null {
+  if (["active-projects", "projects-at-risk", "total-budget", "forecast-variance", "open-risks", "projects-by-health", "budget-vs-actual", "projects-attention", "top-risks"].includes(type)) return homeSummaryKeys.all;
+  if (type.includes("risk")) return ["risks"];
+  if (type.includes("project")) return ["projects"];
+  if (type.includes("meeting")) return ["meetings"];
+  if (type.includes("resource") || type.includes("utilization")) return ["resources"];
+  if (type.includes("task") || type.includes("todo") || type.includes("milestone")) return ["work-items"];
+  return null;
 }
 
 export function DashboardBuilder() {
@@ -242,7 +253,7 @@ export function DashboardBuilder() {
   );
 
   const refreshWidget = React.useCallback(
-    (id: string) => {
+    (id: string, type: string) => {
       setState((prev) => ({
         ...prev,
         views: prev.views.map((v) => ({
@@ -250,7 +261,8 @@ export function DashboardBuilder() {
           widgets: v.widgets.map((w) => (w.id === id ? { ...w, loading: true } : w)),
         })),
       }));
-      void queryClient.invalidateQueries().finally(() => {
+      const queryKey = queryKeyForDashboardWidget(type);
+      void (queryKey ? queryClient.invalidateQueries({ queryKey }) : Promise.resolve()).finally(() => {
         setState((prev) => ({
           ...prev,
           lastUpdated: Date.now(),
@@ -272,7 +284,8 @@ export function DashboardBuilder() {
       ...prev,
       views: prev.views.map((v) => ({ ...v, widgets: v.widgets.map((w) => ({ ...w, loading: true })) })),
     }));
-    void queryClient.invalidateQueries().finally(() => {
+    const queryKeys = [...new Set(currentView.widgets.map((widget) => queryKeyForDashboardWidget(widget.type)).filter((key): key is readonly unknown[] => Boolean(key)).map((key) => JSON.stringify(key)))].map((key) => JSON.parse(key) as readonly unknown[]);
+    void Promise.all(queryKeys.map((queryKey) => queryClient.invalidateQueries({ queryKey }))).finally(() => {
       setState((prev) => ({
         ...prev,
         lastUpdated: Date.now(),
@@ -283,7 +296,7 @@ export function DashboardBuilder() {
       }));
       setRefreshing(false);
     });
-  }, [queryClient]);
+  }, [currentView.widgets, queryClient]);
 
   const resetDashboard = React.useCallback(() => {
     if (typeof window !== "undefined" && !window.confirm("Reset this dashboard to its default widgets and layout?")) return;
@@ -477,7 +490,7 @@ export function DashboardBuilder() {
               loading
               collapsed={w.collapsed}
               editMode={state.editMode}
-              onRefresh={() => refreshWidget(w.id)}
+              onRefresh={() => refreshWidget(w.id, w.type)}
               onSettings={() => setSettingsWidgetId(w.id)}
               onDuplicate={() => duplicateWidget(w.id)}
               onRemove={() => removeWidget(w.id)}
@@ -516,7 +529,7 @@ export function DashboardBuilder() {
           collapsed={w.collapsed}
           editMode={state.editMode}
           dataSource={def.dataSourceLabel}
-          onRefresh={() => refreshWidget(w.id)}
+          onRefresh={() => refreshWidget(w.id, w.type)}
           onSettings={() => setSettingsWidgetId(w.id)}
           onDuplicate={() => duplicateWidget(w.id)}
           onRemove={() => removeWidget(w.id)}

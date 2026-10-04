@@ -48,6 +48,7 @@ import {
   type UserAdminDto,
 } from "@/hooks/administration/useUsers";
 import { useToast } from "@/hooks/use-toast";
+import { getLookupTextClass } from "@/lib/status-presentation";
 
 const userSchema = z.object({
   firstName: z.string().trim().min(1, "First name is required").max(100),
@@ -424,9 +425,9 @@ export default function AdminUsersPage() {
                   <span className="text-muted-foreground">-</span>
                 ) : (
                   user.roles.map((role) => (
-                    <Badge key={role} variant={role === "project.manager" ? "default" : "outline"} className="text-[10px]">
+                    <span key={role} className={`text-xs font-medium ${getLookupTextClass(role)}`}>
                       {role}
-                    </Badge>
+                    </span>
                   ))
                 )}
               </div>

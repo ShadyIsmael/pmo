@@ -8,6 +8,8 @@ using NEXUS.Modules.Audit.Domain;
 using NEXUS.Modules.WorkItems.Application.DTOs;
 using NEXUS.Modules.WorkItems.Domain;
 using NEXUS.Modules.WorkflowEngine.Application.Contracts;
+using NEXUS.Modules.WorkflowEngine.Application.Services;
+using NEXUS.Modules.WorkflowEngine.Domain;
 using NEXUS.SharedKernel;
 using NEXUS.SharedKernel.Helpers;
 using NEXUS.SharedKernel.Management;
@@ -27,11 +29,13 @@ public sealed class WorkItemService : IWorkItemService
     private readonly IWorkItemStatusReferenceLookup _statusLookup;
     private readonly IManagementContextAccessor _managementContext;
     private readonly IWorkItemAssigneeLookup _assigneeLookup;
+    private readonly IResourceReferenceLookup _resourceLookup;
     private readonly IUserReferenceLookup _userLookup;
     private readonly IWorkItemWorkflowProvisioningService _workflowProvisioning;
     private readonly IWorkflowInstanceService _workflowInstanceService;
+    private readonly IProjectWorkflowConfigurationService _projectWorkflowConfiguration;
 
-    public WorkItemService(DbContext context, IAuditService auditService, IProjectReferenceLookup projectLookup, IHttpContextAccessor httpContextAccessor, IWorkItemCommentAccess commentAccess, IWorkItemCommentAuthorLookup commentAuthorLookup, IWorkItemAttachmentStorage attachmentStorage, IOptions<WorkItemAttachmentOptions> attachmentOptions, IWorkItemStatusReferenceLookup statusLookup, IManagementContextAccessor managementContext, IWorkItemAssigneeLookup assigneeLookup, IUserReferenceLookup userLookup, IWorkItemWorkflowProvisioningService workflowProvisioning, IWorkflowInstanceService workflowInstanceService)
+    public WorkItemService(DbContext context, IAuditService auditService, IProjectReferenceLookup projectLookup, IHttpContextAccessor httpContextAccessor, IWorkItemCommentAccess commentAccess, IWorkItemCommentAuthorLookup commentAuthorLookup, IWorkItemAttachmentStorage attachmentStorage, IOptions<WorkItemAttachmentOptions> attachmentOptions, IWorkItemStatusReferenceLookup statusLookup, IManagementContextAccessor managementContext, IWorkItemAssigneeLookup assigneeLookup, IResourceReferenceLookup resourceLookup, IUserReferenceLookup userLookup, IWorkItemWorkflowProvisioningService workflowProvisioning, IWorkflowInstanceService workflowInstanceService, IProjectWorkflowConfigurationService projectWorkflowConfiguration)
     {
         _context = context;
         _auditService = auditService;
@@ -44,9 +48,11 @@ public sealed class WorkItemService : IWorkItemService
         _statusLookup = statusLookup;
         _managementContext = managementContext;
         _assigneeLookup = assigneeLookup;
+        _resourceLookup = resourceLookup;
         _userLookup = userLookup;
         _workflowProvisioning = workflowProvisioning;
         _workflowInstanceService = workflowInstanceService;
+        _projectWorkflowConfiguration = projectWorkflowConfiguration;
     }
 
     public async Task<Result<WorkItemDto>> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
@@ -65,36 +71,65 @@ public sealed class WorkItemService : IWorkItemService
             return Result<IReadOnlyList<WorkItemAssigneeDto>>.Failure(Error.Forbidden("The project is outside the current management scope"));
 
         var candidates = await _assigneeLookup.GetEligibleAsync(projectId, cancellationToken);
-        return Result<IReadOnlyList<WorkItemAssigneeDto>>.Success(candidates.Select(candidate => new WorkItemAssigneeDto
+        var teams = await _assigneeLookup.GetEligibleTeamsAsync(cancellationToken);
+        var targets = candidates.Select(candidate => new WorkItemAssigneeDto
         {
-            AssigneeId = candidate.AssigneeId,
+            TargetType = "Resource",
+            TargetId = candidate.ResourceId,
             ResourceId = candidate.ResourceId,
             Name = candidate.Name,
             Email = candidate.Email,
             JobTitle = candidate.JobTitle
-        }).ToList());
+        }).Concat(teams.Select(team => new WorkItemAssigneeDto
+        {
+            TargetType = "Team",
+            TargetId = team.TeamId,
+            TeamId = team.TeamId,
+            Name = team.Name,
+            Email = team.Code is null ? null : team.Code,
+            JobTitle = "Team"
+        })).ToList();
+        return Result<IReadOnlyList<WorkItemAssigneeDto>>.Success(targets);
     }
 
-    public async Task<PagedResult<WorkItemDto>> GetPagedAsync(int page, int pageSize, Guid? projectId = null, string? status = null, string? type = null, string? priority = null, string? search = null, Guid? assigneeId = null, Guid? reporterId = null, DateTime? dueDateFrom = null, DateTime? dueDateTo = null, bool? overdue = null, bool? unassigned = null, bool? highPriority = null, string? sortBy = null, CancellationToken cancellationToken = default)
+    public async Task<PagedResult<WorkItemDto>> GetPagedAsync(int page, int pageSize, Guid? projectId = null, string? status = null, string? type = null, string? priority = null, string? search = null, Guid? assignedResourceId = null, Guid? assignedTeamId = null, Guid? legacyAssigneeUserId = null, Guid? reporterId = null, DateTime? dueDateFrom = null, DateTime? dueDateTo = null, bool? overdue = null, bool? unassigned = null, bool? highPriority = null, bool myWork = false, string? viewerUserId = null, string? sortBy = null, CancellationToken cancellationToken = default)
     {
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 100);
-        var query = ApplyFilters(ScopedWorkItems(), projectId, status, type, priority, search, assigneeId, reporterId, dueDateFrom, dueDateTo, overdue, unassigned, highPriority);
+        var query = ApplyFilters(ScopedWorkItems(), projectId, status, type, priority, search, assignedResourceId, assignedTeamId, reporterId, dueDateFrom, dueDateTo, overdue, unassigned, highPriority);
+        if (legacyAssigneeUserId.HasValue)
+        {
+            var legacyResourceIds = (await _resourceLookup.GetDetailsByUserIdsAsync(new[] { legacyAssigneeUserId.Value }, cancellationToken)).Keys.ToArray();
+            query = query.Where(item => item.AssignedResourceId.HasValue && legacyResourceIds.Contains(item.AssignedResourceId.Value));
+        }
+        if (myWork && Guid.TryParse(viewerUserId, out var viewerId))
+        {
+            var ownResourceIds = (await _resourceLookup.GetDetailsByUserIdsAsync(new[] { viewerId }, cancellationToken)).Keys.ToArray();
+            var activeTeamIds = await _assigneeLookup.GetActiveTeamIdsForUserAsync(viewerId, cancellationToken);
+            query = query.Where(item => (item.AssignedResourceId.HasValue && ownResourceIds.Contains(item.AssignedResourceId.Value)) || (item.AssignedTeamId.HasValue && activeTeamIds.Contains(item.AssignedTeamId.Value)));
+        }
 
         var total = await query.CountAsync(cancellationToken);
         var items = await ApplySort(query, sortBy).Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(cancellationToken);
         var projectNames = await _projectLookup.GetNamesAsync(items.Where(item => item.ProjectId.HasValue).Select(item => item.ProjectId!.Value), cancellationToken);
-        var assigneeNames = await _userLookup.GetManyAsync(items.Where(item => item.AssigneeId.HasValue).Select(item => item.AssigneeId!.Value), cancellationToken);
+        var resourceNames = await _resourceLookup.GetNamesAsync(items.Where(item => item.AssignedResourceId.HasValue).Select(item => item.AssignedResourceId!.Value), cancellationToken);
+        var teamNames = (await _assigneeLookup.GetEligibleTeamsAsync(cancellationToken)).ToDictionary(team => team.TeamId, team => team.Name);
         var dtos = items.Select(item => ToDto(
             item,
             item.ProjectId.HasValue ? projectNames.GetValueOrDefault(item.ProjectId.Value) : null,
-            item.AssigneeId.HasValue ? assigneeNames.GetValueOrDefault(item.AssigneeId.Value)?.FullName : null)).ToList();
+            item.AssignedResourceId.HasValue ? resourceNames.GetValueOrDefault(item.AssignedResourceId.Value) : null,
+            item.AssignedTeamId.HasValue ? teamNames.GetValueOrDefault(item.AssignedTeamId.Value) : null)).ToList();
         return new PagedResult<WorkItemDto>(dtos, page, pageSize, total);
     }
 
-    public async Task<WorkItemInsightsDto> GetInsightsAsync(Guid? projectId = null, string? status = null, string? type = null, string? priority = null, string? search = null, Guid? assigneeId = null, Guid? reporterId = null, DateTime? dueDateFrom = null, DateTime? dueDateTo = null, bool? overdue = null, bool? unassigned = null, bool? highPriority = null, CancellationToken cancellationToken = default)
+    public async Task<WorkItemInsightsDto> GetInsightsAsync(Guid? projectId = null, string? status = null, string? type = null, string? priority = null, string? search = null, Guid? assignedResourceId = null, Guid? assignedTeamId = null, Guid? legacyAssigneeUserId = null, Guid? reporterId = null, DateTime? dueDateFrom = null, DateTime? dueDateTo = null, bool? overdue = null, bool? unassigned = null, bool? highPriority = null, CancellationToken cancellationToken = default)
     {
-        var query = ApplyFilters(ScopedWorkItems().AsNoTracking(), projectId, status, type, priority, search, assigneeId, reporterId, dueDateFrom, dueDateTo, overdue, unassigned, highPriority);
+        var query = ApplyFilters(ScopedWorkItems().AsNoTracking(), projectId, status, type, priority, search, assignedResourceId, assignedTeamId, reporterId, dueDateFrom, dueDateTo, overdue, unassigned, highPriority);
+        if (legacyAssigneeUserId.HasValue)
+        {
+            var legacyResourceIds = (await _resourceLookup.GetDetailsByUserIdsAsync(new[] { legacyAssigneeUserId.Value }, cancellationToken)).Keys.ToArray();
+            query = query.Where(item => item.AssignedResourceId.HasValue && legacyResourceIds.Contains(item.AssignedResourceId.Value));
+        }
         var now = DateTime.UtcNow;
         var today = now.Date;
         var weekEnd = today.AddDays(7);
@@ -104,7 +139,7 @@ public sealed class WorkItemService : IWorkItemService
             Total = await query.CountAsync(cancellationToken),
             Open = await query.CountAsync(item => !terminalStatuses.Contains(item.Status), cancellationToken),
             Overdue = await query.CountAsync(item => !terminalStatuses.Contains(item.Status) && (item.Type == WorkItemType.Issue.ToString() ? item.TargetResolutionDate ?? item.DueDate : item.DueDate) < now, cancellationToken),
-            Unassigned = await query.CountAsync(item => !item.AssigneeId.HasValue, cancellationToken),
+            Unassigned = await query.CountAsync(item => !item.AssignedResourceId.HasValue && !item.AssignedTeamId.HasValue, cancellationToken),
             DueThisWeek = await query.CountAsync(item => !terminalStatuses.Contains(item.Status) && (item.Type == WorkItemType.Issue.ToString() ? item.TargetResolutionDate ?? item.DueDate : item.DueDate) >= today && (item.Type == WorkItemType.Issue.ToString() ? item.TargetResolutionDate ?? item.DueDate : item.DueDate) < weekEnd, cancellationToken),
             ByStatus = await query.GroupBy(item => item.Status).Select(group => new WorkItemInsightBucketDto { Key = group.Key, Count = group.Count() }).OrderBy(bucket => bucket.Key).ToListAsync(cancellationToken),
             ByPriority = await query.GroupBy(item => item.Priority).Select(group => new WorkItemInsightBucketDto { Key = group.Key, Count = group.Count() }).OrderBy(bucket => bucket.Key).ToListAsync(cancellationToken)
@@ -120,7 +155,7 @@ public sealed class WorkItemService : IWorkItemService
             : query.Where(item => item.ProjectId.HasValue && projectIds.Contains(item.ProjectId.Value));
     }
 
-    private static IQueryable<WorkItem> ApplyFilters(IQueryable<WorkItem> query, Guid? projectId, string? status, string? type, string? priority, string? search, Guid? assigneeId, Guid? reporterId, DateTime? dueDateFrom, DateTime? dueDateTo, bool? overdue, bool? unassigned, bool? highPriority)
+    private static IQueryable<WorkItem> ApplyFilters(IQueryable<WorkItem> query, Guid? projectId, string? status, string? type, string? priority, string? search, Guid? assignedResourceId, Guid? assignedTeamId, Guid? reporterId, DateTime? dueDateFrom, DateTime? dueDateTo, bool? overdue, bool? unassigned, bool? highPriority)
     {
         if (projectId.HasValue) query = query.Where(item => item.ProjectId == projectId.Value);
         if (!string.IsNullOrWhiteSpace(status)) query = query.Where(item => item.Status == status);
@@ -131,9 +166,10 @@ public sealed class WorkItemService : IWorkItemService
             var normalizedSearch = search.Trim();
             query = query.Where(item => item.Title.Contains(normalizedSearch) || (item.Description != null && item.Description.Contains(normalizedSearch)));
         }
-        if (assigneeId.HasValue) query = query.Where(item => item.AssigneeId == assigneeId.Value);
+        if (assignedResourceId.HasValue) query = query.Where(item => item.AssignedResourceId == assignedResourceId.Value);
+        if (assignedTeamId.HasValue) query = query.Where(item => item.AssignedTeamId == assignedTeamId.Value);
         if (reporterId.HasValue) query = query.Where(item => item.ReporterId == reporterId.Value);
-        if (unassigned == true) query = query.Where(item => !item.AssigneeId.HasValue);
+        if (unassigned == true) query = query.Where(item => !item.AssignedResourceId.HasValue && !item.AssignedTeamId.HasValue);
         if (highPriority == true) query = query.Where(item => item.Priority == WorkItemPriority.Critical.ToString() || item.Priority == WorkItemPriority.High.ToString());
         if (dueDateFrom.HasValue)
         {
@@ -205,19 +241,23 @@ public sealed class WorkItemService : IWorkItemService
 
     public async Task<Result<WorkItemDto>> CreateAsync(CreateWorkItemDto dto, string userId, CancellationToken cancellationToken = default)
     {
-        var workflow = await _workflowProvisioning.EnsureCurrentTenantAsync(userId, cancellationToken);
+        var projectSelection = await _projectWorkflowConfiguration.ResolveForNewRecordAsync(dto.ProjectId, WorkflowDomains.Task, WorkItemWorkflow.EntityType, BuildWorkflowContext(userId), cancellationToken);
+        if (projectSelection.IsFailure) return Result<WorkItemDto>.Failure(projectSelection.Error!);
+        var workflow = projectSelection.Value is { IsCustom: true }
+            ? Result<WorkItemWorkflowProvisioningResult>.Success(new WorkItemWorkflowProvisioningResult(projectSelection.Value.WorkflowDefinitionId!.Value, projectSelection.Value.WorkflowVersionId!.Value, projectSelection.Value.InitialStateCode!, 0, 0))
+            : await _workflowProvisioning.EnsureCurrentTenantAsync(userId, cancellationToken);
         if (workflow.IsFailure) return Result<WorkItemDto>.Failure(workflow.Error!);
         if (!string.IsNullOrWhiteSpace(dto.Status) && !string.Equals(dto.Status.Trim(), workflow.Value!.InitialStateCode, StringComparison.OrdinalIgnoreCase))
             return Result<WorkItemDto>.Failure(Error.Validation("A new Work Item starts at the configured workflow initial state."));
         var status = await _statusLookup.FindAsync(workflow.Value!.InitialStateCode, cancellationToken);
         if (status is null || !status.IsActive) return Result<WorkItemDto>.Failure(Error.Validation("The configured workflow initial Work Item status is not active"));
-        var validation = await ValidateAsync(dto.Title, dto.Type, dto.Priority, status.Code, dto.ProjectId, dto.AssigneeId, cancellationToken);
+        var validation = await ValidateAsync(dto.Title, dto.Type, dto.Priority, status.Code, dto.ProjectId, dto.AssignedResourceId, dto.AssignedTeamId, cancellationToken);
         if (validation is not null) return Result<WorkItemDto>.Failure(validation);
 
         var now = DateTime.UtcNow;
         var item = new WorkItem
         {
-            TenantId = GetCurrentTenantId(), Title = dto.Title.Trim(), Description = Normalize(dto.Description), Type = dto.Type.ToString(), Priority = dto.Priority.ToString(), Status = status.Code, Source = WorkItemSource.Internal.ToString(), ProjectId = dto.ProjectId, AssigneeId = dto.AssigneeId, ReporterId = TryParseGuid(userId), ParentId = dto.ParentId, StoryPoints = dto.StoryPoints, EstimatedHours = dto.EstimatedHours, StartDate = dto.StartDate, DueDate = dto.DueDate, Severity = Normalize(dto.Severity), IdentifiedDate = dto.Type == WorkItemType.Issue ? now : null, TargetResolutionDate = dto.TargetResolutionDate, CompletedAt = IsDone(status) ? now : null, ResolvedDate = dto.Type == WorkItemType.Issue && IsDone(status) ? now : null, Tags = Normalize(dto.Tags), Labels = Normalize(dto.Labels), CreatedBy = userId
+            TenantId = GetCurrentTenantId(), Title = dto.Title.Trim(), Description = Normalize(dto.Description), Type = dto.Type.ToString(), Priority = dto.Priority.ToString(), Status = status.Code, Source = WorkItemSource.Internal.ToString(), ProjectId = dto.ProjectId, AssignedResourceId = dto.AssignedResourceId, AssignedTeamId = dto.AssignedTeamId, ReporterId = TryParseGuid(userId), ParentId = dto.ParentId, StoryPoints = dto.StoryPoints, EstimatedHours = dto.EstimatedHours, StartDate = dto.StartDate, DueDate = dto.DueDate, Severity = Normalize(dto.Severity), IdentifiedDate = dto.Type == WorkItemType.Issue ? now : null, TargetResolutionDate = dto.TargetResolutionDate, CompletedAt = IsDone(status) ? now : null, ResolvedDate = dto.Type == WorkItemType.Issue && IsDone(status) ? now : null, Tags = Normalize(dto.Tags), Labels = Normalize(dto.Labels), CreatedBy = userId
         };
 
         await using var transaction = _context.Database.ProviderName?.Contains("Relational", StringComparison.OrdinalIgnoreCase) == true
@@ -228,19 +268,16 @@ public sealed class WorkItemService : IWorkItemService
             _context.Set<WorkItem>().Add(item);
             await _context.SaveChangesAsync(cancellationToken);
 
-            var instance = await _workflowInstanceService.ProvisionAsync(
-                WorkItemWorkflow.EntityType,
-                item.Id,
-                WorkItemWorkflow.DefinitionCode,
-                BuildWorkflowContext(userId),
-                cancellationToken);
+            var instance = projectSelection.Value is { IsCustom: true } custom
+                ? await _workflowInstanceService.ProvisionAsync(WorkItemWorkflow.EntityType, item.Id, custom.WorkflowDefinitionId!.Value, custom.WorkflowVersionId!.Value, BuildWorkflowContext(userId), cancellationToken)
+                : await _workflowInstanceService.ProvisionAsync(WorkItemWorkflow.EntityType, item.Id, WorkItemWorkflow.DefinitionCode, BuildWorkflowContext(userId), cancellationToken);
             if (instance.IsFailure)
             {
                 if (transaction is not null) await transaction.RollbackAsync(cancellationToken);
                 return Result<WorkItemDto>.Failure(instance.Error!);
             }
 
-            await LogActivityAsync(item, "Created", new { type = item.Type, title = item.Title, assignee = await GetAssigneeLabelAsync(item.AssigneeId, cancellationToken) }, userId, cancellationToken);
+            await LogActivityAsync(item, "Created", new { type = item.Type, title = item.Title, assignment = await GetTargetLabelAsync(item.AssignedResourceId, item.AssignedTeamId, cancellationToken) }, userId, cancellationToken);
             if (transaction is not null) await transaction.CommitAsync(cancellationToken);
             return Result<WorkItemDto>.Success(await ToDtoAsync(item, cancellationToken));
         }
@@ -258,34 +295,36 @@ public sealed class WorkItemService : IWorkItemService
 
         if (!string.IsNullOrWhiteSpace(dto.Status) && !string.Equals(dto.Status.Trim(), item.Status, StringComparison.OrdinalIgnoreCase))
             return Result<WorkItemDto>.Failure(Error.Validation("Work Item status must be changed through a workflow transition."));
-        var validation = await ValidateAsync(dto.Title, dto.Type, dto.Priority, item.Status, dto.ProjectId, dto.AssigneeId, cancellationToken);
+        var validation = await ValidateAsync(dto.Title, dto.Type, dto.Priority, item.Status, dto.ProjectId, dto.AssignedResourceId, dto.AssignedTeamId, cancellationToken);
         if (validation is not null) return Result<WorkItemDto>.Failure(validation);
         if (dto.RowVersion.Length > 0) _context.Entry(item).Property(workItem => workItem.RowVersion).OriginalValue = dto.RowVersion;
 
         var oldValues = Snapshot(item);
         var oldStatus = item.Status;
         var oldType = item.Type;
-        var oldAssigneeId = item.AssigneeId;
-        item.Title = dto.Title.Trim(); item.Description = Normalize(dto.Description); item.Type = dto.Type.ToString(); item.Priority = dto.Priority.ToString(); item.ProjectId = dto.ProjectId; item.AssigneeId = dto.AssigneeId; item.ParentId = dto.ParentId; item.StoryPoints = dto.StoryPoints; item.EstimatedHours = dto.EstimatedHours; item.ActualHours = dto.ActualHours; item.StartDate = dto.StartDate; item.DueDate = dto.DueDate; item.Severity = Normalize(dto.Severity); item.IdentifiedDate = dto.Type == WorkItemType.Issue ? item.IdentifiedDate ?? DateTime.UtcNow : null; item.TargetResolutionDate = dto.TargetResolutionDate; item.Resolution = Normalize(dto.Resolution); item.UpdatedBy = userId;
+        var oldAssignedResourceId = item.AssignedResourceId;
+        var oldAssignedTeamId = item.AssignedTeamId;
+        item.Title = dto.Title.Trim(); item.Description = Normalize(dto.Description); item.Type = dto.Type.ToString(); item.Priority = dto.Priority.ToString(); item.ProjectId = dto.ProjectId; item.AssignedResourceId = dto.AssignedResourceId; item.AssignedTeamId = dto.AssignedTeamId; item.ParentId = dto.ParentId; item.StoryPoints = dto.StoryPoints; item.EstimatedHours = dto.EstimatedHours; item.ActualHours = dto.ActualHours; item.StartDate = dto.StartDate; item.DueDate = dto.DueDate; item.Severity = Normalize(dto.Severity); item.IdentifiedDate = dto.Type == WorkItemType.Issue ? item.IdentifiedDate ?? DateTime.UtcNow : null; item.TargetResolutionDate = dto.TargetResolutionDate; item.Resolution = Normalize(dto.Resolution); item.UpdatedBy = userId;
 
         try { await _context.SaveChangesAsync(cancellationToken); }
         catch (DbUpdateConcurrencyException) { return Result<WorkItemDto>.Failure(Error.Conflict("Work item was changed by another user")); }
 
         var changes = BuildChanges(oldValues, Snapshot(item));
-        var assignmentChanged = oldAssigneeId != item.AssigneeId;
+        var assignmentChanged = oldAssignedResourceId != item.AssignedResourceId || oldAssignedTeamId != item.AssignedTeamId;
         if (assignmentChanged)
         {
-            changes.Remove("assigneeId");
-            changes["assignee"] = new
+            changes.Remove("assignedResourceId");
+            changes.Remove("assignedTeamId");
+            changes["assignment"] = new
             {
-                from = await GetAssigneeLabelAsync(oldAssigneeId, cancellationToken),
-                to = await GetAssigneeLabelAsync(item.AssigneeId, cancellationToken)
+                from = await GetTargetLabelAsync(oldAssignedResourceId, oldAssignedTeamId, cancellationToken),
+                to = await GetTargetLabelAsync(item.AssignedResourceId, item.AssignedTeamId, cancellationToken)
             };
         }
         if (changes.Count > 0)
         {
             var action = assignmentChanged
-                ? oldAssigneeId is null ? "Assigned" : item.AssigneeId is null ? "Unassigned" : "Reassigned"
+                ? oldAssignedResourceId is null && oldAssignedTeamId is null ? "Assigned" : item.AssignedResourceId is null && item.AssignedTeamId is null ? "Unassigned" : "Reassigned"
                 : oldStatus == item.Status && oldType == item.Type ? "Updated" : "Transitioned";
             await LogActivityAsync(item, action, changes, userId, cancellationToken);
         }
@@ -487,7 +526,7 @@ public sealed class WorkItemService : IWorkItemService
         return Result.Success();
     }
 
-    private async Task<Error?> ValidateAsync(string title, WorkItemType type, WorkItemPriority priority, string status, Guid? projectId, Guid? assigneeId, CancellationToken cancellationToken)
+    private async Task<Error?> ValidateAsync(string title, WorkItemType type, WorkItemPriority priority, string status, Guid? projectId, Guid? assignedResourceId, Guid? assignedTeamId, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(title)) return Error.Validation("Title is required");
         if (title.Trim().Length > 500) return Error.Validation("Title must not exceed 500 characters");
@@ -497,11 +536,15 @@ public sealed class WorkItemService : IWorkItemService
         if (projectId.HasValue && await _projectLookup.FindAsync(projectId.Value, cancellationToken) is null) return Error.NotFound("Project not found");
         var allowedProjectIds = _managementContext.Current?.Scope.ProjectIds;
         if (allowedProjectIds is not null && (!projectId.HasValue || !allowedProjectIds.Contains(projectId.Value))) return Error.Forbidden("The project is outside the current management scope");
-        if (assigneeId.HasValue)
+        if (assignedResourceId.HasValue && assignedTeamId.HasValue)
+            return Error.Validation("A Work Item can be assigned to one Resource or one Team, not both.");
+        if (assignedResourceId.HasValue || assignedTeamId.HasValue)
         {
             if (!projectId.HasValue) return Error.Validation("Select a project before assigning a Work Item");
-            if (!await _assigneeLookup.IsActiveProjectMemberAsync(projectId.Value, assigneeId.Value, cancellationToken))
-                return Error.Validation("Selected assignee is not an active member of this project.");
+            if (assignedResourceId.HasValue && !await _assigneeLookup.IsActiveProjectMemberAsync(projectId.Value, assignedResourceId.Value, cancellationToken))
+                return Error.Validation("Selected Resource is not an active member of this project.");
+            if (assignedTeamId.HasValue && !await _assigneeLookup.IsActiveTeamAsync(assignedTeamId.Value, cancellationToken))
+                return Error.Validation("Selected Team is not active.");
         }
         return null;
     }
@@ -538,7 +581,9 @@ public sealed class WorkItemService : IWorkItemService
         if (_httpContextAccessor.HttpContext?.User.HasClaim("permission", "WorkItem.Edit") == true) return true;
         if (string.Equals(item.CreatedBy, userId, StringComparison.OrdinalIgnoreCase)) return true;
         if (!currentUser.HasValue) return false;
-        if (item.ReporterId == currentUser || item.AssigneeId == currentUser) return true;
+        var currentResource = currentUser.HasValue ? await _resourceLookup.FindByUserIdAsync(currentUser.Value, cancellationToken) : null;
+        if (item.ReporterId == currentUser || (currentResource?.Id == item.AssignedResourceId)) return true;
+        if (currentResource is not null && item.AssignedTeamId.HasValue && await _assigneeLookup.IsCurrentTeamMemberAsync(item.AssignedTeamId.Value, currentResource.Id, cancellationToken)) return true;
         return await _commentAccess.CanCommentAsync(item, currentUser.Value, cancellationToken);
     }
 
@@ -555,13 +600,14 @@ public sealed class WorkItemService : IWorkItemService
     private async Task<WorkItemDto> ToDtoAsync(WorkItem item, CancellationToken cancellationToken)
     {
         var projectName = item.ProjectId.HasValue ? (await _projectLookup.FindAsync(item.ProjectId.Value, cancellationToken))?.Name : null;
-        var assigneeName = item.AssigneeId.HasValue ? (await _userLookup.FindAsync(item.AssigneeId.Value, cancellationToken))?.FullName : null;
-        return ToDto(item, projectName, assigneeName);
+        var resourceName = item.AssignedResourceId.HasValue ? (await _resourceLookup.FindAsync(item.AssignedResourceId.Value, cancellationToken))?.Name : null;
+        var teamName = item.AssignedTeamId.HasValue ? (await _assigneeLookup.GetEligibleTeamsAsync(cancellationToken)).FirstOrDefault(team => team.TeamId == item.AssignedTeamId.Value)?.Name : null;
+        return ToDto(item, projectName, resourceName, teamName);
     }
 
-    private static WorkItemDto ToDto(WorkItem item, string? projectName, string? assigneeName = null) => new()
+    private static WorkItemDto ToDto(WorkItem item, string? projectName, string? resourceName = null, string? teamName = null) => new()
     {
-        Id = item.Id, Title = item.Title, Description = item.Description, Type = Parse(item.Type, WorkItemType.Task), Priority = Parse(item.Priority, WorkItemPriority.Medium), Status = item.Status, Source = item.Source, ProjectId = item.ProjectId, ProjectName = projectName, AssigneeId = item.AssigneeId, AssigneeName = assigneeName, ReporterId = item.ReporterId, ParentId = item.ParentId, StoryPoints = item.StoryPoints, EstimatedHours = item.EstimatedHours, ActualHours = item.ActualHours, StartDate = item.StartDate, DueDate = item.DueDate, CompletedAt = item.CompletedAt, Severity = item.Severity, IdentifiedDate = item.IdentifiedDate, TargetResolutionDate = item.TargetResolutionDate, ResolvedDate = item.ResolvedDate, Resolution = item.Resolution, Tags = item.Tags, Labels = item.Labels, CreatedAt = item.CreatedAt, UpdatedAt = item.UpdatedAt, CreatedBy = item.CreatedBy, UpdatedBy = item.UpdatedBy, RowVersion = item.RowVersion
+        Id = item.Id, Title = item.Title, Description = item.Description, Type = Parse(item.Type, WorkItemType.Task), Priority = Parse(item.Priority, WorkItemPriority.Medium), Status = item.Status, Source = item.Source, ProjectId = item.ProjectId, ProjectName = projectName, AssignedResourceId = item.AssignedResourceId, AssignedResourceName = resourceName, AssignedTeamId = item.AssignedTeamId, AssignedTeamName = teamName, ReporterId = item.ReporterId, ParentId = item.ParentId, StoryPoints = item.StoryPoints, EstimatedHours = item.EstimatedHours, ActualHours = item.ActualHours, StartDate = item.StartDate, DueDate = item.DueDate, CompletedAt = item.CompletedAt, Severity = item.Severity, IdentifiedDate = item.IdentifiedDate, TargetResolutionDate = item.TargetResolutionDate, ResolvedDate = item.ResolvedDate, Resolution = item.Resolution, Tags = item.Tags, Labels = item.Labels, CreatedAt = item.CreatedAt, UpdatedAt = item.UpdatedAt, CreatedBy = item.CreatedBy, UpdatedBy = item.UpdatedBy, RowVersion = item.RowVersion
     };
 
     private static WorkItemAttachmentDto ToAttachmentDto(WorkItemAttachment attachment) => new()
@@ -583,12 +629,13 @@ public sealed class WorkItemService : IWorkItemService
 
     private static Dictionary<string, object?> BuildChanges(Dictionary<string, object?> oldValues, Dictionary<string, object?> newValues) => newValues.Where(pair => !Equals(oldValues.GetValueOrDefault(pair.Key), pair.Value)).ToDictionary(pair => pair.Key, pair => (object?)new { from = oldValues.GetValueOrDefault(pair.Key), to = pair.Value });
 
-    private static Dictionary<string, object?> Snapshot(WorkItem item) => new() { ["title"] = item.Title, ["description"] = item.Description, ["type"] = item.Type, ["priority"] = item.Priority, ["status"] = item.Status, ["projectId"] = item.ProjectId, ["assigneeId"] = item.AssigneeId, ["dueDate"] = item.DueDate, ["severity"] = item.Severity, ["targetResolutionDate"] = item.TargetResolutionDate, ["resolvedDate"] = item.ResolvedDate, ["resolution"] = item.Resolution };
+    private static Dictionary<string, object?> Snapshot(WorkItem item) => new() { ["title"] = item.Title, ["description"] = item.Description, ["type"] = item.Type, ["priority"] = item.Priority, ["status"] = item.Status, ["projectId"] = item.ProjectId, ["assignedResourceId"] = item.AssignedResourceId, ["assignedTeamId"] = item.AssignedTeamId, ["dueDate"] = item.DueDate, ["severity"] = item.Severity, ["targetResolutionDate"] = item.TargetResolutionDate, ["resolvedDate"] = item.ResolvedDate, ["resolution"] = item.Resolution };
 
-    private async Task<string> GetAssigneeLabelAsync(Guid? userId, CancellationToken cancellationToken)
+    private async Task<string> GetTargetLabelAsync(Guid? resourceId, Guid? teamId, CancellationToken cancellationToken)
     {
-        if (!userId.HasValue) return "Unassigned";
-        return (await _userLookup.FindAsync(userId.Value, cancellationToken))?.FullName ?? "Unknown";
+        if (resourceId.HasValue) return (await _resourceLookup.FindAsync(resourceId.Value, cancellationToken))?.Name ?? "Unknown Resource";
+        if (teamId.HasValue) return (await _assigneeLookup.GetEligibleTeamsAsync(cancellationToken)).FirstOrDefault(team => team.TeamId == teamId.Value)?.Name ?? "Unknown Team";
+        return "Unassigned";
     }
 
     private static string? Normalize(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();

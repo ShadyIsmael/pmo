@@ -2816,6 +2816,73 @@ namespace NEXUS.Persistence.Migrations
                     b.ToTable("NotificationTemplates");
                 });
 
+            modelBuilder.Entity("NEXUS.Modules.Notifications.Domain.UserDeviceToken", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("DeactivatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DeviceName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime>("LastSeenAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Platform")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Token")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "Token")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "UserId", "IsActive");
+
+                    b.ToTable("UserDeviceTokens", (string)null);
+                });
+
             modelBuilder.Entity("NEXUS.Modules.Organization.Domain.BusinessUnit", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3307,14 +3374,16 @@ namespace NEXUS.Persistence.Migrations
                     b.ToTable("Organizations");
                 });
 
-            modelBuilder.Entity("NEXUS.Modules.Organization.Domain.Team", b =>
+            modelBuilder.Entity("NEXUS.Modules.Organization.Domain.OrganizationalUnit", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("Code")
-                        .HasColumnType("nvarchar(max)");
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
@@ -3323,11 +3392,9 @@ namespace NEXUS.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<Guid>("DepartmentId")
-                        .HasColumnType("uniqueidentifier");
-
                     b.Property<string>("Description")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
@@ -3337,7 +3404,223 @@ namespace NEXUS.Persistence.Migrations
 
                     b.Property<string>("Name")
                         .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid?>("ParentOrganizationalUnitId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("TypeCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
                         .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ParentOrganizationalUnitId");
+
+                    b.HasIndex("TenantId", "Code")
+                        .IsUnique()
+                        .HasFilter("[IsDeleted] = 0");
+
+                    b.HasIndex("TenantId", "ParentOrganizationalUnitId", "IsActive");
+
+                    b.HasIndex("TenantId", "TypeCode", "IsActive");
+
+                    b.ToTable("OrganizationalUnits", (string)null);
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.Organization.Domain.ResourceOrganizationalUnit", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("EffectiveFrom")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("EffectiveTo")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsPrimary")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid>("OrganizationalUnitId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ResourceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationalUnitId");
+
+                    b.HasIndex("TenantId", "OrganizationalUnitId", "IsActive");
+
+                    b.HasIndex("TenantId", "ResourceId", "EffectiveFrom");
+
+                    b.HasIndex("TenantId", "ResourceId", "IsPrimary", "IsActive")
+                        .IsUnique()
+                        .HasFilter("[IsDeleted] = 0 AND [IsActive] = 1 AND [IsPrimary] = 1");
+
+                    b.ToTable("ResourceOrganizationalUnits", (string)null);
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.Organization.Domain.ResourceReportingLine", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("EffectiveFrom")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("EffectiveTo")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsPrimary")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid>("ManagerResourceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ReportingType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<Guid>("ResourceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "ManagerResourceId", "IsActive");
+
+                    b.HasIndex("TenantId", "ResourceId", "EffectiveFrom");
+
+                    b.HasIndex("TenantId", "ResourceId", "IsPrimary", "IsActive")
+                        .IsUnique()
+                        .HasFilter("[IsDeleted] = 0 AND [IsActive] = 1 AND [IsPrimary] = 1");
+
+                    b.ToTable("ResourceReportingLines", (string)null);
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.Organization.Domain.Team", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Code")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid?>("DepartmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("EmailAlias")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("ExternalDirectoryId")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<byte[]>("RowVersion")
                         .IsRequired()
@@ -3359,7 +3642,78 @@ namespace NEXUS.Persistence.Migrations
 
                     b.HasIndex("DepartmentId");
 
-                    b.ToTable("Teams");
+                    b.HasIndex("IsActive");
+
+                    b.HasIndex("Name");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "Code")
+                        .IsUnique()
+                        .HasFilter("[Code] IS NOT NULL");
+
+                    b.ToTable("Teams", (string)null);
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.Organization.Domain.TeamMember", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("EffectiveFrom")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("EffectiveTo")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid>("ResourceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsRequired()
+                        .HasColumnType("varbinary(max)");
+
+                    b.Property<Guid>("TeamId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ResourceId");
+
+                    b.HasIndex("TeamId");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "ResourceId", "IsActive");
+
+                    b.HasIndex("TenantId", "TeamId", "ResourceId")
+                        .IsUnique()
+                        .HasFilter("[IsDeleted] = 0 AND [IsActive] = 1 AND [EffectiveTo] IS NULL");
+
+                    b.ToTable("TeamMembers", (string)null);
                 });
 
             modelBuilder.Entity("NEXUS.Modules.Organization.Domain.WorkingCalendar", b =>
@@ -7147,6 +7501,158 @@ namespace NEXUS.Persistence.Migrations
                     b.ToTable("PlanDependencies", (string)null);
                 });
 
+            modelBuilder.Entity("NEXUS.Modules.ProjectPlanning.Domain.PlanImportIssue", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<int>("Count")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("EntityType")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
+                    b.Property<bool>("IsBlocking")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<Guid>("PlanImportSessionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsRequired()
+                        .HasColumnType("varbinary(max)");
+
+                    b.Property<string>("Severity")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("SourceId")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PlanImportSessionId");
+
+                    b.HasIndex("TenantId", "PlanImportSessionId", "IsBlocking");
+
+                    b.ToTable("PlanImportIssues", (string)null);
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.ProjectPlanning.Domain.PlanImportSession", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CommitResultJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("CommittedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(260)
+                        .HasColumnType("nvarchar(260)");
+
+                    b.Property<string>("Format")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("ParsedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ParsedDocumentJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ResolutionJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsRequired()
+                        .HasColumnType("varbinary(max)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<string>("SuggestedPlanName")
+                        .IsRequired()
+                        .HasMaxLength(250)
+                        .HasColumnType("nvarchar(250)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "ProjectId", "Status");
+
+                    b.ToTable("PlanImportSessions", (string)null);
+                });
+
             modelBuilder.Entity("NEXUS.Modules.ProjectPlanning.Domain.PlanVersion", b =>
                 {
                     b.Property<Guid>("Id")
@@ -8913,7 +9419,10 @@ namespace NEXUS.Persistence.Migrations
                         .HasPrecision(10, 2)
                         .HasColumnType("decimal(10,2)");
 
-                    b.Property<Guid?>("AssigneeId")
+                    b.Property<Guid?>("AssignedResourceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("AssignedTeamId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<DateTime?>("CompletedAt")
@@ -9024,13 +9533,18 @@ namespace NEXUS.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("AssigneeId");
+                    b.HasIndex("AssignedResourceId");
+
+                    b.HasIndex("AssignedTeamId");
 
                     b.HasIndex("ProjectId");
 
                     b.HasIndex("Status", "ProjectId");
 
-                    b.ToTable("WorkItems", (string)null);
+                    b.ToTable("WorkItems", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_WorkItems_ExactlyOneAssignmentTarget", "([AssignedResourceId] IS NULL OR [AssignedTeamId] IS NULL)");
+                        });
                 });
 
             modelBuilder.Entity("NEXUS.Modules.WorkItems.Domain.WorkItemAssignment", b =>
@@ -9196,6 +9710,79 @@ namespace NEXUS.Persistence.Migrations
                     b.ToTable("WorkItemComments", (string)null);
                 });
 
+            modelBuilder.Entity("NEXUS.Modules.WorkflowEngine.Domain.ProjectWorkflowConfiguration", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("ConfiguredAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ConfiguredBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Domain")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<Guid?>("EffectiveWorkflowVersionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Mode")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid?>("WorkflowDefinitionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EffectiveWorkflowVersionId");
+
+                    b.HasIndex("WorkflowDefinitionId");
+
+                    b.HasIndex("TenantId", "WorkflowDefinitionId");
+
+                    b.HasIndex("TenantId", "ProjectId", "Domain")
+                        .IsUnique()
+                        .HasFilter("[IsDeleted] = 0");
+
+                    b.ToTable("ProjectWorkflowConfigurations", (string)null);
+                });
+
             modelBuilder.Entity("NEXUS.Modules.WorkflowEngine.Domain.WorkflowDefinition", b =>
                 {
                     b.Property<Guid>("Id")
@@ -9220,6 +9807,13 @@ namespace NEXUS.Persistence.Migrations
                     b.Property<string>("Description")
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("Domain")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasDefaultValue("Task");
 
                     b.Property<string>("EntityType")
                         .IsRequired()
@@ -9260,7 +9854,7 @@ namespace NEXUS.Persistence.Migrations
                         .IsUnique()
                         .HasFilter("[IsDeleted] = 0");
 
-                    b.HasIndex("TenantId", "EntityType", "IsActive");
+                    b.HasIndex("TenantId", "Domain", "IsActive");
 
                     b.ToTable("WorkflowDefinitions", (string)null);
                 });
@@ -9756,6 +10350,31 @@ namespace NEXUS.Persistence.Migrations
                     b.ToTable("WorkflowTransitionHistory", (string)null);
                 });
 
+            modelBuilder.Entity("NEXUS.SharedKernel.EntityCodeSequence", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("EntityType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int>("NextValue")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "EntityType")
+                        .IsUnique();
+
+                    b.ToTable("EntityCodeSequences", (string)null);
+                });
+
             modelBuilder.Entity("PermissionRole", b =>
                 {
                     b.Property<Guid>("PermissionsId")
@@ -10121,15 +10740,46 @@ namespace NEXUS.Persistence.Migrations
                     b.Navigation("WorkingCalendar");
                 });
 
+            modelBuilder.Entity("NEXUS.Modules.Organization.Domain.OrganizationalUnit", b =>
+                {
+                    b.HasOne("NEXUS.Modules.Organization.Domain.OrganizationalUnit", "ParentOrganizationalUnit")
+                        .WithMany("Children")
+                        .HasForeignKey("ParentOrganizationalUnitId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("ParentOrganizationalUnit");
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.Organization.Domain.ResourceOrganizationalUnit", b =>
+                {
+                    b.HasOne("NEXUS.Modules.Organization.Domain.OrganizationalUnit", "OrganizationalUnit")
+                        .WithMany()
+                        .HasForeignKey("OrganizationalUnitId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("OrganizationalUnit");
+                });
+
             modelBuilder.Entity("NEXUS.Modules.Organization.Domain.Team", b =>
                 {
                     b.HasOne("NEXUS.Modules.Organization.Domain.Department", "Department")
                         .WithMany("Teams")
                         .HasForeignKey("DepartmentId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Department");
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.Organization.Domain.TeamMember", b =>
+                {
+                    b.HasOne("NEXUS.Modules.Organization.Domain.Team", "Team")
+                        .WithMany("Members")
+                        .HasForeignKey("TeamId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.Navigation("Department");
+                    b.Navigation("Team");
                 });
 
             modelBuilder.Entity("NEXUS.Modules.PluginManagement.Domain.PluginDependency", b =>
@@ -10666,6 +11316,17 @@ namespace NEXUS.Persistence.Migrations
                     b.Navigation("PlanVersion");
                 });
 
+            modelBuilder.Entity("NEXUS.Modules.ProjectPlanning.Domain.PlanImportIssue", b =>
+                {
+                    b.HasOne("NEXUS.Modules.ProjectPlanning.Domain.PlanImportSession", "PlanImportSession")
+                        .WithMany("Issues")
+                        .HasForeignKey("PlanImportSessionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("PlanImportSession");
+                });
+
             modelBuilder.Entity("NEXUS.Modules.ProjectPlanning.Domain.PlanVersion", b =>
                 {
                     b.HasOne("NEXUS.Modules.ProjectPlanning.Domain.Plan", "Plan")
@@ -10957,6 +11618,23 @@ namespace NEXUS.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("NEXUS.Modules.WorkflowEngine.Domain.ProjectWorkflowConfiguration", b =>
+                {
+                    b.HasOne("NEXUS.Modules.WorkflowEngine.Domain.WorkflowDefinitionVersion", "EffectiveWorkflowVersion")
+                        .WithMany()
+                        .HasForeignKey("EffectiveWorkflowVersionId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("NEXUS.Modules.WorkflowEngine.Domain.WorkflowDefinition", "WorkflowDefinition")
+                        .WithMany()
+                        .HasForeignKey("WorkflowDefinitionId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("EffectiveWorkflowVersion");
+
+                    b.Navigation("WorkflowDefinition");
+                });
+
             modelBuilder.Entity("NEXUS.Modules.WorkflowEngine.Domain.WorkflowDefinition", b =>
                 {
                     b.HasOne("NEXUS.Modules.WorkflowEngine.Domain.WorkflowDefinitionVersion", "ActivePublishedVersion")
@@ -11219,6 +11897,16 @@ namespace NEXUS.Persistence.Migrations
                     b.Navigation("BusinessUnits");
                 });
 
+            modelBuilder.Entity("NEXUS.Modules.Organization.Domain.OrganizationalUnit", b =>
+                {
+                    b.Navigation("Children");
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.Organization.Domain.Team", b =>
+                {
+                    b.Navigation("Members");
+                });
+
             modelBuilder.Entity("NEXUS.Modules.Organization.Domain.WorkingCalendar", b =>
                 {
                     b.Navigation("Holidays");
@@ -11284,6 +11972,11 @@ namespace NEXUS.Persistence.Migrations
             modelBuilder.Entity("NEXUS.Modules.ProjectPlanning.Domain.Plan", b =>
                 {
                     b.Navigation("Versions");
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.ProjectPlanning.Domain.PlanImportSession", b =>
+                {
+                    b.Navigation("Issues");
                 });
 
             modelBuilder.Entity("NEXUS.Modules.ProjectPlanning.Domain.PlanVersion", b =>

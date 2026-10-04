@@ -18,6 +18,9 @@ export const Permissions = {
     View: "Resource.View",
     Assign: "Resource.Assign",
     Allocate: "Resource.Allocate",
+    Create: "Resource.Create",
+    Edit: "Resource.Edit",
+    Delete: "Resource.Delete",
     Manage: "Resource.Manage",
     ManageRates: "Resource.ManageRates",
     ViewCostRate: "Resource.ViewCostRate",
@@ -28,6 +31,13 @@ export const Permissions = {
     Create: "Project.Create",
     Edit: "Project.Edit",
     Delete: "Project.Delete",
+  },
+  Team: {
+    View: "Team.View",
+    Create: "Team.Create",
+    Edit: "Team.Edit",
+    Delete: "Team.Delete",
+    Manage: "Team.Manage",
   },
   Stakeholders: {
     Read: "Stakeholders.Read",
@@ -138,6 +148,10 @@ export function getAllPermissions(): string[] {
 
 export function hasPermission(userPermissions: string[], permission: string): boolean {
   return userPermissions.includes(permission);
+}
+
+export function hasAnyPermission(userPermissions: string[], permissions: string[]): boolean {
+  return permissions.some((permission) => hasPermission(userPermissions, permission));
 }
 
 export function usePermissions(): string[] {
