@@ -56,7 +56,7 @@ export function CostsPage() {
       ) : null}
       {tab === "overview" || tab === "budgets" ? (
         <Card>
-          <CardHeader><CardTitle>{t("costs.budgets")}</CardTitle></CardHeader>
+          <CardHeader><CardTitle>{t("costs.budgetTab")}</CardTitle></CardHeader>
           <CardContent className="p-0">
             {budgets.isLoading ? <p className="p-6 text-center text-sm text-muted-foreground">{t("common.loading")}</p>
               : (budgets.data?.items ?? []).length === 0 ? <p className="p-6 text-center text-sm text-muted-foreground">{t("common.noResults")}</p>
@@ -75,7 +75,7 @@ export function CostsPage() {
       ) : null}
       {tab === "overview" || tab === "actuals" ? (
         <Card>
-          <CardHeader><CardTitle>{t("costs.actuals")}</CardTitle></CardHeader>
+          <CardHeader><CardTitle>{t("costs.actualsTab")}</CardTitle></CardHeader>
           <CardContent className="p-0">
             {costs.isLoading ? <p className="p-6 text-center text-sm text-muted-foreground">{t("common.loading")}</p>
               : (costs.data?.items ?? []).length === 0 ? <p className="p-6 text-center text-sm text-muted-foreground">{t("common.noResults")}</p>

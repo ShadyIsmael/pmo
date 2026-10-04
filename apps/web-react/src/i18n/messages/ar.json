@@ -149,7 +149,8 @@
       "main": "الرئيسية",
       "portfolioManagement": "إدارة التسليم",
       "resourceManagement": "الموارد",
-      "monitoring": "المراقبة"
+      "monitoring": "المراقبة",
+      "account": "الحساب"
     },
     "workflowManagement": "إدارة مسارات العمل",
     "deferredReports": "صفحة التقارير الحالية تستخدم بيانات تجريبية ثابتة.",
@@ -3045,6 +3046,8 @@
   },
   "costs": {
     "title": "لوحة التكاليف العالمية",
+    "budgetTab": "الميزانيات",
+    "actualsTab": "التكاليف الفعلية",
     "description": "لوحة تنفيذية للسلطة المالية والإنفاق والالتزامات والتوقعات عبر المشاريع",
     "currencyContext": "سياق العملة",
     "currencyContextDescription": "تُجمع جميع الأرقام أدناه حسب العملة المحددة. لا يتم تطبيق تحويل للعملات.",

@@ -149,7 +149,8 @@
       "main": "Home",
       "portfolioManagement": "Delivery Management",
       "resourceManagement": "Resources",
-      "monitoring": "Monitoring"
+      "monitoring": "Monitoring",
+      "account": "Account"
     },
     "workflowManagement": "Workflow Management",
     "deferredReports": "The current Reports page uses static placeholder data.",
@@ -3045,6 +3046,8 @@
   },
   "costs": {
     "title": "Global Cost Dashboard",
+    "budgetTab": "Budgets",
+    "actualsTab": "Actuals",
     "description": "Executive financial authority, spending, commitments, and forecast across projects",
     "currencyContext": "Currency context",
     "currencyContextDescription": "All figures below are grouped by the selected currency. No FX conversion is applied.",
