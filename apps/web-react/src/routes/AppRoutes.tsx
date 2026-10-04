@@ -25,6 +25,7 @@ import { ResourcesListPage } from "../features/resources/ResourcesListPage";
 import { VendorsPage } from "../features/vendors/VendorsPage";
 import { TeamsPage } from "../features/teams/TeamsPage";
 import { AcceptInvitationPage, StakeholderProjectsPage } from "../features/stakeholder/StakeholderPages";
+import { WorkItemsPageFull, WorkItemDetailPageFull } from "../features/delivery/WorkItemPages";
 
 // Lazy: heavy/secondary modules split out of the initial bundle (visible-first + code-split).
 const CapacityPage = React.lazy(() => import("../features/resources/CapacityPage").then((m) => ({ default: m.CapacityPage })));
@@ -53,10 +54,8 @@ const PreferencesPage = React.lazy(() => import("../features/account/AccountPage
 const SecurityPage = React.lazy(() => import("../features/account/AccountPages").then((m) => ({ default: m.SecurityPage })));
 const AccountNotificationsPage = React.lazy(() => import("../features/account/AccountPages").then((m) => ({ default: m.AccountNotificationsPage })));
 const NotificationsPage = React.lazy(() => import("../features/notifications/NotificationsPage").then((m) => ({ default: m.NotificationsPage })));
-const MeetingsPage = React.lazy(() => import("../features/delivery/DeliveryPages").then((m) => ({ default: m.MeetingsPage })));
-const MeetingDetailPage = React.lazy(() => import("../features/delivery/DeliveryPages").then((m) => ({ default: m.MeetingDetailPage })));
-const WorkItemsPage = React.lazy(() => import("../features/delivery/DeliveryPages").then((m) => ({ default: m.WorkItemsPage })));
-const WorkItemDetailPage = React.lazy(() => import("../features/delivery/DeliveryPages").then((m) => ({ default: m.WorkItemDetailPage })));
+const MeetingsPageFull = React.lazy(() => import("../features/delivery/MeetingPages").then((m) => ({ default: m.MeetingsPageFull })));
+const MeetingDetailPageFull = React.lazy(() => import("../features/delivery/MeetingPages").then((m) => ({ default: m.MeetingDetailPageFull })));
 const DocumentsPage = React.lazy(() => import("../features/delivery/DeliveryPages").then((m) => ({ default: m.DocumentsPage })));
 const PortfoliosPage = React.lazy(() => import("../features/delivery/DeliveryPages").then((m) => ({ default: m.PortfoliosPage })));
 const PortfolioDetailPage = React.lazy(() => import("../features/delivery/DeliveryPages").then((m) => ({ default: m.PortfolioDetailPage })));
@@ -123,14 +122,14 @@ export function AppRoutes() {
         <Route path="/portfolios/optimization" element={<Guard permissions={Permissions.Portfolio.View}><Suspended><PortfoliosPage /></Suspended></Guard>} />
         <Route path="/portfolios/:id" element={<Guard permissions={Permissions.Portfolio.View}><Suspended><PortfolioDetailPage /></Suspended></Guard>} />
 
-        <Route path="/meetings" element={<Guard permissions={Permissions.Meeting.View}><Suspended><MeetingsPage /></Suspended></Guard>} />
-        <Route path="/meetings/:id" element={<Guard permissions={Permissions.Meeting.View}><Suspended><MeetingDetailPage /></Suspended></Guard>} />
-        <Route path="/meetings/:id/minutes" element={<Guard permissions={Permissions.Meeting.View}><Suspended><MeetingDetailPage /></Suspended></Guard>} />
-        <Route path="/meetings/minutes" element={<Guard permissions={Permissions.Meeting.View}><Suspended><MeetingsPage /></Suspended></Guard>} />
-        <Route path="/meetings/actions" element={<Guard permissions={Permissions.Meeting.View}><Suspended><MeetingsPage /></Suspended></Guard>} />
+        <Route path="/meetings" element={<Guard permissions={Permissions.Meeting.View}><Suspended><MeetingsPageFull /></Suspended></Guard>} />
+        <Route path="/meetings/:id" element={<Guard permissions={Permissions.Meeting.View}><Suspended><MeetingDetailPageFull /></Suspended></Guard>} />
+        <Route path="/meetings/:id/minutes" element={<Guard permissions={Permissions.Meeting.View}><Suspended><MeetingDetailPageFull /></Suspended></Guard>} />
+        <Route path="/meetings/minutes" element={<Guard permissions={Permissions.Meeting.View}><Suspended><MeetingsPageFull /></Suspended></Guard>} />
+        <Route path="/meetings/actions" element={<Guard permissions={Permissions.Meeting.View}><Suspended><MeetingsPageFull /></Suspended></Guard>} />
 
-        <Route path="/work-items" element={<Guard permissions={Permissions.WorkItem.View}><Suspended><WorkItemsPage /></Suspended></Guard>} />
-        <Route path="/work-items/:id" element={<Guard permissions={Permissions.WorkItem.View}><Suspended><WorkItemDetailPage /></Suspended></Guard>} />
+        <Route path="/work-items" element={<Guard permissions={Permissions.WorkItem.View}><WorkItemsPageFull /></Guard>} />
+        <Route path="/work-items/:id" element={<Guard permissions={Permissions.WorkItem.View}><WorkItemDetailPageFull /></Guard>} />
 
         <Route path="/risks-issues/risks" element={<Guard permissions={Permissions.Risk.View}><Suspended><RisksPage /></Suspended></Guard>} />
         <Route path="/risks-issues/risks/new" element={<Guard permissions={Permissions.Risk.View}><Suspended><RisksPage /></Suspended></Guard>} />

@@ -47,7 +47,7 @@ async function refreshAccessToken(): Promise<boolean> {
 
 async function request<T>(path: string, options: RequestInit = {}, retry = true, params?: Record<string, string | number | boolean | undefined>): Promise<T> {
   const headers = new Headers(options.headers);
-  headers.set("Content-Type", "application/json");
+  if (!(options.body instanceof FormData)) headers.set("Content-Type", "application/json");
   if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
   if (managementContext) {
     headers.set("X-Nexus-Perspective", managementContext.perspective);
@@ -63,11 +63,29 @@ async function request<T>(path: string, options: RequestInit = {}, retry = true,
   return await response.json() as T;
 }
 
+async function requestBinary(path: string, retry = true): Promise<Blob> {
+  const headers = new Headers();
+  if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
+  if (managementContext) {
+    headers.set("X-Nexus-Perspective", managementContext.perspective);
+    headers.set("X-Nexus-View-Mode", managementContext.viewMode);
+    if (managementContext.portfolioId) headers.set("X-Nexus-Portfolio-Id", managementContext.portfolioId);
+    if (managementContext.programId) headers.set("X-Nexus-Program-Id", managementContext.programId);
+    if (managementContext.projectId) headers.set("X-Nexus-Project-Id", managementContext.projectId);
+  }
+  const response = await fetch(url(path), { method: "GET", headers });
+  if (response.status === 401 && retry && !path.includes("/auth/") && await refreshAccessToken()) return requestBinary(path, false);
+  if (!response.ok) throw new ApiError(response.status, await readError(response));
+  return response.blob();
+}
+
 export const api = {
   get: <T>(path: string, params?: Record<string, string | number | boolean | undefined>) => request<T>(path, { method: "GET" }, true, params),
   post: <T>(path: string, body?: unknown) => request<T>(path, { method: "POST", body: body === undefined ? undefined : JSON.stringify(body) }),
   put: <T>(path: string, body?: unknown) => request<T>(path, { method: "PUT", body: body === undefined ? undefined : JSON.stringify(body) }),
   patch: <T>(path: string, body?: unknown) => request<T>(path, { method: "PATCH", body: body === undefined ? undefined : JSON.stringify(body) }),
+  upload: <T>(path: string, body: FormData) => request<T>(path, { method: "POST", body }),
+  download: <T extends Blob = Blob>(path: string) => requestBinary(path) as Promise<T>,
   delete: <T>(path: string, body?: unknown, params?: Record<string, string | number | boolean | undefined>) => request<T>(path, { method: "DELETE", body: body === undefined ? undefined : JSON.stringify(body) }, true, params),
   login: (email: string, password: string) => request<AuthResponse>("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password, tenantId: import.meta.env.VITE_TENANT_ID || undefined }) }, false),
   logout: (token: string | null) => request<void>("/api/auth/logout", { method: "POST", body: JSON.stringify({ refreshToken: token }) }, false),
