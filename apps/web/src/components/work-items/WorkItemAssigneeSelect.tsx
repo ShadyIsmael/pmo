@@ -26,8 +26,8 @@ export function WorkItemAssigneeSelect({
   disabled?: boolean;
 }) {
   const options = useMemo<ResourceSearchOption[]>(() => candidates.map((candidate) => ({
-      value: candidate.assigneeId,
-      label: candidate.name,
+      value: `${candidate.targetType.toLowerCase()}:${candidate.targetId}`,
+      label: candidate.targetType === "Team" ? `Team · ${candidate.name}` : candidate.name,
       email: candidate.email,
       jobTitle: candidate.jobTitle,
     })), [candidates]);

@@ -35,6 +35,15 @@ public class ProjectController : ControllerBase
     }
 
     [Authorize(Policy = "Project.View")]
+    [HttpGet("{id:guid}/shell")]
+    public async Task<IActionResult> GetShell(Guid id, CancellationToken cancellationToken)
+    {
+        var result = await _projectService.GetShellAsync(id, cancellationToken);
+        if (result.IsFailure) return NotFound(new { error = result.Error?.Message });
+        return Ok(result.Value);
+    }
+
+    [Authorize(Policy = "Project.View")]
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
     {

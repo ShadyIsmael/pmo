@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
+import { getLookupTextClass } from "@/lib/status-presentation";
 import { Plus, Pencil, Check, X, Copy, Trash2, Star, Lock, Users } from "lucide-react";
 import type { DashboardAccess, DashboardStartMode, DashboardType, DashboardView, PointOfView } from "./dashboard-types";
 
@@ -127,7 +127,7 @@ export function DashboardViewManager({
                         <span className="mt-0.5 block text-[9px] text-muted-foreground">{view.widgets.length} widgets · Owner: {view.ownerName}{isCurrent ? " · Current" : ""}</span>
                       </button>
                     )}
-                    <Badge variant="outline" className="h-5 gap-1 text-[9px]">{view.type === "shared" ? <Users className="h-2.5 w-2.5" /> : <Lock className="h-2.5 w-2.5" />}{view.type}</Badge>
+                    <span className={`inline-flex h-5 items-center gap-1 text-[10px] font-medium ${getLookupTextClass(view.type)}`}>{view.type === "shared" ? <Users className="h-2.5 w-2.5" /> : <Lock className="h-2.5 w-2.5" />}{view.type}</span>
                     {isEditing ? (
                       <>
                         <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => { if (editValue.trim()) onRename(view.id, editValue.trim()); setEditingId(null); }}><Check className="h-3 w-3" /></Button>

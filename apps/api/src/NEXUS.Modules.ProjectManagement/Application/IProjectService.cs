@@ -6,6 +6,7 @@ namespace NEXUS.Modules.ProjectManagement.Application;
 public interface IProjectService
 {
     Task<Result<ProjectDto>> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<Result<ProjectDto>> GetShellAsync(Guid id, CancellationToken cancellationToken = default);
     Task<PagedResult<ProjectSummaryDto>> GetPagedAsync(int page, int pageSize, string? status = null, string? priority = null, Guid? portfolioId = null, CancellationToken cancellationToken = default);
     Task<Result<IReadOnlyList<ProjectManagerHistoryDto>>> GetManagerHistoryAsync(Guid projectId, CancellationToken cancellationToken = default);
     Task<Result<ProjectDto>> CreateAsync(CreateProjectDto dto, string userId, CancellationToken cancellationToken = default);

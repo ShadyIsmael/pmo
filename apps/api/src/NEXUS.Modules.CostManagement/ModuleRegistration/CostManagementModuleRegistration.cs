@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using NEXUS.Modules.CostManagement.Application;
 using NEXUS.SharedKernel;
+using NEXUS.Modules.WorkflowEngine.Application.Contracts;
 
 namespace NEXUS.Modules.CostManagement.ModuleRegistration;
 
@@ -14,6 +15,9 @@ public static class CostManagementModuleRegistration
         services.AddScoped<IProjectFinancialLookup, ProjectFinancialLookup>();
         services.AddScoped<IGlobalFinancialSummaryService, GlobalFinancialSummaryService>();
         services.AddScoped<IBudgetRevisionService, BudgetRevisionService>();
+        services.AddScoped<IWorkflowEntityAdapter, FinanceWorkflowAdapter>();
+        services.AddScoped<IWorkflowEntityMetadataProvider, FinanceWorkflowMetadataProvider>();
+        services.AddScoped<IWorkflowDefinitionConsumerValidator, FinanceWorkflowConsumerValidator>();
         return services;
     }
 }

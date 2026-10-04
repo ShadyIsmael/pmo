@@ -28,7 +28,11 @@ export function findActiveItem(items: NavItem[], pathname: string): NavItem | nu
 
 export function filterItems(items: NavItem[], permissions: string[]): NavItem[] {
   return items
-    .filter((item) => !item.requiredPermission || permissions.includes(item.requiredPermission))
+    .filter((item) => {
+      if (item.requiredPermission && !permissions.includes(item.requiredPermission)) return false;
+      if (item.requiredAnyPermission?.length && !item.requiredAnyPermission.some((permission) => permissions.includes(permission))) return false;
+      return true;
+    })
     .map((item) => item.items?.length ? { ...item, items: filterItems(item.items, permissions) } : item);
 }
 

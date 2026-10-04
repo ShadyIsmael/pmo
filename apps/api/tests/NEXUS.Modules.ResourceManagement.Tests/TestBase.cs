@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using NEXUS.Modules.Organization.Domain;
 using NEXUS.Modules.ResourceManagement.Domain;
+using NEXUS.SharedKernel.Helpers;
 
 namespace NEXUS.Modules.ResourceManagement.Tests;
 
@@ -236,9 +237,12 @@ public class TestBase : IDisposable
 
     private void SeedProjectRoles(TestDbContext context)
     {
+        // Stamped with the demo tenant to match SeedDataProvider: Lookups are tenant-scoped,
+        // so rows left at Guid.Empty would be invisible to the tenant-scoped service queries.
         context.Lookups.Add(new Lookup
         {
             Id = ProjectRoleDevId,
+            TenantId = TenantConstants.DemoTenantId,
             Category = "ProjectRole",
             Code = "BackendDeveloper",
             NameEn = "Backend Developer",
@@ -249,6 +253,7 @@ public class TestBase : IDisposable
         context.Lookups.Add(new Lookup
         {
             Id = ProjectRoleArchId,
+            TenantId = TenantConstants.DemoTenantId,
             Category = "ProjectRole",
             Code = "SolutionArchitect",
             NameEn = "Solution Architect",

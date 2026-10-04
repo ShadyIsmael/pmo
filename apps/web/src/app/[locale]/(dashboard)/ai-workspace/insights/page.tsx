@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BarChart3, Lightbulb, TrendingUp, AlertTriangle, Sparkles } from "lucide-react";
+import { getLookupTextClass } from "@/lib/status-presentation";
 
 const insights = [
   { id: "ins-1", title: "Resource Overallocation Detected", description: "Engineering department is overallocated by 120 hours this month. Consider redistributing tasks or adjusting deadlines.", type: "warning", category: "Resources", date: "2026-07-29" },
@@ -94,7 +95,7 @@ export default function AIInsightsPage() {
                       </Badge>
                     </div>
                     <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-                      <Badge variant="outline" className="text-[10px]">{insight.category}</Badge>
+                      <span className={`text-xs font-medium ${getLookupTextClass(insight.category)}`}>{insight.category}</span>
                       <span>{insight.date}</span>
                     </div>
                   </div>

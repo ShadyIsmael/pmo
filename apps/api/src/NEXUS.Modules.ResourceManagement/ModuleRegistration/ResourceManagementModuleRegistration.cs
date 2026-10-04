@@ -16,6 +16,7 @@ public static class ResourceManagementModuleRegistration
         services.AddScoped<ICapacityService, CapacityService>();
         services.AddScoped<IResourceFinderService, ResourceFinderService>();
         services.AddScoped<ISkillService, SkillService>();
+        services.AddScoped<ITeamService, TeamService>();
         services.AddScoped<IVendorService, VendorService>();
         services.AddScoped<IVendorCategoryService, VendorCategoryService>();
         services.AddScoped<IResourceCostProfileService, ResourceCostProfileService>();

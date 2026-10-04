@@ -94,27 +94,29 @@ export function WorkItemDetails() {
 
   useEffect(() => {
     const item = itemQuery.data;
-    if (item) { setForm({ title: item.title, description: item.description, type: item.type, priority: item.priority, projectId: item.projectId, assigneeId: item.assigneeId, parentId: item.parentId, storyPoints: item.storyPoints, estimatedHours: item.estimatedHours, actualHours: item.actualHours, startDate: item.startDate, dueDate: item.dueDate, severity: item.severity, targetResolutionDate: item.targetResolutionDate, resolvedDate: item.resolvedDate, resolution: item.resolution, tags: item.tags, labels: item.labels, rowVersion: item.rowVersion }); if (item.type === "Task") setDetailTab("comments"); }
+    if (item) { setForm({ title: item.title, description: item.description, type: item.type, priority: item.priority, projectId: item.projectId, assignedResourceId: item.assignedResourceId, assignedTeamId: item.assignedTeamId, parentId: item.parentId, storyPoints: item.storyPoints, estimatedHours: item.estimatedHours, actualHours: item.actualHours, startDate: item.startDate, dueDate: item.dueDate, severity: item.severity, targetResolutionDate: item.targetResolutionDate, resolvedDate: item.resolvedDate, resolution: item.resolution, tags: item.tags, labels: item.labels, rowVersion: item.rowVersion }); if (item.type === "Task") setDetailTab("comments"); }
   }, [itemQuery.data]);
 
   const item = itemQuery.data;
   const statusOptions = statusesQuery.data ?? [];
   const projects = projectsQuery.data?.items ?? [];
   const assigneeCandidates = assigneesQuery.data ?? [];
-  const assigneeName = item?.assigneeId ? item.assigneeName ?? t.notAvailable : t.unassigned;
+  const assigneeName = item?.assignedResourceId || item?.assignedTeamId ? item.assignedResourceName ?? item.assignedTeamName ?? t.notAvailable : t.unassigned;
   const dateLocale = locale === "ar" ? "ar-EG" : "en-GB";
   const set = <K extends keyof SaveWorkItemDto>(key: K, value: SaveWorkItemDto[K]) => setForm((current) => current ? { ...current, [key]: value } : current);
   const changeProject = (value: string | undefined) => {
     if (!form) return;
     const nextProjectId = value ?? "";
-    const hadAssignee = Boolean(form.assigneeId && form.projectId !== nextProjectId);
-    setForm((current) => current ? { ...current, projectId: nextProjectId, assigneeId: current.projectId === nextProjectId ? current.assigneeId : undefined } : current);
+    const currentTarget = form.assignedResourceId ? `resource:${form.assignedResourceId}` : form.assignedTeamId ? `team:${form.assignedTeamId}` : "";
+    const hadAssignee = Boolean(currentTarget && form.projectId !== nextProjectId);
+    setForm((current) => current ? { ...current, projectId: nextProjectId, assignedResourceId: current.projectId === nextProjectId ? current.assignedResourceId : undefined, assignedTeamId: current.projectId === nextProjectId ? current.assignedTeamId : undefined } : current);
     if (hadAssignee) setError(t.assigneeInvalidForProject);
   };
   const projectField = form?.type === "Task"
     ? <ProjectPicker id="item-project" label={t.project} value={form.projectId} onChange={changeProject} projects={projects} isLoading={projectsQuery.isLoading} t={t} />
     : <div className="space-y-1.5"><label htmlFor="item-project" className="text-sm font-medium">{t.project}</label><select id="item-project" className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={form?.projectId ?? ""} onChange={(event) => changeProject(event.target.value)}><option value="">{t.noProject}</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.code ? `${project.code} · ${project.name}` : project.name}</option>)}</select></div>;
-  const assigneeField = <div className="space-y-1.5"><label htmlFor="item-assignee" className="text-sm font-medium">{t.assignee}</label><WorkItemAssigneeSelect value={form?.assigneeId} candidates={assigneeCandidates} loading={assigneesQuery.isLoading} disabled={!form?.projectId} onValueChange={(value) => { setError(""); set("assigneeId", value || undefined); }} placeholder={form?.projectId ? t.selectAssignee : t.selectProjectFirst} searchPlaceholder={t.searchAssignees} emptyText={t.noEligibleProjectPeople} clearLabel={t.unassign} /></div>;
+  const assignmentTarget = form?.assignedResourceId ? `resource:${form.assignedResourceId}` : form?.assignedTeamId ? `team:${form.assignedTeamId}` : "";
+  const assigneeField = <div className="space-y-1.5"><label htmlFor="item-assignee" className="text-sm font-medium">{t.assignee}</label><WorkItemAssigneeSelect value={assignmentTarget} candidates={assigneeCandidates} loading={assigneesQuery.isLoading} disabled={!form?.projectId} onValueChange={(value) => { setError(""); const [targetType, targetId] = value.split(":"); setForm((current) => current ? { ...current, assignedResourceId: targetType === "resource" ? targetId : undefined, assignedTeamId: targetType === "team" ? targetId : undefined } : current); }} placeholder={form?.projectId ? t.selectAssignee : t.selectProjectFirst} searchPlaceholder={t.searchAssignees} emptyText={t.noEligibleProjectPeople} clearLabel={t.unassign} /></div>;
 
   const save = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();

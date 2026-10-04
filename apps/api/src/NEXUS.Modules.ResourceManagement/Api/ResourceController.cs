@@ -42,7 +42,7 @@ public class ResourceController : ControllerBase
     }
 
     [HttpPost]
-    [Authorize(Policy = "Resource.Manage")]
+    [Authorize(Policy = "Resource.Create")]
     public async Task<IActionResult> Create([FromBody] CreateResourceDto dto, CancellationToken cancellationToken)
     {
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
@@ -57,7 +57,7 @@ public class ResourceController : ControllerBase
     }
 
     [HttpPut("{id:guid}")]
-    [Authorize(Policy = "Resource.Manage")]
+    [Authorize(Policy = "Resource.Edit")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateResourceDto dto, CancellationToken cancellationToken)
     {
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
@@ -73,7 +73,7 @@ public class ResourceController : ControllerBase
     }
 
     [HttpDelete("{id:guid}")]
-    [Authorize(Policy = "Resource.Manage")]
+    [Authorize(Policy = "Resource.Delete")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";

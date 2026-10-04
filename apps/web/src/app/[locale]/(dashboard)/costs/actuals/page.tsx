@@ -10,6 +10,7 @@ import { RefreshCw, AlertTriangle, DollarSign } from "lucide-react";
 import { useCostEntries, type CostEntryDto } from "@/lib/api/costs";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { TablePagination } from "@/components/ui/table-pagination";
+import { getLookupTextClass } from "@/lib/status-presentation";
 
 type CurrencyTotals = {
   currency: string;
@@ -194,15 +195,15 @@ function CostRow({
     <div className="nexus-table-row grid grid-cols-[repeat(14,minmax(0,1fr))] gap-2 px-4 py-3 text-sm">
       <div className="col-span-1 text-muted-foreground">{formatDate(cost.incurredDate, dateLocale)}</div>
       <div className="col-span-2 truncate">{displayText(cost.projectId ? `${cost.projectId.slice(0, 8)}...` : undefined, unavailable)}</div>
-      <div className="col-span-1 truncate">{displayText(cost.category, unavailable)}</div>
+      <div className={`col-span-1 truncate ${getLookupTextClass(cost.category)}`}>{displayText(cost.category, unavailable)}</div>
       <div className="col-span-2 truncate">{displayText(cost.description, unavailable)}</div>
       <div className="col-span-2 truncate">{displayText(cost.vendorName, unavailable)}</div>
       <div className="col-span-1 truncate">{displayText(cost.reference, unavailable)}</div>
       <div className="col-span-1 font-semibold text-fin-blue">{formatAmount(cost.amount, cost.currency?.trim().toUpperCase() ?? "", dateLocale, unavailable)}</div>
       <div className="col-span-1">{cost.taxAmount != null ? formatAmount(cost.taxAmount, cost.currency?.trim().toUpperCase() ?? "", dateLocale, unavailable) : unavailable}</div>
       <div className="col-span-1"><Badge status={cost.status}>{statusLabel}</Badge></div>
-      <div className="col-span-1 truncate">{displayText(cost.type, unavailable)}</div>
-      <div className="col-span-1">{displayText(cost.currency?.trim().toUpperCase(), unavailable)}</div>
+      <div className={`col-span-1 truncate ${getLookupTextClass(cost.type)}`}>{displayText(cost.type, unavailable)}</div>
+      <div className={`col-span-1 ${getLookupTextClass(cost.currency)}`}>{displayText(cost.currency?.trim().toUpperCase(), unavailable)}</div>
     </div>
   );
 }

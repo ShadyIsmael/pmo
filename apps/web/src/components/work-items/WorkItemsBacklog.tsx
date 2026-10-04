@@ -31,7 +31,7 @@ import { useAuth } from "@/lib/auth";
 import { ApiError } from "@/lib/api/client";
 import { hasPermission, Permissions } from "@/lib/permissions";
 import { useManagementPerspective } from "@/lib/perspective-context";
-import { getWorkItemStatusColorClasses } from "@/lib/status-presentation";
+import { getAssignmentTargetTextClass, getWorkItemStatusColorClasses, type AssignmentTargetKind } from "@/lib/status-presentation";
 import { formatDate } from "@/lib/utils";
 import {
   useWorkItemAssignees, useWorkItemMutations, useWorkItems, useWorkItemInsights,
@@ -74,6 +74,18 @@ const priorityDot: Record<string, string> = {
 
 const statusLabel = (value: string, _t: Copy, statuses: readonly WorkItemStatusReference[], locale: string) => getWorkItemStatusName(value, statuses, locale, value);
 
+function getAssignmentTargetKind(item: Pick<WorkItemDto, "assignedResourceId" | "assignedTeamId">): AssignmentTargetKind {
+  return item.assignedTeamId ? "team" : item.assignedResourceId ? "resource" : "none";
+}
+
+function getAssignmentTargetLabel(item: Pick<WorkItemDto, "assignedResourceId" | "assignedTeamId" | "assignedResourceName" | "assignedTeamName">, t: Copy): string {
+  const kind = getAssignmentTargetKind(item);
+  const name = item.assignedTeamName ?? item.assignedResourceName ?? t.unassigned;
+  if (kind === "team") return `${t.teamTarget} · ${name}`;
+  if (kind === "resource") return `${t.resourceTarget} · ${name}`;
+  return name;
+}
+
 function KanbanBoard({
   items,
   statuses,
@@ -83,7 +95,7 @@ function KanbanBoard({
   canEdit,
   movingItemId,
   moveError,
-  assigneeNames,
+  assigneeNames: _assigneeNames,
   onMove,
   onOpen,
 }: {
@@ -138,7 +150,8 @@ function KanbanBoard({
                   {columnItems.length > 0 ? columnItems.map((item) => {
                     const deadline = item.type === "Issue" ? item.targetResolutionDate : item.dueDate;
                     const isMoving = movingItemId === item.id;
-                    const assignee = item.assigneeName ?? (item.assigneeId ? assigneeNames.get(item.assigneeId) ?? t.notAvailable : t.unassigned);
+                    const assignmentKind = getAssignmentTargetKind(item);
+                    const assignee = getAssignmentTargetLabel(item, t);
                     return (
                       <button
                         key={item.id}
@@ -160,7 +173,7 @@ function KanbanBoard({
                         <h3 className="mt-1 line-clamp-2 text-sm font-semibold leading-5 text-foreground">{item.title}</h3>
                         <div className="mt-3 flex flex-wrap gap-1.5 text-[11px]"><span className={`rounded-md bg-muted/70 px-2 py-1 font-medium ${priorityClass(item.priority)}`}>{t[item.priority.toLowerCase() as keyof Copy] || item.priority}</span></div>
                         <div className="mt-3 flex flex-col gap-1.5 border-t border-border/60 pt-2.5 text-[11px] text-muted-foreground">
-                          <span className="flex min-w-0 items-center gap-1.5"><UserRound className="h-3.5 w-3.5 shrink-0" /><span className="truncate">{assignee}</span></span>
+                          <span className={`flex min-w-0 items-center gap-1.5 ${getAssignmentTargetTextClass(assignmentKind)}`}><UserRound className="h-3.5 w-3.5 shrink-0" /><span className="truncate">{assignee}</span></span>
                           {deadline ? <span className="flex items-center gap-1.5"><CalendarDays className="h-3.5 w-3.5 shrink-0" /><span>{formatDate(deadline, dateLocale)}</span></span> : null}
                         </div>
                         {isMoving ? <span className="mt-2 block text-[11px] font-medium text-primary">{t.moving}</span> : null}
@@ -247,15 +260,12 @@ export function WorkItemsBacklog() {
   const applyFilters = (value: WorkItemFilterValues) => replaceQuery({ type: value.type, status: value.status, priority: value.priority, assignee: value.assignee, projectId: value.projectId, dueFrom: value.dueFrom, dueTo: value.dueTo });
 
   const buildFilterParams = useCallback(() => {
-    const p: Record<string, string | number | undefined> = {
+    const p: Record<string, string | number | boolean | undefined> = {
       projectId,
       type: typeFilter === "all" ? undefined : typeFilter,
       status: statusFilter === "all" ? undefined : statusFilter,
       priority: priorityFilter === "all" ? undefined : priorityFilter,
-      assigneeId: assigneeFilter === "all" ? undefined
-        : assigneeFilter === "me" ? user?.id
-        : assigneeFilter === "unassigned" ? undefined
-        : assigneeFilter,
+      assigneeId: assigneeFilter === "all" || assigneeFilter === "me" || assigneeFilter === "unassigned" ? undefined : assigneeFilter,
       unassigned: assigneeFilter === "unassigned" || quickView === "unassigned" ? "true" : undefined,
       search: searchQuery.trim() || undefined,
       dueDateFrom: searchParams.get("dueFrom") || undefined,
@@ -264,7 +274,7 @@ export function WorkItemsBacklog() {
       highPriority: quickView === "high-priority" ? "true" : undefined,
       sortBy: quickView === "recently-updated" ? "updatedAt" : sortBy,
     };
-    if (quickView === "my-items" || activeTab === "my-work") p.assigneeId = user?.id;
+    if (quickView === "my-items" || activeTab === "my-work") p.myWork = true;
     return p;
   }, [activeTab, assigneeFilter, priorityFilter, projectId, quickView, searchParams, searchQuery, sortBy, statusFilter, typeFilter, user?.id]);
 
@@ -294,7 +304,7 @@ export function WorkItemsBacklog() {
       let key = "";
       switch (groupBy) {
         case "status": key = item.status; break;
-        case "assignee": key = item.assigneeId || "unassigned"; break;
+        case "assignee": key = item.assignedResourceName || item.assignedTeamName || "unassigned"; break;
         case "priority": key = item.priority; break;
         case "project": key = item.projectName || item.projectId || "no-project"; break;
         case "type": key = item.type; break;
@@ -673,6 +683,7 @@ function BacklogRow({ item, t, locale, statuses, projectId, selected, onSelect, 
   const dateLocale = locale === "ar" ? "ar-EG" : "en-GB";
   const deadline = item.type === "Issue" ? item.targetResolutionDate : item.dueDate;
   const isOverdue = deadline && new Date(deadline) < new Date() && !["Done", "Cancelled"].includes(item.status);
+  const assignmentKind = getAssignmentTargetKind(item);
 
   return (
     <TableRow className="cursor-pointer" onClick={onOpen}>
@@ -701,8 +712,8 @@ function BacklogRow({ item, t, locale, statuses, projectId, selected, onSelect, 
           {t[item.priority.toLowerCase() as keyof Copy] || item.priority}
         </span>
       </TableCell>
-      <TableCell className="text-xs text-muted-foreground">
-        {item.assigneeId ? <span className="flex items-center gap-1"><UserRound className="h-3 w-3" />{item.assigneeId.slice(0, 8)}</span> : "—"}
+      <TableCell className={`text-xs ${getAssignmentTargetTextClass(assignmentKind)}`}>
+        {assignmentKind !== "none" ? <span className="flex items-center gap-1"><UserRound className="h-3 w-3" />{getAssignmentTargetLabel(item, t)}</span> : "—"}
       </TableCell>
       <TableCell>
         {deadline ? (
@@ -812,7 +823,7 @@ function getGroupLabel(key: string, groupBy: GroupBy, statuses: readonly WorkIte
   if (groupBy === "priority") {
     return key === "Critical" ? "Critical" : key === "High" ? "High" : key === "Medium" ? "Medium" : key === "Low" ? "Low" : key;
   }
-  if (groupBy === "assignee") return key === "unassigned" ? "Unassigned" : key.slice(0, 8);
+  if (groupBy === "assignee") return key === "unassigned" ? "Unassigned" : key;
   if (groupBy === "project") return key === "no-project" ? "No Project" : key;
   if (groupBy === "type") return key;
   return key;
@@ -825,13 +836,13 @@ function CreateWorkItemSheet({ open, onOpenChange, t, locale, defaultType, statu
   const router = useRouter();
   const { create } = useWorkItemMutations();
   const projectsQuery = useProjects({ page: 1, pageSize: 200 }, open);
-  const [form, setForm] = useState({ title: "", description: "", type: defaultType as WorkItemType, priority: "Medium" as WorkItemPriority, projectId: "", assigneeId: "", dueDate: "", targetResolutionDate: "", severity: "Medium" });
+  const [form, setForm] = useState({ title: "", description: "", type: defaultType as WorkItemType, priority: "Medium" as WorkItemPriority, projectId: "", assignmentTarget: "", dueDate: "", targetResolutionDate: "", severity: "Medium" });
   const [error, setError] = useState("");
   const [assigneeNotice, setAssigneeNotice] = useState("");
   const update = (key: string, value: string) => setForm((c) => ({ ...c, [key]: value }));
   const assigneesQuery = useWorkItemAssignees(form.projectId, open && Boolean(form.projectId));
   const assigneeCandidates = assigneesQuery.data ?? [];
-  const close = (v: boolean) => { if (!v) { setForm({ title: "", description: "", type: defaultType, priority: "Medium", projectId: "", assigneeId: "", dueDate: "", targetResolutionDate: "", severity: "Medium" }); setError(""); setAssigneeNotice(""); } onOpenChange(v); };
+  const close = (v: boolean) => { if (!v) { setForm({ title: "", description: "", type: defaultType, priority: "Medium", projectId: "", assignmentTarget: "", dueDate: "", targetResolutionDate: "", severity: "Medium" }); setError(""); setAssigneeNotice(""); } onOpenChange(v); };
   const isIssue = defaultType === "Issue";
   const projects = projectsQuery.data?.items ?? [];
 
@@ -843,7 +854,8 @@ function CreateWorkItemSheet({ open, onOpenChange, t, locale, defaultType, statu
         title: form.title.trim(), description: form.description.trim() || undefined,
         type: defaultType, priority: form.priority,
         projectId: form.projectId || undefined,
-        assigneeId: form.assigneeId || undefined,
+        assignedResourceId: form.assignmentTarget.startsWith("resource:") ? form.assignmentTarget.slice("resource:".length) : undefined,
+        assignedTeamId: form.assignmentTarget.startsWith("team:") ? form.assignmentTarget.slice("team:".length) : undefined,
         dueDate: isIssue ? undefined : form.dueDate || undefined,
         targetResolutionDate: isIssue ? form.targetResolutionDate || undefined : undefined,
         severity: isIssue ? form.severity : undefined,
@@ -872,7 +884,7 @@ function CreateWorkItemSheet({ open, onOpenChange, t, locale, defaultType, statu
             </div>
             <div className="space-y-1.5">
               <label className="text-sm font-medium">{t.colProject}</label>
-              <select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={form.projectId} onChange={(e) => { const nextProjectId = e.target.value; setForm((current) => ({ ...current, projectId: nextProjectId, assigneeId: current.projectId === nextProjectId ? current.assigneeId : "" })); setAssigneeNotice(form.projectId && nextProjectId !== form.projectId && form.assigneeId ? t.assigneeInvalidForProject : ""); }}>
+              <select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={form.projectId} onChange={(e) => { const nextProjectId = e.target.value; setForm((current) => ({ ...current, projectId: nextProjectId, assignmentTarget: current.projectId === nextProjectId ? current.assignmentTarget : "" })); setAssigneeNotice(form.projectId && nextProjectId !== form.projectId && form.assignmentTarget ? t.assigneeInvalidForProject : ""); }}>
                 <option value="">{t.noProject}</option>
                 {projects.map((p) => <option key={p.id} value={p.id}>{p.code ? `${p.code} · ${p.name}` : p.name}</option>)}
               </select>
@@ -880,11 +892,11 @@ function CreateWorkItemSheet({ open, onOpenChange, t, locale, defaultType, statu
             <div className="space-y-1.5">
               <label className="text-sm font-medium">{t.assignee}</label>
               <WorkItemAssigneeSelect
-                value={form.assigneeId}
+                value={form.assignmentTarget}
                 candidates={assigneeCandidates}
                 loading={assigneesQuery.isLoading}
                 disabled={!form.projectId}
-                onValueChange={(value) => { setAssigneeNotice(""); update("assigneeId", value); }}
+                onValueChange={(value) => { setAssigneeNotice(""); update("assignmentTarget", value); }}
                 placeholder={form.projectId ? t.selectAssignee : t.selectProjectFirst}
                 searchPlaceholder={t.searchAssignees}
                 emptyText={t.noEligibleProjectPeople}
@@ -916,7 +928,7 @@ function CreateWorkItemSheet({ open, onOpenChange, t, locale, defaultType, statu
 const text: { en: Copy; ar: Copy } = {
   en: {
     title: "Work Items", subtitle: "Plan, prioritize and track tasks and issues across your scope.",
-    newWorkItem: "New Work Item", newTask: "New Task", newIssue: "New Issue", projectScope: "Project scope", allProjects: "All projects", moreFilters: "More filters", unassigned: "Unassigned", assignee: "Assignee", assign: "Assign", reassign: "Reassign", unassign: "Unassign", selectAssignee: "Select assignee", selectProjectFirst: "Select a project first", noEligibleProjectPeople: "No eligible project people found", assigneeInvalidForProject: "Selected assignee is not an active member of this project.", searchAssignees: "Search assignees...", advancedFilters: "Advanced filters", advancedFiltersHint: "Refine the current Work Items view.", applyFilters: "Apply filters", clearAll: "Clear all", filterType: "Type", filterStatus: "Status", filterPriority: "Priority", filterAssignee: "Assignee", filterProject: "Project", filterDueDate: "Due date", searchUsers: "Search users...", from: "From", to: "To",
+    newWorkItem: "New Work Item", newTask: "New Task", newIssue: "New Issue", projectScope: "Project scope", allProjects: "All projects", moreFilters: "More filters", unassigned: "Unassigned", resourceTarget: "Resource", teamTarget: "Team", assignee: "Assignee", assign: "Assign", reassign: "Reassign", unassign: "Unassign", selectAssignee: "Select assignee", selectProjectFirst: "Select a project first", noEligibleProjectPeople: "No eligible project people found", assigneeInvalidForProject: "Selected assignee is not an active member of this project.", searchAssignees: "Search assignees...", advancedFilters: "Advanced filters", advancedFiltersHint: "Refine the current Work Items view.", applyFilters: "Apply filters", clearAll: "Clear all", filterType: "Type", filterStatus: "Status", filterPriority: "Priority", filterAssignee: "Assignee", filterProject: "Project", filterDueDate: "Due date", searchUsers: "Search users...", from: "From", to: "To",
     tabBacklog: "Backlog", tabBoard: "Board", tabMyWork: "My Work",
     kpiOpen: "Open", kpiOverdue: "Overdue", kpiUnassigned: "Unassigned", kpiDueThisWeek: "Due This Week",
     hideInsights: "Hide Insights", showInsights: "Show Insights",
@@ -941,7 +953,7 @@ const text: { en: Copy; ar: Copy } = {
   },
   ar: {
     title: "عناصر العمل", subtitle: "خطط ورتب وتتبع المهام والمشكلات في نطاقك.",
-    newWorkItem: "عنصر عمل جديد", newTask: "مهمة جديدة", newIssue: "مشكلة جديدة", projectScope: "نطاق المشروع", allProjects: "كل المشروعات", moreFilters: "مرشحات إضافية", unassigned: "غير مسند", assignee: "المسند إليه", assign: "إسناد", reassign: "إعادة إسناد", unassign: "إلغاء الإسناد", selectAssignee: "اختر المسند إليه", selectProjectFirst: "اختر مشروعًا أولًا", noEligibleProjectPeople: "لا يوجد أعضاء مؤهلون في المشروع", assigneeInvalidForProject: "المسند إليه المحدد ليس عضوًا نشطًا في هذا المشروع.", searchAssignees: "ابحث عن أعضاء المشروع...", advancedFilters: "مرشحات متقدمة", advancedFiltersHint: "ضيّق نطاق عرض عناصر العمل الحالية.", applyFilters: "تطبيق المرشحات", clearAll: "مسح الكل", filterType: "النوع", filterStatus: "الحالة", filterPriority: "الأولوية", filterAssignee: "المسند إليه", filterProject: "المشروع", filterDueDate: "تاريخ الاستحقاق", searchUsers: "ابحث عن مستخدمين...", from: "من", to: "إلى",
+    newWorkItem: "عنصر عمل جديد", newTask: "مهمة جديدة", newIssue: "مشكلة جديدة", projectScope: "نطاق المشروع", allProjects: "كل المشروعات", moreFilters: "مرشحات إضافية", unassigned: "غير مسند", resourceTarget: "مورد", teamTarget: "فريق", assignee: "المسند إليه", assign: "إسناد", reassign: "إعادة إسناد", unassign: "إلغاء الإسناد", selectAssignee: "اختر المسند إليه", selectProjectFirst: "اختر مشروعًا أولًا", noEligibleProjectPeople: "لا يوجد أعضاء مؤهلون في المشروع", assigneeInvalidForProject: "المسند إليه المحدد ليس عضوًا نشطًا في هذا المشروع.", searchAssignees: "ابحث عن أعضاء المشروع...", advancedFilters: "مرشحات متقدمة", advancedFiltersHint: "ضيّق نطاق عرض عناصر العمل الحالية.", applyFilters: "تطبيق المرشحات", clearAll: "مسح الكل", filterType: "النوع", filterStatus: "الحالة", filterPriority: "الأولوية", filterAssignee: "المسند إليه", filterProject: "المشروع", filterDueDate: "تاريخ الاستحقاق", searchUsers: "ابحث عن مستخدمين...", from: "من", to: "إلى",
     tabBacklog: "قائمة الأعمال", tabBoard: "لوحة", tabMyWork: "عملي",
     kpiOpen: "مفتوح", kpiOverdue: "متأخر", kpiUnassigned: "غير مسند", kpiDueThisWeek: "تستحق هذا الأسبوع",
     hideInsights: "إخفاء الرؤى", showInsights: "عرض الرؤى",

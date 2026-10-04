@@ -31,6 +31,6 @@ export function useManagedPortfolios(search?: string) {
   return useQuery({ queryKey: ["portfolio-management", "portfolios", search ?? ""], queryFn: () => api.get<PagedResult<PortfolioManagementListItem>>(endpoints.portfolios.management, { page: 1, pageSize: 50, search: search?.trim() || undefined }), staleTime: 30_000 });
 }
 
-export function usePortfolioManagementOverview(portfolioId?: string, programsPage = 1, projectsPage = 1, projectsPageSize = 25) {
-  return useQuery({ queryKey: ["portfolio-management", "overview", portfolioId ?? "", programsPage, projectsPage, projectsPageSize], queryFn: () => api.get<PortfolioManagementOverview>(endpoints.portfolios.managementOverview(portfolioId!), { programsPage, projectsPage, pageSize: projectsPageSize }), enabled: Boolean(portfolioId), staleTime: 30_000 });
+export function usePortfolioManagementOverview(portfolioId?: string, programsPage = 1, projectsPage = 1, projectsPageSize = 25, enabled = true) {
+  return useQuery({ queryKey: ["portfolio-management", "overview", portfolioId ?? "", programsPage, projectsPage, projectsPageSize], queryFn: () => api.get<PortfolioManagementOverview>(endpoints.portfolios.managementOverview(portfolioId!), { programsPage, projectsPage, pageSize: projectsPageSize }), enabled: Boolean(portfolioId) && enabled, staleTime: 30_000 });
 }

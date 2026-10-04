@@ -6,6 +6,7 @@ public sealed record WorkflowDefinitionListItemDto(
     Guid Id,
     string Name,
     string Code,
+    string Domain,
     string EntityType,
     bool IsActive,
     Guid? ActivePublishedVersionId,
@@ -20,6 +21,7 @@ public sealed record WorkflowDefinitionDetailsDto(
     string Name,
     string Code,
     string? Description,
+    string Domain,
     string EntityType,
     bool IsActive,
     Guid? ActivePublishedVersionId,
@@ -107,6 +109,7 @@ public sealed class CreateWorkflowDefinitionRequest
     public string Name { get; set; } = string.Empty;
     public string Code { get; set; } = string.Empty;
     public string? Description { get; set; }
+    public string Domain { get; set; } = WorkflowDomains.Task;
     public string EntityType { get; set; } = string.Empty;
 }
 

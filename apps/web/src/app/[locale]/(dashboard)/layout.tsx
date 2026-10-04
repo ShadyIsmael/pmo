@@ -2,7 +2,6 @@ import { DashboardAuthGate } from "@/components/layout/DashboardAuthGate";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Header } from "@/components/layout/Header";
 import { Breadcrumbs } from "@/components/layout/Breadcrumbs";
-import { LiveTimerShell } from "@/components/time-tracking/LiveTimerShell";
 
 export default function DashboardLayout({
   children,
@@ -23,7 +22,6 @@ export default function DashboardLayout({
               {children}
             </div>
           </main>
-          <LiveTimerShell />
         </div>
       </div>
     </DashboardAuthGate>

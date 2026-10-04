@@ -5,6 +5,7 @@ export const projectKeys = {
   all: ["projects"] as const,
   list: (filters: unknown = {}) => ["projects", "list", filters] as const,
   detail: (id: string) => ["projects", "detail", id] as const,
+  shell: (id: string) => ["projects", "detail", id, "shell"] as const,
   overview: (id: string) => ["projects", "detail", id, "overview"] as const,
   team: (id: string) => ["projects", "detail", id, "team"] as const,
   people: (id: string) => ["projects", "detail", id, "people"] as const,

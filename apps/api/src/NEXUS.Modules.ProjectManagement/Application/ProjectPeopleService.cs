@@ -364,7 +364,7 @@ public sealed class ProjectPeopleService : IProjectPeopleService
         if (userId.HasValue)
         {
             workItemIds.AddRange(await _context.Set<WorkItem>()
-                .Where(item => item.ProjectId == projectId && item.AssigneeId == userId.Value && !item.IsDeleted && item.CompletedAt == null && item.Status != "Done")
+                .Where(item => item.ProjectId == projectId && item.AssignedResourceId == resourceId && !item.IsDeleted && item.CompletedAt == null && item.Status != "Done")
                 .Select(item => item.Id)
                 .ToListAsync(cancellationToken));
             workItemIds.AddRange(await _context.Set<WorkItemAssignment>()

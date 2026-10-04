@@ -57,7 +57,7 @@ public sealed class ProjectOverviewService : IProjectOverviewService
 
     public async Task<Result<ProjectOverviewDto>> GetAsync(Guid projectId, CancellationToken cancellationToken = default)
     {
-        var projectResult = await _projectService.GetByIdAsync(projectId, cancellationToken);
+        var projectResult = await _projectService.GetShellAsync(projectId, cancellationToken);
         if (projectResult.IsFailure || projectResult.Value is null)
         {
             return Result<ProjectOverviewDto>.Failure(projectResult.Error ?? Error.NotFound("Project not found"));

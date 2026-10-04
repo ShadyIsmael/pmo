@@ -1,6 +1,6 @@
 namespace NEXUS.SharedKernel;
 
-public sealed record WorkItemReference(Guid Id, string Title, string Type, string Status, Guid? ProjectId);
+public sealed record WorkItemReference(Guid Id, string Title, string Type, string Status, Guid? ProjectId, Guid? AssignedResourceId, Guid? AssignedTeamId);
 
 public interface IWorkItemReferenceLookup
 {

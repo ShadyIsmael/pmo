@@ -228,6 +228,10 @@ public class SnapshotWorkItemDto
     public string Type { get; set; } = string.Empty;
     public string Priority { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
+    public Guid? AssignedResourceId { get; set; }
+    public string? AssignedResourceName { get; set; }
+    public Guid? AssignedTeamId { get; set; }
+    public string? AssignedTeamName { get; set; }
     public Guid? AssigneeId { get; set; }
     public string? AssigneeName { get; set; }
     public Guid? ParentId { get; set; }

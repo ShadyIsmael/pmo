@@ -372,11 +372,16 @@ public sealed class RiskServiceTests : IDisposable
     {
         public Task<ProjectReference?> FindAsync(Guid projectId, CancellationToken cancellationToken = default) => context.Projects.Where(project => project.Id == projectId).Select(project => new ProjectReference(project.Id, project.Name)).FirstOrDefaultAsync(cancellationToken);
         public async Task<IReadOnlyDictionary<Guid, string>> GetNamesAsync(IEnumerable<Guid> projectIds, CancellationToken cancellationToken = default) => await context.Projects.Where(project => projectIds.Contains(project.Id)).ToDictionaryAsync(project => project.Id, project => project.Name, cancellationToken);
+        public async Task<IReadOnlyList<ProjectReference>> GetFinancialReferencesAsync(CancellationToken cancellationToken = default) => await context.Projects.Select(project => new ProjectReference(project.Id, project.Name)).ToListAsync(cancellationToken);
     }
 
     private sealed class ResourceReferenceLookup(AppDbContext context) : IResourceReferenceLookup
     {
         public Task<bool> ExistsAsync(Guid resourceId, CancellationToken cancellationToken = default) => context.Resources.AnyAsync(resource => resource.Id == resourceId, cancellationToken);
         public async Task<IReadOnlyDictionary<Guid, string>> GetNamesAsync(IEnumerable<Guid> resourceIds, CancellationToken cancellationToken = default) => await context.Resources.Where(resource => resourceIds.Contains(resource.Id)).ToDictionaryAsync(resource => resource.Id, resource => resource.Name, cancellationToken);
+        public Task<ResourceReference?> FindAsync(Guid resourceId, CancellationToken cancellationToken = default) => context.Resources.Where(resource => resource.Id == resourceId).Select(resource => new ResourceReference(resource.Id, resource.UserId, resource.Name, resource.Email, resource.JobTitle, resource.Type, resource.Status, resource.IsActive)).FirstOrDefaultAsync(cancellationToken);
+        public Task<ResourceReference?> FindByUserIdAsync(Guid userId, CancellationToken cancellationToken = default) => context.Resources.Where(resource => resource.UserId == userId).Select(resource => new ResourceReference(resource.Id, resource.UserId, resource.Name, resource.Email, resource.JobTitle, resource.Type, resource.Status, resource.IsActive)).FirstOrDefaultAsync(cancellationToken);
+        public async Task<IReadOnlyDictionary<Guid, ResourceReference>> GetDetailsAsync(IEnumerable<Guid> resourceIds, CancellationToken cancellationToken = default) => await context.Resources.Where(resource => resourceIds.Contains(resource.Id)).Select(resource => new ResourceReference(resource.Id, resource.UserId, resource.Name, resource.Email, resource.JobTitle, resource.Type, resource.Status, resource.IsActive)).ToDictionaryAsync(resource => resource.Id, cancellationToken);
+        public async Task<IReadOnlyDictionary<Guid, ResourceReference>> GetDetailsByUserIdsAsync(IEnumerable<Guid> userIds, CancellationToken cancellationToken = default) => await context.Resources.Where(resource => resource.UserId.HasValue && userIds.Contains(resource.UserId.Value)).Select(resource => new ResourceReference(resource.Id, resource.UserId, resource.Name, resource.Email, resource.JobTitle, resource.Type, resource.Status, resource.IsActive)).ToDictionaryAsync(resource => resource.UserId!.Value, cancellationToken);
     }
 }

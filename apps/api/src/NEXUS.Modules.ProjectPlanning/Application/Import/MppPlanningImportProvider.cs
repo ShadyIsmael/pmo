@@ -258,6 +258,8 @@ public sealed class MppPlanningImportProvider : IPlanningImportProvider
         var duplicateAssignments = new HashSet<string>(StringComparer.Ordinal);
         var skippedAssignments = 0;
         var workValues = 0;
+        var workConversionFailures = 0;
+        var assignmentIndex = 0;
         foreach (MpxjTask task in project.Tasks)
         {
             var taskSourceId = SourceId(task.UniqueID, task.ID, 0);
@@ -273,13 +275,21 @@ public sealed class MppPlanningImportProvider : IPlanningImportProvider
                     continue;
                 }
 
+                var plannedHours = ConvertDuration(assignment.Work, TimeUnit.valueOf("HOURS"), project.ProjectProperties);
+                var workConversionStatus = assignment.Work is null ? "NotProvided" : plannedHours.HasValue ? "ConvertedToHours" : "NeedsReview";
                 if (assignment.Work is not null) workValues++;
+                if (assignment.Work is not null && !plannedHours.HasValue) workConversionFailures++;
                 document.Assignments.Add(new PlanningImportAssignment
                 {
+                    SourceId = $"{taskSourceId}|{resourceSourceId}|{assignmentIndex++}",
                     TaskSourceId = taskSourceId,
                     ResourceSourceId = resourceSourceId,
                     AllocationPercent = ToDecimal(assignment.Units, 0, 100),
                     HoursPerWeek = null,
+                    PlannedHours = plannedHours is { } hours && !double.IsNaN(hours) && !double.IsInfinity(hours)
+                        ? (decimal?)Math.Round((decimal)hours, 2, MidpointRounding.AwayFromZero)
+                        : null,
+                    WorkConversionStatus = workConversionStatus,
                     Start = ToDateTime(assignment.Start),
                     Finish = ToDateTime(assignment.Finish)
                 });
@@ -289,12 +299,15 @@ public sealed class MppPlanningImportProvider : IPlanningImportProvider
         if (skippedAssignments > 0)
             document.Warnings.Add(Notice("assignment-skipped", "Assignments without a usable task/resource or duplicate assignments were skipped.", skippedAssignments));
         if (workValues > 0)
-            document.UnsupportedFields.Add(Notice("assignment-work", "Microsoft Project assignment work is a total/timephased value and is not guessed as Planning hours per week.", workValues));
+            document.Warnings.Add(Notice("assignment-work-mapped", "Microsoft Project assignment Work was converted to total Planned Hours. It was not guessed as Hours Per Week, and timephased detail is not imported.", workValues));
+        if (workConversionFailures > 0)
+            document.UnsupportedFields.Add(Notice("assignment-work-conversion", "Some assignment Work values could not be converted safely to hours and require review.", workConversionFailures));
     }
 
     private static void MapCalendars(ProjectFile project, PlanningImportDocument document)
     {
         var unsupportedCalendarFeatures = 0;
+        var calendarIndex = 0;
         foreach (ProjectCalendar calendar in project.Calendars)
         {
             if (calendar.Parent is not null)
@@ -345,6 +358,7 @@ public sealed class MppPlanningImportProvider : IPlanningImportProvider
 
             var imported = new PlanningImportCalendar
             {
+                SourceId = $"calendar-{calendarIndex++}",
                 Name = FirstNonBlank(calendar.Name, "Imported calendar")!,
                 IsDefault = ReferenceEquals(project.DefaultCalendar, calendar),
                 Days = days

@@ -23,6 +23,15 @@ interface PerspectiveContextValue {
 }
 
 const PerspectiveContext = React.createContext<PerspectiveContextValue | null>(null);
+let perspectivesBootstrapPromise: Promise<PerspectiveSnapshot> | null = null;
+
+function bootstrapPerspectives(): Promise<PerspectiveSnapshot> {
+  if (perspectivesBootstrapPromise) return perspectivesBootstrapPromise;
+  perspectivesBootstrapPromise = api.getPerspectives().finally(() => {
+    perspectivesBootstrapPromise = null;
+  });
+  return perspectivesBootstrapPromise;
+}
 
 export function ManagementPerspectiveProvider({ children, user }: { children: React.ReactNode; user: CurrentUser | null }) {
   const [snapshot, setSnapshot] = React.useState<PerspectiveSnapshot | null>(null);
@@ -39,7 +48,7 @@ export function ManagementPerspectiveProvider({ children, user }: { children: Re
     }
 
     setLoading(true);
-    api.getPerspectives()
+    bootstrapPerspectives()
       .then((next) => {
         if (cancelled) return;
         setSnapshot(next);

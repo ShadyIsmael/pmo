@@ -38,6 +38,13 @@ export interface TimeEntrySummaryDto {
   capacityHours: number;
   plannedUtilization: number;
   actualUtilization: number;
+  byTeam: ActualWorkBreakdownDto[];
+}
+
+export interface ActualWorkBreakdownDto {
+  id?: string | null;
+  label: string;
+  actualHours: number;
 }
 
 export interface TimeEntryFilter extends Record<string, string | number | boolean | undefined> {

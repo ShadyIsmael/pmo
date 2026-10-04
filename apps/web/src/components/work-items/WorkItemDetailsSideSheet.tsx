@@ -11,11 +11,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TaskComments } from "@/components/work-items/TaskComments";
 import { WorkItemAssigneeSelect } from "@/components/work-items/WorkItemAssigneeSelect";
-import { useUserLookup } from "@/hooks/projects/useProjectLookups";
 import { ApiError } from "@/lib/api/client";
 import { useWorkItem, useWorkItemActivity, useWorkItemAssignees, useWorkItemMutations, useWorkItemWorkflow, type WorkItemAssigneeDto, type WorkItemDto } from "@/lib/api/work-items";
 import type { WorkItemStatusReference } from "@/lib/api/reference-data";
-import { getWorkItemStatusColorClasses } from "@/lib/status-presentation";
+import { getAssignmentTargetTextClass, getWorkItemStatusColorClasses, type AssignmentTargetKind } from "@/lib/status-presentation";
 import { formatDate, formatDateTime } from "@/lib/utils";
 
 type Copy = Record<string, string>;
@@ -38,7 +37,6 @@ export function WorkItemDetailsSideSheet({
   canEdit: boolean;
 }) {
   const itemQuery = useWorkItem(id ?? undefined);
-  const usersQuery = useUserLookup(undefined, open);
   const item = itemQuery.data;
   const assigneesQuery = useWorkItemAssignees(item?.projectId, open && Boolean(item?.projectId));
   const assigneeCandidates = assigneesQuery.data ?? [];
@@ -46,9 +44,10 @@ export function WorkItemDetailsSideSheet({
     () => statuses.filter((status) => status.isActive || status.code === itemQuery.data?.status),
     [statuses, itemQuery.data?.status],
   );
-  const assigneeName = item?.assigneeId
-    ? item.assigneeName ?? usersQuery.data?.find((candidate) => candidate.id === item.assigneeId)?.fullName ?? t.notAvailable
+  const assigneeName = item?.assignedResourceId || item?.assignedTeamId
+    ? item.assignedResourceName ?? item.assignedTeamName ?? t.notAvailable
     : t.unassigned;
+  const assignmentKind: AssignmentTargetKind = item?.assignedTeamId ? "team" : item?.assignedResourceId ? "resource" : "none";
   const title = item?.title ?? t.detailTitle;
 
   return (
@@ -62,6 +61,7 @@ export function WorkItemDetailsSideSheet({
             statuses={statuses}
             statusOptions={statusOptions}
             assigneeName={assigneeName}
+            assignmentKind={assignmentKind}
             assigneeCandidates={assigneeCandidates}
             assigneeLoading={assigneesQuery.isLoading}
             canEdit={canEdit}
@@ -72,13 +72,14 @@ export function WorkItemDetailsSideSheet({
   );
 }
 
-function WorkItemDetailsContent({ item, locale, t, statuses, statusOptions: _statusOptions, assigneeName, assigneeCandidates, assigneeLoading, canEdit }: {
+function WorkItemDetailsContent({ item, locale, t, statuses, statusOptions: _statusOptions, assigneeName, assignmentKind, assigneeCandidates, assigneeLoading, canEdit }: {
   item: WorkItemDto;
   locale: string;
   t: Copy;
   statuses: readonly WorkItemStatusReference[];
   statusOptions: readonly WorkItemStatusReference[];
   assigneeName: string;
+  assignmentKind: AssignmentTargetKind;
   assigneeCandidates: readonly WorkItemAssigneeDto[];
   assigneeLoading: boolean;
   canEdit: boolean;
@@ -108,11 +109,14 @@ function WorkItemDetailsContent({ item, locale, t, statuses, statusOptions: _sta
     }
   };
 
-  const changeAssignee = async (nextAssigneeId: string) => {
-    if (!canEdit || update.isPending || nextAssigneeId === (item.assigneeId ?? "")) return;
+  const changeAssignee = async (nextTarget: string) => {
+    if (!canEdit || update.isPending) return;
+    const [targetType, targetId] = nextTarget.split(":");
+    const currentTarget = item.assignedResourceId ? `resource:${item.assignedResourceId}` : item.assignedTeamId ? `team:${item.assignedTeamId}` : "";
+    if (nextTarget === currentTarget) return;
     setAssigneeError("");
     try {
-      await update.mutateAsync({ id: item.id, body: { title: item.title, description: item.description, type: item.type, priority: item.priority, projectId: item.projectId, assigneeId: nextAssigneeId || undefined, parentId: item.parentId, storyPoints: item.storyPoints, estimatedHours: item.estimatedHours, actualHours: item.actualHours, startDate: item.startDate, dueDate: item.dueDate, severity: item.severity, targetResolutionDate: item.targetResolutionDate, resolvedDate: item.resolvedDate, resolution: item.resolution, tags: item.tags, labels: item.labels, rowVersion: item.rowVersion } });
+      await update.mutateAsync({ id: item.id, body: { title: item.title, description: item.description, type: item.type, priority: item.priority, projectId: item.projectId, assignedResourceId: targetType === "resource" ? targetId : undefined, assignedTeamId: targetType === "team" ? targetId : undefined, parentId: item.parentId, storyPoints: item.storyPoints, estimatedHours: item.estimatedHours, actualHours: item.actualHours, startDate: item.startDate, dueDate: item.dueDate, severity: item.severity, targetResolutionDate: item.targetResolutionDate, resolvedDate: item.resolvedDate, resolution: item.resolution, tags: item.tags, labels: item.labels, rowVersion: item.rowVersion } });
     } catch (error) {
       setAssigneeError(error instanceof ApiError ? error.message : t.assignmentError);
     }
@@ -139,7 +143,7 @@ function WorkItemDetailsContent({ item, locale, t, statuses, statusOptions: _sta
         <Card className="border-border/70 shadow-sm"><CardHeader className="border-b bg-muted/20 px-4 py-3"><CardTitle className="text-sm">{t.detailPrimaryFields}</CardTitle></CardHeader><CardContent className="grid gap-4 p-4 sm:grid-cols-2">
           <div className="space-y-2"><span className="text-xs text-muted-foreground">{t.currentState}</span><p className="text-sm font-semibold">{status ? (locale === "ar" ? status.nameAr : status.nameEn) : item.status}</p>{workflow.isLoading ? <p className="text-xs text-muted-foreground">{t.loading}</p> : workflow.availableTransitions.length > 0 ? <div className="flex flex-wrap gap-2">{workflow.availableTransitions.map((candidate) => <Button key={candidate.code} type="button" size="sm" variant="outline" disabled={!canEdit || !candidate.canExecute || workflow.execute.isPending} onClick={() => void changeStatus(candidate.targetStateCode, candidate.code)}>{locale === "ar" ? candidate.nameAr : candidate.nameEn}</Button>)}</div> : <p className="text-xs text-muted-foreground">{t.noTransitions}</p>}{statusError ? <p role="alert" className="text-xs text-destructive">{statusError}</p> : null}</div>
           <Field label={t.priority} value={t[item.priority.toLowerCase()] || item.priority} />
-          <div className="space-y-1"><span className="text-xs text-muted-foreground">{t.assignee}</span>{canEdit && item.projectId ? <WorkItemAssigneeSelect value={item.assigneeId} candidates={assigneeCandidates} loading={assigneeLoading || update.isPending} onValueChange={changeAssignee} placeholder={t.unassigned} searchPlaceholder={t.searchAssignees} emptyText={t.noEligibleProjectPeople} clearLabel={t.unassign} /> : <Field label="" value={assigneeName} icon={<UserRound className="h-3.5 w-3.5" />} />}{canEdit && !item.projectId ? <p className="text-xs text-muted-foreground">{t.selectProjectFirst}</p> : null}{assigneeError ? <p role="alert" className="text-xs text-destructive">{assigneeError}</p> : null}</div>
+          <div className="space-y-1"><span className="text-xs text-muted-foreground">{t.assignee}</span>{canEdit && item.projectId ? <WorkItemAssigneeSelect value={item.assignedResourceId ? `resource:${item.assignedResourceId}` : item.assignedTeamId ? `team:${item.assignedTeamId}` : ""} candidates={assigneeCandidates} loading={assigneeLoading || update.isPending} onValueChange={changeAssignee} placeholder={t.unassigned} searchPlaceholder={t.searchAssignees} emptyText={t.noEligibleProjectPeople} clearLabel={t.unassign} /> : <p className={`flex items-center gap-1.5 text-sm font-medium ${getAssignmentTargetTextClass(assignmentKind)}`}><UserRound className="h-3.5 w-3.5" />{assigneeName}</p>}{canEdit && !item.projectId ? <p className="text-xs text-muted-foreground">{t.selectProjectFirst}</p> : null}{assigneeError ? <p role="alert" className="text-xs text-destructive">{assigneeError}</p> : null}</div>
           <Field label={deadlineLabel} value={deadline ? formatDate(deadline, dateLocale) : t.notAvailable} icon={<CalendarDays className="h-3.5 w-3.5" />} />
         </CardContent></Card>
         <Card className="border-border/70 shadow-sm"><CardHeader className="border-b bg-muted/20 px-4 py-3"><CardTitle className="text-sm">{item.type === "Issue" ? t.issueDetails : t.taskDetails}</CardTitle></CardHeader><CardContent className="grid gap-4 p-4 sm:grid-cols-2">

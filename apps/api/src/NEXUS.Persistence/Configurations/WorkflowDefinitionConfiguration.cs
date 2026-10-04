@@ -13,9 +13,10 @@ public sealed class WorkflowDefinitionConfiguration : IEntityTypeConfiguration<W
         builder.Property(item => item.Code).HasMaxLength(100).IsRequired();
         builder.Property(item => item.Name).HasMaxLength(200).IsRequired();
         builder.Property(item => item.Description).HasMaxLength(2000);
+        builder.Property(item => item.Domain).HasMaxLength(30).IsRequired().HasDefaultValue(WorkflowDomains.Task);
         builder.Property(item => item.EntityType).HasMaxLength(100).IsRequired();
         builder.HasIndex(item => new { item.TenantId, item.Code }).IsUnique().HasFilter("[IsDeleted] = 0");
-        builder.HasIndex(item => new { item.TenantId, item.EntityType, item.IsActive });
+        builder.HasIndex(item => new { item.TenantId, item.Domain, item.IsActive });
         builder.Property(item => item.RowVersion).IsRowVersion().IsConcurrencyToken();
         builder.HasOne(item => item.ActivePublishedVersion)
             .WithMany()

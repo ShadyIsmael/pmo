@@ -25,6 +25,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { SUPPORTED_LOCALES } from "@/lib/constants";
+import { useLocale, useTranslations } from "next-intl";
 import { getInitials, cn } from "@/lib/utils";
 import { useTheme } from "next-themes";
 import { useRouter, usePathname } from "next/navigation";
@@ -33,6 +34,7 @@ import { LanguageSwitcher } from "@/components/layout/LanguageSwitcher";
 import { PerspectiveSwitcher } from "@/components/layout/PerspectiveSwitcher";
 import { CurrentOrganizationIndicator } from "@/components/layout/CurrentOrganizationIndicator";
 import { useManagementPerspective } from "@/lib/perspective-context";
+import { HeaderTimer } from "@/components/time-tracking/HeaderTimer";
 
 interface LazyOverlayProps { open: boolean; onOpenChange: (_value: boolean) => void; }
 type CreateProjectSheetComponent = React.ComponentType<LazyOverlayProps>;
@@ -40,6 +42,8 @@ type CreateProjectSheetComponent = React.ComponentType<LazyOverlayProps>;
 export function HeaderInteractive({ staticActions }: { staticActions: React.ReactNode }) {
   const { theme, setTheme } = useTheme();
   const { user, logout } = useAuth();
+  const locale = useLocale();
+  const accountT = useTranslations("account.menu");
   const { canMutate, effectiveReadOnly } = useManagementPerspective();
   const showGlobalCreate = canMutate && !effectiveReadOnly;
   const router = useRouter();
@@ -84,6 +88,7 @@ export function HeaderInteractive({ staticActions }: { staticActions: React.Reac
             <span className="text-[9px]">⌘</span>K
           </kbd>
         </button>
+        <HeaderTimer />
       </div>
 
       <div className="flex items-center gap-1">
@@ -158,8 +163,8 @@ export function HeaderInteractive({ staticActions }: { staticActions: React.Reac
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              <DropdownMenuItem className="rounded-md px-2 py-1.5 text-sm"><User className="mr-2 h-4 w-4" />Profile</DropdownMenuItem>
-              <DropdownMenuItem className="rounded-md px-2 py-1.5 text-sm"><Settings className="mr-2 h-4 w-4" />Account Settings</DropdownMenuItem>
+              <DropdownMenuItem className="rounded-md px-2 py-1.5 text-sm" onSelect={() => router.push(`/${locale}/account/profile`)}><User className="me-2 h-4 w-4" />{accountT("profile")}</DropdownMenuItem>
+              <DropdownMenuItem className="rounded-md px-2 py-1.5 text-sm" onSelect={() => router.push(`/${locale}/account/preferences`)}><Settings className="me-2 h-4 w-4" />{accountT("preferences")}</DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuItem className="rounded-md px-2 py-1.5 text-sm text-destructive focus:text-destructive" onSelect={handleSignOut}>

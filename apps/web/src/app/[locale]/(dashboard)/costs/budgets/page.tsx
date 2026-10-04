@@ -13,6 +13,7 @@ import { AlertTriangle, ArrowUpRight, Banknote, Info, RefreshCw } from "lucide-r
 import { useBudgets, type BudgetDto } from "@/lib/api/costs";
 import { formatCurrency, isFiniteNumber } from "@/lib/utils";
 import { TablePagination } from "@/components/ui/table-pagination";
+import { getLookupTextClass } from "@/lib/status-presentation";
 
 const budgetStatusKeys: Record<string, string> = {
   active: "budgetStatuses.active",
@@ -313,7 +314,7 @@ function BudgetRow({
           </Link>
         ) : unavailable}
       </TableCell>
-      <TableCell className="min-w-32">{displayText(budget.category, unavailable)}</TableCell>
+      <TableCell className={`min-w-32 ${getLookupTextClass(budget.category)}`}>{displayText(budget.category, unavailable)}</TableCell>
       <TableCell className="text-end tabular-nums">{formatMoney(budget.plannedAmount, currency, formatterLocale, unavailable)}</TableCell>
       <TableCell className="text-end font-semibold tabular-nums text-fin-indigo" title={t("currentAllocationHint")}>
         {formatMoney(budget.approvedAmount, currency, formatterLocale, unavailable)}
@@ -331,7 +332,7 @@ function BudgetRow({
       </TableCell>
       <TableCell className="whitespace-nowrap">{fiscalPeriodLabel(t, budget, unavailable)}</TableCell>
       <TableCell>{status ? <Badge status={status}>{budgetStatusLabel(t, status, unavailable)}</Badge> : unavailable}</TableCell>
-      <TableCell className="font-medium">{currency || unavailable}</TableCell>
+      <TableCell className={`font-medium ${getLookupTextClass(currency)}`}>{currency || unavailable}</TableCell>
       <TableCell className="text-end">
         {projectId ? (
           <Button asChild variant="ghost" size="sm" className="h-8 px-2">

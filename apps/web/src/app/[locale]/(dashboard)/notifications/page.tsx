@@ -1,24 +1,28 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  AlertTriangle,
+  Bell,
+  CalendarCheck,
+  CheckCheck,
+  FileText,
+  Info,
+  Settings,
+  UserPlus,
+} from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Bell, CheckCheck, AlertTriangle, FileText, CalendarCheck, UserPlus, Settings, Info } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { notificationApi, notificationKeys, type NotificationListItem } from "@/lib/api/notifications";
+import {
+  enablePushNotifications,
+  isFirebaseMessagingConfigured,
+  type PushRegistrationStatus,
+} from "@/lib/firebase-messaging";
 import { formatRelativeDate } from "@/lib/utils";
-
-const mockNotifications = [
-  { id: "not-1", title: "Risk Escalated: Core Banking Modernisation", description: "A critical risk with score 20 has been escalated", type: "risk", read: false, createdAt: "2026-07-29" },
-  { id: "not-2", title: "Approval Required: Budget Change", description: "ERP Cloud Migration budget revision requires your approval", type: "approval", read: false, createdAt: "2026-07-29" },
-  { id: "not-3", title: "Meeting Reminder: Steering Committee", description: "Steering Committee - Core Banking Modernisation starts in 1 hour", type: "meeting", read: false, createdAt: "2026-07-28" },
-  { id: "not-4", title: "Resource Allocation Changed", description: "Your resource allocation has been updated for Q3", type: "resource", read: false, createdAt: "2026-07-28" },
-  { id: "not-5", title: "Milestone Completed: Architecture Sign-off", description: "Architecture Sign-off milestone has been marked complete", type: "milestone", read: true, createdAt: "2026-07-27" },
-  { id: "not-6", title: "New Comment on Risk Register", description: "Daniel O'Brien added a comment to risk R-0042", type: "comment", read: true, createdAt: "2026-07-27" },
-  { id: "not-7", title: "Project Health Changed", description: "HR & Payroll Transformation health changed from Amber to Red", type: "health", read: true, createdAt: "2026-07-26" },
-  { id: "not-8", title: "New Project Assigned", description: "You have been assigned as Project Manager for ESG Reporting Framework", type: "assignment", read: true, createdAt: "2026-07-25" },
-  { id: "not-9", title: "Report Ready: Monthly Dashboard", description: "Monthly Portfolio Dashboard report is ready for download", type: "report", read: true, createdAt: "2026-07-24" },
-  { id: "not-10", title: "System: Maintenance Scheduled", description: "NEXUS PMO will be offline for maintenance on Aug 3rd 02:00-04:00", type: "system", read: true, createdAt: "2026-07-23" },
-];
 
 const typeIcons: Record<string, { icon: typeof Bell; color: string }> = {
   risk: { icon: AlertTriangle, color: "text-status-red" },
@@ -34,80 +38,151 @@ const typeIcons: Record<string, { icon: typeof Bell; color: string }> = {
 };
 
 export default function NotificationsPage() {
-  const [allRead, setAllRead] = useState(false);
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [pushStatus, setPushStatus] = useState<PushRegistrationStatus | null>(null);
+
+  const notificationsQuery = useQuery({
+    queryKey: notificationKeys.all,
+    queryFn: () => notificationApi.list({ page: 1, pageSize: 50 }),
+    refetchInterval: 10_000,
+    refetchOnWindowFocus: true,
+  });
+
+  const markReadMutation = useMutation({
+    mutationFn: (notificationId: string) => notificationApi.markRead(notificationId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: notificationKeys.all }),
+    onError: () => toast({ title: "Could not update notification", variant: "destructive" }),
+  });
+
+  const markAllReadMutation = useMutation({
+    mutationFn: () => notificationApi.markAllRead(),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: notificationKeys.all });
+      toast({ title: "All notifications marked as read" });
+    },
+    onError: () => toast({ title: "Could not update notifications", variant: "destructive" }),
+  });
+
+  const notifications = notificationsQuery.data?.items ?? [];
+  const unreadNotifications = useMemo(
+    () => notifications.filter((notification) => !notification.isRead),
+    [notifications]
+  );
+
+  const handleEnablePush = async () => {
+    const result = await enablePushNotifications();
+    setPushStatus(result.status);
+
+    const messages: Record<PushRegistrationStatus, string> = {
+      enabled: "Browser notifications are enabled on this device.",
+      denied: "Browser notification permission was denied. Enable it from the browser settings.",
+      unsupported: "This browser does not support push notifications.",
+      unconfigured: "Firebase web configuration is not present in the deployed web application.",
+      unavailable: "Push registration could not be completed. Please try again.",
+    };
+    toast({
+      title: result.status === "enabled" ? "Notifications enabled" : "Notifications not enabled",
+      description: messages[result.status],
+      variant: result.status === "enabled" ? "success" : "destructive",
+    });
+  };
+
+  const renderNotification = (notification: NotificationListItem) => {
+    const iconConfig = typeIcons[notification.type.toLowerCase()] ?? typeIcons.system!;
+    const Icon = iconConfig.icon;
+    const isUnread = !notification.isRead;
+
+    return (
+      <button
+        key={notification.id}
+        type="button"
+        className={`nexus-table-row flex w-full items-start gap-4 px-4 py-4 text-left last:border-0 ${isUnread ? "bg-muted/20" : ""}`}
+        onClick={() => {
+          if (isUnread && !markReadMutation.isPending) {
+            markReadMutation.mutate(notification.id);
+          }
+        }}
+      >
+        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${isUnread ? "bg-primary/10" : "bg-muted"}`}>
+          <Icon className={`h-5 w-5 ${iconConfig.color}`} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className={`text-sm ${isUnread ? "font-medium" : ""}`}>{notification.title}</p>
+              {notification.body && <p className="mt-0.5 text-xs text-muted-foreground">{notification.body}</p>}
+            </div>
+            {isUnread && <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary" />}
+          </div>
+          <p className="mt-1 text-[10px] text-muted-foreground">{formatRelativeDate(notification.sentAt)}</p>
+        </div>
+      </button>
+    );
+  };
+
+  const content = notificationsQuery.isLoading ? (
+    <div className="nexus-table-surface px-4 py-12 text-center text-sm text-muted-foreground">Loading notifications…</div>
+  ) : notificationsQuery.isError ? (
+    <div className="nexus-table-surface px-4 py-12 text-center text-sm text-destructive">
+      Notifications could not be loaded. Please refresh and try again.
+    </div>
+  ) : notifications.length === 0 ? (
+    <div className="nexus-table-surface flex flex-col items-center gap-2 py-12 text-muted-foreground">
+      <Bell className="h-12 w-12" />
+      <p className="text-sm">No notifications yet</p>
+    </div>
+  ) : (
+    <div className="nexus-table-surface">{notifications.map(renderNotification)}</div>
+  );
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Notification Centre"
-        description={`${mockNotifications.filter(n => !n.read).length} unread notifications`}
+        description={`${unreadNotifications.length} unread notifications`}
         actions={
-          <Button variant="outline" size="sm" onClick={() => setAllRead(true)}>
-            <CheckCheck className="mr-2 h-4 w-4" />Mark All Read
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            {pushStatus !== "enabled" && (
+              <Button variant="outline" size="sm" onClick={() => void handleEnablePush()}>
+                <Bell className="mr-2 h-4 w-4" />
+                Enable Browser Notifications
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={unreadNotifications.length === 0 || markAllReadMutation.isPending}
+              onClick={() => markAllReadMutation.mutate()}
+            >
+              <CheckCheck className="mr-2 h-4 w-4" />Mark All Read
+            </Button>
+          </div>
         }
       />
 
+      {!isFirebaseMessagingConfigured() && (
+        <p className="text-xs text-muted-foreground">
+          Browser push is available after the Firebase web settings are supplied to this deployment. In-app notifications below are loaded from the NEXUS database.
+        </p>
+      )}
+
       <Tabs defaultValue="all">
         <TabsList>
-          <TabsTrigger value="all">All ({mockNotifications.length})</TabsTrigger>
-          <TabsTrigger value="unread">Unread ({mockNotifications.filter(n => !n.read && !allRead).length})</TabsTrigger>
+          <TabsTrigger value="all">All ({notifications.length})</TabsTrigger>
+          <TabsTrigger value="unread">Unread ({unreadNotifications.length})</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="all">
-          <div className="nexus-table-surface">
-            {mockNotifications.map((notification) => {
-              const isUnread = !notification.read && !allRead;
-              const iconConfig = typeIcons[notification.type] ?? typeIcons.system!;
-              const Icon = iconConfig.icon;
-              return (
-                <div key={notification.id} className={`nexus-table-row flex items-start gap-4 px-4 py-4 last:border-0 ${isUnread ? "bg-muted/20" : ""}`}>
-                  <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${isUnread ? "bg-primary/10" : "bg-muted"}`}>
-                    <Icon className={`h-5 w-5 ${iconConfig.color}`} />
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <p className={`text-sm ${isUnread ? "font-medium" : ""}`}>{notification.title}</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">{notification.description}</p>
-                      </div>
-                      {isUnread && <span className="h-2 w-2 rounded-full bg-primary shrink-0 mt-1.5" />}
-                    </div>
-                    <p className="mt-1 text-[10px] text-muted-foreground">{formatRelativeDate(notification.createdAt)}</p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </TabsContent>
-
+        <TabsContent value="all">{content}</TabsContent>
         <TabsContent value="unread">
-          <div className="nexus-table-surface">
-            {mockNotifications.filter(n => !n.read && !allRead).length === 0 ? (
-              <div className="flex flex-col items-center gap-2 py-12 text-muted-foreground">
-                <Bell className="h-12 w-12" />
-                <p className="text-sm">No unread notifications</p>
-              </div>
-            ) : (
-              mockNotifications.filter(n => !n.read && !allRead).map((notification) => {
-                const iconConfig = typeIcons[notification.type] ?? typeIcons.system!;
-                const Icon = iconConfig.icon;
-                return (
-                <div key={notification.id} className="nexus-table-row flex items-start gap-4 px-4 py-4 last:border-0 bg-muted/20">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-                      <Icon className={`h-5 w-5 ${iconConfig.color}`} />
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-sm font-medium">{notification.title}</p>
-                      <p className="text-xs text-muted-foreground">{notification.description}</p>
-                      <p className="mt-1 text-[10px] text-muted-foreground">{formatRelativeDate(notification.createdAt)}</p>
-                    </div>
-                    <span className="h-2 w-2 rounded-full bg-primary shrink-0 mt-1.5" />
-                  </div>
-                );
-              })
-            )}
-          </div>
+          {unreadNotifications.length === 0 ? (
+            <div className="nexus-table-surface flex flex-col items-center gap-2 py-12 text-muted-foreground">
+              <Bell className="h-12 w-12" />
+              <p className="text-sm">No unread notifications</p>
+            </div>
+          ) : (
+            <div className="nexus-table-surface">{unreadNotifications.map(renderNotification)}</div>
+          )}
         </TabsContent>
       </Tabs>
     </div>

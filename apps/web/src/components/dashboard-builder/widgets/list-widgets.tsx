@@ -1,10 +1,10 @@
 import { registerWidget, commonFields as f } from "../widget-registry";
 import type { WidgetConfig } from "../dashboard-types";
-import { DashboardDataState, isClosedProject, isOpenRisk, projectHealth, useDashboardLabels, useDashboardMeetings, useDashboardMyWorkItems, useDashboardProjects, useDashboardRisks, useDashboardWorkItems } from "../dashboard-data";
+import { DashboardDataState, projectHealth, useDashboardLabels, useDashboardMeetings, useDashboardMyWorkItems, useDashboardSummary, useDashboardWorkItems } from "../dashboard-data";
 
 function ProjectsAttentionList({ config }: { config: WidgetConfig }) {
-  const query = useDashboardProjects(); const { t } = useDashboardLabels(); const limit = config.maxRecords || 10;
-  return <DashboardDataState query={query}>{(page) => { const projects = page.items.filter((p) => !isClosedProject(p.status) && ["amber", "red"].includes(projectHealth(p))).slice(0, limit); return <div className="space-y-0.5 h-full overflow-y-auto">{projects.map((p) => <div key={p.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg border-s-2 border-warning text-xs"><span className={`h-2 w-2 shrink-0 rounded-full ${projectHealth(p) === "red" ? "bg-destructive" : "bg-warning"}`} /><span className="flex-1 truncate font-medium">{p.name}</span><span className="text-muted-foreground">{p.progress}%</span></div>)}{projects.length === 0 && <p className="text-xs text-muted-foreground text-center py-4">{t("noAttention")}</p>}</div>; }}</DashboardDataState>;
+  const query = useDashboardSummary(); const { t } = useDashboardLabels(); const limit = config.maxRecords || 10;
+  return <DashboardDataState query={query}>{(summary) => { const projects = summary.attentionProjects.slice(0, limit); return <div className="space-y-0.5 h-full overflow-y-auto">{projects.map((p) => <div key={p.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg border-s-2 border-warning text-xs"><span className={`h-2 w-2 shrink-0 rounded-full ${projectHealth(p) === "red" ? "bg-destructive" : "bg-warning"}`} /><span className="flex-1 truncate font-medium">{p.name}</span><span className="text-muted-foreground">{p.progress}%</span></div>)}{projects.length === 0 && <p className="text-xs text-muted-foreground text-center py-4">{t("noAttention")}</p>}</div>; }}</DashboardDataState>;
 }
 
 function MyTodoList({ config }: { config: WidgetConfig }) {
@@ -18,8 +18,8 @@ function UpcomingMilestonesList({ config }: { config: WidgetConfig }) {
 }
 
 function TopRisksList({ config }: { config: WidgetConfig }) {
-  const query = useDashboardRisks(); const { t } = useDashboardLabels(); const limit = config.maxRecords || 10;
-  return <DashboardDataState query={query}>{(collection) => { const risks = collection.items.filter((risk) => isOpenRisk(risk.status)).sort((a, b) => ["Critical", "High", "Medium", "Low"].indexOf(a.riskLevel) - ["Critical", "High", "Medium", "Low"].indexOf(b.riskLevel)).slice(0, limit); return <div className="space-y-0.5 h-full overflow-y-auto">{risks.map((risk) => <div key={risk.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs"><span className={`h-2 w-2 shrink-0 rounded-full ${risk.riskLevel === "Critical" ? "bg-destructive" : risk.riskLevel === "High" ? "bg-warning" : "bg-muted-foreground"}`} /><div className="flex-1 min-w-0"><div className="truncate font-medium">{risk.title}</div><div className="text-[10px] text-muted-foreground">{risk.projectName} · {risk.riskLevel}</div></div><span className="text-[9px] text-destructive">{t("open")}</span></div>)}{risks.length === 0 && <p className="text-xs text-muted-foreground text-center py-4">{t("noRisks")}</p>}</div>; }}</DashboardDataState>;
+  const query = useDashboardSummary(); const { t } = useDashboardLabels(); const limit = config.maxRecords || 10;
+  return <DashboardDataState query={query}>{(summary) => { const risks = summary.topRisks.slice(0, limit); return <div className="space-y-0.5 h-full overflow-y-auto">{risks.map((risk) => <div key={risk.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs"><span className={`h-2 w-2 shrink-0 rounded-full ${risk.riskLevel === "Critical" ? "bg-destructive" : risk.riskLevel === "High" ? "bg-warning" : "bg-muted-foreground"}`} /><div className="flex-1 min-w-0"><div className="truncate font-medium">{risk.title}</div><div className="text-[10px] text-muted-foreground">{risk.projectName} · {risk.riskLevel}</div></div><span className="text-[9px] text-destructive">{t("open")}</span></div>)}{risks.length === 0 && <p className="text-xs text-muted-foreground text-center py-4">{t("noRisks")}</p>}</div>; }}</DashboardDataState>;
 }
 
 function UpcomingMeetingsList({ config }: { config: WidgetConfig }) {

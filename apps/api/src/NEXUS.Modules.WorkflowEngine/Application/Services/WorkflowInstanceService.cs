@@ -105,6 +105,61 @@ public sealed class WorkflowInstanceService : IWorkflowInstanceService
             instance.RowVersion));
     }
 
+    public async Task<Result<WorkflowInstanceSummary>> ProvisionAsync(
+        string entityType,
+        Guid entityId,
+        Guid workflowDefinitionId,
+        Guid workflowVersionId,
+        WorkflowExecutionContext context,
+        CancellationToken cancellationToken = default)
+    {
+        var adapter = _adapterRegistry.Resolve(entityType);
+        if (adapter is null)
+            return Result<WorkflowInstanceSummary>.Failure(WorkflowErrors.UnknownEntityType(entityType));
+
+        var authorizeResult = await adapter.AuthorizeAsync(context, entityId, cancellationToken);
+        if (authorizeResult.IsFailure)
+            return Result<WorkflowInstanceSummary>.Failure(authorizeResult.Error!);
+
+        var definition = await _context.Set<WorkflowDefinition>()
+            .AsNoTracking()
+            .FirstOrDefaultAsync(item => item.Id == workflowDefinitionId && item.IsActive && !item.IsDeleted, cancellationToken);
+        var version = await _context.Set<WorkflowDefinitionVersion>()
+            .Include(item => item.States)
+            .AsNoTracking()
+            .FirstOrDefaultAsync(item => item.Id == workflowVersionId && item.WorkflowDefinitionId == workflowDefinitionId && !item.IsDeleted, cancellationToken);
+        if (definition is null || version is null || definition.ActivePublishedVersionId != version.Id)
+            return Result<WorkflowInstanceSummary>.Failure(WorkflowErrors.NoActivePublishedVersion);
+        if (version.LifecycleStatus == WorkflowDefinitionVersionLifecycleStatus.Draft)
+            return Result<WorkflowInstanceSummary>.Failure(WorkflowErrors.DraftCannotExecute);
+        if (version.LifecycleStatus == WorkflowDefinitionVersionLifecycleStatus.Retired)
+            return Result<WorkflowInstanceSummary>.Failure(WorkflowErrors.RetiredCannotStart);
+
+        var instances = _context.Set<WorkflowInstance>();
+        if (await instances.AnyAsync(item => item.EntityType == entityType && item.EntityId == entityId && item.IsActive && !item.IsDeleted, cancellationToken))
+            return Result<WorkflowInstanceSummary>.Failure(WorkflowErrors.DuplicateInstance);
+        var initialState = version.States.FirstOrDefault(item => item.IsInitial && item.IsActive && !item.IsDeleted);
+        if (initialState is null)
+            return Result<WorkflowInstanceSummary>.Failure(WorkflowErrors.NoInitialState);
+
+        var instance = new WorkflowInstance
+        {
+            TenantId = context.TenantId,
+            WorkflowDefinitionId = definition.Id,
+            WorkflowDefinitionVersionId = version.Id,
+            EntityType = entityType,
+            EntityId = entityId,
+            CurrentStateId = initialState.Id,
+            StartedAt = DateTime.UtcNow,
+            StartedBy = context.UserId,
+            CreatedBy = context.UserId,
+            IsActive = true
+        };
+        instances.Add(instance);
+        await _context.SaveChangesAsync(cancellationToken);
+        return Result<WorkflowInstanceSummary>.Success(new WorkflowInstanceSummary(instance.Id, definition.Id, version.Id, definition.Code, version.VersionNumber, entityType, entityId, initialState.Code, initialState.NameEn, initialState.NameAr, initialState.IsFinal, instance.StartedAt, instance.StartedBy, instance.CompletedAt, instance.IsActive, instance.RowVersion));
+    }
+
     public async Task<Result<WorkflowInstanceSummary?>> GetInstanceAsync(
         string entityType,
         Guid entityId,

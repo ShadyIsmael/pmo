@@ -1,22 +1,41 @@
+using System.Security.Claims;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using NEXUS.Modules.Audit.Application;
 using NEXUS.Modules.Audit.Domain;
 using NEXUS.Modules.Organization.Domain;
 using NEXUS.SharedKernel;
+using NEXUS.SharedKernel.Helpers;
 
 namespace NEXUS.Modules.ResourceManagement.Application;
 
 public class ProjectRoleService : IProjectRoleService
 {
-    private const string Category = "ProjectRole";
+    public const string Category = "ProjectRole";
+
+    /// <summary>Prefix for system-generated project-role codes.</summary>
+    public const string CodePrefix = "PROJROLE-";
+
     private readonly DbContext _context;
     private readonly IAuditService _auditService;
+    private readonly IHttpContextAccessor? _httpContextAccessor;
 
-    public ProjectRoleService(DbContext context, IAuditService auditService)
+    public ProjectRoleService(DbContext context, IAuditService auditService, IHttpContextAccessor? httpContextAccessor = null)
     {
         _context = context;
         _auditService = auditService;
+        _httpContextAccessor = httpContextAccessor;
     }
+
+    /// <summary>
+    /// Lookups are tenant-scoped entities with a global query filter, so a created row is
+    /// only readable if it is stamped with the caller's tenant. Defaulting to Guid.Empty
+    /// would write a row that no later query can see.
+    /// </summary>
+    private Guid CurrentTenantId() =>
+        Guid.TryParse(_httpContextAccessor?.HttpContext?.User.FindFirstValue("tenantId"), out var tenantId)
+            ? tenantId
+            : TenantConstants.DemoTenantId;
 
     public async Task<Result<IReadOnlyList<LookupDto>>> GetActiveAsync(CancellationToken cancellationToken = default)
     {
@@ -44,17 +63,47 @@ public class ProjectRoleService : IProjectRoleService
         return Result<LookupDto>.Success(ToDto(item));
     }
 
+    public async Task<string> GetNextCodeAsync(CancellationToken cancellationToken = default)
+    {
+        var tenantId = CurrentTenantId();
+        var generated = await _context.Set<Lookup>()
+            .Where(l => l.TenantId == tenantId && l.Category == Category && l.Code.StartsWith(CodePrefix) && !l.IsDeleted)
+            .Select(l => l.Code)
+            .ToListAsync(cancellationToken);
+
+        // Non-numeric and hand-entered codes are ignored so they cannot skew the sequence.
+        var highest = generated
+            .Select(code => int.TryParse(code[CodePrefix.Length..], out var number) ? number : 0)
+            .DefaultIfEmpty(0)
+            .Max();
+
+        return $"{CodePrefix}{highest + 1:D6}";
+    }
+
     public async Task<Result<LookupDto>> CreateAsync(CreateLookupDto dto, string userId, CancellationToken cancellationToken = default)
     {
-        var normalizedCode = dto.Code.Trim().ToUpperInvariant();
+        var tenantId = CurrentTenantId();
+
+        // A blank code means "assign the next generic one". The unique-index check below
+        // still runs, so a concurrent create surfaces as a 409 rather than a duplicate.
+        var requested = dto.Code?.Trim();
+        var code = string.IsNullOrWhiteSpace(requested)
+            ? await GetNextCodeAsync(cancellationToken)
+            : requested;
+
+        var normalizedCode = code.ToUpperInvariant();
         var duplicate = await _context.Set<Lookup>().AnyAsync(l =>
-            l.Category == Category && l.Code.ToUpper() == normalizedCode && !l.IsDeleted, cancellationToken);
+            l.TenantId == tenantId &&
+            l.Category == Category &&
+            l.Code.ToUpper() == normalizedCode &&
+            !l.IsDeleted, cancellationToken);
         if (duplicate) return Result<LookupDto>.Failure(Error.Conflict("A Project Role with this code already exists"));
 
         var lookup = new Lookup
         {
+            TenantId = tenantId,
             Category = Category,
-            Code = dto.Code.Trim(),
+            Code = code,
             Name = dto.NameEn,
             NameEn = dto.NameEn,
             NameAr = dto.NameAr,

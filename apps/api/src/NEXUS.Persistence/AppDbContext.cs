@@ -40,6 +40,11 @@ public class AppDbContext : DbContext
     public DbSet<BusinessUnit> BusinessUnits => Set<BusinessUnit>();
     public DbSet<Department> Departments => Set<Department>();
     public DbSet<Team> Teams => Set<Team>();
+    public DbSet<TeamMember> TeamMembers => Set<TeamMember>();
+    public DbSet<EntityCodeSequence> EntityCodeSequences => Set<EntityCodeSequence>();
+    public DbSet<OrganizationalUnit> OrganizationalUnits => Set<OrganizationalUnit>();
+    public DbSet<ResourceOrganizationalUnit> ResourceOrganizationalUnits => Set<ResourceOrganizationalUnit>();
+    public DbSet<ResourceReportingLine> ResourceReportingLines => Set<ResourceReportingLine>();
     public DbSet<Location> Locations => Set<Location>();
     public DbSet<WorkingCalendar> WorkingCalendars => Set<WorkingCalendar>();
     public DbSet<Holiday> Holidays => Set<Holiday>();
@@ -94,6 +99,8 @@ public class AppDbContext : DbContext
     public DbSet<CalendarDayRule> CalendarDayRules => Set<CalendarDayRule>();
     public DbSet<CalendarHoliday> CalendarHolidays => Set<CalendarHoliday>();
     public DbSet<PlanningTablePreference> PlanningTablePreferences => Set<PlanningTablePreference>();
+    public DbSet<PlanImportSession> PlanImportSessions => Set<PlanImportSession>();
+    public DbSet<PlanImportIssue> PlanImportIssues => Set<PlanImportIssue>();
 
     public DbSet<WorkItem> WorkItems => Set<WorkItem>();
     public DbSet<WorkItemAssignment> WorkItemAssignments => Set<WorkItemAssignment>();
@@ -154,12 +161,14 @@ public class AppDbContext : DbContext
     public DbSet<WorkflowTransitionAction> WorkflowTransitionActions => Set<WorkflowTransitionAction>();
     public DbSet<WorkflowInstance> WorkflowInstances => Set<WorkflowInstance>();
     public DbSet<WorkflowTransitionHistory> WorkflowTransitionHistories => Set<WorkflowTransitionHistory>();
+    public DbSet<ProjectWorkflowConfiguration> ProjectWorkflowConfigurations => Set<ProjectWorkflowConfiguration>();
 
     public DbSet<ApprovalRequest> ApprovalRequests => Set<ApprovalRequest>();
     public DbSet<ApprovalAction> ApprovalActions => Set<ApprovalAction>();
     public DbSet<Delegation> Delegations => Set<Delegation>();
 
     public DbSet<Notification> Notifications => Set<Notification>();
+    public DbSet<UserDeviceToken> UserDeviceTokens => Set<UserDeviceToken>();
     public DbSet<NotificationTemplate> NotificationTemplates => Set<NotificationTemplate>();
     public DbSet<NotificationPreference> NotificationPreferences => Set<NotificationPreference>();
     public DbSet<NotificationDigest> NotificationDigests => Set<NotificationDigest>();

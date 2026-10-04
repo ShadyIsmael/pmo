@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Filter, TrendingUp } from "lucide-react";
 import { getInitials } from "@/lib/utils";
+import { getStatusTextClass } from "@/lib/status-presentation";
 import { useCapacityAvailability } from "@/hooks/resources/useCapacity";
 
 export default function UtilizationPage() {
@@ -147,7 +148,10 @@ export default function UtilizationPage() {
                 <span className={`inline-block h-2 w-2 rounded-full ${
                   res.currentUtilization > 80 ? "bg-status-red" :
                   res.currentUtilization > 60 ? "bg-status-amber" : "bg-status-green"
-                }`} />
+                }`} aria-hidden="true" />
+                <span className={`ms-1 text-xs ${getStatusTextClass(res.currentUtilization > 80 ? "Overdue" : res.currentUtilization > 60 ? "Warning" : "OK")}`}>
+                  {res.currentUtilization > 80 ? "Over" : res.currentUtilization > 60 ? "At risk" : "OK"}
+                </span>
               </div>
             </div>
           ))

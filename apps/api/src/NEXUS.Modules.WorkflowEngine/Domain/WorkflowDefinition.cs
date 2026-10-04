@@ -7,6 +7,7 @@ public class WorkflowDefinition : BaseEntity
     public string Code { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public string? Description { get; set; }
+    public string Domain { get; set; } = WorkflowDomains.Task;
     public string EntityType { get; set; } = string.Empty;
     public bool IsActive { get; set; } = true;
     public Guid? ActivePublishedVersionId { get; set; }

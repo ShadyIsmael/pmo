@@ -138,3 +138,37 @@ export function getStatusBadgeVariant(value: string | null | undefined): StatusB
 export function getStatusTextClass(value: string | null | undefined): string {
   return statusToneTextClasses[getStatusTone(value)];
 }
+
+export type AssignmentTargetKind = "resource" | "team" | "none";
+
+/** Shared text-only semantic colors used by resource and work-item tables. */
+export function getResourceTypeTextClass(value: string | null | undefined): string {
+  const normalized = normalizeStatus(value);
+  if (normalized === "staff") return "text-primary";
+  if (normalized === "vendorresource" || normalized === "vendor") return "text-warning";
+  return "text-muted-foreground";
+}
+
+export function getSystemUserTextClass(linked: boolean): string {
+  return linked ? "text-success" : "text-muted-foreground";
+}
+
+export function getAssignmentTargetTextClass(target: AssignmentTargetKind): string {
+  if (target === "resource") return "text-info";
+  if (target === "team") return "text-fin-violet";
+  return "text-muted-foreground";
+}
+
+export function getLookupTextClass(value: string | null | undefined): string {
+  return value ? "text-info" : "text-muted-foreground";
+}
+
+/** Text-only semantic mapping for severity/priority values. */
+export function getPriorityTextClass(value: string | null | undefined): string {
+  return getStatusTextClass(value);
+}
+
+/** Text-only semantic mapping for linked/unlinked associations. */
+export function getAssociationTextClass(linked: boolean): string {
+  return linked ? "text-success" : "text-muted-foreground";
+}

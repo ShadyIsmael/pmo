@@ -94,9 +94,17 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("Resource.View", policy => policy.RequireAssertion(context =>
         context.User.HasClaim("permission", "Resource.View") || context.User.HasClaim("permission", "Resource.Allocate") || context.User.HasClaim("permission", "Resource.Manage")));
     options.AddPolicy("Resource.Assign", policy => policy.RequireClaim("permission", "Resource.Allocate", "Resource.Manage"));
+    options.AddPolicy("Resource.Create", policy => policy.RequireClaim("permission", "Resource.Create", "Resource.Manage"));
+    options.AddPolicy("Resource.Edit", policy => policy.RequireClaim("permission", "Resource.Edit", "Resource.Manage"));
+    options.AddPolicy("Resource.Delete", policy => policy.RequireClaim("permission", "Resource.Delete", "Resource.Manage"));
     options.AddPolicy("Resource.Manage", policy => policy.RequireClaim("permission", "Resource.Manage"));
     options.AddPolicy("Resource.ViewCostRate", policy => policy.RequireClaim("permission", "Resource.ViewCostRate", "Resource.ManageRates", "Resource.Manage"));
     options.AddPolicy("Resource.EditCostRate", policy => policy.RequireClaim("permission", "Resource.EditCostRate", "Resource.ManageRates", "Resource.Manage"));
+    options.AddPolicy("Team.View", policy => policy.RequireClaim("permission", "Team.View", "Team.Manage"));
+    options.AddPolicy("Team.Create", policy => policy.RequireClaim("permission", "Team.Create", "Team.Manage"));
+    options.AddPolicy("Team.Edit", policy => policy.RequireClaim("permission", "Team.Edit", "Team.Manage"));
+    options.AddPolicy("Team.Delete", policy => policy.RequireClaim("permission", "Team.Delete", "Team.Manage"));
+    options.AddPolicy("Team.Manage", policy => policy.RequireClaim("permission", "Team.Manage"));
     options.AddPolicy("Users.Read", policy => policy.RequireClaim("permission", "users.read", "users.write"));
     options.AddPolicy("Users.Write", policy => policy.RequireClaim("permission", "users.write"));
     options.AddPolicy("Settings.Read", policy => policy.RequireClaim("permission", "settings.read", "settings.write"));

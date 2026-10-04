@@ -2,7 +2,7 @@ import { NextIntlClientProvider } from "next-intl";
 import { getMessages } from "next-intl/server";
 import type { AbstractIntlMessages } from "use-intl/core";
 
-export const BASE_NAMESPACES = ["nav", "common", "enums", "organization", "perspective", "programManager", "portfolioManager", "dashboard", "timeTracking", "costUtilization"] as const;
+export const BASE_NAMESPACES = ["nav", "common", "enums", "organization", "perspective", "programManager", "portfolioManager", "dashboard", "timeTracking", "costUtilization", "account"] as const;
 
 export type FeatureMessageNamespace =
   | "administration"

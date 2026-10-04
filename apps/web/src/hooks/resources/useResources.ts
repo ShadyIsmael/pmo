@@ -39,6 +39,11 @@ export interface ResourceDto {
   vendorName?: string;
   baseCalendarId?: string;
   baseCalendarName?: string;
+  primaryOrganizationalUnitId?: string;
+  primaryOrganizationalUnitName?: string;
+  primaryOrganizationalUnitCode?: string;
+  primaryManagerResourceId?: string;
+  primaryManagerResourceName?: string;
   timezone?: string;
   utilizationTarget?: number;
   currentUtilization?: number;
@@ -79,6 +84,7 @@ export interface ResourceFilterParams {
   type?: string;
   userId?: string;
   departmentId?: string;
+  organizationalUnitId?: string;
   locationId?: string;
   vendorId?: string;
   isActive?: boolean;
@@ -122,6 +128,7 @@ function toParams(filter: ResourceFilterParams): Record<string, string | number 
     type: filter.type,
     userId: filter.userId,
     departmentId: filter.departmentId,
+    organizationalUnitId: filter.organizationalUnitId,
     locationId: filter.locationId,
     vendorId: filter.vendorId,
     isActive: filter.isActive,
@@ -172,9 +179,7 @@ export function useCreateResource() {
   return useMutation({
     mutationFn: async (data: CreateResourceInput | Record<string, unknown>) =>
       api.post<ResourceDto>(endpoints.resources.root, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: resourceKeys.all });
-    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: resourceKeys.all }),
   });
 }
 
@@ -182,9 +187,7 @@ export function useUpdateResource(defaultId?: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (input: { id?: string; data: UpdateResourceInput | Record<string, unknown> }) => api.put<ResourceDto>(endpoints.resources.detail(input.id ?? defaultId ?? ""), input.data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: resourceKeys.all });
-    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: resourceKeys.all }),
   });
 }
 
@@ -194,9 +197,7 @@ export function useDeleteResource() {
     mutationFn: async (id: string) => {
       await api.delete<void>(endpoints.resources.detail(id));
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: resourceKeys.all });
-    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: resourceKeys.all }),
   });
 }
 
@@ -214,9 +215,7 @@ export function useCreateCostProfile() {
   return useMutation({
     mutationFn: async (data: { resourceId: string; body: Record<string, unknown> }) =>
       api.post<ResourceCostProfileDto>(`${endpoints.resources.detail(data.resourceId)}/cost-profiles`, data.body),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: resourceKeys.all });
-    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: resourceKeys.all }),
   });
 }
 
@@ -225,9 +224,7 @@ export function useUpdateCostProfile() {
   return useMutation({
     mutationFn: async (data: { resourceId: string; profileId: string; body: Record<string, unknown> }) =>
       api.put<ResourceCostProfileDto>(`${endpoints.resources.detail(data.resourceId)}/cost-profiles/${data.profileId}`, data.body),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: resourceKeys.all });
-    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: resourceKeys.all }),
   });
 }
 
@@ -236,17 +233,34 @@ export function useDeleteCostProfile() {
   return useMutation({
     mutationFn: async (data: { resourceId: string; profileId: string }) =>
       api.delete<void>(`${endpoints.resources.detail(data.resourceId)}/cost-profiles/${data.profileId}`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: resourceKeys.all });
-    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: resourceKeys.all }),
   });
 }
 
-export function useProjectRoles(activeOnly = true) {
+export function useProjectRoles(activeOnly = true, enabled = true) {
   return useQuery({
     queryKey: [...resourceKeys.all, "project-roles", activeOnly],
     queryFn: () => api.get<ProjectRoleDto[]>("/api/project-roles", { activeOnly }),
+    enabled,
     staleTime: 60_000,
+  });
+}
+
+/**
+ * Next generic project-role code (PROJROLE-000001), so the create form can show a code
+ * as soon as it opens.
+ *
+ * `requestKey` must change on every open of the create form. Without it the query would
+ * serve the code cached from the previous create, so the second role would be offered a
+ * code that is already taken. Varying the key gives each open its own fresh request and
+ * leaves no stale value on screen while it loads.
+ */
+export function useProjectRoleNextCode(enabled = true, requestKey: number | string = 0) {
+  return useQuery({
+    queryKey: [...resourceKeys.all, "project-roles", "next-code", requestKey],
+    queryFn: () => api.get<{ code: string }>("/api/project-roles/next-code"),
+    enabled,
+    staleTime: 0,
   });
 }
 
@@ -254,9 +268,7 @@ export function useCreateProjectRole() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (data: Record<string, unknown>) => api.post<ProjectRoleDto>("/api/project-roles", data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [...resourceKeys.all, "project-roles"] });
-    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [...resourceKeys.all, "project-roles"] }),
   });
 }
 
@@ -265,9 +277,7 @@ export function useUpdateProjectRole() {
   return useMutation({
     mutationFn: async (data: { id: string; body: Record<string, unknown> }) =>
       api.put<ProjectRoleDto>(`/api/project-roles/${data.id}`, data.body),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [...resourceKeys.all, "project-roles"] });
-    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [...resourceKeys.all, "project-roles"] }),
   });
 }
 
@@ -275,8 +285,6 @@ export function useDeactivateProjectRole() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => api.put<void>(`/api/project-roles/${id}/deactivate`, {}),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [...resourceKeys.all, "project-roles"] });
-    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [...resourceKeys.all, "project-roles"] }),
   });
 }

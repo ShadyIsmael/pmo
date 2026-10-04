@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SideSheet, SideSheetBody, SideSheetFooter } from "@/components/ui/side-sheet";
 import { useAuth } from "@/lib/auth";
-import { hasPermission, Permissions } from "@/lib/permissions";
+import { hasAnyPermission, Permissions } from "@/lib/permissions";
 import { useCreateVendor, type VendorDto } from "@/hooks/resources/useVendors";
 import { useVendorCategories } from "@/lib/api/reference-data";
 
@@ -42,7 +42,7 @@ export function AddVendorButton() {
   const t = useTranslations("resources.vendors");
   const locale = useLocale();
   const { user, status: authStatus } = useAuth();
-  const canManage = Boolean(user && hasPermission(user.permissions, Permissions.Resources.Manage));
+  const canCreate = hasAnyPermission(user?.permissions ?? [], [Permissions.Resources.Create, Permissions.Resources.Manage]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<VendorForm>(emptyForm);
   const [nameError, setNameError] = useState(false);
@@ -61,7 +61,7 @@ export function AddVendorButton() {
     return <Button size="sm" disabled><Plus className="mr-2 h-4 w-4" />{t("addVendor")}</Button>;
   }
 
-  if (!canManage) {
+  if (!canCreate) {
     return null;
   }
 

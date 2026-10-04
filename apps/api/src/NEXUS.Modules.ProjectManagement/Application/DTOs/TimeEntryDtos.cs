@@ -96,5 +96,6 @@ public sealed class TimeEntrySummaryDto
     public List<ActualWorkBreakdownDto> ByProject { get; set; } = new();
     public List<ActualWorkBreakdownDto> ByPlanActivity { get; set; } = new();
     public List<ActualWorkBreakdownDto> ByWorkItem { get; set; } = new();
+    public List<ActualWorkBreakdownDto> ByTeam { get; set; } = new();
     public List<ActualWorkBreakdownDto> ByProjectRole { get; set; } = new();
 }

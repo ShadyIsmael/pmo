@@ -14,6 +14,13 @@ public static class OrganizationModuleRegistration
             var context = sp.GetRequiredService<DbContext>();
             return new OrganizationService(context);
         });
+        services.AddScoped<IOrganizationalUnitService>(sp =>
+        {
+            var context = sp.GetRequiredService<DbContext>();
+            var httpContextAccessor = sp.GetRequiredService<Microsoft.AspNetCore.Http.IHttpContextAccessor>();
+            var resourceLookup = sp.GetRequiredService<NEXUS.SharedKernel.IResourceReferenceLookup>();
+            return new OrganizationalUnitService(context, httpContextAccessor, resourceLookup);
+        });
         services.AddScoped<IBusinessUnitService>(sp =>
         {
             var context = sp.GetRequiredService<DbContext>();

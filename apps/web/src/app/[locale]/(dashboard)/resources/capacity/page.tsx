@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { getLookupTextClass } from "@/lib/status-presentation";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -244,7 +245,7 @@ export default function CapacityPlanningPage() {
                     {demandVsCapacity.groups.map((g, i) => (
                       <div key={i} className="nexus-table-row grid grid-cols-5 gap-2 px-4 py-3 text-sm last:border-0">
                         <div className="col-span-2 flex items-center gap-2 font-medium">
-                          <Badge variant="outline" className="text-[10px]">{g.groupType}</Badge>
+                          <span className={`text-xs font-medium ${getLookupTextClass(g.groupType)}`}>{g.groupType}</span>
                           {g.groupName}
                         </div>
                         <div className="col-span-1 text-right">{Math.round(g.demandHours).toLocaleString()} {tc("hours")}</div>

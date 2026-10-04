@@ -54,11 +54,12 @@ export const programKeys = {
   detail: (id: string) => ["programs", "detail", id] as const,
 };
 
-export function usePrograms(params: { search?: string; status?: string; portfolioId?: string; page?: number; pageSize?: number } = {}) {
+export function usePrograms(params: { search?: string; status?: string; portfolioId?: string; page?: number; pageSize?: number } = {}, enabled = true) {
   const query = { page: 1, pageSize: 200, ...params };
   return useQuery({
     queryKey: programKeys.list(query),
     queryFn: () => api.get<PagedResult<ProgramDto>>(endpoints.programs.root, query),
+    enabled,
     staleTime: 15_000,
   });
 }

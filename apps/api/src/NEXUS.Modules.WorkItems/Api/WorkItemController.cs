@@ -99,16 +99,16 @@ public class WorkItemController : ControllerBase
 
     [Authorize(Policy = "WorkItem.View")]
     [HttpGet("insights")]
-    public async Task<IActionResult> GetInsights([FromQuery] Guid? projectId = null, [FromQuery] string? status = null, [FromQuery] string? type = null, [FromQuery] string? priority = null, [FromQuery] string? search = null, [FromQuery] Guid? assigneeId = null, [FromQuery] Guid? reporterId = null, [FromQuery] DateTime? dueDateFrom = null, [FromQuery] DateTime? dueDateTo = null, [FromQuery] bool? overdue = null, [FromQuery] bool? unassigned = null, [FromQuery] bool? highPriority = null, CancellationToken cancellationToken = default)
+    public async Task<IActionResult> GetInsights([FromQuery] Guid? projectId = null, [FromQuery] string? status = null, [FromQuery] string? type = null, [FromQuery] string? priority = null, [FromQuery] string? search = null, [FromQuery] Guid? assignedResourceId = null, [FromQuery] Guid? assignedTeamId = null, [FromQuery] Guid? assigneeId = null, [FromQuery] Guid? reporterId = null, [FromQuery] DateTime? dueDateFrom = null, [FromQuery] DateTime? dueDateTo = null, [FromQuery] bool? overdue = null, [FromQuery] bool? unassigned = null, [FromQuery] bool? highPriority = null, CancellationToken cancellationToken = default)
     {
-        return Ok(await _workItemService.GetInsightsAsync(projectId, status, type, priority, search, assigneeId, reporterId, dueDateFrom, dueDateTo, overdue, unassigned, highPriority, cancellationToken));
+        return Ok(await _workItemService.GetInsightsAsync(projectId, status, type, priority, search, assignedResourceId, assignedTeamId, assigneeId, reporterId, dueDateFrom, dueDateTo, overdue, unassigned, highPriority, cancellationToken));
     }
 
     [Authorize(Policy = "WorkItem.View")]
     [HttpGet]
-    public async Task<IActionResult> GetPaged([FromQuery] int page = 1, [FromQuery] int pageSize = 20, [FromQuery] Guid? projectId = null, [FromQuery] string? status = null, [FromQuery] string? type = null, [FromQuery] string? priority = null, [FromQuery] string? search = null, [FromQuery] Guid? assigneeId = null, [FromQuery] Guid? reporterId = null, [FromQuery] DateTime? dueDateFrom = null, [FromQuery] DateTime? dueDateTo = null, [FromQuery] bool? overdue = null, [FromQuery] bool? unassigned = null, [FromQuery] bool? highPriority = null, [FromQuery] string? sortBy = null, CancellationToken cancellationToken = default)
+    public async Task<IActionResult> GetPaged([FromQuery] int page = 1, [FromQuery] int pageSize = 20, [FromQuery] Guid? projectId = null, [FromQuery] string? status = null, [FromQuery] string? type = null, [FromQuery] string? priority = null, [FromQuery] string? search = null, [FromQuery] Guid? assignedResourceId = null, [FromQuery] Guid? assignedTeamId = null, [FromQuery] Guid? assigneeId = null, [FromQuery] Guid? reporterId = null, [FromQuery] DateTime? dueDateFrom = null, [FromQuery] DateTime? dueDateTo = null, [FromQuery] bool? overdue = null, [FromQuery] bool? unassigned = null, [FromQuery] bool? highPriority = null, [FromQuery] bool myWork = false, [FromQuery] string? sortBy = null, CancellationToken cancellationToken = default)
     {
-        var result = await _workItemService.GetPagedAsync(page, pageSize, projectId, status, type, priority, search, assigneeId, reporterId, dueDateFrom, dueDateTo, overdue, unassigned, highPriority, sortBy, cancellationToken);
+        var result = await _workItemService.GetPagedAsync(page, pageSize, projectId, status, type, priority, search, assignedResourceId, assignedTeamId, assigneeId, reporterId, dueDateFrom, dueDateTo, overdue, unassigned, highPriority, myWork, UserId(), sortBy, cancellationToken);
         return Ok(result);
     }
 

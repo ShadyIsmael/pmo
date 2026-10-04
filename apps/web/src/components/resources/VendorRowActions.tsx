@@ -12,7 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { MoreHorizontal } from "lucide-react";
 import { useAuth } from "@/lib/auth";
-import { hasPermission, Permissions } from "@/lib/permissions";
+import { hasAnyPermission, Permissions } from "@/lib/permissions";
 import {
   useDeactivateVendor,
   useDeleteVendor,
@@ -36,7 +36,9 @@ function apiErrorMessage(error: unknown, fallback: string): string {
 export function VendorRowActions({ vendor }: { vendor: VendorDto }) {
   const t = useTranslations("resources.vendors");
   const { user } = useAuth();
-  const canManage = hasPermission(user?.permissions ?? [], Permissions.Resources.Manage);
+  const permissions = user?.permissions ?? [];
+  const canEdit = hasAnyPermission(permissions, [Permissions.Resources.Edit, Permissions.Resources.Manage]);
+  const canDelete = hasAnyPermission(permissions, [Permissions.Resources.Delete, Permissions.Resources.Manage]);
   const [editOpen, setEditOpen] = useState(false);
   const [dialog, setDialog] = useState<LifecycleDialog>(null);
   const [error, setError] = useState<string | null>(null);
@@ -44,7 +46,7 @@ export function VendorRowActions({ vendor }: { vendor: VendorDto }) {
   const reactivate = useReactivateVendor();
   const remove = useDeleteVendor();
 
-  if (!canManage) {
+  if (!canEdit && !canDelete) {
     return null;
   }
 
@@ -95,11 +97,11 @@ export function VendorRowActions({ vendor }: { vendor: VendorDto }) {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" sideOffset={4} className="min-w-44">
-          <DropdownMenuItem onClick={() => setEditOpen(true)} disabled={pending}>
+          {canEdit ? <DropdownMenuItem onClick={() => setEditOpen(true)} disabled={pending}>
             {t("edit")}
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          {vendor.isActive ? (
+          </DropdownMenuItem> : null}
+          {canEdit && canDelete ? <DropdownMenuSeparator /> : null}
+          {canDelete && vendor.isActive ? (
             <DropdownMenuItem
               onClick={() => { setError(null); setDialog({ kind: "deactivate" }); }}
               disabled={pending}
@@ -107,7 +109,7 @@ export function VendorRowActions({ vendor }: { vendor: VendorDto }) {
             >
               {t("deactivate")}
             </DropdownMenuItem>
-          ) : (
+          ) : canDelete ? (
             <DropdownMenuItem
               onClick={() => { setError(null); setDialog({ kind: "reactivate" }); }}
               disabled={pending}
@@ -115,14 +117,14 @@ export function VendorRowActions({ vendor }: { vendor: VendorDto }) {
             >
               {t("reactivate")}
             </DropdownMenuItem>
-          )}
-          <DropdownMenuItem
+          ) : null}
+          {canDelete ? <DropdownMenuItem
             onClick={() => { setError(null); setDialog({ kind: "delete" }); }}
             disabled={pending}
             className="text-destructive focus:text-destructive"
           >
             {t("delete")}
-          </DropdownMenuItem>
+          </DropdownMenuItem> : null}
         </DropdownMenuContent>
       </DropdownMenu>
 

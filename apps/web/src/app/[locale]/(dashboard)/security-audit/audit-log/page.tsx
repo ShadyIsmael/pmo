@@ -4,6 +4,7 @@ import { useState } from "react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { getStatusTextClass } from "@/lib/status-presentation";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -106,6 +107,7 @@ export default function AuditLogPage() {
                   <div className="col-span-2 text-xs text-muted-foreground truncate">{log.details}</div>
                   <div className="col-span-1">
                     <Icon className={`h-4 w-4 ${severityColors[log.severity] ?? "text-muted-foreground"}`} />
+                    <span className={`ms-1 text-xs font-medium ${getStatusTextClass(log.severity)}`}>{log.severity}</span>
                   </div>
                 </div>
               );

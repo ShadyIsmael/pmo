@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ShieldCheck, Plus } from "lucide-react";
+import { getLookupTextClass } from "@/lib/status-presentation";
 
 const policies = [
   { name: "Password Complexity", description: "Minimum 12 characters, mixed case, numbers, special chars", status: "Active", scope: "Global" },
@@ -35,7 +36,7 @@ export default function SecurityPoliciesPage() {
                 <div className="flex items-center gap-2">
                   <p className="font-medium">{policy.name}</p>
                   <Badge status={policy.status} className="text-[10px]">{policy.status}</Badge>
-                  <Badge variant="outline" className="text-[10px]">{policy.scope}</Badge>
+                  <span className={`text-xs font-medium ${getLookupTextClass(policy.scope)}`}>{policy.scope}</span>
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">{policy.description}</p>
               </div>

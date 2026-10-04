@@ -20,6 +20,8 @@ import { useProjectRoles } from "@/hooks/resources/useResources";
 import { useRevokeStakeholderInvitation, useSendStakeholderInvitation, useStakeholderInvitation } from "@/hooks/projects/useStakeholderInvitations";
 import { SearchableResourceSelect } from "./SearchableResourceSelect";
 import { useManagementPerspective } from "@/lib/perspective-context";
+import { shouldLoadProjectLookup } from "@/hooks/projects/project-loading";
+import { getLookupTextClass, getResourceTypeTextClass, getSystemUserTextClass } from "@/lib/status-presentation";
 
 type Relationship = "TeamMember" | "Stakeholder" | "Sponsor" | "Other";
 type FormState = CreateProjectPersonDto & { rowVersion?: string; source?: string };
@@ -74,7 +76,7 @@ export function ProjectPeople({ projectId, enabled = true, canManage = false }: 
   const add = useAddProjectPerson(projectId);
   const update = useUpdateProjectPerson(projectId, selected?.id ?? "");
   const remove = useRemoveProjectPerson(projectId);
-  const projectRoles = useProjectRoles();
+  const projectRoles = useProjectRoles(true, shouldLoadProjectLookup(enabled && sheet !== null));
   const invitation = useStakeholderInvitation(projectId, inviteSelected?.id ?? "", !!inviteSelected);
   const sendInvitation = useSendStakeholderInvitation(projectId, inviteSelected?.id ?? "");
   const revokeInvitation = useRevokeStakeholderInvitation(projectId, inviteSelected?.id ?? "");
@@ -320,7 +322,7 @@ export function ProjectPeople({ projectId, enabled = true, canManage = false }: 
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline">{relationshipLabel(item.relationshipType, t)}</Badge>
+                        <span className={`text-sm font-medium ${getLookupTextClass(item.relationshipType)}`}>{relationshipLabel(item.relationshipType, t)}</span>
                         <div className="mt-1 text-xs text-muted-foreground">{item.role || "—"}</div>
                         {item.functionalRoles && item.functionalRoles.length > 0 && (
                           <div className="mt-1 flex flex-wrap gap-1">
@@ -330,8 +332,8 @@ export function ProjectPeople({ projectId, enabled = true, canManage = false }: 
                           </div>
                         )}
                       </TableCell>
-                      <TableCell>{item.resourceType || "—"}</TableCell>
-                      <TableCell>{item.hasSystemUser ? t("yes") : t("no")}</TableCell>
+                      <TableCell className={getResourceTypeTextClass(item.resourceType)}>{item.resourceType || "—"}</TableCell>
+                      <TableCell className={getSystemUserTextClass(item.hasSystemUser)}>{item.hasSystemUser ? t("yes") : t("no")}</TableCell>
                       <TableCell>
                         {item.relationshipType === "TeamMember" && item.allocationPercentage !== null && item.allocationPercentage !== undefined
                           ? `${item.allocationPercentage}%`
@@ -456,9 +458,9 @@ export function ProjectPeople({ projectId, enabled = true, canManage = false }: 
                       <p className="font-medium truncate">{selectedResource?.name || "—"}</p>
                       <p className="text-xs text-muted-foreground truncate">{selectedResource?.email || "—"}</p>
                       <div className="flex flex-wrap gap-2 mt-1">
-                        {selectedResource?.resourceType && <Badge variant="outline" className="text-xs">{selectedResource.resourceType}</Badge>}
+                        {selectedResource?.resourceType && <span className={`text-xs font-medium ${getResourceTypeTextClass(selectedResource.resourceType)}`}>{selectedResource.resourceType}</span>}
                         {selectedResource?.jobTitle && <Badge variant="secondary" className="text-xs">{selectedResource.jobTitle}</Badge>}
-                        {selectedResource?.hasSystemUser && <Badge variant="outline" className="text-xs text-primary">{t("systemUser")}</Badge>}
+                        {selectedResource?.hasSystemUser && <span className={`text-xs font-medium ${getSystemUserTextClass(true)}`}>{t("systemUser")}</span>}
                         {hasHistoricalForSelectedRelationship && <Badge variant="secondary" className="text-xs text-amber-600 dark:text-amber-400"><RotateCcw className="me-1 h-2.5 w-2.5" />{t("previouslyInProjectBadge")}</Badge>}
                         {isActiveDuplicate && <Badge variant="destructive" className="text-xs">{t("alreadyInProject")}</Badge>}
                       </div>

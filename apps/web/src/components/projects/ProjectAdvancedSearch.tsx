@@ -9,8 +9,10 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { SearchableSelect, type SelectOption } from "@/components/ui/searchable-select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useProjectEnumLabels } from "@/hooks/projects/useProjectEnumLabels";
+import { toUserSelectOptions, useUserLookup } from "@/hooks/projects/useProjectLookups";
+import { shouldLoadProjectLookup } from "@/hooks/projects/project-loading";
 import { ProjectHealthHelper, ProjectStatusHelper } from "@/lib/enums";
 import { ChevronDown, Filter, X } from "lucide-react";
 
@@ -37,13 +39,12 @@ interface ProjectAdvancedSearchProps {
   setFilterForecastMax: (_value: string) => void;
   filterProjectManager: string;
   setFilterProjectManager: (_value: string) => void;
+  setFilterProjectManagerName: (_value: string) => void;
   filterDueDateFrom: string;
   setFilterDueDateFrom: (_value: string) => void;
   filterDueDateTo: string;
   setFilterDueDateTo: (_value: string) => void;
   activeFilterCount: number;
-  projectManagerOptions: SelectOption[];
-  projectManagersLoading: boolean;
   onClearFilters: () => void;
 }
 
@@ -70,19 +71,20 @@ export function ProjectAdvancedSearch({
   setFilterForecastMax,
   filterProjectManager,
   setFilterProjectManager,
+  setFilterProjectManagerName,
   filterDueDateFrom,
   setFilterDueDateFrom,
   filterDueDateTo,
   setFilterDueDateTo,
   activeFilterCount,
-  projectManagerOptions,
-  projectManagersLoading,
   onClearFilters,
 }: ProjectAdvancedSearchProps) {
   const t = useTranslations("projects");
   const common = useTranslations("common");
   const { statusLabel, healthLabel } = useProjectEnumLabels();
   const [open, setOpen] = useState(false);
+  const { data: projectManagers, isLoading: projectManagersLoading } = useUserLookup("project.manager", shouldLoadProjectLookup(open));
+  const projectManagerOptions = toUserSelectOptions(projectManagers);
 
   const healthOptions = ProjectHealthHelper.allValues().map((value) => ({
     value,
@@ -183,7 +185,7 @@ export function ProjectAdvancedSearch({
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
                   <Label className="text-xs font-medium">{t("pm")}</Label>
-                  <SearchableSelect options={projectManagerOptions} value={filterProjectManager} onValueChange={setFilterProjectManager} placeholder={t("pm")} searchPlaceholder={t("searchManagerPlaceholder")} loading={projectManagersLoading} emptyText={t("noEligibleManagers")} />
+                  <SearchableSelect options={projectManagerOptions} value={filterProjectManager} onValueChange={(value) => { setFilterProjectManager(value); setFilterProjectManagerName(projectManagers?.find((manager) => manager.id === value)?.fullName ?? ""); }} placeholder={t("pm")} searchPlaceholder={t("searchManagerPlaceholder")} loading={projectManagersLoading} emptyText={t("noEligibleManagers")} />
                 </div>
                 <div className="space-y-2">
                   <Label className="text-xs font-medium">{common("dueDate")}</Label>

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { X } from "lucide-react";
 import type { GlobalFilters } from "./dashboard-types";
 import { useDashboardPortfolios, useDashboardPrograms, useDashboardProjects } from "./dashboard-data";
+import { isDashboardFilterOpen, type DashboardFilterKey } from "./dashboard-loading";
 
 interface DashboardFiltersProps {
   filters: GlobalFilters;
@@ -15,9 +16,10 @@ interface DashboardFiltersProps {
 
 export function DashboardFilters({ filters: _filters, onFiltersChange, compact }: DashboardFiltersProps) {
   const filters = _filters;
-  const portfoliosQuery = useDashboardPortfolios();
-  const programsQuery = useDashboardPrograms();
-  const projectsQuery = useDashboardProjects();
+  const [openFilter, setOpenFilter] = React.useState<DashboardFilterKey | null>(null);
+  const portfoliosQuery = useDashboardPortfolios(isDashboardFilterOpen(openFilter, "portfolio"));
+  const programsQuery = useDashboardPrograms(isDashboardFilterOpen(openFilter, "program"));
+  const projectsQuery = useDashboardProjects(isDashboardFilterOpen(openFilter, "project"));
   const portfolios = portfoliosQuery.data?.items ?? [];
   const programs = programsQuery.data?.items ?? [];
   const projects = React.useMemo(() => projectsQuery.data?.items ?? [], [projectsQuery.data?.items]);
@@ -27,7 +29,7 @@ export function DashboardFilters({ filters: _filters, onFiltersChange, compact }
   if (compact) {
     return (
       <div className="flex items-center gap-1.5 flex-wrap">
-        <Select value={filters.portfolio || "_all"} onValueChange={(v) => onFiltersChange({ ...filters, portfolio: v === "_all" ? null : v, program: null, project: null })}>
+        <Select value={filters.portfolio || "_all"} onOpenChange={(open) => setOpenFilter(open ? "portfolio" : null)} onValueChange={(v) => onFiltersChange({ ...filters, portfolio: v === "_all" ? null : v, program: null, project: null })}>
           <SelectTrigger className="h-7 text-[10px] w-[120px]">
             <SelectValue placeholder="Portfolio" />
           </SelectTrigger>
@@ -38,7 +40,7 @@ export function DashboardFilters({ filters: _filters, onFiltersChange, compact }
             ))}
           </SelectContent>
         </Select>
-        <Select value={filters.program || "_all"} onValueChange={(v) => onFiltersChange({ ...filters, program: v === "_all" ? null : v })}>
+        <Select value={filters.program || "_all"} onOpenChange={(open) => setOpenFilter(open ? "program" : null)} onValueChange={(v) => onFiltersChange({ ...filters, program: v === "_all" ? null : v })}>
           <SelectTrigger className="h-7 text-[10px] w-[120px]">
             <SelectValue placeholder="Program" />
           </SelectTrigger>
@@ -71,7 +73,7 @@ export function DashboardFilters({ filters: _filters, onFiltersChange, compact }
           ))}
         </SelectContent>
       </Select>
-      <Select value={filters.portfolio || "_all"} onValueChange={(v) => onFiltersChange({ ...filters, portfolio: v === "_all" ? null : v, program: null, project: null })}>
+      <Select value={filters.portfolio || "_all"} onOpenChange={(open) => setOpenFilter(open ? "portfolio" : null)} onValueChange={(v) => onFiltersChange({ ...filters, portfolio: v === "_all" ? null : v, program: null, project: null })}>
         <SelectTrigger className="h-7 text-[10px] w-[130px]">
           <SelectValue placeholder="All Portfolios" />
         </SelectTrigger>
@@ -82,7 +84,7 @@ export function DashboardFilters({ filters: _filters, onFiltersChange, compact }
           ))}
         </SelectContent>
       </Select>
-      <Select value={filters.program || "_all"} onValueChange={(v) => onFiltersChange({ ...filters, program: v === "_all" ? null : v })}>
+      <Select value={filters.program || "_all"} onOpenChange={(open) => setOpenFilter(open ? "program" : null)} onValueChange={(v) => onFiltersChange({ ...filters, program: v === "_all" ? null : v })}>
         <SelectTrigger className="h-7 text-[10px] w-[130px]">
           <SelectValue placeholder="All Programs" />
         </SelectTrigger>
@@ -93,7 +95,7 @@ export function DashboardFilters({ filters: _filters, onFiltersChange, compact }
           ))}
         </SelectContent>
       </Select>
-      <Select value={filters.project || "_all"} onValueChange={(v) => onFiltersChange({ ...filters, project: v === "_all" ? null : v })}>
+      <Select value={filters.project || "_all"} onOpenChange={(open) => setOpenFilter(open ? "project" : null)} onValueChange={(v) => onFiltersChange({ ...filters, project: v === "_all" ? null : v })}>
         <SelectTrigger className="h-7 text-[10px] w-[130px]">
           <SelectValue placeholder="All Projects" />
         </SelectTrigger>

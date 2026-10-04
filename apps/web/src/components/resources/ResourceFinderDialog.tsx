@@ -17,6 +17,7 @@ import { useSkills } from "@/hooks/resources/useSkills";
 import { useVendors } from "@/hooks/resources/useVendors";
 import { useResources } from "@/hooks/resources/useResources";
 import { SearchableSelect, SearchableMultiSelect, type SelectOption } from "@/components/ui/searchable-select";
+import { getResourceTypeTextClass } from "@/lib/status-presentation";
 
 const STATUS_COLORS: Record<string, string> = {
   Confirmed: "bg-blue-400",
@@ -275,7 +276,7 @@ export function ResourceFinderDialog() {
                       <div className="flex items-center gap-2">
                         <span className="font-medium">{r.resourceName}</span>
                         <Badge variant="secondary" className="text-[10px]">{Math.round(r.matchScore)}% {t("matchScore")}</Badge>
-                        <Badge variant="outline" className="text-[10px]">{r.resourceType}</Badge>
+                        <span className={`text-xs font-medium ${getResourceTypeTextClass(r.resourceType)}`}>{r.resourceType}</span>
                       </div>
                       <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
                         <span>{r.jobTitle ?? "-"}</span>

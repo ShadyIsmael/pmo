@@ -59,16 +59,20 @@ public sealed class PlanningImportResource
 
 public sealed class PlanningImportAssignment
 {
+    public string SourceId { get; init; } = string.Empty;
     public required string TaskSourceId { get; init; }
     public required string ResourceSourceId { get; init; }
     public decimal? AllocationPercent { get; init; }
     public decimal? HoursPerWeek { get; init; }
+    public decimal? PlannedHours { get; init; }
+    public string WorkConversionStatus { get; init; } = "NotProvided";
     public DateTime? Start { get; init; }
     public DateTime? Finish { get; init; }
 }
 
 public sealed class PlanningImportCalendar
 {
+    public string SourceId { get; init; } = string.Empty;
     public required string Name { get; init; }
     public bool IsDefault { get; init; }
     public List<PlanningImportCalendarDay> Days { get; init; } = new();

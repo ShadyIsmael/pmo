@@ -256,21 +256,38 @@ export interface PlanCalendarDto {
 export interface ResourceLookupDto { id: string; name: string; jobTitle?: string; isActive: boolean; }
 
 export interface PlanImportNoticeDto { code: string; message: string; count: number; }
+export interface PlanImportIssueDto { id: string; severity: string; category: string; entityType: string; sourceId?: string; code: string; message: string; count: number; isBlocking: boolean; resolution: string; }
 export interface PlanImportStatisticsDto { tasks: number; milestones: number; wbsLevels: number; dependencies: number; resources: number; assignments: number; calendars: number; actualDates: number; }
 export interface PlanImportTaskPreviewDto {
   sourceId: string; parentSourceId?: string; code: string; name: string; outlineLevel: number; sortOrder: number;
   isMilestone: boolean; schedulingMode: PlanSchedulingMode; constraintType: PlanConstraintType; constraintDate?: string; deadline?: string; durationDays: number; start?: string; finish?: string; actualStart?: string; actualFinish?: string; percentComplete?: number;
   predecessors: string[]; resources: string[];
 }
-export interface PlanImportResourcePreviewDto { sourceId: string; name: string; email?: string; nexusResourceId?: string; matchStatus: "Matched" | "Unmatched"; assignmentCount: number; }
-export interface PlanImportCalendarPreviewDto { name: string; isDefault: boolean; workingDays: number; holidays: number; }
+export interface PlanImportResourceCandidateDto { id: string; name: string; email?: string; type: string; isActive: boolean; }
+export interface PlanImportResourcePreviewDto { sourceId: string; name: string; email?: string; nexusResourceId?: string; matchStatus: "Matched" | "Unmatched"; assignmentCount: number; candidates: PlanImportResourceCandidateDto[]; resolution: string; }
+export interface PlanImportAssignmentPreviewDto { sourceId: string; taskSourceId: string; resourceSourceId: string; plannedHours?: number; workConversionStatus: string; allocationPercent?: number; start?: string; finish?: string; status: string; }
+export interface PlanImportCalendarPreviewDto { sourceId: string; name: string; isDefault: boolean; workingDays: number; holidays: number; resolution: string; requiresReview: boolean; }
 export interface PlanImportPreviewDto {
   fileName: string; format: string; suggestedPlanName: string; statistics: PlanImportStatisticsDto;
   tasks: PlanImportTaskPreviewDto[]; dependencies: Array<{ successorSourceId: string; predecessorSourceId: string; type: PlanDependencyType; lagDays?: number }>;
   resources: PlanImportResourcePreviewDto[]; calendars: PlanImportCalendarPreviewDto[];
   warnings: PlanImportNoticeDto[]; unsupportedFields: PlanImportNoticeDto[];
 }
+
+export interface PlanImportSessionDto extends PlanImportPreviewDto {
+  id: string;
+  projectId: string;
+  status: "Parsed" | "NeedsReview" | "ReadyToCommit" | "Committed" | "Cancelled" | "Failed";
+  assignments: PlanImportAssignmentPreviewDto[];
+  issues: PlanImportIssueDto[];
+  blockingIssueCount: number;
+  unresolvedResourceCount: number;
+  ignoredAssignmentCount: number;
+}
 export interface PlanImportResultDto { planId: string; planVersionId: string; versionNumber: number; createdPlan: boolean; statistics: PlanImportStatisticsDto; warnings: PlanImportNoticeDto[]; }
+export interface PlanImportResourceResolutionInput { resolution: "MapExisting" | "CreateNew" | "Ignore"; resourceId?: string; createResource?: Record<string, unknown>; }
+export interface PlanImportAssignmentResolutionInput { resolution: "Ready" | "Ignore"; }
+export interface PlanImportCalendarResolutionInput { resolution: "Import" | "Simplify" | "Ignore"; }
 
 export const planningKeys = {
   bootstrap: (projectId: string) => ["planning", "bootstrap", projectId] as const,
@@ -446,20 +463,18 @@ export const planningApi = {
   createCalendar: (projectId: string, planId: string, body: unknown) => api.post<PlanCalendarDto>(endpoints.planning.calendars(projectId, planId), body),
   updateCalendar: (projectId: string, planId: string, id: string, body: unknown) => api.put<PlanCalendarDto>(endpoints.planning.calendar(projectId, planId, id), body),
   deleteCalendar: (projectId: string, planId: string, id: string, rowVersion: string) => api.delete<void>(`${endpoints.planning.calendar(projectId, planId, id)}?rowVersion=${encodeURIComponent(rowVersion)}`),
-  previewImport: (projectId: string, file: File, targetPlanId?: string) => {
+  createImportSession: (projectId: string, file: File, targetPlanId?: string) => {
     const form = new FormData();
     form.append("file", file);
     if (targetPlanId) form.append("targetPlanId", targetPlanId);
-    return api.upload<PlanImportPreviewDto>(endpoints.planning.importPreview(projectId), form);
+    return api.upload<PlanImportSessionDto>(endpoints.planning.importSession(projectId), form);
   },
-  commitImport: (projectId: string, file: File, options: { targetPlanId?: string; newPlanName?: string; newPlanType?: PlanType }) => {
-    const form = new FormData();
-    form.append("file", file);
-    if (options.targetPlanId) form.append("targetPlanId", options.targetPlanId);
-    if (options.newPlanName) form.append("newPlanName", options.newPlanName);
-    if (options.newPlanType) form.append("newPlanType", options.newPlanType);
-    return api.upload<PlanImportResultDto>(endpoints.planning.importCommit(projectId), form);
-  },
+  getImportSession: (projectId: string, sessionId: string) => api.get<PlanImportSessionDto>(endpoints.planning.importSessionDetail(projectId, sessionId)),
+  resolveImportResource: (projectId: string, sessionId: string, sourceId: string, body: PlanImportResourceResolutionInput) => api.patch<PlanImportSessionDto>(endpoints.planning.importResourceResolution(projectId, sessionId, sourceId), body),
+  resolveImportAssignment: (projectId: string, sessionId: string, sourceId: string, body: PlanImportAssignmentResolutionInput) => api.patch<PlanImportSessionDto>(endpoints.planning.importAssignmentResolution(projectId, sessionId, sourceId), body),
+  resolveImportCalendar: (projectId: string, sessionId: string, sourceId: string, body: PlanImportCalendarResolutionInput) => api.patch<PlanImportSessionDto>(endpoints.planning.importCalendarResolution(projectId, sessionId, sourceId), body),
+  commitImportSession: (projectId: string, sessionId: string, options: { targetPlanId?: string; newPlanName?: string; newPlanType?: PlanType }) => api.post<PlanImportResultDto>(endpoints.planning.importSessionCommit(projectId, sessionId), options),
+  cancelImportSession: (projectId: string, sessionId: string) => api.post<void>(endpoints.planning.importSessionCancel(projectId, sessionId), {}),
 };
 
 export function useCreatePlanningPlan(projectId: string) {
