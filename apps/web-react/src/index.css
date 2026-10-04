@@ -1,0 +1,16 @@
+@import "./nexus-tokens.css";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Pilot compatibility shell — preserved, maps to NEXUS tokens, no redesign */
+.app-shell { min-height: 100vh; display: flex; background: hsl(var(--background)); }
+.app-column { min-width: 0; flex: 1; display: flex; flex-direction: column; min-height: 100vh; }
+.main-content { max-width: 1560px; width: 100%; margin: 0 auto; padding: 1rem; }
+@media (min-width: 1024px) { .main-content { padding: 1.25rem 1.5rem; } }
+.route-state { min-height: 340px; display: flex; align-items: center; justify-content: center; color: hsl(var(--muted-foreground)); }
+.timer-entry { display: inline-flex; align-items: center; gap: 7px; padding: 8px 12px; border: 1px solid hsl(var(--border)); border-radius: 7px; background: hsl(var(--card)); font-size: 12px; white-space: nowrap; }
+.timer-entry.timer-active { border-color: hsl(var(--primary)); background: hsl(var(--primary) / 0.08); }
+.icon-button { width: 32px; height: 32px; display: inline-grid; place-items: center; border-radius: 7px; color: hsl(var(--muted-foreground)); }
+.icon-button:hover { background: hsl(var(--muted)); }
+html[dir="rtl"] .app-shell { direction: rtl; }

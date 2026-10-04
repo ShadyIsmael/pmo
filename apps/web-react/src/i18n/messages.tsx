@@ -1,30 +1,100 @@
 import * as React from "react";
+import enMessages from "./messages/en.json";
+import arMessages from "./messages/ar.json";
 
 export type Locale = "en" | "ar";
 
 const messages = {
-  en: {
-    brand: "NEXUS PMO", home: "Home", dashboard: "Dashboard", projects: "Projects", myWork: "My Work", notifications: "Notifications", pilotScope: "Home pilot", search: "Search projects, tasks, documents...", language: "العربية", lightTheme: "Light theme", darkTheme: "Dark theme", signOut: "Sign out", signIn: "Sign in", email: "Email", password: "Password", signInDescription: "Sign in to continue to NEXUS PMO.", signInError: "Unable to sign in. Check your credentials and try again.", activeProjects: "Active projects", projectsAtRisk: "Projects at risk", openRisks: "Open risks", criticalRisks: "Critical risks", health: "Project health", attention: "Projects needing attention", topRisks: "Top risks", budget: "Budget overview", project: "Project", progress: "Progress", risk: "Risk", status: "Status", noAttention: "No projects currently need attention.", noRisks: "No open risks in the current scope.", noBudget: "No budget data in the current scope.", loading: "Loading Home...", loadError: "Home data could not be loaded.", retry: "Retry", refresh: "Refresh", trackTime: "Track time", noActiveTimer: "No active timer", activeTimer: "Active timer", elapsed: "Elapsed", timerUnavailable: "Timer unavailable", unread: "unread notifications", noPermission: "You do not have access to this area.",
-  },
-  ar: {
-    brand: "نيكسس PMO", home: "الرئيسية", dashboard: "لوحة المعلومات", projects: "المشروعات", myWork: "عملي", notifications: "الإشعارات", pilotScope: "نسخة Home التجريبية", search: "البحث في المشروعات والمهام والمستندات...", language: "English", lightTheme: "المظهر الفاتح", darkTheme: "المظهر الداكن", signOut: "تسجيل الخروج", signIn: "تسجيل الدخول", email: "البريد الإلكتروني", password: "كلمة المرور", signInDescription: "سجّل الدخول للمتابعة إلى NEXUS PMO.", signInError: "تعذر تسجيل الدخول. تحقق من البيانات وحاول مرة أخرى.", activeProjects: "المشروعات النشطة", projectsAtRisk: "مشروعات معرضة للخطر", openRisks: "المخاطر المفتوحة", criticalRisks: "المخاطر الحرجة", health: "حالة المشروعات", attention: "مشروعات تحتاج إلى متابعة", topRisks: "أهم المخاطر", budget: "ملخص الميزانية", project: "المشروع", progress: "نسبة الإنجاز", risk: "الخطر", status: "الحالة", noAttention: "لا توجد مشروعات تحتاج إلى متابعة حاليًا.", noRisks: "لا توجد مخاطر مفتوحة ضمن النطاق الحالي.", noBudget: "لا توجد بيانات ميزانية ضمن النطاق الحالي.", loading: "جارٍ تحميل الرئيسية...", loadError: "تعذر تحميل بيانات الرئيسية.", retry: "إعادة المحاولة", refresh: "تحديث", trackTime: "تسجيل الوقت", noActiveTimer: "لا يوجد مؤقت نشط", activeTimer: "المؤقت النشط", elapsed: "الوقت المنقضي", timerUnavailable: "المؤقت غير متاح", unread: "إشعارات غير مقروءة", noPermission: "ليس لديك صلاحية الوصول إلى هذه المنطقة.",
-  },
+  en: enMessages,
+  ar: arMessages,
 } as const;
 
-type MessageKey = keyof typeof messages.en;
-interface I18nContextValue { locale: Locale; setLocale: (locale: Locale) => void; t: (key: MessageKey) => string; }
+interface I18nContextValue {
+  locale: Locale;
+  setLocale: (locale: Locale) => void;
+  t: (key: string, params?: Record<string, string | number>) => string;
+  formatNumber: (value: number) => string;
+  formatCurrency: (value: number, currency?: string) => string;
+  formatPercent: (value: number) => string;
+  formatDate: (date: Date | string, options?: Intl.DateTimeFormatOptions) => string;
+}
+
 const I18nContext = React.createContext<I18nContextValue | null>(null);
+
+function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
+  return path.split(".").reduce((current: unknown, key: string) => {
+    if (current && typeof current === "object" && key in current) {
+      return (current as Record<string, unknown>)[key];
+    }
+    return undefined;
+  }, obj);
+}
+
+function interpolate(template: string, params?: Record<string, string | number>): string {
+  if (!params) return template;
+  return template.replace(/\{(\w+)\}/g, (_, key) => String(params[key] ?? ""));
+}
 
 export function I18nProvider({ children }: { children: React.ReactNode }) {
   const [locale, setLocale] = React.useState<Locale>(() => {
-    const saved = typeof window === "undefined" ? null : window.localStorage.getItem("nexus-react-locale");
+    if (typeof window === "undefined") return "en";
+    const saved = window.localStorage.getItem("nexus-locale");
     return saved === "ar" ? "ar" : "en";
   });
-  React.useEffect(() => { window.localStorage.setItem("nexus-react-locale", locale); document.documentElement.lang = locale; document.documentElement.dir = locale === "ar" ? "rtl" : "ltr"; }, [locale]);
-  const value = React.useMemo<I18nContextValue>(() => ({ locale, setLocale, t: (key) => messages[locale][key] }), [locale]);
+
+  React.useEffect(() => {
+    window.localStorage.setItem("nexus-locale", locale);
+    document.documentElement.lang = locale;
+    document.documentElement.dir = locale === "ar" ? "rtl" : "ltr";
+  }, [locale]);
+
+  const t = React.useCallback(
+    (key: string, params?: Record<string, string | number>) => {
+      const message = getNestedValue(messages[locale] as Record<string, unknown>, key);
+      if (message === undefined || typeof message !== "string") {
+        const fallback = getNestedValue(messages.en as Record<string, unknown>, key);
+        return typeof fallback === "string" ? interpolate(fallback, params) : key;
+      }
+      return interpolate(message, params);
+    },
+    [locale]
+  );
+
+  const formatNumber = React.useCallback((value: number) => {
+    return new Intl.NumberFormat(locale === "ar" ? "ar-SA" : "en-US", { useGrouping: true }).format(value);
+  }, [locale]);
+
+  const formatPercent = React.useCallback((value: number) => {
+    return `${formatNumber(Math.round(value))}%`;
+  }, [formatNumber]);
+
+  const formatCurrency = React.useCallback((value: number, currency: string = "USD") => {
+    return new Intl.NumberFormat(locale === "ar" ? "ar-SA" : "en-US", {
+      style: "currency",
+      currency,
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    }).format(value);
+  }, [locale]);
+
+  const formatDate = React.useCallback((date: Date | string, options?: Intl.DateTimeFormatOptions) => {
+    const d = typeof date === "string" ? new Date(date) : date;
+    return new Intl.DateTimeFormat(locale === "ar" ? "ar-SA" : "en-US", {
+      dateStyle: "medium",
+      ...options,
+    }).format(d);
+  }, [locale]);
+
+  const value = React.useMemo<I18nContextValue>(
+    () => ({ locale, setLocale, t, formatNumber, formatCurrency, formatPercent, formatDate }),
+    [locale, t, formatNumber, formatCurrency, formatPercent, formatDate]
+  );
+
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }
 
-export function useI18n(): I18nContextValue { const value = React.useContext(I18nContext); if (!value) throw new Error("useI18n must be used within I18nProvider"); return value; }
-export function formatNumber(value: number): string { return new Intl.NumberFormat("en-US", { useGrouping: false }).format(value); }
-export function formatPercent(value: number): string { return `${formatNumber(Math.round(value))}%`; }
+export function useI18n(): I18nContextValue {
+  const value = React.useContext(I18nContext);
+  if (!value) throw new Error("useI18n must be used within I18nProvider");
+  return value;
+}

@@ -66,6 +66,10 @@ async function request<T>(path: string, options: RequestInit = {}, retry = true,
 export const api = {
   get: <T>(path: string, params?: Record<string, string | number | boolean | undefined>) => request<T>(path, { method: "GET" }, true, params),
   post: <T>(path: string, body?: unknown) => request<T>(path, { method: "POST", body: body === undefined ? undefined : JSON.stringify(body) }),
+  put: <T>(path: string, body?: unknown) => request<T>(path, { method: "PUT", body: body === undefined ? undefined : JSON.stringify(body) }),
+  patch: <T>(path: string, body?: unknown) => request<T>(path, { method: "PATCH", body: body === undefined ? undefined : JSON.stringify(body) }),
+  delete: <T>(path: string, body?: unknown, params?: Record<string, string | number | boolean | undefined>) => request<T>(path, { method: "DELETE", body: body === undefined ? undefined : JSON.stringify(body) }, true, params),
   login: (email: string, password: string) => request<AuthResponse>("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password, tenantId: import.meta.env.VITE_TENANT_ID || undefined }) }, false),
   logout: (token: string | null) => request<void>("/api/auth/logout", { method: "POST", body: JSON.stringify({ refreshToken: token }) }, false),
+  getMe: () => request<CurrentUser>("/api/auth/me"),
 };

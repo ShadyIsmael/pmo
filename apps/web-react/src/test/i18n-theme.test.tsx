@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { I18nProvider, useI18n } from "../i18n/messages";
 import { ThemeProvider, useTheme } from "../theme/ThemeProvider";
 
-function Probe() { const { setLocale, t } = useI18n(); const { toggleTheme } = useTheme(); return <><button onClick={() => setLocale("ar")}>AR</button><button onClick={toggleTheme}>Theme</button><span>{t("home")}</span></>; }
+function Probe() { const { setLocale, t } = useI18n(); const { toggleTheme } = useTheme(); return <><button onClick={() => setLocale("ar")}>AR</button><button onClick={toggleTheme}>Theme</button><span>{t("nav.home")}</span></>; }
 
 describe("locale and theme shell", () => {
   it("supports Arabic RTL and dark theme", async () => {

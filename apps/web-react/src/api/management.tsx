@@ -1,34 +1,125 @@
 import * as React from "react";
-import { api, setManagementRequestContext, type CurrentUser, type ManagementRequestContext } from "./client";
+import { api, setManagementRequestContext } from "./client";
+import { endpoints } from "./endpoints";
+import { MANAGEMENT_PERSPECTIVES, type ManagementPerspective, type ManagementRequestContext, type PerspectiveSnapshot } from "../lib/perspective";
 
-export interface ManagementEntityReference { id: string; name: string; code?: string; }
-export interface PerspectiveAvailability { perspective: string; isNative: boolean; requiresEntityContext: boolean; contexts: ManagementEntityReference[]; }
-export interface PerspectiveSnapshot { nativePerspectives: string[]; availablePerspectives: PerspectiveAvailability[]; defaultPerspective?: string; canViewAs: boolean; selectedContext?: { selectedPerspective: string; viewMode: "Native" | "ReadOnlyViewAs"; selectedPortfolioId?: string; selectedProgramId?: string; selectedProjectId?: string; effectiveReadOnly: boolean; }; }
-
-function defaultContext(snapshot: PerspectiveSnapshot): ManagementRequestContext | null {
-  if (!snapshot.defaultPerspective) return null;
-  const availability = snapshot.availablePerspectives.find((item) => item.perspective === snapshot.defaultPerspective);
-  const entityId = availability?.contexts[0]?.id;
-  if (snapshot.selectedContext) return { perspective: snapshot.selectedContext.selectedPerspective, viewMode: snapshot.selectedContext.viewMode, portfolioId: snapshot.selectedContext.selectedPortfolioId, programId: snapshot.selectedContext.selectedProgramId, projectId: snapshot.selectedContext.selectedProjectId };
-  return { perspective: snapshot.defaultPerspective, viewMode: availability?.isNative === false ? "ReadOnlyViewAs" : "Native", ...(snapshot.defaultPerspective === "PortfolioManager" && entityId ? { portfolioId: entityId } : {}), ...(snapshot.defaultPerspective === "ProgramManager" && entityId ? { programId: entityId } : {}), ...(snapshot.defaultPerspective === "ProjectManager" && entityId ? { projectId: entityId } : {}) };
+interface ManagementContextValue {
+  snapshot: PerspectiveSnapshot | null;
+  context: ManagementRequestContext | null;
+  loading: boolean;
+  effectiveReadOnly: boolean;
+  canMutate: boolean;
+  setContext: (context: ManagementRequestContext | null) => void;
+  switchPerspective: (perspective: ManagementPerspective, entityId?: string) => void;
+  exitViewAs: () => void;
 }
 
-interface ManagementContextValue { snapshot: PerspectiveSnapshot | null; current: ManagementRequestContext | null; loading: boolean; effectiveReadOnly: boolean; }
 const ManagementContext = React.createContext<ManagementContextValue | null>(null);
+let bootstrapPromise: Promise<PerspectiveSnapshot> | null = null;
 
-export function ManagementProvider({ children, user }: { children: React.ReactNode; user: CurrentUser | null }) {
+function bootstrap(): Promise<PerspectiveSnapshot> {
+  if (bootstrapPromise) return bootstrapPromise;
+  bootstrapPromise = api.get<PerspectiveSnapshot>(endpoints.auth.perspectives).finally(() => {
+    bootstrapPromise = null;
+  });
+  return bootstrapPromise;
+}
+
+function toRequestContext(perspective: ManagementPerspective, isNative: boolean, entityId?: string): ManagementRequestContext {
+  return {
+    perspective,
+    viewMode: isNative ? "Native" : "ReadOnlyViewAs",
+    ...(perspective === MANAGEMENT_PERSPECTIVES.PortfolioManager ? { portfolioId: entityId } : {}),
+    ...(perspective === MANAGEMENT_PERSPECTIVES.ProgramManager ? { programId: entityId } : {}),
+    ...(perspective === MANAGEMENT_PERSPECTIVES.ProjectManager ? { projectId: entityId } : {}),
+  };
+}
+
+export function ManagementProvider({ user, children }: { user: { id: string; permissions: string[] } | null; children: React.ReactNode }) {
   const [snapshot, setSnapshot] = React.useState<PerspectiveSnapshot | null>(null);
-  const [current, setCurrent] = React.useState<ManagementRequestContext | null>(null);
-  const [loading, setLoading] = React.useState(Boolean(user));
+  const [context, setContextState] = React.useState<ManagementRequestContext | null>(null);
+  const [loading, setLoading] = React.useState(true);
+
   React.useEffect(() => {
     let cancelled = false;
-    if (!user) { setSnapshot(null); setCurrent(null); setLoading(false); setManagementRequestContext(null); return () => { cancelled = true; }; }
+    if (!user) {
+      setSnapshot(null);
+      setContextState(null);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
-    api.get<PerspectiveSnapshot>("/api/me/perspectives").then((next) => { if (cancelled) return; const nextContext = defaultContext(next); setSnapshot(next); setCurrent(nextContext); setManagementRequestContext(nextContext); }).catch(() => { if (!cancelled) { setSnapshot(null); setCurrent(null); setManagementRequestContext(null); } }).finally(() => { if (!cancelled) setLoading(false); });
+    bootstrap()
+      .then((next) => {
+        if (cancelled) return;
+        setSnapshot(next);
+        if (next.defaultPerspective) {
+          const availability = next.availablePerspectives.find((a) => a.perspective === next.defaultPerspective);
+          setContextState(toRequestContext(next.defaultPerspective, availability?.isNative ?? true, availability?.contexts[0]?.id));
+        } else {
+          setContextState({ perspective: MANAGEMENT_PERSPECTIVES.PortfolioManager, viewMode: "Native" });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSnapshot(null);
+          setContextState({ perspective: MANAGEMENT_PERSPECTIVES.PortfolioManager, viewMode: "Native" });
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
     return () => { cancelled = true; };
-  }, [user]);
-  const value = React.useMemo(() => ({ snapshot, current, loading, effectiveReadOnly: current?.viewMode === "ReadOnlyViewAs" }), [snapshot, current, loading]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+
+  const setContext = React.useCallback((next: ManagementRequestContext | null) => setContextState(next), []);
+
+  const switchPerspective = React.useCallback(
+    (perspective: ManagementPerspective, entityId?: string) => {
+      const availability = snapshot?.availablePerspectives.find((a) => a.perspective === perspective);
+      if (!availability) return;
+      const resolved = entityId ?? availability.contexts[0]?.id;
+      if (availability.requiresEntityContext && !resolved) return;
+      setContextState(toRequestContext(perspective, availability.isNative, resolved));
+    },
+    [snapshot]
+  );
+
+  const exitViewAs = React.useCallback(() => {
+    const native = snapshot?.defaultPerspective;
+    if (!native) return;
+    const availability = snapshot?.availablePerspectives.find((a) => a.perspective === native);
+    setContextState(toRequestContext(native, true, availability?.contexts[0]?.id));
+  }, [snapshot]);
+
+  React.useEffect(() => {
+    setManagementRequestContext(context);
+    return () => setManagementRequestContext(null);
+  }, [context]);
+
+  const value = React.useMemo<ManagementContextValue>(
+    () => ({
+      snapshot,
+      context,
+      loading,
+      effectiveReadOnly: context?.viewMode === "ReadOnlyViewAs",
+      canMutate: context?.viewMode !== "ReadOnlyViewAs",
+      setContext,
+      switchPerspective,
+      exitViewAs,
+    }),
+    [snapshot, context, loading, setContext, switchPerspective, exitViewAs]
+  );
+
   return <ManagementContext.Provider value={value}>{children}</ManagementContext.Provider>;
 }
 
-export function useManagement(): ManagementContextValue { const value = React.useContext(ManagementContext); if (!value) throw new Error("useManagement must be used within ManagementProvider"); return value; }
+export function useManagement() {
+  const value = React.useContext(ManagementContext);
+  if (!value) throw new Error("useManagement must be used within ManagementProvider");
+  return value;
+}
+
+// Back-compat alias used by Next.js code paths
+export const useManagementPerspective = useManagement;
