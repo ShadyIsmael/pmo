@@ -15,7 +15,7 @@ import { ProjectRisksTab } from "../features/projects/ProjectRisksTab";
 import { ProjectFinanceTab } from "../features/projects/ProjectFinanceTab";
 import { ProjectMembersTab } from "../features/projects/ProjectMembersTab";
 import { ProjectDocumentsTab } from "../features/projects/ProjectDocumentsTab";
-import { ProjectPlanningTab } from "../features/projects/ProjectPlanningTab";
+import { ProjectPlanningTabFull } from "../features/projects/ProjectPlanningTabFull";
 import { ProjectWorkflowsTab } from "../features/projects/ProjectWorkflowsTab";
 import { MyWorkLayout } from "../features/my-work/MyWorkLayout";
 import { MyWorkTasksPage } from "../features/my-work/MyWorkTasksPage";
@@ -35,8 +35,9 @@ const RisksPage = React.lazy(() => import("../features/risks/RisksPage").then((m
 const RiskDetailPage = React.lazy(() => import("../features/risks/RiskDetailPage").then((m) => ({ default: m.RiskDetailPage })));
 const IssuesPage = React.lazy(() => import("../features/risks/IssuesPage").then((m) => ({ default: m.IssuesPage })));
 const CostsPage = React.lazy(() => import("../features/finance/CostsPage").then((m) => ({ default: m.CostsPage })));
-const WorkflowsPage = React.lazy(() => import("../features/workflow/WorkflowsPage").then((m) => ({ default: m.WorkflowsPage })));
-const WorkflowDetailPage = React.lazy(() => import("../features/workflow/WorkflowDetailPage").then((m) => ({ default: m.WorkflowDetailPage })));
+const WorkflowsPageFull = React.lazy(() => import("../features/workflow/WorkflowPagesFull").then((m) => ({ default: m.WorkflowsPageFull })));
+const WorkflowDefinitionPageFull = React.lazy(() => import("../features/workflow/WorkflowPagesFull").then((m) => ({ default: m.WorkflowDefinitionPageFull })));
+const WorkflowVersionPageFull = React.lazy(() => import("../features/workflow/WorkflowPagesFull").then((m) => ({ default: m.WorkflowVersionPageFull })));
 const AdministrationHub = React.lazy(() => import("../features/administration/AdministrationHub").then((m) => ({ default: m.AdministrationHub })));
 const AdministrationLayout = React.lazy(() => import("../features/administration/AdministrationHub").then((m) => ({ default: m.AdministrationLayout })));
 const AccessPage = React.lazy(() => import("../features/administration/AdminPages").then((m) => ({ default: m.AccessPage })));
@@ -57,10 +58,15 @@ const NotificationsPage = React.lazy(() => import("../features/notifications/Not
 const MeetingsPageFull = React.lazy(() => import("../features/delivery/MeetingPages").then((m) => ({ default: m.MeetingsPageFull })));
 const MeetingDetailPageFull = React.lazy(() => import("../features/delivery/MeetingPages").then((m) => ({ default: m.MeetingDetailPageFull })));
 const DocumentsPage = React.lazy(() => import("../features/delivery/DeliveryPages").then((m) => ({ default: m.DocumentsPage })));
+const ReportsPageFull = React.lazy(() => import("../features/operations/OperationsPagesFull").then((m) => ({ default: m.ReportsPageFull })));
+const AuditLogPageFull = React.lazy(() => import("../features/operations/OperationsPagesFull").then((m) => ({ default: m.AuditLogPageFull })));
+const SecurityAuditPageFull = React.lazy(() => import("../features/operations/OperationsPagesFull").then((m) => ({ default: m.SecurityAuditPageFull })));
+const AIWorkspacePageFull = React.lazy(() => import("../features/operations/OperationsPagesFull").then((m) => ({ default: m.AIWorkspacePageFull })));
+const TicketsPageFull = React.lazy(() => import("../features/operations/OperationsPagesFull").then((m) => ({ default: m.WorkItemCollectionPageFull })));
+const TestManagementPageFull = React.lazy(() => import("../features/operations/OperationsPagesFull").then((m) => ({ default: m.WorkItemCollectionPageFull })));
 const PortfoliosPage = React.lazy(() => import("../features/delivery/DeliveryPages").then((m) => ({ default: m.PortfoliosPage })));
 const PortfolioDetailPage = React.lazy(() => import("../features/delivery/DeliveryPages").then((m) => ({ default: m.PortfolioDetailPage })));
 const ProgramsPage = React.lazy(() => import("../features/delivery/DeliveryPages").then((m) => ({ default: m.ProgramsPage })));
-const DeferredPage = React.lazy(() => import("../features/delivery/DeferredPage").then((m) => ({ default: m.DeferredPage })));
 
 
 function Suspended({ children }: { children: React.ReactNode }) {
@@ -90,7 +96,7 @@ export function AppRoutes() {
           <Route path="finance" element={<ProjectFinanceTab />} />
           <Route path="members" element={<ProjectMembersTab />} />
           <Route path="documents" element={<ProjectDocumentsTab />} />
-          <Route path="planning" element={<ProjectPlanningTab />} />
+          <Route path="planning" element={<ProjectPlanningTabFull />} />
           <Route path="workflows" element={<ProjectWorkflowsTab />} />
           {/* Legacy Next deep-links → canonical tabs */}
           <Route path="plan" element={<Navigate to="../planning" replace />} />
@@ -146,9 +152,9 @@ export function AppRoutes() {
 
         <Route path="/documents" element={<Guard permissions={Permissions.Document.View}><Suspended><DocumentsPage /></Suspended></Guard>} />
 
-        <Route path="/workflows" element={<Guard permissions={Permissions.Workflow.View}><Suspended><WorkflowsPage /></Suspended></Guard>} />
-        <Route path="/workflows/:id" element={<Guard permissions={Permissions.Workflow.View}><Suspended><WorkflowDetailPage /></Suspended></Guard>} />
-        <Route path="/workflows/:id/versions/:versionId" element={<Guard permissions={Permissions.Workflow.View}><Suspended><WorkflowDetailPage /></Suspended></Guard>} />
+        <Route path="/workflows" element={<Guard permissions={Permissions.Workflow.View}><Suspended><WorkflowsPageFull /></Suspended></Guard>} />
+        <Route path="/workflows/:id" element={<Guard permissions={Permissions.Workflow.View}><Suspended><WorkflowDefinitionPageFull /></Suspended></Guard>} />
+        <Route path="/workflows/:id/versions/:versionId" element={<Guard permissions={Permissions.Workflow.View}><Suspended><WorkflowVersionPageFull /></Suspended></Guard>} />
 
         <Route path="/stakeholder/projects" element={<Suspended><StakeholderProjectsPage /></Suspended>} />
         <Route path="/stakeholder/projects/:projectId" element={<Suspended><StakeholderProjectsPage /></Suspended>} />
@@ -183,15 +189,15 @@ export function AppRoutes() {
         <Route path="/notifications" element={<Suspended><NotificationsPage /></Suspended>} />
         <Route path="/integrations" element={<Suspended><IntegrationsPage /></Suspended>} />
 
-        {/* Experimental/deferred Next.js areas: deep-link safe, explicitly deferred */}
-        <Route path="/reports" element={<Suspended><DeferredPage reasonKey="nav.deferredReports" /></Suspended>} />
-        <Route path="/reports/*" element={<Suspended><DeferredPage reasonKey="nav.deferredReports" /></Suspended>} />
-        <Route path="/ai-workspace" element={<Suspended><DeferredPage reasonKey="nav.deferredAnalytics" /></Suspended>} />
-        <Route path="/ai-workspace/*" element={<Suspended><DeferredPage reasonKey="nav.deferredAnalytics" /></Suspended>} />
-        <Route path="/security-audit" element={<Suspended><DeferredPage reasonKey="nav.deferredAnalytics" /></Suspended>} />
-        <Route path="/security-audit/*" element={<Suspended><DeferredPage reasonKey="nav.deferredAnalytics" /></Suspended>} />
-        <Route path="/tickets" element={<Suspended><DeferredPage reasonKey="nav.deferredAnalytics" /></Suspended>} />
-        <Route path="/test-management" element={<Suspended><DeferredPage reasonKey="nav.deferredAnalytics" /></Suspended>} />
+        <Route path="/reports" element={<Suspended><ReportsPageFull /></Suspended>} />
+        <Route path="/reports/*" element={<Suspended><ReportsPageFull /></Suspended>} />
+        <Route path="/ai-workspace" element={<Suspended><AIWorkspacePageFull /></Suspended>} />
+        <Route path="/ai-workspace/*" element={<Suspended><AIWorkspacePageFull /></Suspended>} />
+        <Route path="/security-audit" element={<Suspended><SecurityAuditPageFull /></Suspended>} />
+        <Route path="/security-audit/audit-log" element={<Suspended><AuditLogPageFull /></Suspended>} />
+        <Route path="/security-audit/*" element={<Suspended><SecurityAuditPageFull /></Suspended>} />
+        <Route path="/tickets" element={<Suspended><TicketsPageFull type="Ticket" titleKey="operations.ticketsTitle" descriptionKey="operations.ticketsDescription" /></Suspended>} />
+        <Route path="/test-management" element={<Suspended><TestManagementPageFull type="TestCase" titleKey="operations.testsTitle" descriptionKey="operations.testsDescription" /></Suspended>} />
         <Route path="/plugins" element={<Suspended><PluginsPage /></Suspended>} />
       </Route>
       <Route path="*" element={<Navigate to="/home" replace />} />

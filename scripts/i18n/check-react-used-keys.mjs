@@ -23,14 +23,23 @@ function files(directory) {
   });
 }
 
-const source = files(sourceRoot).map((file) => fs.readFileSync(file, "utf8")).join("\n");
 const used = new Set();
-for (const pattern of [
-  /\bt\(\s*["']([^"']+)["']/g,
-  /\blabelKey\s*:\s*["']([^"']+)["']/g,
-  /\breasonKey\s*=\s*["']([^"']+)["']/g,
-]) {
-  for (const match of source.matchAll(pattern)) used.add(match[1]);
+const scopedAliases = new Map([
+  [path.join(sourceRoot, "features", "projects", "ProjectPlanningTabFull.tsx"), [["planning.", "projects.planning."]]],
+]);
+for (const file of files(sourceRoot)) {
+  const source = fs.readFileSync(file, "utf8");
+  const aliases = scopedAliases.get(file) ?? [];
+  for (const pattern of [
+    /\bt\(\s*["']([^"']+)["']/g,
+    /\blabelKey\s*:\s*["']([^"']+)["']/g,
+    /\breasonKey\s*=\s*["']([^"']+)["']/g,
+  ]) {
+    for (const match of source.matchAll(pattern)) {
+      const alias = aliases.find(([from]) => match[1].startsWith(from));
+      used.add(alias ? `${alias[1]}${match[1].slice(alias[0].length)}` : match[1]);
+    }
+  }
 }
 
 const available = leaves(messages);
