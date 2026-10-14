@@ -28,32 +28,32 @@ export function DashboardFilters({ filters: _filters, onFiltersChange, compact }
 
   if (compact) {
     return (
-      <div className="flex items-center gap-1.5 flex-wrap">
+      <div className="flex items-center gap-2 flex-wrap">
         <Select value={filters.portfolio || "_all"} onOpenChange={(open) => setOpenFilter(open ? "portfolio" : null)} onValueChange={(v) => onFiltersChange({ ...filters, portfolio: v === "_all" ? null : v, program: null, project: null })}>
-          <SelectTrigger className="h-7 text-[10px] w-[120px]">
+          <SelectTrigger className="h-8 text-xs font-medium w-[130px] border-slate-200">
             <SelectValue placeholder="Portfolio" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="_all" className="text-xs">All Portfolios</SelectItem>
+            <SelectItem value="_all" className="text-xs font-medium">All Portfolios</SelectItem>
             {portfolios.map((pf) => (
-              <SelectItem key={pf.id} value={pf.id} className="text-xs">{pf.name}</SelectItem>
+              <SelectItem key={pf.id} value={pf.id} className="text-xs font-medium">{pf.name}</SelectItem>
             ))}
           </SelectContent>
         </Select>
         <Select value={filters.program || "_all"} onOpenChange={(open) => setOpenFilter(open ? "program" : null)} onValueChange={(v) => onFiltersChange({ ...filters, program: v === "_all" ? null : v })}>
-          <SelectTrigger className="h-7 text-[10px] w-[120px]">
+          <SelectTrigger className="h-8 text-xs font-medium w-[130px] border-slate-200">
             <SelectValue placeholder="Program" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="_all" className="text-xs">All Programs</SelectItem>
+            <SelectItem value="_all" className="text-xs font-medium">All Programs</SelectItem>
             {programs.map((prog) => (
-              <SelectItem key={prog.id} value={prog.id} className="text-xs">{prog.name}</SelectItem>
+              <SelectItem key={prog.id} value={prog.id} className="text-xs font-medium">{prog.name}</SelectItem>
             ))}
           </SelectContent>
         </Select>
         {hasFilters && (
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onFiltersChange({ portfolio: null, program: null, project: null, dateRange: filters.dateRange })}>
-            <X className="h-3 w-3" />
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-slate-700 hover:bg-slate-100" onClick={() => onFiltersChange({ portfolio: null, program: null, project: null, dateRange: filters.dateRange })}>
+            <X className="h-3.5 w-3.5" />
           </Button>
         )}
       </div>
@@ -62,53 +62,53 @@ export function DashboardFilters({ filters: _filters, onFiltersChange, compact }
 
   return (
     <div className="flex items-center gap-2 flex-wrap">
-      <span className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Filters</span>
+      <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Filters</span>
       <Select value={filters.dateRange} onValueChange={(v) => onFiltersChange({ ...filters, dateRange: v })}>
-        <SelectTrigger className="h-7 text-[10px] w-[110px]">
+        <SelectTrigger className="h-8 text-xs font-medium w-[120px] border-slate-200">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
           {[{ label: "Last 7 Days", value: "7d" }, { label: "Last 30 Days", value: "30d" }, { label: "Last 90 Days", value: "90d" }, { label: "Year to Date", value: "ytd" }, { label: "Last Year", value: "1y" }].map((o) => (
-            <SelectItem key={o.value} value={o.value} className="text-xs">{o.label}</SelectItem>
+            <SelectItem key={o.value} value={o.value} className="text-xs font-medium">{o.label}</SelectItem>
           ))}
         </SelectContent>
       </Select>
       <Select value={filters.portfolio || "_all"} onOpenChange={(open) => setOpenFilter(open ? "portfolio" : null)} onValueChange={(v) => onFiltersChange({ ...filters, portfolio: v === "_all" ? null : v, program: null, project: null })}>
-        <SelectTrigger className="h-7 text-[10px] w-[130px]">
+        <SelectTrigger className="h-8 text-xs font-medium w-[140px] border-slate-200">
           <SelectValue placeholder="All Portfolios" />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="_all" className="text-xs">All Portfolios</SelectItem>
+          <SelectItem value="_all" className="text-xs font-medium">All Portfolios</SelectItem>
           {portfolios.map((pf) => (
-            <SelectItem key={pf.id} value={pf.id} className="text-xs">{pf.name}</SelectItem>
+            <SelectItem key={pf.id} value={pf.id} className="text-xs font-medium">{pf.name}</SelectItem>
           ))}
         </SelectContent>
       </Select>
       <Select value={filters.program || "_all"} onOpenChange={(open) => setOpenFilter(open ? "program" : null)} onValueChange={(v) => onFiltersChange({ ...filters, program: v === "_all" ? null : v })}>
-        <SelectTrigger className="h-7 text-[10px] w-[130px]">
+        <SelectTrigger className="h-8 text-xs font-medium w-[140px] border-slate-200">
           <SelectValue placeholder="All Programs" />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="_all" className="text-xs">All Programs</SelectItem>
+          <SelectItem value="_all" className="text-xs font-medium">All Programs</SelectItem>
           {programs.map((prog) => (
-            <SelectItem key={prog.id} value={prog.id} className="text-xs">{prog.name}</SelectItem>
+            <SelectItem key={prog.id} value={prog.id} className="text-xs font-medium">{prog.name}</SelectItem>
           ))}
         </SelectContent>
       </Select>
       <Select value={filters.project || "_all"} onOpenChange={(open) => setOpenFilter(open ? "project" : null)} onValueChange={(v) => onFiltersChange({ ...filters, project: v === "_all" ? null : v })}>
-        <SelectTrigger className="h-7 text-[10px] w-[130px]">
+        <SelectTrigger className="h-8 text-xs font-medium w-[140px] border-slate-200">
           <SelectValue placeholder="All Projects" />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="_all" className="text-xs">All Projects</SelectItem>
+          <SelectItem value="_all" className="text-xs font-medium">All Projects</SelectItem>
           {projects.map((p) => (
-            <SelectItem key={p.id} value={p.id} className="text-xs">{p.name}</SelectItem>
+            <SelectItem key={p.id} value={p.id} className="text-xs font-medium">{p.name}</SelectItem>
           ))}
         </SelectContent>
       </Select>
       {hasFilters && (
-        <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => onFiltersChange({ portfolio: null, program: null, project: null, dateRange: filters.dateRange })}>
-          <X className="h-3 w-3" />
+        <Button variant="ghost" size="sm" className="h-8 text-xs font-medium gap-1.5 text-slate-600 hover:text-slate-800 hover:bg-slate-100" onClick={() => onFiltersChange({ portfolio: null, program: null, project: null, dateRange: filters.dateRange })}>
+          <X className="h-3.5 w-3.5" />
           Clear
         </Button>
       )}

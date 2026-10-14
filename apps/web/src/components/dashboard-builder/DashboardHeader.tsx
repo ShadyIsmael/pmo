@@ -43,43 +43,43 @@ export function DashboardHeader({
   onRefreshAll, onSaveView, onManageViews, onReset, onFiltersChange, onSwitchView,
 }: DashboardHeaderProps) {
   return (
-    <div className="space-y-2">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="space-y-0.5">
-          <div className="flex items-center gap-2">
-            <h1 className="text-lg font-bold tracking-tight sm:text-xl">{viewName}</h1>
-            <span className="text-xs font-medium capitalize text-info">{dashboardType}</span>
-            {!canEdit && <Badge variant="secondary" className="h-5 text-[9px]">{access === "duplicate" ? "Can duplicate" : "View only"}</Badge>}
+    <div className="space-y-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">{viewName}</h1>
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">{dashboardType}</span>
+            {!canEdit && <Badge variant="secondary" className="h-6 text-[10px] font-medium bg-slate-100 text-slate-600 border-slate-200">{access === "duplicate" ? "Can duplicate" : "View only"}</Badge>}
             {editMode && (
-              <Badge variant="default" className="bg-warning text-warning-foreground hover:bg-warning text-[9px] h-5">
-                <Pencil className="h-2.5 w-2.5 mr-0.5" />
+              <Badge variant="default" className="bg-amber-500 text-white hover:bg-amber-600 text-[10px] font-medium h-6 px-2.5">
+                <Pencil className="h-3 w-3 mr-1" />
                 Editing
               </Badge>
             )}
           </div>
-          <p className="text-xs text-muted-foreground/80">{POV_LABELS[pov]} · {POV_DESCRIPTIONS[pov]}</p>
+          <p className="text-sm text-slate-500">{POV_LABELS[pov]} · {POV_DESCRIPTIONS[pov]}</p>
         </div>
 
-        <div className="flex items-center gap-1.5 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
           <Select value={pov} onValueChange={(v) => onPOVChange(v as PointOfView)}>
-            <SelectTrigger className="h-7 w-[130px] text-[10px]">
-              <Layers className="h-3 w-3 mr-1" />
+            <SelectTrigger className="h-8 w-[140px] text-xs font-medium border-slate-200">
+              <Layers className="h-3.5 w-3.5 mr-1.5 text-slate-500" />
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               {(povOptions ?? POV_OPTIONS).map((opt) => (
-                <SelectItem key={opt} value={opt} className="text-xs">{opt}</SelectItem>
+                <SelectItem key={opt} value={opt} className="text-xs font-medium">{opt}</SelectItem>
               ))}
             </SelectContent>
           </Select>
 
           <Select value={currentViewId} onValueChange={onSwitchView}>
-            <SelectTrigger className="h-7 w-[140px] text-[10px]">
+            <SelectTrigger className="h-8 w-[150px] text-xs font-medium border-slate-200">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               {views.map((v) => (
-                <SelectItem key={v.id} value={v.id} className="text-xs">
+                <SelectItem key={v.id} value={v.id} className="text-xs font-medium">
                   {v.name} {v.isDefault ? "★" : ""}
                 </SelectItem>
               ))}
@@ -87,42 +87,42 @@ export function DashboardHeader({
           </Select>
 
           {lastUpdated && (
-            <span className="hidden sm:block text-[9px] text-muted-foreground/50 mr-1">
-              {new Date(lastUpdated).toLocaleTimeString()}
+            <span className="hidden sm:block text-[10px] text-slate-400 mr-1">
+              Updated {new Date(lastUpdated).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </span>
           )}
 
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onRefreshAll} disabled={refreshing}>
-            <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-slate-700 hover:bg-slate-100" onClick={onRefreshAll} disabled={refreshing}>
+            <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
           </Button>
 
-          <Button variant={editMode ? "default" : "outline"} size="sm" className="h-7 text-[10px] gap-1" onClick={onToggleEditMode} disabled={!canEdit}>
-            {editMode ? <EyeOff className="h-3 w-3" /> : <Pencil className="h-3 w-3" />}
+          <Button variant={editMode ? "default" : "outline"} size="sm" className="h-8 text-xs font-medium gap-1.5" onClick={onToggleEditMode} disabled={!canEdit}>
+            {editMode ? <EyeOff className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
             {editMode ? "View" : "Edit"}
           </Button>
 
           {!editMode && canEdit && (
-            <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1" onClick={onAddWidget}>
-              <Plus className="h-3 w-3" />Add
+            <Button variant="outline" size="sm" className="h-8 text-xs font-medium gap-1.5 border-slate-200 hover:bg-slate-50" onClick={onAddWidget}>
+              <Plus className="h-3.5 w-3.5" />Add Widget
             </Button>
           )}
 
           {!editMode && canEdit && (
-            <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1" onClick={onManageViews}>
-              <Layout className="h-3 w-3" />Manage ({viewCount})
+            <Button variant="outline" size="sm" className="h-8 text-xs font-medium gap-1.5 border-slate-200 hover:bg-slate-50" onClick={onManageViews}>
+              <Layout className="h-3.5 w-3.5" />Views ({viewCount})
             </Button>
           )}
 
           {editMode && (
             <>
-              <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1" onClick={onSaveView}>
-                <Save className="h-3 w-3" />Save
+              <Button variant="outline" size="sm" className="h-8 text-xs font-medium gap-1.5 border-slate-200 hover:bg-slate-50" onClick={onSaveView}>
+                <Save className="h-3.5 w-3.5" />Save
               </Button>
-              <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1" onClick={onManageViews}>
-                <Layout className="h-3 w-3" />{viewCount}
+              <Button variant="outline" size="sm" className="h-8 text-xs font-medium gap-1.5 border-slate-200 hover:bg-slate-50" onClick={onManageViews}>
+                <Layout className="h-3.5 w-3.5" />{viewCount}
               </Button>
-              <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1 text-destructive hover:text-destructive" onClick={onReset}>
-                <RotateCcw className="h-3 w-3" />Reset
+              <Button variant="outline" size="sm" className="h-8 text-xs font-medium gap-1.5 text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700" onClick={onReset}>
+                <RotateCcw className="h-3.5 w-3.5" />Reset
               </Button>
             </>
           )}
