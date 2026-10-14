@@ -13,9 +13,10 @@ public sealed class UserDeviceTokenConfiguration : IEntityTypeConfiguration<User
         // SQL Server caps nvarchar at 4000 characters, and (TenantId, Token) is a unique
         // index so Token cannot be nvarchar(max) either.
         builder.Property(device => device.Token).HasMaxLength(4000).IsRequired();
+        builder.Property(device => device.TokenHash).HasMaxLength(64).IsRequired();
         builder.Property(device => device.Platform).HasMaxLength(32).IsRequired();
         builder.Property(device => device.DeviceName).HasMaxLength(200);
-        builder.HasIndex(device => new { device.TenantId, device.Token }).IsUnique();
+        builder.HasIndex(device => device.TokenHash).IsUnique().HasFilter("[IsActive] = 1");
         builder.HasIndex(device => new { device.TenantId, device.UserId, device.IsActive });
         builder.Property(device => device.RowVersion).IsRowVersion();
     }

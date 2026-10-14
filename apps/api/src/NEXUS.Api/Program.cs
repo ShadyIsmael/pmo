@@ -12,6 +12,7 @@ using NEXUS.Modules.CostManagement.ModuleRegistration;
 using NEXUS.Modules.Documents.Application;
 using NEXUS.Modules.Documents.ModuleRegistration;
 using NEXUS.Modules.Identity.ModuleRegistration;
+using NEXUS.Modules.Identity.Infrastructure;
 using NEXUS.Modules.Integrations.ModuleRegistration;
 using NEXUS.Modules.IssueManagement.ModuleRegistration;
 using NEXUS.Modules.Meetings.ModuleRegistration;
@@ -38,6 +39,12 @@ using NEXUS.Api.ProgramManagement;
 using NEXUS.Api.PortfolioManagement;
 
 var builder = WebApplication.CreateBuilder(args);
+var seedOnly = args.Contains("--seed-only", StringComparer.OrdinalIgnoreCase);
+
+if (seedOnly && !builder.Environment.IsDevelopment())
+{
+    throw new InvalidOperationException("The --seed-only option is available only in the Development environment.");
+}
 
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
@@ -107,8 +114,27 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("Team.Manage", policy => policy.RequireClaim("permission", "Team.Manage"));
     options.AddPolicy("Users.Read", policy => policy.RequireClaim("permission", "users.read", "users.write"));
     options.AddPolicy("Users.Write", policy => policy.RequireClaim("permission", "users.write"));
+    options.AddPolicy("Users.ResetPassword", policy => policy.RequireClaim("permission", "users.reset-password"));
     options.AddPolicy("Settings.Read", policy => policy.RequireClaim("permission", "settings.read", "settings.write"));
     options.AddPolicy("Settings.Write", policy => policy.RequireClaim("permission", "settings.write"));
+    options.AddPolicy("Directory.View", policy => policy.RequireAssertion(context =>
+        context.User.HasClaim("permission", "Directory.View")
+        || context.User.HasClaim("permission", "Directory.Manage")
+        || context.User.HasClaim("permission", "Directory.TestConnection")
+        || context.User.HasClaim("permission", "Directory.PreviewSync")
+        || context.User.HasClaim("permission", "Directory.ExecuteSync")
+        || context.User.HasClaim("permission", "Directory.ManageMappings")
+        || context.User.HasClaim("permission", "Directory.ManageProvisioningPolicy")));
+    options.AddPolicy("Directory.Manage", policy => policy.RequireClaim("permission", "Directory.Manage"));
+    options.AddPolicy("Directory.TestConnection", policy => policy.RequireClaim("permission", "Directory.TestConnection", "Directory.Manage"));
+    options.AddPolicy("Directory.PreviewSync", policy => policy.RequireClaim("permission", "Directory.PreviewSync", "Directory.Manage"));
+    options.AddPolicy("Directory.GroupCatalog", policy => policy.RequireAssertion(context =>
+        context.User.HasClaim("permission", "Directory.PreviewSync")
+        || context.User.HasClaim("permission", "Directory.ManageMappings")
+        || context.User.HasClaim("permission", "Directory.Manage")));
+    options.AddPolicy("Directory.ExecuteSync", policy => policy.RequireClaim("permission", "Directory.ExecuteSync", "Directory.Manage"));
+    options.AddPolicy("Directory.ManageMappings", policy => policy.RequireClaim("permission", "Directory.ManageMappings", "Directory.Manage"));
+    options.AddPolicy("Directory.ManageProvisioningPolicy", policy => policy.RequireClaim("permission", "Directory.ManageProvisioningPolicy", "Directory.Manage"));
     options.AddPolicy("Finances.Read", policy => policy.RequireClaim("permission", "finances.read", "finances.write"));
     options.AddPolicy("Finances.Write", policy => policy.RequireClaim("permission", "finances.write"));
 
@@ -266,11 +292,19 @@ if (app.Environment.IsDevelopment())
     var workflowOnboarding = await workItemWorkflowProvisioning.OnboardCurrentTenantAsync("System", CancellationToken.None);
     if (workflowOnboarding.IsSuccess && workflowOnboarding.Value!.Exceptions.Count > 0)
         app.Logger.LogWarning("Work Item workflow onboarding completed with {Count} exceptions.", workflowOnboarding.Value.Exceptions.Count);
+
+    if (seedOnly)
+    {
+        app.Logger.LogInformation("Database migration and development seeding completed; exiting before opening an HTTP listener.");
+        return;
+    }
 }
 
 app.UseRouting();
 app.UseCors("FrontendCors");
 app.UseAuthentication();
+app.UseMiddleware<InitialPasswordEnforcementMiddleware>();
+app.UseMiddleware<UserPermissionClaimsMiddleware>();
 app.UseMiddleware<ManagementContextMiddleware>();
 app.UseAuthorization();
 app.MapControllers();

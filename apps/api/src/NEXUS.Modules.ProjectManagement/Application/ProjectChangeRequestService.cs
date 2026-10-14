@@ -31,14 +31,14 @@ public class ProjectChangeRequestService : IProjectChangeRequestService
         var tenantIdResult = GetCurrentTenantId();
         if (tenantIdResult.IsFailure)
         {
-            return Result<ProjectChangeRequestDto>.Failure(tenantIdResult.Error);
+            return Result<ProjectChangeRequestDto>.Failure(tenantIdResult.Error!);
         }
         var tenantId = tenantIdResult.Value;
 
         var userIdResult = GetCurrentUserGuid();
         if (userIdResult.IsFailure)
         {
-            return Result<ProjectChangeRequestDto>.Failure(userIdResult.Error);
+            return Result<ProjectChangeRequestDto>.Failure(userIdResult.Error!);
         }
         var actualUserId = userIdResult.Value;
 
@@ -94,7 +94,7 @@ public class ProjectChangeRequestService : IProjectChangeRequestService
         var tenantIdResult = GetCurrentTenantId();
         if (tenantIdResult.IsFailure)
         {
-            return Result<ProjectChangeRequestDto>.Failure(tenantIdResult.Error);
+            return Result<ProjectChangeRequestDto>.Failure(tenantIdResult.Error!);
         }
         var tenantId = tenantIdResult.Value;
 
@@ -128,7 +128,7 @@ public class ProjectChangeRequestService : IProjectChangeRequestService
         var tenantIdResult = GetCurrentTenantId();
         if (tenantIdResult.IsFailure)
         {
-            return Result<IReadOnlyList<ProjectChangeRequestDto>>.Failure(tenantIdResult.Error);
+            return Result<IReadOnlyList<ProjectChangeRequestDto>>.Failure(tenantIdResult.Error!);
         }
         var tenantId = tenantIdResult.Value;
 
@@ -182,7 +182,7 @@ public class ProjectChangeRequestService : IProjectChangeRequestService
         var tenantIdResult = GetCurrentTenantId();
         if (tenantIdResult.IsFailure)
         {
-            return Result<IReadOnlyList<ProjectChangeRequestDto>>.Failure(tenantIdResult.Error);
+            return Result<IReadOnlyList<ProjectChangeRequestDto>>.Failure(tenantIdResult.Error!);
         }
         var tenantId = tenantIdResult.Value;
 
@@ -230,14 +230,14 @@ public class ProjectChangeRequestService : IProjectChangeRequestService
         var tenantIdResult = GetCurrentTenantId();
         if (tenantIdResult.IsFailure)
         {
-            return Result<ProjectChangeRequestDto>.Failure(tenantIdResult.Error);
+            return Result<ProjectChangeRequestDto>.Failure(tenantIdResult.Error!);
         }
         var tenantId = tenantIdResult.Value;
 
         var reviewerIdResult = GetCurrentUserGuid();
         if (reviewerIdResult.IsFailure)
         {
-            return Result<ProjectChangeRequestDto>.Failure(reviewerIdResult.Error);
+            return Result<ProjectChangeRequestDto>.Failure(reviewerIdResult.Error!);
         }
         var reviewerId = reviewerIdResult.Value;
 
@@ -292,7 +292,7 @@ public class ProjectChangeRequestService : IProjectChangeRequestService
         var saveResult = await SaveWithConcurrencyCheckAsync(cancellationToken);
         if (saveResult.IsFailure)
         {
-            return Result<ProjectChangeRequestDto>.Failure(saveResult.Error);
+            return Result<ProjectChangeRequestDto>.Failure(saveResult.Error!);
         }
 
         await transaction.CommitAsync(cancellationToken);
@@ -306,14 +306,14 @@ public class ProjectChangeRequestService : IProjectChangeRequestService
         var tenantIdResult = GetCurrentTenantId();
         if (tenantIdResult.IsFailure)
         {
-            return Result<ProjectChangeRequestDto>.Failure(tenantIdResult.Error);
+            return Result<ProjectChangeRequestDto>.Failure(tenantIdResult.Error!);
         }
         var tenantId = tenantIdResult.Value;
 
         var reviewerIdResult = GetCurrentUserGuid();
         if (reviewerIdResult.IsFailure)
         {
-            return Result<ProjectChangeRequestDto>.Failure(reviewerIdResult.Error);
+            return Result<ProjectChangeRequestDto>.Failure(reviewerIdResult.Error!);
         }
         var reviewerId = reviewerIdResult.Value;
 
@@ -353,7 +353,7 @@ public class ProjectChangeRequestService : IProjectChangeRequestService
         var saveResult = await SaveWithConcurrencyCheckAsync(cancellationToken);
         if (saveResult.IsFailure)
         {
-            return Result<ProjectChangeRequestDto>.Failure(saveResult.Error);
+            return Result<ProjectChangeRequestDto>.Failure(saveResult.Error!);
         }
 
         await LogAuditAsync(request, "Reject", reviewerId, decisionNotes, cancellationToken);
@@ -366,14 +366,14 @@ public class ProjectChangeRequestService : IProjectChangeRequestService
         var tenantIdResult = GetCurrentTenantId();
         if (tenantIdResult.IsFailure)
         {
-            return Result<ProjectChangeRequestDto>.Failure(tenantIdResult.Error);
+            return Result<ProjectChangeRequestDto>.Failure(tenantIdResult.Error!);
         }
         var tenantId = tenantIdResult.Value;
 
         var actorIdResult = GetCurrentUserGuid();
         if (actorIdResult.IsFailure)
         {
-            return Result<ProjectChangeRequestDto>.Failure(actorIdResult.Error);
+            return Result<ProjectChangeRequestDto>.Failure(actorIdResult.Error!);
         }
         var actorId = actorIdResult.Value;
 
@@ -403,7 +403,7 @@ public class ProjectChangeRequestService : IProjectChangeRequestService
         var saveResult = await SaveWithConcurrencyCheckAsync(cancellationToken);
         if (saveResult.IsFailure)
         {
-            return Result<ProjectChangeRequestDto>.Failure(saveResult.Error);
+            return Result<ProjectChangeRequestDto>.Failure(saveResult.Error!);
         }
 
         await LogAuditAsync(request, "Cancel", actorId, request.DecisionNotes, cancellationToken);

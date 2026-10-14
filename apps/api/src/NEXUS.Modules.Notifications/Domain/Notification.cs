@@ -9,9 +9,9 @@ public class Notification : BaseEntity
     public string Title { get; set; } = string.Empty;
     public string? Body { get; set; }
     public string Type { get; set; } = string.Empty;
-    public string Channel { get; set; } = string.Empty;
     public string? ReferenceType { get; set; }
     public Guid? ReferenceId { get; set; }
+    public bool IsInAppVisible { get; set; } = true;
     public bool IsRead { get; set; }
     public DateTime? ReadAt { get; set; }
     public DateTime SentAt { get; set; } = DateTime.UtcNow;

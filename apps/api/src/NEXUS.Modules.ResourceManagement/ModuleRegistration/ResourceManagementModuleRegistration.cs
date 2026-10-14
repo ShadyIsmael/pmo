@@ -22,6 +22,7 @@ public static class ResourceManagementModuleRegistration
         services.AddScoped<IResourceCostProfileService, ResourceCostProfileService>();
         services.AddScoped<IProjectRoleService, ProjectRoleService>();
         services.AddScoped<ResourceLaborCostCalculator>();
+        services.AddScoped<IProjectEvmLaborCostLookup, ProjectEvmLaborCostLookup>();
         services.AddScoped<ICostUtilizationAnalyticsService, CostUtilizationAnalyticsService>();
         return services;
     }

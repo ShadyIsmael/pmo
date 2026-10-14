@@ -13,6 +13,7 @@ public static class CostManagementModuleRegistration
         services.AddScoped<ICostService, CostService>();
         services.AddScoped<ICommitmentService, CommitmentService>();
         services.AddScoped<IProjectFinancialLookup, ProjectFinancialLookup>();
+        services.AddScoped<IProjectEvmDirectCostLookup, ProjectEvmDirectCostLookup>();
         services.AddScoped<IGlobalFinancialSummaryService, GlobalFinancialSummaryService>();
         services.AddScoped<IBudgetRevisionService, BudgetRevisionService>();
         services.AddScoped<IWorkflowEntityAdapter, FinanceWorkflowAdapter>();

@@ -31,6 +31,7 @@ export interface WorkItemStatusDto {
   displayOrder: number;
   isActive: boolean;
   isTerminal: boolean;
+  color?: string;
 }
 
 const workItemKeys = {

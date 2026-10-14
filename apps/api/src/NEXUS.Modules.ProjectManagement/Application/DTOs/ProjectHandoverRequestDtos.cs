@@ -13,6 +13,15 @@ public class RejectProjectHandoverRequestDto
     public string RejectionReason { get; set; } = string.Empty;
 }
 
+public class ProjectHandoverManagerDto
+{
+    public Guid Id { get; set; }
+    public string FullName { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+    public string? JobTitle { get; set; }
+    public IReadOnlyList<string> ManagerTypes { get; set; } = Array.Empty<string>();
+}
+
 public class ProjectHandoverRequestDto
 {
     public Guid Id { get; set; }

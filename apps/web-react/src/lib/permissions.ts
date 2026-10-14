@@ -86,6 +86,12 @@ export const Permissions = {
     Manage: "Meeting.Manage",
     Delete: "Meeting.Delete",
   },
+  TimeTracking: {
+    ViewOwn: "TimeTracking.ViewOwn",
+    ManageOwn: "TimeTracking.ManageOwn",
+    ViewTeam: "TimeTracking.ViewTeam",
+    ManageTeam: "TimeTracking.ManageTeam",
+  },
   Document: {
     View: "Document.View",
     Create: "Document.Create",
@@ -96,6 +102,7 @@ export const Permissions = {
   Users: {
     Read: "users.read",
     Write: "users.write",
+    ResetPassword: "users.reset-password",
   },
   Finances: {
     Read: "finances.read",
@@ -109,12 +116,23 @@ export const Permissions = {
     Read: "settings.read",
     Write: "settings.write",
   },
+  Directory: {
+    View: "Directory.View",
+    Manage: "Directory.Manage",
+    TestConnection: "Directory.TestConnection",
+    PreviewSync: "Directory.PreviewSync",
+    ExecuteSync: "Directory.ExecuteSync",
+    ManageMappings: "Directory.ManageMappings",
+    ManageProvisioningPolicy: "Directory.ManageProvisioningPolicy",
+  },
   Workflow: {
     View: "Workflow.View",
     Manage: "Workflow.Manage",
     Publish: "Workflow.Publish",
   },
 } as const;
+
+export const DirectoryAccessPermissions = Object.values(Permissions.Directory);
 
 export type Permission = (typeof Permissions)[keyof typeof Permissions][keyof typeof Permissions[keyof typeof Permissions]];
 

@@ -8,6 +8,8 @@ public sealed class CreateRiskDto
     public string Title { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public RiskLevel RiskLevel { get; set; } = RiskLevel.Low;
+    public string? Impact { get; set; }
+    public string? Likelihood { get; set; }
     public Guid? OwnerResourceId { get; set; }
     public CreateRiskImpactAssessmentDto? ImpactAssessment { get; set; }
 }
@@ -17,6 +19,8 @@ public sealed class UpdateRiskDto
     public string Title { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public RiskLevel RiskLevel { get; set; }
+    public string? Impact { get; set; }
+    public string? Likelihood { get; set; }
     public Guid? OwnerResourceId { get; set; }
     public byte[] RowVersion { get; set; } = Array.Empty<byte>();
 }
@@ -60,6 +64,8 @@ public sealed class RiskDto
     public string Title { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public RiskLevel RiskLevel { get; set; }
+    public string Impact { get; set; } = string.Empty;
+    public string Likelihood { get; set; } = string.Empty;
     public RiskStatus Status { get; set; }
     public IReadOnlyList<RiskImpactType> ImpactTypes { get; set; } = Array.Empty<RiskImpactType>();
     public string? LastActionUpdateText { get; set; }

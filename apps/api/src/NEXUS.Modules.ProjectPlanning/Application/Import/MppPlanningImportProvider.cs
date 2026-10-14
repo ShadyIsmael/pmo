@@ -1,9 +1,8 @@
 using NEXUS.Modules.ProjectPlanning.Domain;
 using System.Text;
-using net.sf.mpxj;
-using net.sf.mpxj.mpp;
-using MpxjResource = net.sf.mpxj.Resource;
-using MpxjTask = net.sf.mpxj.Task;
+using MPXJ.Net;
+using MpxjResource = MPXJ.Net.Resource;
+using MpxjTask = MPXJ.Net.Task;
 
 namespace NEXUS.Modules.ProjectPlanning.Application.Import;
 
@@ -61,7 +60,7 @@ public sealed class MppPlanningImportProvider : IPlanningImportProvider
             {
                 // Use the format-specific reader deliberately: an uploaded file
                 // cannot select another parser merely by disguising its extension.
-                project = new MPPReader().Read(new java.io.File(tempFile));
+                project = new MPPReader().Read(tempFile);
             }
             catch (Exception exception)
             {
@@ -99,7 +98,7 @@ public sealed class MppPlanningImportProvider : IPlanningImportProvider
         foreach (MpxjTask task in project.Tasks)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var id = task.ID?.intValue() ?? 0;
+            var id = task.ID ?? 0;
             var name = task.Name?.Trim();
             if (id == 0 || string.IsNullOrWhiteSpace(name)) continue;
 
@@ -110,7 +109,7 @@ public sealed class MppPlanningImportProvider : IPlanningImportProvider
                 continue;
             }
 
-            var durationValue = ConvertDuration(task.Duration, TimeUnit.valueOf("DAYS"), project.ProjectProperties);
+            var durationValue = ConvertDuration(task.Duration, TimeUnit.Days, project.ProjectProperties);
             var durationDays = ToWholeDays(durationValue, out var wasFractional);
             if (wasFractional) fractionalDurations++;
 
@@ -122,7 +121,7 @@ public sealed class MppPlanningImportProvider : IPlanningImportProvider
             }
 
             var parent = task.ParentTask;
-            var parentSourceId = parent is null || (parent.ID?.intValue() ?? 0) == 0
+            var parentSourceId = parent is null || (parent.ID ?? 0) == 0
                 ? null
                 : SourceId(parent.UniqueID, parent.ID, 0);
             var milestone = task.Milestone || (!task.Summary && durationDays == 0);
@@ -135,10 +134,10 @@ public sealed class MppPlanningImportProvider : IPlanningImportProvider
             {
                 SourceId = sourceId,
                 ParentSourceId = parentSourceId,
-                Code = FirstNonBlank(task.WBS, task.ID?.toString(), sourceId)!,
+                Code = FirstNonBlank(task.WBS, task.ID?.ToString(System.Globalization.CultureInfo.InvariantCulture), sourceId)!,
                 Name = name,
                 Description = description,
-                OutlineLevel = Math.Max(1, task.OutlineLevel?.intValue() ?? 1),
+                OutlineLevel = Math.Max(1, task.OutlineLevel ?? 1),
                 SortOrder = sortOrder++,
                 IsMilestone = milestone,
                 SchedulingMode = schedulingMode,
@@ -197,7 +196,7 @@ public sealed class MppPlanningImportProvider : IPlanningImportProvider
             var successorId = SourceId(task.UniqueID, task.ID, 0);
             if (!known.Contains(successorId)) continue;
 
-            foreach (var relation in EnumerateJavaList<Relation>(task.Predecessors))
+            foreach (var relation in Enumerate<Relation>(task.Predecessors))
             {
                 var predecessor = relation.PredecessorTask;
                 var predecessorId = SourceId(predecessor?.UniqueID, predecessor?.ID, 0);
@@ -208,7 +207,7 @@ public sealed class MppPlanningImportProvider : IPlanningImportProvider
                 }
 
                 var type = MapRelationType(relation.Type);
-                var lagValue = ConvertDuration(relation.Lag, TimeUnit.valueOf("DAYS"), project.ProjectProperties);
+                var lagValue = ConvertDuration(relation.Lag, TimeUnit.Days, project.ProjectProperties);
                 var lagDays = ToWholeDays(lagValue, out var fractional);
                 if (fractional) fractionalLags++;
                 var edgeKey = $"{successorId}|{predecessorId}";
@@ -264,7 +263,7 @@ public sealed class MppPlanningImportProvider : IPlanningImportProvider
         {
             var taskSourceId = SourceId(task.UniqueID, task.ID, 0);
             if (!knownTasks.Contains(taskSourceId)) continue;
-            foreach (var assignment in EnumerateJavaList<ResourceAssignment>(task.ResourceAssignments))
+            foreach (var assignment in Enumerate<ResourceAssignment>(task.ResourceAssignments))
             {
                 var resource = assignment.Resource;
                 var resourceSourceId = SourceId(resource?.UniqueID, assignment.ResourceUniqueID, 0);
@@ -275,7 +274,7 @@ public sealed class MppPlanningImportProvider : IPlanningImportProvider
                     continue;
                 }
 
-                var plannedHours = ConvertDuration(assignment.Work, TimeUnit.valueOf("HOURS"), project.ProjectProperties);
+                var plannedHours = ConvertDuration(assignment.Work, TimeUnit.Hours, project.ProjectProperties);
                 var workConversionStatus = assignment.Work is null ? "NotProvided" : plannedHours.HasValue ? "ConvertedToHours" : "NeedsReview";
                 if (assignment.Work is not null) workValues++;
                 if (assignment.Work is not null && !plannedHours.HasValue) workConversionFailures++;
@@ -329,7 +328,7 @@ public sealed class MppPlanningImportProvider : IPlanningImportProvider
             for (var index = 0; index < 7; index++)
             {
                 var dayHours = hours[index];
-                var rangeCount = dayHours?.size() ?? 0;
+                var rangeCount = dayHours?.Count ?? 0;
                 var isWorking = IsWorkingDay(dayTypes[index]) || rangeCount > 0;
                 if (rangeCount > 2)
                 {
@@ -337,8 +336,8 @@ public sealed class MppPlanningImportProvider : IPlanningImportProvider
                     break;
                 }
 
-                LocalTimeRange? first = rangeCount > 0 ? dayHours!.get(0) : null;
-                LocalTimeRange? last = rangeCount > 0 ? dayHours!.get(rangeCount - 1) : null;
+                TimeOnlyRange? first = rangeCount > 0 ? dayHours![0] : null;
+                TimeOnlyRange? last = rangeCount > 0 ? dayHours![rangeCount - 1] : null;
                 days.Add(new PlanningImportCalendarDay
                 {
                     DayOfWeek = (DayOfWeek)index,
@@ -364,7 +363,7 @@ public sealed class MppPlanningImportProvider : IPlanningImportProvider
                 Days = days
             };
 
-            foreach (var exception in EnumerateJavaList<ProjectCalendarException>(calendar.CalendarExceptions))
+            foreach (var exception in Enumerate<ProjectCalendarException>(calendar.CalendarExceptions))
             {
                 var from = ToDateTime(exception.FromDate);
                 var to = ToDateTime(exception.ToDate);
@@ -384,7 +383,7 @@ public sealed class MppPlanningImportProvider : IPlanningImportProvider
                 }
             }
 
-            if (calendar.WorkWeeks.size() > 0) unsupportedCalendarFeatures += calendar.WorkWeeks.size();
+            if (calendar.WorkWeeks.Count > 0) unsupportedCalendarFeatures += calendar.WorkWeeks.Count;
             document.Calendars.Add(imported);
         }
 
@@ -394,7 +393,7 @@ public sealed class MppPlanningImportProvider : IPlanningImportProvider
 
     private static PlanDependencyType MapRelationType(RelationType? type)
     {
-        var value = type?.toString()?.Replace("-", "_", StringComparison.Ordinal).Replace(" ", "_", StringComparison.Ordinal).ToUpperInvariant();
+        var value = NormalizeEnumValue(type?.ToString());
         return value switch
         {
             "START_START" or "SS" => PlanDependencyType.StartToStart,
@@ -405,19 +404,19 @@ public sealed class MppPlanningImportProvider : IPlanningImportProvider
     }
 
     private static bool IsWorkingDay(DayType? type) =>
-        string.Equals(type?.toString(), "WORKING", StringComparison.OrdinalIgnoreCase);
+        string.Equals(type?.ToString(), "Working", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsAsSoonAsPossible(ConstraintType? type)
     {
         if (type is null) return true;
-        var value = type.toString();
+        var value = NormalizeEnumValue(type.ToString());
         return string.Equals(value, "AS_SOON_AS_POSSIBLE", StringComparison.OrdinalIgnoreCase)
                || string.Equals(value, "ASAP", StringComparison.OrdinalIgnoreCase);
     }
 
     private static PlanConstraintType MapConstraintType(ConstraintType? type)
     {
-        var value = type?.toString()?.Replace("-", "_", StringComparison.Ordinal).Replace(" ", "_", StringComparison.Ordinal).ToUpperInvariant();
+        var value = NormalizeEnumValue(type?.ToString());
         return value switch
         {
             "AS_LATE_AS_POSSIBLE" or "ALAP" => PlanConstraintType.AsLateAsPossible,
@@ -443,11 +442,11 @@ public sealed class MppPlanningImportProvider : IPlanningImportProvider
         return false;
     }
 
-    private static double? ConvertDuration(Duration? duration, TimeUnit target, TimeUnitDefaultsContainer defaults)
+    private static double? ConvertDuration(Duration? duration, TimeUnit target, ProjectProperties defaults)
     {
         if (duration is null) return null;
-        try { return duration.ConvertUnits(target, defaults).Duration; }
-        catch { return duration.Duration; }
+        try { return duration.ConvertUnits(target, defaults).DurationValue; }
+        catch { return duration.DurationValue; }
     }
 
     private static int ToWholeDays(double? value, out bool fractional)
@@ -461,40 +460,39 @@ public sealed class MppPlanningImportProvider : IPlanningImportProvider
         return checked((int)Math.Round(value.Value, MidpointRounding.AwayFromZero));
     }
 
-    private static decimal? ToDecimal(java.lang.Number? number, decimal min, decimal max)
+    private static decimal? ToDecimal(double? number, decimal min, decimal max)
     {
         if (number is null) return null;
-        var value = (decimal)number.doubleValue();
+        var value = (decimal)number.Value;
         return Math.Clamp(value, min, max);
     }
 
-    private static DateTime? ToDateTime(java.time.LocalDateTime? value) => value is null
-        ? null
-        : new DateTime(value.getYear(), value.getMonthValue(), value.getDayOfMonth(), value.getHour(), value.getMinute(), value.getSecond(), DateTimeKind.Unspecified);
+    private static DateTime? ToDateTime(DateTime? value) => value;
 
-    private static DateTime? ToDateTime(java.time.LocalDate? value) => value is null
-        ? null
-        : new DateTime(value.getYear(), value.getMonthValue(), value.getDayOfMonth(), 0, 0, 0, DateTimeKind.Unspecified);
+    private static DateTime? ToDateTime(DateOnly? value) => value?.ToDateTime(TimeOnly.MinValue);
 
-    private static TimeSpan? ToTimeSpan(java.time.LocalTime? value) => value is null
-        ? null
-        : new TimeSpan(value.getHour(), value.getMinute(), value.getSecond());
+    private static TimeSpan? ToTimeSpan(TimeOnly? value) => value?.ToTimeSpan();
 
-    private static string SourceId(java.lang.Integer? uniqueId, java.lang.Integer? id, int fallback) =>
-        (uniqueId ?? id)?.toString() ?? fallback.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    private static string SourceId(int? uniqueId, int? id, int fallback) =>
+        (uniqueId ?? id)?.ToString(System.Globalization.CultureInfo.InvariantCulture)
+        ?? fallback.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
     private static string? FirstNonBlank(params string?[] values) => values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim();
     private static string? NullIfWhiteSpace(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     private static PlanningImportNotice Notice(string code, string message, int count) => new() { Code = code, Message = message, Count = count };
 
-    private static IEnumerable<T> EnumerateJavaList<T>(java.util.List? values)
+    private static IEnumerable<T> Enumerate<T>(IEnumerable<T>? values)
     {
         if (values is null) yield break;
-        for (var index = 0; index < values.size(); index++)
-        {
-            if (values.get(index) is T value) yield return value;
-        }
+        foreach (var value in values) yield return value;
     }
+
+    private static string? NormalizeEnumValue(string? value) => value is null
+        ? null
+        : System.Text.RegularExpressions.Regex.Replace(value, "([a-z0-9])([A-Z])", "$1_$2")
+            .Replace("-", "_", StringComparison.Ordinal)
+            .Replace(" ", "_", StringComparison.Ordinal)
+            .ToUpperInvariant();
 
     private static void TryDelete(string path)
     {

@@ -2,73 +2,80 @@ import * as React from "react";
 import { cn } from "@lib/utils";
 
 interface TabsProps {
-  defaultValue: string;
+  value?: string;
+  defaultValue?: string;
+  onValueChange?: (value: string) => void;
   children: React.ReactNode;
   className?: string;
 }
 
-const Tabs = React.forwardRef<HTMLDivElement, TabsProps>(
-  ({ className, children, defaultValue, ...props }, ref) => (
-    <div ref={ref} className={cn("", className)} {...props} data-default-value={defaultValue}>
-      {children}
-    </div>
-  )
-);
-Tabs.displayName = "Tabs";
+const TabsContext = React.createContext<{ value: string; onValueChange: (value: string) => void } | null>(null);
 
-const TabsList = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
-  ({ className, children, ...props }, ref) => (
+export function Tabs({ value, defaultValue, onValueChange, children, className }: TabsProps) {
+  const [uncontrolled, setUncontrolled] = React.useState(defaultValue ?? "");
+  const current = value ?? uncontrolled;
+  const handleChange = React.useCallback(
+    (next: string) => {
+      if (value === undefined) setUncontrolled(next);
+      onValueChange?.(next);
+    },
+    [value, onValueChange]
+  );
+  const ctx = React.useMemo(() => ({ value: current, onValueChange: handleChange }), [current, handleChange]);
+  return (
+    <TabsContext.Provider value={ctx}>
+      <div className={cn("", className)}>{children}</div>
+    </TabsContext.Provider>
+  );
+}
+
+export function TabsList({ className, children, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+  return (
     <div
-      ref={ref}
-      className={cn("inline-flex h-9 items-center justify-center rounded-md bg-muted p-1 text-muted-foreground", className)}
+      className={cn("inline-flex h-9 items-center justify-center gap-0.5 rounded-md bg-muted/60 p-1 text-muted-foreground", className)}
+      role="tablist"
       {...props}
     >
       {children}
     </div>
-  )
-);
-TabsList.displayName = "TabsList";
+  );
+}
 
 interface TabsTriggerProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   value: string;
 }
 
-const TabsTrigger = React.forwardRef<HTMLButtonElement, TabsTriggerProps>(
-  ({ className, value, children, ...props }, ref) => (
+export function TabsTrigger({ className, value, children, ...props }: TabsTriggerProps) {
+  const ctx = React.useContext(TabsContext);
+  const active = ctx?.value === value;
+  return (
     <button
-      ref={ref}
+      type="button"
+      role="tab"
+      aria-selected={active}
+      data-state={active ? "active" : "inactive"}
+      onClick={() => ctx?.onValueChange(value)}
       className={cn(
-        "inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm",
+        "inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:font-semibold data-[state=active]:text-foreground data-[state=active]:shadow-sm",
         className
       )}
       {...props}
-      data-value={value}
     >
       {children}
     </button>
-  )
-);
-TabsTrigger.displayName = "TabsTrigger";
+  );
+}
 
 interface TabsContentProps extends React.HTMLAttributes<HTMLDivElement> {
   value: string;
 }
 
-const TabsContent = React.forwardRef<HTMLDivElement, TabsContentProps>(
-  ({ className, value, children, ...props }, ref) => (
-    <div
-      ref={ref}
-      className={cn(
-        "mt-2 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-        className
-      )}
-      {...props}
-      data-value={value}
-    >
+export function TabsContent({ className, value, children, ...props }: TabsContentProps) {
+  const ctx = React.useContext(TabsContext);
+  if (ctx && ctx.value !== value) return null;
+  return (
+    <div className={cn("mt-2 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", className)} {...props}>
       {children}
     </div>
-  )
-);
-TabsContent.displayName = "TabsContent";
-
-export { Tabs, TabsList, TabsTrigger, TabsContent };
+  );
+}

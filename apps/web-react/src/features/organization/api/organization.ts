@@ -37,9 +37,12 @@ export function useCreateUnit() {
   const invalidate = useInvalidateOrganization();
   return useMutation({ mutationFn: (body: Record<string, unknown>) => api.post<OrganizationUnit>(endpoints.organization.units, body), onSuccess: () => invalidate() });
 }
-export function useUpdateUnit() {
+export function useUpdateUnit(invalidateOnSuccess = true) {
   const invalidate = useInvalidateOrganization();
-  return useMutation({ mutationFn: ({ id, body }: { id: string; body: Record<string, unknown> }) => api.put<OrganizationUnit>(endpoints.organization.unit(id), body), onSuccess: () => invalidate() });
+  return useMutation({
+    mutationFn: ({ id, body }: { id: string; body: Record<string, unknown> }) => api.put<OrganizationUnit>(endpoints.organization.unit(id), body),
+    onSuccess: () => { if (invalidateOnSuccess) invalidate(); },
+  });
 }
 export function useDeleteUnit() {
   const invalidate = useInvalidateOrganization();

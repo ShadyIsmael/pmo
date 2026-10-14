@@ -7,12 +7,39 @@ export interface NotificationListItem {
   title: string;
   body?: string;
   type: string;
-  channel: string;
   isRead: boolean;
   readAt?: string;
   sentAt: string;
   referenceType?: string;
   referenceId?: string;
+}
+
+export interface DeviceTokenDto {
+  id: string;
+  platform: string;
+  deviceName?: string;
+  isActive: boolean;
+  lastSeenAt: string;
+}
+
+export interface RegisterDeviceTokenRequest {
+  token: string;
+  platform: string;
+  deviceName?: string;
+  previousDeviceId?: string;
+}
+
+export interface NotificationPreference {
+  type: string;
+  inAppEnabled: boolean;
+  pushEnabled: boolean;
+  emailEnabled: boolean;
+}
+
+export interface NotificationPreferencesResponse {
+  items: NotificationPreference[];
+  pushAvailable: boolean;
+  emailAvailable: boolean;
 }
 
 export interface PagedResult<T> {
@@ -25,29 +52,60 @@ export interface PagedResult<T> {
 
 export const notificationKeys = { all: ["notifications"] as const };
 
+export const notificationApi = {
+  registerDevice: (request: RegisterDeviceTokenRequest) => api.post<DeviceTokenDto>(endpoints.notifications.devices, request),
+  unregisterDevice: (deviceId: string) => api.delete<void>(endpoints.notifications.device(deviceId)),
+  getPreferences: () => api.get<NotificationPreferencesResponse>(endpoints.notifications.preferences),
+  updatePreferences: (items: NotificationPreference[]) => api.put<void>(endpoints.notifications.preferences, { items }),
+};
+
 /** Header: lightweight unread count only. Full center loads lazily when opened. */
 export function useUnreadNotificationCount(enabled: boolean) {
   return useQuery({
     queryKey: [...notificationKeys.all, "unread-count"],
     queryFn: async () => {
-      const result = await api.get<PagedResult<NotificationListItem>>(endpoints.notifications.root, { page: 1, pageSize: 1, unreadOnly: true });
-      return result.totalCount ?? result.items.filter((i) => !i.isRead).length;
+      const result = await api.get<{ count: number }>(endpoints.notifications.unreadCount);
+      return result.count;
     },
     enabled,
     staleTime: 30_000,
     gcTime: 300_000,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    refetchInterval: false,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
   });
 }
 
-export function useNotifications(params?: { page?: number; pageSize?: number; unreadOnly?: boolean }, enabled = true) {
+export function useNotifications(params?: { page?: number; pageSize?: number; unreadOnly?: boolean }, enabled = true, realtime = false) {
   return useQuery({
     queryKey: [...notificationKeys.all, "list", params ?? {}],
     queryFn: () => api.get<PagedResult<NotificationListItem>>(endpoints.notifications.root, params),
     enabled,
     staleTime: 15_000,
+    refetchInterval: realtime ? 30_000 : false,
+    refetchOnWindowFocus: realtime,
+  });
+}
+
+export const notificationPreferenceKeys = { all: ["notification-preferences"] as const };
+
+export function useNotificationPreferences(enabled = true) {
+  return useQuery({
+    queryKey: notificationPreferenceKeys.all,
+    queryFn: notificationApi.getPreferences,
+    enabled,
+    staleTime: 30_000,
+    refetchOnWindowFocus: true,
+  });
+}
+
+export function useUpdateNotificationPreferences() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: notificationApi.updatePreferences,
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: notificationPreferenceKeys.all });
+      void client.invalidateQueries({ queryKey: notificationKeys.all });
+    },
   });
 }
 

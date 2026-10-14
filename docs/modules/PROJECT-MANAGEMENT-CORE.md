@@ -3,6 +3,20 @@
 ## Overview
 The Project Management Core module provides comprehensive project lifecycle management including project CRUD operations, project team management, resource allocation with conflict detection, and integration with Resource Management capacity planning.
 
+## Earned Value in Project Overview (SPI / CPI)
+
+Project Overview calculates EVM from persisted planning, resource-cost, time-entry, and finance records. It does not use the legacy editable `Project.PlannedValue`, `EarnedValue`, or `ActualCost` fields as fallbacks.
+
+- **Status date:** current UTC date. The UI labels it and explains that the view is a current snapshot; historical EVM is not claimed because activity progress is not versioned by date.
+- **Baseline:** newest project plan (same plan order as the planning workspace), with its latest approved `PlanVersion` of type `Baseline`. PV/BAC use its dated `PlanAssignment` hours, resource calendar capacity, and effective `ResourceCostProfile` rates.
+- **Current progress / EV:** latest active `Working` plan version, matching baseline activities by stable source lineage and only using a unique activity code for legacy activities. EV is baseline assignment cost multiplied by current task progress.
+- **Actual labor cost:** persisted project `TimeEntry` hours priced with the applicable resource cost profile and the canonical labor cost calculator through the status date.
+- **Direct actual costs:** only `CostEntry` rows of type `Actual`, status `Posted` or `Verified`, dated through the status date, without a resource link and not labeled as labor are added to displayed AC. Tax is excluded. Currency conversion is not inferred.
+- **Comparable cost metrics:** if direct non-labor actual costs exist, total AC remains visible, but Cost Variance and CPI are unavailable because those direct costs have no activity/baseline mapping. This avoids comparing total AC against labor-only EV. SPI remains available when its inputs are complete.
+- **Incomplete data:** missing baseline assignments, missing task progress, invalid dates/hours, missing or overlapping cost profiles, and currency mismatches return null metrics with localized reason codes; no mock or legacy values fill the gaps.
+- **Tooltips:** concise Arabic and English SPI/CPI formulas and threshold meanings appear beside those metrics in Project Performance. KPI Summary does not duplicate SPI/CPI or the next milestone, which is already represented in the milestone timeline.
+- **Verification:** `ProjectEvmCalculatorTests` verifies formulas and unavailable reasons; `ProjectEvmPersistenceTests` exercises persisted baseline, normal plan/time-entry/finance service updates, independence of progress and labor cost changes, and direct-cost comparability. Build/test execution status must be taken from the task verification report.
+
 ## Domain Entities
 
 | Entity | Description | Key Fields |

@@ -1,255 +1,253 @@
 import * as React from "react";
-import { useResources, useCreateResource, useUpdateResource, useDeleteResource, useBaseCalendars } from "./api/resources";
+import { useResource, useResources, useCreateResource, useUpdateResource, useDeleteResource, useBaseCalendars, type ResourceDto, type ResourceBaseCalendarDto } from "./api/resources";
+import { useOrganizationUnits } from "../organization/api/organization";
+import { useUserLookup, type UserLookupDto } from "../projects/lib/project-lookups";
+import { useVendors, type VendorDto } from "../vendors/api/vendors";
+import { useManagement } from "@api/management";
 import { useI18n } from "@i18n/messages";
 import { useAuth } from "@auth/AuthProvider";
-import { hasPermission, Permissions } from "@lib/permissions";
+import { hasAnyPermission, hasPermission, Permissions } from "@lib/permissions";
 import { Button } from "@components/ui/Button";
 import { Input } from "@components/ui/Input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@components/ui/Select";
 import { Card, CardContent, CardHeader, CardTitle } from "@components/ui/Card";
-import { Badge } from "@components/ui/Badge";
+import { getResourceTypeTextClass, getStatusTextClass, getSystemUserTextClass } from "@lib/status-presentation";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@components/ui/Table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@components/ui/Dialog";
-import { Textarea } from "@components/ui/Textarea";
-import { Label } from "@components/ui/Label";
 import { Skeleton } from "@components/ui/Skeleton";
-import { Plus, Edit, Trash2 } from "lucide-react";
+import { Plus, Edit, Eye, Power, UserRound } from "lucide-react";
+import { ConfirmDialog } from "@components/ui/ConfirmDialog";
+import { SideSheet, SideSheetBody, SideSheetFooter } from "@components/ui/SideSheet";
+import { dialogValuesToResourceForm, toCreateResourcePayload, toUpdateResourcePayload, validateResourceForm } from "./resource-form";
+import { emptyResourceFormValues, ResourceFormSections, type ResourceFormValues } from "./ResourceFormSections";
+import { ResourceFinderDialog } from "./ResourceFinderDialog";
 
 interface ResourceTableRowProps {
-  resource: any;
-  onEdit: (resource: any) => void;
-  onDelete: (resource: any) => void;
+  resource: ResourceDto;
+  onEdit: (resource: ResourceDto) => void;
+  onView: (resource: ResourceDto) => void;
+  onDelete: (resource: ResourceDto) => void;
   canEdit: boolean;
   canDelete: boolean;
 }
 
-function ResourceTableRow({ resource, onEdit, onDelete, canEdit, canDelete }: ResourceTableRowProps) {
-  const typeLabel = resource.type === "Staff" ? "Staff" : "Vendor Resource";
-  const statusLabel = resource.isActive ? "Active" : "Inactive";
+function ResourceTableRow({ resource, onEdit, onView, onDelete, canEdit, canDelete }: ResourceTableRowProps) {
+  const { t } = useI18n();
+  const typeLabel = resource.type === "Staff" ? t("resources.directory.staff") : t("resources.directory.vendorResource");
+  const statusLabel = resource.isActive ? t("resources.directory.active") : t("resources.directory.inactive");
 
   return (
     <TableRow>
-      <TableCell className="font-medium">{resource.name}</TableCell>
-      <TableCell>{resource.employeeId || "—"}</TableCell>
+      <TableCell><button type="button" className="flex items-center gap-2 text-start font-medium hover:text-primary" onClick={() => onView(resource)}><span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-primary"><UserRound className="h-3.5 w-3.5" /></span>{resource.name}</button></TableCell>
+      <TableCell>{resource.email || t("resources.directory.notProvided")}</TableCell>
+      <TableCell>{resource.jobTitle || t("resources.directory.notProvided")}</TableCell>
+      <TableCell>{resource.primaryOrganizationalUnitName || resource.departmentName || t("resources.directory.notProvided")}</TableCell>
       <TableCell>
-        <Badge status={resource.type}>{typeLabel}</Badge>
+        <span className={`text-sm font-medium ${getResourceTypeTextClass(resource.type)}`}>{typeLabel}</span>
       </TableCell>
+      <TableCell><span className={`text-sm font-medium ${getSystemUserTextClass(Boolean(resource.userId))}`}>{resource.userId ? t("resources.directory.yes") : t("resources.directory.no")}</span></TableCell>
       <TableCell>
-        <Badge status={resource.status}>{statusLabel}</Badge>
+        <span className={`text-sm font-medium ${getStatusTextClass(resource.isActive ? "Active" : "Inactive")}`}>{statusLabel}</span>
       </TableCell>
-      <TableCell>{resource.departmentName || "—"}</TableCell>
-      <TableCell>{resource.jobTitle || "—"}</TableCell>
       <TableCell className="text-right">
         <div className="flex items-center justify-end gap-1">
+          <Button variant="ghost" size="icon" aria-label={t("resources.directory.viewDetails")} onClick={() => onView(resource)}><Eye className="h-4 w-4" /></Button>
           {canEdit && <Button variant="ghost" size="icon" onClick={() => onEdit(resource)}><Edit className="h-4 w-4" /></Button>}
-          {canDelete && <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => onDelete(resource)}><Trash2 className="h-4 w-4" /></Button>}
+          {canDelete && <Button variant="ghost" size="icon" aria-label={resource.isActive ? t("resources.directory.deactivate") : t("resources.directory.activate")} className={resource.isActive ? "text-destructive hover:text-destructive" : ""} onClick={() => onDelete(resource)}><Power className="h-4 w-4" /></Button>}
         </div>
       </TableCell>
     </TableRow>
   );
 }
 
-function CreateResourceDialog({ open, onOpenChange, onSubmit, calendars: _calendars, isPending }: { open: boolean; onOpenChange: (open: boolean) => void; onSubmit: (data: any) => void; calendars?: any[]; isPending: boolean }) {
-  void _calendars;
+function ResourceDetailsSheet({ resource, detail, loading, error, onRetry, onClose, onEdit, canEdit }: {
+  resource: ResourceDto | null;
+  detail?: ResourceDto;
+  loading: boolean;
+  error: boolean;
+  onRetry: () => void;
+  onClose: () => void;
+  onEdit: (resource: ResourceDto) => void;
+  canEdit: boolean;
+}) {
   const { t } = useI18n();
-  const [formData, setFormData] = React.useState({
-    name: "",
-    email: "",
-    phone: "",
-    jobTitle: "",
-    employeeId: "",
-    organizationalUnitId: "",
-    resourceType: "Staff",
-    status: "Active",
-    vendorId: "",
-    baseCalendarId: "",
-    systemUserId: "",
-    employmentType: "",
-    seniority: "",
-    notes: "",
-  });
+  const record = detail ?? resource;
+  const typeLabel = record?.type === "VendorResource" ? t("resources.directory.vendorResource") : t("resources.directory.staff");
+  const statusLabel = record?.isActive ? t("resources.directory.active") : t("resources.directory.inactive");
+  return (
+    <SideSheet open={Boolean(resource)} onOpenChange={(open) => { if (!open) onClose(); }} title={record?.name ?? t("resources.directory.detailsTitle")} description={t("resources.directory.detailsDescription")}>
+      <SideSheetBody className="space-y-5">
+        {loading ? <div className="space-y-3">{[1, 2, 3, 4].map((index) => <Skeleton key={index} className="h-8 w-full" />)}</div> : null}
+        {error ? <div role="alert" className="space-y-2 text-sm text-destructive"><p>{t("resources.directory.detailsError")}</p><Button variant="outline" size="sm" onClick={onRetry}>{t("common.retry")}</Button></div> : null}
+        {record && !loading ? <>
+          <section className="rounded-lg border p-4">
+            <div className="flex items-start justify-between gap-3"><div><h3 className="font-semibold">{record.name}</h3><p className="text-sm text-muted-foreground">{record.email || t("resources.directory.notProvided")}</p></div><span className={`text-sm font-medium ${getStatusTextClass(record.isActive ? "Active" : "Inactive")}`}>{statusLabel}</span></div>
+            <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+              <div><dt className="text-muted-foreground">{t("resources.directory.jobTitle")}</dt><dd>{record.jobTitle || t("resources.directory.notProvided")}</dd></div>
+              <div><dt className="text-muted-foreground">{t("resources.directory.resourceType")}</dt><dd className={`font-medium ${getResourceTypeTextClass(record.type)}`}>{typeLabel}</dd></div>
+              <div><dt className="text-muted-foreground">{t("resources.directory.systemUser")}</dt><dd className={`font-medium ${getSystemUserTextClass(Boolean(record.userId))}`}>{record.userId ? t("resources.directory.linked") : t("resources.directory.noSystemUser")}</dd></div>
+              <div><dt className="text-muted-foreground">{t("resources.directory.organization")}</dt><dd>{record.primaryOrganizationalUnitName || record.departmentName || t("resources.directory.notProvided")}</dd></div>
+              <div><dt className="text-muted-foreground">{t("resources.directory.vendor")}</dt><dd>{record.vendorName || t("resources.directory.notProvided")}</dd></div>
+              <div><dt className="text-muted-foreground">{t("resources.directory.baseCalendar")}</dt><dd>{record.baseCalendarName || t("resources.directory.notProvided")}</dd></div>
+              <div><dt className="text-muted-foreground">{t("resources.directory.employmentType")}</dt><dd>{record.employmentType || t("resources.directory.notProvided")}</dd></div>
+              <div><dt className="text-muted-foreground">{t("resources.directory.seniority")}</dt><dd>{record.seniority || t("resources.directory.notProvided")}</dd></div>
+            </dl>
+            {record.notes ? <div className="mt-3 border-t pt-3 text-sm"><p className="text-muted-foreground">{t("resources.directory.notes")}</p><p className="whitespace-pre-wrap">{record.notes}</p></div> : null}
+          </section>
+          <section>
+            <h3 className="mb-2 text-sm font-semibold">{t("resources.directory.allocations")}</h3>
+            {record.allocations?.length ? <div className="space-y-2">{record.allocations.map((allocation) => <div key={allocation.id} className="rounded-lg border p-3 text-sm"><div className="flex items-center justify-between gap-2"><span className="font-medium">{allocation.projectName || t("resources.directory.unassignedProject")}</span><span className={`text-xs font-medium ${getStatusTextClass(allocation.status ?? "Tentative")}`}>{t(`resources.directory.${(allocation.status ?? "tentative").toLowerCase()}`)}</span></div><p className="mt-1 text-xs text-muted-foreground">{allocation.role} · {allocation.allocationPercentage}% · {allocation.startDate.slice(0, 10)} – {allocation.endDate.slice(0, 10)}</p></div>)}</div> : <p className="text-sm text-muted-foreground">{t("resources.directory.noAllocations")}</p>}
+          </section>
+        </> : null}
+      </SideSheetBody>
+      <SideSheetFooter><Button type="button" variant="outline" onClick={onClose}>{t("resources.directory.close")}</Button>{canEdit && record ? <Button type="button" onClick={() => onEdit(record)}>{t("resources.directory.editResource")}</Button> : null}</SideSheetFooter>
+    </SideSheet>
+  );
+}
+
+type ResourceLookups = { calendars?: ResourceBaseCalendarDto[]; units?: { id: string; name: string; code?: string; isActive?: boolean }[]; users?: UserLookupDto[]; vendors?: VendorDto[]; calendarsLoading?: boolean; usersLoading?: boolean; vendorsLoading?: boolean };
+
+function CreateResourceDialog({ open, onOpenChange, onSubmit, calendars, units, users, vendors, calendarsLoading, usersLoading, vendorsLoading, isPending, error }: { open: boolean; onOpenChange: (open: boolean) => void; onSubmit: (data: Record<string, string>) => void; isPending: boolean; error?: string } & ResourceLookups) {
+  const { t } = useI18n();
+  const [formData, setFormData] = React.useState<ResourceFormValues>(emptyResourceFormValues);
+  const [submitted, setSubmitted] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!open) return;
+    setFormData(emptyResourceFormValues);
+    setSubmitted(false);
+  }, [open]);
 
   if (!open) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setSubmitted(true);
+    if (Object.values(validateResourceForm(dialogValuesToResourceForm(formData))).some(Boolean)) return;
     onSubmit(formData);
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>{t("resources.directory.createTitle")}</DialogTitle>
-          <DialogDescription>{t("resources.directory.formDescription")}</DialogDescription>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-1.5"><Label htmlFor="name">{t("resources.directory.name")} *</Label><Input id="name" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required /></div>
-            <div className="space-y-1.5"><Label htmlFor="email">{t("resources.directory.email")}</Label><Input id="email" type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} /></div>
-            <div className="space-y-1.5"><Label htmlFor="phone">{t("resources.directory.phone")}</Label><Input id="phone" value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} /></div>
-            <div className="space-y-1.5"><Label htmlFor="jobTitle">{t("resources.directory.jobTitle")}</Label><Input id="jobTitle" value={formData.jobTitle} onChange={(e) => setFormData({ ...formData, jobTitle: e.target.value })} /></div>
-            <div className="space-y-1.5"><Label htmlFor="employeeId">{t("resources.directory.employeeId")}</Label><Input id="employeeId" value={formData.employeeId} onChange={(e) => setFormData({ ...formData, employeeId: e.target.value })} /></div>
-            <div className="space-y-1.5"><Label htmlFor="resourceType">{t("resources.directory.resourceType")} *</Label>
-              <Select value={formData.resourceType} onValueChange={(value) => setFormData({ ...formData, resourceType: value })}>
-                <SelectTrigger><SelectValue placeholder={t("common.select")} /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Staff">{t("resources.directory.staff")}</SelectItem>
-                  <SelectItem value="VendorResource">{t("resources.directory.vendorResource")}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5"><Label htmlFor="status">{t("resources.directory.status")}</Label>
-              <Select value={formData.status} onValueChange={(value) => setFormData({ ...formData, status: value })}>
-                <SelectTrigger><SelectValue placeholder={t("common.select")} /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Active">{t("resources.directory.active")}</SelectItem>
-                  <SelectItem value="Inactive">{t("resources.directory.inactive")}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <div className="space-y-1.5 md:col-span-2">
-            <Label htmlFor="notes">{t("resources.directory.notes")}</Label>
-            <Textarea id="notes" value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} placeholder={t("resources.directory.notes")} />
-          </div>
-          <DialogFooter>
+    <SideSheet open={open} onOpenChange={onOpenChange} title={t("resources.directory.createTitle")} description={t("resources.directory.formDescription")} size="lg">
+        <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+          <SideSheetBody>
+            {error ? <p role="alert" className="mb-4 text-sm text-destructive">{error}</p> : null}
+            <ResourceFormSections values={formData} setValues={setFormData} calendars={calendars} units={units} users={users} vendors={vendors} calendarsLoading={calendarsLoading} usersLoading={usersLoading} vendorsLoading={vendorsLoading} submitted={submitted} />
+          </SideSheetBody>
+          <SideSheetFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>{t("common.cancel")}</Button>
-            <Button type="submit" disabled={isPending}>{isPending ? t("common.saving") : t("common.create")}</Button>
-          </DialogFooter>
+            <Button type="submit" disabled={isPending || !formData.name.trim()}>{isPending ? t("common.saving") : t("common.create")}</Button>
+          </SideSheetFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+    </SideSheet>
   );
 }
 
-function EditResourceDialog({ open, onOpenChange, resource, onSubmit, isPending }: { open: boolean; onOpenChange: (open: boolean) => void; resource: any; onSubmit: (data: any) => void; isPending: boolean }) {
+function EditResourceDialog({ open, onOpenChange, resource, onSubmit, calendars, units, users, vendors, calendarsLoading, usersLoading, vendorsLoading, isPending, error }: { open: boolean; onOpenChange: (open: boolean) => void; resource: ResourceDto | null; onSubmit: (data: Record<string, string> & { id: string }) => void; isPending: boolean; error?: string } & ResourceLookups) {
   const { t } = useI18n();
-  const [formData, setFormData] = React.useState({
-    name: resource?.name || "",
-    email: resource?.email || "",
-    phone: resource?.phone || "",
-    jobTitle: resource?.jobTitle || "",
-    employeeId: resource?.employeeId || "",
-    organizationalUnitId: resource?.primaryOrganizationalUnitId || "",
-    resourceType: resource?.type || "Staff",
-    status: resource?.isActive ? "Active" : "Inactive",
-    vendorId: resource?.vendorId || "",
-    baseCalendarId: resource?.baseCalendarId || "",
-    systemUserId: resource?.userId || "",
-    employmentType: resource?.employmentType || "",
-    seniority: resource?.seniority || "",
-    notes: resource?.notes || "",
-  });
+  const [formData, setFormData] = React.useState<ResourceFormValues>(emptyResourceFormValues);
+  const [submitted, setSubmitted] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!resource) return;
+    setFormData({
+      name: resource.name ?? "", email: resource.email ?? "", phone: resource.phone ?? "", jobTitle: resource.jobTitle ?? "",
+      employeeId: resource.employeeId ?? "", organizationalUnitId: resource.primaryOrganizationalUnitId ?? "",
+      resourceType: resource.type === "VendorResource" ? "VendorResource" : "Staff", status: resource.isActive ? "Active" : "Inactive", vendorId: resource.vendorId ?? "",
+      baseCalendarId: resource.baseCalendarId ?? "", systemUserId: resource.userId ?? "", employmentType: resource.employmentType ?? "",
+      seniority: resource.seniority ?? "", notes: resource.notes ?? "",
+    });
+    setSubmitted(false);
+  }, [resource]);
 
   if (!open || !resource) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setSubmitted(true);
+    if (Object.values(validateResourceForm(dialogValuesToResourceForm(formData))).some(Boolean)) return;
     onSubmit({ id: resource.id, ...formData });
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>{t("resources.directory.editTitle")}</DialogTitle>
-          <DialogDescription>{t("resources.directory.formDescription")}</DialogDescription>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-1.5"><Label htmlFor="name">{t("resources.directory.name")} *</Label><Input id="name" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required /></div>
-            <div className="space-y-1.5"><Label htmlFor="email">{t("resources.directory.email")}</Label><Input id="email" type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} /></div>
-            <div className="space-y-1.5"><Label htmlFor="phone">{t("resources.directory.phone")}</Label><Input id="phone" value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} /></div>
-            <div className="space-y-1.5"><Label htmlFor="jobTitle">{t("resources.directory.jobTitle")}</Label><Input id="jobTitle" value={formData.jobTitle} onChange={(e) => setFormData({ ...formData, jobTitle: e.target.value })} /></div>
-            <div className="space-y-1.5"><Label htmlFor="employeeId">{t("resources.directory.employeeId")}</Label><Input id="employeeId" value={formData.employeeId} onChange={(e) => setFormData({ ...formData, employeeId: e.target.value })} /></div>
-          </div>
-          <div className="space-y-1.5 md:col-span-2">
-            <Label htmlFor="notes">{t("resources.directory.notes")}</Label>
-            <Textarea id="notes" value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} placeholder={t("resources.directory.notes")} />
-          </div>
-          <DialogFooter>
+    <SideSheet open={open} onOpenChange={onOpenChange} title={t("resources.directory.editTitle")} description={t("resources.directory.formDescription")} size="lg">
+        <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+          <SideSheetBody>
+            {error ? <p role="alert" className="mb-4 text-sm text-destructive">{error}</p> : null}
+            <ResourceFormSections values={formData} setValues={setFormData} calendars={calendars} units={units} users={users} vendors={vendors} calendarsLoading={calendarsLoading} usersLoading={usersLoading} vendorsLoading={vendorsLoading} readOnlyType currentVendorId={resource.vendorId} submitted={submitted} />
+          </SideSheetBody>
+          <SideSheetFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>{t("common.cancel")}</Button>
-            <Button type="submit" disabled={isPending}>{isPending ? t("common.saving") : t("common.save")}</Button>
-          </DialogFooter>
+            <Button type="submit" disabled={isPending || !formData.name.trim()}>{isPending ? t("common.saving") : t("common.save")}</Button>
+          </SideSheetFooter>
         </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function DeleteConfirmDialog({ open, onOpenChange, onConfirm }: { open: boolean; onOpenChange: (open: boolean) => void; onConfirm: () => void }) {
-  const { t } = useI18n();
-  if (!open) return null;
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader><DialogTitle>{t("resources.directory.deactivateConfirm")}</DialogTitle></DialogHeader>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>{t("common.cancel")}</Button>
-          <Button variant="destructive" onClick={() => { onConfirm(); onOpenChange(false); }}>{t("common.delete")}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    </SideSheet>
   );
 }
 
 export function ResourcesListPage() {
   const { t } = useI18n();
   const { user } = useAuth();
-  const canCreate = Boolean(user && hasPermission(user.permissions, Permissions.Resources.Create));
-  const canEdit = Boolean(user && hasPermission(user.permissions, Permissions.Resources.Edit));
-  const canDelete = Boolean(user && hasPermission(user.permissions, Permissions.Resources.Delete));
+  const { canMutate, effectiveReadOnly } = useManagement();
+  const canView = Boolean(user && hasPermission(user.permissions, Permissions.Resources.View));
+  const mutable = canMutate && !effectiveReadOnly;
+  const permissions = user?.permissions ?? [];
+  const canCreate = hasAnyPermission(permissions, [Permissions.Resources.Create, Permissions.Resources.Manage]) && mutable;
+  const canEdit = hasAnyPermission(permissions, [Permissions.Resources.Edit, Permissions.Resources.Manage]) && mutable;
+  const canDelete = hasAnyPermission(permissions, [Permissions.Resources.Delete, Permissions.Resources.Manage]) && mutable;
 
   const [filters, setFilters] = React.useState({
     search: "",
     status: "",
     type: "",
+    systemUserId: "",
     page: 1,
     pageSize: 20,
   });
   const [createOpen, setCreateOpen] = React.useState(false);
-  const [editResource, setEditResource] = React.useState<any>(null);
-  const [deleteOpen, setDeleteOpen] = React.useState(false);
-  const [deleteResourceId, setDeleteResourceId] = React.useState<string | null>(null);
+  const [editResource, setEditResource] = React.useState<ResourceDto | null>(null);
+  const [detailResource, setDetailResource] = React.useState<ResourceDto | null>(null);
+  const [confirmResource, setConfirmResource] = React.useState<ResourceDto | null>(null);
 
-  const query = useResources(filters, true);
+  const query = useResources({ ...filters, search: filters.search.trim() || undefined, type: filters.type || undefined, status: filters.status || undefined, isActive: filters.status ? filters.status === "Active" : undefined, userId: filters.systemUserId || undefined }, canView);
   const createMutation = useCreateResource();
   const updateMutation = useUpdateResource();
   const deleteMutation = useDeleteResource();
-  const calendarsQuery = useBaseCalendars(true);
+  const detailQuery = useResource(detailResource?.id ?? "");
+  const calendarsQuery = useBaseCalendars(canView);
+  const usersQuery = useUserLookup(undefined, canView);
+  const unitsQuery = useOrganizationUnits(canView);
+  const vendorsQuery = useVendors(undefined, undefined, "all", canView && (createOpen || Boolean(editResource)));
+  const mutationError = createMutation.error ?? updateMutation.error ?? deleteMutation.error;
 
   const handleFilterChange = (newFilters: typeof filters) => {
     setFilters({ ...newFilters, page: 1 });
   };
 
-  const handleCreate = (data: any) => {
-    createMutation.mutate(data, {
+  const handleCreate = (data: Record<string, string>) => {
+    createMutation.mutate(toCreateResourcePayload(dialogValuesToResourceForm(data)), {
       onSuccess: () => setCreateOpen(false),
     });
   };
 
-  const handleUpdate = (data: any) => {
-    updateMutation.mutate({ id: editResource?.id, data }, {
+  const handleUpdate = (data: Record<string, string> & { id: string }) => {
+    updateMutation.mutate({ id: data.id, data: toUpdateResourcePayload(dialogValuesToResourceForm(data)) }, {
       onSuccess: () => setEditResource(null),
     });
   };
 
-  const handleDelete = (id: string) => {
-    setDeleteResourceId(id);
-    setDeleteOpen(true);
-  };
-
-  const confirmDelete = () => {
-    if (deleteResourceId) {
-      deleteMutation.mutate(deleteResourceId, {
-        onSuccess: () => {
-          setDeleteResourceId(null);
-          setDeleteOpen(false);
-        },
-      });
+  const confirmStatusChange = async () => {
+    if (!confirmResource) return;
+    try {
+      if (confirmResource.isActive) await deleteMutation.mutateAsync(confirmResource.id);
+      else await updateMutation.mutateAsync({ id: confirmResource.id, data: { status: "Active", isActive: true } });
+    } catch {
+      // Mutation errors are shown in the page alert; keep the interaction free of an unhandled rejection.
+    } finally {
+      setConfirmResource(null);
     }
   };
+
+  if (!canView) return <Card><CardContent className="p-6"><h1 className="text-lg font-semibold">{t("resources.directory.permissionRequired")}</h1><p className="mt-1 text-sm text-muted-foreground">{t("resources.directory.permissionDescription")}</p></CardContent></Card>;
 
   return (
     <div className="space-y-4">
@@ -258,10 +256,10 @@ export function ResourcesListPage() {
           <h1 className="text-2xl font-bold">{t("resources.directory.title")}</h1>
           <p className="text-muted-foreground">{t("resources.directory.description", { count: query.data?.totalCount ?? 0 })}</p>
         </div>
-        <Button onClick={() => setCreateOpen(true)} disabled={!canCreate} className="gap-2">
+        <div className="flex items-center gap-2"><ResourceFinderDialog />{canCreate ? <Button onClick={() => { createMutation.reset(); setCreateOpen(true); }} className="gap-2">
           <Plus className="h-4 w-4" />
           {t("resources.directory.addResource")}
-        </Button>
+        </Button> : null}</div>
       </div>
 
       <Card>
@@ -279,8 +277,8 @@ export function ResourcesListPage() {
                   <SelectTrigger className="w-full"><SelectValue placeholder={t("resources.directory.allTypes")} /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="">{t("resources.directory.allTypes")}</SelectItem>
-                    <SelectItem value="Staff">Staff</SelectItem>
-                    <SelectItem value="VendorResource">Vendor Resource</SelectItem>
+                    <SelectItem value="Staff">{t("resources.directory.staff")}</SelectItem>
+                    <SelectItem value="VendorResource">{t("resources.directory.vendorResource")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -289,8 +287,17 @@ export function ResourcesListPage() {
                   <SelectTrigger className="w-full"><SelectValue placeholder={t("resources.directory.allStatuses")} /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="">{t("resources.directory.allStatuses")}</SelectItem>
-                    <SelectItem value="Active">Active</SelectItem>
-                    <SelectItem value="Inactive">Inactive</SelectItem>
+                    <SelectItem value="Active">{t("resources.directory.active")}</SelectItem>
+                    <SelectItem value="Inactive">{t("resources.directory.inactive")}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex-1 min-w-[180px]">
+                <Select value={filters.systemUserId} onValueChange={(value) => handleFilterChange({ ...filters, systemUserId: value })}>
+                  <SelectTrigger className="w-full"><SelectValue placeholder={t("resources.directory.systemUserFilter")} /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">{t("resources.directory.allSystemUsers")}</SelectItem>
+                    {usersQuery.data?.map((userOption) => <SelectItem key={userOption.id} value={userOption.id}>{userOption.fullName} · {userOption.email}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
@@ -301,17 +308,11 @@ export function ResourcesListPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Employee ID</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Department</TableHead>
-                  <TableHead>Job Title</TableHead>
-                  <TableHead>Actions</TableHead>
+                  <TableHead>{t("resources.directory.name")}</TableHead><TableHead>{t("resources.directory.email")}</TableHead><TableHead>{t("resources.directory.jobTitle")}</TableHead><TableHead>{t("resources.directory.organization")}</TableHead><TableHead>{t("resources.directory.resourceType")}</TableHead><TableHead>{t("resources.directory.systemUser")}</TableHead><TableHead>{t("resources.directory.status")}</TableHead><TableHead>{t("common.actions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {[1, 2, 3, 4, 5].map((i) => <TableRow key={i}><TableCell><Skeleton className="h-4 w-3/4" /></TableCell><TableCell><Skeleton className="h-4 w-1/2" /></TableCell><TableCell><Skeleton className="h-4 w-1/2" /></TableCell><TableCell><Skeleton className="h-4 w-1/2" /></TableCell><TableCell><Skeleton className="h-4 w-1/2" /></TableCell><TableCell><Skeleton className="h-4 w-1/2" /></TableCell><TableCell></TableCell></TableRow>)}
+                {[1, 2, 3, 4, 5].map((i) => <TableRow key={i}>{Array.from({ length: 8 }, (_, index) => <TableCell key={index}><Skeleton className="h-4 w-3/4" /></TableCell>)}</TableRow>)}
               </TableBody>
             </Table>
           ) : (
@@ -319,11 +320,12 @@ export function ResourcesListPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>{t("resources.directory.name")}</TableHead>
-                  <TableHead>{t("resources.directory.employeeId")}</TableHead>
-                  <TableHead>{t("resources.directory.resourceType")}</TableHead>
-                  <TableHead>{t("resources.directory.status")}</TableHead>
-                  <TableHead>{t("resources.directory.organization")}</TableHead>
+                  <TableHead>{t("resources.directory.email")}</TableHead>
                   <TableHead>{t("resources.directory.jobTitle")}</TableHead>
+                  <TableHead>{t("resources.directory.organization")}</TableHead>
+                  <TableHead>{t("resources.directory.resourceType")}</TableHead>
+                  <TableHead>{t("resources.directory.systemUser")}</TableHead>
+                  <TableHead>{t("resources.directory.status")}</TableHead>
                   <TableHead className="text-right">{t("common.actions")}</TableHead>
                 </TableRow>
               </TableHeader>
@@ -333,18 +335,22 @@ export function ResourcesListPage() {
                     key={resource.id}
                     resource={resource}
                     onEdit={setEditResource}
-                    onDelete={(r: { id: string }) => handleDelete(r.id)}
+                    onView={setDetailResource}
+                    onDelete={setConfirmResource}
                     canEdit={canEdit}
                     canDelete={canDelete}
                   />
-                )) || (
+                ))}
+                {query.data?.items.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">{t("resources.directory.emptyTitle")}</TableCell>
+                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground"><p>{t("resources.directory.emptyTitle")}</p><p className="mt-1 text-sm">{t("resources.directory.emptyDescription")}</p></TableCell>
                   </TableRow>
-                )}
+                ) : null}
               </TableBody>
             </Table>
           )}
+
+          {query.isError ? <div role="alert" className="mt-4 flex items-center justify-between gap-3 text-sm text-destructive"><span>{t("resources.directory.loadError")}: {query.error instanceof Error ? query.error.message : ""}</span><Button size="sm" variant="outline" onClick={() => void query.refetch()}>{t("common.retry")}</Button></div> : null}
 
           {query.data && (
             <div className="flex items-center justify-between mt-4 text-sm text-muted-foreground">
@@ -358,9 +364,11 @@ export function ResourcesListPage() {
         </CardContent>
       </Card>
 
-      <CreateResourceDialog open={createOpen} onOpenChange={setCreateOpen} onSubmit={handleCreate} calendars={calendarsQuery.data} isPending={createMutation.isPending} />
-      <EditResourceDialog open={!!editResource} onOpenChange={setEditResource} resource={editResource} onSubmit={handleUpdate} isPending={updateMutation.isPending} />
-      <DeleteConfirmDialog open={deleteOpen} onOpenChange={setDeleteOpen} onConfirm={confirmDelete} />
+          {mutationError && !createOpen && !editResource ? <p className="text-sm text-destructive" role="alert">{mutationError instanceof Error ? mutationError.message : t("resources.directory.mutationError")}</p> : null}
+      <CreateResourceDialog open={createOpen} onOpenChange={setCreateOpen} onSubmit={handleCreate} calendars={calendarsQuery.data} units={unitsQuery.data} users={usersQuery.data} vendors={vendorsQuery.data?.items} calendarsLoading={calendarsQuery.isLoading} usersLoading={usersQuery.isLoading} vendorsLoading={vendorsQuery.isLoading} isPending={createMutation.isPending} error={createMutation.error ? createMutation.error instanceof Error ? createMutation.error.message : t("resources.directory.mutationError") : undefined} />
+      <EditResourceDialog open={!!editResource} onOpenChange={(open) => { if (!open) setEditResource(null); }} resource={editResource} onSubmit={handleUpdate} calendars={calendarsQuery.data} units={unitsQuery.data} users={usersQuery.data} vendors={vendorsQuery.data?.items} calendarsLoading={calendarsQuery.isLoading} usersLoading={usersQuery.isLoading} vendorsLoading={vendorsQuery.isLoading} isPending={updateMutation.isPending} error={updateMutation.error ? updateMutation.error instanceof Error ? updateMutation.error.message : t("resources.directory.mutationError") : undefined} />
+      <ConfirmDialog open={!!confirmResource} onOpenChange={(open) => { if (!open) setConfirmResource(null); }} title={confirmResource?.isActive ? t("resources.directory.deactivateConfirm") : t("resources.directory.activateConfirm")} confirmLabel={confirmResource?.isActive ? t("resources.directory.deactivate") : t("resources.directory.activate")} destructive={Boolean(confirmResource?.isActive)} loading={deleteMutation.isPending || updateMutation.isPending} onConfirm={confirmStatusChange} />
+      <ResourceDetailsSheet resource={detailResource} detail={detailQuery.data} loading={detailQuery.isLoading} error={detailQuery.isError} onRetry={() => void detailQuery.refetch()} onClose={() => setDetailResource(null)} onEdit={(resource) => { setDetailResource(null); setEditResource(resource); }} canEdit={canEdit} />
     </div>
   );
 }

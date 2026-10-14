@@ -1,9 +1,11 @@
 import { Link, useParams } from "react-router-dom";
 import { PageHeader } from "@components/layout/PageHeader";
-import { Card, CardContent, CardHeader, CardTitle } from "@components/ui/Card";
+import { Card, CardContent } from "@components/ui/Card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@components/ui/Table";
 import { useI18n } from "@i18n/messages";
-import { useMeetings, useMeeting, useWorkItemsList, useWorkItem, useDocuments, usePortfolios, usePortfolio, usePrograms } from "./api/delivery";
+import { useMeetings, useMeeting, useWorkItemsList, useWorkItem } from "./api/delivery";
+import { DocumentsCenterPage } from "@features/projects/ProjectDocumentsTab";
+export { ManagedPortfoliosPage as PortfoliosPage, ManagedPortfolioDetailPage as PortfolioDetailPage, ManagedProgramsPage as ProgramsPage, ManagedProgramDetailPage as ProgramDetailPage } from "./PortfolioProgramPages";
 
 export function MeetingsPage() {
   const { t, formatDate } = useI18n();
@@ -21,7 +23,6 @@ export function MeetingsPage() {
     </div>
   );
 }
-
 export function MeetingDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { t, formatDate } = useI18n();
@@ -36,7 +37,6 @@ export function MeetingDetailPage() {
     </div>
   );
 }
-
 export function WorkItemsPage() {
   const { t } = useI18n();
   const query = useWorkItemsList({ page: 1, pageSize: 50 });
@@ -53,7 +53,6 @@ export function WorkItemsPage() {
     </div>
   );
 }
-
 export function WorkItemDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { t } = useI18n();
@@ -69,66 +68,6 @@ export function WorkItemDetailPage() {
 }
 
 export function DocumentsPage() {
-  const { t } = useI18n();
-  const query = useDocuments({});
-  const items = query.data?.items ?? [];
-  return (
-    <div className="space-y-6">
-      <PageHeader title={t("nav.documentCenter")} description={t("documents.description")} />
-      <Card><CardContent className="p-0">
-        {query.isLoading ? <p className="p-6 text-center text-sm text-muted-foreground">{t("common.loading")}</p>
-          : items.length === 0 ? <p className="p-6 text-center text-sm text-muted-foreground">{t("common.noResults")}</p>
-          : <Table><TableHeader><TableRow><TableHead>{t("common.name")}</TableHead><TableHead>{t("common.status")}</TableHead></TableRow></TableHeader>
-            <TableBody>{items.map((d) => <TableRow key={d.id}><TableCell className="font-medium">{d.name}</TableCell><TableCell>{d.status}</TableCell></TableRow>)}</TableBody></Table>}
-      </CardContent></Card>
-    </div>
-  );
+  return <DocumentsCenterPage />;
 }
 
-export function PortfoliosPage() {
-  const { t } = useI18n();
-  const query = usePortfolios(true);
-  const items = query.data?.items ?? [];
-  return (
-    <div className="space-y-6">
-      <PageHeader title={t("nav.portfolios")} description={t("portfolios.description")} />
-      <Card><CardContent className="p-0">
-        {query.isLoading ? <p className="p-6 text-center text-sm text-muted-foreground">{t("common.loading")}</p>
-          : items.length === 0 ? <p className="p-6 text-center text-sm text-muted-foreground">{t("common.noResults")}</p>
-          : <Table><TableHeader><TableRow><TableHead>{t("common.name")}</TableHead><TableHead>{t("common.code")}</TableHead></TableRow></TableHeader>
-            <TableBody>{items.map((p) => <TableRow key={p.id}><TableCell><Link to={`/portfolios/${encodeURIComponent(p.id)}`} className="font-semibold hover:underline">{p.name}</Link></TableCell><TableCell className="font-mono text-xs">{p.code ?? "—"}</TableCell></TableRow>)}</TableBody></Table>}
-      </CardContent></Card>
-    </div>
-  );
-}
-
-export function PortfolioDetailPage() {
-  const { id } = useParams<{ id: string }>();
-  const { t } = useI18n();
-  const query = usePortfolio(id ?? "", Boolean(id));
-  if (query.isLoading) return <p className="py-12 text-center text-sm text-muted-foreground">{t("common.loading")}</p>;
-  if (query.isError || !query.data) return <p className="py-12 text-center text-sm text-destructive">{t("common.notFound")}</p>;
-  return (
-    <div className="space-y-6">
-      <PageHeader title={query.data.name} description={query.data.code ?? ""} />
-      <Card><CardHeader><CardTitle>{t("common.details")}</CardTitle></CardHeader><CardContent className="text-sm text-muted-foreground">{query.data.status ?? ""}</CardContent></Card>
-    </div>
-  );
-}
-
-export function ProgramsPage() {
-  const { t } = useI18n();
-  const query = usePrograms(true);
-  const items = (query.data as unknown as { items: { id: string; name: string; code?: string }[] } | undefined)?.items ?? [];
-  return (
-    <div className="space-y-6">
-      <PageHeader title={t("nav.programs")} description={t("portfolios.programsDescription")} />
-      <Card><CardContent className="p-0">
-        {query.isLoading ? <p className="p-6 text-center text-sm text-muted-foreground">{t("common.loading")}</p>
-          : items.length === 0 ? <p className="p-6 text-center text-sm text-muted-foreground">{t("common.noResults")}</p>
-          : <Table><TableHeader><TableRow><TableHead>{t("common.name")}</TableHead><TableHead>{t("common.code")}</TableHead></TableRow></TableHeader>
-            <TableBody>{items.map((p) => <TableRow key={p.id}><TableCell className="font-medium">{p.name}</TableCell><TableCell className="font-mono text-xs">{p.code ?? "—"}</TableCell></TableRow>)}</TableBody></Table>}
-      </CardContent></Card>
-    </div>
-  );
-}

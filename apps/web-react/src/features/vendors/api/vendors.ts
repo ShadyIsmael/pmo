@@ -65,7 +65,7 @@ const vendorKeys = {
 
 export type VendorStatusFilter = "all" | "active" | "inactive";
 
-export function useVendors(search?: string, categoryId?: string, status: VendorStatusFilter = "all") {
+export function useVendors(search?: string, categoryId?: string, status: VendorStatusFilter = "all", enabled = true) {
   return useQuery({
     queryKey: vendorKeys.list(search, categoryId, status),
     queryFn: () => api.get<{ items: VendorDto[] }>("/api/vendors", {
@@ -75,6 +75,7 @@ export function useVendors(search?: string, categoryId?: string, status: VendorS
       isActive: status === "active" ? true : status === "inactive" ? false : undefined,
     }),
     staleTime: 60_000,
+    enabled,
   });
 }
 

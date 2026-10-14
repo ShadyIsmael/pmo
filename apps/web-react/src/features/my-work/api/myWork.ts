@@ -1,5 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@api/client";
+import { projectKeys } from "@features/projects/api/projects";
+import { invalidateManagerHandoverEntity } from "@features/delivery/api/managerHandovers";
+import type { ManagerHandoverRequestDto } from "@features/delivery/api/managerHandovers";
+export type { ManagerHandoverRequestDto } from "@features/delivery/api/managerHandovers";
 
 export interface TimeEntryDto {
   id: string;
@@ -38,19 +42,21 @@ const timeEntryKeys = {
   summary: (params: { from: string; to: string }) => [...timeEntryKeys.all, "summary", params] as const,
 };
 
-export function useTimeEntries(params: TimeEntryParams = {}) {
+export function useTimeEntries(params: TimeEntryParams = {}, enabled = true) {
   return useQuery({
     queryKey: timeEntryKeys.list(params),
     queryFn: () => api.get<{ items: TimeEntryDto[]; totalCount: number; page: number; pageSize: number; totalPages: number }>("/api/time-entries", params),
+    enabled,
     staleTime: 30_000,
   });
 }
 
-export function useTimeEntrySummary(params: { from: string; to: string }) {
+export function useTimeEntrySummary(params: { from: string; to: string }, enabled = true, staleTime = 30_000) {
   return useQuery({
     queryKey: timeEntryKeys.summary(params),
     queryFn: () => api.get<TimeEntrySummary>("/api/time-entries/summary", params),
-    staleTime: 30_000,
+    enabled,
+    staleTime,
   });
 }
 
@@ -111,97 +117,133 @@ export interface HandoverRequestDto {
   rejectionReason?: string;
 }
 
-export interface ManagerHandoverRequestDto {
-  id: string;
-  entityType: "Program" | "Portfolio";
-  entityId: string;
-  entityName: string;
-  currentManagerId: string;
-  currentManagerName: string;
-  newManagerId: string;
-  newManagerName: string;
-  effectiveHandoverDate: string;
-  reason: string;
-  status: string;
-  requestedBy: string;
-  requestedByName: string;
-  requestedAt: string;
-}
-
 export interface ProjectChangeRequestDto {
   id: string;
   projectId: string;
   projectName: string;
-  number: string;
-  type: string;
-  status: string;
+  number: number;
+  type: "Administrative" | "Baseline";
+  status: "Pending" | "Approved" | "Rejected" | "Cancelled";
   reason: string;
-  justification?: string;
+  justification?: string | null;
+  impact?: string | null;
+  budgetBeforeChange?: number | null;
+  budgetChangeAmount?: number | null;
+  proposedProjectBudget?: number | null;
+  attachments?: string | null;
   requestedBy: string;
   requestedByName: string;
   requestedAt: string;
+  reviewedBy?: string | null;
+  reviewedByName?: string | null;
+  reviewedAt?: string | null;
+  decisionNotes?: string | null;
+  createdAt: string;
+  createdBy: string;
+  updatedAt?: string | null;
+  updatedBy?: string | null;
 }
 
-export function usePendingHandoverRequestsForMe() {
+export function usePendingHandoverRequestsForMe(enabled = true) {
   return useQuery({
     queryKey: ["handovers", "pendingForMe"],
     queryFn: () => api.get<HandoverRequestDto[]>("/api/handover-requests/pending-for-me"),
+    enabled,
     staleTime: 15_000,
   });
 }
 
-export function usePendingManagerHandovers() {
+export function usePendingManagerHandovers(enabled = true) {
   return useQuery({
     queryKey: ["managerHandovers", "pendingForMe"],
     queryFn: () => api.get<ManagerHandoverRequestDto[]>("/api/manager-handovers/pending-for-me"),
+    enabled,
     staleTime: 15_000,
   });
 }
 
-export function usePendingProjectChangeRequests() {
+export function usePendingProjectChangeRequests(enabled = true) {
   return useQuery({
     queryKey: ["projectChangeRequests", "pendingForMe"],
     queryFn: () => api.get<ProjectChangeRequestDto[]>("/api/project-change-requests/pending-for-me"),
+    enabled,
     staleTime: 15_000,
   });
 }
 
 export function useAcceptHandoverRequest() {
+  const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (requestId: string) => api.post<void>(`/api/handover-requests/${requestId}/accept`, {}),
+    mutationFn: (requestId: string) => api.post<HandoverRequestDto>(`/api/handover-requests/${requestId}/accept`, {}),
+    onSuccess: (request) => Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["projects", "detail", request.projectId], exact: true }),
+      queryClient.invalidateQueries({ queryKey: ["projects", "shell", request.projectId], exact: true }),
+      queryClient.invalidateQueries({ queryKey: ["projects", "overview", request.projectId], exact: true }),
+      queryClient.invalidateQueries({ queryKey: ["projects", "list"] }),
+      queryClient.invalidateQueries({ queryKey: ["projects", "people", request.projectId] }),
+      queryClient.invalidateQueries({ queryKey: ["projects", "team", request.projectId] }),
+      queryClient.invalidateQueries({ queryKey: ["projects", "history", request.projectId] }),
+      queryClient.invalidateQueries({ queryKey: ["projects", "snapshots", request.projectId] }),
+      queryClient.invalidateQueries({ queryKey: ["projects", "handovers", request.projectId] }),
+      queryClient.invalidateQueries({ queryKey: projectKeys.handoverManagers(request.projectId) }),
+    ]),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["handovers", "pendingForMe"] }),
   });
 }
 
 export function useRejectHandoverRequest() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ requestId, rejectionReason }: { requestId: string; rejectionReason: string }) =>
-      api.post<void>(`/api/handover-requests/${requestId}/reject`, { rejectionReason }),
+      api.post<HandoverRequestDto>(`/api/handover-requests/${requestId}/reject`, { rejectionReason }),
+    onSuccess: (request) => queryClient.invalidateQueries({ queryKey: ["projects", "handovers", request.projectId] }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["handovers", "pendingForMe"] }),
   });
 }
 
 export function useAcceptManagerHandover(type: "programs" | "portfolios") {
+  const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (requestId: string) => api.post<void>(`/api/manager-handovers/${type}/requests/${requestId}/accept`, {}),
+    mutationFn: (requestId: string) => api.post<ManagerHandoverRequestDto>(`/api/manager-handovers/${type}/requests/${requestId}/accept`, {}),
+    onSuccess: (request) => invalidateManagerHandoverEntity(queryClient, request),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["managerHandovers"] }),
   });
 }
 
 export function useRejectManagerHandover(type: "programs" | "portfolios") {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ requestId, rejectionReason }: { requestId: string; rejectionReason: string }) =>
-      api.post<void>(`/api/manager-handovers/${type}/requests/${requestId}/reject`, { rejectionReason }),
+      api.post<ManagerHandoverRequestDto>(`/api/manager-handovers/${type}/requests/${requestId}/reject`, { rejectionReason }),
+    onSuccess: (request) => invalidateManagerHandoverEntity(queryClient, request),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["managerHandovers"] }),
   });
 }
 
 export function useApproveProjectChangeRequest() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ id, dto }: { id: string; dto: Record<string, unknown> }) =>
-      api.post<void>(`/api/project-change-requests/${id}/approve`, dto),
+      api.post<ProjectChangeRequestDto>(`/api/project-change-requests/${id}/approve`, dto),
+    onSuccess: (request) => Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["projects", "change-requests", request.projectId] }),
+      queryClient.invalidateQueries({ queryKey: ["projects", "detail", request.projectId], exact: true }),
+      queryClient.invalidateQueries({ queryKey: ["projects", "overview", request.projectId], exact: true }),
+    ]),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["projectChangeRequests"] }),
   });
 }
 
 export function useRejectProjectChangeRequest() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ id, decisionNotes }: { id: string; decisionNotes: string }) =>
-      api.post<void>(`/api/project-change-requests/${id}/reject`, { decisionNotes }),
+      api.post<ProjectChangeRequestDto>(`/api/project-change-requests/${id}/reject`, { decisionNotes }),
+    onSuccess: (request) => Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["projects", "change-requests", request.projectId] }),
+      queryClient.invalidateQueries({ queryKey: ["projects", "detail", request.projectId], exact: true }),
+      queryClient.invalidateQueries({ queryKey: ["projects", "overview", request.projectId], exact: true }),
+    ]),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["projectChangeRequests"] }),
   });
 }

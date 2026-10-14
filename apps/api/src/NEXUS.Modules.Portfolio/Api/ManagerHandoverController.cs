@@ -16,6 +16,12 @@ public sealed class ManagerHandoverController : ControllerBase
     [Authorize(Policy = "Handover.Approve")]
     [HttpGet("pending-for-me")]
     public async Task<IActionResult> Pending(CancellationToken ct) => FromResult(await _service.GetPendingForMeAsync(UserId(), ct));
+    [Authorize(Policy = "Handover.Manage")]
+    [HttpGet("programs/{id:guid}/eligible-managers")]
+    public async Task<IActionResult> EligibleProgramManagers(Guid id, CancellationToken ct) => FromResult(await _service.GetEligibleProgramManagersAsync(id, ct));
+    [Authorize(Policy = "Handover.Manage")]
+    [HttpGet("portfolios/{id:guid}/eligible-managers")]
+    public async Task<IActionResult> EligiblePortfolioManagers(Guid id, CancellationToken ct) => FromResult(await _service.GetEligiblePortfolioManagersAsync(id, ct));
     [Authorize(Policy = "Handover.View")]
     [HttpGet("programs/{id:guid}/requests")]
     public async Task<IActionResult> ProgramRequests(Guid id, CancellationToken ct) => FromResult(await _service.GetProgramRequestsAsync(id, ct));

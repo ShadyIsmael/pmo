@@ -1,4 +1,5 @@
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { Coffee, Pause, Play, RotateCcw, Square, Timer, X, Zap } from "lucide-react";
 import { useAuth } from "../auth/AuthProvider";
 import { useManagement } from "../api/management";
@@ -11,13 +12,13 @@ import {
   useTimerAction,
   useTimerHeartbeat,
 } from "../api/timer";
-import { deriveWorkSeconds, estimateServerNowMs, formatDurationSeconds, isTimerActive, sessionReceivedAtMs } from "../lib/timer-totals";
+import { deriveTimerTotals, estimateServerNowMs, formatDurationSeconds, isTimerActive, sessionReceivedAtMs } from "../lib/timer-totals";
 import { FinalizeSessionSideSheet } from "../features/time/FinalizeSessionSideSheet";
 
 const IDLE_MINUTES = 15;
 
 export function HeaderTimer() {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const { user, status: authStatus } = useAuth();
   const { effectiveReadOnly, loading: managementLoading } = useManagement();
   const canControl = Boolean(user?.permissions?.includes("TimeTracking.ManageOwn")) && !effectiveReadOnly;
@@ -90,10 +91,18 @@ export function HeaderTimer() {
       ? estimateServerNowMs(session, sessionReceivedAtMs(session), now)
       : new Date(session.serverNow).getTime()
     : Date.now();
-  const workSeconds = session ? deriveWorkSeconds(session, serverNowMs) : 0;
+  const totals = session ? deriveTimerTotals(session, serverNowMs) : null;
+  const workSeconds = totals?.workSeconds ?? 0;
   const needsFinalization = sessionStatus === "AwaitingFinalization";
+  const statusLabel = session ? t(`timeTracking.status.${session.status}`) : t("timeTracking.trackTime");
   const triggerValue = needsFinalization ? t("timeTracking.needsCompletion") : session ? formatDurationSeconds(workSeconds) : t("timeTracking.trackTime");
-  void locale;
+  const errors = [
+    start.isError && (start.error instanceof Error ? start.error.message : t("timeTracking.startError")),
+    finishAction.isError && (finishAction.error instanceof Error ? finishAction.error.message : t("timeTracking.finishError")),
+    pauseAction.isError && (pauseAction.error instanceof Error ? pauseAction.error.message : t("timeTracking.pauseError")),
+    breakAction.isError && (breakAction.error instanceof Error ? breakAction.error.message : t("timeTracking.breakError")),
+    resumeAction.isError && (resumeAction.error instanceof Error ? resumeAction.error.message : t("timeTracking.resumeError")),
+  ].filter((message): message is string => Boolean(message));
   const statusTone = !session
     ? "border-primary/40 bg-primary/10 text-primary hover:bg-primary/15"
     : sessionStatus === "Running"
@@ -113,29 +122,29 @@ export function HeaderTimer() {
 
   return (
     <>
-      <div className="relative">
+      <div>
         <Button
           variant="outline"
           size="sm"
           className={cn("h-8 max-w-40 gap-1.5 px-2 text-xs font-medium shadow-sm", statusTone)}
-          aria-label={triggerValue}
+          aria-label={statusLabel}
           onClick={() => setOpen((v) => !v)}
         >
           <StatusIcon className="h-3.5 w-3.5 shrink-0" />
           <span className="hidden truncate tabular-nums sm:inline">{triggerValue}</span>
         </Button>
-        {open ? (
+        {open && typeof document !== "undefined" ? createPortal(
           <>
-            <button type="button" aria-label={t("common.close")} onClick={() => setOpen(false)} className="fixed inset-0 z-40 cursor-default bg-transparent" />
-            <div role="dialog" aria-label={triggerValue} className="fixed bottom-4 right-4 z-50 max-h-[calc(100vh-2rem)] w-80 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-md border bg-popover p-3 text-popover-foreground shadow-lg sm:bottom-6 sm:right-6">
+            <button type="button" aria-label={t("common.close")} onClick={() => setOpen(false)} className="fixed inset-0 z-[99] cursor-default bg-transparent" />
+            <div role="dialog" aria-label={statusLabel} data-testid="header-timer-popover" className="fixed top-14 right-4 z-[100] max-h-[calc(100vh-4.5rem)] w-80 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-md border bg-popover p-3 text-popover-foreground shadow-lg sm:top-16 sm:right-6">
               <div className="space-y-3">
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="text-sm font-semibold">{needsFinalization ? t("timeTracking.needsCompletion") : session ? session.status : t("timeTracking.trackTime")}</p>
+                    <p className="text-sm font-semibold">{needsFinalization ? t("timeTracking.needsCompletion") : session ? statusLabel : t("timeTracking.trackTime")}</p>
                     <p className="text-xs text-muted-foreground">{t("timeTracking.headerTimerDescription")}</p>
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
-                    {session ? <span className="font-mono text-lg tabular-nums">{formatDurationSeconds(workSeconds)}</span> : <Timer className="h-5 w-5 text-muted-foreground" />}
+                    {session && totals ? <span className="font-mono text-lg tabular-nums">{formatDurationSeconds(totals.workSeconds)}</span> : <Timer className="h-5 w-5 text-muted-foreground" />}
                     <Button variant="ghost" size="icon" className="h-7 w-7" aria-label={t("common.close")} onClick={() => setOpen(false)}>
                       <X className="h-4 w-4" />
                     </Button>
@@ -143,6 +152,13 @@ export function HeaderTimer() {
                 </div>
                 {session ? (
                   <>
+                    {totals ? <div className="grid grid-cols-4 gap-1.5 text-center text-[10px]">
+                      <div className="rounded border border-border/70 bg-muted/30 px-1.5 py-1"><span className="block text-muted-foreground">{t("timeTracking.workTime")}</span><strong className="font-mono" data-testid="header-timer-work">{formatDurationSeconds(totals.workSeconds)}</strong></div>
+                      <div className="rounded border border-border/70 bg-muted/30 px-1.5 py-1"><span className="block text-muted-foreground">{t("timeTracking.breakTime")}</span><strong className="font-mono" data-testid="header-timer-break-counter">{formatDurationSeconds(totals.breakSeconds)}</strong></div>
+                      <div className="rounded border border-border/70 bg-muted/30 px-1.5 py-1"><span className="block text-muted-foreground">{t("timeTracking.pauseTime")}</span><strong className="font-mono" data-testid="header-timer-pause">{formatDurationSeconds(totals.pauseSeconds)}</strong></div>
+                      <div className="rounded border border-border/70 bg-muted/30 px-1.5 py-1"><span className="block text-muted-foreground">{t("timeTracking.totalSession")}</span><strong className="font-mono" data-testid="header-timer-total">{formatDurationSeconds(totals.sessionSeconds)}</strong></div>
+                    </div> : null}
+                    {sessionStatus === "IdlePaused" ? <p className="text-xs text-warning">{t("timeTracking.idleMessage")}</p> : null}
                     <div className="flex flex-wrap justify-end gap-1.5">
                       {sessionStatus === "Running" ? (
                         <>
@@ -175,10 +191,11 @@ export function HeaderTimer() {
                     <Play className="me-2 h-4 w-4" />{t("timeTracking.startTimer")}
                   </Button>
                 )}
+                {errors.length > 0 ? <div className="space-y-1 border-t border-border/60 pt-2">{errors.map((message) => <p key={message} role="alert" className="text-xs text-destructive">{message}</p>)}</div> : null}
               </div>
             </div>
           </>
-        ) : null}
+        , document.body) : null}
       </div>
       <FinalizeSessionSideSheet open={finalizeOpen} onOpenChange={setFinalizeOpen} session={session} />
     </>

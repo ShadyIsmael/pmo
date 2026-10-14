@@ -1,14 +1,17 @@
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { Check, ChevronDown } from "lucide-react";
 import { cn } from "@lib/utils";
+import { useAnchoredOverlayPosition } from "./AnchoredOverlay";
 
 interface SelectContextValue {
   value: string;
   onValueChange: (value: string) => void;
   open: boolean;
   setOpen: (open: boolean) => void;
-  labels: Map<string, React.ReactNode>;
-  registerLabel: (value: string, label: React.ReactNode) => void;
+  labels: Map<string, string>;
+  triggerRef: React.MutableRefObject<HTMLButtonElement | null>;
+  contentRef: React.MutableRefObject<HTMLDivElement | null>;
 }
 
 const SelectContext = React.createContext<SelectContextValue | null>(null);
@@ -23,7 +26,8 @@ interface SelectRootProps {
 export function Select({ value, defaultValue = "", onValueChange, children }: SelectRootProps) {
   const [uncontrolled, setUncontrolled] = React.useState(defaultValue);
   const [open, setOpen] = React.useState(false);
-  const [labels, setLabels] = React.useState(() => new Map<string, React.ReactNode>());
+  const triggerRef = React.useRef<HTMLButtonElement>(null);
+  const contentRef = React.useRef<HTMLDivElement>(null);
   const current = value ?? uncontrolled;
   const handleChange = React.useCallback(
     (next: string) => {
@@ -33,27 +37,32 @@ export function Select({ value, defaultValue = "", onValueChange, children }: Se
     },
     [value, onValueChange]
   );
-  const registerLabel = React.useCallback((itemValue: string, label: React.ReactNode) => {
-    setLabels((prev) => {
-      if (prev.get(itemValue) === label) return prev;
-      const next = new Map(prev);
-      next.set(itemValue, label);
-      return next;
-    });
-  }, []);
+  // Declarative label map: walked from children on every render (cheap for
+  // small option lists). Works before the menu is ever opened and cannot loop,
+  // unlike effect-based registration with ReactNode identity.
+  const labels = React.useMemo(() => collectLabels(children), [children]);
   const ctx = React.useMemo(
-    () => ({ value: current, onValueChange: handleChange, open, setOpen, labels, registerLabel }),
-    [current, handleChange, open, labels, registerLabel]
+    () => ({ value: current, onValueChange: handleChange, open, setOpen, labels, triggerRef, contentRef }),
+    [current, handleChange, open, labels]
   );
 
   React.useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (triggerRef.current?.contains(target) || contentRef.current?.contains(target)) return;
+      setOpen(false);
     };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open ]);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
 
   return (
     <SelectContext.Provider value={ctx}>
@@ -62,12 +71,36 @@ export function Select({ value, defaultValue = "", onValueChange, children }: Se
   );
 }
 
+function collectLabels(node: React.ReactNode, map: Map<string, string> = new Map()): Map<string, string> {
+  React.Children.forEach(node, (child) => {
+    if (!React.isValidElement<{ value?: unknown; children?: React.ReactNode }>(child)) return;
+    if (child.type === SelectItem && typeof child.props.value === "string") {
+      const text = flattenText(child.props.children);
+      if (text) map.set(child.props.value, text);
+    } else if (child.props?.children) {
+      collectLabels(child.props.children, map);
+    }
+  });
+  return map;
+}
+
+function flattenText(node: React.ReactNode): string | null {
+  let out = "";
+  let ok = true;
+  React.Children.forEach(node, (child) => {
+    if (typeof child === "string" || typeof child === "number") out += String(child);
+    else ok = false;
+  });
+  return ok && out ? out : null;
+}
+
 export function SelectTrigger({ className, children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   const ctx = React.useContext(SelectContext);
   if (!ctx) throw new Error("SelectTrigger must be used within Select");
   return (
     <>
       <button
+        ref={ctx.triggerRef}
         type="button"
         aria-haspopup="listbox"
         aria-expanded={ctx.open}
@@ -81,9 +114,6 @@ export function SelectTrigger({ className, children, ...props }: React.ButtonHTM
         <span className="min-w-0 flex-1 truncate text-start">{children}</span>
         <ChevronDown className={cn("h-4 w-4 shrink-0 opacity-50 transition-transform", ctx.open && "rotate-180")} />
       </button>
-      {ctx.open ? (
-        <button type="button" aria-label="Close" tabIndex={-1} onClick={() => ctx.setOpen(false)} className="fixed inset-0 z-40 cursor-default bg-transparent" />
-      ) : null}
     </>
   );
 }
@@ -100,20 +130,19 @@ export function SelectValue({ placeholder, children }: { placeholder?: string; c
 export function SelectContent({ className, children }: { className?: string; children: React.ReactNode; position?: "popper" | "inline" }) {
   const ctx = React.useContext(SelectContext);
   if (!ctx) throw new Error("SelectContent must be used within Select");
+  const style = useAnchoredOverlayPosition({ open: ctx.open, anchorRef: ctx.triggerRef, contentRef: ctx.contentRef, matchTriggerWidth: true });
   if (!ctx.open) return null;
-  return (
-    <div role="listbox" className={cn("absolute z-50 mt-1 max-h-72 w-full overflow-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-md", className)}>
+  return createPortal(
+    <div ref={ctx.contentRef} role="listbox" style={style} className={cn("max-h-72 rounded-md border bg-popover p-1 text-popover-foreground shadow-md", className)}>
       {children}
-    </div>
+    </div>,
+    document.body
   );
 }
 
 export function SelectItem({ value, children, disabled }: { value: string; children: React.ReactNode; disabled?: boolean }) {
   const ctx = React.useContext(SelectContext);
   if (!ctx) throw new Error("SelectItem must be used within Select");
-  React.useEffect(() => {
-    ctx.registerLabel(value, children);
-  }, [value, children, ctx]);
   const selected = ctx.value === value;
   return (
     <button

@@ -31,7 +31,11 @@ function NavSectionView({ section, items, pathname, open, onOpenChange, onNaviga
   const Icon = section.icon;
 
   return (
-    <details open={open} onToggle={() => onOpenChange(!open)} className="group">
+    <details
+      open={open}
+      onToggle={(event) => onOpenChange(event.currentTarget.open)}
+      className="group"
+    >
       <summary className="flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-[11px] font-bold uppercase tracking-[0.1em] transition-colors cursor-pointer list-none">
         {Icon && <Icon className="h-3.5 w-3.5 shrink-0" />}
         <span className="flex-1 text-start">{t(section.labelKey)}</span>
@@ -147,7 +151,7 @@ export function Sidebar() {
       <aside
         dir={locale === "ar" ? "rtl" : "ltr"}
         className={`
-          nexus-sidebar fixed inset-y-0 start-0 z-50 flex h-screen min-h-0 flex-col border-e border-sidebar-border bg-sidebar text-sidebar-foreground shadow-sidebar transition-[width,transform] duration-200 md:static md:z-auto md:shadow-none
+          nexus-sidebar fixed inset-y-0 start-0 z-50 flex h-screen min-h-0 flex-col border-e border-sidebar-border bg-sidebar text-sidebar-foreground shadow-sidebar transition-[width,transform] duration-200 md:sticky md:top-0 md:z-auto md:h-screen md:max-h-screen md:shrink-0 md:shadow-none
           ${collapsed ? "md:w-[64px]" : "md:w-[260px]"}
           ${mobileOpen ? "w-[min(88vw,288px)] translate-x-0" : "w-[min(88vw,288px)] ltr:-translate-x-full rtl:translate-x-full md:!translate-x-0"}
         `}

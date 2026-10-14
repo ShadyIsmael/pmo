@@ -21,10 +21,11 @@ export interface SideSheetProps {
   children: React.ReactNode;
   size?: SideSheetSize;
   closeLabel?: string;
+  ariaLabel?: string;
   className?: string;
 }
 
-export function SideSheet({ open, onOpenChange, title, description, children, size = "lg", closeLabel = "Close", className }: SideSheetProps) {
+export function SideSheet({ open, onOpenChange, title, description, children, size = "lg", closeLabel = "Close", ariaLabel, className }: SideSheetProps) {
   React.useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -40,7 +41,7 @@ export function SideSheet({ open, onOpenChange, title, description, children, si
 
   if (!open) return null;
   return createPortal(
-    <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label={typeof title === "string" ? title : undefined}>
+    <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label={ariaLabel ?? (typeof title === "string" ? title : undefined)}>
       <button type="button" aria-label={closeLabel} onClick={() => onOpenChange(false)} className="absolute inset-0 bg-black/50" />
       <div className={cn("absolute inset-y-0 end-0 flex w-full max-w-md flex-col border-s bg-background shadow-xl", sideSheetSizes[size], className)}>
         <div className="flex shrink-0 items-start gap-3 border-b px-5 py-4">

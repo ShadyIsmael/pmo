@@ -24,8 +24,9 @@ public sealed class OrganizationalUnitService : IOrganizationalUnitService
     public async Task<IReadOnlyList<OrganizationalUnitDto>> GetUnitsAsync(bool includeInactive, CancellationToken cancellationToken = default)
     {
         await EnsureDefaultTypesAsync(cancellationToken);
+        var tenantId = CurrentTenantId();
         var units = await _context.Set<OrganizationalUnit>()
-            .Where(unit => includeInactive || unit.IsActive)
+            .Where(unit => unit.TenantId == tenantId && (includeInactive || unit.IsActive))
             .OrderBy(unit => unit.SortOrder).ThenBy(unit => unit.Name)
             .ToListAsync(cancellationToken);
         return await MapUnitsAsync(units, cancellationToken);
@@ -33,7 +34,7 @@ public sealed class OrganizationalUnitService : IOrganizationalUnitService
 
     public async Task<Result<OrganizationalUnitDto>> GetUnitAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var unit = await _context.Set<OrganizationalUnit>().FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
+        var unit = await _context.Set<OrganizationalUnit>().FirstOrDefaultAsync(item => item.TenantId == CurrentTenantId() && item.Id == id, cancellationToken);
         if (unit is null) return Result<OrganizationalUnitDto>.Failure(Error.NotFound("Organizational unit not found"));
         return Result<OrganizationalUnitDto>.Success((await MapUnitsAsync(new[] { unit }, cancellationToken)).Single());
     }
@@ -63,7 +64,7 @@ public sealed class OrganizationalUnitService : IOrganizationalUnitService
     public async Task<Result<OrganizationalUnitDto>> UpdateUnitAsync(Guid id, SaveOrganizationalUnitDto request, string userId, CancellationToken cancellationToken = default)
     {
         await EnsureDefaultTypesAsync(cancellationToken);
-        var unit = await _context.Set<OrganizationalUnit>().FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
+        var unit = await _context.Set<OrganizationalUnit>().FirstOrDefaultAsync(item => item.TenantId == CurrentTenantId() && item.Id == id, cancellationToken);
         if (unit is null) return Result<OrganizationalUnitDto>.Failure(Error.NotFound("Organizational unit not found"));
         var validation = await ValidateUnitAsync(request, id, cancellationToken);
         if (validation is not null) return Result<OrganizationalUnitDto>.Failure(validation);
@@ -83,11 +84,12 @@ public sealed class OrganizationalUnitService : IOrganizationalUnitService
 
     public async Task<Result> DeleteUnitAsync(Guid id, string userId, CancellationToken cancellationToken = default)
     {
-        var unit = await _context.Set<OrganizationalUnit>().FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
+        var tenantId = CurrentTenantId();
+        var unit = await _context.Set<OrganizationalUnit>().FirstOrDefaultAsync(item => item.TenantId == tenantId && item.Id == id, cancellationToken);
         if (unit is null) return Result.Failure(Error.NotFound("Organizational unit not found"));
-        if (await _context.Set<OrganizationalUnit>().AnyAsync(item => item.ParentOrganizationalUnitId == id, cancellationToken))
+        if (await _context.Set<OrganizationalUnit>().AnyAsync(item => item.TenantId == tenantId && item.ParentOrganizationalUnitId == id, cancellationToken))
             return Result.Failure(Error.Conflict("An organizational unit with children cannot be deleted; deactivate it instead"));
-        if (await _context.Set<ResourceOrganizationalUnit>().AnyAsync(item => item.OrganizationalUnitId == id && item.IsActive, cancellationToken))
+        if (await _context.Set<ResourceOrganizationalUnit>().AnyAsync(item => item.TenantId == tenantId && item.OrganizationalUnitId == id && item.IsActive, cancellationToken))
             return Result.Failure(Error.Conflict("An organizational unit with active resource memberships cannot be deleted"));
         unit.IsDeleted = true;
         unit.IsActive = false;
@@ -121,7 +123,7 @@ public sealed class OrganizationalUnitService : IOrganizationalUnitService
     {
         var validation = ValidateType(request, out var code, out var nameEn, out var nameAr);
         if (validation is not null) return Result<OrganizationalUnitTypeDto>.Failure(validation);
-        var type = await _context.Set<Lookup>().FirstOrDefaultAsync(item => item.Id == id && item.Category == DefaultTypeCategory, cancellationToken);
+        var type = await _context.Set<Lookup>().FirstOrDefaultAsync(item => item.TenantId == CurrentTenantId() && item.Id == id && item.Category == DefaultTypeCategory, cancellationToken);
         if (type is null) return Result<OrganizationalUnitTypeDto>.Failure(Error.NotFound("Organizational unit type not found"));
         if (await _context.Set<Lookup>().IgnoreQueryFilters().AnyAsync(item => item.Id != id && item.TenantId == type.TenantId && item.Category == DefaultTypeCategory && item.Code == code && !item.IsDeleted, cancellationToken))
             return Result<OrganizationalUnitTypeDto>.Failure(Error.Conflict("An organizational unit type with this code already exists"));
@@ -134,7 +136,11 @@ public sealed class OrganizationalUnitService : IOrganizationalUnitService
 
     public async Task<IReadOnlyList<ResourceOrganizationalUnitDto>> GetMembershipsAsync(Guid? organizationalUnitId, Guid? resourceId, bool includeHistory, CancellationToken cancellationToken = default)
     {
-        var query = _context.Set<ResourceOrganizationalUnit>().Include(item => item.OrganizationalUnit).AsQueryable();
+        var tenantId = CurrentTenantId();
+        var query = _context.Set<ResourceOrganizationalUnit>()
+            .Include(item => item.OrganizationalUnit)
+            .Where(item => item.TenantId == tenantId && item.OrganizationalUnit.TenantId == tenantId)
+            .AsQueryable();
         if (organizationalUnitId.HasValue) query = query.Where(item => item.OrganizationalUnitId == organizationalUnitId.Value);
         if (resourceId.HasValue) query = query.Where(item => item.ResourceId == resourceId.Value);
         if (!includeHistory) query = query.Where(item => item.IsActive && (item.EffectiveTo == null || item.EffectiveTo > DateTime.UtcNow));
@@ -145,14 +151,15 @@ public sealed class OrganizationalUnitService : IOrganizationalUnitService
 
     public async Task<Result<ResourceOrganizationalUnitDto>> AssignMembershipAsync(SaveResourceOrganizationalUnitDto request, string userId, CancellationToken cancellationToken = default)
     {
-        var unit = await _context.Set<OrganizationalUnit>().FirstOrDefaultAsync(item => item.Id == request.OrganizationalUnitId && item.IsActive, cancellationToken);
+        var tenantId = CurrentTenantId();
+        var unit = await _context.Set<OrganizationalUnit>().FirstOrDefaultAsync(item => item.TenantId == tenantId && item.Id == request.OrganizationalUnitId && item.IsActive, cancellationToken);
         if (unit is null) return Result<ResourceOrganizationalUnitDto>.Failure(Error.NotFound("Active organizational unit not found"));
         var resource = await _resourceLookup.FindAsync(request.ResourceId, cancellationToken);
         if (resource is null || !resource.IsActive) return Result<ResourceOrganizationalUnitDto>.Failure(Error.Validation("The resource does not exist in the current tenant or is inactive"));
         var effectiveFrom = request.EffectiveFrom.ToUniversalTime();
         if (request.IsPrimary)
         {
-            var current = await _context.Set<ResourceOrganizationalUnit>().Where(item => item.ResourceId == request.ResourceId && item.IsPrimary && item.IsActive && (item.EffectiveTo == null || item.EffectiveTo > effectiveFrom)).ToListAsync(cancellationToken);
+            var current = await _context.Set<ResourceOrganizationalUnit>().Where(item => item.TenantId == tenantId && item.ResourceId == request.ResourceId && item.IsPrimary && item.IsActive && (item.EffectiveTo == null || item.EffectiveTo > effectiveFrom)).ToListAsync(cancellationToken);
             foreach (var existing in current) { existing.EffectiveTo = effectiveFrom; existing.IsActive = false; existing.UpdatedBy = userId; }
         }
         var membership = new ResourceOrganizationalUnit { TenantId = CurrentTenantId(), ResourceId = request.ResourceId, OrganizationalUnitId = unit.Id, IsPrimary = request.IsPrimary, EffectiveFrom = effectiveFrom, CreatedBy = userId };
@@ -164,7 +171,7 @@ public sealed class OrganizationalUnitService : IOrganizationalUnitService
 
     public async Task<Result> EndMembershipAsync(Guid membershipId, DateTime effectiveTo, string userId, CancellationToken cancellationToken = default)
     {
-        var membership = await _context.Set<ResourceOrganizationalUnit>().FirstOrDefaultAsync(item => item.Id == membershipId && item.IsActive, cancellationToken);
+        var membership = await _context.Set<ResourceOrganizationalUnit>().FirstOrDefaultAsync(item => item.TenantId == CurrentTenantId() && item.Id == membershipId && item.IsActive, cancellationToken);
         if (membership is null) return Result.Failure(Error.NotFound("Current organizational membership not found"));
         var end = effectiveTo.ToUniversalTime();
         if (end <= membership.EffectiveFrom) return Result.Failure(Error.Validation("Membership end must be after its start"));
@@ -175,7 +182,7 @@ public sealed class OrganizationalUnitService : IOrganizationalUnitService
 
     public async Task<IReadOnlyList<ResourceReportingLineDto>> GetReportingLinesAsync(Guid? resourceId, bool includeHistory, CancellationToken cancellationToken = default)
     {
-        var query = _context.Set<ResourceReportingLine>().AsQueryable();
+        var query = _context.Set<ResourceReportingLine>().Where(item => item.TenantId == CurrentTenantId()).AsQueryable();
         if (resourceId.HasValue) query = query.Where(item => item.ResourceId == resourceId.Value || item.ManagerResourceId == resourceId.Value);
         if (!includeHistory) query = query.Where(item => item.IsActive && (item.EffectiveTo == null || item.EffectiveTo > DateTime.UtcNow));
         var rows = await query.OrderByDescending(item => item.IsActive).ThenByDescending(item => item.EffectiveFrom).ToListAsync(cancellationToken);
@@ -195,7 +202,7 @@ public sealed class OrganizationalUnitService : IOrganizationalUnitService
         var effectiveFrom = request.EffectiveFrom.ToUniversalTime();
         if (request.IsPrimary)
         {
-            var current = await _context.Set<ResourceReportingLine>().Where(item => item.ResourceId == request.ResourceId && item.IsPrimary && item.IsActive && (item.EffectiveTo == null || item.EffectiveTo > effectiveFrom)).ToListAsync(cancellationToken);
+            var current = await _context.Set<ResourceReportingLine>().Where(item => item.TenantId == CurrentTenantId() && item.ResourceId == request.ResourceId && item.IsPrimary && item.IsActive && (item.EffectiveTo == null || item.EffectiveTo > effectiveFrom)).ToListAsync(cancellationToken);
             foreach (var existing in current) { existing.EffectiveTo = effectiveFrom; existing.IsActive = false; existing.UpdatedBy = userId; }
         }
         var line = new ResourceReportingLine { TenantId = CurrentTenantId(), ResourceId = request.ResourceId, ManagerResourceId = request.ManagerResourceId, ReportingType = string.IsNullOrWhiteSpace(request.ReportingType) ? "LineManager" : request.ReportingType.Trim(), IsPrimary = request.IsPrimary, EffectiveFrom = effectiveFrom, CreatedBy = userId };
@@ -206,7 +213,7 @@ public sealed class OrganizationalUnitService : IOrganizationalUnitService
 
     public async Task<Result> EndReportingLineAsync(Guid reportingLineId, DateTime effectiveTo, string userId, CancellationToken cancellationToken = default)
     {
-        var line = await _context.Set<ResourceReportingLine>().FirstOrDefaultAsync(item => item.Id == reportingLineId && item.IsActive, cancellationToken);
+        var line = await _context.Set<ResourceReportingLine>().FirstOrDefaultAsync(item => item.TenantId == CurrentTenantId() && item.Id == reportingLineId && item.IsActive, cancellationToken);
         if (line is null) return Result.Failure(Error.NotFound("Current reporting line not found"));
         var end = effectiveTo.ToUniversalTime();
         if (end <= line.EffectiveFrom) return Result.Failure(Error.Validation("Reporting line end must be after its start"));
@@ -217,11 +224,12 @@ public sealed class OrganizationalUnitService : IOrganizationalUnitService
 
     private async Task<Result> SetUnitActiveAsync(Guid id, bool active, string userId, CancellationToken cancellationToken)
     {
-        var unit = await _context.Set<OrganizationalUnit>().FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
+        var tenantId = CurrentTenantId();
+        var unit = await _context.Set<OrganizationalUnit>().FirstOrDefaultAsync(item => item.TenantId == tenantId && item.Id == id, cancellationToken);
         if (unit is null) return Result.Failure(Error.NotFound("Organizational unit not found"));
-        if (!active && await _context.Set<OrganizationalUnit>().AnyAsync(item => item.ParentOrganizationalUnitId == id && item.IsActive, cancellationToken))
+        if (!active && await _context.Set<OrganizationalUnit>().AnyAsync(item => item.TenantId == tenantId && item.ParentOrganizationalUnitId == id && item.IsActive, cancellationToken))
             return Result.Failure(Error.Conflict("Deactivate child units before deactivating their parent"));
-        if (active && unit.ParentOrganizationalUnitId.HasValue && !await _context.Set<OrganizationalUnit>().AnyAsync(item => item.Id == unit.ParentOrganizationalUnitId && item.IsActive, cancellationToken))
+        if (active && unit.ParentOrganizationalUnitId.HasValue && !await _context.Set<OrganizationalUnit>().AnyAsync(item => item.TenantId == tenantId && item.Id == unit.ParentOrganizationalUnitId && item.IsActive, cancellationToken))
             return Result.Failure(Error.Validation("An active organizational unit must have an active parent"));
         unit.IsActive = active; unit.UpdatedBy = userId;
         await _context.SaveChangesAsync(cancellationToken);
@@ -246,7 +254,7 @@ public sealed class OrganizationalUnitService : IOrganizationalUnitService
         while (parentId.HasValue && visited.Add(parentId.Value))
         {
             if (parentId.Value == unitId) return true;
-            parentId = await _context.Set<OrganizationalUnit>().Where(item => item.Id == parentId.Value).Select(item => item.ParentOrganizationalUnitId).FirstOrDefaultAsync(cancellationToken);
+            parentId = await _context.Set<OrganizationalUnit>().Where(item => item.TenantId == CurrentTenantId() && item.Id == parentId.Value).Select(item => item.ParentOrganizationalUnitId).FirstOrDefaultAsync(cancellationToken);
         }
         return false;
     }
@@ -267,33 +275,44 @@ public sealed class OrganizationalUnitService : IOrganizationalUnitService
     private async Task<IReadOnlyList<OrganizationalUnitDto>> MapUnitsAsync(IReadOnlyList<OrganizationalUnit> units, CancellationToken cancellationToken)
     {
         var ids = units.Select(unit => unit.Id).ToHashSet();
-        var allUnits = await _context.Set<OrganizationalUnit>().AsNoTracking().ToListAsync(cancellationToken);
+        var tenantId = CurrentTenantId();
+        var allUnits = await _context.Set<OrganizationalUnit>().AsNoTracking().Where(unit => unit.TenantId == tenantId).ToListAsync(cancellationToken);
         var unitById = allUnits.ToDictionary(unit => unit.Id);
+        // Build child counts once. Counting all units for every returned unit
+        // turns a large hierarchy load into an O(n²) operation and can make
+        // the Organization screen appear frozen while the API is responding.
+        var childCounts = allUnits
+            .Where(unit => unit.ParentOrganizationalUnitId.HasValue)
+            .GroupBy(unit => unit.ParentOrganizationalUnitId!.Value)
+            .ToDictionary(group => group.Key, group => group.Count());
         var pathCache = new Dictionary<Guid, string>();
-        var types = await _context.Set<Lookup>().Where(item => item.Category == DefaultTypeCategory).AsNoTracking().ToDictionaryAsync(item => item.Code, cancellationToken);
-        var memberCounts = await _context.Set<ResourceOrganizationalUnit>().Where(item => ids.Contains(item.OrganizationalUnitId) && item.IsActive && (item.EffectiveTo == null || item.EffectiveTo > DateTime.UtcNow)).GroupBy(item => item.OrganizationalUnitId).Select(group => new { group.Key, Count = group.Count() }).ToDictionaryAsync(item => item.Key, item => item.Count, cancellationToken);
+        var types = await _context.Set<Lookup>().Where(item => item.TenantId == tenantId && item.Category == DefaultTypeCategory).AsNoTracking().ToDictionaryAsync(item => item.Code, cancellationToken);
+        var memberCounts = await _context.Set<ResourceOrganizationalUnit>().Where(item => item.TenantId == tenantId && ids.Contains(item.OrganizationalUnitId) && item.IsActive && (item.EffectiveTo == null || item.EffectiveTo > DateTime.UtcNow)).GroupBy(item => item.OrganizationalUnitId).Select(group => new { group.Key, Count = group.Count() }).ToDictionaryAsync(item => item.Key, item => item.Count, cancellationToken);
         return units.Select(unit =>
         {
             types.TryGetValue(unit.TypeCode, out var type);
-            return new OrganizationalUnitDto { Id = unit.Id, Code = unit.Code, Name = unit.Name, TypeCode = unit.TypeCode, TypeNameEn = type?.NameEn, TypeNameAr = type?.NameAr, Description = unit.Description, HierarchyPath = BuildHierarchyPath(unit, unitById, pathCache), ParentOrganizationalUnitId = unit.ParentOrganizationalUnitId, ParentName = unit.ParentOrganizationalUnitId.HasValue && unitById.TryGetValue(unit.ParentOrganizationalUnitId.Value, out var parent) ? parent.Name : null, IsActive = unit.IsActive, SortOrder = unit.SortOrder, ChildCount = allUnits.Count(child => child.ParentOrganizationalUnitId == unit.Id), CurrentMemberCount = memberCounts.TryGetValue(unit.Id, out var count) ? count : 0, CreatedAt = unit.CreatedAt, UpdatedAt = unit.UpdatedAt };
+            return new OrganizationalUnitDto { Id = unit.Id, Code = unit.Code, Name = unit.Name, TypeCode = unit.TypeCode, TypeNameEn = type?.NameEn, TypeNameAr = type?.NameAr, Description = unit.Description, HierarchyPath = BuildHierarchyPath(unit, unitById, pathCache), ParentOrganizationalUnitId = unit.ParentOrganizationalUnitId, ParentName = unit.ParentOrganizationalUnitId.HasValue && unitById.TryGetValue(unit.ParentOrganizationalUnitId.Value, out var parent) ? parent.Name : null, IsActive = unit.IsActive, SortOrder = unit.SortOrder, ChildCount = childCounts.TryGetValue(unit.Id, out var childCount) ? childCount : 0, CurrentMemberCount = memberCounts.TryGetValue(unit.Id, out var count) ? count : 0, CreatedAt = unit.CreatedAt, UpdatedAt = unit.UpdatedAt };
         }).ToList();
     }
 
     private static string BuildHierarchyPath(OrganizationalUnit unit, IReadOnlyDictionary<Guid, OrganizationalUnit> units, IDictionary<Guid, string> cache)
     {
         if (cache.TryGetValue(unit.Id, out var cached)) return cached;
-        var names = new List<string>();
+        var chain = new List<OrganizationalUnit>();
         var visited = new HashSet<Guid>();
         OrganizationalUnit? current = unit;
-        while (current is not null && visited.Add(current.Id))
+        var prefix = string.Empty;
+        while (current is not null && visited.Add(current.Id) && !cache.TryGetValue(current.Id, out prefix))
         {
-            names.Add(current.Name);
+            chain.Add(current);
             current = current.ParentOrganizationalUnitId.HasValue && units.TryGetValue(current.ParentOrganizationalUnitId.Value, out var parent) ? parent : null;
         }
-        names.Reverse();
-        var path = string.Join(" / ", names);
-        cache[unit.Id] = path;
-        return path;
+        for (var index = chain.Count - 1; index >= 0; index--)
+        {
+            prefix = string.IsNullOrEmpty(prefix) ? chain[index].Name : $"{prefix} / {chain[index].Name}";
+            cache[chain[index].Id] = prefix;
+        }
+        return cache.TryGetValue(unit.Id, out var path) ? path : unit.Name;
     }
 
     private async Task EnsureDefaultTypesAsync(CancellationToken cancellationToken)

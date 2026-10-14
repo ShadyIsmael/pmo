@@ -2,7 +2,7 @@ import * as React from "react";
 import { Search, Plus, MoreHorizontal } from "lucide-react";
 import { useAuth } from "@auth/AuthProvider";
 import { useI18n } from "@i18n/messages";
-import { hasAnyPermission, Permissions } from "@lib/permissions";
+import { hasAnyPermission, hasPermission, Permissions } from "@lib/permissions";
 import { PageHeader } from "@components/layout/PageHeader";
 import { Button } from "@components/ui/Button";
 import { Input } from "@components/ui/Input";
@@ -15,12 +15,13 @@ import { useVendors, useCreateVendor, useUpdateVendor, useDeactivateVendor, useR
 import { useForm, Controller } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { getStatusTextClass } from "@lib/status-presentation";
 
 const vendorSchema = z.object({
-  name: z.string().min(1),
-  contactName: z.string().optional(),
-  contactEmail: z.string().email().optional().or(z.literal("")),
-  contactPhone: z.string().optional(),
+  name: z.string().trim().min(1),
+  contactName: z.string().trim().optional(),
+  contactEmail: z.string().trim().email().optional().or(z.literal("")),
+  contactPhone: z.string().trim().optional(),
   vendorCategoryId: z.string().min(1),
   contractValue: z.coerce.number().optional(),
   contractStart: z.string().optional(),
@@ -29,9 +30,19 @@ const vendorSchema = z.object({
 
 type VendorForm = z.infer<typeof vendorSchema>;
 
-function VendorFormFields({ defaultValues, onSubmit, pending }: { defaultValues?: Partial<VendorForm>; onSubmit: (v: VendorForm) => void; pending: boolean }) {
+function normalizeVendorForm(values: VendorForm): VendorForm {
+  return {
+    ...values,
+    contactName: values.contactName?.trim() || undefined,
+    contactEmail: values.contactEmail?.trim() || undefined,
+    contactPhone: values.contactPhone?.trim() || undefined,
+  };
+}
+
+function VendorFormFields({ defaultValues, onSubmit, pending, error, code, submitLabel }: { defaultValues?: Partial<VendorForm>; onSubmit: (v: VendorForm) => void; pending: boolean; error?: unknown; code?: string; submitLabel: string }) {
   const { t, locale } = useI18n();
   const categories = useVendorCategories(true);
+  const availableCategories = (categories.data ?? []).filter((category) => category.isActive || category.id === defaultValues?.vendorCategoryId);
   const { control, register, handleSubmit, formState: { errors } } = useForm<VendorForm>({
     resolver: zodResolver(vendorSchema),
     defaultValues: { name: "", contactName: "", contactEmail: "", contactPhone: "", vendorCategoryId: "", ...defaultValues },
@@ -39,33 +50,48 @@ function VendorFormFields({ defaultValues, onSubmit, pending }: { defaultValues?
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="flex min-h-0 flex-1 flex-col">
       <SideSheetBody className="space-y-4">
-        <div className="space-y-1.5">
-          <Label htmlFor="vendor-name">{t("resources.vendors.name")} *</Label>
-          <Input id="vendor-name" {...register("name")} />
-          {errors.name ? <p className="text-xs text-destructive">{t("resources.vendors.nameRequired")}</p> : null}
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="space-y-1.5"><Label>{t("resources.vendors.contactName")}</Label><Input {...register("contactName")} /></div>
-          <div className="space-y-1.5"><Label>{t("resources.vendors.contactEmail")}</Label><Input {...register("contactEmail")} /></div>
-          <div className="space-y-1.5"><Label>{t("resources.vendors.contactPhone")}</Label><Input {...register("contactPhone")} /></div>
-          <div className="space-y-1.5">
-            <Label>{t("resources.vendors.category")} *</Label>
-            <Controller
-              control={control}
-              name="vendorCategoryId"
-              render={({ field }) => (
-                <select className="input-field" value={field.value} onChange={(e) => field.onChange(e.target.value)}>
-                  <option value="">{t("resources.vendors.selectCategory")}</option>
-                  {(categories.data ?? []).map((c) => <option key={c.id} value={c.id}>{locale === "ar" ? c.nameAr : c.nameEn}</option>)}
-                </select>
-              )}
-            />
-            {errors.vendorCategoryId ? <p className="text-xs text-destructive">{t("resources.vendors.categoryRequired")}</p> : null}
+        <section aria-labelledby="vendor-basic-heading" className="space-y-3">
+          <h3 id="vendor-basic-heading" className="text-sm font-semibold">{t("resources.vendors.basicInformation")}</h3>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label htmlFor="vendor-name">{t("resources.vendors.name")} *</Label>
+              <Input id="vendor-name" {...register("name")} />
+              {errors.name ? <p className="text-xs text-destructive">{t("resources.vendors.nameRequired")}</p> : null}
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="vendor-code">{t("resources.vendors.code")}</Label>
+              <Input id="vendor-code" value={code ?? ""} readOnly disabled placeholder={code ? undefined : t("resources.vendors.autoGenerated")} />
+              {!code ? <p className="text-xs text-muted-foreground">{t("resources.vendors.autoGeneratedHint")}</p> : <p className="text-xs text-muted-foreground">{t("resources.vendors.codeReadOnly")}</p>}
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="vendor-category">{t("resources.vendors.category")} *</Label>
+              <Controller
+                control={control}
+                name="vendorCategoryId"
+                render={({ field }) => (
+                  <select id="vendor-category" className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={field.value} onChange={(e) => field.onChange(e.target.value)} aria-invalid={Boolean(errors.vendorCategoryId)}>
+                    <option value="">{t("resources.vendors.selectCategory")}</option>
+                    {availableCategories.map((category) => <option key={category.id} value={category.id}>{locale === "ar" ? category.nameAr : category.nameEn}</option>)}
+                  </select>
+                )}
+              />
+              {errors.vendorCategoryId ? <p className="text-xs text-destructive">{t("resources.vendors.categoryRequired")}</p> : null}
+            </div>
           </div>
-        </div>
+        </section>
+        <section aria-labelledby="vendor-contact-heading" className="space-y-3">
+          <h3 id="vendor-contact-heading" className="text-sm font-semibold">{t("resources.vendors.contactInformation")}</h3>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5"><Label htmlFor="vendor-contact-name">{t("resources.vendors.contactName")}</Label><Input id="vendor-contact-name" {...register("contactName")} /></div>
+            <div className="space-y-1.5"><Label htmlFor="vendor-contact-email">{t("resources.vendors.contactEmail")}</Label><Input id="vendor-contact-email" type="email" {...register("contactEmail")} />{errors.contactEmail ? <p className="text-xs text-destructive">{t("resources.vendors.emailInvalid")}</p> : null}</div>
+            <div className="space-y-1.5"><Label htmlFor="vendor-contact-phone">{t("resources.vendors.contactPhone")}</Label><Input id="vendor-contact-phone" {...register("contactPhone")} /></div>
+          </div>
+        </section>
+        {!defaultValues ? <section aria-labelledby="vendor-business-heading" className="space-y-2"><h3 id="vendor-business-heading" className="text-sm font-semibold">{t("resources.vendors.businessInformation")}</h3><p className="text-xs text-muted-foreground">{t("resources.vendors.businessInformationHint")}</p></section> : null}
+        {error instanceof Error ? <p className="text-sm text-destructive" role="alert">{error.message || t("resources.vendors.mutationError")}</p> : error ? <p className="text-sm text-destructive" role="alert">{t("resources.vendors.mutationError")}</p> : null}
       </SideSheetBody>
       <SideSheetFooter>
-        <Button type="submit" disabled={pending}>{pending ? t("common.saving") : t("common.save")}</Button>
+        <Button type="submit" disabled={pending}>{pending ? t("resources.vendors.saving") : submitLabel}</Button>
       </SideSheetFooter>
     </form>
   );
@@ -109,7 +135,10 @@ function VendorRowActions({ vendor }: { vendor: VendorDto }) {
         <VendorFormFields
           pending={update.isPending}
           defaultValues={{ name: vendor.name, contactName: vendor.contactName, contactEmail: vendor.contactEmail, contactPhone: vendor.contactPhone, vendorCategoryId: vendor.vendorCategoryId }}
-          onSubmit={(v) => update.mutate({ id: vendor.id, input: v }, { onSuccess: () => setEditOpen(false) })}
+          code={vendor.code}
+          error={update.error}
+          submitLabel={t("resources.vendors.save")}
+          onSubmit={(v) => update.mutate({ id: vendor.id, input: normalizeVendorForm(v) }, { onSuccess: () => setEditOpen(false) })}
         />
       </SideSheet>
       <ConfirmDialog
@@ -143,38 +172,63 @@ function VendorRowActions({ vendor }: { vendor: VendorDto }) {
 
 export function VendorsPage() {
   const { t, locale } = useI18n();
-  const { user } = useAuth();
-  const canView = Boolean(user && hasAnyPermission(user.permissions, [Permissions.Resources.View, Permissions.Resources.Manage]));
+  const { user, status: authStatus } = useAuth();
+  const canView = Boolean(user && hasPermission(user.permissions, Permissions.Resources.View));
   const canCreate = hasAnyPermission(user?.permissions ?? [], [Permissions.Resources.Create, Permissions.Resources.Manage]);
   const [search, setSearch] = React.useState("");
   const [categoryId, setCategoryId] = React.useState("");
   const [status, setStatus] = React.useState<"all" | "active" | "inactive">("all");
   const [createOpen, setCreateOpen] = React.useState(false);
+  const [createdVendor, setCreatedVendor] = React.useState<VendorDto | null>(null);
   const deferredSearch = React.useDeferredValue(search);
   const vendorsQuery = useVendors(deferredSearch || undefined, categoryId || undefined, status);
-  const categoriesQuery = useVendorCategories(false);
+  const categoriesQuery = useVendorCategories(true);
   const create = useCreateVendor();
   const vendors = vendorsQuery.data?.items ?? [];
   const categories = categoriesQuery.data ?? [];
 
+  if (authStatus === "loading") return <p className="py-12 text-center text-sm text-muted-foreground">{t("common.loading")}</p>;
   if (!canView) return <p className="text-sm text-muted-foreground">{t("resources.vendors.permissionRequired")}</p>;
+
+  const hasFilters = Boolean(search || categoryId || status !== "all");
+  const closeCreateSheet = () => {
+    setCreateOpen(false);
+    setCreatedVendor(null);
+    create.reset();
+  };
+  const setCreateSheetOpen = (open: boolean) => {
+    if (open) {
+      create.reset();
+      setCreatedVendor(null);
+    } else {
+      closeCreateSheet();
+    }
+    setCreateOpen(open);
+  };
+  const clearFilters = () => {
+    setSearch("");
+    setCategoryId("");
+    setStatus("all");
+  };
+  const openCreateSheet = () => setCreateSheetOpen(true);
 
   return (
     <div className="space-y-6">
       <PageHeader
         title={t("resources.vendors.listTitle")}
         description={t("resources.vendors.listDescription", { count: vendors.length })}
-        actions={canCreate ? <Button size="sm" onClick={() => setCreateOpen(true)}><Plus className="me-1.5 h-4 w-4" />{t("resources.vendors.addVendor")}</Button> : undefined}
+        actions={canCreate ? <Button size="sm" onClick={openCreateSheet}><Plus className="me-1.5 h-4 w-4" />{t("resources.vendors.addVendor")}</Button> : undefined}
       />
       <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/20 px-3 py-2.5">
         <div className="relative min-w-56 flex-1">
           <Search className="absolute start-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t("resources.vendors.searchPlaceholder")} className="ps-8" />
+        <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t("resources.vendors.searchPlaceholder")} aria-label={t("resources.vendors.searchPlaceholder")} className="ps-8" />
         </div>
         <select className="h-10 w-52 rounded-md border bg-background px-3 text-sm" value={categoryId} onChange={(e) => setCategoryId(e.target.value)} aria-label={t("resources.vendors.filterCategory")}>
           <option value="">{t("resources.vendors.allCategories")}</option>
           {categories.map((c) => <option key={c.id} value={c.id}>{locale === "ar" ? c.nameAr : c.nameEn}</option>)}
         </select>
+        {hasFilters ? <Button type="button" variant="ghost" size="sm" onClick={clearFilters}>{t("resources.vendors.clearFilters")}</Button> : null}
         <select className="h-10 w-40 rounded-md border bg-background px-3 text-sm" value={status} onChange={(e) => setStatus(e.target.value as typeof status)} aria-label={t("resources.vendors.filterStatus")}>
           <option value="all">{t("resources.vendors.allStatuses")}</option>
           <option value="active">{t("resources.vendors.active")}</option>
@@ -184,9 +238,9 @@ export function VendorsPage() {
       {vendorsQuery.isLoading ? (
         <p className="py-12 text-center text-sm text-muted-foreground">{t("common.loading")}</p>
       ) : vendorsQuery.isError ? (
-        <p className="py-12 text-center text-sm text-destructive">{t("resources.vendors.loadError")}</p>
+        <div role="alert" className="space-y-2 py-12 text-center text-sm text-destructive"><p>{t("resources.vendors.loadError")}</p>{vendorsQuery.error instanceof Error ? <p>{vendorsQuery.error.message}</p> : null}<Button type="button" variant="outline" size="sm" onClick={() => void vendorsQuery.refetch()}>{t("common.retry")}</Button></div>
       ) : vendors.length === 0 ? (
-        <p className="py-12 text-center text-sm text-muted-foreground">{t("resources.vendors.empty")}</p>
+        <div className="space-y-3 py-12 text-center"><p className="text-sm font-medium">{t("resources.vendors.empty")}</p><p className="text-sm text-muted-foreground">{t("resources.vendors.emptyDescription")}</p>{canCreate ? <Button type="button" size="sm" onClick={openCreateSheet}><Plus className="me-1.5 h-4 w-4" />{t("resources.vendors.addVendor")}</Button> : null}</div>
       ) : (
         <Table>
           <TableHeader>
@@ -206,11 +260,11 @@ export function VendorsPage() {
               const contact = [vendor.contactName, vendor.contactEmail, vendor.contactPhone].filter(Boolean).join(" · ");
               return (
                 <TableRow key={vendor.id}>
-                  <TableCell className="font-medium">{vendor.name}</TableCell>
+                  <TableCell className={`font-medium ${vendor.isActive ? "" : "text-muted-foreground"}`}>{vendor.name}</TableCell>
                   <TableCell><span className="font-mono text-xs">{vendor.code ?? "—"}</span></TableCell>
-                  <TableCell>{categoryName ?? "—"}</TableCell>
+                  <TableCell>{categoryName ? <span className="text-info">{categoryName}</span> : "—"}</TableCell>
                   <TableCell className="max-w-64 truncate text-muted-foreground">{contact || "—"}</TableCell>
-                  <TableCell>{vendor.isActive ? t("resources.vendors.active") : t("resources.vendors.inactive")}</TableCell>
+                  <TableCell><span className={`text-sm font-medium ${getStatusTextClass(vendor.isActive ? "Active" : "Inactive")}`}>{vendor.isActive ? t("resources.vendors.active") : t("resources.vendors.inactive")}</span></TableCell>
                   <TableCell className="text-end"><VendorRowActions vendor={vendor} /></TableCell>
                 </TableRow>
               );
@@ -218,8 +272,8 @@ export function VendorsPage() {
           </TableBody>
         </Table>
       )}
-      <SideSheet open={createOpen} onOpenChange={setCreateOpen} title={t("resources.vendors.createTitle")} description={t("resources.vendors.formDescription")}>
-        <VendorFormFields pending={create.isPending} onSubmit={(v) => create.mutate(v, { onSuccess: () => setCreateOpen(false) })} />
+      <SideSheet open={createOpen} onOpenChange={setCreateSheetOpen} title={createdVendor ? t("resources.vendors.createdTitle") : t("resources.vendors.createTitle")} description={createdVendor?.name ?? t("resources.vendors.formDescription")} size="lg" closeLabel={createdVendor ? t("resources.vendors.done") : t("resources.vendors.cancel")}>
+        {createdVendor ? <><SideSheetBody className="space-y-4"><div className="rounded-md border border-border bg-muted/40 p-4"><p className="text-sm text-muted-foreground">{t("resources.vendors.createdCodeLabel")}</p><p className="mt-1 font-mono text-2xl font-semibold tracking-wide text-foreground">{createdVendor.code ?? "—"}</p></div><p className="text-sm text-muted-foreground">{t("resources.vendors.createdHint")}</p></SideSheetBody><SideSheetFooter><Button type="button" onClick={closeCreateSheet}>{t("resources.vendors.done")}</Button></SideSheetFooter></> : <VendorFormFields pending={create.isPending} error={create.error} submitLabel={t("resources.vendors.create")} onSubmit={(v) => create.mutate(normalizeVendorForm(v), { onSuccess: (created) => { if (created) setCreatedVendor(created); } })} />}
       </SideSheet>
     </div>
   );

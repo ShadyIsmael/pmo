@@ -8,6 +8,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@components/ui/Card";
 import { Input } from "@components/ui/Input";
 import { Textarea } from "@components/ui/Textarea";
 import { useI18n } from "@i18n/messages";
+import { useAuth } from "@auth/AuthProvider";
+import { useManagement } from "@api/management";
+import { hasAnyPermission, hasPermission, Permissions } from "@lib/permissions";
 import { useProjects } from "@features/projects/api/projects";
 import { useTimeEntries, useTimeEntrySummary, useCreateTimeEntry, useUpdateTimeEntry, useDeleteTimeEntry } from "./api/myWork";
 
@@ -16,20 +19,34 @@ const formatHours = (value: number, locale: string) => new Intl.NumberFormat(loc
 
 export function MyWorkTimesheetsPage() {
   const { t, locale } = useI18n();
+  const { user, status } = useAuth();
+  const { canMutate, effectiveReadOnly } = useManagement();
+  const permissions = user?.permissions ?? [];
+  const canView = hasAnyPermission(permissions, [
+    Permissions.TimeTracking.ViewOwn,
+    Permissions.TimeTracking.ManageOwn,
+    Permissions.TimeTracking.ViewTeam,
+    Permissions.TimeTracking.ManageTeam,
+  ]);
+  const canManageOwn = hasPermission(permissions, Permissions.TimeTracking.ManageOwn) && canMutate && !effectiveReadOnly;
+  const canViewTeam = hasAnyPermission(permissions, [Permissions.TimeTracking.ViewTeam, Permissions.TimeTracking.ManageTeam]);
+  // The API returns both personal and in-scope team entries for ViewTeam. Without ManageTeam
+  // there is no reliable client-side ownership field, so keep row mutations hidden in that mix.
+  const canManageRows = canManageOwn && (!canViewTeam || hasPermission(permissions, Permissions.TimeTracking.ManageTeam));
   const today = useMemo(() => new Date(), []);
   const from = useMemo(() => { const date = new Date(today); date.setDate(date.getDate() - 6); return toDateInput(date); }, [today]);
   const to = toDateInput(today);
   const [form, setForm] = useState({ projectId: "", workDate: to, startTime: "09:00", endTime: "17:00", description: "" });
   const [editing, setEditing] = useState<{ id: string; rowVersion: number[] } | null>(null);
-  const projectsQuery = useProjects({ page: 1, pageSize: 200 });
-  const entriesQuery = useTimeEntries({ page: 1, pageSize: 100, from, to });
-  const summaryQuery = useTimeEntrySummary({ from, to });
+  const projectsQuery = useProjects({ page: 1, pageSize: 200 }, canManageOwn);
+  const entriesQuery = useTimeEntries({ page: 1, pageSize: 100, from, to }, canView);
+  const summaryQuery = useTimeEntrySummary({ from, to }, canView);
   const createMutation = useCreateTimeEntry();
   const deleteMutation = useDeleteTimeEntry();
   const updateMutation = useUpdateTimeEntry(editing?.id ?? "");
-  const projects = projectsQuery.data?.items ?? [];
-  const entries = entriesQuery.data?.items ?? [];
-  const summary = summaryQuery.data;
+  const projects = canManageOwn ? projectsQuery.data?.items ?? [] : [];
+  const entries = canView ? entriesQuery.data?.items ?? [] : [];
+  const summary = canView ? summaryQuery.data : undefined;
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -48,7 +65,8 @@ export function MyWorkTimesheetsPage() {
 
   return (
     <div className="space-y-5">
-      <PageHeader title={t("timeTracking.title")} description={t("timeTracking.description")} actions={<Button size="sm" type="submit" form="time-entry-form"><Plus className="me-2 h-4 w-4" />{t("timeTracking.addEntry")}</Button>} />
+      <PageHeader title={t("timeTracking.title")} description={t("timeTracking.description")} actions={canManageOwn ? <Button size="sm" type="submit" form="time-entry-form"><Plus className="me-2 h-4 w-4" />{t("timeTracking.addEntry")}</Button> : undefined} />
+      {!canView ? status === "loading" ? <p className="text-sm text-muted-foreground">{t("common.loading")}</p> : <p role="alert" className="rounded-md border border-border/70 p-4 text-sm text-muted-foreground">{t("timeTracking.permissionRequired")}</p> : <>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard title={t("timeTracking.actual")} value={`${formatHours(summary?.actualHours ?? 0, locale!)} ${t("timeTracking.hours")}`} icon={<Clock3 className="h-4 w-4" />} />
         <MetricCard title={t("timeTracking.planned")} value={`${formatHours(summary?.plannedHours ?? 0, locale!)} ${t("timeTracking.hours")}`} icon={<CalendarDays className="h-4 w-4" />} />
@@ -68,7 +86,7 @@ export function MyWorkTimesheetsPage() {
           </CardContent>
         </Card>
       ) : null}
-      <Card>
+      {canManageOwn ? <Card>
         <CardHeader><CardTitle className="text-base">{editing ? t("timeTracking.editEntry") : t("timeTracking.newEntry")}</CardTitle></CardHeader>
         <CardContent>
           <form id="time-entry-form" onSubmit={submit} className="grid gap-3 md:grid-cols-6">
@@ -81,7 +99,7 @@ export function MyWorkTimesheetsPage() {
           {(createMutation.isError || updateMutation.isError) && <p className="mt-3 text-sm text-destructive">{t("timeTracking.saveError")}</p>}
           {editing && <Button type="button" variant="ghost" size="sm" className="mt-2" onClick={cancelEdit}>{t("common.cancel")}</Button>}
         </CardContent>
-      </Card>
+      </Card> : null}
       <Card>
         <CardHeader><CardTitle className="text-base">{t("timeTracking.entries")}</CardTitle></CardHeader>
         <CardContent className="p-0">
@@ -95,7 +113,7 @@ export function MyWorkTimesheetsPage() {
                     <th className="px-4 py-3">{t("timeTracking.time")}</th>
                     <th className="px-4 py-3">{t("timeTracking.actual")}</th>
                     <th className="px-4 py-3">{t("timeTracking.descriptionField")}</th>
-                    <th className="px-4 py-3">{t("common.actions")}</th>
+                    {canManageRows ? <th className="px-4 py-3">{t("common.actions")}</th> : null}
                   </tr>
                 </thead>
                 <tbody>
@@ -106,10 +124,10 @@ export function MyWorkTimesheetsPage() {
                       <td className="px-4 py-3">{entry.startTime.slice(0, 5)} — {entry.endTime.slice(0, 5)}</td>
                       <td className="px-4 py-3">{formatHours(entry.actualHours, locale!)} {t("timeTracking.hours")}</td>
                       <td className="max-w-xs truncate px-4 py-3 text-muted-foreground">{entry.description || "—"}</td>
-                      <td className="px-4 py-3 text-center">
+                      {canManageRows ? <td className="px-4 py-3 text-center">
                         <Button type="button" variant="ghost" size="icon" aria-label={t("timeTracking.editEntry")} onClick={() => beginEdit(entry)}><Pencil className="h-4 w-4" /></Button>
                         <Button type="button" variant="ghost" size="icon" aria-label={t("common.delete")} disabled={deleteMutation.isPending} onClick={() => deleteMutation.mutate(entry.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
-                      </td>
+                      </td> : null}
                     </tr>
                   ))}
                 </tbody>
@@ -118,6 +136,7 @@ export function MyWorkTimesheetsPage() {
           )}
         </CardContent>
       </Card>
+      </>}
     </div>
   );
 }

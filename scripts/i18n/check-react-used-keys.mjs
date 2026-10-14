@@ -26,16 +26,23 @@ function files(directory) {
 const used = new Set();
 const scopedAliases = new Map([
   [path.join(sourceRoot, "features", "projects", "ProjectPlanningTabFull.tsx"), [["planning.", "projects.planning."]]],
+  [path.join(sourceRoot, "features", "projects", "components", "PlanningImportSheet.tsx"), [["planning.", "projects.planning."]]],
+  [path.join(sourceRoot, "features", "projects", "components", "PlanningGrid.tsx"), [["planning.", "projects.planning."]]],
+  [path.join(sourceRoot, "features", "projects", "components", "PlanningCalendarsPanel.tsx"), [["planning.", "projects.planning."]]],
+]);
+const helperAliases = new Map([
+  [path.join(sourceRoot, "features", "projects", "components", "PlanTimelineGantt.tsx"), [["", "projects.planning."]]],
+  [path.join(sourceRoot, "features", "projects", "components", "BudgetRevisionSection.tsx"), [["", "projects.budgetRevisions."]]],
 ]);
 for (const file of files(sourceRoot)) {
   const source = fs.readFileSync(file, "utf8");
-  const aliases = scopedAliases.get(file) ?? [];
-  for (const pattern of [
-    /\bt\(\s*["']([^"']+)["']/g,
-    /\blabelKey\s*:\s*["']([^"']+)["']/g,
-    /\breasonKey\s*=\s*["']([^"']+)["']/g,
+  for (const { regex, aliases } of [
+    { regex: /\bt\(\s*["']([^"']+)["']/g, aliases: scopedAliases.get(file) ?? [] },
+    { regex: /\btr\(\s*["']([^"']+)["']/g, aliases: helperAliases.get(file) ?? [] },
+    { regex: /\blabelKey\s*:\s*["']([^"']+)["']/g, aliases: scopedAliases.get(file) ?? [] },
+    { regex: /\breasonKey\s*=\s*["']([^"']+)["']/g, aliases: scopedAliases.get(file) ?? [] },
   ]) {
-    for (const match of source.matchAll(pattern)) {
+    for (const match of source.matchAll(regex)) {
       const alias = aliases.find(([from]) => match[1].startsWith(from));
       used.add(alias ? `${alias[1]}${match[1].slice(alias[0].length)}` : match[1]);
     }

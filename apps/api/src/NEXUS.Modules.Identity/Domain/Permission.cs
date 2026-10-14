@@ -9,4 +9,5 @@ public class Permission : BaseEntity
     public string Resource { get; set; } = string.Empty;
     public string Action { get; set; } = string.Empty;
     public ICollection<Role> Roles { get; set; } = new List<Role>();
+    public ICollection<UserPermissionOverride> UserOverrides { get; set; } = new List<UserPermissionOverride>();
 }

@@ -2,6 +2,7 @@ import * as React from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "@auth/AuthProvider";
 import { useI18n } from "@i18n/messages";
+import { ApiError } from "@api/client";
 import { Loader2, LogIn, Eye, EyeOff, Building2, Shield } from "lucide-react";
 import { Button } from "@components/ui/Button";
 import { Input } from "@components/ui/Input";
@@ -12,7 +13,8 @@ export function LoginPage() {
   const { t } = useI18n();
   const navigate = useNavigate();
   const location = useLocation();
-  const { login, isAuthenticated, status } = useAuth();
+  const { login, isAuthenticated, status, user } = useAuth();
+  const passwordChangedNotice = Boolean((location.state as { passwordChanged?: unknown } | null)?.passwordChanged);
 
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
@@ -22,21 +24,22 @@ export function LoginPage() {
 
   React.useEffect(() => {
     if (isAuthenticated) {
-      const from = location.state?.from as string || "/home";
+      const from = user?.mustChangePassword ? "/account/change-initial-password" : location.state?.from as string || "/home";
       navigate(from, { replace: true });
     }
-  }, [isAuthenticated, location, navigate]);
+  }, [isAuthenticated, location, navigate, user?.mustChangePassword]);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
     setSubmitting(true);
     try {
-      await login(email.trim(), password);
-      const from = location.state?.from as string || "/home";
+      const signedInUser = await login(email.trim(), password);
+      const from = signedInUser.mustChangePassword ? "/account/change-initial-password" : location.state?.from as string || "/home";
       navigate(from, { replace: true });
     } catch (err) {
-      setError((err as Error).message || "Unable to sign in. Please try again.");
+      const code = err instanceof ApiError ? err.code : undefined;
+      setError(code === "TEMPORARY_PASSWORD_EXPIRED" ? t("account.initialPassword.expired") : (err as Error).message || t("auth.signInError"));
     } finally {
       setSubmitting(false);
     }
@@ -119,6 +122,8 @@ export function LoginPage() {
                   </button>
                 </div>
               </div>
+
+              {passwordChangedNotice ? <p role="status" className="text-sm text-success">{t("auth.passwordChangedNotice")}</p> : null}
 
               {error && (
                 <div className="rounded-lg border bg-destructive/10 p-3 text-sm text-destructive animate-in" role="alert">

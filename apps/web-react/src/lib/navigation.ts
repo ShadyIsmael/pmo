@@ -2,10 +2,10 @@ import {
   Home, FolderKanban, Layers3, LayoutGrid, CalendarDays, ListTodo, SquareCheck, CircleAlert,
   Users, UsersRound, Building2, BarChart3, Coins, Receipt, TrendingUp, TriangleAlert,
   FileText, Settings2, ShieldCheck, BriefcaseBusiness, BadgeCheck, ClipboardCheck,
-  GitBranch, ListFilter, Plug, Shield, Workflow as WorkflowIcon, Bell, User as UserIcon,
+  GitBranch, ListFilter, Plug, Shield, Workflow as WorkflowIcon, User as UserIcon,
   type LucideIcon,
 } from "lucide-react";
-import { Permissions } from "./permissions";
+import { DirectoryAccessPermissions, Permissions } from "./permissions";
 
 export type NavigationReadiness = "ready" | "context" | "deferred";
 export type NavigationMatch = "exact" | "prefix";
@@ -47,10 +47,10 @@ export interface AdministrationCategory {
 
 export const administrationCategoryConfig: AdministrationCategory[] = [
   { id: "organization", href: "/administration/organization", labelKey: "nav.organization", icon: Building2, requiredPermissions: [Permissions.Settings.Read] },
-  { id: "access", href: "/administration/access", labelKey: "nav.accessSecurity", icon: Shield, requiredPermissions: [Permissions.Users.Read, Permissions.Settings.Read] },
+  { id: "access", href: "/administration/access", labelKey: "nav.accessSecurity", icon: Shield, requiredPermissions: [Permissions.Users.Read, Permissions.Users.Write] },
   { id: "reference-data", href: "/administration/reference-data", labelKey: "nav.referenceData", icon: ListFilter, requiredPermissions: [Permissions.Settings.Read] },
   { id: "platform-settings", href: "/administration/settings", labelKey: "nav.platformSettings", icon: Settings2, requiredPermissions: [Permissions.Settings.Read] },
-  { id: "integrations", href: "/administration/integrations", labelKey: "nav.integrations", icon: Plug, requiredPermissions: [Permissions.Settings.Read] },
+  { id: "integrations", href: "/administration/integrations", labelKey: "nav.integrations", icon: Plug, requiredPermissions: [Permissions.Settings.Read, ...DirectoryAccessPermissions] },
   { id: "governance", href: "/administration/governance", labelKey: "nav.governance", icon: GitBranch, requiredPermissions: [Permissions.Settings.Read, Permissions.Workflow.View] },
 ];
 
@@ -65,7 +65,6 @@ export const navigationConfig: NavSection[] = [
       item({ id: "home", labelKey: "nav.home", href: "/home", icon: Home, match: "exact" }),
       item({ id: "my-work", labelKey: "nav.myWork", href: "/my-work", icon: ClipboardCheck }),
       item({ id: "approvals", labelKey: "nav.approvals", href: "/my-work/approvals", icon: BadgeCheck }),
-      item({ id: "notifications", labelKey: "nav.notifications", href: "/notifications", icon: Bell }),
     ],
   },
   {
@@ -155,7 +154,6 @@ export const deferredNavigation = [
   { id: "change-requests", labelKey: "nav.changeRequests", reason: "Change requests are project-context operations." },
   { id: "status-reporting", labelKey: "nav.statusReporting", reason: "Status reporting is project-context functionality." },
   { id: "handovers", labelKey: "nav.handovers", reason: "Handovers are context-specific workflows." },
-  { id: "reports", labelKey: "nav.reports", reason: "The current Reports page uses static placeholder data." },
   { id: "global-commitments", labelKey: "nav.commitments", reason: "Commitments are currently project-context financials." },
 ];
 

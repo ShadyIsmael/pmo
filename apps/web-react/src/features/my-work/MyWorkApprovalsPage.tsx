@@ -1,5 +1,6 @@
 import * as React from "react";
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { CheckCircle2, XCircle, ArrowRightLeft, GitBranch, Loader2 } from "lucide-react";
 import { PageHeader } from "@components/layout/PageHeader";
 import { Button } from "@components/ui/Button";
@@ -8,7 +9,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@components/ui/Tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@components/ui/Dialog";
 import { Textarea } from "@components/ui/Textarea";
 import { formatDate } from "@lib/utils";
+import { getStatusTextClass } from "@lib/status-presentation";
 import { useI18n } from "@i18n/messages";
+import { useAuth } from "@auth/AuthProvider";
+import { useManagement } from "@api/management";
+import { hasPermission, Permissions } from "@lib/permissions";
 import {
   usePendingHandoverRequestsForMe,
   useAcceptHandoverRequest,
@@ -24,9 +29,13 @@ import type { ProjectChangeRequestDto, ManagerHandoverRequestDto } from "./api/m
 
 export function MyWorkApprovalsPage() {
   const { t } = useI18n();
-  const { data: requests, isLoading } = usePendingHandoverRequestsForMe();
-  const { data: managerRequests, isLoading: managerLoading } = usePendingManagerHandovers();
-  const { data: changeRequests, isLoading: changeLoading } = usePendingProjectChangeRequests();
+  const { user } = useAuth();
+  const { refreshSnapshot } = useManagement();
+  const canApproveHandovers = Boolean(user && hasPermission(user.permissions, Permissions.Handover.Approve));
+  const canApproveChangeRequests = Boolean(user && hasPermission(user.permissions, Permissions.ChangeRequest.Approve));
+  const { data: requests, isLoading, isError: handoverRequestsError, refetch: refetchHandovers } = usePendingHandoverRequestsForMe(canApproveHandovers);
+  const { data: managerRequests, isLoading: managerLoading, isError: managerRequestsError, refetch: refetchManagerHandovers } = usePendingManagerHandovers(canApproveHandovers);
+  const { data: changeRequests, isLoading: changeLoading, isError: changeRequestsError, refetch: refetchChangeRequests } = usePendingProjectChangeRequests(canApproveChangeRequests);
   const acceptMutation = useAcceptHandoverRequest();
   const rejectMutation = useRejectHandoverRequest();
   const approveChange = useApproveProjectChangeRequest();
@@ -35,21 +44,64 @@ export function MyWorkApprovalsPage() {
   const [rejectionReason, setRejectionReason] = useState("");
   const [managerRejectingId, setManagerRejectingId] = useState<string | null>(null);
   const [managerRejectionReason, setManagerRejectionReason] = useState("");
+  const [managerHandoverActionError, setManagerHandoverActionError] = useState<{ requestId: string; message: string } | null>(null);
+  const [managerRejectError, setManagerRejectError] = useState<string | null>(null);
   const [changeRejectingId, setChangeRejectingId] = useState<string | null>(null);
   const [changeRejectionReason, setChangeRejectionReason] = useState("");
-  const [changeApprovalError, setChangeApprovalError] = useState<string | null>(null);
+  const [changeApprovalError, setChangeApprovalError] = useState<{ requestId: string; message: string } | null>(null);
+  const [changeRejectError, setChangeRejectError] = useState<string | null>(null);
+  const [handoverActionError, setHandoverActionError] = useState<string | null>(null);
   const managerAccept = useAcceptManagerHandover("programs");
   const managerAcceptPortfolio = useAcceptManagerHandover("portfolios");
   const managerReject = useRejectManagerHandover("programs");
   const managerRejectPortfolio = useRejectManagerHandover("portfolios");
 
-  const pending = (requests ?? []).filter((r) => r.status === "Pending");
-  const history = (requests ?? []).filter((r) => r.status !== "Pending");
-  const managerPending = managerRequests ?? [];
-  const changePending = changeRequests ?? [];
+  const pending = canApproveHandovers ? (requests ?? []).filter((r) => r.status === "Pending") : [];
+  const history = canApproveHandovers ? (requests ?? []).filter((r) => r.status !== "Pending") : [];
+  const managerPending = canApproveHandovers ? managerRequests ?? [] : [];
+  const changePending = canApproveChangeRequests ? changeRequests ?? [] : [];
+  const canRetryHandoverRequests = canApproveHandovers && (handoverRequestsError || managerRequestsError);
+  const canRetryChangeRequests = canApproveChangeRequests && changeRequestsError;
 
   const handleAccept = async (id: string) => {
-    await acceptMutation.mutateAsync(id);
+    setHandoverActionError(null);
+    try {
+      await acceptMutation.mutateAsync(id);
+    } catch (error: unknown) {
+      const status = (error as { status?: number }).status;
+      setHandoverActionError(status === 409 ? t("approvals.handoverDecisionConflict") : t("approvals.handoverDecisionFailed"));
+    }
+  };
+
+  const handleManagerHandoverAccept = async (request: ManagerHandoverRequestDto) => {
+    setManagerHandoverActionError(null);
+    const mutation = request.entityType === "Program" ? managerAccept : managerAcceptPortfolio;
+    try {
+      await mutation.mutateAsync(request.id);
+      await refreshSnapshot();
+    } catch (error: unknown) {
+      const status = (error as { status?: number }).status;
+      setManagerHandoverActionError({ requestId: request.id, message: status === 409 ? t("approvals.handoverDecisionConflict") : t("approvals.handoverDecisionFailed") });
+    }
+  };
+
+  const handleManagerHandoverReject = async () => {
+    if (!managerRejectingId || !managerRejectionReason.trim()) return;
+    setManagerRejectError(null);
+    const request = managerRequests?.find((item) => item.id === managerRejectingId);
+    if (!request) {
+      setManagerRejectError(t("approvals.handoverDecisionConflict"));
+      return;
+    }
+    const mutation = request.entityType === "Program" ? managerReject : managerRejectPortfolio;
+    try {
+      await mutation.mutateAsync({ requestId: managerRejectingId, rejectionReason: managerRejectionReason.trim() });
+      setManagerRejectingId(null);
+      setManagerRejectionReason("");
+    } catch (error: unknown) {
+      const status = (error as { status?: number }).status;
+      setManagerRejectError(status === 409 ? t("approvals.handoverDecisionConflict") : t("approvals.handoverDecisionFailed"));
+    }
   };
 
   const handleReject = async (id: string) => {
@@ -64,16 +116,22 @@ export function MyWorkApprovalsPage() {
     try {
       await approveChange.mutateAsync({ id, dto: {} });
     } catch (err: unknown) {
-      const error = err as { data?: { error?: string; message?: string }; message?: string };
-      setChangeApprovalError(error?.data?.error ?? error?.data?.message ?? error?.message ?? "Approval failed");
+      const status = (err as { status?: number })?.status;
+      setChangeApprovalError({ requestId: id, message: status === 409 ? t("approvals.changeDecisionConflict") : t("approvals.changeDecisionFailed") });
     }
   };
 
   const handleRejectChange = async (id: string) => {
     if (!changeRejectionReason.trim()) return;
-    await rejectChange.mutateAsync({ id, decisionNotes: changeRejectionReason.trim() });
-    setChangeRejectingId(null);
-    setChangeRejectionReason("");
+    setChangeRejectError(null);
+    try {
+      await rejectChange.mutateAsync({ id, decisionNotes: changeRejectionReason.trim() });
+      setChangeRejectingId(null);
+      setChangeRejectionReason("");
+    } catch (err: unknown) {
+      const status = (err as { status?: number })?.status;
+      setChangeRejectError(status === 409 ? t("approvals.changeDecisionConflict") : t("approvals.changeDecisionFailed"));
+    }
   };
 
   return (
@@ -87,9 +145,25 @@ export function MyWorkApprovalsPage() {
         </TabsList>
 
         <TabsContent value="pending" className="space-y-4">
+          {handoverActionError ? <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{handoverActionError}</p> : null}
+          {canRetryHandoverRequests ? (
+            <div role="alert" className="flex items-center justify-between gap-3 rounded-md border border-destructive/30 p-3 text-sm text-destructive">
+              <span>{t("approvals.handoverRequestsLoadFailed")}</span>
+              <Button size="sm" variant="outline" onClick={() => {
+                if (handoverRequestsError) void refetchHandovers();
+                if (managerRequestsError) void refetchManagerHandovers();
+              }}>{t("common.retry")}</Button>
+            </div>
+          ) : null}
+          {canRetryChangeRequests ? (
+            <div role="alert" className="flex items-center justify-between gap-3 rounded-md border border-destructive/30 p-3 text-sm text-destructive">
+              <span>{t("approvals.changeRequestsLoadFailed")}</span>
+              <Button size="sm" variant="outline" onClick={() => void refetchChangeRequests()}>{t("common.retry")}</Button>
+            </div>
+          ) : null}
           {isLoading || managerLoading || changeLoading ? (
             <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
-          ) : pending.length === 0 && managerPending.length === 0 && changePending.length === 0 ? (
+          ) : pending.length === 0 && managerPending.length === 0 && changePending.length === 0 && !canRetryHandoverRequests && !canRetryChangeRequests ? (
             <div className="flex flex-col items-center gap-2 py-12 text-muted-foreground">
               <CheckCircle2 className="h-12 w-12" />
               <p className="text-sm">{t("approvals.noPending")}</p>
@@ -139,8 +213,10 @@ export function MyWorkApprovalsPage() {
                   key={`${request.entityType}-${request.id}`}
                   request={request}
                   accepting={managerAccept.isPending || managerAcceptPortfolio.isPending}
-                  onAccept={() => (request.entityType === "Program" ? managerAccept.mutate(request.id) : managerAcceptPortfolio.mutate(request.id))}
-                  onReject={() => setManagerRejectingId(request.id)}
+                  rejecting={managerReject.isPending || managerRejectPortfolio.isPending}
+                  error={managerHandoverActionError?.requestId === request.id ? managerHandoverActionError.message : null}
+                  onAccept={() => void handleManagerHandoverAccept(request)}
+                  onReject={() => { setManagerRejectError(null); setManagerRejectingId(request.id); }}
                 />
               ))}
               {changePending.map((request) => (
@@ -149,9 +225,9 @@ export function MyWorkApprovalsPage() {
                   request={request}
                   approving={approveChange.isPending}
                   rejecting={rejectChange.isPending}
+                  approvalError={changeApprovalError?.requestId === request.id ? changeApprovalError.message : null}
                   onApprove={() => handleApproveChange(request.id)}
-                  onReject={() => setChangeRejectingId(request.id)}
-                  approvalError={changeApprovalError}
+                  onReject={() => { setChangeApprovalError(null); setChangeRejectError(null); setChangeRejectingId(request.id); }}
                 />
               ))}
             </div>
@@ -187,21 +263,16 @@ export function MyWorkApprovalsPage() {
         </TabsContent>
       </Tabs>
 
-      <Dialog open={!!managerRejectingId} onOpenChange={(open) => { if (!open) { setManagerRejectingId(null); setManagerRejectionReason(""); } }}>
+      <Dialog open={!!managerRejectingId} onOpenChange={(open) => { if (!open) { setManagerRejectingId(null); setManagerRejectionReason(""); setManagerRejectError(null); } }}>
         <DialogContent>
           <DialogHeader><DialogTitle>{t("approvals.rejectDialogTitle")}</DialogTitle><DialogDescription>{t("approvals.rejectDialogDescription")}</DialogDescription></DialogHeader>
-          <Textarea value={managerRejectionReason} onChange={(event) => setManagerRejectionReason(event.target.value)} placeholder={t("approvals.rejectionReasonPlaceholder")} rows={3} />
+          <div className="space-y-2"><Textarea value={managerRejectionReason} onChange={(event) => setManagerRejectionReason(event.target.value)} placeholder={t("approvals.rejectionReasonPlaceholder")} rows={3} />{managerRejectError ? <p role="alert" className="text-sm text-destructive">{managerRejectError}</p> : null}</div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setManagerRejectingId(null); setManagerRejectionReason(""); }}>{t("common.cancel")}</Button>
+            <Button variant="outline" onClick={() => { setManagerRejectingId(null); setManagerRejectionReason(""); setManagerRejectError(null); }} disabled={managerReject.isPending || managerRejectPortfolio.isPending}>{t("common.cancel")}</Button>
             <Button
               variant="destructive"
               disabled={!managerRejectionReason.trim() || managerReject.isPending || managerRejectPortfolio.isPending}
-              onClick={() => {
-                if (managerRejectingId) {
-                  const mutation = managerRequests?.find((r) => r.id === managerRejectingId)?.entityType === "Program" ? managerReject : managerRejectPortfolio;
-                  mutation.mutate({ requestId: managerRejectingId, rejectionReason: managerRejectionReason.trim() }, { onSuccess: () => { setManagerRejectingId(null); setManagerRejectionReason(""); } });
-                }
-              }}
+              onClick={() => void handleManagerHandoverReject()}
             >
               {(managerReject.isPending || managerRejectPortfolio.isPending) && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
               {t("approvals.confirmReject")}
@@ -227,7 +298,7 @@ export function MyWorkApprovalsPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!changeRejectingId} onOpenChange={(open) => { if (!open) { setChangeRejectingId(null); setChangeRejectionReason(""); } }}>
+      <Dialog open={!!changeRejectingId} onOpenChange={(open) => { if (!open) { setChangeRejectingId(null); setChangeRejectionReason(""); setChangeRejectError(null); } }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t("approvals.rejectChangeDialogTitle")}</DialogTitle>
@@ -236,9 +307,10 @@ export function MyWorkApprovalsPage() {
           <div className="space-y-1">
             <Textarea value={changeRejectionReason} onChange={(e) => setChangeRejectionReason(e.target.value)} placeholder={t("approvals.decisionNotesPlaceholder")} rows={3} />
             {!changeRejectionReason.trim() && <p className="text-xs text-muted-foreground">{t("approvals.decisionNotesRequired")}</p>}
+            {changeRejectError ? <p role="alert" className="text-sm text-destructive">{changeRejectError}</p> : null}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setChangeRejectingId(null); setChangeRejectionReason(""); }}>{t("common.cancel")}</Button>
+            <Button variant="outline" onClick={() => { setChangeRejectingId(null); setChangeRejectionReason(""); setChangeRejectError(null); }}>{t("common.cancel")}</Button>
             <Button variant="destructive" disabled={!changeRejectionReason.trim() || rejectChange.isPending} onClick={() => changeRejectingId && handleRejectChange(changeRejectingId)}>
               {rejectChange.isPending && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
               {t("approvals.confirmReject")}
@@ -250,8 +322,9 @@ export function MyWorkApprovalsPage() {
   );
 }
 
-function ManagerApproval({ request, accepting, onAccept, onReject }: { request: ManagerHandoverRequestDto; accepting: boolean; onAccept: () => void; onReject: () => void }) {
+function ManagerApproval({ request, accepting, rejecting, error, onAccept, onReject }: { request: ManagerHandoverRequestDto; accepting: boolean; rejecting: boolean; error?: string | null; onAccept: () => void; onReject: () => void }) {
   const { t } = useI18n();
+  const entityType = request.entityType === "Program" ? t("managerHandover.program") : t("managerHandover.portfolio");
   return (
     <div className="flex items-start gap-4 border-t px-4 py-4">
       <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
@@ -259,22 +332,23 @@ function ManagerApproval({ request, accepting, onAccept, onReject }: { request: 
       </div>
       <div className="flex-1">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-medium">{request.entityType} {t("approvals.handoverRequest")}</span>
-          <Badge status="Pending">{t("approvals.statusPending")}</Badge>
+          <span className="text-sm font-medium">{t("managerHandover.handover")} · {entityType}</span>
+          <span className={`text-xs font-semibold ${getStatusTextClass("Pending")}`}>{t("approvals.statusPending")}</span>
         </div>
         <p className="mt-1 text-sm">{request.currentManagerName} → <span className="font-medium">{request.newManagerName}</span></p>
         <p className="text-xs text-muted-foreground">{request.entityName} · {request.reason}</p>
         <p className="mt-1 text-xs text-muted-foreground">{t("approvals.effectiveDate")}: {formatDate(request.effectiveHandoverDate)} · {t("approvals.requestedBy")}: {request.requestedByName}</p>
+        {error ? <p role="alert" className="mt-2 text-xs text-destructive">{error}</p> : null}
       </div>
       <div className="flex gap-2">
-        <Button size="sm" disabled={accepting} onClick={onAccept}><CheckCircle2 className="mr-1 h-4 w-4" />{t("approvals.approve")}</Button>
-        <Button size="sm" variant="outline" onClick={onReject}><XCircle className="mr-1 h-4 w-4" />{t("approvals.reject")}</Button>
+        <Button size="sm" disabled={accepting || rejecting} onClick={onAccept}><CheckCircle2 className="mr-1 h-4 w-4" />{t("approvals.approve")}</Button>
+        <Button size="sm" variant="outline" disabled={accepting || rejecting} onClick={onReject}><XCircle className="mr-1 h-4 w-4" />{t("approvals.reject")}</Button>
       </div>
     </div>
   );
 }
 
-function ChangeRequestApproval({ request, approving, rejecting, onApprove, onReject, approvalError }: { request: ProjectChangeRequestDto; approving: boolean; rejecting: boolean; onApprove: () => void; onReject: () => void; approvalError?: string | null }) {
+function ChangeRequestApproval({ request, approving, rejecting, approvalError, onApprove, onReject }: { request: ProjectChangeRequestDto; approving: boolean; rejecting: boolean; approvalError?: string | null; onApprove: () => void; onReject: () => void }) {
   const { t } = useI18n();
   return (
     <div className="flex items-start gap-4 border-t px-4 py-4">
@@ -284,19 +358,19 @@ function ChangeRequestApproval({ request, approving, rejecting, onApprove, onRej
       <div className="flex-1">
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium">{t("approvals.changeRequest")}</span>
-          <Badge status={request.status}>{request.status}</Badge>
+          <span className={`text-xs font-semibold ${getStatusTextClass(request.status)}`}>{t(`projects.changeStatus.${request.status}`)}</span>
         </div>
         <p className="mt-1 text-xs text-muted-foreground">
-          <a href={`/projects/${request.projectId}`} className="font-medium hover:underline">
+          <Link to={`/projects/${request.projectId}`} className="font-medium hover:underline">
             {request.projectName}
-          </a>
+          </Link>
           <span> · </span>
-          {t("approvals.changeType")}: {request.type}
+          {t("approvals.changeType")}: {t(request.type === "Baseline" ? "projects.changeTypeBaseline" : "projects.changeTypeAdministrative")}
         </p>
         <p className="mt-1 text-sm">{t("approvals.changeNumber")} #{request.number} · {request.reason}</p>
         {request.justification && <p className="mt-1 text-xs text-muted-foreground">{t("approvals.justification")}: {request.justification}</p>}
         <p className="mt-1 text-xs text-muted-foreground">{t("approvals.requestedBy")}: {request.requestedByName} · {formatDate(request.requestedAt)}</p>
-        {approvalError && <p className="mt-2 text-xs text-destructive">{approvalError}</p>}
+        {approvalError ? <p role="alert" className="mt-2 text-xs text-destructive">{approvalError}</p> : null}
       </div>
       <div className="flex gap-2">
         <Button size="sm" disabled={approving || rejecting} onClick={onApprove}><CheckCircle2 className="mr-1 h-4 w-4" />{t("approvals.approve")}</Button>

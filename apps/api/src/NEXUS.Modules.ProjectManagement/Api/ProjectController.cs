@@ -217,6 +217,21 @@ public class ProjectController : ControllerBase
     }
 
     [Authorize(Policy = "Handover.Manage")]
+    [HttpGet("{id:guid}/handover-managers")]
+    public async Task<IActionResult> GetEligibleHandoverManagers(Guid id, CancellationToken cancellationToken)
+    {
+        var result = await _projectHandoverRequestService.GetEligibleManagersAsync(id, cancellationToken);
+        if (result.IsFailure)
+            return result.Error?.StatusCode switch
+            {
+                404 => NotFound(new { error = result.Error.Message }),
+                401 => Unauthorized(new { error = result.Error.Message }),
+                _ => BadRequest(new { error = result.Error?.Message })
+            };
+        return Ok(result.Value);
+    }
+
+    [Authorize(Policy = "Handover.Manage")]
     [HttpPost("{id:guid}/handover-requests")]
     public async Task<IActionResult> CreateHandoverRequest(Guid id, [FromBody] CreateProjectHandoverRequestDto dto, CancellationToken cancellationToken)
     {

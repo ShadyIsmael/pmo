@@ -49,8 +49,7 @@ describe("routing and permission guards", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<MemoryRouter initialEntries={["/projects"]}><AppRoutes /></MemoryRouter>, { wrapper: shell() });
     await waitFor(() => expect(screen.getByText(/Project Registry|سجل المشاريع/i)).toBeInTheDocument());
-    const projectCalls = fetchMock.mock.calls.filter(([input]) => String(input).includes("/api/projects") && !String(input).includes("/shell") && !String(input).includes("/overview")).length;
-    expect(projectCalls).toBeGreaterThanOrEqual(1);
+    await waitFor(() => expect(fetchMock.mock.calls.filter(([input]) => String(input).includes("/api/projects") && !String(input).includes("/shell") && !String(input).includes("/overview")).length).toBeGreaterThanOrEqual(1));
   });
 
   it("shows permission message when lacking access", async () => {
@@ -64,5 +63,60 @@ describe("routing and permission guards", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<MemoryRouter initialEntries={["/workflows"]}><AppRoutes /></MemoryRouter>, { wrapper: shell([]) });
     await waitFor(() => expect(screen.getByText(/do not have access/i)).toBeInTheDocument());
+  });
+
+  it.each([
+    { path: "/projects/board", restrictedEndpoints: ["/api/work-items", "/api/reference-data/work-item-statuses"] },
+    { path: "/projects/gantt", restrictedEndpoints: ["/api/planning/"] },
+    { path: "/projects/matrix", restrictedEndpoints: ["/api/resources"] },
+    { path: "/projects/templates", restrictedEndpoints: ["/api/documents"] },
+  ])("guards $path with its data permission before issuing feature requests", async ({ path, restrictedEndpoints }) => {
+    setTokens("a", "r");
+    const fetchMock = mockFetch({
+      "/api/auth/me": { id: "u", email: "a@b.c", firstName: "A", lastName: "B", fullName: "A B", roles: [], permissions: ["projects.read"] },
+      "/api/me/perspectives": { availablePerspectives: [], scope: { portfolioIds: [], programIds: [], projectIds: [] } },
+      "/api/timer/current": null,
+      "/api/notifications": { items: [], totalCount: 0 },
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<MemoryRouter initialEntries={[path]}><AppRoutes /></MemoryRouter>, { wrapper: shell(["projects.read"]) });
+
+    await waitFor(() => expect(screen.getByText(/do not have access/i)).toBeInTheDocument());
+    for (const endpoint of restrictedEndpoints) {
+      expect(fetchMock.mock.calls.some(([input]) => String(input).includes(endpoint))).toBe(false);
+    }
+  });
+
+  it.each([
+    { path: "/projects/project-1/board", restrictedEndpoint: "/api/work-items" },
+    { path: "/projects/project-1/gantt", restrictedEndpoint: "/api/planning/" },
+    { path: "/projects/project-1/matrix", restrictedEndpoint: "/api/resources" },
+  ])("guards nested project route $path before its feature query", async ({ path, restrictedEndpoint }) => {
+    setTokens("a", "r");
+    const fetchMock = mockFetch({
+      "/api/auth/me": { id: "u", email: "a@b.c", firstName: "A", lastName: "B", fullName: "A B", roles: [], permissions: ["projects.read"] },
+      "/api/me/perspectives": { availablePerspectives: [], scope: { portfolioIds: [], programIds: [], projectIds: [] } },
+      "/api/timer/current": null,
+      "/api/notifications": { items: [], totalCount: 0 },
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<MemoryRouter initialEntries={[path]}><AppRoutes /></MemoryRouter>, { wrapper: shell(["projects.read"]) });
+
+    await waitFor(() => expect(screen.getByText(/do not have access/i)).toBeInTheDocument());
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes(restrictedEndpoint))).toBe(false);
+  });
+
+  it("guards the direct Organization route and does not fetch organization data without access", async () => {
+    setTokens("a", "r");
+    const fetchMock = mockFetch({
+      "/api/auth/me": { id: "u", email: "a@b.c", firstName: "A", lastName: "B", fullName: "A B", roles: [], permissions: [] },
+      "/api/me/perspectives": { availablePerspectives: [], scope: { portfolioIds: [], programIds: [], projectIds: [] } },
+      "/api/timer/current": null,
+      "/api/notifications": { items: [], totalCount: 0 },
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<MemoryRouter initialEntries={["/administration/organization"]}><AppRoutes /></MemoryRouter>, { wrapper: shell([]) });
+    await waitFor(() => expect(screen.getByText(/do not have access/i)).toBeInTheDocument());
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/organization/"))).toBe(false);
   });
 });

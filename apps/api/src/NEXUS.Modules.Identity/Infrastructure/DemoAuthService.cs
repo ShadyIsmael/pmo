@@ -5,7 +5,10 @@ using System.Text;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
+using NEXUS.Modules.Audit.Application;
+using NEXUS.Modules.Audit.Domain;
 using NEXUS.Modules.Identity.Application;
 using NEXUS.Modules.Identity.Domain;
 using NEXUS.SharedKernel;
@@ -18,12 +21,18 @@ public class DemoAuthService : IAuthenticationService
     private readonly DbContext _context;
     private readonly IConfiguration _configuration;
     private readonly IPasswordHasher<User> _passwordHasher;
+    private readonly IUserEffectivePermissionService _effectivePermissions;
+    private readonly IAuditService _auditService;
+    private readonly LocalPasswordPolicyOptions _passwordPolicy;
 
-    public DemoAuthService(DbContext context, IConfiguration configuration, IPasswordHasher<User> passwordHasher)
+    public DemoAuthService(DbContext context, IConfiguration configuration, IPasswordHasher<User> passwordHasher, IUserEffectivePermissionService effectivePermissions, IAuditService auditService, IOptions<LocalPasswordPolicyOptions> passwordPolicy)
     {
         _context = context;
         _configuration = configuration;
         _passwordHasher = passwordHasher;
+        _effectivePermissions = effectivePermissions;
+        _auditService = auditService;
+        _passwordPolicy = passwordPolicy.Value;
     }
 
     public async Task<Result<LoginResponseDto>> LoginAsync(LoginCommand command, CancellationToken cancellationToken = default)
@@ -34,6 +43,9 @@ public class DemoAuthService : IAuthenticationService
         if (user is null)
             return Result<LoginResponseDto>.Failure(Error.Unauthorized("Invalid email or password"));
 
+        if (user.AuthenticationSource != AuthenticationSource.Local || string.IsNullOrEmpty(user.PasswordHash))
+            return Result<LoginResponseDto>.Failure(Error.Unauthorized("Invalid email or password"));
+
         var verificationUser = user.ToPasswordVerificationUser();
         var verification = _passwordHasher.VerifyHashedPassword(verificationUser, user.PasswordHash, command.Password);
         if (verification == PasswordVerificationResult.Failed)
@@ -41,6 +53,15 @@ public class DemoAuthService : IAuthenticationService
 
         if (!user.IsActive)
             return Result<LoginResponseDto>.Failure(Error.Forbidden("Account is deactivated"));
+
+        if (user.MustChangePassword && (!user.TemporaryPasswordExpiresAt.HasValue || user.TemporaryPasswordExpiresAt <= DateTime.UtcNow))
+            return Result<LoginResponseDto>.Failure(new Error("TEMPORARY_PASSWORD_EXPIRED", "The temporary password has expired. Contact an administrator to generate a new one.", 401));
+
+        if (user.MustChangePassword)
+        {
+            user.Permissions.Clear();
+            user.Roles.Clear();
+        }
 
         // Session creation is authoritative. LastLoginAt is best-effort metadata and
         // must not turn a valid concurrent login into a failed request.
@@ -67,10 +88,84 @@ public class DemoAuthService : IAuthenticationService
         if (user is null || !user.IsActive)
             return Result<LoginResponseDto>.Failure(Error.Unauthorized("User account is not available"));
 
+        if (user.AuthenticationSource != AuthenticationSource.Local || string.IsNullOrEmpty(user.PasswordHash))
+            return Result<LoginResponseDto>.Failure(Error.Unauthorized("User account is not available for local authentication"));
+        if (user.MustChangePassword && (!user.TemporaryPasswordExpiresAt.HasValue || user.TemporaryPasswordExpiresAt <= DateTime.UtcNow))
+        {
+            session.RevokedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync(cancellationToken);
+            return Result<LoginResponseDto>.Failure(new Error("TEMPORARY_PASSWORD_EXPIRED", "The temporary password has expired. Contact an administrator to generate a new one.", 401));
+        }
+
         session.RevokedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync(cancellationToken);
 
         return await IssueSessionAsync(user, cancellationToken);
+    }
+
+    public async Task<Result<ChangeInitialPasswordResponseDto>> ChangeInitialPasswordAsync(Guid userId, Guid tenantId, ChangeInitialPasswordCommand command, CancellationToken cancellationToken = default)
+    {
+        var user = await _context.Set<User>()
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(candidate => candidate.Id == userId && candidate.TenantId == tenantId && !candidate.IsDeleted, cancellationToken);
+
+        if (user is null || !user.IsActive || user.AuthenticationSource != AuthenticationSource.Local || string.IsNullOrEmpty(user.PasswordHash))
+            return Result<ChangeInitialPasswordResponseDto>.Failure(Error.Unauthorized("The local account is not available"));
+        if (!user.MustChangePassword)
+            return Result<ChangeInitialPasswordResponseDto>.Failure(Error.Conflict("No initial password change is required"));
+
+        var now = DateTime.UtcNow;
+        if (!user.TemporaryPasswordExpiresAt.HasValue || user.TemporaryPasswordExpiresAt <= now)
+            return Result<ChangeInitialPasswordResponseDto>.Failure(new Error("TEMPORARY_PASSWORD_EXPIRED", "The temporary password has expired. Contact an administrator to generate a new one.", 401));
+
+        var verification = _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, command.CurrentPassword ?? string.Empty);
+        if (verification == PasswordVerificationResult.Failed)
+            return Result<ChangeInitialPasswordResponseDto>.Failure(Error.Unauthorized("The current password is incorrect"));
+
+        var newPassword = command.NewPassword ?? string.Empty;
+        if (newPassword.Length < _passwordPolicy.MinimumLength || newPassword.Length > _passwordPolicy.MaximumLength)
+            return Result<ChangeInitialPasswordResponseDto>.Failure(Error.Validation($"The new password must be between {_passwordPolicy.MinimumLength} and {_passwordPolicy.MaximumLength} characters."));
+        if (string.Equals(command.CurrentPassword, newPassword, StringComparison.Ordinal))
+            return Result<ChangeInitialPasswordResponseDto>.Failure(Error.Validation("The new password must be different from the temporary password."));
+
+        user.PasswordHash = _passwordHasher.HashPassword(user, newPassword);
+        user.MustChangePassword = false;
+        user.TemporaryPasswordExpiresAt = null;
+        user.PasswordChangedAt = now;
+        user.UpdatedAt = now;
+        user.UpdatedBy = userId.ToString();
+
+        var sessions = await _context.Set<UserSession>()
+            .IgnoreQueryFilters()
+            .Where(session => session.UserId == userId && session.TenantId == tenantId && session.RevokedAt == null)
+            .ToListAsync(cancellationToken);
+        foreach (var session in sessions)
+            session.RevokedAt = now;
+
+        await _auditService.AppendAsync(new AuditEntry
+        {
+            TenantId = tenantId,
+            EntityType = "User",
+            EntityId = user.Id,
+            Action = "FirstPasswordChanged",
+            Changes = "{\"PasswordState\":\"Permanent\",\"MustChangePassword\":false}",
+            OriginalValues = "{\"PasswordState\":\"Temporary\",\"MustChangePassword\":true}",
+            NewValues = "{\"PasswordState\":\"Permanent\",\"MustChangePassword\":false}",
+            UserId = user.Id,
+            UserName = user.FullName,
+            CreatedBy = user.Id.ToString()
+        }, cancellationToken);
+
+        try
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Result<ChangeInitialPasswordResponseDto>.Failure(Error.Conflict("The account changed concurrently. Sign in again and try once more."));
+        }
+
+        return Result<ChangeInitialPasswordResponseDto>.Success(new ChangeInitialPasswordResponseDto());
     }
 
     public async Task<Result> LogoutAsync(Guid userId, string? refreshToken, CancellationToken cancellationToken = default)
@@ -108,7 +203,16 @@ public class DemoAuthService : IAuthenticationService
         if (user is null)
             return Result<CurrentUserDto>.Failure(Error.NotFound("User not found"));
 
-        return Result<CurrentUserDto>.Success(MapToCurrentUser(user));
+        var currentUser = MapToCurrentUser(user);
+        currentUser.Permissions = (await _effectivePermissions.GetEffectivePermissionsAsync(userId, user.TenantId, cancellationToken))
+            .OrderBy(permission => permission, StringComparer.Ordinal)
+            .ToList();
+        if (user.MustChangePassword)
+        {
+            currentUser.Permissions.Clear();
+            currentUser.Roles.Clear();
+        }
+        return Result<CurrentUserDto>.Success(currentUser);
     }
 
     public async Task<Result<CurrentUserDto>> SwitchRoleAsync(Guid userId, string roleName, CancellationToken cancellationToken = default)
@@ -118,7 +222,24 @@ public class DemoAuthService : IAuthenticationService
 
     private Task<Result<LoginResponseDto>> IssueSessionAsync(User user, CancellationToken cancellationToken)
     {
-        return IssueSessionAsync(CreateLoginUserSnapshot(user), cancellationToken);
+        return IssueSessionWithCurrentPermissionsAsync(user, cancellationToken);
+    }
+
+    private async Task<Result<LoginResponseDto>> IssueSessionWithCurrentPermissionsAsync(User user, CancellationToken cancellationToken)
+    {
+        var snapshot = CreateLoginUserSnapshot(user);
+        if (snapshot.MustChangePassword)
+        {
+            snapshot.Permissions = new List<string>();
+            snapshot.Roles = new List<RoleDto>();
+        }
+        else
+        {
+            snapshot.Permissions = (await _effectivePermissions.GetEffectivePermissionsAsync(user.Id, user.TenantId, cancellationToken))
+                .OrderBy(permission => permission, StringComparer.Ordinal)
+                .ToList();
+        }
+        return await IssueSessionAsync(snapshot, cancellationToken);
     }
 
     private async Task<Result<LoginResponseDto>> IssueSessionAsync(LoginUserSnapshot user, CancellationToken cancellationToken)
@@ -145,7 +266,8 @@ public class DemoAuthService : IAuthenticationService
             Token = token,
             RefreshToken = refreshToken,
             ExpiresAt = expiresAt,
-            User = MapToCurrentUser(user)
+            User = MapToCurrentUser(user),
+            PasswordChangeRequired = user.MustChangePassword
         });
     }
 
@@ -183,7 +305,11 @@ public class DemoAuthService : IAuthenticationService
                 JobTitle = user.JobTitle,
                 Phone = user.Phone,
                 AvatarUrl = user.AvatarUrl,
-                IsActive = user.IsActive
+                IsActive = user.IsActive,
+                AuthenticationSource = user.AuthenticationSource,
+                MustChangePassword = user.MustChangePassword,
+                TemporaryPasswordExpiresAt = user.TemporaryPasswordExpiresAt,
+                PasswordChangedAt = user.PasswordChangedAt
             })
             .FirstOrDefaultAsync(cancellationToken);
 
@@ -193,7 +319,8 @@ public class DemoAuthService : IAuthenticationService
         var authorization = await _context.Set<UserRole>()
             .IgnoreQueryFilters()
             .AsNoTracking()
-            .Where(userRole => userRole.UserId == user.Id && userRole.TenantId == tenantId && !userRole.IsDeleted)
+            .Where(userRole => userRole.UserId == user.Id && userRole.TenantId == tenantId && !userRole.IsDeleted
+                               && userRole.Role.TenantId == tenantId && !userRole.Role.IsDeleted)
             .Select(userRole => new LoginRoleProjection
             {
                 Role = new RoleDto
@@ -204,12 +331,13 @@ public class DemoAuthService : IAuthenticationService
                     Category = userRole.Role.Category
                 },
                 Permissions = userRole.Role.Permissions
+                    .Where(permission => permission.TenantId == tenantId && !permission.IsDeleted)
                     .Select(permission => permission.Resource + "." + permission.Action)
                     .ToList()
             })
             .ToListAsync(cancellationToken);
 
-        return new LoginUserSnapshot
+        var snapshot = new LoginUserSnapshot
         {
             Id = user.Id,
             TenantId = user.TenantId,
@@ -221,21 +349,29 @@ public class DemoAuthService : IAuthenticationService
             Phone = user.Phone,
             AvatarUrl = user.AvatarUrl,
             IsActive = user.IsActive,
+            AuthenticationSource = user.AuthenticationSource,
+            MustChangePassword = user.MustChangePassword,
+            TemporaryPasswordExpiresAt = user.TemporaryPasswordExpiresAt,
+            PasswordChangedAt = user.PasswordChangedAt,
             Roles = authorization.Select(item => item.Role).ToList(),
             Permissions = authorization
                 .SelectMany(item => item.Permissions)
                 .Distinct()
                 .ToList()
         };
+        snapshot.Permissions = (await _effectivePermissions.GetEffectivePermissionsAsync(user.Id, tenantId, cancellationToken))
+            .OrderBy(permission => permission, StringComparer.Ordinal)
+            .ToList();
+        return snapshot;
     }
 
     private async Task<User?> GetUserWithRolesByIdAsync(Guid id, Guid tenantId, CancellationToken cancellationToken)
     {
         return await _context.Set<User>()
             .IgnoreQueryFilters()
-            .Include(u => u.UserRoles)
+            .Include(u => u.UserRoles.Where(userRole => userRole.TenantId == tenantId && !userRole.IsDeleted && userRole.Role.TenantId == tenantId && !userRole.Role.IsDeleted))
                 .ThenInclude(ur => ur.Role)
-                .ThenInclude(r => r.Permissions)
+                .ThenInclude(role => role.Permissions.Where(permission => permission.TenantId == tenantId && !permission.IsDeleted))
             .FirstOrDefaultAsync(u => u.Id == id && u.TenantId == tenantId && !u.IsDeleted, cancellationToken);
     }
 
@@ -256,6 +392,10 @@ public class DemoAuthService : IAuthenticationService
             Phone = user.Phone,
             AvatarUrl = user.AvatarUrl,
             IsActive = user.IsActive,
+            AuthenticationSource = user.AuthenticationSource,
+            MustChangePassword = user.MustChangePassword,
+            TemporaryPasswordExpiresAt = user.TemporaryPasswordExpiresAt,
+            PasswordChangedAt = user.PasswordChangedAt,
             Roles = user.UserRoles.Select(userRole => new RoleDto
             {
                 Id = userRole.Role.Id,
@@ -297,6 +437,9 @@ public class DemoAuthService : IAuthenticationService
             Phone = user.Phone,
             AvatarUrl = user.AvatarUrl,
             TenantId = user.TenantId.ToString(),
+            AuthenticationSource = user.AuthenticationSource,
+            MustChangePassword = user.MustChangePassword,
+            TemporaryPasswordExpiresAt = user.TemporaryPasswordExpiresAt,
             Roles = roleDtos,
             Permissions = permissions
         };
@@ -314,6 +457,9 @@ public class DemoAuthService : IAuthenticationService
             Phone = user.Phone,
             AvatarUrl = user.AvatarUrl,
             TenantId = user.TenantId.ToString(),
+            AuthenticationSource = user.AuthenticationSource,
+            MustChangePassword = user.MustChangePassword,
+            TemporaryPasswordExpiresAt = user.TemporaryPasswordExpiresAt,
             Roles = user.Roles,
             Permissions = user.Permissions
         };
@@ -331,7 +477,8 @@ public class DemoAuthService : IAuthenticationService
             new(ClaimTypes.NameIdentifier, user.Id.ToString()),
             new(ClaimTypes.Email, user.Email),
             new(ClaimTypes.Name, $"{user.FirstName} {user.LastName}"),
-            new("tenantId", user.TenantId.ToString())
+            new("tenantId", user.TenantId.ToString()),
+            new("pwdts", user.PasswordChangedAt?.Ticks.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "0")
         };
 
         foreach (var role in user.Roles.Select(role => role.Name))
@@ -378,13 +525,17 @@ public class DemoAuthService : IAuthenticationService
         public Guid Id { get; set; }
         public Guid TenantId { get; set; }
         public string Email { get; set; } = string.Empty;
-        public string PasswordHash { get; set; } = string.Empty;
+        public string? PasswordHash { get; set; }
         public string FirstName { get; set; } = string.Empty;
         public string LastName { get; set; } = string.Empty;
         public string? JobTitle { get; set; }
         public string? Phone { get; set; }
         public string? AvatarUrl { get; set; }
         public bool IsActive { get; set; }
+        public AuthenticationSource AuthenticationSource { get; set; }
+        public bool MustChangePassword { get; set; }
+        public DateTime? TemporaryPasswordExpiresAt { get; set; }
+        public DateTime? PasswordChangedAt { get; set; }
         public List<RoleDto> Roles { get; set; } = new();
         public List<string> Permissions { get; set; } = new();
 

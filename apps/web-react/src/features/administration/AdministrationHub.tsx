@@ -1,11 +1,10 @@
-import { Link, Outlet, useLocation } from "react-router-dom";
+import { Link, Outlet } from "react-router-dom";
 import { ArrowUpRight, GitBranch, ListFilter, Plug, Settings2, Shield, Building2 } from "lucide-react";
 import { PageHeader } from "@components/layout/PageHeader";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@components/ui/Card";
 import { useI18n } from "@i18n/messages";
 import { useAuth } from "@auth/AuthProvider";
 import { hasAnyPermission, Permissions } from "@lib/permissions";
-import { cn } from "@lib/utils";
 
 export function AdministrationHub() {
   const { t } = useI18n();
@@ -13,7 +12,7 @@ export function AdministrationHub() {
   const permissions = user?.permissions ?? [];
   const areas = [
     { id: "organization", href: "/administration/organization", icon: Building2, title: t("administration.home.cards.organization.title"), description: t("administration.home.cards.organization.description"), perms: [Permissions.Settings.Read] },
-    { id: "access", href: "/administration/access", icon: Shield, title: t("administration.home.cards.access.title"), description: t("administration.home.cards.access.description"), perms: [Permissions.Users.Read, Permissions.Settings.Read] },
+    { id: "access", href: "/administration/access", icon: Shield, title: t("administration.home.cards.access.title"), description: t("administration.home.cards.access.description"), perms: [Permissions.Users.Read, Permissions.Users.Write] },
     { id: "reference-data", href: "/administration/reference-data", icon: ListFilter, title: t("administration.home.cards.referenceData.title"), description: t("administration.home.cards.referenceData.description"), perms: [Permissions.Settings.Read] },
     { id: "platform-settings", href: "/administration/settings", icon: Settings2, title: t("administration.home.cards.platformSettings.title"), description: t("administration.home.cards.platformSettings.description"), perms: [Permissions.Settings.Read] },
     { id: "integrations", href: "/administration/integrations", icon: Plug, title: t("administration.home.cards.integrations.title"), description: t("administration.home.cards.integrations.description"), perms: [Permissions.Settings.Read] },
@@ -45,33 +44,5 @@ export function AdministrationHub() {
 }
 
 export function AdministrationLayout() {
-  const { t } = useI18n();
-  const location = useLocation();
-  const tabs = [
-    { id: "organization", href: "/administration/organization", label: t("nav.organization") },
-    { id: "access", href: "/administration/access", label: t("nav.accessSecurity") },
-    { id: "reference-data", href: "/administration/reference-data", label: t("nav.referenceData") },
-    { id: "settings", href: "/administration/settings", label: t("nav.platformSettings") },
-    { id: "integrations", href: "/administration/integrations", label: t("nav.integrations") },
-    { id: "governance", href: "/administration/governance", label: t("nav.governance") },
-  ];
-  return (
-    <div className="space-y-4">
-      <nav className="flex gap-1 overflow-x-auto" aria-label="Administration">
-        {tabs.map((tab) => (
-          <Link
-            key={tab.id}
-            to={tab.href}
-            className={cn(
-              "whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium",
-              location.pathname.startsWith(tab.href) ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent"
-            )}
-          >
-            {tab.label}
-          </Link>
-        ))}
-      </nav>
-      <Outlet />
-    </div>
-  );
+  return <Outlet />;
 }

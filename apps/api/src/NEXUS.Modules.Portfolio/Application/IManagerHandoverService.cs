@@ -4,6 +4,8 @@ namespace NEXUS.Modules.Portfolio.Application;
 
 public interface IManagerHandoverService
 {
+    Task<Result<IReadOnlyList<ManagerHandoverManagerDto>>> GetEligibleProgramManagersAsync(Guid programId, CancellationToken ct = default);
+    Task<Result<IReadOnlyList<ManagerHandoverManagerDto>>> GetEligiblePortfolioManagersAsync(Guid portfolioId, CancellationToken ct = default);
     Task<Result<ManagerHandoverRequestDto>> CreateProgramAsync(Guid programId, CreateManagerHandoverRequestDto dto, Guid userId, CancellationToken ct = default);
     Task<Result<ManagerHandoverRequestDto>> CreatePortfolioAsync(Guid portfolioId, CreateManagerHandoverRequestDto dto, Guid userId, CancellationToken ct = default);
     Task<Result<IReadOnlyList<ManagerHandoverRequestDto>>> GetProgramRequestsAsync(Guid programId, CancellationToken ct = default);

@@ -26,9 +26,12 @@ self.addEventListener("push", (event) => {
   event.waitUntil(
     (async () => {
       const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      let hasVisibleClient = false;
       for (const client of clients) {
         client.postMessage({ type: "FCM_MESSAGE", payload });
+        if (client.visibilityState === "visible") hasVisibleClient = true;
       }
+      if (hasVisibleClient) return;
       return self.registration.showNotification(title, options);
     })()
   );
@@ -38,12 +41,28 @@ self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   event.waitUntil(
     (async () => {
+      const data = event.notification.data || {};
+      const target = resolveInternalTarget(data.referenceType, data.referenceId);
       const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
       if (clients.length > 0) {
-        await clients[0].focus();
+        const client = clients.find((candidate) => new URL(candidate.url).origin === self.location.origin) || clients[0];
+        if (target && "navigate" in client) await client.navigate(target);
+        await client.focus();
       } else {
-        await self.clients.openWindow("/");
+        await self.clients.openWindow(target || "/");
       }
     })()
   );
 });
+
+function resolveInternalTarget(referenceType, referenceId) {
+  if (typeof referenceType !== "string" || typeof referenceId !== "string"
+      || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(referenceId)) return null;
+  const id = encodeURIComponent(referenceId);
+  switch (referenceType.toLowerCase()) {
+    case "project": return `/projects/${id}`;
+    case "program": return `/portfolios/programs/${id}`;
+    case "portfolio": return `/portfolios/${id}`;
+    default: return null;
+  }
+}

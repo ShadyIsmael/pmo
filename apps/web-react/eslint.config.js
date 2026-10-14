@@ -6,7 +6,7 @@ import reactHooks from "eslint-plugin-react-hooks";
 import reactRefresh from "eslint-plugin-react-refresh";
 
 export default [
-  { ignores: ["dist", "node_modules", "**/*.d.ts", "vite.config.*", "vitest.config.*"] },
+  { ignores: ["dist", "node_modules", ".role-admin-build-check/**", "**/*.d.ts", "vite.config.*", "vitest.config.*"] },
   js.configs.recommended,
   {
     files: ["**/*.{js,cjs,mjs}"],

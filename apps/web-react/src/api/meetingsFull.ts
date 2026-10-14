@@ -3,23 +3,24 @@ import { api } from "@api/client";
 import { endpoints } from "@api/endpoints";
 
 type PagedResult<T> = { items: T[]; totalCount: number; page?: number; pageSize?: number; totalPages?: number };
-export interface MeetingListDto { id: string; title: string; projectId?: string | null; projectName?: string | null; organizerId?: string | null; organizerName?: string | null; startTime: string; endTime: string; status?: string | null; attendeeCount: number; minutesState?: "Draft" | "Final" | null; }
+export interface MeetingListDto { id: string; title: string; projectId?: string | null; projectName?: string | null; organizerId?: string | null; organizerName?: string | null; startTime: string; endTime: string; status?: string | null; attendeeCount: number; minutesState?: "Draft" | "Final" | null; reminderOffsetMinutes?: number | null; }
 export interface MeetingAttendeeDto { id: string; meetingId: string; userId?: string | null; displayName?: string | null; email: string; isInternalUser: boolean; }
 export interface MeetingDetailDto extends MeetingListDto { objective?: string | null; location?: string | null; meetingLink?: string | null; attendees: readonly MeetingAttendeeDto[]; rowVersion: string; }
 export interface MeetingMinutesDto { id: string; meetingId: string; summary?: string | null; discussionNotes?: string | null; decisions?: string | null; outcomes?: string | null; state: "Draft" | "Final"; recordedBy?: string | null; recordedAt: string; rowVersion: string; }
 export interface ChecklistItemDto { id: string; meetingMinutesId: string; title: string; isCompleted: boolean; sortOrder: number; }
 export interface MeetingAttachmentDto { id: string; meetingMinutesId: string; fileName: string; contentType: string; fileSize: number; createdAt: string; }
 export interface MeetingCommentDto { id: string; meetingMinutesId: string; parentCommentId?: string | null; commentText: string; createdBy: string; authorName?: string | null; createdAt: string; }
-export interface MeetingInput { title: string; objective?: string; projectId?: string; startTime: string; endTime: string; location?: string; meetingLink?: string; organizerId: string; attendees: readonly { userId?: string; email?: string; displayName?: string }[]; }
+export interface MeetingInput { title: string; objective?: string; projectId?: string; startTime: string; endTime: string; location?: string; meetingLink?: string; reminderOffsetMinutes?: number | null; organizerId: string; attendees: readonly { userId?: string; email?: string; displayName?: string }[]; }
 
-export const meetingKeys = { all: ["meetings"] as const, list: (params: Record<string, unknown>) => ["meetings", "list", params] as const, detail: (id: string) => ["meetings", "detail", id] as const, minutes: (id: string) => ["meetings", "minutes", id] as const, checklist: (id: string) => ["meetings", "minutes", id, "checklist"] as const, attachments: (id: string) => ["meetings", "minutes", id, "attachments"] as const, comments: (id: string) => ["meetings", "minutes", id, "comments"] as const };
+export const meetingKeys = { all: ["meetings"] as const, lists: () => ["meetings", "list"] as const, list: (params: Record<string, unknown>) => [...meetingKeys.lists(), params] as const, detail: (id: string) => ["meetings", "detail", id] as const, minutes: (id: string) => ["meetings", "minutes", id] as const, checklist: (id: string) => ["meetings", "minutes", id, "checklist"] as const, attachments: (id: string) => ["meetings", "minutes", id, "attachments"] as const, comments: (id: string) => ["meetings", "minutes", id, "comments"] as const };
 export const meetingsApiFull = {
   list: (params: Record<string, string | number | boolean | undefined>) => api.get<PagedResult<MeetingListDto>>(endpoints.meetings.root, params),
   detail: (id: string) => api.get<MeetingDetailDto>(endpoints.meetings.detail(id)),
   create: (body: MeetingInput) => api.post<MeetingDetailDto>(endpoints.meetings.root, body),
   update: (id: string, body: MeetingInput & { rowVersion?: string; status?: string }) => api.put<MeetingDetailDto>(endpoints.meetings.detail(id), body),
+  delete: (id: string) => api.delete<void>(endpoints.meetings.detail(id)),
   minutes: (id: string) => api.get<MeetingMinutesDto | null>(endpoints.meetings.minutes(id)),
-  createMinutes: (id: string, body: Record<string, string>) => api.post<MeetingMinutesDto>(endpoints.meetings.minutes(id), body),
+  createMinutes: (id: string, body: Record<string, string | undefined>) => api.post<MeetingMinutesDto>(endpoints.meetings.minutes(id), body),
   updateMinutes: (id: string, body: Record<string, string | undefined>) => api.put<MeetingMinutesDto>(endpoints.meetings.minutes(id), body),
   finalizeMinutes: (id: string, rowVersion?: string) => api.post<MeetingMinutesDto>(endpoints.meetings.finalizeMinutes(id), rowVersion ? { rowVersion } : {}),
   checklist: (id: string) => api.get<ChecklistItemDto[]>(endpoints.meetings.checklist(id)),
@@ -43,11 +44,11 @@ export function useMeetingMinutesAttachments(id?: string, enabled = true) { retu
 export function useMeetingMinutesComments(id?: string, enabled = true) { return useQuery({ queryKey: meetingKeys.comments(id ?? ""), queryFn: () => meetingsApiFull.comments(id!), enabled: Boolean(id) && enabled, staleTime: 15_000 }); }
 export function useMeetingFullMutations(id?: string) {
   const client = useQueryClient();
-  const invalidate = () => { void client.invalidateQueries({ queryKey: meetingKeys.all }); if (id) void client.invalidateQueries({ queryKey: meetingKeys.detail(id) }); };
   return {
-    create: useMutation({ mutationFn: meetingsApiFull.create, onSuccess: invalidate }),
-    update: useMutation({ mutationFn: ({ body }: { body: MeetingInput & { rowVersion?: string; status?: string } }) => meetingsApiFull.update(id!, body), onSuccess: invalidate }),
-    createMinutes: useMutation({ mutationFn: (body: Record<string, string>) => meetingsApiFull.createMinutes(id!, body), onSuccess: () => client.invalidateQueries({ queryKey: meetingKeys.minutes(id ?? "") }) }),
+    create: useMutation({ mutationFn: meetingsApiFull.create, onSuccess: () => client.invalidateQueries({ queryKey: meetingKeys.lists() }) }),
+    update: useMutation({ mutationFn: ({ body }: { body: MeetingInput & { rowVersion?: string; status?: string } }) => meetingsApiFull.update(id!, body), onSuccess: async (meeting) => { await client.invalidateQueries({ queryKey: meetingKeys.lists() }); await client.invalidateQueries({ queryKey: meetingKeys.detail(meeting.id), exact: true }); } }),
+    delete: useMutation({ mutationFn: meetingsApiFull.delete, onSuccess: async (_result, deletedId) => { await client.invalidateQueries({ queryKey: meetingKeys.lists() }); client.removeQueries({ queryKey: meetingKeys.detail(deletedId), exact: true }); } }),
+    createMinutes: useMutation({ mutationFn: (body: Record<string, string | undefined>) => meetingsApiFull.createMinutes(id!, body), onSuccess: () => client.invalidateQueries({ queryKey: meetingKeys.minutes(id ?? "") }) }),
     updateMinutes: useMutation({ mutationFn: (body: Record<string, string | undefined>) => meetingsApiFull.updateMinutes(id!, body), onSuccess: () => client.invalidateQueries({ queryKey: meetingKeys.minutes(id ?? "") }) }),
     finalizeMinutes: useMutation({ mutationFn: (rowVersion?: string) => meetingsApiFull.finalizeMinutes(id!, rowVersion), onSuccess: () => client.invalidateQueries({ queryKey: meetingKeys.minutes(id ?? "") }) }),
     createChecklist: useMutation({ mutationFn: (title: string) => meetingsApiFull.createChecklist(id!, title), onSuccess: () => client.invalidateQueries({ queryKey: meetingKeys.checklist(id ?? "") }) }),

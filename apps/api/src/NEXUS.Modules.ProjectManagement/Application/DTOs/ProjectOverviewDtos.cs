@@ -18,6 +18,8 @@ public sealed class ProjectOverviewDto
     public ProjectAllocationOverviewDto Allocations { get; init; } = new();
     public ProjectMeetingOverviewDto Meetings { get; init; } = new();
     public decimal? PlanProgress { get; init; }
+    public DateTime StatusDate { get; init; }
+    public decimal? BudgetAtCompletion { get; init; }
     public decimal? PlannedValue { get; init; }
     public decimal? EarnedValue { get; init; }
     public decimal? ActualCost { get; init; }
@@ -26,6 +28,12 @@ public sealed class ProjectOverviewDto
     public decimal? CostVariance { get; init; }
     public decimal? SchedulePerformanceIndex { get; init; }
     public decimal? CostPerformanceIndex { get; init; }
+    public string? PlannedValueUnavailableReason { get; init; }
+    public string? EarnedValueUnavailableReason { get; init; }
+    public string? ActualCostUnavailableReason { get; init; }
+    public string? SchedulePerformanceIndexUnavailableReason { get; init; }
+    public string? CostPerformanceIndexUnavailableReason { get; init; }
+    public string? CostVarianceUnavailableReason { get; init; }
     public decimal? CurrentApprovedProjectBudget { get; init; }
     public decimal AllocatedBudget { get; init; }
     public decimal? UnallocatedBudget { get; init; }

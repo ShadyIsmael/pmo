@@ -21,25 +21,31 @@ public sealed class FirebaseMessagingClient
         _logger = logger;
     }
 
-    public async Task<string?> SendAsync(string token, Domain.Notification notification, CancellationToken cancellationToken = default)
+    public bool IsConfigured
+    {
+        get
+        {
+            var options = _options.Value;
+            return !string.IsNullOrWhiteSpace(options.ProjectId)
+                && (!string.IsNullOrWhiteSpace(options.CredentialsJson)
+                    || !string.IsNullOrWhiteSpace(options.CredentialsPath)
+                    || options.AllowApplicationDefaultCredentials);
+        }
+    }
+
+    public async Task<string> SendAsync(string token, string title, string body, IReadOnlyDictionary<string, string> data, CancellationToken cancellationToken = default)
     {
         var messaging = GetMessaging();
-        if (messaging is null) return null;
+        if (messaging is null) throw new FirebaseMessagingUnavailableException();
 
         var message = new Message
         {
+#pragma warning disable CS0618 // Existing browser clients register FCM tokens; FID migration requires a coordinated client and storage change.
             Token = token,
-            Notification = new FirebaseAdmin.Messaging.Notification { Title = notification.Title, Body = notification.Body ?? string.Empty },
-            Data = new Dictionary<string, string>
-            {
-                ["notificationId"] = notification.Id.ToString(),
-                ["type"] = notification.Type,
-                ["channel"] = notification.Channel,
-                ["referenceType"] = notification.ReferenceType ?? string.Empty,
-                ["referenceId"] = notification.ReferenceId?.ToString() ?? string.Empty,
-            },
+#pragma warning restore CS0618
+            Notification = new FirebaseAdmin.Messaging.Notification { Title = title, Body = body },
+            Data = new Dictionary<string, string>(data),
         };
-
         return await messaging.SendAsync(message, cancellationToken);
     }
 
@@ -52,9 +58,9 @@ public sealed class FirebaseMessagingClient
             if (_messaging is not null || _initializationAttempted) return _messaging;
             _initializationAttempted = true;
             var options = _options.Value;
-            if (string.IsNullOrWhiteSpace(options.ProjectId))
+            if (!IsConfigured)
             {
-                _logger.LogInformation("Firebase push is disabled because Firebase:ProjectId is not configured.");
+                _logger.LogInformation("Firebase push is disabled because Firebase credentials or project configuration are unavailable.");
                 return null;
             }
 
@@ -69,9 +75,10 @@ public sealed class FirebaseMessagingClient
                 _messaging = FirebaseMessaging.GetMessaging(app);
                 return _messaging;
             }
-            catch (Exception exception)
+            catch (Exception)
             {
-                _logger.LogWarning(exception, "Firebase push is unavailable; notifications will remain in NEXUS only.");
+                // Credential parser errors may contain secret material; log only a safe category.
+                _logger.LogWarning("Firebase Admin initialization failed. Push deliveries will be recorded as unavailable.");
                 return null;
             }
         }
@@ -79,12 +86,16 @@ public sealed class FirebaseMessagingClient
 
     private static GoogleCredential CreateCredential(FirebaseOptions options)
     {
-        if (!string.IsNullOrWhiteSpace(options.CredentialsJson)) return GoogleCredential.FromJson(options.CredentialsJson);
-        if (!string.IsNullOrWhiteSpace(options.CredentialsPath)) return GoogleCredential.FromFile(options.CredentialsPath);
-        if (!options.AllowApplicationDefaultCredentials)
-        {
-            throw new InvalidOperationException("Firebase Admin credentials are not configured for NEXUS.");
-        }
+        if (!string.IsNullOrWhiteSpace(options.CredentialsJson))
+            return CredentialFactory.FromJson<ServiceAccountCredential>(options.CredentialsJson).ToGoogleCredential();
+        if (!string.IsNullOrWhiteSpace(options.CredentialsPath))
+            return CredentialFactory.FromFile<ServiceAccountCredential>(options.CredentialsPath).ToGoogleCredential();
+        if (!options.AllowApplicationDefaultCredentials) throw new FirebaseMessagingUnavailableException();
         return GoogleCredential.GetApplicationDefault();
     }
+}
+
+public sealed class FirebaseMessagingUnavailableException : Exception
+{
+    public FirebaseMessagingUnavailableException() : base("Firebase messaging is unavailable.") { }
 }

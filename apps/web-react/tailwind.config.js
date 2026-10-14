@@ -5,6 +5,9 @@ export default {
   theme: {
     container: { center: true, padding: "1.5rem", screens: { "2xl": "1400px" } },
     extend: {
+      fontFamily: {
+        planning: ["Inter", "Segoe UI", "Tahoma", "Arial", "sans-serif"],
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
@@ -25,6 +28,7 @@ export default {
         sidebar: { DEFAULT: "hsl(var(--sidebar-background))", foreground: "hsl(var(--sidebar-foreground))", accent: "hsl(var(--sidebar-accent))", active: "hsl(var(--sidebar-active))", "active-subtle": "hsl(var(--sidebar-active-subtle))", border: "hsl(var(--sidebar-border))", hover: "hsl(var(--sidebar-hover))", muted: "hsl(var(--sidebar-muted))", ring: "hsl(var(--sidebar-ring))" },
         chart: { 1: "hsl(var(--chart-1))", 2: "hsl(var(--chart-2))", 3: "hsl(var(--chart-3))", 4: "hsl(var(--chart-4))", 5: "hsl(var(--chart-5))", 6: "hsl(var(--chart-6))", 7: "hsl(var(--chart-7))" },
         fin: { navy: "hsl(var(--fin-navy))", indigo: "hsl(var(--fin-indigo))", blue: "hsl(var(--fin-blue))", amber: "hsl(var(--fin-amber))", violet: "hsl(var(--fin-violet))", green: "hsl(var(--fin-green))", red: "hsl(var(--fin-red))", slate: "hsl(var(--fin-slate))" },
+        financial: { total: "hsl(var(--financial-total))" },
       },
       borderRadius: { lg: "var(--radius)", md: "calc(var(--radius) - 2px)", sm: "calc(var(--radius) - 4px)" },
       keyframes: {

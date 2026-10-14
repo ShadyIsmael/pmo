@@ -188,12 +188,13 @@ All entities inherit from `BaseEntity` in `NEXUS.SharedKernel` which provides: `
 
 | Entity | Table | Key Fields | Module |
 |--------|-------|------------|--------|
-| `Notification` | Notifications | UserId, Title, Body, Type, Channel (InApp/Email/Push), IsRead, SentAt, ReadAt | Notifications |
-| `NotificationTemplate` | NotificationTemplates | Name, SubjectTemplate, BodyTemplate, Type, Channel | Notifications |
-| `NotificationPreference` | NotificationPreferences | UserId, Type, Channel, IsEnabled, DigestFrequency | Notifications |
-| `NotificationDigest` | NotificationDigests | UserId, Type, PendingCount, LastSentAt, Frequency | Notifications |
+| `Notification` | Notifications | TenantId, UserId, Title, Body, Type, IsRead, IsInAppVisible, SentAt, ReadAt | Notifications |
+| `NotificationDelivery` | NotificationDeliveries | TenantId, NotificationId, Channel, Status, AttemptCount, NextAttemptAt, ProcessingStartedAt, LeaseId | Notifications |
+| `NotificationDeliveryAttempt` | NotificationDeliveryAttempts | DeliveryId, DeviceTokenId, Status, AttemptCount, NextAttemptAt, DeliveredAt, FailureCategory | Notifications |
+| `NotificationPreference` | NotificationPreferences | TenantId, UserId, Type, IsInAppEnabled, IsPushEnabled, IsEmailEnabled | Notifications |
+| `UserDeviceToken` | UserDeviceTokens | TenantId, UserId, Token, TokenHash, Platform, IsActive, LastSeenAt | Notifications |
 
-**Evidence:** `AppDbContext.cs:112-115`, `SeedDataProvider.cs:525-543` (30 notifications seeded)
+**Evidence:** `AppDbContext.cs` notification DbSets, `NotificationDeliveryProcessor.cs`, `NotificationService.cs`, `SeedDataProvider.cs:525-543` (30 notifications seeded)
 
 ---
 

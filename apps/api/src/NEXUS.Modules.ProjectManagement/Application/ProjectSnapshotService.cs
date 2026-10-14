@@ -43,6 +43,9 @@ public class ProjectSnapshotService : IProjectSnapshotService
         _membershipSynchronizer = membershipSynchronizer;
     }
 
+    private string? CurrentUserName => _httpContextAccessor.HttpContext?.User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value
+        ?? _httpContextAccessor.HttpContext?.User.FindFirst("name")?.Value;
+
     public async Task<Result<ProjectSnapshotDto>> CompleteHandoverAsync(Guid projectId, ProjectHandoverRequest request, string userId, CancellationToken cancellationToken = default)
     {
         if (request.Status != ProjectHandoverRequest.Statuses.Pending)
@@ -177,7 +180,7 @@ public class ProjectSnapshotService : IProjectSnapshotService
         await _context.SaveChangesAsync(cancellationToken);
 
         var previousManagerName = previousManager?.FullName ?? "Unassigned";
-        var managerChange = $"Project Manager: {previousManagerName} → {newManager.FullName}";
+        var managerChange = JsonSerializer.Serialize(new { projectManager = new { from = previousManagerName, to = newManager.FullName } });
 
         await _auditService.LogAsync(new AuditEntry
         {
@@ -186,6 +189,7 @@ public class ProjectSnapshotService : IProjectSnapshotService
             Action = "Handover",
             TenantId = project.TenantId,
             UserId = TryParseGuid(userId),
+            UserName = CurrentUserName,
             Changes = managerChange,
             OriginalValues = JsonSerializer.Serialize(new
             {
@@ -211,6 +215,7 @@ public class ProjectSnapshotService : IProjectSnapshotService
             Action = "ManagerHandoverAccepted",
             TenantId = project.TenantId,
             UserId = TryParseGuid(userId),
+            UserName = CurrentUserName,
             Changes = managerChange,
             OriginalValues = JsonSerializer.Serialize(new
             {

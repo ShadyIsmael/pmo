@@ -30,19 +30,85 @@ export function sessionReceivedAtMs(session: TimerSessionDto): number {
   return stamp;
 }
 
+export type TimerSegmentType = TimerSegmentDto["segmentType"];
+
+export interface TimerSegmentGroup {
+  segments: TimerSegmentDto[];
+  totalSeconds: number;
+  count: number;
+}
+
+export interface TimerTotals {
+  work: TimerSegmentGroup;
+  break: TimerSegmentGroup;
+  pause: TimerSegmentGroup;
+  idle: TimerSegmentGroup;
+  workSeconds: number;
+  breakSeconds: number;
+  pauseSeconds: number;
+  idleSeconds: number;
+  sessionSeconds: number;
+  breakCount: number;
+  pauseCount: number;
+  idleCount: number;
+}
+
+export function sortSegmentsChronologically(segments: readonly TimerSegmentDto[]): TimerSegmentDto[] {
+  return [...segments].sort((left, right) => {
+    const leftStart = new Date(left.startedAt).getTime();
+    const rightStart = new Date(right.startedAt).getTime();
+    if (leftStart !== rightStart) return leftStart - rightStart;
+    if (left.id === right.id) return 0;
+    return left.id < right.id ? -1 : 1;
+  });
+}
+
+export function segmentDurationSeconds(segment: TimerSegmentDto, serverNowMs: number): number {
+  const startMs = new Date(segment.startedAt).getTime();
+  const endMs = segment.endedAt ? new Date(segment.endedAt).getTime() : serverNowMs;
+  return Math.max(0, Math.round((endMs - startMs) / 1000));
+}
+
+function groupSegments(sorted: readonly TimerSegmentDto[], type: TimerSegmentType, serverNowMs: number): TimerSegmentGroup {
+  const segments = sorted.filter((segment) => segment.segmentType === type);
+  return {
+    segments,
+    totalSeconds: segments.reduce((sum, segment) => sum + segmentDurationSeconds(segment, serverNowMs), 0),
+    count: segments.length,
+  };
+}
+
+export function deriveTimerTotals(
+  session: Pick<TimerSessionDto, "segments"> | null | undefined,
+  serverNowMs: number
+): TimerTotals {
+  const sorted = sortSegmentsChronologically(session?.segments ?? []);
+  const work = groupSegments(sorted, "Work", serverNowMs);
+  const breakGroup = groupSegments(sorted, "Break", serverNowMs);
+  const pause = groupSegments(sorted, "Pause", serverNowMs);
+  const idle = groupSegments(sorted, "Idle", serverNowMs);
+  return {
+    work,
+    break: breakGroup,
+    pause,
+    idle,
+    workSeconds: work.totalSeconds,
+    breakSeconds: breakGroup.totalSeconds,
+    pauseSeconds: pause.totalSeconds,
+    idleSeconds: idle.totalSeconds,
+    sessionSeconds: work.totalSeconds + breakGroup.totalSeconds + pause.totalSeconds + idle.totalSeconds,
+    breakCount: breakGroup.count,
+    pauseCount: pause.count,
+    idleCount: idle.count,
+  };
+}
+
 export function isTimerActive(status?: TimerStatus | null): boolean {
   return status === "Running" || status === "OnBreak" || status === "Paused" || status === "IdlePaused";
 }
 
 export function deriveWorkSeconds(session: TimerSessionDto, serverNowMs: number): number {
-  // Backend metrics.workSeconds is authoritative up to serverNow; add local delta only while active.
-  const base = session.metrics.workSeconds;
-  if (!isTimerActive(session.status)) return base;
-  const serverNow = new Date(session.serverNow).getTime();
-  const delta = Math.max(0, Math.floor((serverNowMs - serverNow) / 1000));
-  // Only Running accrues work time locally; Break/Pause/Idle accrue separately and are shown via segments on sync.
-  if (session.status !== "Running") return base;
-  return base + delta;
+  return deriveTimerTotals(session, serverNowMs).workSeconds;
 }
 
 export type { TimerSegmentDto, TimerSessionDto, TimerStatus };

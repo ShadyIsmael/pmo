@@ -2,12 +2,15 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@api/client";
 import { endpoints } from "@api/endpoints";
 
-export type WorkflowDomain = "Task" | "Risk" | "Finance" | string;
-export interface WorkflowDefinitionListItem { id: string; name: string; code: string; domain: WorkflowDomain; isActive: boolean; currentVersion?: string; updatedAt?: string; }
+export type WorkflowDomain = "Task" | "Risk" | "Finance";
+export type WorkflowRowVersion = string | number[];
+export interface WorkflowDefinitionListItem { id: string; name: string; code: string; domain: WorkflowDomain; entityType: string; isActive: boolean; activePublishedVersionId?: string; activePublishedVersionNumber?: number; activePublishedLifecycleStatus?: "Draft" | "Published" | "Retired"; versionCount: number; updatedAt?: string; rowVersion?: WorkflowRowVersion; }
 export interface WorkflowState { id: string; code: string; name: string; isInitial?: boolean; isTerminal?: boolean; }
 export interface WorkflowTransition { id: string; code: string; name: string; fromStateId: string; toStateId: string; }
 export interface WorkflowVersionDetails { id: string; definitionId: string; version: number; status: string; states: WorkflowState[]; transitions: WorkflowTransition[]; rowVersion?: number[]; }
 export interface WorkflowDefinitionDetails { id: string; name: string; code: string; domain: WorkflowDomain; description?: string; isActive: boolean; versions: { id: string; version: number; status: string }[]; }
+export interface ProjectWorkflowConfiguration { id: string; projectId: string; domain: WorkflowDomain; mode: "Standard" | "Custom"; workflowDefinitionId?: string; workflowDefinitionName?: string; effectiveWorkflowVersionId?: string; effectiveWorkflowVersionNumber?: number; isPublished: boolean; effectiveBehavior?: string; configuredAt: string; configuredBy: string; rowVersion?: WorkflowRowVersion; }
+export interface ProjectWorkflowSettings { projectId: string; domains: ProjectWorkflowConfiguration[]; }
 
 export const workflowKeys = {
   all: ["workflows"] as const,
@@ -29,7 +32,7 @@ export function useWorkflowVersion(id?: string) {
 export function useProjectWorkflowSettings(projectId?: string) {
   return useQuery({
     queryKey: workflowKeys.project(projectId ?? ""),
-    queryFn: () => api.get<{ settings: { domain: WorkflowDomain; mode: "Standard" | "Custom"; workflowDefinitionId?: string }[] }>(`/api/projects/${encodeURIComponent(projectId!)}/workflows`),
+    queryFn: () => api.get<ProjectWorkflowSettings>(endpoints.projects.workflows(projectId!)),
     enabled: Boolean(projectId),
     staleTime: 10_000,
   });
@@ -44,8 +47,8 @@ export function useWorkflowMutations() {
     validate: useMutation({ mutationFn: (versionId: string) => api.post<{ valid: boolean; errors: string[] }>(endpoints.workflows.validate(versionId), {}) }),
     publish: useMutation({ mutationFn: (versionId: string) => api.post<WorkflowVersionDetails>(endpoints.workflows.publish(versionId), {}), onSuccess: invalidate }),
     saveProjectConfiguration: useMutation({
-      mutationFn: ({ projectId, domain, body }: { projectId: string; domain: WorkflowDomain; body: { mode: "Standard" | "Custom"; workflowDefinitionId?: string } }) =>
-        api.put<void>(`/api/projects/${encodeURIComponent(projectId)}/workflows/${encodeURIComponent(domain)}`, body),
+      mutationFn: ({ projectId, domain, body }: { projectId: string; domain: WorkflowDomain; body: { mode: "Standard" | "Custom"; workflowDefinitionId?: string; rowVersion?: WorkflowRowVersion } }) =>
+        api.put<ProjectWorkflowConfiguration>(endpoints.projects.workflow(projectId, domain), body),
       onSuccess: (_d, v) => { void client.invalidateQueries({ queryKey: workflowKeys.project(v.projectId) }); },
     }),
   };

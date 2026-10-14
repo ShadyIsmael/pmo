@@ -42,7 +42,7 @@ NEXUS PMO is in the **Foundation Phase** -- a functional shell with working dash
 | Status | Count | Modules |
 |--------|-------|---------|
 | **Implemented** | 13 | Identity, Organization, Portfolio, ProjectManagement, WorkItems, ResourceManagement, CostManagement, RiskManagement, IssueManagement, Meetings, Approvals, Reporting, Audit |
-| **Partial** | 4 | Workflow Engine (entities exist, execution engine not verified), Notifications (in-app works, email/push placeholders), Integrations (entities exist, no real sync adapters), AI Planning (entities exist, MockAIProvider) |
+| **Partial** | 4 | Workflow Engine (entities exist, execution engine not verified), Notifications (in-app plus durable asynchronous Push foundation; Email deferred), Integrations (entities exist, no real sync adapters), AI Planning (entities exist, MockAIProvider) |
 | **Mocked** | 0 | (All modules have at least structural code) |
 | **Placeholder** | 0 | (No module is completely empty) |
 | **Deferred** | 0 | |
@@ -54,9 +54,8 @@ NEXUS PMO is in the **Foundation Phase** -- a functional shell with working dash
 | Aspect | Status | Evidence |
 |--------|--------|----------|
 | **Schema** | Exists in EF Core entity configurations | `AppDbContext.cs:141-159` applies configurations |
-| **Migrations** | None (uses `EnsureCreatedAsync`) | `Program.cs:128` -- `await context.Database.EnsureCreatedAsync()` |
-| **Primary** | PostgreSQL 16 (Npgsql) | `NEXUS.Persistence.csproj` references Npgsql |
-| **Fallback** | SQL Server (development) | `Program.cs:83` |
+| **Migrations** | EF Core migrations are applied at startup with `MigrateAsync`; notification delivery migration is generated and included | `Program.cs:278`, `Migrations/20261012110228_AddNotificationDeliveryFoundation.cs` |
+| **Provider** | SQL Server | `Program.cs:205` configures `UseSqlServer` |
 | **Seed data** | 591 lines, 8 users, 24 projects, 320 work items, etc. | `SeedDataProvider.cs` |
 | **Concurrency** | RowVersion (byte array) on BaseEntity | `BaseEntity.cs` |
 | **Soft delete** | Global query filter for ISoftDeletable | `AppDbContext.cs:162-164` |
@@ -97,8 +96,8 @@ NEXUS PMO is in the **Foundation Phase** -- a functional shell with working dash
 | **MS Project** | Manifest only | `plugins/microsoft-project/plugin.json` |
 | **Jira** | Manifest only | `plugins/jira-integration/plugin.json` |
 | **Internal Ticketing** | Manifest only | `plugins/internal-ticketing/plugin.json` |
-| **Email** | Interface only (`INotificationChannel`) | `Notifications/Application/INotificationChannel.cs` |
-| **Push** | Interface only (`INotificationChannel`) | `Notifications/Application/INotificationChannel.cs` |
+| **Email** | Deferred; preference field and structural delivery channel only, no sender/worker | `Notifications/Domain/NotificationDelivery.cs`, `NotificationService.cs` |
+| **Push** | Durable asynchronous delivery, retries, device attempts, and FCM adapter; requires Firebase server configuration and browser consent | `NotificationDeliveryWorker.cs`, `NotificationDeliveryProcessor.cs`, `FirebaseNotificationChannel.cs` |
 | **AI Provider** | Mock (`MockAIProvider`) | `AIPlanning/Infrastructure/MockAIProvider.cs` |
 | **File Storage** | Placeholder (`LocalStorageProvider`) | `Documents/Infrastructure/LocalStorageProvider.cs` |
 | **Enterprise Identity** | Placeholder (v0.1.0 manifest) | `plugins/enterprise-identity-placeholder/plugin.json` |

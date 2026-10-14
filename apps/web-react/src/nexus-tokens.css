@@ -149,6 +149,7 @@
     --chart-7: 210 70% 50%;
 
     /* Financial palette */
+    --financial-total: 222 72% 28%;
     --fin-navy: 222 47% 11%;
     --fin-indigo: 239 84% 67%;
     --fin-blue: 217 91% 60%;
@@ -301,6 +302,7 @@
     --chart-7: 210 65% 55%;
 
     /* Financial palette (dark) */
+    --financial-total: 211 90% 72%;
     --fin-navy: 224 50% 18%;
     --fin-indigo: 235 75% 65%;
     --fin-blue: 213 90% 58%;
@@ -346,6 +348,7 @@
 
   html {
     @apply antialiased;
+    overscroll-behavior-y: none;
   }
 
   body {
@@ -1316,5 +1319,16 @@
   .nexus-capacity .nexus-table-surface > .nexus-table-header,
   .nexus-capacity .nexus-table-surface > .nexus-table-row {
     min-width: 760px;
+  }
+}
+
+/* Full-bleed detail-workspace tab bars span the available content edge-to-edge. */
+.nexus-fullbleed-tabs {
+  margin-inline: -1rem;
+}
+
+@media (max-width: 1000px) {
+  .nexus-fullbleed-tabs {
+    margin-inline: -12px;
   }
 }

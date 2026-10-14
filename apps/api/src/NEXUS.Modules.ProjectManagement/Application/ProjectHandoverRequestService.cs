@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using NEXUS.Modules.Identity.Domain;
 using NEXUS.Modules.Notifications.Application;
 using NEXUS.Modules.Notifications.Domain;
+using NEXUS.Modules.Portfolio.Domain;
 using NEXUS.Modules.ProjectManagement.Application.DTOs;
 using NEXUS.Modules.ProjectManagement.Domain;
 using NEXUS.SharedKernel;
@@ -31,10 +32,95 @@ public class ProjectHandoverRequestService : IProjectHandoverRequestService
         _httpContextAccessor = httpContextAccessor;
     }
 
+    public async Task<Result<IReadOnlyList<ProjectHandoverManagerDto>>> GetEligibleManagersAsync(Guid projectId, CancellationToken cancellationToken = default)
+    {
+        var tenantResult = GetRequiredCurrentTenantId();
+        if (tenantResult.IsFailure)
+        {
+            return Result<IReadOnlyList<ProjectHandoverManagerDto>>.Failure(tenantResult.Error!);
+        }
+        var tenantId = tenantResult.Value;
+        var project = await _context.Set<Project>().AsNoTracking()
+            .FirstOrDefaultAsync(p => p.Id == projectId && p.TenantId == tenantId && !p.IsDeleted, cancellationToken);
+        if (project is null)
+        {
+            return Result<IReadOnlyList<ProjectHandoverManagerDto>>.Failure(Error.NotFound("Project not found"));
+        }
+
+        var roleAssignments = await (
+            from userRole in _context.Set<UserRole>().AsNoTracking()
+            join role in _context.Set<Role>().AsNoTracking() on userRole.RoleId equals role.Id
+            where userRole.TenantId == tenantId && !userRole.IsDeleted
+                && role.TenantId == tenantId && !role.IsDeleted
+                && (role.Name == "project.manager" || role.Name == "portfolio.manager")
+            select new { userRole.UserId, role.Name }
+        ).ToListAsync(cancellationToken);
+
+        var projectManagerIds = roleAssignments
+            .Where(item => item.Name == "project.manager")
+            .Select(item => item.UserId)
+            .ToHashSet();
+        var portfolioManagerIds = roleAssignments
+            .Where(item => item.Name == "portfolio.manager")
+            .Select(item => item.UserId)
+            .ToHashSet();
+
+        var assignedProgramManagerIds = await _context.Set<ProgramManagerAssignment>().AsNoTracking()
+            .Where(assignment => assignment.TenantId == tenantId && !assignment.IsDeleted && assignment.IsCurrent
+                && _context.Set<Program>().Any(program => program.Id == assignment.ProgramId
+                    && program.TenantId == tenantId && !program.IsDeleted))
+            .Select(assignment => assignment.ProgramManagerId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+        var directProgramManagerIds = await _context.Set<Program>().AsNoTracking()
+            .Where(program => program.TenantId == tenantId && !program.IsDeleted && program.ProgramManagerId.HasValue)
+            .Select(program => program.ProgramManagerId!.Value)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+        var programManagerIds = assignedProgramManagerIds.Concat(directProgramManagerIds).ToHashSet();
+
+        var candidateIds = projectManagerIds.Concat(portfolioManagerIds).Concat(programManagerIds)
+            .Where(id => id != project.ProjectManagerId)
+            .Distinct()
+            .ToArray();
+        if (candidateIds.Length == 0)
+        {
+            return Result<IReadOnlyList<ProjectHandoverManagerDto>>.Success(Array.Empty<ProjectHandoverManagerDto>());
+        }
+
+        var users = await _context.Set<User>().AsNoTracking()
+            .Where(user => candidateIds.Contains(user.Id) && user.TenantId == tenantId && user.IsActive && !user.IsDeleted)
+            .OrderBy(user => user.FirstName)
+            .ThenBy(user => user.LastName)
+            .Select(user => new { user.Id, user.FirstName, user.LastName, user.Email, user.JobTitle })
+            .ToListAsync(cancellationToken);
+
+        IReadOnlyList<ProjectHandoverManagerDto> managers = users.Select(user => new ProjectHandoverManagerDto
+        {
+            Id = user.Id,
+            FullName = $"{user.FirstName} {user.LastName}".Trim(),
+            Email = user.Email,
+            JobTitle = user.JobTitle,
+            ManagerTypes = Array.Empty<string>()
+                .Concat(projectManagerIds.Contains(user.Id) ? new[] { "ProjectManager" } : Array.Empty<string>())
+                .Concat(portfolioManagerIds.Contains(user.Id) ? new[] { "PortfolioManager" } : Array.Empty<string>())
+                .Concat(programManagerIds.Contains(user.Id) ? new[] { "ProgramManager" } : Array.Empty<string>())
+                .ToArray()
+        }).ToArray();
+
+        return Result<IReadOnlyList<ProjectHandoverManagerDto>>.Success(managers);
+    }
+
     public async Task<Result<ProjectHandoverRequestDto>> CreateAsync(Guid projectId, CreateProjectHandoverRequestDto dto, string userId, CancellationToken cancellationToken = default)
     {
+        var tenantResult = GetRequiredCurrentTenantId();
+        if (tenantResult.IsFailure)
+        {
+            return Result<ProjectHandoverRequestDto>.Failure(tenantResult.Error!);
+        }
+        var tenantId = tenantResult.Value;
         var project = await _context.Set<Project>()
-            .FirstOrDefaultAsync(p => p.Id == projectId && !p.IsDeleted, cancellationToken);
+            .FirstOrDefaultAsync(p => p.Id == projectId && p.TenantId == tenantId && !p.IsDeleted, cancellationToken);
         if (project is null) return Result<ProjectHandoverRequestDto>.Failure(Error.NotFound("Project not found"));
 
         var currentManagerId = project.ProjectManagerId;
@@ -47,7 +133,8 @@ public class ProjectHandoverRequestService : IProjectHandoverRequestService
             return Result<ProjectHandoverRequestDto>.Failure(Error.Validation("The new project manager must be different from the current project manager"));
         }
 
-        var newManager = await _context.Set<User>().FirstOrDefaultAsync(u => u.Id == dto.NewProjectManagerId && !u.IsDeleted, cancellationToken);
+        var newManager = await _context.Set<User>().FirstOrDefaultAsync(u => u.Id == dto.NewProjectManagerId
+            && u.TenantId == tenantId && u.IsActive && !u.IsDeleted, cancellationToken);
         if (newManager is null)
         {
             return Result<ProjectHandoverRequestDto>.Failure(Error.Validation("The new project manager could not be found"));
@@ -88,7 +175,7 @@ public class ProjectHandoverRequestService : IProjectHandoverRequestService
 
         var request = new ProjectHandoverRequest
         {
-            TenantId = GetCurrentTenantId(),
+            TenantId = tenantId,
             ProjectId = projectId,
             CurrentProjectManagerId = currentManagerId.Value,
             NewProjectManagerId = dto.NewProjectManagerId,
@@ -304,8 +391,7 @@ public class ProjectHandoverRequestService : IProjectHandoverRequestService
             UserId = request.NewProjectManagerId,
             Title = "Project handover request",
             Body = $"You have received a project handover request requiring your approval. Project: {project.Name}",
-            Type = "ProjectHandover",
-            Channel = "InApp",
+            Type = NotificationTypes.ProjectHandover,
             ReferenceType = "Project",
             ReferenceId = project.Id,
             SentAt = DateTime.UtcNow
@@ -319,8 +405,7 @@ public class ProjectHandoverRequestService : IProjectHandoverRequestService
                 UserId = stakeholder.UserId!.Value,
                 Title = "Project manager handover",
                 Body = $"A Project Manager handover request has been submitted. Project: {project.Name}",
-                Type = "ProjectHandover",
-                Channel = "InApp",
+                Type = NotificationTypes.ProjectHandover,
                 ReferenceType = "Project",
                 ReferenceId = project.Id,
                 SentAt = DateTime.UtcNow
@@ -343,8 +428,7 @@ public class ProjectHandoverRequestService : IProjectHandoverRequestService
                 UserId = request.CurrentProjectManagerId,
                 Title = "Handover accepted",
                 Body = $"Your project manager handover for {projectName} has been accepted by the new project manager.",
-                Type = "ProjectHandover",
-                Channel = "InApp",
+                Type = NotificationTypes.ProjectHandover,
                 ReferenceType = "Project",
                 ReferenceId = request.ProjectId,
                 SentAt = DateTime.UtcNow
@@ -359,8 +443,7 @@ public class ProjectHandoverRequestService : IProjectHandoverRequestService
                 UserId = stakeholder.UserId!.Value,
                 Title = "Project manager handover completed",
                 Body = $"The project manager handover for {projectName} has been completed.",
-                Type = "ProjectHandover",
-                Channel = "InApp",
+                Type = NotificationTypes.ProjectHandover,
                 ReferenceType = "Project",
                 ReferenceId = request.ProjectId,
                 SentAt = DateTime.UtcNow
@@ -381,8 +464,7 @@ public class ProjectHandoverRequestService : IProjectHandoverRequestService
             UserId = request.RequestedBy,
             Title = "Handover rejected",
             Body = $"Your project manager handover request for {projectName} was rejected. Reason: {request.RejectionReason}",
-            Type = "ProjectHandover",
-            Channel = "InApp",
+            Type = NotificationTypes.ProjectHandover,
             ReferenceType = "Project",
             ReferenceId = request.ProjectId,
             SentAt = DateTime.UtcNow
@@ -396,8 +478,7 @@ public class ProjectHandoverRequestService : IProjectHandoverRequestService
                 UserId = request.CurrentProjectManagerId,
                 Title = "Handover rejected",
                 Body = $"The project manager handover request for {projectName} was rejected by the proposed new project manager.",
-                Type = "ProjectHandover",
-                Channel = "InApp",
+                Type = NotificationTypes.ProjectHandover,
                 ReferenceType = "Project",
                 ReferenceId = request.ProjectId,
                 SentAt = DateTime.UtcNow
@@ -421,6 +502,17 @@ public class ProjectHandoverRequestService : IProjectHandoverRequestService
         }
 
         return TenantConstants.DemoTenantId;
+    }
+
+    private Result<Guid> GetRequiredCurrentTenantId()
+    {
+        var tenantId = _httpContextAccessor.HttpContext?.User.FindFirst("tenantId")?.Value;
+        if (Guid.TryParse(tenantId, out var parsed))
+        {
+            return Result<Guid>.Success(parsed);
+        }
+
+        return Result<Guid>.Failure(Error.Unauthorized("Tenant ID is missing or invalid in the authentication token."));
     }
 
     private static Guid? TryParseGuid(string value)

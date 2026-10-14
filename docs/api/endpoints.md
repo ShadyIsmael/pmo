@@ -72,6 +72,24 @@ All endpoints require JWT Bearer authentication unless noted.
 | PUT | `/programs/{id}` | Update program |
 | DELETE | `/programs/{id}` | Delete program |
 
+### Manager handovers (portfolio and program)
+
+These authenticated routes use the matching `Handover.View`, `Handover.Manage`, or `Handover.Approve` permission. Resource and user queries remain tenant-scoped.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/manager-handovers/pending-for-me` | List pending transfers addressed to the current manager (`Handover.Approve`) |
+| GET | `/manager-handovers/{programs|portfolios}/{id}/eligible-managers` | List active same-tenant managers with effective handover-approval access (`Handover.Manage`) |
+| GET | `/manager-handovers/{programs|portfolios}/{id}/requests` | List transfer requests for the resource (`Handover.View`) |
+| POST | `/manager-handovers/{programs|portfolios}/{id}/requests` | Request manager transfer; the current manager remains assigned until acceptance (`Handover.Manage`) |
+| POST | `/manager-handovers/{programs|portfolios}/requests/{requestId}/accept` | Accept transfer, update manager assignment, and capture a snapshot (`Handover.Approve`) |
+| POST | `/manager-handovers/{programs|portfolios}/requests/{requestId}/reject` | Reject transfer with a reason (`Handover.Approve`) |
+| POST | `/manager-handovers/{programs|portfolios}/requests/{requestId}/cancel` | Cancel a pending request created by the current user (`Handover.Manage`) |
+| GET | `/manager-handovers/{programs|portfolios}/{id}/history` | List manager assignment history (`Handover.View`) |
+| GET | `/manager-handovers/{programs|portfolios}/{id}/snapshots` | List immutable handover snapshots (`Handover.View`) |
+
+`PUT /portfolios/{id}` and `PUT /programs/{id}` cannot change an already-assigned manager. Initial assignment remains available during creation, and an unassigned legacy Portfolio or Program can receive its first manager; later manager changes must use the governed handover routes above.
+
 ---
 
 ## Work Items
@@ -221,14 +239,16 @@ All endpoints require JWT Bearer authentication unless noted.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/notifications` | List notifications for current user |
-| POST | `/notifications` | Create notification |
-| GET | `/notifications/{id}` | Get notification details |
-| PUT | `/notifications/{id}/read` | Mark notification as read |
-| PUT | `/notifications/read-all` | Mark all notifications as read |
-| GET | `/notifications/preferences` | Get notification preferences |
-| PUT | `/notifications/preferences` | Update notification preferences |
-| GET | `/notifications/templates` | List notification templates |
+| GET | `/api/notifications?page=&pageSize=&unreadOnly=` | List visible notifications for the authenticated user |
+| GET | `/api/notifications/unread-count` | Read the lightweight visible unread count |
+| POST | `/api/notifications/{id}/mark-read` | Mark one of the current user's notifications as read |
+| PUT | `/api/notifications/read-all` | Mark all visible notifications for the current user as read |
+| GET | `/api/notifications/preferences` | Read current-user preferences and channel availability |
+| PUT | `/api/notifications/preferences` | Update preferences for supported event types |
+| POST | `/api/notifications/devices` | Register/update an FCM device token for the authenticated user |
+| DELETE | `/api/notifications/devices/{deviceId}` | Deactivate a device owned by the authenticated user |
+
+All routes require JWT authentication. User and tenant identity come from claims; preference and device requests cannot select another user. Push delivery is asynchronous. Email delivery is not implemented.
 
 ---
 
@@ -303,6 +323,33 @@ All endpoints require JWT Bearer authentication unless noted.
 
 ---
 
+## Directory Integration (Microsoft Entra ID / Active Directory)
+
+These routes use the authenticated tenant from the JWT and require the listed directory permission. The controller route is `/api/directory-integrations` (not under the `/api/v1` base prefix above).
+
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| GET | `/api/directory-integrations/connections` | `Directory.View` | List current-tenant directory connections |
+| POST | `/api/directory-integrations/connections` | `Directory.Manage` | Create a connection |
+| PUT | `/api/directory-integrations/connections/{connectionId}` | `Directory.Manage` | Update a connection |
+| POST | `/api/directory-integrations/connections/{connectionId}/test` | `Directory.TestConnection` | Test provider connectivity |
+| GET / PUT | `/api/directory-integrations/connections/{connectionId}/scope` | `Directory.View` / `Directory.Manage` | Read or update sync scope |
+| GET / PUT | `/api/directory-integrations/connections/{connectionId}/field-mappings` | `Directory.View` / `Directory.ManageMappings` | Read or update field mappings |
+| GET | `/api/directory-integrations/connections/{connectionId}/groups` | `Directory.PreviewSync`, `Directory.ManageMappings`, or `Directory.Manage` | Browse provider groups |
+| GET / PUT | `/api/directory-integrations/connections/{connectionId}/group-mappings` | `Directory.View` / `Directory.ManageMappings` | Read or update group-to-role mappings |
+| GET / PUT | `/api/directory-integrations/connections/{connectionId}/organization-mappings` | `Directory.View` / `Directory.ManageMappings` | Read or update organization mappings |
+| GET / PUT | `/api/directory-integrations/connections/{connectionId}/provisioning-policy` | `Directory.View` / `Directory.ManageProvisioningPolicy` | Read or update provisioning policy |
+| GET | `/api/directory-integrations/connections/{connectionId}/preview/{itemType}` | `Directory.PreviewSync` | Preview a bounded provider page before sync |
+| POST | `/api/directory-integrations/connections/{connectionId}/sync` | `Directory.ExecuteSync` | Apply selected sync actions |
+| GET | `/api/directory-integrations/sync-runs` | `Directory.View` | List sync history |
+| GET | `/api/directory-integrations/sync-runs/{runId}` | `Directory.View` | Read sync-run details |
+| GET | `/api/directory-integrations/reference/organizational-units` | `Directory.View` | List current-tenant organization units |
+| GET | `/api/directory-integrations/reference/calendars` | `Directory.View` | List current-tenant working calendars |
+
+Every route also requires JWT authentication. Secrets are resolved only by the API host and are never sent by the client.
+
+---
+
 ## AI Planning
 
 | Method | Endpoint | Description |
@@ -334,21 +381,18 @@ All endpoints require JWT Bearer authentication unless noted.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/admin/users` | List all users |
-| POST | `/admin/users` | Create user |
-| GET | `/admin/users/{id}` | Get user details |
-| PUT | `/admin/users/{id}` | Update user |
-| DELETE | `/admin/users/{id}` | Delete user |
-| POST | `/admin/users/{id}/roles` | Assign role to user |
-| DELETE | `/admin/users/{id}/roles/{rid}` | Remove role from user |
-| GET | `/admin/roles` | List roles |
-| POST | `/admin/roles` | Create role |
-| GET | `/admin/roles/{id}` | Get role with permissions |
-| PUT | `/admin/roles/{id}` | Update role |
-| DELETE | `/admin/roles/{id}` | Delete role |
-| GET | `/admin/permissions` | List all permissions |
-| POST | `/admin/roles/{id}/permissions` | Assign permissions to role |
-| DELETE | `/admin/roles/{id}/permissions/{pid}` | Remove permission from role |
+| GET | `/api/users` | List tenant users and their assigned roles (`users.read` or `users.write`) |
+| POST | `/api/users` | Create user and assign tenant roles (`users.write`) |
+| PUT | `/api/users/{id}` | Update user profile and role assignments (`users.write`) |
+| GET | `/api/users/{id}/permissions` | Read role access and direct overrides (`users.write`) |
+| PUT | `/api/users/{id}/permissions` | Save direct `Allow`/`Deny` overrides (`users.write`) |
+| GET | `/api/roles` | List role options for user assignment (authenticated) |
+| GET | `/api/roles/manage` | List roles manageable by the actor (`users.write`) |
+| GET | `/api/roles/permissions` | List permissions the actor may assign (`users.write`) |
+| GET | `/api/roles/{id}` | Get a manageable role and its permissions (`users.write`) |
+| POST | `/api/roles` | Create a tenant role (`users.write`) |
+| PUT | `/api/roles/{id}` | Update role metadata and permission set (`users.write`) |
+| DELETE | `/api/roles/{id}` | Soft-delete an unassigned custom role (`users.write`) |
 | GET | `/admin/settings` | Get system settings |
 | PUT | `/admin/settings` | Update system settings |
 | GET | `/admin/license` | Get license information |

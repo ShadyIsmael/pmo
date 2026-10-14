@@ -21,4 +21,5 @@ public interface IManagementScopeResolver
     Task<bool> CanAccessPortfolioAsync(Guid userId, Guid tenantId, Guid portfolioId, CancellationToken cancellationToken = default);
     Task<bool> CanAccessProgramAsync(Guid userId, Guid tenantId, Guid programId, CancellationToken cancellationToken = default);
     Task<bool> CanAccessProjectAsync(Guid userId, Guid tenantId, Guid projectId, CancellationToken cancellationToken = default);
+    Task<bool> IsTenantAdministratorAsync(Guid userId, Guid tenantId, CancellationToken cancellationToken = default);
 }

@@ -10,6 +10,13 @@
     <FocusedProjectPlanningComparison Condition="'$(FocusedProjectPlanningComparison)' == ''">false</FocusedProjectPlanningComparison>
     <FocusedProjectPlanningDependencies Condition="'$(FocusedProjectPlanningDependencies)' == ''">false</FocusedProjectPlanningDependencies>
     <FocusedTeamCode Condition="'$(FocusedTeamCode)' == ''">false</FocusedTeamCode>
+    <FocusedHandoverManagers Condition="'$(FocusedHandoverManagers)' == ''">false</FocusedHandoverManagers>
+    <FocusedAuditSearch Condition="'$(FocusedAuditSearch)' == ''">false</FocusedAuditSearch>
+    <FocusedUserPermissions Condition="'$(FocusedUserPermissions)' == ''">false</FocusedUserPermissions>
+    <FocusedLocalPasswordLifecycle Condition="'$(FocusedLocalPasswordLifecycle)' == ''">false</FocusedLocalPasswordLifecycle>
+    <FocusedNotifications Condition="'$(FocusedNotifications)' == ''">false</FocusedNotifications>
+    <FocusedEvm Condition="'$(FocusedEvm)' == ''">false</FocusedEvm>
+    <FocusedPortfolioProgramRead Condition="'$(FocusedPortfolioProgramRead)' == ''">false</FocusedPortfolioProgramRead>
   </PropertyGroup>
 
   <ItemGroup>
@@ -27,6 +34,7 @@
     <PackageReference Include="FluentAssertions" Version="6.12.0" />
     <!-- Use EF Core 10 compatible SQLite packages for integration tests -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.10" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.10" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.10" />
     <!-- Override the transitive SQLite native library to clear NU1903 (GHSA-2m69-gcr7-jv3q). -->
     <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="3.53.3" />
@@ -91,6 +99,84 @@
     <ProjectReference Include="..\..\src\NEXUS.Modules.ResourceManagement\NEXUS.Modules.ResourceManagement.csproj" />
     <ProjectReference Include="..\..\src\NEXUS.Modules.Audit\NEXUS.Modules.Audit.csproj" />
     <ProjectReference Include="..\..\src\NEXUS.Modules.Organization\NEXUS.Modules.Organization.csproj" />
+  </ItemGroup>
+
+  <!-- Focused handover-manager tests use a minimal EF model and avoid the host API/persistence graph. -->
+  <ItemGroup Condition="'$(FocusedHandoverManagers)' == 'true'">
+    <Compile Remove="**\*.cs" />
+    <Compile Include="Integration\ProjectHandoverManagerServiceTests.cs" />
+    <ProjectReference Remove="..\..\src\NEXUS.Api\NEXUS.Api.csproj" />
+    <ProjectReference Remove="..\..\src\NEXUS.Modules.RiskManagement\NEXUS.Modules.RiskManagement.csproj" />
+    <ProjectReference Remove="..\..\src\NEXUS.Modules.ProjectPlanning\NEXUS.Modules.ProjectPlanning.csproj" />
+    <ProjectReference Remove="..\..\src\NEXUS.Persistence\NEXUS.Persistence.csproj" />
+    <ProjectReference Remove="..\..\src\NEXUS.Modules.WorkflowEngine\NEXUS.Modules.WorkflowEngine.csproj" />
+  </ItemGroup>
+
+  <!-- Focused audit search tests avoid unrelated host tests and API project dependencies. -->
+  <ItemGroup Condition="'$(FocusedAuditSearch)' == 'true'">
+    <Compile Remove="**\*.cs" />
+    <Compile Include="Integration\AuditServiceSearchTests.cs" />
+    <ProjectReference Remove="..\..\src\NEXUS.Api\NEXUS.Api.csproj" />
+    <ProjectReference Remove="..\..\src\NEXUS.Modules.Identity\NEXUS.Modules.Identity.csproj" />
+    <ProjectReference Remove="..\..\src\NEXUS.Modules.RiskManagement\NEXUS.Modules.RiskManagement.csproj" />
+    <ProjectReference Remove="..\..\src\NEXUS.Modules.ProjectManagement\NEXUS.Modules.ProjectManagement.csproj" />
+    <ProjectReference Remove="..\..\src\NEXUS.Modules.ProjectPlanning\NEXUS.Modules.ProjectPlanning.csproj" />
+    <ProjectReference Remove="..\..\src\NEXUS.Modules.WorkflowEngine\NEXUS.Modules.WorkflowEngine.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.Audit\NEXUS.Modules.Audit.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Persistence\NEXUS.Persistence.csproj" />
+  </ItemGroup>
+
+  <!-- Permission security tests run against a minimal SQLite identity model, avoiding the unrelated API/project-planning graph. -->
+  <ItemGroup Condition="'$(FocusedUserPermissions)' == 'true'">
+    <Compile Remove="**\*.cs" />
+    <Compile Include="Integration\UserPermissionAdministrationTests.cs" />
+    <ProjectReference Remove="@(ProjectReference)" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.Identity\NEXUS.Modules.Identity.csproj" />
+    <ProjectReference Remove="..\..\src\NEXUS.Api\NEXUS.Api.csproj" />
+    <ProjectReference Remove="..\..\src\NEXUS.Modules.RiskManagement\NEXUS.Modules.RiskManagement.csproj" />
+    <ProjectReference Remove="..\..\src\NEXUS.Modules.ProjectManagement\NEXUS.Modules.ProjectManagement.csproj" />
+    <ProjectReference Remove="..\..\src\NEXUS.Modules.ProjectPlanning\NEXUS.Modules.ProjectPlanning.csproj" />
+    <ProjectReference Remove="..\..\src\NEXUS.Persistence\NEXUS.Persistence.csproj" />
+    <ProjectReference Remove="..\..\src\NEXUS.Modules.WorkflowEngine\NEXUS.Modules.WorkflowEngine.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(FocusedLocalPasswordLifecycle)' == 'true'">
+    <Compile Remove="**\*.cs" />
+    <Compile Include="Integration\UserPermissionAdministrationTests.cs" />
+    <Compile Include="Integration\LocalPasswordLifecycleTests.cs" />
+    <ProjectReference Remove="@(ProjectReference)" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.Identity\NEXUS.Modules.Identity.csproj" />
+    <ProjectReference Remove="..\..\src\NEXUS.Api\NEXUS.Api.csproj" />
+    <ProjectReference Remove="..\..\src\NEXUS.Modules.RiskManagement\NEXUS.Modules.RiskManagement.csproj" />
+    <ProjectReference Remove="..\..\src\NEXUS.Modules.ProjectManagement\NEXUS.Modules.ProjectManagement.csproj" />
+    <ProjectReference Remove="..\..\src\NEXUS.Modules.ProjectPlanning\NEXUS.Modules.ProjectPlanning.csproj" />
+    <ProjectReference Remove="..\..\src\NEXUS.Persistence\NEXUS.Persistence.csproj" />
+    <ProjectReference Remove="..\..\src\NEXUS.Modules.WorkflowEngine\NEXUS.Modules.WorkflowEngine.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(FocusedNotifications)' == 'true'">
+    <Compile Remove="**\*.cs" />
+    <Compile Include="Integration\NotificationDeliveryFoundationTests.cs" />
+    <ProjectReference Remove="@(ProjectReference)" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.Notifications\NEXUS.Modules.Notifications.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(FocusedEvm)' == 'true'">
+    <Compile Remove="**\*.cs" />
+    <Compile Include="Integration\ProjectEvmPersistenceTests.cs" />
+    <Compile Include="Integration\ProjectEvmCalculatorTests.cs" />
+    <ProjectReference Remove="@(ProjectReference)" />
+    <ProjectReference Include="..\..\src\NEXUS.Persistence\NEXUS.Persistence.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.ProjectManagement\NEXUS.Modules.ProjectManagement.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.ProjectPlanning\NEXUS.Modules.ProjectPlanning.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.ResourceManagement\NEXUS.Modules.ResourceManagement.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.CostManagement\NEXUS.Modules.CostManagement.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(FocusedPortfolioProgramRead)' == 'true'">
+    <Compile Remove="**\*.cs" />
+    <Compile Include="Integration\PortfolioManagementTenantReadTests.cs" />
+    <Compile Include="Unit\ManagementContextMiddlewareTests.cs" />
   </ItemGroup>
 
 </Project>

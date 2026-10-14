@@ -11,10 +11,19 @@ public static class IdentityModuleRegistration
 {
     public static IServiceCollection AddIdentityModule(this IServiceCollection services)
     {
+        services.AddOptions<LocalPasswordPolicyOptions>()
+            .BindConfiguration(LocalPasswordPolicyOptions.SectionName)
+            .Validate(options => options.TemporaryPasswordExpiryHours is >= 1 and <= 168
+                && options.MinimumLength is >= 8 and <= 128
+                && options.MaximumLength >= options.MinimumLength && options.MaximumLength <= 256,
+                "Local password policy values are outside the supported range.")
+            .ValidateOnStart();
         services.AddScoped<IAuthenticationService, DemoAuthService>();
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IUserReferenceLookup, UserReferenceLookup>();
         services.AddScoped<IUserAdministrationService, UserAdministrationService>();
+        services.AddScoped<IRoleAdministrationService, RoleAdministrationService>();
+        services.AddScoped<IUserEffectivePermissionService, UserEffectivePermissionService>();
         services.AddScoped<IPasswordHasher<User>, PasswordHasher<User>>();
         return services;
     }

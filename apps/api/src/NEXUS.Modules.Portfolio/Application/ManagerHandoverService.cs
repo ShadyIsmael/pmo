@@ -1,6 +1,7 @@
 using System.Data;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using NEXUS.Modules.Identity.Application;
 using NEXUS.Modules.Audit.Domain;
 using NEXUS.Modules.Identity.Domain;
 using NEXUS.Modules.Notifications.Domain;
@@ -15,11 +16,86 @@ public sealed class ManagerHandoverService : IManagerHandoverService
 {
     private readonly DbContext _db;
     private readonly INotificationService _notifications;
+    private readonly IUserEffectivePermissionService _effectivePermissions;
 
-    public ManagerHandoverService(DbContext db, INotificationService notifications)
+    public ManagerHandoverService(DbContext db, INotificationService notifications, IUserEffectivePermissionService effectivePermissions)
     {
         _db = db;
         _notifications = notifications;
+        _effectivePermissions = effectivePermissions;
+    }
+
+    public async Task<Result<IReadOnlyList<ManagerHandoverManagerDto>>> GetEligibleProgramManagersAsync(Guid id, CancellationToken ct = default)
+    {
+        var program = await _db.Set<Program>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (program is null) return Result<IReadOnlyList<ManagerHandoverManagerDto>>.Failure(Error.NotFound("Program not found"));
+        return Result<IReadOnlyList<ManagerHandoverManagerDto>>.Success(await GetEligibleManagersAsync(program.TenantId, program.ProgramManagerId, ct));
+    }
+
+    public async Task<Result<IReadOnlyList<ManagerHandoverManagerDto>>> GetEligiblePortfolioManagersAsync(Guid id, CancellationToken ct = default)
+    {
+        var portfolio = await _db.Set<PortfolioEntity>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (portfolio is null) return Result<IReadOnlyList<ManagerHandoverManagerDto>>.Failure(Error.NotFound("Portfolio not found"));
+        return Result<IReadOnlyList<ManagerHandoverManagerDto>>.Success(await GetEligibleManagersAsync(portfolio.TenantId, portfolio.OwnerId, ct));
+    }
+
+    private async Task<IReadOnlyList<ManagerHandoverManagerDto>> GetEligibleManagersAsync(Guid tenantId, Guid? currentManagerId, CancellationToken ct)
+    {
+        var roleAssignments = await (
+            from assignment in _db.Set<UserRole>().AsNoTracking()
+            join role in _db.Set<Role>().AsNoTracking() on assignment.RoleId equals role.Id
+            where assignment.TenantId == tenantId && !assignment.IsDeleted
+                && role.TenantId == tenantId && !role.IsDeleted
+                && (role.Name == "project.manager" || role.Name == "portfolio.manager")
+            select new { assignment.UserId, role.Name }
+        ).ToListAsync(ct);
+        var projectManagerIds = roleAssignments.Where(x => x.Name == "project.manager").Select(x => x.UserId).ToHashSet();
+        var portfolioManagerIds = roleAssignments.Where(x => x.Name == "portfolio.manager").Select(x => x.UserId).ToHashSet();
+        var assignedProgramManagerIds = await _db.Set<ProgramManagerAssignment>().AsNoTracking()
+            .Where(x => x.TenantId == tenantId && x.IsCurrent && !x.IsDeleted)
+            .Select(x => x.ProgramManagerId).Distinct().ToListAsync(ct);
+        var directProgramManagerIds = await _db.Set<Program>().AsNoTracking()
+            .Where(x => x.TenantId == tenantId && !x.IsDeleted && x.ProgramManagerId.HasValue)
+            .Select(x => x.ProgramManagerId!.Value).Distinct().ToListAsync(ct);
+        var assignedPortfolioManagerIds = await _db.Set<PortfolioManagerAssignment>().AsNoTracking()
+            .Where(x => x.TenantId == tenantId && x.IsCurrent && !x.IsDeleted)
+            .Select(x => x.PortfolioManagerId).Distinct().ToListAsync(ct);
+        var directPortfolioManagerIds = await _db.Set<PortfolioEntity>().AsNoTracking()
+            .Where(x => x.TenantId == tenantId && !x.IsDeleted && x.OwnerId.HasValue)
+            .Select(x => x.OwnerId!.Value).Distinct().ToListAsync(ct);
+        var programManagerIds = assignedProgramManagerIds.Concat(directProgramManagerIds).ToHashSet();
+        var portfolioAssignmentIds = assignedPortfolioManagerIds.Concat(directPortfolioManagerIds).ToHashSet();
+        var candidateIds = projectManagerIds.Concat(portfolioManagerIds).Concat(programManagerIds).Concat(portfolioAssignmentIds)
+            .Where(id => id != currentManagerId).Distinct().ToArray();
+        if (candidateIds.Length == 0) return Array.Empty<ManagerHandoverManagerDto>();
+
+        var users = await _db.Set<User>().AsNoTracking()
+            .Where(user => candidateIds.Contains(user.Id) && user.TenantId == tenantId && user.IsActive && !user.IsDeleted
+                && (user.UserRoles.Any(assignment => assignment.TenantId == tenantId && !assignment.IsDeleted
+                    && assignment.Role.TenantId == tenantId && !assignment.Role.IsDeleted
+                    && assignment.Role.Permissions.Any(permission => permission.TenantId == tenantId && !permission.IsDeleted && permission.Name == "Handover.Approve"))
+                    || user.PermissionOverrides.Any(item => item.TenantId == tenantId && !item.IsDeleted
+                        && item.Permission.TenantId == tenantId && !item.Permission.IsDeleted
+                        && item.Permission.Name == "Handover.Approve" && item.Effect == PermissionOverrideEffect.Allow))
+                && !user.PermissionOverrides.Any(item => item.TenantId == tenantId && !item.IsDeleted
+                    && item.Permission.TenantId == tenantId && !item.Permission.IsDeleted
+                    && item.Permission.Name == "Handover.Approve" && item.Effect == PermissionOverrideEffect.Deny))
+            .OrderBy(user => user.FirstName).ThenBy(user => user.LastName)
+            .Select(user => new { user.Id, user.FirstName, user.LastName, user.Email, user.JobTitle })
+            .ToListAsync(ct);
+
+        return users.Select(user => new ManagerHandoverManagerDto
+        {
+            Id = user.Id,
+            FullName = $"{user.FirstName} {user.LastName}".Trim(),
+            Email = user.Email,
+            JobTitle = user.JobTitle,
+            ManagerTypes = Array.Empty<string>()
+                .Concat(projectManagerIds.Contains(user.Id) ? new[] { "ProjectManager" } : Array.Empty<string>())
+                .Concat(portfolioManagerIds.Contains(user.Id) || portfolioAssignmentIds.Contains(user.Id) ? new[] { "PortfolioManager" } : Array.Empty<string>())
+                .Concat(programManagerIds.Contains(user.Id) ? new[] { "ProgramManager" } : Array.Empty<string>())
+                .ToArray()
+        }).ToList();
     }
 
     public Task<Result<ManagerHandoverRequestDto>> CreateProgramAsync(Guid id, CreateManagerHandoverRequestDto dto, Guid userId, CancellationToken ct = default) =>
@@ -32,14 +108,13 @@ public sealed class ManagerHandoverService : IManagerHandoverService
     {
         var program = await _db.Set<Program>().FirstOrDefaultAsync(x => x.Id == id, ct);
         if (program is null) return Result<ManagerHandoverRequestDto>.Failure(Error.NotFound("Program not found"));
-        if (!await HasHandoverPermissionAsync(userId, ct)) return Result<ManagerHandoverRequestDto>.Failure(Error.Forbidden("You do not have permission to manage handovers"));
+        if (!await HasPermissionAsync(userId, program.TenantId, "Handover.Manage", ct)) return Result<ManagerHandoverRequestDto>.Failure(Error.Forbidden("You do not have permission to manage handovers"));
         var validation = Validate(dto, program.ProgramManagerId);
         if (validation is not null) return Result<ManagerHandoverRequestDto>.Failure(validation);
         if (program.ProgramManagerId != userId) return Result<ManagerHandoverRequestDto>.Failure(Error.Forbidden("Only the current Program Manager can request a handover"));
-        if (!await IsActiveUserAsync(dto.NewManagerId, ct)) return Result<ManagerHandoverRequestDto>.Failure(Error.Validation("The selected manager must be an active user in this tenant"));
-        if (await _db.Set<ProgramHandoverRequest>().AnyAsync(x => x.ProgramId == id && x.Status == ManagerHandoverStatus.Pending, ct)) return Result<ManagerHandoverRequestDto>.Failure(Error.Conflict("A pending handover request already exists"));
-
+        if (!(await GetEligibleManagersAsync(program.TenantId, program.ProgramManagerId, ct)).Any(x => x.Id == dto.NewManagerId)) return Result<ManagerHandoverRequestDto>.Failure(Error.Validation("Select an eligible active manager in this tenant who can approve the handover"));
         await using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        if (await _db.Set<ProgramHandoverRequest>().AnyAsync(x => x.ProgramId == id && x.TenantId == program.TenantId && x.Status == ManagerHandoverStatus.Pending, ct)) return Result<ManagerHandoverRequestDto>.Failure(Error.Conflict("A pending handover request already exists"));
         await EnsureProgramAssignmentAsync(program, userId, ct);
         var request = new ProgramHandoverRequest { TenantId = program.TenantId, ProgramId = id, CurrentProgramManagerId = userId, NewProgramManagerId = dto.NewManagerId, EffectiveHandoverDate = dto.EffectiveHandoverDate, Reason = dto.Reason.Trim(), Notes = dto.Notes?.Trim(), RequestedBy = userId, CreatedBy = userId.ToString() };
         _db.Set<ProgramHandoverRequest>().Add(request);
@@ -53,14 +128,13 @@ public sealed class ManagerHandoverService : IManagerHandoverService
     {
         var portfolio = await _db.Set<PortfolioEntity>().FirstOrDefaultAsync(x => x.Id == id, ct);
         if (portfolio is null) return Result<ManagerHandoverRequestDto>.Failure(Error.NotFound("Portfolio not found"));
-        if (!await HasHandoverPermissionAsync(userId, ct)) return Result<ManagerHandoverRequestDto>.Failure(Error.Forbidden("You do not have permission to manage handovers"));
+        if (!await HasPermissionAsync(userId, portfolio.TenantId, "Handover.Manage", ct)) return Result<ManagerHandoverRequestDto>.Failure(Error.Forbidden("You do not have permission to manage handovers"));
         var validation = Validate(dto, portfolio.OwnerId);
         if (validation is not null) return Result<ManagerHandoverRequestDto>.Failure(validation);
         if (portfolio.OwnerId != userId) return Result<ManagerHandoverRequestDto>.Failure(Error.Forbidden("Only the current Portfolio Manager can request a handover"));
-        if (!await IsActiveUserAsync(dto.NewManagerId, ct)) return Result<ManagerHandoverRequestDto>.Failure(Error.Validation("The selected manager must be an active user in this tenant"));
-        if (await _db.Set<PortfolioHandoverRequest>().AnyAsync(x => x.PortfolioId == id && x.Status == ManagerHandoverStatus.Pending, ct)) return Result<ManagerHandoverRequestDto>.Failure(Error.Conflict("A pending handover request already exists"));
-
+        if (!(await GetEligibleManagersAsync(portfolio.TenantId, portfolio.OwnerId, ct)).Any(x => x.Id == dto.NewManagerId)) return Result<ManagerHandoverRequestDto>.Failure(Error.Validation("Select an eligible active manager in this tenant who can approve the handover"));
         await using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        if (await _db.Set<PortfolioHandoverRequest>().AnyAsync(x => x.PortfolioId == id && x.TenantId == portfolio.TenantId && x.Status == ManagerHandoverStatus.Pending, ct)) return Result<ManagerHandoverRequestDto>.Failure(Error.Conflict("A pending handover request already exists"));
         await EnsurePortfolioAssignmentAsync(portfolio, userId, ct);
         var request = new PortfolioHandoverRequest { TenantId = portfolio.TenantId, PortfolioId = id, CurrentPortfolioManagerId = userId, NewPortfolioManagerId = dto.NewManagerId, EffectiveHandoverDate = dto.EffectiveHandoverDate, Reason = dto.Reason.Trim(), Notes = dto.Notes?.Trim(), RequestedBy = userId, CreatedBy = userId.ToString() };
         _db.Set<PortfolioHandoverRequest>().Add(request);
@@ -106,7 +180,7 @@ public sealed class ManagerHandoverService : IManagerHandoverService
         if (request is null) return Result<ManagerHandoverRequestDto>.Failure(Error.NotFound("Handover request not found"));
         if (request.Status != ManagerHandoverStatus.Pending) return Result<ManagerHandoverRequestDto>.Failure(Error.Conflict("Only pending handover requests can be accepted"));
         if (request.NewProgramManagerId != userId) return Result<ManagerHandoverRequestDto>.Failure(Error.Forbidden("Only the selected new manager can accept this request"));
-        if (!await HasHandoverPermissionAsync(userId, ct)) return Result<ManagerHandoverRequestDto>.Failure(Error.Forbidden("You do not have permission to manage handovers"));
+        if (!await HasPermissionAsync(userId, request.TenantId, "Handover.Approve", ct)) return Result<ManagerHandoverRequestDto>.Failure(Error.Forbidden("You do not have permission to approve handovers"));
         var program = await _db.Set<Program>().FirstOrDefaultAsync(x => x.Id == request.ProgramId, ct);
         if (program is null) return Result<ManagerHandoverRequestDto>.Failure(Error.NotFound("Program not found"));
         if (program.ProgramManagerId != request.CurrentProgramManagerId) return Result<ManagerHandoverRequestDto>.Failure(Error.Conflict("The current Program Manager has changed"));
@@ -132,7 +206,7 @@ public sealed class ManagerHandoverService : IManagerHandoverService
         if (request is null) return Result<ManagerHandoverRequestDto>.Failure(Error.NotFound("Handover request not found"));
         if (request.Status != ManagerHandoverStatus.Pending) return Result<ManagerHandoverRequestDto>.Failure(Error.Conflict("Only pending handover requests can be accepted"));
         if (request.NewPortfolioManagerId != userId) return Result<ManagerHandoverRequestDto>.Failure(Error.Forbidden("Only the selected new manager can accept this request"));
-        if (!await HasHandoverPermissionAsync(userId, ct)) return Result<ManagerHandoverRequestDto>.Failure(Error.Forbidden("You do not have permission to manage handovers"));
+        if (!await HasPermissionAsync(userId, request.TenantId, "Handover.Approve", ct)) return Result<ManagerHandoverRequestDto>.Failure(Error.Forbidden("You do not have permission to approve handovers"));
         var portfolio = await _db.Set<PortfolioEntity>().FirstOrDefaultAsync(x => x.Id == request.PortfolioId, ct);
         if (portfolio is null) return Result<ManagerHandoverRequestDto>.Failure(Error.NotFound("Portfolio not found"));
         if (portfolio.OwnerId != request.CurrentPortfolioManagerId) return Result<ManagerHandoverRequestDto>.Failure(Error.Conflict("The current Portfolio Manager has changed"));
@@ -163,7 +237,8 @@ public sealed class ManagerHandoverService : IManagerHandoverService
         if (request is null) return Result<ManagerHandoverRequestDto>.Failure(Error.NotFound("Handover request not found"));
         if (request.Status != ManagerHandoverStatus.Pending) return Result<ManagerHandoverRequestDto>.Failure(Error.Conflict("Only pending handover requests can be changed"));
         if (status == ManagerHandoverStatus.Rejected && request.NewProgramManagerId != userId) return Result<ManagerHandoverRequestDto>.Failure(Error.Forbidden("Only the selected new manager can reject this request"));
-        if (!await HasHandoverPermissionAsync(userId, ct)) return Result<ManagerHandoverRequestDto>.Failure(Error.Forbidden("You do not have permission to manage handovers"));
+        var requiredPermission = status == ManagerHandoverStatus.Rejected ? "Handover.Approve" : "Handover.Manage";
+        if (!await HasPermissionAsync(userId, request.TenantId, requiredPermission, ct)) return Result<ManagerHandoverRequestDto>.Failure(Error.Forbidden("You do not have permission to change this handover request"));
         if (status == ManagerHandoverStatus.Cancelled && request.RequestedBy != userId) return Result<ManagerHandoverRequestDto>.Failure(Error.Forbidden("Only the requester can cancel this request"));
         if (status == ManagerHandoverStatus.Rejected && string.IsNullOrWhiteSpace(reason)) return Result<ManagerHandoverRequestDto>.Failure(Error.Validation("A rejection reason is required"));
         request.Status = status; request.RejectionReason = reason?.Trim(); request.RespondedBy = userId; request.RespondedAt = DateTime.UtcNow; request.UpdatedBy = userId.ToString();
@@ -180,7 +255,8 @@ public sealed class ManagerHandoverService : IManagerHandoverService
         if (request is null) return Result<ManagerHandoverRequestDto>.Failure(Error.NotFound("Handover request not found"));
         if (request.Status != ManagerHandoverStatus.Pending) return Result<ManagerHandoverRequestDto>.Failure(Error.Conflict("Only pending handover requests can be changed"));
         if (status == ManagerHandoverStatus.Rejected && request.NewPortfolioManagerId != userId) return Result<ManagerHandoverRequestDto>.Failure(Error.Forbidden("Only the selected new manager can reject this request"));
-        if (!await HasHandoverPermissionAsync(userId, ct)) return Result<ManagerHandoverRequestDto>.Failure(Error.Forbidden("You do not have permission to manage handovers"));
+        var requiredPermission = status == ManagerHandoverStatus.Rejected ? "Handover.Approve" : "Handover.Manage";
+        if (!await HasPermissionAsync(userId, request.TenantId, requiredPermission, ct)) return Result<ManagerHandoverRequestDto>.Failure(Error.Forbidden("You do not have permission to change this handover request"));
         if (status == ManagerHandoverStatus.Cancelled && request.RequestedBy != userId) return Result<ManagerHandoverRequestDto>.Failure(Error.Forbidden("Only the requester can cancel this request"));
         if (status == ManagerHandoverStatus.Rejected && string.IsNullOrWhiteSpace(reason)) return Result<ManagerHandoverRequestDto>.Failure(Error.Validation("A rejection reason is required"));
         request.Status = status; request.RejectionReason = reason?.Trim(); request.RespondedBy = userId; request.RespondedAt = DateTime.UtcNow; request.UpdatedBy = userId.ToString();
@@ -215,8 +291,11 @@ public sealed class ManagerHandoverService : IManagerHandoverService
     }
 
     private static Error? Validate(CreateManagerHandoverRequestDto dto, Guid? currentId) => currentId is null || currentId == Guid.Empty ? Error.Validation("The entity must have a current manager") : dto.NewManagerId == Guid.Empty || dto.NewManagerId == currentId ? Error.Validation("A different new manager is required") : dto.EffectiveHandoverDate == default ? Error.Validation("Effective handover date is required") : string.IsNullOrWhiteSpace(dto.Reason) || dto.Reason.Trim().Length > 500 ? Error.Validation("Handover reason is required and limited to 500 characters") : dto.Notes?.Trim().Length > 2000 ? Error.Validation("Handover notes are limited to 2000 characters") : null;
-    private async Task<bool> IsActiveUserAsync(Guid id, CancellationToken ct) => await _db.Set<User>().AnyAsync(x => x.Id == id && x.IsActive, ct);
-    private async Task<bool> HasHandoverPermissionAsync(Guid id, CancellationToken ct) => await _db.Set<User>().AnyAsync(x => x.Id == id && x.IsActive && x.UserRoles.Any(ur => ur.Role.Permissions.Any(p => p.Name == "manager.handover")), ct);
+    private async Task<bool> HasPermissionAsync(Guid userId, Guid tenantId, string permission, CancellationToken ct)
+    {
+        var permissions = await _effectivePermissions.GetEffectivePermissionsAsync(userId, tenantId, ct);
+        return permissions.Contains(permission);
+    }
 
     private async Task<ProgramManagerAssignment> EnsureProgramAssignmentAsync(Program program, Guid actor, CancellationToken ct)
     {
@@ -251,7 +330,7 @@ public sealed class ManagerHandoverService : IManagerHandoverService
         if (newId != currentId) await SendNotificationAsync(newId, $"{type} manager handover {status.ToLowerInvariant()}", $"The manager handover request for {name} is now {status}.", type, entityId, requestId, ct);
     }
 
-    private async Task SendNotificationAsync(Guid userId, string title, string body, string type, Guid entityId, Guid requestId, CancellationToken ct) => await _notifications.SendAsync(new Notification { TenantId = (await _db.Set<User>().AsNoTracking().Where(x => x.Id == userId).Select(x => (Guid?)x.TenantId).FirstOrDefaultAsync(ct)) ?? Guid.Empty, UserId = userId, Title = title, Body = body, Type = $"{type}Handover", Channel = "InApp", ReferenceType = type, ReferenceId = requestId, CreatedBy = userId.ToString() }, ct);
+    private async Task SendNotificationAsync(Guid userId, string title, string body, string type, Guid entityId, Guid requestId, CancellationToken ct) => await _notifications.SendAsync(new Notification { TenantId = (await _db.Set<User>().AsNoTracking().Where(x => x.Id == userId).Select(x => (Guid?)x.TenantId).FirstOrDefaultAsync(ct)) ?? Guid.Empty, UserId = userId, Title = title, Body = body, Type = type == "Program" ? NotificationTypes.ProgramHandover : NotificationTypes.PortfolioHandover, ReferenceType = type, ReferenceId = requestId, CreatedBy = userId.ToString() }, ct);
 
     private async Task<ManagerHandoverRequestDto> MapProgramRequestAsync(ProgramHandoverRequest x, CancellationToken ct) => await MapRequestAsync(x.Id, "Program", x.ProgramId, x.CurrentProgramManagerId, x.NewProgramManagerId, x.EffectiveHandoverDate, x.Reason, x.Notes, x.Status, x.RequestedBy, x.RequestedAt, x.RespondedBy, x.RespondedAt, x.RejectionReason, x.SnapshotId, ct);
     private async Task<ManagerHandoverRequestDto> MapPortfolioRequestAsync(PortfolioHandoverRequest x, CancellationToken ct) => await MapRequestAsync(x.Id, "Portfolio", x.PortfolioId, x.CurrentPortfolioManagerId, x.NewPortfolioManagerId, x.EffectiveHandoverDate, x.Reason, x.Notes, x.Status, x.RequestedBy, x.RequestedAt, x.RespondedBy, x.RespondedAt, x.RejectionReason, x.SnapshotId, ct);

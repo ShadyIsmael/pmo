@@ -125,6 +125,38 @@ export interface PagedResult<T> {
   totalPages: number;
 }
 
+export interface ResourceFinderQuery {
+  role?: string;
+  skillIds?: string[];
+  seniority?: string;
+  startDate?: string;
+  endDate?: string;
+  requiredAllocation?: number;
+  departmentId?: string;
+  locationId?: string;
+  vendorId?: string;
+}
+
+export interface ResourceFinderItem {
+  resourceId: string;
+  resourceName: string;
+  jobTitle?: string;
+  seniority?: string;
+  departmentName?: string;
+  locationName?: string;
+  email?: string;
+  matchScore: number;
+  availableCapacityHours: number;
+  currentLoadPercent: number;
+  earliestAvailableDate?: string;
+  conflictingAllocations: Array<{ allocationId: string; projectName: string; role: string; allocationPercentage: number; startDate: string; endDate: string }>;
+  skillMatches: Array<{ skillName: string; proficiency: string; isMatch: boolean }>;
+  resourceType: string;
+}
+
+export type ResourceFinderResult = PagedResult<ResourceFinderItem>;
+export interface ResourceSkillLookup { id: string; name: string; category?: string; isActive: boolean }
+
 const resourceKeysAll = ["resources"] as const;
 const resourceKeysLists = () => [...resourceKeysAll, "list"] as const;
 
@@ -142,6 +174,24 @@ export function useResources(filter: ResourceFilterParams = {}, enabled = true) 
     queryFn: () => api.get<PagedResult<ResourceDto>>("/api/resources", filter),
     staleTime: 30_000,
     enabled,
+  });
+}
+
+export function useResourceFinder(query: ResourceFinderQuery, enabled = true) {
+  return useQuery({
+    queryKey: [...resourceKeys.all, "finder", query],
+    queryFn: () => api.post<ResourceFinderResult>("/api/resource-finder/find", query),
+    enabled,
+    staleTime: 15_000,
+  });
+}
+
+export function useResourceSkills(enabled = true) {
+  return useQuery({
+    queryKey: [...resourceKeys.all, "skills"],
+    queryFn: async () => (await api.get<PagedResult<ResourceSkillLookup>>("/api/skills", { pageSize: 200 })).items ?? [],
+    enabled,
+    staleTime: 60_000,
   });
 }
 
@@ -167,7 +217,7 @@ export function useCreateResource() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (data: Record<string, unknown>) => api.post<ResourceDto>("/api/resources", data),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: resourceKeys.lists() }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: resourceKeys.all }),
   });
 }
 
@@ -175,7 +225,7 @@ export function useUpdateResource(defaultId?: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (input: { id?: string; data: Record<string, unknown> }) => api.put<ResourceDto>(`/api/resources/${input.id ?? defaultId ?? ""}`, input.data),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: resourceKeys.lists() }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: resourceKeys.all }),
   });
 }
 
@@ -183,7 +233,7 @@ export function useDeleteResource() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => api.delete<void>(`/api/resources/${id}`),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: resourceKeys.lists() }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: resourceKeys.all }),
   });
 }
 
@@ -202,6 +252,15 @@ export function useProjectRoles(activeOnly = true, enabled = true) {
     queryFn: () => api.get<ProjectRoleDto[]>("/api/project-roles", { activeOnly }),
     enabled,
     staleTime: 60_000,
+  });
+}
+
+export function useProjectRoleNextCode(enabled = true, requestKey: number | string = 0) {
+  return useQuery({
+    queryKey: [...resourceKeys.all, "project-role-next-code", requestKey],
+    queryFn: () => api.get<{ code: string }>("/api/project-roles/next-code"),
+    enabled,
+    staleTime: 0,
   });
 }
 

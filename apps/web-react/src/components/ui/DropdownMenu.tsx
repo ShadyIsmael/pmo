@@ -1,38 +1,50 @@
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@lib/utils";
+import { useAnchoredOverlayPosition, type AnchoredOverlayAlignment } from "./AnchoredOverlay";
 
 interface MenuContextValue {
   open: boolean;
   setOpen: (open: boolean) => void;
+  triggerRef: React.MutableRefObject<HTMLButtonElement | null>;
+  contentRef: React.MutableRefObject<HTMLDivElement | null>;
 }
 
 const MenuContext = React.createContext<MenuContextValue | null>(null);
 
 export function DropdownMenu({ children, className }: { children: React.ReactNode; className?: string }) {
   const [open, setOpen] = React.useState(false);
-  const ref = React.useRef<HTMLDivElement>(null);
+  const triggerRef = React.useRef<HTMLButtonElement>(null);
+  const contentRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
     if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (triggerRef.current?.contains(target) || contentRef.current?.contains(target)) return;
+      setOpen(false);
     };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
     };
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
     return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
     };
-  }, [open ]);
+  }, [open]);
 
   return (
-    <MenuContext.Provider value={{ open, setOpen }}>
-      <div ref={ref} className={cn("relative", className)}>{children}</div>
+    <MenuContext.Provider value={{ open, setOpen, triggerRef, contentRef }}>
+      <div className={cn("relative", className)}>{children}</div>
     </MenuContext.Provider>
   );
+}
+
+function assignRef<T>(ref: React.Ref<T> | undefined, value: T | null) {
+  if (typeof ref === "function") ref(value);
+  else if (ref) (ref as React.MutableRefObject<T | null>).current = value;
 }
 
 export function DropdownMenuTrigger({ children, asChild }: { children: React.ReactElement; asChild?: boolean }) {
@@ -40,7 +52,12 @@ export function DropdownMenuTrigger({ children, asChild }: { children: React.Rea
   if (!ctx) throw new Error("DropdownMenuTrigger must be used within DropdownMenu");
   void asChild;
   const child = React.Children.only(children) as React.ReactElement<{ onClick?: (e: React.MouseEvent) => void }>;
+  const childRef = (child as React.ReactElement & { ref?: React.Ref<HTMLButtonElement> }).ref;
   return React.cloneElement(child, {
+    ref: (node: HTMLButtonElement | null) => {
+      ctx.triggerRef.current = node;
+      assignRef(childRef, node);
+    },
     onClick: (e: React.MouseEvent) => {
       child.props.onClick?.(e);
       ctx.setOpen(!ctx.open);
@@ -50,22 +67,16 @@ export function DropdownMenuTrigger({ children, asChild }: { children: React.Rea
   } as Record<string, unknown>);
 }
 
-export function DropdownMenuContent({ children, align = "end", className }: { children: React.ReactNode; align?: "start" | "center" | "end"; className?: string }) {
+export function DropdownMenuContent({ children, align = "end", className }: { children: React.ReactNode; align?: AnchoredOverlayAlignment; className?: string }) {
   const ctx = React.useContext(MenuContext);
   if (!ctx) throw new Error("DropdownMenuContent must be used within DropdownMenu");
+  const style = useAnchoredOverlayPosition({ open: ctx.open, anchorRef: ctx.triggerRef, contentRef: ctx.contentRef, align });
   if (!ctx.open) return null;
-  return (
-    <div
-      role="menu"
-      className={cn(
-        "absolute z-50 mt-1 min-w-[12rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md",
-        align === "end" && "end-0",
-        align === "start" && "start-0",
-        className
-      )}
-    >
+  return createPortal(
+    <div ref={ctx.contentRef} role="menu" style={style} className={cn("min-w-[12rem] overflow-y-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-md", className)}>
       {children}
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -74,19 +85,20 @@ function useCloseMenu() {
   return () => ctx?.setOpen(false);
 }
 
-export function DropdownMenuItem({ children, className, onSelect, onClick }: { children: React.ReactNode; className?: string; onSelect?: () => void; onClick?: () => void }) {
+export function DropdownMenuItem({ children, className, onSelect, onClick, disabled }: { children: React.ReactNode; className?: string; onSelect?: () => void; onClick?: () => void; disabled?: boolean }) {
   const close = useCloseMenu();
   return (
     <button
       type="button"
       role="menuitem"
+      disabled={disabled}
       onClick={() => {
         onSelect?.();
         onClick?.();
         close();
       }}
       className={cn(
-        "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-start hover:bg-accent hover:text-accent-foreground focus-visible:outline-none",
+        "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-start hover:bg-accent hover:text-accent-foreground focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50",
         className
       )}
     >

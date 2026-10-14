@@ -2,9 +2,9 @@
 
 ---
 
-## Current State: ALL INTEGRATIONS ARE MOCKED OR PLACEHOLDER
+## Current State: MOST INTEGRATIONS ARE MOCKED OR PLACEHOLDER
 
-Every external system adapter in NEXUS PMO is either an interface without implementation, a mock provider, or a manifest-only plugin. No real external system connectivity is implemented.
+Most external-system adapters in NEXUS PMO are interfaces, mock providers, or manifest-only plugins. Directory Integration is implemented as a separate tenant-scoped capability for Microsoft Entra ID and secure LDAP. Its schema migration has been generated but still must be applied to the target database, and a real provider connection must be configured and verified before production use.
 
 ---
 
@@ -40,15 +40,16 @@ Every external system adapter in NEXUS PMO is either an interface without implem
 | **Implementation** | `LocalStorageProvider` in `Infrastructure/LocalStorageProvider.cs` |
 | **Status** | Placeholder (local filesystem, not production-ready) |
 
-### INotificationChannel
+### Notification Delivery Foundation
 
-| Aspect | Detail |
-|--------|--------|
-| **Namespace** | `NEXUS.Modules.Notifications.Application` |
-| **File** | `Application/INotificationChannel.cs` |
-| **Purpose** | Multi-channel notification delivery |
-| **Sub-channels** | Email (placeholder), InApp (implemented), Push (placeholder) |
-| **Status** | Interface only for Email/Push; InApp works via DB storage |
+- `Notification` remains the canonical user-facing record. Its `IsInAppVisible` field controls Notification Center visibility; it does not encode a delivery channel.
+- `NotificationService.SendAsync` persists the canonical notification and, when the authenticated recipient has Push enabled and Firebase is configured, a unique Pending `NotificationDelivery` in the same database save. It does not call a provider.
+- `NotificationDeliveryWorker` claims bounded batches with an atomic status/lease update. Expired Processing leases are claimable again, including after a worker restart.
+- A delivery owns one attempt per device token. Each device is tracked independently; transient failures use bounded exponential backoff, permanent failures stop, and unregistered/invalid registrations are deactivated.
+- The worker stores provider outcomes and safe error summaries. FCM lock-screen title/body are generic; the payload carries only notification type and internal entity reference metadata.
+- Active device tokens are globally unique by SHA-256 fingerprint. Re-registration reconciles stale ownership while keeping the previous owner row inactive for history.
+- User preferences are scoped to the authenticated tenant/user and supported handover event types. In-App defaults on, Push defaults off, and Email preference can be stored while Email delivery remains unavailable.
+- The current producers are project, program, and portfolio handovers. The migration does not enqueue historical notifications.
 
 ---
 
@@ -111,19 +112,18 @@ Every external system adapter in NEXUS PMO is either an interface without implem
 
 | Aspect | Detail |
 |--------|--------|
-| **Type** | Channel (`INotificationChannel`) |
-| **Status** | Interface only |
-| **Implementation** | No SMTP client, no email service discovered |
-| **Evidence** | `INotificationChannel.cs` in Notifications module |
+| **Status** | Deferred |
+| **Implementation** | No provider, SMTP client, template renderer, or email worker. Email preferences are stored, but no Email delivery is created or sent. |
+| **Future integration point** | `NotificationDelivery` supports an Email channel; add a provider and dispatcher in a later phase. |
 
 ### Push Notifications
 
 | Aspect | Detail |
 |--------|--------|
-| **Type** | Channel (`INotificationChannel`) |
-| **Status** | Interface only |
-| **Implementation** | No push notification service discovered |
-| **Evidence** | `INotificationChannel.cs` in Notifications module |
+| **Type** | Durable asynchronous channel (`IPushNotificationSender`) |
+| **Status** | Implemented; runtime sending requires valid Firebase Admin configuration and user browser consent |
+| **Implementation** | `NotificationDeliveryProcessor`, `NotificationDeliveryWorker`, and `FirebaseNotificationChannel` |
+| **Failure handling** | Per-device result tracking, bounded retry/backoff, stale-token deactivation, and lease recovery |
 
 ### AI Provider
 
@@ -139,10 +139,24 @@ Every external system adapter in NEXUS PMO is either an interface without implem
 
 | Aspect | Detail |
 |--------|--------|
-| **Type** | Plugin (`nexus.plugin.enterprise-identity`) |
-| **Status** | Placeholder (v0.1.0) |
+| **Type** | Plugin plus Directory Integration module |
+| **Status** | SSO plugin remains a placeholder. Directory Integration provides directory read, selected-record synchronization, and optional user/resource provisioning; it does not implement login federation. |
 | **Plugin directory** | `plugins/enterprise-identity-placeholder/` -- `plugin.json` only |
-| **Evidence** | `plugins/enterprise-identity-placeholder/plugin.json` |
+| **Implementation** | `NEXUS.Modules.Integrations` (`DirectoryIntegrationController`, Entra Graph and LDAPS providers) |
+
+### Directory Integration (Microsoft Entra ID and Active Directory LDAP)
+
+- Configuration, scope, mappings, provisioning policy, links, groups, and sync history are tenant-scoped.
+- Entra uses Microsoft Graph app-only access. LDAP uses LDAPS only (ports 636/3269), with normal certificate validation. The API host must explicitly allowlist LDAP hosts through `DirectoryProviders:Ldap:AllowedHosts`; an empty allowlist denies all LDAP connections.
+- Entra requires a tenant ID, app/client ID, and a server-side client-secret reference. The app registration must have Microsoft Graph application permissions `User.Read.All` and `GroupMember.Read.All`, with tenant admin consent.
+- Credentials are referenced by alias and resolved from API-host configuration. The secret value is not accepted from the browser, returned by APIs, or stored in the directory connection row.
+- Synchronization is manual: the operator previews current directory data, selects records and actions, and the API re-fetches and validates scope/actions before applying changes.
+- Sync is bounded, audited, and non-destructive: user/group deletion is not performed; directory-owned role grants and organization relationships are tracked separately from manual assignments.
+- Provisioning defaults are conservative. Resource creation is separately configurable; no automatic directory password import is performed.
+- Permission keys are `Directory.View`, `Directory.Manage`, `Directory.TestConnection`, `Directory.PreviewSync`, `Directory.ExecuteSync`, `Directory.ManageMappings`, and `Directory.ManageProvisioningPolicy`.
+- API secret configuration path: `DirectorySecrets:{tenantId}:{connectionId}:{reference}`. For environment variables, replace colons with double underscores (`DirectorySecrets__{tenantId}__{connectionId}__{reference}`). Keep referenced values in the API host's secret store; never put them in the React app, source control, or a directory-connection request.
+- LDAP host allowlist path: `DirectoryProviders:Ldap:AllowedHosts`; environment-variable form: `DirectoryProviders__Ldap__AllowedHosts__0` (add further numbered entries as needed).
+- Migration `20261011205628_AddDirectoryIntegration` creates only the eleven `Directory*` tables. It has been generated and compiled, but was not applied to a database in this task.
 
 ### ERP Integration (SAP/Oracle)
 
@@ -197,13 +211,14 @@ graph TB
             ISP[ISyncProvider]
             IAI[IAIProvider]
             ISP2[IStorageProvider]
-            INC[INotificationChannel]
+            PUSH_SENDER[IPushNotificationSender]
         end
 
         subgraph "Implementations"
             MOCK_AI[MockAIProvider]
             LOCAL_STO[LocalStorageProvider]
-            IN_APP[InApp Channel]
+            DELIVERY_WORKER[NotificationDeliveryWorker]
+            FCM_CHANNEL[FirebaseNotificationChannel]
         end
 
         subgraph "Integration Entities"
@@ -230,7 +245,7 @@ graph TB
         ENTRA[Entra ID / AD]
         SAP[SAP / Oracle]
         SMTP[Email Server]
-        PUSH[Push Service]
+        PUSH[Firebase Cloud Messaging]
     end
 
     ISP -.-> JIRA
@@ -240,9 +255,10 @@ graph TB
     MOCK_AI -.- AI_SYS[Future AI Provider]
     ISP2 --> LOCAL_STO
     LOCAL_STO -.- CLOUD_STO[Future Cloud Storage]
-    INC --> IN_APP
-    INC -.-> SMTP
-    INC -.-> PUSH
+    PUSH_SENDER --> FCM_CHANNEL
+    DELIVERY_WORKER --> PUSH_SENDER
+    FCM_CHANNEL --> PUSH
+    DELIVERY_WORKER -. future Email delivery .-> SMTP
 
     JIRA -.- JIRA_EXT
     MSP -.- MSP_EXT
@@ -252,11 +268,11 @@ graph TB
     classDef implemented fill:#90EE90
     classDef placeholder fill:#FFB6C6
     classDef interface fill:#DDA0DD
-    class IN_APP implemented
+    class DELIVERY_WORKER,FCM_CHANNEL implemented
     class MOCK_AI implemented
     class LOCAL_STO placeholder
     class JIRA,MSP,TICK,TM,MOB,EI,ERP placeholder
-    class ISP,IAI,ISP2,INC interface
+    class ISP,IAI,ISP2,PUSH_SENDER interface
 ```
 
 ---

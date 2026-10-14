@@ -5,6 +5,7 @@ using NEXUS.Modules.CostManagement.Domain;
 using NEXUS.Modules.Documents.Application;
 using NEXUS.Modules.Documents.Domain;
 using NEXUS.Modules.Identity.Domain;
+using NEXUS.Modules.Integrations.Application;
 using NEXUS.Modules.IssueManagement.Domain;
 using NEXUS.Modules.Meetings.Domain;
 using NEXUS.Modules.Meetings.Application;
@@ -1057,6 +1058,7 @@ public static class SeedDataProvider
             new() { Id = Guid.Parse("b0000007-0000-0000-0000-000000000007"), TenantId = TenantId, Name = "resources.write", Resource = "resources", Action = "write", CreatedBy = "System" },
             new() { Id = Guid.Parse("b0000008-0000-0000-0000-000000000008"), TenantId = TenantId, Name = "users.read", Resource = "users", Action = "read", CreatedBy = "System" },
             new() { Id = Guid.Parse("b0000009-0000-0000-0000-000000000009"), TenantId = TenantId, Name = "users.write", Resource = "users", Action = "write", CreatedBy = "System" },
+            new() { Id = Guid.Parse("b0000027-0000-0000-0000-000000000027"), TenantId = TenantId, Name = "users.reset-password", Resource = "users", Action = "reset-password", Description = "Generate a one-time temporary password for a local user", CreatedBy = "System" },
             new() { Id = Guid.Parse("b0000010-0000-0000-0000-000000000010"), TenantId = TenantId, Name = "finances.read", Resource = "finances", Action = "read", CreatedBy = "System" },
             new() { Id = Guid.Parse("b0000011-0000-0000-0000-000000000011"), TenantId = TenantId, Name = "finances.write", Resource = "finances", Action = "write", CreatedBy = "System" },
             new() { Id = Guid.Parse("b0000012-0000-0000-0000-000000000012"), TenantId = TenantId, Name = "reports.read", Resource = "reports", Action = "read", CreatedBy = "System" },
@@ -1124,6 +1126,13 @@ public static class SeedDataProvider
             ,new() { Id = Guid.Parse("b0000143-0000-0000-0000-000000000143"), TenantId = TenantId, Name = TimeTrackingPermissions.ManageOwn, Resource = "TimeTracking", Action = "ManageOwn", Description = "Create, update, and delete own manual time entries", CreatedBy = "System" }
             ,new() { Id = Guid.Parse("b0000144-0000-0000-0000-000000000144"), TenantId = TenantId, Name = TimeTrackingPermissions.ViewTeam, Resource = "TimeTracking", Action = "ViewTeam", Description = "View team manual time entries within management scope", CreatedBy = "System" }
             ,new() { Id = Guid.Parse("b0000145-0000-0000-0000-000000000145"), TenantId = TenantId, Name = TimeTrackingPermissions.ManageTeam, Resource = "TimeTracking", Action = "ManageTeam", Description = "Manage team manual time entries within management scope", CreatedBy = "System" }
+            ,new() { Id = Guid.Parse("b0000150-0000-0000-0000-000000000150"), TenantId = TenantId, Name = DirectoryPermissions.View, Resource = "Directory", Action = "View", Description = "View directory integration configuration and sync history", CreatedBy = "System" }
+            ,new() { Id = Guid.Parse("b0000151-0000-0000-0000-000000000151"), TenantId = TenantId, Name = DirectoryPermissions.Manage, Resource = "Directory", Action = "Manage", Description = "Manage directory connections and sync scope", CreatedBy = "System" }
+            ,new() { Id = Guid.Parse("b0000152-0000-0000-0000-000000000152"), TenantId = TenantId, Name = DirectoryPermissions.TestConnection, Resource = "Directory", Action = "TestConnection", Description = "Test directory connectivity", CreatedBy = "System" }
+            ,new() { Id = Guid.Parse("b0000153-0000-0000-0000-000000000153"), TenantId = TenantId, Name = DirectoryPermissions.PreviewSync, Resource = "Directory", Action = "PreviewSync", Description = "Preview directory synchronization", CreatedBy = "System" }
+            ,new() { Id = Guid.Parse("b0000154-0000-0000-0000-000000000154"), TenantId = TenantId, Name = DirectoryPermissions.ExecuteSync, Resource = "Directory", Action = "ExecuteSync", Description = "Execute selected directory synchronization actions", CreatedBy = "System" }
+            ,new() { Id = Guid.Parse("b0000155-0000-0000-0000-000000000155"), TenantId = TenantId, Name = DirectoryPermissions.ManageMappings, Resource = "Directory", Action = "ManageMappings", Description = "Manage directory field, group, and organization mappings", CreatedBy = "System" }
+            ,new() { Id = Guid.Parse("b0000156-0000-0000-0000-000000000156"), TenantId = TenantId, Name = DirectoryPermissions.ManageProvisioningPolicy, Resource = "Directory", Action = "ManageProvisioningPolicy", Description = "Manage directory provisioning policy", CreatedBy = "System" }
         };
 
         var permissionsByKey = permissions.ToDictionary(p => $"{p.Resource}|{p.Action}");

@@ -1,13 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@api/client";
 import { endpoints } from "@api/endpoints";
+import { workflowKeys } from "./workflows";
 
 export type WorkflowLifecycleStatus = "Draft" | "Published" | "Retired";
 export type WorkflowDomain = "Task" | "Risk" | "Finance";
 export type WorkflowRowVersion = string | number[];
 export interface WorkflowDefinitionListItem { id: string; name: string; code: string; domain: WorkflowDomain; entityType: string; isActive: boolean; activePublishedVersionId?: string; activePublishedVersionNumber?: number; activePublishedLifecycleStatus?: WorkflowLifecycleStatus; versionCount: number; updatedAt?: string; rowVersion?: WorkflowRowVersion; }
 export interface WorkflowVersionListItem { id: string; versionNumber: number; lifecycleStatus: WorkflowLifecycleStatus; changeLog?: string; createdAt: string; createdBy: string; publishedAt?: string; publishedBy?: string; stateCount: number; transitionCount: number; guardCount: number; actionCount: number; rowVersion?: WorkflowRowVersion; }
-export interface WorkflowDefinitionDetails { id: string; name: string; code: string; description?: string; domain: WorkflowDomain; entityType: string; isActive: boolean; activePublishedVersionId?: string; rowVersion?: WorkflowRowVersion; versions: WorkflowVersionListItem[]; }
+export interface WorkflowDefinitionDetails { id: string; name: string; code: string; description?: string; domain: WorkflowDomain; entityType: string; isActive: boolean; activePublishedVersionId?: string; createdAt: string; createdBy: string; updatedAt?: string; updatedBy?: string; rowVersion?: WorkflowRowVersion; versions: WorkflowVersionListItem[]; }
 export interface WorkflowState { id: string; code: string; nameEn: string; nameAr: string; description?: string; displayOrder: number; isInitial: boolean; isFinal: boolean; isActive: boolean; rowVersion?: WorkflowRowVersion; }
 export interface WorkflowGuard { id: string; guardType: string; configurationJson: string; executionOrder: number; isActive: boolean; rowVersion?: WorkflowRowVersion; }
 export interface WorkflowAction { id: string; actionType: string; configurationJson: string; executionOrder: number; isActive: boolean; rowVersion?: WorkflowRowVersion; }
@@ -30,6 +31,7 @@ export const workflowsApiFull = {
   definition: (id: string) => api.get<WorkflowDefinitionDetails>(endpoints.workflows.definition(id)),
   version: (id: string) => api.get<WorkflowVersionDetails>(endpoints.workflows.version(id)),
   create: (body: { name: string; code: string; description?: string; domain: WorkflowDomain; entityType?: string }) => api.post<WorkflowDefinitionDetails>(endpoints.workflows.root, body),
+  update: (id: string, body: { name: string; description?: string; isActive: boolean; rowVersion?: WorkflowRowVersion }) => api.patch<WorkflowDefinitionDetails>(endpoints.workflows.definition(id), body),
   createDraft: (id: string, body?: { changeLog?: string; rowVersion?: WorkflowRowVersion }) => api.post<WorkflowVersionDetails>(endpoints.workflows.drafts(id), body ?? {}),
   deleteDraft: (id: string, rowVersion?: WorkflowRowVersion) => api.delete<void>(endpoints.workflows.deleteDraft(id), undefined, rowVersion === undefined ? undefined : { rowVersion: JSON.stringify(rowVersion) }),
   validate: (id: string) => api.post<WorkflowValidationReport>(endpoints.workflows.validate(id), {}),
@@ -42,12 +44,14 @@ export const workflowsApiFull = {
   updateTransition: (id: string, body: SaveWorkflowTransition) => api.patch<WorkflowTransition>(endpoints.workflows.transition(id), body),
   deleteTransition: (id: string, rowVersion?: WorkflowRowVersion) => api.delete<void>(endpoints.workflows.transition(id), undefined, rowVersion === undefined ? undefined : { rowVersion: JSON.stringify(rowVersion) }),
   createGuard: (id: string, body: SaveWorkflowRule) => api.post<WorkflowGuard>(endpoints.workflows.guards(id), body),
+  updateGuard: (id: string, body: SaveWorkflowRule) => api.patch<WorkflowGuard>(endpoints.workflows.guard(id), body),
   deleteGuard: (id: string, rowVersion?: WorkflowRowVersion) => api.delete<void>(endpoints.workflows.guard(id), undefined, rowVersion === undefined ? undefined : { rowVersion: JSON.stringify(rowVersion) }),
   createAction: (id: string, body: SaveWorkflowRule) => api.post<WorkflowAction>(endpoints.workflows.actions(id), body),
+  updateAction: (id: string, body: SaveWorkflowRule) => api.patch<WorkflowAction>(endpoints.workflows.action(id), body),
   deleteAction: (id: string, rowVersion?: WorkflowRowVersion) => api.delete<void>(endpoints.workflows.action(id), undefined, rowVersion === undefined ? undefined : { rowVersion: JSON.stringify(rowVersion) }),
 };
 
-export function useFullWorkflowDefinitions(params: { search?: string; isActive?: boolean; domain?: WorkflowDomain } = {}) { return useQuery({ queryKey: workflowKeysFull.definitions(params), queryFn: () => workflowsApiFull.list(params), staleTime: 15_000 }); }
+export function useFullWorkflowDefinitions(params: { search?: string; isActive?: boolean; entityType?: string; domain?: WorkflowDomain } = {}) { return useQuery({ queryKey: workflowKeysFull.definitions(params), queryFn: () => workflowsApiFull.list(params), staleTime: 15_000 }); }
 export function useFullWorkflowDefinition(id?: string) { return useQuery({ queryKey: workflowKeysFull.definition(id ?? ""), queryFn: () => workflowsApiFull.definition(id!), enabled: Boolean(id), staleTime: 10_000 }); }
 export function useFullWorkflowVersion(id?: string) { return useQuery({ queryKey: workflowKeysFull.version(id ?? ""), queryFn: () => workflowsApiFull.version(id!), enabled: Boolean(id), staleTime: 5_000 }); }
 export function useFullWorkflowMetadata(enabled = true) { return useQuery({ queryKey: workflowKeysFull.metadata, queryFn: workflowsApiFull.metadata, enabled, staleTime: 60_000 }); }
@@ -55,9 +59,15 @@ export function useFullWorkflowPreview(id?: string) { return useQuery({ queryKey
 
 export function useFullWorkflowMutations() {
   const client = useQueryClient();
-  const invalidate = () => { void client.invalidateQueries({ queryKey: workflowKeysFull.all }); };
+  const invalidate = async () => {
+    await Promise.all([
+      client.invalidateQueries({ queryKey: workflowKeysFull.all }),
+      client.invalidateQueries({ queryKey: workflowKeys.all }),
+    ]);
+  };
   return {
     create: useMutation({ mutationFn: workflowsApiFull.create, onSuccess: invalidate }),
+    update: useMutation({ mutationFn: ({ id, body }: { id: string; body: { name: string; description?: string; isActive: boolean; rowVersion?: WorkflowRowVersion } }) => workflowsApiFull.update(id, body), onSuccess: invalidate }),
     createDraft: useMutation({ mutationFn: ({ id, body }: { id: string; body?: { changeLog?: string; rowVersion?: WorkflowRowVersion } }) => workflowsApiFull.createDraft(id, body), onSuccess: invalidate }),
     deleteDraft: useMutation({ mutationFn: ({ id, rowVersion }: { id: string; rowVersion?: WorkflowRowVersion }) => workflowsApiFull.deleteDraft(id, rowVersion), onSuccess: invalidate }),
     validate: useMutation({ mutationFn: workflowsApiFull.validate }),
@@ -69,8 +79,10 @@ export function useFullWorkflowMutations() {
     updateTransition: useMutation({ mutationFn: ({ id, body }: { id: string; body: SaveWorkflowTransition }) => workflowsApiFull.updateTransition(id, body), onSuccess: invalidate }),
     deleteTransition: useMutation({ mutationFn: ({ id, rowVersion }: { id: string; rowVersion?: WorkflowRowVersion }) => workflowsApiFull.deleteTransition(id, rowVersion), onSuccess: invalidate }),
     createGuard: useMutation({ mutationFn: ({ id, body }: { id: string; body: SaveWorkflowRule }) => workflowsApiFull.createGuard(id, body), onSuccess: invalidate }),
+    updateGuard: useMutation({ mutationFn: ({ id, body }: { id: string; body: SaveWorkflowRule }) => workflowsApiFull.updateGuard(id, body), onSuccess: invalidate }),
     deleteGuard: useMutation({ mutationFn: ({ id, rowVersion }: { id: string; rowVersion?: WorkflowRowVersion }) => workflowsApiFull.deleteGuard(id, rowVersion), onSuccess: invalidate }),
     createAction: useMutation({ mutationFn: ({ id, body }: { id: string; body: SaveWorkflowRule }) => workflowsApiFull.createAction(id, body), onSuccess: invalidate }),
+    updateAction: useMutation({ mutationFn: ({ id, body }: { id: string; body: SaveWorkflowRule }) => workflowsApiFull.updateAction(id, body), onSuccess: invalidate }),
     deleteAction: useMutation({ mutationFn: ({ id, rowVersion }: { id: string; rowVersion?: WorkflowRowVersion }) => workflowsApiFull.deleteAction(id, rowVersion), onSuccess: invalidate }),
   };
 }

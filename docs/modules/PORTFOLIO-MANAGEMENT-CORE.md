@@ -17,6 +17,8 @@ Portfolio records contain name, unique tenant-scoped code, description, status, 
 
 All endpoints require authentication. Global EF query filters enforce tenant and soft-delete isolation. The UI uses the shared `FormSheet` for create/edit and the real user lookup for searchable Owner and Sponsor selection.
 
+An active user assigned the tenant system `admin` role may read unassigned portfolios within the current tenant when `Portfolio.View` is granted. Updating an unassigned portfolio is permitted only for the exact `PUT /api/portfolios/{id}` route, in native mode, and only when the caller also has `Portfolio.Manage`; the service applies an explicit current-tenant predicate. This does not expand archive/reactivate or cross-tenant access. Users without this administrator scope remain restricted to their resolved management assignments.
+
 ## Project integration
 
 Projects retain their existing optional `PortfolioId` relationship and selector. Portfolio detail loads linked projects from `GET /api/projects?portfolioId={id}`; no project-manager or resource behavior is changed.

@@ -4,7 +4,7 @@ The Program Manager perspective is a presentation and aggregation layer over the
 
 ## Scope and context
 
-`GET /api/program-management/programs` returns only Programs in the resolved `ManagementContext`. Native Program Manager requests use the complete native Program assignment scope for the My Programs landing; a Portfolio Manager viewing as Program Manager remains limited to the selected inherited Program context. `GET /api/program-management/programs/{programId}/overview` validates the selected Program against the same server-side scope before querying any child data.
+`GET /api/program-management/programs` returns only Programs in the resolved `ManagementContext`, except that an active user assigned the persisted tenant system role `admin` can read all Programs in that same tenant without a Program Manager assignment. The `Program.View` policy and tenant isolation remain mandatory; the exception is GET-only, does not grant write access, and does not apply in View-As mode. Native Program Manager requests use the complete native Program assignment scope for the My Programs landing; a Portfolio Manager viewing as Program Manager remains limited to the selected inherited Program context. `GET /api/program-management/programs/{programId}/overview` validates the selected Program against the same server-side scope before querying any child data, with the same tenant-admin read exception.
 
 ## Read model
 
@@ -22,6 +22,10 @@ Published status reports are preferred. A report is `Current` when its ReportDat
 
 The existing `/portfolios/programs` route is the My Programs landing. `/portfolios/programs/{id}` is the Program workspace with Overview, Projects, Delivery, Financials, Risks & Issues, Resources, Status Reports, and Meetings / Activity tabs. Project links navigate to the existing Project experience; no Program-specific Project CRUD was added.
 
-The dashboard uses stable widget identities (`program.health`, `program.project-health`, `program.delivery`, `program.milestones`, `program.financials`, `program.risks`, `program.issues`, `program.resources`, `program.status-reports`, and `program.activity`) rendered through the existing `WidgetShell`. A persistent layout engine is intentionally deferred.
+The React dashboard uses seven compact API-backed cards with stable identities (`program.health-overview`, `program.delivery-milestones`, `program.financials`, `program.risk-issues`, `program.resources`, `program.status-reports`, and `program.activity`). Health/distribution, delivery/milestones, and risks/issues are grouped to reduce duplicated space; the read-model source appears once above the card grid. Currency groups remain distinct; aggregate amounts use the financial-total text token and individual project amounts use sign-based semantic text. A persistent layout engine is intentionally deferred.
 
 Native and View-As contexts use the same workspace. Existing permissions remain authoritative; `ReadOnlyViewAs` adds the existing centralized mutation deny layer and does not grant Project, Risk, Financial, Planning, or Resource permissions.
+
+The React Program workspace includes a permission-gated manager handover surface. The current Program Manager can request or cancel a transfer; the selected active same-tenant manager must have effective `Handover.Approve` access and decides from My Work → Approvals. Program ownership and current assignment change only after acceptance. The decision is recorded in the request history and audit log, a snapshot is captured, and both managers are notified. The workspace presents pending/completed requests, assignment history, and snapshots, and the Program read model is refreshed after acceptance.
+
+Editing an assigned Program no longer changes its manager directly. An unassigned Program can receive its initial manager through the edit sheet; every later manager change must use the handover workflow.

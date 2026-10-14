@@ -1,5 +1,5 @@
-import { cn } from "@lib/utils";
 import { useI18n } from "@i18n/messages";
+import { getRiskLevelTextClass } from "@lib/status-presentation";
 import type { HomeRiskSummary } from "@api/home";
 
 export function TopRisksWidget({ risks }: { risks: HomeRiskSummary[] }) {
@@ -18,11 +18,7 @@ export function TopRisksWidget({ risks }: { risks: HomeRiskSummary[] }) {
               <p className="truncate text-sm font-medium">{risk.title}</p>
               <p className="text-xs text-muted-foreground">{risk.projectName}</p>
             </div>
-            <span className={cn("rounded px-2 py-0.5 text-xs font-medium",
-              risk.riskLevel === "Critical" ? "bg-red-100 text-red-700" :
-              risk.riskLevel === "High" ? "bg-orange-100 text-orange-700" :
-              "bg-green-100 text-green-700"
-            )}>
+            <span className={`text-xs font-medium ${getRiskLevelTextClass(risk.riskLevel)}`}>
               {risk.riskLevel}
             </span>
           </div>
