@@ -10,7 +10,7 @@ import { useUserLookup, toUserSelectOptions } from "@features/projects/lib/proje
 import { useI18n } from "@i18n/messages";
 import { useCreatePortfolio, useUpdatePortfolio, type PortfolioDto, type SavePortfolioDto } from "./api/delivery";
 
-const blankForm = (): SavePortfolioDto => ({ name: "", description: "", ownerId: "", status: "Active", currency: "USD" });
+const blankForm = (): SavePortfolioDto => ({ name: "", description: "", ownerId: "", status: "Active", currency: "USD", startDate: "", endDate: "", strategicObjective: "", priority: "" });
 
 export function PortfolioSheet({ open, onOpenChange, portfolio, canManage }: {
   open: boolean;
@@ -36,6 +36,10 @@ export function PortfolioSheet({ open, onOpenChange, portfolio, canManage }: {
       ownerId: portfolio.ownerId && portfolio.ownerId !== "00000000-0000-0000-0000-000000000000" ? portfolio.ownerId : "",
       status: portfolio.status === "Archived" ? "Archived" : "Active",
       currency: portfolio.currency || "USD",
+      startDate: portfolio.startDate?.slice(0, 10) ?? "",
+      endDate: portfolio.endDate?.slice(0, 10) ?? "",
+      strategicObjective: portfolio.strategicObjective ?? "",
+      priority: portfolio.priority ?? "",
     } : blankForm());
     setError("");
   }, [open, portfolio]);
@@ -47,11 +51,25 @@ export function PortfolioSheet({ open, onOpenChange, portfolio, canManage }: {
     event.preventDefault();
     setError("");
     if (!canManage) return;
-    if (!form.name.trim() || !form.ownerId) {
-      setError(t("portfolioManager.portfolioNameManagerRequired"));
+    if (!form.name.trim()) {
+      setError(t("portfolioManager.portfolioNameRequired"));
       return;
     }
-    const payload: SavePortfolioDto = { ...form, ownerId: hasAssignedOwner ? portfolio?.ownerId ?? form.ownerId : form.ownerId, name: form.name.trim(), currency: form.currency || "USD" };
+    if (form.startDate && form.endDate && form.endDate < form.startDate) {
+      setError(t("portfolioManager.endDateAfterStartDate"));
+      return;
+    }
+    const payload: SavePortfolioDto = {
+      ...form,
+      ownerId: hasAssignedOwner ? portfolio?.ownerId : form.ownerId || undefined,
+      name: form.name.trim(),
+      description: form.description ?? "",
+      currency: form.currency || "USD",
+      startDate: form.startDate || undefined,
+      endDate: form.endDate || undefined,
+      strategicObjective: form.strategicObjective?.trim() ? form.strategicObjective.trim() : undefined,
+      priority: form.priority?.trim() ? form.priority.trim() : undefined,
+    };
     try {
       if (portfolio) await update.mutateAsync({ id: portfolio.id, dto: payload });
       else await create.mutateAsync(payload);
@@ -69,11 +87,17 @@ export function PortfolioSheet({ open, onOpenChange, portfolio, canManage }: {
         <div><Label>{t("portfolioManager.code")}</Label><p className="mt-2 rounded-md border bg-muted px-3 py-2 text-sm text-muted-foreground">{portfolio?.code || t("portfolioManager.generatedPortfolioCode")}</p></div>
         <div><Label htmlFor="portfolio-description">{t("portfolioManager.description")}</Label><Textarea id="portfolio-description" className="mt-2" value={form.description ?? ""} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} /></div>
         <div>
-          <Label>{t("portfolioManager.owner")} *</Label>
+          <Label>{t("portfolioManager.owner")}</Label>
           {hasAssignedOwner
             ? <><Input className="mt-2" value={portfolio?.ownerName || "—"} readOnly /><p className="mt-1 text-xs text-muted-foreground">{t("managerHandover.managerChangeViaHandover")}</p></>
             : <><div className="mt-2"><SearchableSelect options={userOptions} value={form.ownerId} onValueChange={(ownerId) => setForm((current) => ({ ...current, ownerId }))} placeholder={t("portfolioManager.selectPortfolioManager")} searchPlaceholder={t("portfolioManager.searchPortfolioManagers")} loading={usersQuery.isLoading} emptyText={t("portfolioManager.noPortfolioManagers")} /></div>{portfolio ? <p className="mt-1 text-xs text-muted-foreground">{t("managerHandover.setInitialManager")}</p> : null}</>}
         </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div><Label htmlFor="portfolio-start-date">{t("portfolioManager.startDate")}</Label><Input id="portfolio-start-date" className="mt-2" type="date" value={form.startDate ?? ""} onChange={(event) => setForm((current) => ({ ...current, startDate: event.target.value }))} /></div>
+          <div><Label htmlFor="portfolio-end-date">{t("portfolioManager.endDate")}</Label><Input id="portfolio-end-date" className="mt-2" type="date" value={form.endDate ?? ""} onChange={(event) => setForm((current) => ({ ...current, endDate: event.target.value }))} /></div>
+        </div>
+        <div><Label htmlFor="portfolio-strategic-objective">{t("portfolioManager.strategicObjective")}</Label><Textarea id="portfolio-strategic-objective" className="mt-2" value={form.strategicObjective ?? ""} onChange={(event) => setForm((current) => ({ ...current, strategicObjective: event.target.value }))} /></div>
+        <div><Label htmlFor="portfolio-priority">{t("portfolioManager.priority")}</Label><Input id="portfolio-priority" className="mt-2" value={form.priority ?? ""} onChange={(event) => setForm((current) => ({ ...current, priority: event.target.value }))} /></div>
         <div>
           <Label htmlFor="portfolio-currency">{t("portfolioManager.currency")}</Label>
           {currencyOptions.length > 0

@@ -57,6 +57,12 @@ public sealed class PortfolioDto
     public string? OwnerName { get; set; }
     public string? OwnerEmail { get; set; }
     public string Currency { get; set; } = "USD";
+    public DateTime? StartDate { get; set; }
+    public DateTime? EndDate { get; set; }
+    public string? StrategicObjective { get; set; }
+    public string? Priority { get; set; }
+    public string? Health { get; set; }
+    public string? ConfidenceLevel { get; set; }
     public PortfolioMetricsDto Metrics { get; set; } = new();
     public IReadOnlyList<PortfolioProjectDto> Projects { get; set; } = Array.Empty<PortfolioProjectDto>();
     public DateTime CreatedAt { get; set; }
@@ -69,7 +75,13 @@ public sealed class SavePortfolioDto
 {
     public string Name { get; set; } = "";
     public string? Description { get; set; }
-    public Guid OwnerId { get; set; }
+    public Guid? OwnerId { get; set; }
     public string Status { get; set; } = "Active";
     public string Currency { get; set; } = "USD";
+    public DateTime? StartDate { get; set; }
+    public DateTime? EndDate { get; set; }
+    public string? StrategicObjective { get; set; }
+    public string? Priority { get; set; }
+    public string? Health { get; set; }
+    public string? ConfidenceLevel { get; set; }
 }

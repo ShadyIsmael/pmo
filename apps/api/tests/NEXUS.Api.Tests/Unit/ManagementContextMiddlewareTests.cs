@@ -205,6 +205,128 @@ public sealed class ManagementContextMiddlewareTests
     }
 
     [Fact]
+    public async Task Tenant_admin_can_read_portfolio_and_program_handover_details_in_current_tenant()
+    {
+        foreach (var path in new[]
+        {
+            $"/api/manager-handovers/portfolios/{Guid.NewGuid()}/requests",
+            $"/api/manager-handovers/portfolios/{Guid.NewGuid()}/history",
+            $"/api/manager-handovers/portfolios/{Guid.NewGuid()}/snapshots",
+            $"/api/manager-handovers/programs/{Guid.NewGuid()}/requests",
+            $"/api/manager-handovers/programs/{Guid.NewGuid()}/history",
+            $"/api/manager-handovers/programs/{Guid.NewGuid()}/snapshots"
+        })
+        {
+            var nextCalled = false;
+            var middleware = new ManagementContextMiddleware(_ =>
+            {
+                nextCalled = true;
+                return Task.CompletedTask;
+            });
+            var resolver = new Mock<IManagementScopeResolver>();
+            resolver.Setup(item => item.IsTenantAdministratorAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+            resolver.Setup(item => item.GetPerspectiveSnapshotAsync(
+                It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<ManagementContext?>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new ManagementPerspectiveSnapshot(
+                    Array.Empty<ManagementPerspective>(),
+                    Array.Empty<ManagementPerspectiveAvailability>(),
+                    null,
+                    false,
+                    ManagementScope.Empty,
+                    null));
+            ManagementContext? capturedContext = null;
+            var accessor = new Mock<IManagementContextAccessor>();
+            accessor.Setup(item => item.Set(It.IsAny<ManagementContext>())).Callback<ManagementContext>(value => capturedContext = value);
+            var httpContext = CreateAuthenticatedContext(path);
+            httpContext.Request.Method = HttpMethods.Get;
+
+            await middleware.InvokeAsync(httpContext, resolver.Object, accessor.Object, NullLogger<ManagementContextMiddleware>.Instance);
+
+            Assert.True(nextCalled);
+            Assert.True(capturedContext?.CanReadAllTenantPortfolioProgramData);
+        }
+    }
+
+    [Fact]
+    public async Task Tenant_admin_handover_read_scope_does_not_cover_mutations_or_manager_discovery()
+    {
+        foreach (var (path, method) in new[]
+        {
+            ($"/api/manager-handovers/portfolios/{Guid.NewGuid()}/requests", HttpMethods.Post),
+            ($"/api/manager-handovers/programs/{Guid.NewGuid()}/eligible-managers", HttpMethods.Get)
+        })
+        {
+            var nextCalled = false;
+            var middleware = new ManagementContextMiddleware(_ =>
+            {
+                nextCalled = true;
+                return Task.CompletedTask;
+            });
+            var resolver = new Mock<IManagementScopeResolver>();
+            resolver.Setup(item => item.IsTenantAdministratorAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+            resolver.Setup(item => item.GetPerspectiveSnapshotAsync(
+                It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<ManagementContext?>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new ManagementPerspectiveSnapshot(
+                    Array.Empty<ManagementPerspective>(),
+                    Array.Empty<ManagementPerspectiveAvailability>(),
+                    null,
+                    false,
+                    ManagementScope.Empty,
+                    null));
+            var accessor = new Mock<IManagementContextAccessor>();
+            var httpContext = CreateAuthenticatedContext(path);
+            httpContext.Request.Method = method;
+
+            await middleware.InvokeAsync(httpContext, resolver.Object, accessor.Object, NullLogger<ManagementContextMiddleware>.Instance);
+
+            Assert.False(nextCalled);
+            Assert.Equal(StatusCodes.Status404NotFound, httpContext.Response.StatusCode);
+        }
+    }
+
+    [Fact]
+    public async Task Handover_tenant_read_scope_does_not_apply_to_non_admin_or_view_as_requests()
+    {
+        foreach (var (isAdmin, viewMode, expectedStatus) in new[]
+        {
+            (false, "Native", StatusCodes.Status404NotFound),
+            (true, "ReadOnlyViewAs", StatusCodes.Status403Forbidden)
+        })
+        {
+            var nextCalled = false;
+            var middleware = new ManagementContextMiddleware(_ =>
+            {
+                nextCalled = true;
+                return Task.CompletedTask;
+            });
+            var resolver = new Mock<IManagementScopeResolver>();
+            resolver.Setup(item => item.IsTenantAdministratorAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync(isAdmin);
+            resolver.Setup(item => item.GetPerspectiveSnapshotAsync(
+                It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<ManagementContext?>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new ManagementPerspectiveSnapshot(
+                    Array.Empty<ManagementPerspective>(),
+                    Array.Empty<ManagementPerspectiveAvailability>(),
+                    null,
+                    false,
+                    ManagementScope.Empty,
+                    null));
+            var accessor = new Mock<IManagementContextAccessor>();
+            var httpContext = CreateAuthenticatedContext($"/api/manager-handovers/programs/{Guid.NewGuid()}/requests");
+            httpContext.Request.Method = HttpMethods.Get;
+            if (viewMode == "ReadOnlyViewAs")
+            {
+                httpContext.Request.Headers[ManagementContextMiddleware.PerspectiveHeader] = "ProgramManager";
+                httpContext.Request.Headers[ManagementContextMiddleware.ViewModeHeader] = viewMode;
+            }
+
+            await middleware.InvokeAsync(httpContext, resolver.Object, accessor.Object, NullLogger<ManagementContextMiddleware>.Instance);
+
+            Assert.False(nextCalled);
+            Assert.Equal(expectedStatus, httpContext.Response.StatusCode);
+        }
+    }
+
+    [Fact]
     public async Task Tenant_admin_flag_does_not_apply_to_unlisted_resource_routes()
     {
         var nextCalled = false;

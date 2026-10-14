@@ -41,11 +41,18 @@ public sealed class PortfolioService : IPortfolioService
     public async Task<Result<PortfolioDto>> CreateAsync(SavePortfolioDto dto, string userId, CancellationToken ct = default)
     {
         var validation = Validate(dto); if (validation is not null) return Result<PortfolioDto>.Failure(validation);
-        if (!await IsActiveUserAsync(dto.OwnerId, ct)) return Result<PortfolioDto>.Failure(Error.Validation("Portfolio Manager must be an active user in this tenant"));
+        var ownerId = NormalizeOwnerId(dto.OwnerId);
+        if (ownerId.HasValue && !await IsActiveUserAsync(ownerId.Value, ct)) return Result<PortfolioDto>.Failure(Error.Validation("Portfolio Manager must be an active user in this tenant"));
         await using var transaction = _db.Database.BeginTransaction(IsolationLevel.Serializable);
         var next = await NextCodeAsync(ct);
-        var entity = new Entity { TenantId = TenantId(), Code = next, Name = dto.Name.Trim(), Description = dto.Description?.Trim(), OwnerId = dto.OwnerId, Status = dto.Status, Currency = string.IsNullOrWhiteSpace(dto.Currency) ? "USD" : dto.Currency.Trim().ToUpperInvariant(), CreatedBy = userId };
-        _db.Set<Entity>().Add(entity); await _db.SaveChangesAsync(ct); await transaction.CommitAsync(ct);
+        var entity = new Entity { TenantId = TenantId(), Code = next, Name = dto.Name.Trim(), Description = dto.Description?.Trim(), OwnerId = ownerId, Status = dto.Status, Currency = string.IsNullOrWhiteSpace(dto.Currency) ? "USD" : dto.Currency.Trim().ToUpperInvariant(), StartDate = dto.StartDate, EndDate = dto.EndDate, StrategicObjective = dto.StrategicObjective?.Trim(), Priority = dto.Priority?.Trim(), Health = dto.Health?.Trim(), ConfidenceLevel = dto.ConfidenceLevel?.Trim(), CreatedBy = userId };
+        _db.Set<Entity>().Add(entity); await _db.SaveChangesAsync(ct);
+        if (ownerId.HasValue)
+        {
+            _db.Set<PortfolioManagerAssignment>().Add(new PortfolioManagerAssignment { TenantId = entity.TenantId, PortfolioId = entity.Id, PortfolioManagerId = ownerId.Value, StartDate = DateTime.UtcNow, IsCurrent = true, CreatedBy = userId });
+            await _db.SaveChangesAsync(ct);
+        }
+        await transaction.CommitAsync(ct);
         return Result<PortfolioDto>.Success(await MapAsync(entity, true, ct));
     }
 
@@ -54,14 +61,18 @@ public sealed class PortfolioService : IPortfolioService
         var validation = Validate(dto); if (validation is not null) return Result<PortfolioDto>.Failure(validation);
         var entity = await InScope(_db.Set<Entity>()).FirstOrDefaultAsync(x => x.Id == id, ct);
         if (entity is null) return Result<PortfolioDto>.Failure(Error.NotFound("Portfolio not found"));
-        if (entity.OwnerId.HasValue && entity.OwnerId != dto.OwnerId) return Result<PortfolioDto>.Failure(Error.Validation("Portfolio Manager changes must use the governed handover process"));
-        if (!await IsActiveUserAsync(dto.OwnerId, ct)) return Result<PortfolioDto>.Failure(Error.Validation("Portfolio Manager must be an active user in this tenant"));
-        if (!entity.OwnerId.HasValue)
+        var dtoOwnerId = NormalizeOwnerId(dto.OwnerId);
+        if (entity.OwnerId.HasValue)
         {
-            entity.OwnerId = dto.OwnerId;
-            _db.Set<PortfolioManagerAssignment>().Add(new PortfolioManagerAssignment { TenantId = entity.TenantId, PortfolioId = entity.Id, PortfolioManagerId = dto.OwnerId, StartDate = DateTime.UtcNow, IsCurrent = true, CreatedBy = userId });
+            if (dtoOwnerId.HasValue && dtoOwnerId.Value != entity.OwnerId.Value) return Result<PortfolioDto>.Failure(Error.Validation("Portfolio Manager changes must use the governed handover process"));
         }
-        entity.Name = dto.Name.Trim(); entity.Description = dto.Description?.Trim(); entity.Status = dto.Status; if (!string.IsNullOrWhiteSpace(dto.Currency)) entity.Currency = dto.Currency.Trim().ToUpperInvariant(); entity.UpdatedBy = userId;
+        else if (dtoOwnerId.HasValue)
+        {
+            if (!await IsActiveUserAsync(dtoOwnerId.Value, ct)) return Result<PortfolioDto>.Failure(Error.Validation("Portfolio Manager must be an active user in this tenant"));
+            entity.OwnerId = dtoOwnerId.Value;
+            _db.Set<PortfolioManagerAssignment>().Add(new PortfolioManagerAssignment { TenantId = entity.TenantId, PortfolioId = entity.Id, PortfolioManagerId = dtoOwnerId.Value, StartDate = DateTime.UtcNow, IsCurrent = true, CreatedBy = userId });
+        }
+        entity.Name = dto.Name.Trim(); entity.Description = dto.Description?.Trim(); entity.Status = dto.Status; if (!string.IsNullOrWhiteSpace(dto.Currency)) entity.Currency = dto.Currency.Trim().ToUpperInvariant(); entity.StartDate = dto.StartDate; entity.EndDate = dto.EndDate; entity.StrategicObjective = dto.StrategicObjective?.Trim(); entity.Priority = dto.Priority?.Trim(); entity.Health = dto.Health?.Trim(); entity.ConfidenceLevel = dto.ConfidenceLevel?.Trim(); entity.UpdatedBy = userId;
         await _db.SaveChangesAsync(ct); return Result<PortfolioDto>.Success(await MapAsync(entity, true, ct));
     }
 
@@ -90,7 +101,7 @@ public sealed class PortfolioService : IPortfolioService
         var owner = await _db.Set<User>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == entity.OwnerId, ct);
         var projects = await LoadProjectsAsync(entity.Id, ct);
         var metrics = BuildMetrics(projects, entity.Currency);
-        return new PortfolioDto { Id = entity.Id, Name = entity.Name, Code = entity.Code ?? "", Description = entity.Description, Status = entity.Status ?? "Active", OwnerId = entity.OwnerId ?? Guid.Empty, OwnerName = owner?.FullName, OwnerEmail = owner?.Email, Currency = entity.Currency, Metrics = metrics, Projects = includeProjects ? projects : Array.Empty<PortfolioProjectDto>(), CreatedAt = entity.CreatedAt, UpdatedAt = entity.UpdatedAt, CreatedBy = entity.CreatedBy, UpdatedBy = entity.UpdatedBy };
+        return new PortfolioDto { Id = entity.Id, Name = entity.Name, Code = entity.Code ?? "", Description = entity.Description, Status = entity.Status ?? "Active", OwnerId = entity.OwnerId ?? Guid.Empty, OwnerName = owner?.FullName, OwnerEmail = owner?.Email, Currency = entity.Currency, StartDate = entity.StartDate, EndDate = entity.EndDate, StrategicObjective = entity.StrategicObjective, Priority = entity.Priority, Health = entity.Health, ConfidenceLevel = entity.ConfidenceLevel, Metrics = metrics, Projects = includeProjects ? projects : Array.Empty<PortfolioProjectDto>(), CreatedAt = entity.CreatedAt, UpdatedAt = entity.UpdatedAt, CreatedBy = entity.CreatedBy, UpdatedBy = entity.UpdatedBy };
     }
 
     private async Task<List<PortfolioProjectDto>> LoadProjectsAsync(Guid portfolioId, CancellationToken ct)
@@ -122,7 +133,8 @@ public sealed class PortfolioService : IPortfolioService
         return new PortfolioMetricsDto { ProjectCount=projects.Count, ActiveProjects=active, CompletedProjects=completed, DelayedProjects=delayed, TotalBudget=baseSummary?.Budget, TotalForecast=baseSummary?.Forecast, TotalActualCost=baseSummary?.ActualCost, AverageProgress=projects.Count == 0 ? 0 : projects.Average(x=>x.Progress), EarliestStartDate=projects.Where(x=>x.StartDate.HasValue).Select(x=>x.StartDate).Min(), LatestEndDate=projects.Where(x=>x.EndDate.HasValue).Select(x=>x.EndDate).Max(), ProjectsByStatus=projects.GroupBy(x=>x.Status).ToDictionary(x=>x.Key,x=>x.Count()), ProjectsByHealth=projects.GroupBy(x=>string.IsNullOrWhiteSpace(x.RagStatus)?x.Health:x.RagStatus).ToDictionary(x=>x.Key,x=>x.Count()), ByCurrency=byCurrency };
     }
 
-    private static Error? Validate(SavePortfolioDto dto) => string.IsNullOrWhiteSpace(dto.Name) || dto.Name.Trim().Length > 300 ? Error.Validation("Name is required and limited to 300 characters") : dto.OwnerId == Guid.Empty ? Error.Validation("Portfolio Manager is required") : dto.Status is not ("Active" or "Archived") ? Error.Validation("Status must be Active or Archived") : !string.IsNullOrWhiteSpace(dto.Currency) && dto.Currency.Trim().Length > 10 ? Error.Validation("Currency code is limited to 10 characters") : null;
+    private static Error? Validate(SavePortfolioDto dto) => string.IsNullOrWhiteSpace(dto.Name) || dto.Name.Trim().Length > 300 ? Error.Validation("Name is required and limited to 300 characters") : dto.Status is not ("Active" or "Archived") ? Error.Validation("Status must be Active or Archived") : dto.StartDate.HasValue && dto.EndDate.HasValue && dto.EndDate.Value < dto.StartDate.Value ? Error.Validation("End Date must not be before Start Date") : !string.IsNullOrWhiteSpace(dto.Currency) && dto.Currency.Trim().Length > 10 ? Error.Validation("Currency code is limited to 10 characters") : null;
+    private static Guid? NormalizeOwnerId(Guid? ownerId) => ownerId.HasValue && ownerId.Value != Guid.Empty ? ownerId.Value : null;
     private Guid TenantId() { var value = _http.HttpContext?.User.FindFirst("tenantId")?.Value; return Guid.TryParse(value, out var id) ? id : DemoTenant; }
     private IQueryable<Entity> InScope(IQueryable<Entity> query)
     {

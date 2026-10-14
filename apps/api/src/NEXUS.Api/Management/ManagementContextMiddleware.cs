@@ -142,6 +142,16 @@ public sealed class ManagementContextMiddleware
         var isApiPath = segments.Length > 0 && segments[0].Equals("api", StringComparison.OrdinalIgnoreCase);
         if (!isApiPath) return false;
 
+        if (segments.Length == 5
+            && segments[1].Equals("manager-handovers", StringComparison.OrdinalIgnoreCase)
+            && (segments[2].Equals("portfolios", StringComparison.OrdinalIgnoreCase)
+                || segments[2].Equals("programs", StringComparison.OrdinalIgnoreCase))
+            && Guid.TryParse(segments[3], out _)
+            && (segments[4].Equals("requests", StringComparison.OrdinalIgnoreCase)
+                || segments[4].Equals("history", StringComparison.OrdinalIgnoreCase)
+                || segments[4].Equals("snapshots", StringComparison.OrdinalIgnoreCase)))
+            return true;
+
         if (segments.Length == 2)
             return segments[1].Equals("portfolios", StringComparison.OrdinalIgnoreCase)
                 || segments[1].Equals("programs", StringComparison.OrdinalIgnoreCase);
