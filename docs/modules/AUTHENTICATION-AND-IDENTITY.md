@@ -31,6 +31,27 @@ Login ──► POST /api/auth/login
 | GET | `/api/auth/me` | Authenticated | Return current user with roles and permissions |
 | POST | `/api/auth/switch-role` | Authenticated (demo) | Switch active role context (dev feature) |
 
+### User and role administration
+
+User administration and role-management endpoints require the authenticated tenant context. User create/edit forms use Side Sheets; role options come from the roles the actor can safely assign. Profile-only edits preserve existing assignments even when an assigned role exceeds the actor's own permission set; actual role changes still require every resulting role to fit within the actor's effective permissions. Role management uses `users.write` and applies the same server-side permission-subset check so an actor cannot grant access they do not already have.
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/api/users` | `users.read` or `users.write` | List tenant users with their assigned roles |
+| POST | `/api/users` | `users.write` | Create a tenant user and assign tenant roles |
+| PUT | `/api/users/{id}` | `users.write` | Update a tenant user's profile and role assignments |
+| GET | `/api/users/{id}/permissions` | `users.write` | Read role-inherited access and direct user overrides |
+| PUT | `/api/users/{id}/permissions` | `users.write` | Save direct `Allow`/`Deny` overrides; omitted entries inherit from roles |
+| GET | `/api/roles` | Authenticated | List roles for user role assignment |
+| GET | `/api/roles/manage` | `users.write` | List roles the actor can safely manage |
+| GET | `/api/roles/permissions` | `users.write` | List only permissions the actor may assign |
+| GET | `/api/roles/{id}` | `users.write` | Read a manageable role and its permissions |
+| POST | `/api/roles` | `users.write` | Create a tenant role with an allowed permission set |
+| PUT | `/api/roles/{id}` | `users.write` | Update a role and replace its permission set |
+| DELETE | `/api/roles/{id}` | `users.write` | Soft-delete an unassigned, non-system role |
+
+Role and user-role-assignment changes are audited. An actor cannot alter their own role assignments. System roles cannot be renamed or deleted; a role cannot be deleted while assigned to a user; and role updates cannot remove the acting user's final effective `users.write` permission. No schema migration is required: role, permission, tenant, and role-permission tables already exist.
+
 ### Request / Response shapes
 
 `POST /api/auth/login`

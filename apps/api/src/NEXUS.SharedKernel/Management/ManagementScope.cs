@@ -22,6 +22,14 @@ public sealed record ManagementContext(
     ManagementScope Scope)
 {
     public bool EffectiveReadOnly => ViewMode == ManagementViewMode.ReadOnlyViewAs;
+
+    // Set by the API middleware only after checking the current tenant's
+    // persisted system-admin role, and only for approved portfolio/program GETs.
+    public bool CanReadAllTenantPortfolioProgramData { get; init; }
+
+    // Grants tenant-wide object scope for the exact Portfolio PUT route only.
+    // The endpoint's Portfolio.Manage policy remains independently required.
+    public bool HasTenantAdministratorPortfolioWriteScope { get; init; }
 }
 
 public sealed record ManagementPerspectiveAvailability(

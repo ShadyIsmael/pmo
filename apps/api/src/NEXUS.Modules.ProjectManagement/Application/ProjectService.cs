@@ -13,6 +13,8 @@ using NEXUS.SharedKernel;
 using NEXUS.SharedKernel.Helpers;
 using NEXUS.SharedKernel.Management;
 using PortfolioEntity = NEXUS.Modules.Portfolio.Domain.Portfolio;
+using System.Security.Claims;
+using System.Text.Json;
 
 namespace NEXUS.Modules.ProjectManagement.Application;
 
@@ -172,7 +174,10 @@ public class ProjectService : IProjectService, IProjectReferenceLookup
             EntityType = "Project",
             EntityId = project.Id,
             Action = "Create",
+            TenantId = project.TenantId,
             UserId = TryParseGuid(userId),
+            UserName = CurrentUserName,
+            Changes = JsonSerializer.Serialize(new { name = project.Name, code = project.Code, status = project.Status }),
             NewValues = System.Text.Json.JsonSerializer.Serialize(dto),
             Timestamp = DateTime.UtcNow,
             CreatedBy = userId
@@ -204,6 +209,49 @@ public class ProjectService : IProjectService, IProjectReferenceLookup
     {
         return GuidHelper.TryParse(value);
     }
+
+    private string? CurrentUserName => _httpContextAccessor.HttpContext?.User.FindFirst(ClaimTypes.Name)?.Value
+        ?? _httpContextAccessor.HttpContext?.User.FindFirst("name")?.Value;
+
+    private static Dictionary<string, object?> Snapshot(Project project) => new()
+    {
+        ["name"] = project.Name,
+        ["code"] = project.Code,
+        ["description"] = project.Description,
+        ["status"] = project.Status,
+        ["priority"] = project.Priority,
+        ["category"] = project.Category,
+        ["startDate"] = project.StartDate,
+        ["endDate"] = project.EndDate,
+        ["currency"] = project.Currency,
+        ["budget"] = project.Budget,
+        ["actualCost"] = project.ActualCost,
+        ["plannedValue"] = project.PlannedValue,
+        ["earnedValue"] = project.EarnedValue,
+        ["confidenceLevel"] = project.ConfidenceLevel,
+        ["businessCase"] = project.BusinessCase,
+        ["notes"] = project.Notes,
+        ["workingCalendarId"] = project.WorkingCalendarId
+    };
+
+    private static Dictionary<string, object?> Snapshot(ProjectMember member) => new()
+    {
+        ["role"] = member.Role,
+        ["allocationPercentage"] = member.AllocationPercentage,
+        ["hoursPerWeek"] = member.HoursPerWeek,
+        ["startDate"] = member.StartDate,
+        ["endDate"] = member.EndDate,
+        ["status"] = member.Status,
+        ["isBillable"] = member.IsBillable,
+        ["notes"] = member.Notes
+    };
+
+    private static Dictionary<string, object?> BuildChanges(Dictionary<string, object?> before, Dictionary<string, object?> after)
+        => after
+            .Where(pair => !Equals(before.GetValueOrDefault(pair.Key), pair.Value))
+            .ToDictionary(pair => pair.Key, pair => (object?)new { from = before.GetValueOrDefault(pair.Key), to = pair.Value });
+
+    private static string? SerializeChanges(Dictionary<string, object?> changes) => changes.Count == 0 ? null : JsonSerializer.Serialize(changes);
 
     private async Task<string> GenerateUniqueProjectCodeAsync(CancellationToken cancellationToken)
     {
@@ -239,6 +287,7 @@ public class ProjectService : IProjectService, IProjectReferenceLookup
             return Result<ProjectDto>.Failure(Error.Validation("Currency must be an active configured currency"));
 
         var oldValues = System.Text.Json.JsonSerializer.Serialize(project.ToDto());
+        var beforeValues = Snapshot(project);
 
         var managerChanged = dto.ProjectManagerId.HasValue && dto.ProjectManagerId.Value != project.ProjectManagerId;
 
@@ -253,7 +302,10 @@ public class ProjectService : IProjectService, IProjectReferenceLookup
                 EntityType = "Project",
                 EntityId = project.Id,
                 Action = "Update",
+                TenantId = project.TenantId,
                 UserId = TryParseGuid(userId),
+                UserName = CurrentUserName,
+                Changes = SerializeChanges(BuildChanges(beforeValues, Snapshot(project))),
                 OriginalValues = oldValues,
                 NewValues = System.Text.Json.JsonSerializer.Serialize(dto),
                 Timestamp = DateTime.UtcNow,
@@ -338,8 +390,6 @@ public class ProjectService : IProjectService, IProjectReferenceLookup
 
         await _context.SaveChangesAsync(cancellationToken);
 
-        var managerChange = $"Project Manager: {previousManager.FullName} → {newManager.FullName}";
-
         await _auditService.LogAsync(new AuditEntry
         {
             EntityType = "Project",
@@ -347,7 +397,8 @@ public class ProjectService : IProjectService, IProjectReferenceLookup
             Action = "ManagerHandover",
             TenantId = project.TenantId,
             UserId = TryParseGuid(userId),
-            Changes = managerChange,
+            UserName = CurrentUserName,
+            Changes = JsonSerializer.Serialize(new { projectManager = new { from = previousManager.FullName, to = newManager.FullName } }),
             OriginalValues = oldValues,
             NewValues = System.Text.Json.JsonSerializer.Serialize(new
             {
@@ -493,7 +544,10 @@ public class ProjectService : IProjectService, IProjectReferenceLookup
             EntityType = "Project",
             EntityId = id,
             Action = "Delete",
+            TenantId = project.TenantId,
             UserId = TryParseGuid(userId),
+            UserName = CurrentUserName,
+            Changes = JsonSerializer.Serialize(new { name = project.Name, code = project.Code }),
             Timestamp = DateTime.UtcNow,
             CreatedBy = userId
         }, cancellationToken);
@@ -519,7 +573,10 @@ public class ProjectService : IProjectService, IProjectReferenceLookup
             EntityType = "Project",
             EntityId = project.Id,
             Action = "Archive",
+            TenantId = project.TenantId,
             UserId = TryParseGuid(userId),
+            UserName = CurrentUserName,
+            Changes = JsonSerializer.Serialize(new { status = new { from = oldStatus, to = "OnHold" } }),
             OriginalValues = oldStatus,
             NewValues = "OnHold",
             Timestamp = DateTime.UtcNow,
@@ -547,7 +604,10 @@ public class ProjectService : IProjectService, IProjectReferenceLookup
             EntityType = "Project",
             EntityId = project.Id,
             Action = "Reactivate",
+            TenantId = project.TenantId,
             UserId = TryParseGuid(userId),
+            UserName = CurrentUserName,
+            Changes = JsonSerializer.Serialize(new { status = new { from = oldStatus, to = "InProgress" } }),
             OriginalValues = oldStatus,
             NewValues = "InProgress",
             Timestamp = DateTime.UtcNow,
@@ -618,7 +678,10 @@ public class ProjectService : IProjectService, IProjectReferenceLookup
             EntityType = "ProjectMember",
             EntityId = member.Id,
             Action = "Create",
+            TenantId = member.TenantId,
             UserId = TryParseGuid(userId),
+            UserName = CurrentUserName,
+            Changes = JsonSerializer.Serialize(new { resource = resource.Name, role = member.Role, allocationPercentage = member.AllocationPercentage }),
             NewValues = System.Text.Json.JsonSerializer.Serialize(dto),
             Timestamp = DateTime.UtcNow,
             CreatedBy = userId
@@ -649,6 +712,7 @@ public class ProjectService : IProjectService, IProjectReferenceLookup
                 $"Resource over-allocation detected: total would exceed 100%. Conflicting allocations: {string.Join(", ", conflictDetails)}"));
         }
 
+        var beforeMemberValues = Snapshot(member);
         dto.UpdateEntity(member, userId);
         await _context.SaveChangesAsync(cancellationToken);
 
@@ -657,7 +721,10 @@ public class ProjectService : IProjectService, IProjectReferenceLookup
             EntityType = "ProjectMember",
             EntityId = member.Id,
             Action = "Update",
+            TenantId = member.TenantId,
             UserId = TryParseGuid(userId),
+            UserName = CurrentUserName,
+            Changes = SerializeChanges(BuildChanges(beforeMemberValues, Snapshot(member))),
             NewValues = System.Text.Json.JsonSerializer.Serialize(dto),
             Timestamp = DateTime.UtcNow,
             CreatedBy = userId
@@ -685,7 +752,10 @@ public class ProjectService : IProjectService, IProjectReferenceLookup
             EntityType = "ProjectMember",
             EntityId = memberId,
             Action = "Delete",
+            TenantId = member.TenantId,
             UserId = TryParseGuid(userId),
+            UserName = CurrentUserName,
+            Changes = JsonSerializer.Serialize(new { role = member.Role, allocationPercentage = member.AllocationPercentage }),
             Timestamp = DateTime.UtcNow,
             CreatedBy = userId
         }, cancellationToken);

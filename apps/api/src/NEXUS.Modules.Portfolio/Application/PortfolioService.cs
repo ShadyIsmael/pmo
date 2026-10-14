@@ -2,6 +2,7 @@ using System.Data;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using NEXUS.Modules.Identity.Domain;
+using NEXUS.Modules.Portfolio.Domain;
 using NEXUS.SharedKernel;
 using NEXUS.SharedKernel.Management;
 using Entity = NEXUS.Modules.Portfolio.Domain.Portfolio;
@@ -51,10 +52,16 @@ public sealed class PortfolioService : IPortfolioService
     public async Task<Result<PortfolioDto>> UpdateAsync(Guid id, SavePortfolioDto dto, string userId, CancellationToken ct = default)
     {
         var validation = Validate(dto); if (validation is not null) return Result<PortfolioDto>.Failure(validation);
-        if (!await IsActiveUserAsync(dto.OwnerId, ct)) return Result<PortfolioDto>.Failure(Error.Validation("Portfolio Manager must be an active user in this tenant"));
         var entity = await InScope(_db.Set<Entity>()).FirstOrDefaultAsync(x => x.Id == id, ct);
         if (entity is null) return Result<PortfolioDto>.Failure(Error.NotFound("Portfolio not found"));
-        entity.Name = dto.Name.Trim(); entity.Description = dto.Description?.Trim(); entity.OwnerId = dto.OwnerId; entity.Status = dto.Status; if (!string.IsNullOrWhiteSpace(dto.Currency)) entity.Currency = dto.Currency.Trim().ToUpperInvariant(); entity.UpdatedBy = userId;
+        if (entity.OwnerId.HasValue && entity.OwnerId != dto.OwnerId) return Result<PortfolioDto>.Failure(Error.Validation("Portfolio Manager changes must use the governed handover process"));
+        if (!await IsActiveUserAsync(dto.OwnerId, ct)) return Result<PortfolioDto>.Failure(Error.Validation("Portfolio Manager must be an active user in this tenant"));
+        if (!entity.OwnerId.HasValue)
+        {
+            entity.OwnerId = dto.OwnerId;
+            _db.Set<PortfolioManagerAssignment>().Add(new PortfolioManagerAssignment { TenantId = entity.TenantId, PortfolioId = entity.Id, PortfolioManagerId = dto.OwnerId, StartDate = DateTime.UtcNow, IsCurrent = true, CreatedBy = userId });
+        }
+        entity.Name = dto.Name.Trim(); entity.Description = dto.Description?.Trim(); entity.Status = dto.Status; if (!string.IsNullOrWhiteSpace(dto.Currency)) entity.Currency = dto.Currency.Trim().ToUpperInvariant(); entity.UpdatedBy = userId;
         await _db.SaveChangesAsync(ct); return Result<PortfolioDto>.Success(await MapAsync(entity, true, ct));
     }
 
@@ -119,8 +126,13 @@ public sealed class PortfolioService : IPortfolioService
     private Guid TenantId() { var value = _http.HttpContext?.User.FindFirst("tenantId")?.Value; return Guid.TryParse(value, out var id) ? id : DemoTenant; }
     private IQueryable<Entity> InScope(IQueryable<Entity> query)
     {
-        var scope = _managementContext?.Current?.Scope;
-        return scope is null ? query : query.Where(x => scope.PortfolioIds.Contains(x.Id));
+        var context = _managementContext?.Current;
+        if (context is null) return query;
+
+        if (context.CanReadAllTenantPortfolioProgramData || context.HasTenantAdministratorPortfolioWriteScope)
+            return query.Where(x => x.TenantId == context.TenantId);
+
+        return query.Where(x => context.Scope.PortfolioIds.Contains(x.Id));
     }
     private sealed class PortfolioProjectRow { public Guid Id { get; set; } public string Name { get; set; } = ""; public string Code { get; set; } = ""; public string Status { get; set; } = ""; public string Health { get; set; } = ""; public string RagStatus { get; set; } = ""; public decimal Progress { get; set; } public DateTime? StartDate { get; set; } public DateTime? EndDate { get; set; } public decimal? Budget { get; set; } public decimal? Forecast { get; set; } public decimal? ActualCost { get; set; } public string Currency { get; set; } = "GBP"; public Guid? ProgramId { get; set; } }
 }

@@ -57,7 +57,7 @@ public sealed class RiskService : IRiskService
         var risk = new Risk
         {
             TenantId = GetCurrentTenantId(), ProjectId = dto.ProjectId, Title = title, Description = description,
-            RiskLevel = dto.RiskLevel, Status = initialStatus, OwnerResourceId = dto.OwnerResourceId,
+            RiskLevel = dto.RiskLevel, Impact = dto.Impact?.Trim() ?? string.Empty, Likelihood = dto.Likelihood?.Trim() ?? string.Empty, Status = initialStatus, OwnerResourceId = dto.OwnerResourceId,
             IdentifiedDate = DateTime.UtcNow, CreatedBy = userId
         };
         if (impactAssessment is not null)
@@ -94,7 +94,7 @@ public sealed class RiskService : IRiskService
         if (!IsDefined(dto.RiskLevel)) return Failure<RiskDto>("Risk level is invalid");
         if (!await IsValidResourceAsync(dto.OwnerResourceId, cancellationToken)) return Failure<RiskDto>("Risk owner not found");
         if (dto.RowVersion.Length > 0) _context.Entry(risk).Property(r => r.RowVersion).OriginalValue = dto.RowVersion;
-        risk.Title = dto.Title.Trim(); risk.Description = dto.Description.Trim(); risk.RiskLevel = dto.RiskLevel; risk.OwnerResourceId = dto.OwnerResourceId; risk.UpdatedBy = userId;
+        risk.Title = dto.Title.Trim(); risk.Description = dto.Description.Trim(); risk.RiskLevel = dto.RiskLevel; risk.Impact = dto.Impact?.Trim() ?? string.Empty; risk.Likelihood = dto.Likelihood?.Trim() ?? string.Empty; risk.OwnerResourceId = dto.OwnerResourceId; risk.UpdatedBy = userId;
         try { await _context.SaveChangesAsync(cancellationToken); }
         catch (DbUpdateConcurrencyException) { return Result<RiskDto>.Failure(Error.Conflict("Risk was changed by another user")); }
         var project = await _projectLookup.FindAsync(risk.ProjectId, cancellationToken);
@@ -362,7 +362,7 @@ public sealed class RiskService : IRiskService
         var names = await _resourceLookup.GetNamesAsync(risk.OwnerResourceId.HasValue ? new[] { risk.OwnerResourceId.Value } : Array.Empty<Guid>(), cancellationToken);
         return ToRiskDto(risk, projectName, names);
     }
-    private static RiskDto ToRiskDto(Risk risk, string projectName, IReadOnlyDictionary<Guid, string> names, IReadOnlyList<RiskImpactType>? impactTypes = null, LatestActionUpdate? latestActionUpdate = null) => new() { Id = risk.Id, ProjectId = risk.ProjectId, ProjectName = projectName, Title = risk.Title, Description = risk.Description, RiskLevel = risk.RiskLevel, Status = risk.Status, ImpactTypes = impactTypes ?? Array.Empty<RiskImpactType>(), LastActionUpdateText = latestActionUpdate?.UpdateText, LastActionUpdateAt = latestActionUpdate?.CreatedAt, LastActionUpdateCreatedBy = latestActionUpdate?.CreatedBy, OwnerResourceId = risk.OwnerResourceId, OwnerResourceName = risk.OwnerResourceId.HasValue ? names.GetValueOrDefault(risk.OwnerResourceId.Value) : null, CreatedAt = risk.CreatedAt, UpdatedAt = risk.UpdatedAt, CreatedBy = risk.CreatedBy, UpdatedBy = risk.UpdatedBy, RowVersion = risk.RowVersion };
+    private static RiskDto ToRiskDto(Risk risk, string projectName, IReadOnlyDictionary<Guid, string> names, IReadOnlyList<RiskImpactType>? impactTypes = null, LatestActionUpdate? latestActionUpdate = null) => new() { Id = risk.Id, ProjectId = risk.ProjectId, ProjectName = projectName, Title = risk.Title, Description = risk.Description, RiskLevel = risk.RiskLevel, Impact = risk.Impact, Likelihood = risk.Likelihood, Status = risk.Status, ImpactTypes = impactTypes ?? Array.Empty<RiskImpactType>(), LastActionUpdateText = latestActionUpdate?.UpdateText, LastActionUpdateAt = latestActionUpdate?.CreatedAt, LastActionUpdateCreatedBy = latestActionUpdate?.CreatedBy, OwnerResourceId = risk.OwnerResourceId, OwnerResourceName = risk.OwnerResourceId.HasValue ? names.GetValueOrDefault(risk.OwnerResourceId.Value) : null, CreatedAt = risk.CreatedAt, UpdatedAt = risk.UpdatedAt, CreatedBy = risk.CreatedBy, UpdatedBy = risk.UpdatedBy, RowVersion = risk.RowVersion };
     private sealed record LatestActionUpdate(Guid RiskId, string UpdateText, DateTime CreatedAt, string CreatedBy);
     private static RiskImpactAssessmentDto ToImpactDto(RiskImpactAssessment assessment) => new() { Id = assessment.Id, RiskId = assessment.RiskId, ImpactTypes = assessment.ImpactTypes.OrderBy(type => type.ImpactType).Select(type => type.ImpactType).ToList(), Description = assessment.Description, CreatedAt = assessment.CreatedAt, UpdatedAt = assessment.UpdatedAt, CreatedBy = assessment.CreatedBy, RowVersion = assessment.RowVersion };
     private static RiskActionDto ToActionDto(RiskAction action, IReadOnlyDictionary<Guid, string> names) => new() { Id = action.Id, RiskId = action.RiskId, Title = action.Title, Description = action.Description, OwnerResourceId = action.OwnerResourceId, OwnerResourceName = action.OwnerResourceId.HasValue ? names.GetValueOrDefault(action.OwnerResourceId.Value) : null, TargetDate = action.TargetDate, NextFollowUpDate = action.NextFollowUpDate, Status = action.Status, SortOrder = action.SortOrder, CreatedAt = action.CreatedAt, UpdatedAt = action.UpdatedAt, RowVersion = action.RowVersion, UpdateCount = action.Updates.Count };

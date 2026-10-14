@@ -107,6 +107,11 @@ function extractUsedKeys(content, filePath, enLeaves, arLeaves, hookNamespaces =
   }
 
   const namespaces = new Set(bound.values());
+  // Presentational components may receive a namespaced translator as a prop.
+  // They can declare that contract without coupling this validator to React
+  // component semantics: `// i18n-namespace: administration.organization`.
+  const declaredNamespace = contentClean.match(/i18n-namespace:\s*([A-Za-z0-9_.-]+)/)?.[1];
+  if (declaredNamespace) namespaces.add(declaredNamespace);
   const useTranslationsRegex = /useTranslations\(\s*['"`]([^'"`]+)['"`]\s*\)/g;
   while ((match = useTranslationsRegex.exec(contentClean)) !== null) {
     namespaces.add(match[1]);

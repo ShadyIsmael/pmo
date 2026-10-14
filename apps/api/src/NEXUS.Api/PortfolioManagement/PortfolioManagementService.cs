@@ -32,10 +32,23 @@ public sealed class PortfolioManagementService : IPortfolioManagementService
         page = Math.Max(page, 1);
         pageSize = Math.Clamp(pageSize, 1, 100);
         var context = _managementContext.Current;
-        if (context is null || context.SelectedPerspective != ManagementPerspective.PortfolioManager || context.Scope.PortfolioIds.Count == 0)
+        var canReadTenantData = context?.CanReadAllTenantPortfolioProgramData == true;
+        if (!canReadTenantData && context is not null && (context.SelectedPerspective != ManagementPerspective.PortfolioManager || context.Scope.PortfolioIds.Count == 0))
             return new PagedResult<PortfolioManagementListItemDto>([], page, pageSize, 0);
 
-        var query = _db.Set<PortfolioEntity>().AsNoTracking().Where(item => context.Scope.PortfolioIds.Contains(item.Id));
+        // The controller requires Portfolio.View. Tenant administrators receive
+        // tenant-wide read scope here; other users retain the selected manager
+        // scope. The authenticated tenant filter remains active in both cases.
+        var query = _db.Set<PortfolioEntity>().AsNoTracking();
+        if (canReadTenantData)
+        {
+            query = query.Where(item => item.TenantId == context!.TenantId);
+        }
+        else if (context is not null)
+        {
+            var scopedPortfolioIds = context.Scope.PortfolioIds.ToArray();
+            query = query.Where(item => scopedPortfolioIds.Contains(item.Id));
+        }
         if (!string.IsNullOrWhiteSpace(search))
         {
             var term = search.Trim();
@@ -47,12 +60,15 @@ public sealed class PortfolioManagementService : IPortfolioManagementService
         if (portfolios.Count == 0) return new PagedResult<PortfolioManagementListItemDto>([], page, pageSize, total);
 
         var portfolioIds = portfolios.Select(item => item.Id).ToArray();
+        var readScope = canReadTenantData ? null : context;
+        var scopedProgramIds = await ProgramIdsForPortfoliosAsync(portfolioIds, readScope, cancellationToken);
+        var scopedProjectIds = await ProjectIdsForPortfoliosAsync(portfolioIds, scopedProgramIds, readScope, cancellationToken);
         var programs = await _db.Set<ProgramEntity>().AsNoTracking()
-            .Where(item => portfolioIds.Contains(item.PortfolioId) && context.Scope.ProgramIds.Contains(item.Id))
+            .Where(item => portfolioIds.Contains(item.PortfolioId) && scopedProgramIds.Contains(item.Id))
             .Select(item => new ProgramRow(item.Id, item.PortfolioId, item.Name, item.Code, item.ProgramManagerId, item.Status, item.Health, item.Currency, item.StartDate, item.EndDate))
             .ToListAsync(cancellationToken);
         var programById = programs.ToDictionary(item => item.Id);
-        var projects = await ProjectRowsAsync(portfolioIds, context.Scope.ProjectIds, programById.ToDictionary(item => item.Key, item => item.Value.PortfolioId), cancellationToken);
+        var projects = await ProjectRowsAsync(portfolioIds, scopedProjectIds, programById.ToDictionary(item => item.Key, item => item.Value.PortfolioId), cancellationToken);
         var projectIds = projects.Select(item => item.Id).ToArray();
         var schedules = await ScheduleRowsAsync(projectIds, cancellationToken);
         var projectById = projects.ToDictionary(item => item.Id);
@@ -102,18 +118,25 @@ public sealed class PortfolioManagementService : IPortfolioManagementService
         projectsPage = Math.Max(projectsPage, 1);
         pageSize = Math.Clamp(pageSize, 1, 100);
         var context = _managementContext.Current;
-        if (context is null || context.SelectedPerspective != ManagementPerspective.PortfolioManager || !context.Scope.PortfolioIds.Contains(portfolioId))
+        var canReadTenantData = context?.CanReadAllTenantPortfolioProgramData == true;
+        if (!canReadTenantData && context is not null && (context.SelectedPerspective != ManagementPerspective.PortfolioManager || !context.Scope.PortfolioIds.Contains(portfolioId)))
             return Result<PortfolioManagementOverviewDto>.Failure(Error.NotFound("Portfolio not found"));
 
-        var portfolio = await _db.Set<PortfolioEntity>().AsNoTracking().FirstOrDefaultAsync(item => item.Id == portfolioId, cancellationToken);
+        var portfolioQuery = _db.Set<PortfolioEntity>().AsNoTracking().Where(item => item.Id == portfolioId);
+        if (canReadTenantData) portfolioQuery = portfolioQuery.Where(item => item.TenantId == context!.TenantId);
+        var portfolio = await portfolioQuery.FirstOrDefaultAsync(cancellationToken);
         if (portfolio is null) return Result<PortfolioManagementOverviewDto>.Failure(Error.NotFound("Portfolio not found"));
 
+        var portfolioIds = new[] { portfolioId };
+        var readScope = canReadTenantData ? null : context;
+        var scopedProgramIds = await ProgramIdsForPortfoliosAsync(portfolioIds, readScope, cancellationToken);
+        var scopedProjectIds = await ProjectIdsForPortfoliosAsync(portfolioIds, scopedProgramIds, readScope, cancellationToken);
         var programs = await _db.Set<ProgramEntity>().AsNoTracking()
-            .Where(item => item.PortfolioId == portfolioId && context.Scope.ProgramIds.Contains(item.Id))
+            .Where(item => item.PortfolioId == portfolioId && scopedProgramIds.Contains(item.Id))
             .Select(item => new ProgramRow(item.Id, item.PortfolioId, item.Name, item.Code, item.ProgramManagerId, item.Status, item.Health, item.Currency, item.StartDate, item.EndDate))
             .ToListAsync(cancellationToken);
         var programById = programs.ToDictionary(item => item.Id);
-        var projects = await ProjectRowsAsync([portfolioId], context.Scope.ProjectIds, programById.ToDictionary(item => item.Key, item => item.Value.PortfolioId), cancellationToken);
+        var projects = await ProjectRowsAsync(portfolioIds, scopedProjectIds, programById.ToDictionary(item => item.Key, item => item.Value.PortfolioId), cancellationToken);
         var projectIds = projects.Select(item => item.Id).ToArray();
         var managers = await UserNamesAsync(new[] { portfolio.OwnerId }.Concat(programs.Select(item => item.ManagerId)).Concat(projects.Select(item => item.ManagerId)), cancellationToken);
         var schedules = await ScheduleRowsAsync(projectIds, cancellationToken);
@@ -308,6 +331,28 @@ public sealed class PortfolioManagementService : IPortfolioManagementService
             .Select(project => new ProjectRow(project.Id, project.ProgramId, project.PortfolioId, project.Name, project.Code, project.Status, project.Health, project.Priority, project.ProjectManagerId, project.StartDate, project.EndDate, project.Progress, project.Currency, project.Budget, project.ActualCost, !project.ProgramId.HasValue))
             .ToListAsync(cancellationToken);
         return rows.Select(project => project with { PortfolioId = project.ProgramId.HasValue ? programPortfolios.GetValueOrDefault(project.ProgramId.Value) : project.PortfolioId }).ToList();
+    }
+
+    private async Task<Guid[]> ProgramIdsForPortfoliosAsync(Guid[] portfolioIds, ManagementContext? context, CancellationToken cancellationToken)
+    {
+        if (context is not null) return context.Scope.ProgramIds.ToArray();
+
+        return await _db.Set<ProgramEntity>().AsNoTracking()
+            .Where(program => portfolioIds.Contains(program.PortfolioId))
+            .Select(program => program.Id)
+            .ToArrayAsync(cancellationToken);
+    }
+
+    private async Task<IReadOnlySet<Guid>> ProjectIdsForPortfoliosAsync(Guid[] portfolioIds, Guid[] programIds, ManagementContext? context, CancellationToken cancellationToken)
+    {
+        if (context is not null) return context.Scope.ProjectIds;
+
+        return await _db.Set<ProjectEntity>().AsNoTracking()
+            .Where(project =>
+                (project.ProgramId.HasValue && programIds.Contains(project.ProgramId.Value)) ||
+                (!project.ProgramId.HasValue && project.PortfolioId.HasValue && portfolioIds.Contains(project.PortfolioId.Value)))
+            .Select(project => project.Id)
+            .ToHashSetAsync(cancellationToken);
     }
 
     private async Task<List<ScheduleRow>> ScheduleRowsAsync(Guid[] projectIds, CancellationToken cancellationToken)

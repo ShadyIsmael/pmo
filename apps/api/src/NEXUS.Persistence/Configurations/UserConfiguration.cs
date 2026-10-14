@@ -11,7 +11,11 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
         builder.ToTable("Users");
         builder.HasKey(u => u.Id);
         builder.Property(u => u.Email).HasMaxLength(256).IsRequired();
-        builder.Property(u => u.PasswordHash).IsRequired();
+        builder.Property(u => u.PasswordHash).IsRequired(false);
+        builder.Property(u => u.AuthenticationSource).HasConversion<string>().HasMaxLength(32).IsRequired();
+        builder.Property(u => u.MustChangePassword).HasDefaultValue(false);
+        builder.Property(u => u.TemporaryPasswordExpiresAt);
+        builder.Property(u => u.PasswordChangedAt);
         builder.Property(u => u.FirstName).HasMaxLength(100).IsRequired();
         builder.Property(u => u.LastName).HasMaxLength(100).IsRequired();
         builder.Property(u => u.JobTitle).HasMaxLength(200);

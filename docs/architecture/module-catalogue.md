@@ -484,16 +484,19 @@ Meeting participants support either an active internal user (`UserId`) or an ext
 | Attribute | Detail |
 |-----------|--------|
 | **Namespace** | `NEXUS.Modules.Notifications` |
-| **Business responsibility** | In-app notifications, templates, preferences, digests, multi-channel (in-app works; email/push are placeholder) |
-| **Maturity** | Implemented (in-app only) |
-| **Evidence** | `AppDbContext.cs:112-115` (4 DbSets), `SeedDataProvider.cs:525-543` (30 notifications seeded with Channel="InApp"), `NotificationController.cs`, `INotificationChannel.cs`, `Program.cs:111` (`AddNotificationsModule()`) |
+| **Business responsibility** | Canonical in-app notifications, user channel preferences, durable asynchronous Push delivery, templates and digests (Email deferred) |
+| **Maturity** | In-app and Push delivery foundation implemented; Firebase runtime delivery requires deployment configuration and browser consent |
+| **Evidence** | `AppDbContext.cs` notification DbSets, `NotificationController.cs`, `NotificationDeliveryProcessor.cs`, `NotificationDeliveryWorker.cs`, `FirebaseNotificationChannel.cs`, `NotificationsModuleRegistration.cs` |
 
 ### Domain Entities
 | Entity | DbSet | Verified |
 |--------|-------|----------|
 | Notification | `Notifications` | `AppDbContext.cs:112` |
+| NotificationDelivery | `NotificationDeliveries` | `AppDbContext.cs` |
+| NotificationDeliveryAttempt | `NotificationDeliveryAttempts` | `AppDbContext.cs` |
 | NotificationTemplate | `NotificationTemplates` | `AppDbContext.cs:113` |
 | NotificationPreference | `NotificationPreferences` | `AppDbContext.cs:114` |
+| UserDeviceToken | `UserDeviceTokens` | `AppDbContext.cs` |
 | NotificationDigest | `NotificationDigests` | `AppDbContext.cs:115` |
 
 ### Application Services
@@ -501,14 +504,20 @@ Meeting participants support either an active internal user (`UserId`) or an ext
 |---------|------|----------|
 | `INotificationService` | `Application/INotificationService.cs` | Yes |
 | `NotificationService` | `Application/NotificationService.cs` | Yes |
-| `INotificationChannel` | `Application/INotificationChannel.cs` | Yes (interface only; Email/Push not implemented) |
+| `IPushNotificationSender` | `Application/PushNotificationSender.cs` | Yes (Firebase provider boundary) |
+| `NotificationDeliveryProcessor` | `Infrastructure/NotificationDeliveryProcessor.cs` | Yes (claim, per-device send, retry and result tracking) |
+| `NotificationDeliveryWorker` | `Infrastructure/NotificationDeliveryWorker.cs` | Yes (bounded background polling) |
 
 ### API Endpoints
 | Endpoint | Controller File | Verified |
 |----------|----------------|----------|
-| `GET/POST /api/notifications` | `NotificationController.cs` | Yes |
-| `PUT /api/notifications/{id}/read` | `NotificationController.cs` | Yes |
-| `GET/PUT /api/notifications/preferences` | `NotificationController.cs` | Yes |
+| `GET /api/notifications` | `NotificationController.cs` | Yes (paged, current-user only) |
+| `GET /api/notifications/unread-count` | `NotificationController.cs` | Yes |
+| `POST /api/notifications/{id}/mark-read`, `PUT /api/notifications/read-all` | `NotificationController.cs` | Yes |
+| `GET/PUT /api/notifications/preferences` | `NotificationController.cs` | Yes (authenticated user only) |
+| `POST/DELETE /api/notifications/devices` | `NotificationController.cs` | Yes (authenticated tenant/user ownership) |
+
+Supported event types are project handover, program handover, and portfolio handover. Preferences default to In-App on and Push off. No Email provider or delivery is active.
 
 ### Dependencies
 - Identity (user reference)

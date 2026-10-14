@@ -40,11 +40,54 @@ public sealed class ManagementContextMiddleware
             return;
         }
         var viewMode = parsedViewMode ?? ManagementViewMode.Native;
+        var canReadAllTenantPortfolioProgramData = HttpMethods.IsGet(httpContext.Request.Method)
+            && viewMode == ManagementViewMode.Native
+            && IsTenantAdminPortfolioProgramReadPath(httpContext.Request.Path)
+            && await resolver.IsTenantAdministratorAsync(userId, tenantId, httpContext.RequestAborted);
+        var hasTenantAdministratorPortfolioWriteScope = HttpMethods.IsPut(httpContext.Request.Method)
+            && viewMode == ManagementViewMode.Native
+            && IsTenantAdminPortfolioUpdatePath(httpContext.Request.Path)
+            && await resolver.IsTenantAdministratorAsync(userId, tenantId, httpContext.RequestAborted);
+        var hasTenantPortfolioAdminScope = canReadAllTenantPortfolioProgramData || hasTenantAdministratorPortfolioWriteScope;
         var context = await resolver.ResolveAsync(userId, tenantId, perspective, viewMode, ParseGuid(httpContext.Request.Headers[PortfolioHeader]), ParseGuid(httpContext.Request.Headers[ProgramHeader]), ParseGuid(httpContext.Request.Headers[ProjectHeader]), httpContext.RequestAborted);
-        if (context is null && (perspective.HasValue || viewMode == ManagementViewMode.ReadOnlyViewAs))
+        if (context is null && (perspective.HasValue || viewMode == ManagementViewMode.ReadOnlyViewAs) && !hasTenantPortfolioAdminScope)
         {
+            // Timer sessions are personal to the authenticated Resource owner
+            // and are intentionally started before a project is selected.
+            // A stale native management header must not block this flow. The
+            // service still enforces TimeTracking permissions and tenant/user
+            // ownership, while read-only view-as remains blocked below.
+            if (IsTimerEndpoint(httpContext.Request.Path) && viewMode == ManagementViewMode.Native)
+            {
+                await _next(httpContext);
+                return;
+            }
+
             await ForbiddenAsync(httpContext, "The requested perspective or context is not available.");
             return;
+        }
+
+        if (context is null)
+        {
+            // No perspective header was sent and the user has no native
+            // assignments. Establish a context with the user's native scope
+            // (empty when no assignments exist) so that row-level scope
+            // filtering in services (e.g. ProjectService.InScope) is applied
+            // instead of silently falling open to every tenant record.
+            var snapshot = await resolver.GetPerspectiveSnapshotAsync(userId, tenantId, cancellationToken: httpContext.RequestAborted);
+            context = new ManagementContext(userId, tenantId, ManagementPerspective.ProjectManager, ManagementViewMode.Native, null, null, null, snapshot.Scope)
+            {
+                CanReadAllTenantPortfolioProgramData = canReadAllTenantPortfolioProgramData,
+                HasTenantAdministratorPortfolioWriteScope = hasTenantAdministratorPortfolioWriteScope
+            };
+        }
+        else if (hasTenantPortfolioAdminScope)
+        {
+            context = context with
+            {
+                CanReadAllTenantPortfolioProgramData = canReadAllTenantPortfolioProgramData,
+                HasTenantAdministratorPortfolioWriteScope = hasTenantAdministratorPortfolioWriteScope
+            };
         }
 
         if (context is not null)
@@ -69,6 +112,16 @@ public sealed class ManagementContextMiddleware
 
     private static async Task<bool> IsAddressableResourceInScopeAsync(HttpContext httpContext, IManagementScopeResolver resolver, Guid userId, Guid tenantId, ManagementContext context)
     {
+        if (context.CanReadAllTenantPortfolioProgramData
+            && HttpMethods.IsGet(httpContext.Request.Method)
+            && IsTenantAdminPortfolioProgramReadPath(httpContext.Request.Path))
+            return true;
+
+        if (context.HasTenantAdministratorPortfolioWriteScope
+            && HttpMethods.IsPut(httpContext.Request.Method)
+            && IsTenantAdminPortfolioUpdatePath(httpContext.Request.Path))
+            return true;
+
         var segments = httpContext.Request.Path.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) ?? Array.Empty<string>();
         for (var i = 0; i < segments.Length - 1; i++)
         {
@@ -82,6 +135,45 @@ public sealed class ManagementContextMiddleware
 
     private static bool IsMutation(string method) => HttpMethods.IsPost(method) || HttpMethods.IsPut(method) || HttpMethods.IsPatch(method) || HttpMethods.IsDelete(method);
     private static bool IsSessionEndpoint(PathString path) => path.StartsWithSegments("/api/auth");
+    private static bool IsTimerEndpoint(PathString path) => path.StartsWithSegments("/api/timer");
+    private static bool IsTenantAdminPortfolioProgramReadPath(PathString path)
+    {
+        var segments = path.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) ?? Array.Empty<string>();
+        var isApiPath = segments.Length > 0 && segments[0].Equals("api", StringComparison.OrdinalIgnoreCase);
+        if (!isApiPath) return false;
+
+        if (segments.Length == 2)
+            return segments[1].Equals("portfolios", StringComparison.OrdinalIgnoreCase)
+                || segments[1].Equals("programs", StringComparison.OrdinalIgnoreCase);
+
+        if (segments.Length == 3 && Guid.TryParse(segments[2], out _))
+            return segments[1].Equals("portfolios", StringComparison.OrdinalIgnoreCase)
+                || segments[1].Equals("programs", StringComparison.OrdinalIgnoreCase);
+
+        if (segments.Length == 3)
+            return (segments[1].Equals("portfolio-management", StringComparison.OrdinalIgnoreCase)
+                    && segments[2].Equals("portfolios", StringComparison.OrdinalIgnoreCase))
+                || (segments[1].Equals("program-management", StringComparison.OrdinalIgnoreCase)
+                    && segments[2].Equals("programs", StringComparison.OrdinalIgnoreCase));
+
+        if (segments.Length != 5
+            || !Guid.TryParse(segments[3], out _)
+            || !segments[4].Equals("overview", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        return (segments[1].Equals("portfolio-management", StringComparison.OrdinalIgnoreCase)
+                && segments[2].Equals("portfolios", StringComparison.OrdinalIgnoreCase))
+            || (segments[1].Equals("program-management", StringComparison.OrdinalIgnoreCase)
+                && segments[2].Equals("programs", StringComparison.OrdinalIgnoreCase));
+    }
+    private static bool IsTenantAdminPortfolioUpdatePath(PathString path)
+    {
+        var segments = path.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) ?? Array.Empty<string>();
+        return segments.Length == 3
+            && segments[0].Equals("api", StringComparison.OrdinalIgnoreCase)
+            && segments[1].Equals("portfolios", StringComparison.OrdinalIgnoreCase)
+            && Guid.TryParse(segments[2], out _);
+    }
     private static Guid? ParseGuid(string? value) => Guid.TryParse(value, out var id) ? id : null;
     private static T? ParseEnum<T>(string? value) where T : struct, Enum => Enum.TryParse<T>(value, true, out var parsed) ? parsed : null;
 

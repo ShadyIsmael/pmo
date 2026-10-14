@@ -1,12 +1,15 @@
 using Microsoft.EntityFrameworkCore;
+using NEXUS.Modules.Identity.Domain;
 using NEXUS.Modules.Portfolio.Domain;
 using NEXUS.Modules.ProjectManagement.Domain;
+using NEXUS.Modules.ResourceManagement.Domain;
 using NEXUS.SharedKernel.Management;
 
 namespace NEXUS.Persistence.Management;
 
 public sealed class ManagementScopeResolver : IManagementScopeResolver
 {
+    private const string TenantAdministratorRoleName = "admin";
     private readonly AppDbContext _db;
 
     public ManagementScopeResolver(AppDbContext db) => _db = db;
@@ -115,6 +118,14 @@ public sealed class ManagementScopeResolver : IManagementScopeResolver
         return portfolioScope.ProjectIds.Contains(projectId) || programScope.ProjectIds.Contains(projectId) || projectScope.ProjectIds.Contains(projectId);
     }
 
+    public Task<bool> IsTenantAdministratorAsync(Guid userId, Guid tenantId, CancellationToken cancellationToken = default)
+        => _db.Set<UserRole>().IgnoreQueryFilters().AsNoTracking().AnyAsync(assignment =>
+            assignment.UserId == userId && assignment.TenantId == tenantId && !assignment.IsDeleted &&
+            assignment.User.TenantId == tenantId && assignment.User.IsActive && !assignment.User.IsDeleted &&
+            assignment.Role.TenantId == tenantId && assignment.Role.IsSystem &&
+            assignment.Role.Name == TenantAdministratorRoleName && !assignment.Role.IsDeleted,
+            cancellationToken);
+
     private async Task<ManagementScope> BuildScopeAsync(AssignmentSet assignments, ManagementPerspective perspective, CancellationToken cancellationToken)
     {
         var portfolioIds = perspective == ManagementPerspective.PortfolioManager ? assignments.Portfolios.Select(x => x.Id).ToHashSet() : new HashSet<Guid>();
@@ -171,7 +182,7 @@ public sealed class ManagementScopeResolver : IManagementScopeResolver
     {
         var portfolios = await _db.Set<Portfolio>().AsNoTracking().Where(x => x.TenantId == tenantId && (x.OwnerId == userId || _db.Set<PortfolioManagerAssignment>().Any(a => a.TenantId == tenantId && a.PortfolioId == x.Id && a.PortfolioManagerId == userId && a.IsCurrent && !a.IsDeleted))).OrderBy(x => x.Name).ThenBy(x => x.Code).ThenBy(x => x.Id).Select(x => new ManagementEntityReference(x.Id, x.Name, x.Code)).ToListAsync(cancellationToken);
         var programs = await _db.Set<Program>().AsNoTracking().Where(x => x.TenantId == tenantId && (x.ProgramManagerId == userId || _db.Set<ProgramManagerAssignment>().Any(a => a.TenantId == tenantId && a.ProgramId == x.Id && a.ProgramManagerId == userId && a.IsCurrent && !a.IsDeleted))).OrderBy(x => x.Name).ThenBy(x => x.Code).ThenBy(x => x.Id).Select(x => new ManagementEntityReference(x.Id, x.Name, x.Code)).ToListAsync(cancellationToken);
-        var projects = await _db.Set<Project>().AsNoTracking().Where(x => x.TenantId == tenantId && (x.ProjectManagerId == userId || _db.Set<ProjectManagerAssignment>().Any(a => a.TenantId == tenantId && a.ProjectId == x.Id && a.ProjectManagerId == userId && a.IsCurrent && !a.IsDeleted))).OrderBy(x => x.Name).ThenBy(x => x.Code).ThenBy(x => x.Id).Select(x => new ManagementEntityReference(x.Id, x.Name, x.Code)).ToListAsync(cancellationToken);
+        var projects = await _db.Set<Project>().AsNoTracking().Where(x => x.TenantId == tenantId && (x.ProjectManagerId == userId || _db.Set<ProjectManagerAssignment>().Any(a => a.TenantId == tenantId && a.ProjectId == x.Id && a.ProjectManagerId == userId && a.IsCurrent && !a.IsDeleted) || _db.Set<ProjectMember>().Any(m => m.ProjectId == x.Id && m.Status == "Active" && !m.IsDeleted && _db.Set<Resource>().Any(r => r.Id == m.ResourceId && r.UserId == userId && !r.IsDeleted)))).OrderBy(x => x.Name).ThenBy(x => x.Code).ThenBy(x => x.Id).Select(x => new ManagementEntityReference(x.Id, x.Name, x.Code)).ToListAsync(cancellationToken);
         var native = new HashSet<ManagementPerspective>();
         if (portfolios.Count > 0) native.Add(ManagementPerspective.PortfolioManager);
         if (programs.Count > 0) native.Add(ManagementPerspective.ProgramManager);

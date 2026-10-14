@@ -100,6 +100,8 @@ public sealed class ProgramService : IProgramService
         var validation = Validate(dto); if (validation is not null) return Result<ProgramDto>.Failure(validation);
         var entity = await InScope(_db.Set<Entity>()).FirstOrDefaultAsync(x => x.Id == id, ct);
         if (entity is null) return Result<ProgramDto>.Failure(Error.NotFound("Program not found"));
+        if (entity.ProgramManagerId.HasValue && entity.ProgramManagerId != dto.ProgramManagerId)
+            return Result<ProgramDto>.Failure(Error.Validation("Program Manager changes must use the governed handover process"));
         if (!await IsValidPortfolioAsync(dto.PortfolioId, ct)) return Result<ProgramDto>.Failure(Error.Validation("Invalid Portfolio"));
         if (entity.PortfolioId != dto.PortfolioId && await HasProjectsAsync(id, ct)) return Result<ProgramDto>.Failure(Error.Validation("A Program with Projects cannot be moved to another Portfolio"));
         if (dto.ProgramManagerId.HasValue && !await IsActiveUserAsync(dto.ProgramManagerId.Value, ct)) return Result<ProgramDto>.Failure(Error.Validation("Program Manager must be an active user"));

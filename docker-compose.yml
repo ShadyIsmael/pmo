@@ -81,6 +81,29 @@ services:
       - api
     restart: unless-stopped
 
+  # Optional React/Vite preview. Keep this separate from the Next service until the
+  # parity gate and manual UAT are approved.
+  web-react:
+    profiles: ["react"]
+    build:
+      context: ./apps/web-react
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL-}
+        VITE_FIREBASE_API_KEY: ${VITE_FIREBASE_API_KEY-}
+        VITE_FIREBASE_AUTH_DOMAIN: ${VITE_FIREBASE_AUTH_DOMAIN-}
+        VITE_FIREBASE_PROJECT_ID: ${VITE_FIREBASE_PROJECT_ID-}
+        VITE_FIREBASE_STORAGE_BUCKET: ${VITE_FIREBASE_STORAGE_BUCKET-}
+        VITE_FIREBASE_MESSAGING_SENDER_ID: ${VITE_FIREBASE_MESSAGING_SENDER_ID-}
+        VITE_FIREBASE_APP_ID: ${VITE_FIREBASE_APP_ID-}
+        VITE_FIREBASE_VAPID_KEY: ${VITE_FIREBASE_VAPID_KEY-}
+    container_name: nexus-web-react
+    ports:
+      - "4100:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+
   worker:
     build:
       context: ./apps/api

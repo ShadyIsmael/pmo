@@ -172,6 +172,16 @@ export const Permissions = {
 | **Resource Manager** | `Resource.*`, `Project.View`, `Report.View` |
 | **System Administrator** | All permissions (full system access) |
 
+## Role Administration and Effective Permissions
+
+The Identity module exposes role administration through the existing `users.write` capability. Role-management reads and writes are tenant-scoped from the authenticated tenant claim; callers do not supply a tenant ID in the request body. The server only returns permission entries the acting user currently has and rejects a role permission set that exceeds the actor's own effective permissions.
+
+- Effective access is the union of permissions from the user's assigned roles, then per-user overrides are applied: `Allow` adds a permission and `Deny` removes it. `Inherit` is represented by having no override row.
+- Role permission changes and user-role assignments are audited. An actor cannot change their own role assignments or remove their final effective `users.write` grant through a role update.
+- System roles may have their permission sets adjusted by an authorized actor, but cannot be renamed or deleted.
+- A custom role cannot be deleted while any non-deleted user assignment points to it. This avoids silently dropping user access assignments.
+- Role and permission records are selected with explicit tenant checks in addition to EF query filters, including lookup paths that intentionally bypass ambient filters.
+
 ---
 
 ## Multi-Tenant Permission Isolation

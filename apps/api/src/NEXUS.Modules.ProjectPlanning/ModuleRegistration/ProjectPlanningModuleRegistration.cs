@@ -12,6 +12,8 @@ public static class ProjectPlanningModuleRegistration
     {
         services.AddScoped<IPlanService, PlanService>();
         services.AddScoped<IProjectPlanProgressLookup, ProjectPlanProgressLookup>();
+        services.AddScoped<IProjectEvmPlanLookup, ProjectEvmPlanLookup>();
+        services.AddScoped<IProjectPlanMilestoneLookup, ProjectPlanMilestoneLookup>();
         services.AddScoped<IPlanWbsService, PlanWbsService>();
         services.AddScoped<IPlanActivityService, PlanActivityService>();
         services.AddScoped<IPlanDependencyService, PlanDependencyService>();

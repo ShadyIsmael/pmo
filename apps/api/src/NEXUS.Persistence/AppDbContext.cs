@@ -35,6 +35,7 @@ public class AppDbContext : DbContext
     public DbSet<Permission> Permissions => Set<Permission>();
     public DbSet<UserRole> UserRoles => Set<UserRole>();
     public DbSet<UserSession> UserSessions => Set<UserSession>();
+    public DbSet<UserPermissionOverride> UserPermissionOverrides => Set<UserPermissionOverride>();
 
     public DbSet<Organization> Organizations => Set<Organization>();
     public DbSet<BusinessUnit> BusinessUnits => Set<BusinessUnit>();
@@ -168,6 +169,8 @@ public class AppDbContext : DbContext
     public DbSet<Delegation> Delegations => Set<Delegation>();
 
     public DbSet<Notification> Notifications => Set<Notification>();
+    public DbSet<NotificationDelivery> NotificationDeliveries => Set<NotificationDelivery>();
+    public DbSet<NotificationDeliveryAttempt> NotificationDeliveryAttempts => Set<NotificationDeliveryAttempt>();
     public DbSet<UserDeviceToken> UserDeviceTokens => Set<UserDeviceToken>();
     public DbSet<NotificationTemplate> NotificationTemplates => Set<NotificationTemplate>();
     public DbSet<NotificationPreference> NotificationPreferences => Set<NotificationPreference>();
@@ -189,6 +192,17 @@ public class AppDbContext : DbContext
     public DbSet<IntegrationSync> IntegrationSyncs => Set<IntegrationSync>();
     public DbSet<IntegrationWebhook> IntegrationWebhooks => Set<IntegrationWebhook>();
     public DbSet<SyncConflict> SyncConflicts => Set<SyncConflict>();
+    public DbSet<DirectoryConnection> DirectoryConnections => Set<DirectoryConnection>();
+    public DbSet<DirectorySyncScope> DirectorySyncScopes => Set<DirectorySyncScope>();
+    public DbSet<DirectoryFieldMapping> DirectoryFieldMappings => Set<DirectoryFieldMapping>();
+    public DbSet<DirectoryGroup> DirectoryGroups => Set<DirectoryGroup>();
+    public DbSet<DirectoryGroupMapping> DirectoryGroupMappings => Set<DirectoryGroupMapping>();
+    public DbSet<DirectoryOrganizationMapping> DirectoryOrganizationMappings => Set<DirectoryOrganizationMapping>();
+    public DbSet<DirectoryProvisioningPolicy> DirectoryProvisioningPolicies => Set<DirectoryProvisioningPolicy>();
+    public DbSet<DirectoryUserLink> DirectoryUserLinks => Set<DirectoryUserLink>();
+    public DbSet<DirectoryRoleGrant> DirectoryRoleGrants => Set<DirectoryRoleGrant>();
+    public DbSet<DirectorySyncRun> DirectorySyncRuns => Set<DirectorySyncRun>();
+    public DbSet<DirectorySyncItem> DirectorySyncItems => Set<DirectorySyncItem>();
 
     public DbSet<Plugin> Plugins => Set<Plugin>();
     public DbSet<TenantPlugin> TenantPlugins => Set<TenantPlugin>();

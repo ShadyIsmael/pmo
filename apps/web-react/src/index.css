@@ -1,0 +1,94 @@
+@import "./nexus-tokens.css";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Pilot compatibility shell — preserved, maps to NEXUS tokens, no redesign */
+.app-shell { min-height: 100vh; display: flex; background: hsl(var(--background)); }
+.app-column { min-width: 0; flex: 1; display: flex; flex-direction: column; min-height: 100vh; }
+.main-content { max-width: 100%; width: 100%; margin: 0 auto; padding: 1rem; }
+@media (min-width: 1024px) { .main-content { padding: 1rem; } }
+.route-state { min-height: 340px; display: flex; align-items: center; justify-content: center; color: hsl(var(--muted-foreground)); }
+.timer-entry { display: inline-flex; align-items: center; gap: 7px; padding: 8px 12px; border: 1px solid hsl(var(--border)); border-radius: 7px; background: hsl(var(--card)); font-size: 12px; white-space: nowrap; }
+.timer-entry.timer-active { border-color: hsl(var(--primary)); background: hsl(var(--primary) / 0.08); }
+.icon-button { width: 32px; height: 32px; display: inline-grid; place-items: center; border-radius: 7px; color: hsl(var(--muted-foreground)); }
+.icon-button:hover { background: hsl(var(--muted)); }
+html[dir="rtl"] .app-shell { direction: rtl; }
+
+.dashboard-widget-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; align-items: stretch; }
+.dashboard-widget { grid-column: 1 / -1; min-width: 0; min-height: var(--dashboard-widget-min-height, 12rem); }
+.dashboard-widget-move { display: none; }
+@media (min-width: 640px) {
+  .dashboard-widget-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); grid-auto-rows: 6rem; grid-auto-flow: dense; }
+  .dashboard-widget { grid-column: auto / span var(--dashboard-widget-span-md, 3); grid-row: auto / span var(--dashboard-widget-row-span, 3); }
+}
+@media (min-width: 1024px) {
+  .dashboard-widget-move { display: inline-flex; }
+  .dashboard-widget-grid { grid-template-columns: repeat(12, minmax(0, 1fr)); }
+  .dashboard-widget { grid-column: var(--dashboard-widget-column, 1) / span var(--dashboard-widget-span-xl, 3); grid-row: var(--dashboard-widget-row, 1) / span var(--dashboard-widget-row-span, 3); min-height: 0; height: 100%; }
+}
+
+@layer components {
+  .nexus-page { animation: prism-enter 360ms ease-out both; }
+  .nexus-table-surface {
+    overflow-x: auto;
+    overflow-y: visible;
+    border: 1px solid hsl(var(--border) / 0.86);
+    border-radius: 0.75rem;
+    background: hsl(var(--card) / 0.76);
+    box-shadow: 0 12px 28px -26px hsl(228 35% 5% / 0.9);
+    position: relative;
+    scrollbar-width: thin;
+  }
+  .nexus-table-header {
+    min-height: 2.75rem;
+    align-items: center;
+    border-bottom: 1px solid hsl(var(--border) / 0.72);
+    background: linear-gradient(90deg, hsl(var(--muted) / 0.72), hsl(var(--muted) / 0.25));
+    color: hsl(var(--muted-foreground));
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    line-height: 1.2;
+    text-transform: uppercase;
+  }
+  .nexus-table-row {
+    min-height: 3.25rem;
+    align-items: center;
+    border-bottom: 1px solid hsl(var(--border) / 0.5);
+    transition: background-color 150ms ease, box-shadow 150ms ease;
+  }
+  .nexus-table-row:hover {
+    background: linear-gradient(90deg, hsl(247 78% 58% / 0.07), hsl(190 96% 62% / 0.025));
+  }
+  .nexus-projects .nexus-table-row { font-size: 0.78rem; }
+  .nexus-projects .nexus-table-surface::before,
+  .nexus-metric-card::before {
+    content: "";
+    position: absolute;
+    inset-inline: 0;
+    top: 0;
+    z-index: 1;
+    height: 2px;
+    pointer-events: none;
+    background: linear-gradient(90deg, hsl(247 78% 58%), hsl(190 96% 62%), hsl(38 96% 61%));
+  }
+  .nexus-metric-card {
+    position: relative;
+    overflow: hidden;
+    border-color: hsl(var(--border) / 0.82);
+    background: linear-gradient(145deg, hsl(var(--card)), hsl(var(--muted) / 0.3));
+  }
+}
+
+@keyframes prism-enter {
+  from { opacity: 0; transform: translateY(7px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 900px) {
+  .nexus-projects .nexus-table-surface > div > .nexus-table-header,
+  .nexus-projects .nexus-table-surface > div > .nexus-table-row,
+  .nexus-projects .nexus-table-surface > .nexus-table-header,
+  .nexus-projects .nexus-table-surface > .nexus-table-row { min-width: 980px; }
+}

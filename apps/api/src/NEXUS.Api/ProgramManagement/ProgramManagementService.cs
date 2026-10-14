@@ -32,16 +32,25 @@ public sealed class ProgramManagementService : IProgramManagementService
         page = Math.Max(page, 1);
         pageSize = Math.Clamp(pageSize, 1, 100);
         var context = _managementContext.Current;
-        if (context is null || context.Scope.ProgramIds.Count == 0)
+        var canReadTenantData = context?.CanReadAllTenantPortfolioProgramData == true;
+        if (!canReadTenantData && (context is null || context.Scope.ProgramIds.Count == 0))
             return new PagedResult<ProgramManagementListItemDto>([], page, pageSize, 0);
 
-        var programIds = context.Scope.ProgramIds.ToArray();
-        if (context.ViewMode == ManagementViewMode.Native && context.SelectedPerspective == ManagementPerspective.ProgramManager)
+        var programIds = canReadTenantData ? Array.Empty<Guid>() : context!.Scope.ProgramIds.ToArray();
+        if (!canReadTenantData && context!.ViewMode == ManagementViewMode.Native && context.SelectedPerspective == ManagementPerspective.ProgramManager)
         {
             var nativeSnapshot = await _scopeResolver.GetPerspectiveSnapshotAsync(context.UserId, context.TenantId, null, cancellationToken);
             programIds = nativeSnapshot.Scope.ProgramIds.ToArray();
         }
-        var query = _db.Set<ProgramEntity>().AsNoTracking().Where(program => programIds.Contains(program.Id));
+        var query = _db.Set<ProgramEntity>().AsNoTracking();
+        if (canReadTenantData)
+        {
+            query = query.Where(program => program.TenantId == context!.TenantId);
+        }
+        else
+        {
+            query = query.Where(program => programIds.Contains(program.Id));
+        }
         if (!string.IsNullOrWhiteSpace(search))
         {
             var term = search.Trim();
@@ -92,10 +101,13 @@ public sealed class ProgramManagementService : IProgramManagementService
         projectsPage = Math.Max(projectsPage, 1);
         projectsPageSize = Math.Clamp(projectsPageSize, 1, 100);
         var context = _managementContext.Current;
-        if (context is null || !context.Scope.ProgramIds.Contains(programId))
+        var canReadTenantData = context?.CanReadAllTenantPortfolioProgramData == true;
+        if (!canReadTenantData && (context is null || !context.Scope.ProgramIds.Contains(programId)))
             return Result<ProgramManagementOverviewDto>.Failure(Error.NotFound("Program not found"));
 
-        var program = await _db.Set<ProgramEntity>().AsNoTracking().FirstOrDefaultAsync(item => item.Id == programId, cancellationToken);
+        var programQuery = _db.Set<ProgramEntity>().AsNoTracking().Where(item => item.Id == programId);
+        if (canReadTenantData) programQuery = programQuery.Where(item => item.TenantId == context!.TenantId);
+        var program = await programQuery.FirstOrDefaultAsync(cancellationToken);
         if (program is null)
             return Result<ProgramManagementOverviewDto>.Failure(Error.NotFound("Program not found"));
 

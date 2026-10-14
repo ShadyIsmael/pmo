@@ -8,8 +8,8 @@
 |------|---------|---------|
 | Node.js | 18+ (LTS recommended) | Frontend development |
 | npm | 10+ | Package management |
-| .NET SDK | 8.0+ | Backend development |
-| PostgreSQL | 16+ | Primary database |
+| .NET SDK | 10.0+ | Backend development |
+| SQL Server | 2022+ | Primary database |
 | Redis | 7+ | Caching and pub/sub |
 | Docker | Latest | Containerized infrastructure |
 | Git | Latest | Version control |
@@ -52,29 +52,15 @@ cd ../..
 
 ## Step 4: Database Setup
 
-### Option A: Using Docker (Recommended)
+### Local SQL Server
 
-```bash
-# Start PostgreSQL and Redis
-npm run docker:up
+The API uses SQL Server. A local SQL Server Developer or Express instance is suitable.
+The Development connection string can be supplied through user secrets or the
+`ConnectionStrings__DefaultConnection` environment variable; do not commit credentials.
+For a local Windows-authenticated instance, the checked-in Development configuration
+uses `Server=localhost;Database=NexusPmo;Trusted_Connection=True;Encrypt=False;TrustServerCertificate=True;MultipleActiveResultSets=true`.
 
-# This starts:
-# - PostgreSQL on port 5432
-# - Redis on port 6379
-```
-
-### Option B: Manual PostgreSQL Setup
-
-1. Install PostgreSQL 16 locally
-2. Create database:
-
-```sql
-CREATE DATABASE nexus_pmo;
-CREATE USER nexus WITH PASSWORD 'nexus_dev_2024';
-GRANT ALL PRIVILEGES ON DATABASE nexus_pmo TO nexus;
-```
-
-3. Start Redis locally (or use Docker for Redis only)
+The API applies EF Core migrations and seeds demo data when run in Development.
 
 ---
 
@@ -137,6 +123,12 @@ The API will:
 - Start on http://localhost:5000
 - Swagger UI at http://localhost:5000/swagger
 
+To apply migrations and seed without opening an API listener, run from the repository root:
+
+```bash
+dotnet run --project apps/api/src/NEXUS.Api/NEXUS.Api.csproj -- --seed-only
+```
+
 ### Start Frontend (Terminal 2)
 
 ```bash
@@ -171,6 +163,46 @@ Seed data is created automatically in Development mode (skipped in Production). 
 Passwords are hashed with ASP.NET Core `PasswordHasher<User>`. Login returns a JWT access token
 (8h) and a refresh token (7d); the frontend refreshes automatically and redirects to
 `/{locale}/login` when the session expires.
+
+---
+
+## Temporary tunnels for the React app and API
+
+The normal React/Vite and API development ports are 4100 and 5000. On Windows,
+`scripts/start-dev-tunnels.ps1` starts separate instances on ports 4110 and
+5100 by default, plus two
+Cloudflare Quick Tunnels, prints their HTTPS URLs, and stops all four processes
+when interrupted. Install `cloudflared` on PATH or place the official
+`cloudflared.exe` in `tmp/tools`. The API instance uses the existing compiled
+build (`dotnet run --no-build`); build it beforehand while no other process
+holds its output files if you need to pick up source changes. The script sets `VITE_API_URL` to the API
+tunnel URL, adds the exact frontend tunnel origin to the API CORS list, and
+allows the exact Vite tunnel hostname. No backend secrets belong in `VITE_`
+variables.
+
+These are anonymous public URLs. Anyone with either URL can reach the
+development service, and this repository's Development mode seeds demo users
+with documented credentials. Use this only for a controlled temporary test
+with data you are willing to expose. The script requires an explicit
+`-AllowPublicAccess` switch. For Google AI Studio browser preview, also pass
+the preview page's exact HTTPS origin if it calls the API directly:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/start-dev-tunnels.ps1 -AllowPublicAccess -AiStudioOrigin 'https://your-preview-origin.example'
+```
+
+Use the printed API URL as the API base URL in the AI Studio app. The origin
+must be the browser page's origin (scheme and hostname, without a path), not
+the API URL. A new Quick Tunnel run produces new URLs, so update the AI Studio
+app after each restart. The API's `/health` endpoint and the React root page
+must become healthy before the script prints the URLs. Logs are in
+`tmp/dev-tunnels`.
+Use `-WebPort` and `-ApiPort` if these ports are occupied; the script refuses
+to attach a tunnel to an existing listener.
+
+Cloudflare Quick Tunnels are for development and provide no stable hostname.
+For a persistent or access-controlled integration, use a named tunnel and
+appropriate access policy instead.
 
 ---
 

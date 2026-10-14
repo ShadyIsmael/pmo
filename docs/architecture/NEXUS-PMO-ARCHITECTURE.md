@@ -59,7 +59,7 @@ C4Context
   System_Ext(ticketing, "Internal Ticketing", "Helpdesk system")
   System_Ext(ai, "AI Provider", "Plan generation, analysis")
   System_Ext(email, "Email Server", "Email notifications (placeholder)")
-  System_Ext(push, "Push Notification", "Mobile alerts (placeholder)")
+  System_Ext(push, "Push Notification", "Firebase Cloud Messaging (async; deployment configuration required)")
   System_Ext(storage, "File Storage", "Document storage (local)")
   System_Ext(erp, "ERP System", "SAP/Oracle integration (placeholder)")
   System_Ext(identity, "Enterprise Identity", "AD/LDAP/SAML (placeholder)")
@@ -79,8 +79,8 @@ C4Context
   Rel(api, jira, "REST API", "Placeholder")
   Rel(api, ticketing, "Internal", "Placeholder")
   Rel(api, ai, "HTTP", "Placeholder")
-  Rel(api, email, "SMTP", "Placeholder")
-  Rel(api, push, "Push Service", "Placeholder")
+  Rel(api, email, "Email delivery", "Deferred")
+  Rel(api, push, "Durable asynchronous delivery", "FCM")
   Rel(api, storage, "File I/O", "LocalStorage Provider")
   Rel(api, erp, "REST/SOAP", "Placeholder")
   Rel(api, identity, "LDAP/SAML/OIDC", "Placeholder")
@@ -90,7 +90,7 @@ C4Context
 - End users: `SeedDataProvider.cs:160-170` (8 demo accounts with distinct roles)
 - MS Project, Jira, Ticketing: plugins/jira-integration/plugin.json, plugins/microsoft-project/plugin.json, plugins/internal-ticketing/plugin.json (all manifest-based placeholders)
 - AI provider: `Program.cs:117` registers AIPlanning module; `docs/architecture/module-catalogue.md:525-546` documents AI planning entities
-- Email/Push: `INotificationChannel` interface documented; email/push channels documented as "placeholder"
+- Notifications: `NotificationService`, durable `NotificationDelivery` rows, a leased background worker, per-device attempts, and an FCM adapter are implemented; Email remains deferred.
 - File storage: `IStorageProvider` interface documented, `LocalStorageProvider` placeholder
 - ERP: plugins/erp-integration-placeholder/plugin.json
 - Enterprise identity: plugins/enterprise-identity-placeholder/plugin.json
@@ -188,7 +188,7 @@ C:\Projects\pmo/
 │   │       ├── NEXUS.Modules.Meetings/          # Meetings, agendas, minutes, actions
 │   │       ├── NEXUS.Modules.WorkflowEngine/    # Workflow templates, instances, transitions
 │   │       ├── NEXUS.Modules.Approvals/         # Approval requests, actions, delegations
-│   │       ├── NEXUS.Modules.Notifications/     # In-app notifications, templates, preferences
+│   │       ├── NEXUS.Modules.Notifications/     # Canonical notifications, preferences, durable Push delivery
 │   │       ├── NEXUS.Modules.Documents/         # Document metadata, versions, reviews
 │   │       ├── NEXUS.Modules.Reporting/         # Report definitions, schedules, exports
 │   │       ├── NEXUS.Modules.Audit/             # Audit entries, activity log
@@ -440,11 +440,11 @@ All 19 modules. Evidence cross-referenced from `docs/architecture/module-catalog
 | **Maturity** | Implemented (18 approval requests seeded) |
 
 ### 8.13 Notifications
-| **Responsibility** | In-app notifications, templates, preferences, digests, multi-channel (in-app placeholder for email/push) |
-| **Entities** | Notification, NotificationTemplate, NotificationPreference, NotificationDigest |
-| **API endpoints** | GET/POST /api/notifications, read/read-all, preferences |
+| **Responsibility** | Canonical in-app notifications, per-user channel preferences, durable asynchronous Push delivery; Email deferred |
+| **Entities** | Notification, NotificationDelivery, NotificationDeliveryAttempt, UserDeviceToken, NotificationTemplate, NotificationPreference, NotificationDigest |
+| **API endpoints** | GET /api/notifications, unread-count, mark-read/read-all, preferences, device register/deactivate |
 | **Dependencies** | Identity |
-| **Maturity** | Implemented (30 notifications seeded, in-app channel verified; email/push are structural only) |
+| **Maturity** | In-App and asynchronous Push foundation implemented; runtime FCM requires valid server configuration and browser consent; Email is deferred |
 
 ### 8.14 Documents
 | **Responsibility** | Document metadata, versioning, categories, reviews, file storage |
@@ -779,8 +779,8 @@ The `WorkItem` entity (owned by `NEXUS.Modules.WorkItems`) serves as the unified
 | MS Project | Plugin | Placeholder | No MPP parsing library discovered |
 | Jira | Plugin | Placeholder | No Jira REST client discovered |
 | Internal Ticketing | Plugin | Placeholder | Uses WorkItems module data model |
-| Email | Channel | Placeholder | INotificationChannel.Email not implemented |
-| Push Notifications | Channel | Placeholder | INotificationChannel.Push not implemented |
+| Email | Channel | Deferred | No provider, template rendering, or send worker; preferences are stored only |
+| Push Notifications | Channel | Implemented foundation | Durable delivery, lease recovery, per-device retries, and FCM adapter; credentials and browser consent required |
 | AI Provider | Module | Mock/Placeholder | AIPlanning module has entities but no real AI provider adapter |
 | ERP (SAP/Oracle) | Plugin | Placeholder | Manifest only |
 | Enterprise Identity | Plugin | Placeholder | Manifest only |
@@ -818,22 +818,25 @@ The `WorkItem` entity (owned by `NEXUS.Modules.WorkItems`) serves as the unified
 ### Entities
 | Entity | Table | Purpose |
 |--------|-------|---------|
-| Notification | Notifications | Individual notification (UserId, Title, Body, Type, Channel, IsRead, SentAt) |
+| Notification | Notifications | Canonical user-facing event (TenantId, UserId, Type, references, in-app visibility, read state) |
+| NotificationDelivery | NotificationDeliveries | Per-notification/channel state, lease, retries, and final outcome |
+| NotificationDeliveryAttempt | NotificationDeliveryAttempts | Per-device Push attempt state and provider result |
+| UserDeviceToken | UserDeviceTokens | Tenant/user-owned FCM registration token and token fingerprint |
 | NotificationTemplate | NotificationTemplates | Message templates (SubjectTemplate, BodyTemplate) |
 | NotificationPreference | NotificationPreferences | Per-user channel and type preferences |
 | NotificationDigest | NotificationDigests | Digest grouping (PendingCount, Frequency, LastSentAt) |
 
-### Channels (planned)
-- `INotificationChannel` interface (documented, not verified as a code interface):
-  - **Email** -- Placeholder (no SMTP client discovered)
-  - **InApp** -- Implemented (entity stored in DB, exposed via API)
-  - **Push** -- Placeholder (no push service discovered)
+### Channels
+- **In-App** -- The canonical `Notification` record is exposed through the authenticated Notification Center APIs. `IsInAppVisible` preserves the user's visibility preference.
+- **Push** -- `NotificationService` stores a pending Push delivery; the bounded hosted worker claims it atomically, resolves active devices, and tracks one retry state per device. Expired leases recover after crashes. Transient failures use bounded exponential backoff; permanent failures stop; invalid/unregistered tokens are deactivated.
+- **Email** -- Deferred. The preference and delivery channel types are present for future integration, but this phase creates no Email delivery and sends no email.
 
 ### Current State
-- **In-app channel functioning**: 30 notifications seeded in `SeedDataProvider.cs:525-543` with `Channel = "InApp"` and `IsRead` flag.
-- **API endpoints** defined for: list notifications, create, mark read, mark all read, preferences.
-- **Email and Push** are architectural intentions only -- no implementation verified.
-- Notification digests referenced in domain but no aggregation logic verified.
+- **Canonical in-app notifications** retain user, tenant, title/body, reference, and read state. Historical notifications remain visible after migration.
+- **Supported producers** currently cover project, program, and portfolio handovers.
+- **Preference defaults** are In-App on, Push off, and Email off. The API derives user/tenant from JWT claims and validates the supported event types.
+- **Push privacy** uses generic lock-screen text and internal reference metadata. Deep-link routes are allowlisted in the service worker.
+- Notification digests exist as domain data; no digest scheduling or sending logic is implemented.
 
 **Evidence:** `AppDbContext.cs:112-115` defines DbSets. `docs/domain/entities.md:377-393` documents entities. `docs/architecture/module-catalogue.md:371-394` documents module.
 
@@ -1069,7 +1072,7 @@ C4Deployment
 | **Meetings** | Implemented | 22 meetings seeded, agendas, minutes, action items |
 | **Workflows** | Partial | Entities exist (8 tables); execution engine not verified |
 | **Approvals** | Implemented | 18 approval requests seeded, multi-level, delegation |
-| **Notifications** | Partially Implemented | In-app channel works (30 seeded); email/push are placeholders |
+| **Notifications** | Partially Implemented | Canonical in-app and durable asynchronous Push foundation; Firebase configuration and browser consent required for runtime delivery; Email deferred |
 | **Reporting** | Implemented | Entities for definitions, schedules, exports exist |
 | **Documents** | Partially Implemented | Entities exist; storage is LocalStorageProvider placeholder |
 | **Audit** | Implemented | AuditEntry and AuditActivity entities seeded |

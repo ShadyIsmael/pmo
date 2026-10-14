@@ -384,7 +384,18 @@ All entities inherit from `BaseEntity` which provides: `Id` (Guid), `TenantId`, 
 
 ### Notification
 | Table: `Notifications` |
-| Key Properties: UserId, Title, Body, Type, Channel (InApp/Email/Push), IsRead, ReadAt, SentAt, EntityType, EntityId |
+| Key Properties: TenantId, nullable UserId, Title, Body, Type, ReferenceType, ReferenceId, IsInAppVisible, IsRead, ReadAt, SentAt, ScheduledAt |
+| Purpose: Canonical user-facing event record; channel delivery state is stored separately. |
+
+### NotificationDelivery
+| Table: `NotificationDeliveries` |
+| Key Properties: TenantId, NotificationId, Channel (Push/Email), Status, AttemptCount, MaxAttempts, NextAttemptAt, ProcessingStartedAt, LeaseId, DeliveredAt, FailureCategory, LastError |
+| Invariants: one delivery per NotificationId and Channel; Email exists as a future channel only and is not dispatched. |
+
+### NotificationDeliveryAttempt
+| Table: `NotificationDeliveryAttempts` |
+| Key Properties: TenantId, NotificationDeliveryId, DeviceTokenId, Status, AttemptCount, NextAttemptAt, DeliveredAt, ProviderMessageId, FailureCategory, LastError |
+| Purpose: Independent per-device Push result and retry state. |
 
 ### NotificationTemplate
 | Table: `NotificationTemplates` |
@@ -392,7 +403,13 @@ All entities inherit from `BaseEntity` which provides: `Id` (Guid), `TenantId`, 
 
 ### NotificationPreference
 | Table: `NotificationPreferences` |
-| Key Properties: UserId, Type, Channel, IsEnabled, DigestFrequency |
+| Key Properties: TenantId, UserId, Type, InAppEnabled, PushEnabled, EmailEnabled, DigestEnabled, DigestFrequency |
+| Invariants: supported event type is validated at the API; active preference is unique by TenantId, UserId, and Type. Defaults are In-App on, Push off, Email off. |
+
+### UserDeviceToken
+| Table: `UserDeviceTokens` |
+| Key Properties: TenantId, UserId, Token, TokenHash, Platform, DeviceName, IsActive, LastSeenAt, DeactivatedAt |
+| Invariants: only one active row may own a token fingerprint across tenants/users; inactive previous owners remain for history. |
 
 ### NotificationDigest
 | Table: `NotificationDigests` |

@@ -36,6 +36,12 @@
 | `status-amber-light` | `#fef3c7` | Background for amber badges |
 | `status-red-light` | `#fce4ec` | Background for red badges |
 
+### Semantic Text and Action Hierarchy
+- Semantic status wording uses text color only (`text-success`, `text-warning`, `text-destructive`, or `text-info`) on a transparent background. Do not add a tinted semantic fill behind status text; neutral text remains `text-muted-foreground`.
+- Financial detail amounts use `text-success` when positive and `text-destructive` when negative; zero and unavailable values stay neutral. Aggregated totals use `text-financial-total` (dark blue in light mode, accessible blue in dark mode). Do not add semantic background fills to financial text.
+- Primary page and form actions use the default Button variant and default size (40px height). Table-row, navigation, pagination, and retry actions use the outline variant at the small size (36px height).
+- Destructive actions use an outline treatment with destructive text/border, not a destructive-filled button. Keep secondary/cancel actions outline and visually subordinate to the primary action.
+
 ### Base Surface Colors
 | Token | Light | Dark |
 |-------|-------|------|
@@ -185,6 +191,14 @@ NEXUS PMO uses **shadcn/ui** -- a collection of re-usable components built on Ra
 - **Screen reader** support via ARIA labels, roles, and live regions
 - **Reduced motion** respected via `prefers-reduced-motion` media query
 - **Form validation** with clear error messages associated to inputs via `aria-describedby`
+
+### Floating Menus and Popovers
+
+- Dropdowns, searchable selects, and other floating panels must render in a portal outside clipped page, table, dialog, and side-sheet containers.
+- Custom pickers and context menus follow the same portal and viewport-boundary rules as shared dropdown components.
+- Anchor each panel to its trigger with viewport-aware positioning; flip above when there is insufficient room below and clamp horizontally/vertically to the viewport.
+- Preserve logical start/end alignment in both LTR and RTL, and keep long menus scrollable within the available viewport space.
+- Outside interaction and Escape must dismiss the panel without treating interaction inside the portaled panel as an outside click.
 
 ---
 

@@ -1,3 +1,5 @@
+using NEXUS.Modules.Identity.Domain;
+
 namespace NEXUS.Modules.Identity.Application;
 
 public class CurrentUserDto
@@ -11,6 +13,9 @@ public class CurrentUserDto
     public string? Phone { get; set; }
     public string? AvatarUrl { get; set; }
     public string? TenantId { get; set; }
+    public AuthenticationSource AuthenticationSource { get; set; }
+    public bool MustChangePassword { get; set; }
+    public DateTime? TemporaryPasswordExpiresAt { get; set; }
     public List<RoleDto> Roles { get; set; } = new();
     public List<string> Permissions { get; set; } = new();
 }

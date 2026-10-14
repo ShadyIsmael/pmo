@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Http;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -70,10 +71,28 @@ public class UsersController : ControllerBase
         if (result.IsFailure)
             return result.Error?.StatusCode switch
             {
-                409 => Conflict(new { error = result.Error.Message }),
-                _ => BadRequest(new { error = result.Error?.Message })
+                409 => Conflict(new { error = result.Error.Message, code = result.Error.Code }),
+                403 => StatusCode(StatusCodes.Status403Forbidden, new { error = result.Error.Message, code = result.Error.Code }),
+                _ => BadRequest(new { error = result.Error?.Message, code = result.Error?.Code })
             };
         return CreatedAtAction(nameof(GetPaged), new { page = 1, pageSize = 20 }, result.Value);
+    }
+
+    [Authorize(Policy = "Users.ResetPassword")]
+    [HttpPost("{id:guid}/reset-password")]
+    public async Task<IActionResult> ResetPassword(Guid id, CancellationToken cancellationToken)
+    {
+        var actorId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "System";
+        var result = await _userAdministrationService.ResetPasswordAsync(id, actorId, cancellationToken);
+        if (result.IsFailure)
+            return result.Error?.StatusCode switch
+            {
+                403 => StatusCode(StatusCodes.Status403Forbidden, new { error = result.Error.Message, code = result.Error.Code }),
+                404 => NotFound(new { error = result.Error.Message, code = result.Error.Code }),
+                409 => Conflict(new { error = result.Error.Message, code = result.Error.Code }),
+                _ => BadRequest(new { error = result.Error?.Message, code = result.Error?.Code })
+            };
+        return Ok(result.Value);
     }
 
     /// <summary>
@@ -91,9 +110,52 @@ public class UsersController : ControllerBase
             {
                 404 => NotFound(new { error = result.Error.Message }),
                 409 => Conflict(new { error = result.Error.Message }),
+                403 => StatusCode(StatusCodes.Status403Forbidden, new { error = result.Error.Message }),
                 _ => BadRequest(new { error = result.Error?.Message })
             };
         return Ok(result.Value);
+    }
+
+    [Authorize(Policy = "Users.Write")]
+    [HttpGet("{id:guid}/permissions")]
+    public async Task<IActionResult> GetPermissions(Guid id, CancellationToken cancellationToken)
+    {
+        if (!TryGetActor(out _, out var tenantId))
+            return Forbid();
+
+        var result = await _userAdministrationService.GetUserPermissionsAsync(id, tenantId, cancellationToken);
+        if (result.IsFailure)
+            return result.Error?.StatusCode == 404 ? NotFound(new { error = result.Error.Message }) : BadRequest(new { error = result.Error?.Message });
+
+        return Ok(result.Value);
+    }
+
+    [Authorize(Policy = "Users.Write")]
+    [HttpPut("{id:guid}/permissions")]
+    public async Task<IActionResult> UpdatePermissions(Guid id, [FromBody] UpdateUserPermissionsDto dto, CancellationToken cancellationToken)
+    {
+        if (!TryGetActor(out var actorId, out var tenantId))
+            return Forbid();
+
+        var result = await _userAdministrationService.UpdateUserPermissionsAsync(id, tenantId, dto, actorId.ToString(), cancellationToken);
+        if (result.IsFailure)
+            return result.Error?.StatusCode switch
+            {
+                403 => StatusCode(StatusCodes.Status403Forbidden, new { error = result.Error.Message }),
+                404 => NotFound(new { error = result.Error.Message }),
+                409 => Conflict(new { error = result.Error.Message }),
+                _ => BadRequest(new { error = result.Error?.Message })
+            };
+
+        return Ok(result.Value);
+    }
+
+    private bool TryGetActor(out Guid actorId, out Guid tenantId)
+    {
+        actorId = Guid.Empty;
+        tenantId = Guid.Empty;
+        return Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out actorId)
+            && Guid.TryParse(User.FindFirstValue("tenantId"), out tenantId);
     }
 
 }

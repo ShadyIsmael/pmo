@@ -23,8 +23,32 @@ public class NotificationController : ControllerBase
     public async Task<IActionResult> GetUserNotifications([FromQuery] int page = 1, [FromQuery] int pageSize = 20, [FromQuery] bool? unreadOnly = null, CancellationToken cancellationToken = default)
     {
         if (!TryGetCurrentUser(out var userId, out var tenantId)) return Unauthorized();
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 100);
         var result = await _notificationService.GetUserNotificationsAsync(tenantId, userId, page, pageSize, unreadOnly, cancellationToken);
         return Ok(result);
+    }
+
+    [HttpGet("unread-count")]
+    public async Task<IActionResult> GetUnreadCount(CancellationToken cancellationToken)
+    {
+        if (!TryGetCurrentUser(out var userId, out var tenantId)) return Unauthorized();
+        return Ok(new { count = await _notificationService.GetUnreadCountAsync(tenantId, userId, cancellationToken) });
+    }
+
+    [HttpGet("preferences")]
+    public async Task<IActionResult> GetPreferences(CancellationToken cancellationToken)
+    {
+        if (!TryGetCurrentUser(out var userId, out var tenantId)) return Unauthorized();
+        return Ok(await _notificationService.GetPreferencesAsync(tenantId, userId, cancellationToken));
+    }
+
+    [HttpPut("preferences")]
+    public async Task<IActionResult> UpdatePreferences([FromBody] UpdateNotificationPreferencesRequest request, CancellationToken cancellationToken)
+    {
+        if (!TryGetCurrentUser(out var userId, out var tenantId)) return Unauthorized();
+        var result = await _notificationService.UpdatePreferencesAsync(tenantId, userId, request, cancellationToken);
+        return result.IsFailure ? BadRequest(new { error = result.Error?.Message }) : NoContent();
     }
 
     [HttpPost("{id:guid}/mark-read")]
@@ -50,6 +74,10 @@ public class NotificationController : ControllerBase
         CancellationToken cancellationToken)
     {
         if (!TryGetCurrentUser(out var userId, out var tenantId)) return Unauthorized();
+        if (string.IsNullOrWhiteSpace(request.Token) || request.Token.Length > 4000
+            || !new[] { "web", "android", "ios" }.Contains(request.Platform, StringComparer.OrdinalIgnoreCase)
+            || request.DeviceName?.Length > 200)
+            return BadRequest(new { error = "The device registration is invalid." });
         var device = await _deviceTokenService.RegisterAsync(tenantId, userId, request, cancellationToken);
         return Ok(device);
     }

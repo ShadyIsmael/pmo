@@ -8,8 +8,14 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.10" />
     <PackageReference Include="FluentValidation" Version="11.11.0" />
+    <PackageReference Include="Microsoft.Identity.Client" Version="4.73.1" />
+    <PackageReference Include="System.DirectoryServices.Protocols" Version="10.0.12" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\NEXUS.SharedKernel\NEXUS.SharedKernel.csproj" />
+    <ProjectReference Include="..\NEXUS.Modules.Identity\NEXUS.Modules.Identity.csproj" />
+    <ProjectReference Include="..\NEXUS.Modules.Organization\NEXUS.Modules.Organization.csproj" />
+    <ProjectReference Include="..\NEXUS.Modules.ResourceManagement\NEXUS.Modules.ResourceManagement.csproj" />
+    <ProjectReference Include="..\NEXUS.Modules.Audit\NEXUS.Modules.Audit.csproj" />
   </ItemGroup>
 </Project>

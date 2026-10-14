@@ -66,7 +66,9 @@ See [permission-model.md](../architecture/permission-model.md) for the full perm
 | Page | Route | Description |
 |------|-------|-------------|
 | Resource Directory | `/resources` | Main resource list with search, tabs (All/Internal/Outsourced) |
+| Vendors | `/resources/vendors` | Vendor directory; shows vendor-specific data and filters |
 | Outsourced Resources | `/resources/outsourced` | Vendor-supplied resource list |
+| Vendor Categories | `/administration/reference-data/vendor-categories` | Manage vendor categories only; work item statuses and currencies remain separate destinations |
 
 ## Frontend Hooks
 
