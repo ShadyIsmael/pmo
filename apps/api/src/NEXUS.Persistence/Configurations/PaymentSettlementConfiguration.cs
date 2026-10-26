@@ -17,5 +17,10 @@ public sealed class PaymentSettlementConfiguration : IEntityTypeConfiguration<Pa
         builder.Property(item => item.RowVersion).IsConcurrencyToken();
         builder.HasIndex(item => new { item.TenantId, item.IdempotencyKey }).IsUnique();
         builder.HasIndex(item => new { item.TenantId, item.PaymentObligationId, item.SettlementDate });
+        builder.HasOne(item => item.PaymentObligation)
+            .WithMany(item => item.Settlements)
+            .HasForeignKey(item => new { item.TenantId, item.PaymentObligationId })
+            .HasPrincipalKey(item => new { item.TenantId, item.Id })
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }

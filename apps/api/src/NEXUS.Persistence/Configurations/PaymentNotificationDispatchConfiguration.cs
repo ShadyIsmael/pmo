@@ -16,7 +16,8 @@ public sealed class PaymentNotificationDispatchConfiguration : IEntityTypeConfig
         builder.HasIndex(item => new { item.TenantId, item.PaymentObligationId });
         builder.HasOne<PaymentObligation>()
             .WithMany()
-            .HasForeignKey(item => item.PaymentObligationId)
+            .HasForeignKey(item => new { item.TenantId, item.PaymentObligationId })
+            .HasPrincipalKey(item => new { item.TenantId, item.Id })
             .OnDelete(DeleteBehavior.Restrict);
     }
 }

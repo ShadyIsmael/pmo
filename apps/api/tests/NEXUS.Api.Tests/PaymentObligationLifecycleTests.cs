@@ -15,6 +15,7 @@ using NEXUS.Modules.Notifications.Application;
 using NEXUS.Modules.Notifications.Domain;
 using NEXUS.Persistence;
 using NEXUS.SharedKernel;
+using NEXUS.SharedKernel.Management;
 using Xunit;
 
 namespace NEXUS.Api.Tests;
@@ -47,6 +48,7 @@ public class PaymentObligationLifecycleTests
         var obligation = await context.Set<PaymentObligation>().SingleAsync();
         Assert.Equal(500m, obligation.Amount);
         Assert.Equal(500m, obligation.OutstandingAmount);
+        Assert.Equal("Not Paid", obligation.SettlementProgressStatus);
         Assert.Equal("INV-001", obligation.PaymentReference);
 
         var invalidPrecision = await service.CreateAsync(new CreatePaymentObligationDto
@@ -126,6 +128,7 @@ public class PaymentObligationLifecycleTests
         var updated = await context.Set<PaymentObligation>().SingleAsync();
         Assert.Equal(140m, updated.SettledAmount);
         Assert.Equal(460m, updated.OutstandingAmount);
+        Assert.Equal("Partially Paid", updated.SettlementProgressStatus);
     }
 
     [Fact]
@@ -308,8 +311,141 @@ public class PaymentObligationLifecycleTests
         Assert.True(secondResult.IsSuccess);
         var details = await service.GetByIdAsync(created.Value.Id);
         Assert.Equal(0m, details.Value!.OutstandingAmount);
+        Assert.Equal("Fully Paid", details.Value.SettlementProgressStatus);
         Assert.Equal("Fully Paid", details.Value.LifecycleStatus);
         Assert.Equal(2, details.Value.Settlements.Count);
+    }
+
+    [Fact]
+    public async Task ApprovedExample_ThreeSettlementsReachFullyPaidWithoutLosingHistory()
+    {
+        var tenantId = Guid.NewGuid();
+        var projectId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        using var context = new AppDbContext(CreateOptions());
+        var service = CreateService(context, tenantId, projectId, userId, new Mock<IAuditService>().Object, projectCurrency: "EGP");
+        var created = await service.CreateAsync(new CreatePaymentObligationDto
+        {
+            ProjectId = projectId,
+            PaymentReference = "EGP-100000",
+            Purpose = "Approved lifecycle example",
+            Amount = 100_000m,
+            Currency = "EGP",
+            DueDate = DateTime.UtcNow.AddDays(1),
+        }, userId.ToString());
+        Assert.True(created.IsSuccess);
+
+        foreach (var (amount, reference) in new[]
+                 {
+                     (30_000m, "EGP-TX-30"),
+                     (50_000m, "EGP-TX-50"),
+                     (20_000m, "EGP-TX-20"),
+                 })
+        {
+            var settlement = await service.RegisterSettlementAsync(created.Value!.Id, new RecordPaymentSettlementDto
+            {
+                IdempotencyKey = Guid.NewGuid(),
+                Amount = amount,
+                SettlementDate = DateTime.UtcNow,
+                PaymentReference = reference,
+            }, userId.ToString());
+            Assert.True(settlement.IsSuccess);
+        }
+
+        var payment = await service.GetByIdAsync(created.Value!.Id);
+        Assert.True(payment.IsSuccess);
+        Assert.Equal(100_000m, payment.Value!.Amount);
+        Assert.Equal(100_000m, payment.Value.SettledAmount);
+        Assert.Equal(0m, payment.Value.OutstandingAmount);
+        Assert.Equal("Fully Paid", payment.Value.SettlementProgressStatus);
+        Assert.Equal(3, payment.Value.Settlements.Count);
+    }
+
+    [Fact]
+    public void DueDateStatusAndSettlementProgressRemainIndependent()
+    {
+        var payment = new PaymentObligation
+        {
+            Amount = 100m,
+            DueDate = new DateTime(2026, 10, 20, 0, 0, 0, DateTimeKind.Utc),
+            Settlements =
+            {
+                new PaymentSettlement { Amount = 25m },
+            },
+        };
+
+        Assert.Equal("Partially Paid", payment.SettlementProgressStatus);
+        Assert.Equal("Overdue", payment.GetDueDateStatus(new DateTime(2026, 10, 26, 0, 0, 0, DateTimeKind.Utc)));
+        Assert.Equal("Partially Paid and Overdue", payment.GetLifecycleStatus(new DateTime(2026, 10, 26, 0, 0, 0, DateTimeKind.Utc)));
+
+        payment.Settlements.Add(new PaymentSettlement { Amount = 75m });
+        Assert.Equal("Fully Paid", payment.SettlementProgressStatus);
+        Assert.Equal("Settled", payment.GetDueDateStatus(new DateTime(2026, 10, 26, 0, 0, 0, DateTimeKind.Utc)));
+    }
+
+    [Fact]
+    public async Task SettlementCannotReferenceMissingPayment()
+    {
+        var tenantId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var context = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options);
+        await context.Database.EnsureCreatedAsync();
+        context.Set<PaymentSettlement>().Add(new PaymentSettlement
+        {
+            TenantId = tenantId,
+            CreatedBy = userId.ToString(),
+            PaymentObligationId = Guid.NewGuid(),
+            IdempotencyKey = Guid.NewGuid(),
+            Amount = 25m,
+            SettlementDate = DateTime.UtcNow,
+            PaymentReference = "NO-PARENT",
+            RowVersion = Guid.NewGuid().ToByteArray(),
+        });
+
+        await Assert.ThrowsAsync<DbUpdateException>(() => context.SaveChangesAsync());
+    }
+
+    [Fact]
+    public async Task SettlementCannotReferenceParentInAnotherTenant()
+    {
+        var tenantId = Guid.NewGuid();
+        var otherTenantId = Guid.NewGuid();
+        var paymentId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var context = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options);
+        await context.Database.EnsureCreatedAsync();
+        context.Set<PaymentObligation>().Add(new PaymentObligation
+        {
+            Id = paymentId,
+            TenantId = otherTenantId,
+            CreatedBy = userId.ToString(),
+            ProjectId = Guid.NewGuid(),
+            ProjectName = "Other tenant project",
+            PaymentReference = "OTHER-TENANT",
+            Purpose = "Tenant integrity",
+            Amount = 100m,
+            Currency = "USD",
+            DueDate = DateTime.UtcNow.AddDays(1),
+            RowVersion = Guid.NewGuid().ToByteArray(),
+        });
+        await context.SaveChangesAsync();
+        context.Set<PaymentSettlement>().Add(new PaymentSettlement
+        {
+            TenantId = tenantId,
+            CreatedBy = userId.ToString(),
+            PaymentObligationId = paymentId,
+            IdempotencyKey = Guid.NewGuid(),
+            Amount = 25m,
+            SettlementDate = DateTime.UtcNow,
+            PaymentReference = "CROSS-TENANT",
+            RowVersion = Guid.NewGuid().ToByteArray(),
+        });
+
+        await Assert.ThrowsAsync<DbUpdateException>(() => context.SaveChangesAsync());
     }
 
     [Fact]
@@ -420,6 +556,59 @@ public class PaymentObligationLifecycleTests
         Assert.Equal("CURRENT-TENANT", page.Items[0].PaymentReference);
     }
 
+    [Fact]
+    public async Task CreateAsync_EnforcesProjectScopeAndReadOnlyManagementMode()
+    {
+        var tenantId = Guid.NewGuid();
+        var projectId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        using var context = new AppDbContext(CreateOptions());
+        var management = new Mock<IManagementContextAccessor>();
+        management.Setup(item => item.Current).Returns(new ManagementContext(
+            userId,
+            tenantId,
+            ManagementPerspective.ProjectManager,
+            ManagementViewMode.Native,
+            null,
+            null,
+            null,
+            new ManagementScope(new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>())));
+        var service = CreateService(context, tenantId, projectId, userId, new Mock<IAuditService>().Object, managementContext: management.Object);
+        var outOfScope = await service.CreateAsync(new CreatePaymentObligationDto
+        {
+            ProjectId = projectId,
+            PaymentReference = "OUT-OF-SCOPE",
+            Purpose = "Scope denial",
+            Amount = 100m,
+            Currency = "USD",
+            DueDate = DateTime.UtcNow.AddDays(1),
+        }, userId.ToString());
+        Assert.True(outOfScope.IsFailure);
+        Assert.Equal("FORBIDDEN", outOfScope.Error!.Code);
+
+        management.Setup(item => item.Current).Returns(new ManagementContext(
+            userId,
+            tenantId,
+            ManagementPerspective.ProjectManager,
+            ManagementViewMode.ReadOnlyViewAs,
+            null,
+            null,
+            projectId,
+            new ManagementScope(new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid> { projectId })));
+        var readOnly = await service.CreateAsync(new CreatePaymentObligationDto
+        {
+            ProjectId = projectId,
+            PaymentReference = "READ-ONLY",
+            Purpose = "Read-only denial",
+            Amount = 100m,
+            Currency = "USD",
+            DueDate = DateTime.UtcNow.AddDays(1),
+        }, userId.ToString());
+        Assert.True(readOnly.IsFailure);
+        Assert.Equal("FORBIDDEN", readOnly.Error!.Code);
+        Assert.Empty(await context.Set<PaymentObligation>().ToListAsync());
+    }
+
     private static DbContextOptions<AppDbContext> CreateOptions() =>
         new DbContextOptionsBuilder<AppDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
@@ -431,16 +620,18 @@ public class PaymentObligationLifecycleTests
         Guid projectId,
         Guid userId,
         IAuditService auditService,
-        Guid? validMilestoneId = null)
+        Guid? validMilestoneId = null,
+        string projectCurrency = "USD",
+        IManagementContextAccessor? managementContext = null)
     {
         var projectLookup = new Mock<IProjectReferenceLookup>();
         projectLookup.Setup(item => item.FindAsync(projectId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ProjectReference(projectId, "Sample project", "USD"));
+            .ReturnsAsync(new ProjectReference(projectId, "Sample project", projectCurrency));
         var milestoneLookup = new Mock<IProjectMilestoneReferenceLookup>();
         milestoneLookup.Setup(item => item.IsActiveMilestoneForProjectAsync(projectId, It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((Guid _, Guid milestoneId, CancellationToken _) => validMilestoneId == milestoneId);
         var accessor = CreateHttpContextAccessor(tenantId, userId);
-        return new PaymentObligationService(context, auditService, projectLookup.Object, milestoneLookup.Object, accessor);
+        return new PaymentObligationService(context, auditService, projectLookup.Object, milestoneLookup.Object, accessor, managementContext);
     }
 
     private static IHttpContextAccessor CreateHttpContextAccessor(Guid tenantId, Guid userId)

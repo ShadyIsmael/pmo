@@ -4746,7 +4746,9 @@
     "milestoneHint": "Milestone linkage is informational only; it does not alter settlement or due dates.",
     "notes": "Notes",
     "status": "Payment status",
+    "actualPaid": "Actual paid",
     "outstandingBalance": "Outstanding balance",
+    "settlementProgress": "Settlement progress",
     "plannedPayments": "Planned payments",
     "duePayments": "Due payments",
     "showAll": "Show all payments",
@@ -4768,6 +4770,17 @@
       "Partially Paid": "Partially paid",
       "Partially Paid and Overdue": "Partially paid · overdue",
       "Fully Paid": "Fully paid"
+    },
+    "progress": {
+      "Not Paid": "Not paid",
+      "Partially Paid": "Partially paid",
+      "Fully Paid": "Fully paid"
+    },
+    "dueStatuses": {
+      "Upcoming": "Upcoming",
+      "Due": "Due",
+      "Overdue": "Overdue",
+      "Settled": "Settled"
     }
   },
   "programManager": {

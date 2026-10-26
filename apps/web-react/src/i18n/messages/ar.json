@@ -4746,7 +4746,9 @@
     "milestoneHint": "ربط المعلم معلوماتي فقط؛ ولا يغير التسوية أو تاريخ الاستحقاق.",
     "notes": "ملاحظات",
     "status": "حالة الدفع",
+    "actualPaid": "المدفوع فعليًا",
     "outstandingBalance": "الرصيد المستحق",
+    "settlementProgress": "تقدم التسوية",
     "plannedPayments": "المدفوعات المخططة",
     "duePayments": "المدفوعات المستحقة",
     "showAll": "عرض كل المدفوعات",
@@ -4768,6 +4770,17 @@
       "Partially Paid": "مدفوع جزئيًا",
       "Partially Paid and Overdue": "مدفوع جزئيًا · متأخر",
       "Fully Paid": "مدفوع بالكامل"
+    },
+    "progress": {
+      "Not Paid": "غير مدفوع",
+      "Partially Paid": "مدفوع جزئيًا",
+      "Fully Paid": "مدفوع بالكامل"
+    },
+    "dueStatuses": {
+      "Upcoming": "قادم",
+      "Due": "مستحق",
+      "Overdue": "متأخر",
+      "Settled": "مسدد"
     }
   },
   "programManager": {
