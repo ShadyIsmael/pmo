@@ -47,6 +47,16 @@ docker-data/
 tmp/
 temp/
 *.tmp
+/.tmp*/
+**/.tmp*/
+/.verification/
+**/.verification/
+/artifacts/
+/.playwright-mcp/
+/.kilo/
+*.tsbuildinfo
+/apps/api/src/uploads/
+/apps/api/src/NEXUS.Api/uploads/
 
 # OS
 .DS_Store
