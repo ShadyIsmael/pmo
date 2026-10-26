@@ -408,6 +408,54 @@ public class PaymentObligationLifecycleTests
     }
 
     [Fact]
+    public async Task PaymentAndSettlementPersistAcrossDbContextRefresh()
+    {
+        var tenantId = Guid.NewGuid();
+        var projectId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options;
+        AppDbContext.ConfigureTenantResolution(CreateHttpContextAccessor(tenantId, userId));
+
+        Guid paymentId;
+        await using (var createContext = new AppDbContext(options))
+        {
+            await createContext.Database.EnsureCreatedAsync();
+            var service = CreateService(createContext, tenantId, projectId, userId, new Mock<IAuditService>().Object);
+            var created = await service.CreateAsync(new CreatePaymentObligationDto
+            {
+                ProjectId = projectId,
+                PaymentReference = "PERSISTED-PAYMENT",
+                Purpose = "Persistence check",
+                Amount = 100m,
+                Currency = "USD",
+                DueDate = DateTime.UtcNow.AddDays(1),
+            }, userId.ToString());
+            Assert.True(created.IsSuccess);
+            paymentId = created.Value!.Id;
+
+            var settlement = await service.RegisterSettlementAsync(paymentId, new RecordPaymentSettlementDto
+            {
+                IdempotencyKey = Guid.NewGuid(),
+                Amount = 40m,
+                SettlementDate = DateTime.UtcNow,
+                PaymentReference = "PERSISTED-SETTLEMENT",
+            }, userId.ToString());
+            Assert.True(settlement.IsSuccess);
+        }
+
+        await using var refreshedContext = new AppDbContext(options);
+        var refreshedService = CreateService(refreshedContext, tenantId, projectId, userId, new Mock<IAuditService>().Object);
+        var payment = await refreshedService.GetByIdAsync(paymentId);
+        Assert.True(payment.IsSuccess);
+        Assert.Equal(100m, payment.Value!.Amount);
+        Assert.Equal(40m, payment.Value.SettledAmount);
+        Assert.Equal(60m, payment.Value.OutstandingAmount);
+        Assert.Contains(payment.Value.Settlements, settlement => settlement.PaymentReference == "PERSISTED-SETTLEMENT");
+    }
+
+    [Fact]
     public async Task SettlementCannotReferenceParentInAnotherTenant()
     {
         var tenantId = Guid.NewGuid();
