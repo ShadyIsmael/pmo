@@ -29,6 +29,7 @@
 ## Domain
 - [Domain Entities Reference](domain/entities.md)
 - [Project Management Core and EVM source rules](modules/PROJECT-MANAGEMENT-CORE.md)
+- [Financial Management Planned Payments](modules/FINANCIAL-MANAGEMENT-PLANNED-PAYMENTS.md)
 
 ## Decisions
 - [ADR-001: Modular Monolith](decisions/adr-001-modular-monolith.md)

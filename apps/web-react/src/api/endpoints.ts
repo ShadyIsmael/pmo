@@ -249,6 +249,11 @@ export const endpoints = {
     cancel: (v: string) => `${id("/api/budget-revisions", v)}/cancel`,
   },
   costs: { root: "/api/costs", detail: (v: string) => id("/api/costs", v), summary: "/api/costs/summary" },
+  paymentObligations: {
+    root: "/api/payment-obligations",
+    detail: (v: string) => id("/api/payment-obligations", v),
+    settlements: (v: string) => `${id("/api/payment-obligations", v)}/settlements`,
+  },
   commitments: {
     root: "/api/commitments",
     detail: (v: string) => id("/api/commitments", v),

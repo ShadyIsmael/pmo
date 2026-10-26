@@ -44,6 +44,7 @@ const RiskDashboardPage = React.lazy(() => import("../features/risks/RiskDashboa
 const RiskMatrixPage = React.lazy(() => import("../features/risks/RiskMatrixPage").then((m) => ({ default: m.RiskMatrixPage })));
 const IssuesPage = React.lazy(() => import("../features/risks/IssuesPage").then((m) => ({ default: m.IssuesPage })));
 const CostsPage = React.lazy(() => import("../features/finance/CostsPage").then((m) => ({ default: m.CostsPage })));
+const PlannedPaymentsPage = React.lazy(() => import("../features/finance/PlannedPaymentsPage").then((m) => ({ default: m.PlannedPaymentsPage })));
 const WorkflowsPageFull = React.lazy(() => import("../features/workflow/WorkflowPagesFull").then((m) => ({ default: m.WorkflowsPageFull })));
 const WorkflowDefinitionPageFull = React.lazy(() => import("../features/workflow/WorkflowPagesFull").then((m) => ({ default: m.WorkflowDefinitionPageFull })));
 const WorkflowVersionPageFull = React.lazy(() => import("../features/workflow/WorkflowPagesFull").then((m) => ({ default: m.WorkflowVersionPageFull })));
@@ -195,6 +196,7 @@ export function AppRoutes() {
         <Route path="/costs" element={<Guard permissions={Permissions.Finances.Read}><Suspended><CostsPage /></Suspended></Guard>} />
         <Route path="/costs/budgets" element={<Guard permissions={Permissions.Finances.Read}><Suspended><CostsPage /></Suspended></Guard>} />
         <Route path="/costs/actuals" element={<Guard permissions={Permissions.Finances.Read}><Suspended><CostsPage /></Suspended></Guard>} />
+        <Route path="/costs/payments" element={<Guard permissions={Permissions.Finances.Read}><Suspended><PlannedPaymentsPage /></Suspended></Guard>} />
         <Route path="/costs/forecasts" element={<Guard permissions={Permissions.Finances.Read}><Suspended><CostsPage /></Suspended></Guard>} />
 
         <Route path="/documents" element={<Guard permissions={Permissions.Document.View}><Suspended><DocumentsPage /></Suspended></Guard>} />

@@ -122,6 +122,63 @@ export interface UpdateCommitmentDto {
   rowVersion: string;
 }
 
+export interface PaymentSettlementDto {
+  id: string;
+  paymentObligationId: string;
+  amount: number;
+  settlementDate: string;
+  paymentReference: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt?: string;
+  rowVersion: string;
+}
+
+export interface PaymentObligationDto {
+  id: string;
+  projectId: string;
+  milestoneId?: string;
+  paymentReference: string;
+  purpose: string;
+  description?: string;
+  amount: number;
+  currency: string;
+  dueDate: string;
+  notes?: string;
+  settledAmount: number;
+  outstandingAmount: number;
+  lifecycleStatus: string;
+  isDue: boolean;
+  isOverdue: boolean;
+  settlements: PaymentSettlementDto[];
+  createdAt: string;
+  updatedAt?: string;
+  rowVersion: string;
+}
+
+export interface CreatePaymentObligationDto {
+  projectId: string;
+  milestoneId?: string;
+  paymentReference: string;
+  purpose: string;
+  description?: string;
+  amount: number;
+  currency: string;
+  dueDate: string;
+  notes?: string;
+}
+
+export interface UpdatePaymentObligationDto extends CreatePaymentObligationDto {
+  rowVersion: string;
+}
+
+export interface RecordPaymentSettlementDto {
+  amount: number;
+  settlementDate: string;
+  paymentReference: string;
+  notes?: string;
+}
+
 export interface CurrencyFinancialSummary {
   currency: string;
   originalApprovedBudget: number;
@@ -180,6 +237,7 @@ export const costKeys = {
   budgets: (params: BudgetListParams) => [...costKeys.all, "budgets", params] as const,
   costs: (params: CostEntryListParams) => [...costKeys.all, "costs", params] as const,
   commitments: (params: CommitmentListParams) => [...costKeys.all, "commitments", params] as const,
+  paymentObligations: (params: { projectId?: string; dueOnly?: boolean } = {}) => [...costKeys.all, "payment-obligations", params] as const,
   projectBudgets: (projectId: string) => [...costKeys.all, "budgets", { projectId }] as const,
   projectCosts: (projectId: string) => [...costKeys.all, "costs", { projectId }] as const,
   projectCommitments: (projectId: string) => [...costKeys.all, "commitments", { projectId }] as const,
@@ -190,6 +248,11 @@ export const costApi = {
   budgets: (params: BudgetListParams = {}) => api.get<PagedResult<BudgetDto>>(endpoints.budgets.root, params),
   costs: (params: CostEntryListParams = {}) => api.get<PagedResult<CostEntryDto>>(endpoints.costs.root, params),
   commitments: (params: CommitmentListParams = {}) => api.get<PagedResult<PurchaseCommitmentDto>>(endpoints.commitments.root, params),
+  paymentObligations: (params: { projectId?: string; dueOnly?: boolean; page?: number; pageSize?: number } = {}) => api.get<PagedResult<PaymentObligationDto>>(endpoints.paymentObligations.root, params),
+  createPaymentObligation: (body: CreatePaymentObligationDto) => api.post<PaymentObligationDto>(endpoints.paymentObligations.root, body),
+  updatePaymentObligation: (id: string, body: UpdatePaymentObligationDto) => api.put<PaymentObligationDto>(endpoints.paymentObligations.detail(id), body),
+  deletePaymentObligation: (id: string, rowVersion: string) => api.delete<void>(`${endpoints.paymentObligations.detail(id)}?rowVersion=${encodeURIComponent(rowVersion)}`),
+  createSettlement: (id: string, body: RecordPaymentSettlementDto) => api.post<PaymentSettlementDto>(endpoints.paymentObligations.settlements(id), body),
   createBudget: (body: CreateBudgetDto) => api.post<BudgetDto>(endpoints.budgets.root, body),
   updateBudget: (id: string, body: CreateBudgetDto & { rowVersion: string }) => api.put<BudgetDto>(endpoints.budgets.detail(id), body),
   deleteBudget: (id: string) => api.delete<void>(endpoints.budgets.detail(id)),

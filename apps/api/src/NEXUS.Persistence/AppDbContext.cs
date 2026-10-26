@@ -133,6 +133,9 @@ public class AppDbContext : DbContext
     public DbSet<CostApproval> CostApprovals => Set<CostApproval>();
     public DbSet<Invoice> Invoices => Set<Invoice>();
     public DbSet<PurchaseCommitment> PurchaseCommitments => Set<PurchaseCommitment>();
+    public DbSet<PaymentObligation> PaymentObligations => Set<PaymentObligation>();
+    public DbSet<PaymentSettlement> PaymentSettlements => Set<PaymentSettlement>();
+    public DbSet<PaymentNotificationDispatch> PaymentNotificationDispatches => Set<PaymentNotificationDispatch>();
 
     public DbSet<Risk> Risks => Set<Risk>();
     public DbSet<RiskAction> RiskActions => Set<RiskAction>();

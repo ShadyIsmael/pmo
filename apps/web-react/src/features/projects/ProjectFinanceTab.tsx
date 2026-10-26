@@ -1,6 +1,6 @@
 import * as React from "react";
-import { useOutletContext } from "react-router-dom";
-import { AlertTriangle, Archive, Ban, Pencil, Plus, Trash2, TrendingDown } from "lucide-react";
+import { useNavigate, useOutletContext } from "react-router-dom";
+import { AlertTriangle, Archive, Ban, Pencil, Plus, Receipt, Trash2, TrendingDown } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@components/ui/Card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@components/ui/Table";
 import { Button } from "@components/ui/Button";
@@ -77,6 +77,7 @@ function FinancialTableState({ loading, error, colSpan, onRetry, t }: { loading:
 
 export function ProjectFinanceTab() {
   const { projectId, project } = useOutletContext<ProjectContext>();
+  const navigate = useNavigate();
   const { t, formatCurrency } = useI18n();
   const confirm = useConfirm();
   const { user } = useAuth();
@@ -245,7 +246,7 @@ export function ProjectFinanceTab() {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-base font-semibold">{t("projects.financialSummary")}</h2><p className="mt-1 text-sm text-muted-foreground">{t("projects.financialSummaryDescription")}</p></div>{canManage ? <div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={() => openBudget()}><Plus className="me-1.5 h-4 w-4" />{t("projects.addBudgetLine")}</Button><Button size="sm" variant="outline" onClick={() => openCost()}><Plus className="me-1.5 h-4 w-4" />{t("projects.addCostEntry")}</Button><Button size="sm" onClick={() => openCommitment()}><Plus className="me-1.5 h-4 w-4" />{t("projects.addCommitment")}</Button></div> : null}</div>
+      <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-base font-semibold">{t("projects.financialSummary")}</h2><p className="mt-1 text-sm text-muted-foreground">{t("projects.financialSummaryDescription")}</p></div><div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={() => navigate(`/costs/payments?projectId=${encodeURIComponent(projectId)}`)}><Receipt className="me-1.5 h-4 w-4" />{t("payments.plannedPayments")}</Button>{canManage ? <><Button size="sm" variant="outline" onClick={() => openBudget()}><Plus className="me-1.5 h-4 w-4" />{t("projects.addBudgetLine")}</Button><Button size="sm" variant="outline" onClick={() => openCost()}><Plus className="me-1.5 h-4 w-4" />{t("projects.addCostEntry")}</Button><Button size="sm" onClick={() => openCommitment()}><Plus className="me-1.5 h-4 w-4" />{t("projects.addCommitment")}</Button></> : null}</div></div>
       {actionError ? <p className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{actionError}</p> : null}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"><SummaryCard metricKey="budget-ceiling" label={t("projects.budgetCeiling")} value={money(ceiling, currency, formatCurrency)} hint={t("projects.budgetCeilingHint")} /><SummaryCard metricKey="allocated" label={t("projects.allocatedBudget")} value={money(allocated, currency, formatCurrency)} hint={t("projects.allocatedBudgetHint")} /><SummaryCard metricKey="unallocated" label={t("projects.unallocatedBudget")} value={money(unallocated, currency, formatCurrency)} tone={finite(unallocated) && unallocated <= 0 ? "text-warning" : undefined} /></div>
       <div className="space-y-2"><div className="flex items-center justify-between gap-3 text-xs text-muted-foreground"><span>{t("projects.allocationProgress")}</span><span className="tabular-nums">{percentage(allocationPct)} · {money(allocated, currency, formatCurrency)} / {money(ceiling, currency, formatCurrency)}</span></div><Progress value={Math.min(allocationPct, 100)} className="h-2" /></div>

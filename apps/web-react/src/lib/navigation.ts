@@ -112,6 +112,7 @@ export const navigationConfig: NavSection[] = [
       item({ id: "financial-overview", labelKey: "nav.financialOverview", href: "/costs", icon: BarChart3, requiredPermission: Permissions.Finances.Read }),
       item({ id: "budget-allocations", labelKey: "nav.budgets", href: "/costs/budgets", icon: Coins, requiredPermission: Permissions.Finances.Read }),
       item({ id: "actual-costs", labelKey: "nav.actuals", href: "/costs/actuals", icon: Receipt, requiredPermission: Permissions.Finances.Read }),
+      item({ id: "planned-payments", labelKey: "nav.plannedPayments", href: "/costs/payments", icon: Receipt, requiredPermission: Permissions.Finances.Read }),
       item({ id: "forecasts", labelKey: "nav.forecasts", href: "/costs/forecasts", icon: TrendingUp, requiredPermission: Permissions.Finances.Read }),
     ],
   },
