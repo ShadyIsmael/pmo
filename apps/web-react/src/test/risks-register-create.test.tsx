@@ -7,7 +7,7 @@ import { RisksPage } from "../features/risks/RisksPage";
 const fixtures = vi.hoisted(() => ({
   permissions: ["Risk.View", "Risk.Create"] as string[],
   createRisk: vi.fn(),
-  project: { id: "project-1", name: "Delivery Project", code: "PRJ-1" },
+  project: { id: "project-1", publicId: "public-project-1", name: "Delivery Project", code: "PRJ-1" },
 }));
 
 vi.mock("@features/risks/api/risks", () => ({
@@ -53,7 +53,7 @@ describe("risk register creation", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create Risk" }));
 
     const sheet = screen.getByRole("dialog", { name: "Create Risk" });
-    expect(within(sheet).getByRole("link", { name: "Delivery Project (PRJ-1)" })).toHaveAttribute("href", "/projects/project-1/risks-issues");
+    expect(within(sheet).getByRole("link", { name: "Delivery Project (PRJ-1)" })).toHaveAttribute("href", "/projects/public-project-1/risks-issues");
     expect(within(sheet).queryByRole("combobox", { name: "Project" })).not.toBeInTheDocument();
   });
 

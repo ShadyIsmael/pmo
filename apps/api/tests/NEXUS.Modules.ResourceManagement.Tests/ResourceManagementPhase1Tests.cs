@@ -5,6 +5,7 @@ using NEXUS.Modules.Audit.Application;
 using NEXUS.Modules.Audit.Domain;
 using NEXUS.Modules.ResourceManagement.Application;
 using NEXUS.Modules.ResourceManagement.Application.DTOs;
+using NEXUS.Modules.ResourceManagement.Application.Validators;
 using NEXUS.Modules.Organization.Domain;
 using NEXUS.Modules.ResourceManagement.Domain;
 using NEXUS.SharedKernel;
@@ -24,7 +25,9 @@ public class ResourceManagementPhase1Tests : TestBase
             context,
             auditMock.Object,
             Mock.Of<IUserReferenceLookup>(),
-            Mock.Of<IHttpContextAccessor>());
+            Mock.Of<IHttpContextAccessor>(),
+            new CreateResourceValidator(),
+            new UpdateResourceValidator());
     }
 
     [Fact]
@@ -444,7 +447,7 @@ public class ResourceManagementPhase1Tests : TestBase
         var create = await service.CreateAsync(new CreateResourceDto
         {
             Name = "New Vendor Resource",
-            Type = ResourceTypeConstants.VendorResource,
+            Type = ResourceType.Vendor,
             Status = "Active",
             VendorId = inactiveVendor.Id
         }, "11111111-1111-1111-1111-111111111111");
@@ -471,7 +474,7 @@ public class ResourceManagementPhase1Tests : TestBase
         var update = await service.UpdateAsync(existing.Id, new UpdateResourceDto
         {
             Name = "Historical Vendor Resource Renamed",
-            Type = ResourceTypeConstants.VendorResource,
+            Type = ResourceType.Vendor,
             VendorId = inactiveVendor.Id
         }, "11111111-1111-1111-1111-111111111111");
 

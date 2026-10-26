@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { PageHeader } from "@components/layout/PageHeader";
 import { Badge } from "@components/ui/Badge";
 import { Button } from "@components/ui/Button";
+import { useConfirm } from "@components/ui/ConfirmProvider";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@components/ui/Card";
 import { Input } from "@components/ui/Input";
 import { Label } from "@components/ui/Label";
@@ -38,6 +39,7 @@ function emptyRole(): SaveRoleInput {
 
 export function RolesPage() {
   const { t } = useI18n();
+  const confirm = useConfirm();
   const navigate = useNavigate();
   const { user } = useAuth();
   const canManage = Boolean(user && hasPermission(user.permissions, Permissions.Users.Write));
@@ -154,7 +156,7 @@ export function RolesPage() {
 
   async function handleDelete() {
     if (!selectedRole || selectedRole.isSystem || selectedRole.assignedUserCount > 0 || deleteRole.isPending) return;
-    if (!window.confirm(t("administration.areas.roles.deleteConfirm", { name: selectedRole.name }))) return;
+    if (!await confirm({ description: t("administration.areas.roles.deleteConfirm", { name: selectedRole.name }), destructive: true })) return;
     setActionError(null);
     try {
       await deleteRole.mutateAsync(selectedRole.id);

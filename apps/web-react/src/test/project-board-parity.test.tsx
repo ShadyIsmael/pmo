@@ -13,8 +13,8 @@ const mocks = vi.hoisted(() => ({
   executeWorkflowTransition: vi.fn(),
   workItemQuery: vi.fn(),
   projects: [
-    { id: "project-active", name: "Active project", code: "PRJ-100", status: "Active", health: "Green", ragStatus: "Green", progress: 25, currency: "USD" },
-    { id: "project-completed", name: "Completed project", code: "PRJ-101", status: "Completed", health: "Green", ragStatus: "Green", progress: 100, currency: "USD" },
+    { id: "project-active", publicId: "public-project-active", name: "Active project", code: "PRJ-100", status: "Active", health: "Green", ragStatus: "Green", progress: 25, currency: "USD" },
+    { id: "project-completed", publicId: "public-project-completed", name: "Completed project", code: "PRJ-101", status: "Completed", health: "Green", ragStatus: "Green", progress: 100, currency: "USD" },
   ],
   statuses: [
     { id: "status-open", code: "Open", nameEn: "Open", nameAr: "مفتوح", displayOrder: 1, isActive: true, isTerminal: false },
@@ -82,7 +82,7 @@ describe("project board parity", () => {
     expect(screen.queryByRole("option", { name: /Completed project/ })).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Done" })).toBeInTheDocument();
     expect(screen.getByText("Prepare release")).toBeInTheDocument();
-    expect(mocks.workItemQuery).toHaveBeenCalledWith(expect.objectContaining({ projectId: "project-active" }), true);
+    expect(mocks.workItemQuery).toHaveBeenCalledWith(expect.objectContaining({ projectId: "public-project-active" }), true);
   });
 
   it("moves cards through the authorized workflow transition API", async () => {

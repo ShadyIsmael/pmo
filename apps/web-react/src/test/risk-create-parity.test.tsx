@@ -5,8 +5,8 @@ import { I18nProvider } from "../i18n/messages";
 import { RiskCreatePage } from "../features/risks/RiskCreatePage";
 
 const fixtures = vi.hoisted(() => ({
-  project: { id: "project-1", code: "PRJ-001", name: "Delivery Project" },
-  projects: [{ id: "project-1", code: "PRJ-001", name: "Delivery Project" }],
+  project: { id: "project-1", publicId: "public-project-1", code: "PRJ-001", name: "Delivery Project" },
+  projects: [{ id: "project-1", publicId: "public-project-1", code: "PRJ-001", name: "Delivery Project" }],
   resources: [{ id: "resource-1", name: "Resource Owner" }],
   permissions: ["Risk.Create"],
   createRisk: vi.fn(),
@@ -57,7 +57,7 @@ describe("risk creation source parity", () => {
   it("creates from a project context with owner and impact assessment, then opens the action flow", async () => {
     renderCreate("/risks-issues/risks/new?projectId=project-1");
 
-    expect(screen.getByRole("link", { name: /Delivery Project \(PRJ-001\)/ })).toHaveAttribute("href", "/projects/project-1/risks-issues");
+    expect(screen.getByRole("link", { name: /Delivery Project \(PRJ-001\)/ })).toHaveAttribute("href", "/projects/public-project-1/risks-issues");
     fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Supplier delay" } });
     fireEvent.change(screen.getByLabelText("Description"), { target: { value: "A supplier may miss the delivery window." } });
     fireEvent.change(screen.getByLabelText("Risk Owner"), { target: { value: "resource-1" } });

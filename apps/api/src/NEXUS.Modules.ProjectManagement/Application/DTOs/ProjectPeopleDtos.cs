@@ -27,6 +27,7 @@ public sealed class ProjectPersonDto
     public bool IsLegacy { get; set; }
     public string CalendarPolicy { get; set; } = CalendarPolicyConstants.UseResourceCalendar;
     public List<ProjectRoleRefDto> FunctionalRoles { get; set; } = new();
+    public IReadOnlyList<string> AdditionalRelationshipTypes { get; set; } = Array.Empty<string>();
     public byte[] RowVersion { get; set; } = Array.Empty<byte>();
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }

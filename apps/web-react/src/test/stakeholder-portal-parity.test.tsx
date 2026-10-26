@@ -17,6 +17,7 @@ vi.mock("@features/projects/lib/project-labels", () => ({
 
 const project = {
   id: "project-1",
+  publicId: "public-project-1",
   code: "PRJ-001",
   name: "Core Platform",
   description: "Platform modernization",
@@ -86,7 +87,7 @@ describe("stakeholder portal parity", () => {
     expect(screen.getByText("status:Active")).toBeInTheDocument();
     expect(screen.getByText("health:OnTrack")).toBeInTheDocument();
     expect(screen.getByText("42 %")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "View" })).toHaveAttribute("href", "/stakeholder/projects/project-1");
+    expect(screen.getByRole("link", { name: "View" })).toHaveAttribute("href", "/stakeholder/projects/public-project-1");
     expect(stakeholderMocks.get).toHaveBeenLastCalledWith("/api/stakeholder/projects", { page: 1, pageSize: 20 });
   });
 

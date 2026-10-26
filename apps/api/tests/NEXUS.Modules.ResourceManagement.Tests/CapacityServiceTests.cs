@@ -1,8 +1,10 @@
 using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
 using NEXUS.Modules.Organization.Domain;
 using NEXUS.Modules.ResourceManagement.Application;
 using NEXUS.Modules.ResourceManagement.Application.DTOs;
 using NEXUS.Modules.ResourceManagement.Domain;
+using NEXUS.SharedKernel.Helpers;
 using Xunit;
 
 namespace NEXUS.Modules.ResourceManagement.Tests;
@@ -13,6 +15,99 @@ public class CapacityServiceTests : TestBase
     {
         return new CapacityService(context);
     }
+
+    private static ProjectTeamCapacityMemberInputDto TeamMember(
+        Guid resourceId,
+        decimal? hoursPerWeek = null,
+        decimal? dedicationPercentage = 100m,
+        Guid? projectId = null) => new()
+    {
+        ResourceId = resourceId,
+        ProjectId = projectId,
+        StartDate = new DateTime(2026, 1, 4),
+        EndDate = new DateTime(2026, 1, 10),
+        HoursPerWeek = hoursPerWeek,
+        AllocationPercentage = dedicationPercentage
+    };
+
+    [Fact]
+    public async Task GetProjectTeamOverviewAsync_SeparatesResourceCapacityProjectAllocationAndAssignedTaskWork()
+    {
+        using var context = CreateContext();
+        var projectId = Guid.Parse("F3000000-0000-0000-0000-000000000001");
+        var calendar = new WorkingCalendar
+        {
+            Id = Guid.NewGuid(),
+            TenantId = TenantConstants.DemoTenantId,
+            Name = "48-hour week",
+            WorkingDaysPerWeek = 6,
+            HoursPerDay = 8,
+            IsDefault = false
+        };
+        context.WorkingCalendars.Add(calendar);
+        var resource = await context.Resources.SingleAsync(item => item.Id == ResourceAliceId);
+        resource.BaseCalendarId = calendar.Id;
+        context.ResourceAllocations.RemoveRange(context.ResourceAllocations.Where(item => item.ResourceId == ResourceAliceId));
+        context.ResourceAllocations.AddRange(
+            new ResourceAllocation
+            {
+                Id = Guid.NewGuid(),
+                TenantId = TenantConstants.DemoTenantId,
+                ResourceId = ResourceAliceId,
+                ProjectId = projectId,
+                AllocationSource = ResourceAllocation.SourceProjectPlan,
+                SourceReferenceId = Guid.NewGuid(),
+                PlannedHours = 10m,
+                StartDate = new DateTime(2026, 1, 4),
+                EndDate = new DateTime(2026, 1, 10),
+                Status = ResourceAllocation.StatusConfirmed
+            },
+            new ResourceAllocation
+            {
+                Id = Guid.NewGuid(),
+                TenantId = TenantConstants.DemoTenantId,
+                ResourceId = ResourceAliceId,
+                ProjectId = projectId,
+                AllocationSource = ResourceAllocation.SourceProjectPlan,
+                SourceReferenceId = Guid.NewGuid(),
+                PlannedHours = 6m,
+                StartDate = new DateTime(2026, 1, 4),
+                EndDate = new DateTime(2026, 1, 10),
+                Status = ResourceAllocation.StatusConfirmed
+            },
+            new ResourceAllocation
+            {
+                Id = Guid.NewGuid(),
+                TenantId = TenantConstants.DemoTenantId,
+                ResourceId = ResourceAliceId,
+                ProjectId = Guid.Parse("F3000000-0000-0000-0000-000000000002"),
+                AllocationSource = ResourceAllocation.SourceProjectPlan,
+                SourceReferenceId = Guid.NewGuid(),
+                PlannedHours = 100m,
+                StartDate = new DateTime(2026, 1, 4),
+                EndDate = new DateTime(2026, 1, 10),
+                Status = ResourceAllocation.StatusConfirmed
+            });
+        await context.SaveChangesAsync();
+
+        var result = await CreateService(context).GetProjectTeamOverviewAsync(
+            new[] { TeamMember(ResourceAliceId, dedicationPercentage: 50m, projectId: projectId) },
+            TeamCapacityFilter());
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.TotalCapacityHours.Should().Be(24m);
+        result.Value.UtilizedHours.Should().Be(16m);
+        result.Value.AvailableHours.Should().Be(8m);
+        result.Value.OverallocatedHours.Should().Be(0m);
+    }
+
+    private static CapacityFilterDto TeamCapacityFilter() => new()
+    {
+        PeriodType = "Week",
+        StartDate = new DateTime(2026, 1, 4),
+        EndDate = new DateTime(2026, 1, 11),
+        IncludeProposed = true
+    };
 
     [Fact]
     public async Task GetMatrixAsync_ReturnsMatrixWithCorrectPeriods()
@@ -34,6 +129,322 @@ public class CapacityServiceTests : TestBase
     }
 
     [Fact]
+    public async Task GetProjectTeamOverviewAsync_ReconcilesCapacityAndCountsDistinctMembersAcrossProjects()
+    {
+        using var context = CreateContext();
+        context.ResourceAllocations.RemoveRange(context.ResourceAllocations.Where(allocation => allocation.ResourceId == ResourceAliceId));
+        context.ResourceAllocations.AddRange(
+            new ResourceAllocation
+            {
+                Id = Guid.NewGuid(),
+                ResourceId = ResourceAliceId,
+                ProjectId = Guid.Parse("F2000000-0000-0000-0000-000000000011"),
+                ProjectName = "Project Alpha",
+                AllocationPercentage = 25,
+                StartDate = new DateTime(2026, 1, 4),
+                EndDate = new DateTime(2026, 1, 11),
+                Status = ResourceAllocation.StatusConfirmed
+            },
+            new ResourceAllocation
+            {
+                Id = Guid.NewGuid(),
+                ResourceId = ResourceAliceId,
+                ProjectId = Guid.Parse("F2000000-0000-0000-0000-000000000012"),
+                ProjectName = "Project Beta",
+                AllocationPercentage = 25,
+                StartDate = new DateTime(2026, 1, 4),
+                EndDate = new DateTime(2026, 1, 11),
+                Status = ResourceAllocation.StatusProposed
+            });
+        await context.SaveChangesAsync();
+
+        var result = await CreateService(context).GetProjectTeamOverviewAsync(
+            new[] { TeamMember(ResourceAliceId), TeamMember(ResourceAliceId) },
+            TeamCapacityFilter());
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.ActiveResourceCount.Should().Be(1);
+        result.Value.TotalCapacityHours.Should().Be(40m);
+        result.Value.UtilizedHours.Should().Be(20m);
+        result.Value.AvailableHours.Should().Be(20m);
+        result.Value.OverallocatedHours.Should().Be(0m);
+        result.Value.UtilizedPercent.Should().Be(50m);
+        result.Value.AvailablePercent.Should().Be(50m);
+        result.Value.IdleResourceCount.Should().Be(0);
+        (result.Value.TotalCapacityHours!.Value).Should().Be(result.Value.UtilizedHours!.Value + result.Value.AvailableHours!.Value);
+    }
+
+    [Theory]
+    [InlineData(100, 40, 0, 0, 100)]
+    [InlineData(125, 50, 0, 10, 125)]
+    public async Task GetProjectTeamOverviewAsync_ReportsFullUtilizationAndOverallocationsWithoutNegativeAvailability(
+        int allocationPercent,
+        int expectedUtilized,
+        int expectedAvailable,
+        int expectedOverallocated,
+        int expectedUtilizedPercent)
+    {
+        using var context = CreateContext();
+        context.ResourceAllocations.RemoveRange(context.ResourceAllocations.Where(allocation => allocation.ResourceId == ResourceAliceId));
+        context.ResourceAllocations.Add(new ResourceAllocation
+        {
+            Id = Guid.NewGuid(),
+            ResourceId = ResourceAliceId,
+            ProjectId = Guid.Parse("F2000000-0000-0000-0000-000000000011"),
+            ProjectName = "Project Alpha",
+            AllocationPercentage = allocationPercent,
+            StartDate = new DateTime(2026, 1, 4),
+            EndDate = new DateTime(2026, 1, 11),
+            Status = ResourceAllocation.StatusConfirmed
+        });
+        await context.SaveChangesAsync();
+
+        var result = await CreateService(context).GetProjectTeamOverviewAsync(
+            new[] { TeamMember(ResourceAliceId) },
+            TeamCapacityFilter());
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.TotalCapacityHours.Should().Be(40m);
+        result.Value.UtilizedHours.Should().Be(expectedUtilized);
+        result.Value.AvailableHours.Should().Be(expectedAvailable);
+        result.Value.OverallocatedHours.Should().Be(expectedOverallocated);
+        result.Value.UtilizedPercent.Should().Be(expectedUtilizedPercent);
+        result.Value.AvailablePercent.Should().Be(expectedAvailable == 0 ? 0 : expectedAvailable * 100m / 40m);
+        result.Value.IdleResourceCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task GetProjectTeamOverviewAsync_CountsIdleResourcesOnlyWhenAllocationStatusesAreKnown()
+    {
+        using var context = CreateContext();
+        context.ResourceAllocations.RemoveRange(context.ResourceAllocations.Where(allocation => allocation.ResourceId == ResourceAliceId || allocation.ResourceId == ResourceCharlieId));
+        await context.SaveChangesAsync();
+
+        var fullyAvailable = await CreateService(context).GetProjectTeamOverviewAsync(
+            new[] { TeamMember(ResourceAliceId), TeamMember(ResourceCharlieId) },
+            TeamCapacityFilter());
+
+        fullyAvailable.IsSuccess.Should().BeTrue();
+        fullyAvailable.Value.ActiveResourceCount.Should().Be(2);
+        fullyAvailable.Value.IdleResourceCount.Should().Be(2);
+        fullyAvailable.Value.TotalCapacityHours.Should().Be(80m);
+        fullyAvailable.Value.UtilizedHours.Should().Be(0m);
+        fullyAvailable.Value.AvailableHours.Should().Be(80m);
+
+        context.ResourceAllocations.Add(new ResourceAllocation
+        {
+            Id = Guid.NewGuid(),
+            ResourceId = ResourceAliceId,
+            ProjectName = "Unclassified work",
+            AllocationPercentage = 50,
+            StartDate = new DateTime(2026, 1, 4),
+            EndDate = new DateTime(2026, 1, 11),
+            Status = "OnHold"
+        });
+        await context.SaveChangesAsync();
+
+        var incomplete = await CreateService(context).GetProjectTeamOverviewAsync(
+            new[] { TeamMember(ResourceAliceId), TeamMember(ResourceCharlieId) },
+            TeamCapacityFilter());
+
+        incomplete.IsSuccess.Should().BeTrue();
+        incomplete.Value.IsAllocationDataAvailable.Should().BeFalse();
+        incomplete.Value.IdleResourceCount.Should().BeNull();
+        incomplete.Value.UtilizedHours.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetProjectTeamOverviewAsync_UsesConfiguredMemberHoursWithoutAWorkingCalendar()
+    {
+        using var context = CreateContext();
+        context.ResourceAllocations.RemoveRange(context.ResourceAllocations.Where(allocation => allocation.ResourceId == ResourceAliceId));
+        context.ResourceCalendars.RemoveRange(context.ResourceCalendars.Where(entry => entry.ResourceId == ResourceAliceId));
+        context.WorkingCalendars.RemoveRange(context.WorkingCalendars);
+        await context.SaveChangesAsync();
+
+        var result = await CreateService(context).GetProjectTeamOverviewAsync(
+            new[] { TeamMember(ResourceAliceId, hoursPerWeek: 48m) },
+            TeamCapacityFilter());
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.IsCapacityDataAvailable.Should().BeTrue();
+        result.Value.IsAllocationDataAvailable.Should().BeTrue();
+        result.Value.ActiveResourceCount.Should().Be(1);
+        result.Value.IdleResourceCount.Should().Be(1);
+        result.Value.TotalCapacityHours.Should().Be(48m);
+        result.Value.UtilizedHours.Should().Be(0m);
+        result.Value.AvailableHours.Should().Be(48m);
+        result.Value.UtilizedPercent.Should().Be(0m);
+        result.Value.AvailablePercent.Should().Be(100m);
+    }
+
+    [Fact]
+    public async Task GetProjectTeamOverviewAsync_AppliesDedicationAndCrossProjectHoursToMemberCapacity()
+    {
+        using var context = CreateContext();
+        context.ResourceAllocations.RemoveRange(context.ResourceAllocations.Where(allocation => allocation.ResourceId == ResourceAliceId));
+        context.WorkingCalendars.RemoveRange(context.WorkingCalendars);
+        context.ResourceAllocations.AddRange(
+            new ResourceAllocation
+            {
+                Id = Guid.NewGuid(),
+                ResourceId = ResourceAliceId,
+                ProjectId = Guid.Parse("F2000000-0000-0000-0000-000000000011"),
+                ProjectName = "Current project",
+                AllocationPercentage = 100m,
+                HoursPerWeek = 16m,
+                StartDate = new DateTime(2026, 1, 4),
+                EndDate = new DateTime(2026, 1, 11),
+                Status = ResourceAllocation.StatusConfirmed
+            },
+            new ResourceAllocation
+            {
+                Id = Guid.NewGuid(),
+                ResourceId = ResourceAliceId,
+                ProjectId = Guid.Parse("F2000000-0000-0000-0000-000000000012"),
+                ProjectName = "Another project",
+                AllocationPercentage = 100m,
+                HoursPerWeek = 8m,
+                StartDate = new DateTime(2026, 1, 4),
+                EndDate = new DateTime(2026, 1, 11),
+                Status = ResourceAllocation.StatusProposed
+            });
+        await context.SaveChangesAsync();
+
+        var fullDedication = await CreateService(context).GetProjectTeamOverviewAsync(
+            new[] { TeamMember(ResourceAliceId, hoursPerWeek: 48m) },
+            TeamCapacityFilter());
+        context.ResourceAllocations.RemoveRange(context.ResourceAllocations.Where(allocation => allocation.ProjectName == "Another project"));
+        await context.SaveChangesAsync();
+        var assignedWork = await CreateService(context).GetProjectTeamOverviewAsync(
+            new[] { TeamMember(ResourceAliceId, hoursPerWeek: 48m) },
+            TeamCapacityFilter());
+        var halfDedication = await CreateService(context).GetProjectTeamOverviewAsync(
+            new[] { TeamMember(ResourceAliceId, hoursPerWeek: 48m, dedicationPercentage: 50m) },
+            TeamCapacityFilter());
+
+        fullDedication.IsSuccess.Should().BeTrue();
+        fullDedication.Value.TotalCapacityHours.Should().Be(48m);
+        fullDedication.Value.UtilizedHours.Should().Be(24m);
+        fullDedication.Value.AvailableHours.Should().Be(24m);
+        fullDedication.Value.IdleResourceCount.Should().Be(0);
+
+        assignedWork.IsSuccess.Should().BeTrue();
+        assignedWork.Value.TotalCapacityHours.Should().Be(48m);
+        assignedWork.Value.UtilizedHours.Should().Be(16m);
+        assignedWork.Value.AvailableHours.Should().Be(32m);
+
+        halfDedication.IsSuccess.Should().BeTrue();
+        halfDedication.Value.TotalCapacityHours.Should().Be(24m);
+        halfDedication.Value.UtilizedHours.Should().Be(16m);
+        halfDedication.Value.AvailableHours.Should().Be(8m);
+        halfDedication.Value.OverallocatedHours.Should().Be(0m);
+        halfDedication.Value.UtilizedPercent.Should().Be(66.7m);
+    }
+
+    [Fact]
+    public async Task GetProjectTeamOverviewAsync_AddsIdleMembersUsingTheirOwnConfiguredHours()
+    {
+        using var context = CreateContext();
+        context.ResourceAllocations.RemoveRange(context.ResourceAllocations.Where(allocation => allocation.ResourceId == ResourceAliceId || allocation.ResourceId == ResourceCharlieId));
+        context.WorkingCalendars.RemoveRange(context.WorkingCalendars);
+        await context.SaveChangesAsync();
+
+        var result = await CreateService(context).GetProjectTeamOverviewAsync(
+            new[]
+            {
+                TeamMember(ResourceAliceId, hoursPerWeek: 48m),
+                TeamMember(ResourceCharlieId, hoursPerWeek: 24m)
+            },
+            TeamCapacityFilter());
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.ActiveResourceCount.Should().Be(2);
+        result.Value.IdleResourceCount.Should().Be(2);
+        result.Value.TotalCapacityHours.Should().Be(72m);
+        result.Value.UtilizedHours.Should().Be(0m);
+        result.Value.AvailableHours.Should().Be(72m);
+    }
+
+    [Fact]
+    public async Task GetProjectTeamOverviewAsync_UsesHolidayAdjustedCapacityAndReturnsZeroForAnEmptyTeam()
+    {
+        using var context = CreateContext();
+        context.ResourceAllocations.RemoveRange(context.ResourceAllocations.Where(allocation => allocation.ResourceId == ResourceAliceId));
+        context.Holidays.Add(new Holiday
+        {
+            Id = Guid.NewGuid(),
+            WorkingCalendarId = DefaultCalendarId,
+            Name = "Project week holiday",
+            Date = new DateTime(2026, 1, 7),
+            IsRecurring = false
+        });
+        await context.SaveChangesAsync();
+
+        var withHoliday = await CreateService(context).GetProjectTeamOverviewAsync(
+            new[] { TeamMember(ResourceAliceId) },
+            TeamCapacityFilter());
+        var noMembers = await CreateService(context).GetProjectTeamOverviewAsync(
+            Array.Empty<ProjectTeamCapacityMemberInputDto>(),
+            TeamCapacityFilter());
+
+        withHoliday.IsSuccess.Should().BeTrue();
+        withHoliday.Value.TotalCapacityHours.Should().Be(32m);
+        withHoliday.Value.UtilizedHours.Should().Be(0m);
+        withHoliday.Value.AvailableHours.Should().Be(32m);
+        noMembers.IsSuccess.Should().BeTrue();
+        noMembers.Value.ActiveResourceCount.Should().Be(0);
+        noMembers.Value.IdleResourceCount.Should().Be(0);
+        noMembers.Value.TotalCapacityHours.Should().Be(0m);
+        noMembers.Value.UtilizedHours.Should().Be(0m);
+        noMembers.Value.AvailableHours.Should().Be(0m);
+    }
+
+    [Fact]
+    public async Task GetProjectTeamOverviewAsync_AppliesResourceCalendarNonWorkingExceptions()
+    {
+        using var context = CreateContext();
+        context.ResourceAllocations.RemoveRange(context.ResourceAllocations.Where(allocation => allocation.ResourceId == ResourceAliceId));
+        context.ResourceCalendars.Add(new ResourceCalendar
+        {
+            Id = Guid.NewGuid(),
+            ResourceId = ResourceAliceId,
+            Date = new DateTime(2026, 1, 7),
+            DayType = "Leave",
+            AvailableHours = 0m
+        });
+        await context.SaveChangesAsync();
+
+        var result = await CreateService(context).GetProjectTeamOverviewAsync(
+            new[] { TeamMember(ResourceAliceId) },
+            TeamCapacityFilter());
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.IsCapacityDataAvailable.Should().BeTrue();
+        result.Value.TotalCapacityHours.Should().Be(34.3m);
+        result.Value.AvailableHours.Should().Be(34.3m);
+    }
+
+    [Fact]
+    public async Task GetProjectTeamOverviewAsync_MarksCapacityUnavailableWhenNoWorkingCalendarExists()
+    {
+        using var context = CreateContext();
+        context.ResourceAllocations.RemoveRange(context.ResourceAllocations.Where(allocation => allocation.ResourceId == ResourceAliceId));
+        context.WorkingCalendars.RemoveRange(context.WorkingCalendars);
+        await context.SaveChangesAsync();
+
+        var result = await CreateService(context).GetProjectTeamOverviewAsync(
+            new[] { TeamMember(ResourceAliceId) },
+            TeamCapacityFilter());
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.IsCapacityDataAvailable.Should().BeFalse();
+        result.Value.TotalCapacityHours.Should().BeNull();
+        result.Value.UtilizedHours.Should().BeNull();
+        result.Value.IdleResourceCount.Should().Be(1);
+    }
+
+    [Fact]
     public async Task GetMatrixAsync_CalculatesGrossCapacityUsingWorkingCalendar()
     {
         using var context = CreateContext();
@@ -41,8 +452,8 @@ public class CapacityServiceTests : TestBase
         var filter = new CapacityFilterDto
         {
             PeriodType = "Week",
-            StartDate = new DateTime(2026, 1, 5),
-            EndDate = new DateTime(2026, 1, 12),
+            StartDate = new DateTime(2026, 1, 4),
+            EndDate = new DateTime(2026, 1, 11),
             ResourceId = ResourceAliceId
         };
 
@@ -50,7 +461,7 @@ public class CapacityServiceTests : TestBase
 
         result.IsSuccess.Should().BeTrue();
         var row = result.Value.Rows.Should().ContainSingle().Subject;
-        row.Cells.Should().HaveCount(2);
+        row.Cells.Should().ContainSingle();
         row.Cells[0].PeriodKey.Should().Be("2026-01-04");
         row.Cells[0].GrossCapacityHours.Should().Be(40);
     }
@@ -73,8 +484,8 @@ public class CapacityServiceTests : TestBase
         var filter = new CapacityFilterDto
         {
             PeriodType = "Week",
-            StartDate = new DateTime(2026, 1, 5),
-            EndDate = new DateTime(2026, 1, 12),
+            StartDate = new DateTime(2026, 1, 4),
+            EndDate = new DateTime(2026, 1, 11),
             ResourceId = ResourceAliceId
         };
 
@@ -90,25 +501,38 @@ public class CapacityServiceTests : TestBase
     public async Task GetMatrixAsync_SeparatesConfirmedVsProposedCapacity()
     {
         using var context = CreateContext();
-        context.ResourceAllocations.Add(new ResourceAllocation
-        {
-            Id = Guid.NewGuid(),
-            ResourceId = ResourceAliceId,
-            ProjectName = "Proposed Work",
-            ProjectRoleId = ProjectRoleDevId,
-            AllocationPercentage = 30,
-            StartDate = new DateTime(2026, 1, 5),
-            EndDate = new DateTime(2026, 1, 12),
-            Status = ResourceAllocation.StatusProposed
-        });
+        context.ResourceAllocations.RemoveRange(context.ResourceAllocations.Where(allocation => allocation.ResourceId == ResourceAliceId));
+        context.ResourceAllocations.AddRange(
+            new ResourceAllocation
+            {
+                Id = Guid.NewGuid(),
+                ResourceId = ResourceAliceId,
+                ProjectName = "Confirmed Work",
+                ProjectRoleId = ProjectRoleDevId,
+                AllocationPercentage = 50,
+                StartDate = new DateTime(2026, 1, 4),
+                EndDate = new DateTime(2026, 1, 11),
+                Status = ResourceAllocation.StatusConfirmed
+            },
+            new ResourceAllocation
+            {
+                Id = Guid.NewGuid(),
+                ResourceId = ResourceAliceId,
+                ProjectName = "Proposed Work",
+                ProjectRoleId = ProjectRoleDevId,
+                AllocationPercentage = 30,
+                StartDate = new DateTime(2026, 1, 4),
+                EndDate = new DateTime(2026, 1, 11),
+                Status = ResourceAllocation.StatusProposed
+            });
         await context.SaveChangesAsync();
 
         var service = CreateService(context);
         var filter = new CapacityFilterDto
         {
             PeriodType = "Week",
-            StartDate = new DateTime(2026, 1, 5),
-            EndDate = new DateTime(2026, 1, 12),
+            StartDate = new DateTime(2026, 1, 4),
+            EndDate = new DateTime(2026, 1, 11),
             ResourceId = ResourceAliceId
         };
 
@@ -132,8 +556,8 @@ public class CapacityServiceTests : TestBase
             ProjectName = "Heavy Load",
             ProjectRoleId = ProjectRoleDevId,
             AllocationPercentage = 80,
-            StartDate = new DateTime(2026, 1, 5),
-            EndDate = new DateTime(2026, 1, 12),
+            StartDate = new DateTime(2026, 1, 4),
+            EndDate = new DateTime(2026, 1, 11),
             Status = ResourceAllocation.StatusConfirmed
         });
         context.ResourceAllocations.Add(new ResourceAllocation
@@ -143,8 +567,8 @@ public class CapacityServiceTests : TestBase
             ProjectName = "Extra Work",
             ProjectRoleId = ProjectRoleDevId,
             AllocationPercentage = 30,
-            StartDate = new DateTime(2026, 1, 5),
-            EndDate = new DateTime(2026, 1, 12),
+            StartDate = new DateTime(2026, 1, 4),
+            EndDate = new DateTime(2026, 1, 11),
             Status = ResourceAllocation.StatusProposed
         });
         await context.SaveChangesAsync();
@@ -153,8 +577,8 @@ public class CapacityServiceTests : TestBase
         var filter = new CapacityFilterDto
         {
             PeriodType = "Week",
-            StartDate = new DateTime(2026, 1, 5),
-            EndDate = new DateTime(2026, 1, 12),
+            StartDate = new DateTime(2026, 1, 4),
+            EndDate = new DateTime(2026, 1, 11),
             ResourceId = ResourceCharlieId
         };
 
@@ -178,8 +602,8 @@ public class CapacityServiceTests : TestBase
             ProjectRoleId = ProjectRoleDevId,
             AllocationPercentage = 80,
             HoursPerWeek = 40,
-            StartDate = new DateTime(2026, 1, 5),
-            EndDate = new DateTime(2026, 1, 12),
+            StartDate = new DateTime(2026, 1, 4),
+            EndDate = new DateTime(2026, 1, 11),
             Status = ResourceAllocation.StatusConfirmed
         });
         await context.SaveChangesAsync();
@@ -188,8 +612,8 @@ public class CapacityServiceTests : TestBase
         var filter = new CapacityFilterDto
         {
             PeriodType = "Week",
-            StartDate = new DateTime(2026, 1, 5),
-            EndDate = new DateTime(2026, 1, 12),
+            StartDate = new DateTime(2026, 1, 4),
+            EndDate = new DateTime(2026, 1, 11),
             ResourceId = ResourceAliceId
         };
 
@@ -214,8 +638,8 @@ public class CapacityServiceTests : TestBase
             ProjectRoleId = ProjectRoleArchId,
             AllocationPercentage = 60,
             HoursPerWeek = 32,
-            StartDate = new DateTime(2026, 1, 5),
-            EndDate = new DateTime(2026, 1, 12),
+            StartDate = new DateTime(2026, 1, 4),
+            EndDate = new DateTime(2026, 1, 11),
             Status = ResourceAllocation.StatusConfirmed
         });
         await context.SaveChangesAsync();
@@ -224,8 +648,8 @@ public class CapacityServiceTests : TestBase
         var filter = new CapacityFilterDto
         {
             PeriodType = "Week",
-            StartDate = new DateTime(2026, 1, 5),
-            EndDate = new DateTime(2026, 1, 12),
+            StartDate = new DateTime(2026, 1, 4),
+            EndDate = new DateTime(2026, 1, 11),
             ResourceId = ResourceBobId
         };
 
@@ -356,8 +780,8 @@ public class CapacityServiceTests : TestBase
         var filter = new CapacityFilterDto
         {
             PeriodType = "Week",
-            StartDate = new DateTime(2026, 1, 5),
-            EndDate = new DateTime(2026, 1, 12),
+            StartDate = new DateTime(2026, 1, 4),
+            EndDate = new DateTime(2026, 1, 11),
             ResourceId = ResourceAliceId
         };
 
@@ -381,8 +805,8 @@ public class CapacityServiceTests : TestBase
         var filter = new CapacityFilterDto
         {
             PeriodType = "Week",
-            StartDate = new DateTime(2026, 1, 5),
-            EndDate = new DateTime(2026, 1, 12),
+            StartDate = new DateTime(2026, 1, 4),
+            EndDate = new DateTime(2026, 1, 11),
             ResourceId = ResourceAliceId
         };
 
@@ -410,8 +834,8 @@ public class CapacityServiceTests : TestBase
         var filter = new CapacityFilterDto
         {
             PeriodType = "Week",
-            StartDate = new DateTime(2026, 1, 5),
-            EndDate = new DateTime(2026, 1, 12),
+            StartDate = new DateTime(2026, 1, 4),
+            EndDate = new DateTime(2026, 1, 11),
             ResourceId = ResourceAliceId
         };
 

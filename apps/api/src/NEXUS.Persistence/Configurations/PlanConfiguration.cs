@@ -33,11 +33,11 @@ public class PlanConfiguration : IEntityTypeConfiguration<Plan>
             .IsRowVersion()
             .IsConcurrencyToken();
 
-        // A project can contain multiple plans, but only one of each PlanType
-        // (Execution/Recovery/Tender/...) per tenant/project.
-        builder.HasIndex(e => new { e.TenantId, e.ProjectId, e.PlanType })
+        // A project may have parallel plans of the same type. Keep names unique
+        // per plan type without constraining names used by a different type.
+        builder.HasIndex(e => new { e.TenantId, e.ProjectId, e.PlanType, e.Name })
             .IsUnique()
-            .HasDatabaseName("IX_Plans_Tenant_Project_Type");
+            .HasDatabaseName("IX_Plans_Tenant_Project_Type_Name");
 
         builder.HasMany(e => e.Versions)
             .WithOne(v => v.Plan)

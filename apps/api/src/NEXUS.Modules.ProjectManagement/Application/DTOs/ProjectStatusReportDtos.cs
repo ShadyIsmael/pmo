@@ -22,6 +22,7 @@ public class ProjectStatusReportListDto
     public DateTime ReportDate { get; init; }
     public DateTime PeriodFrom { get; init; }
     public DateTime PeriodTo { get; init; }
+    public DateTime StatusDate { get; init; }
     public ProjectStatusReportState ReportState { get; init; }
     public string? ProjectLifecycleStatusAtReport { get; init; }
     public string? OverallHealth { get; init; }
@@ -49,6 +50,9 @@ public sealed class ProjectStatusReportDto : ProjectStatusReportListDto
     public Guid? PublishedByUserId { get; init; }
     public string? PublishedByNameSnapshot { get; init; }
     public DateTime? SourceDataCapturedAt { get; init; }
+    public int? ReportingConfigurationVersionSnapshot { get; init; }
+    public IReadOnlyList<string> IncludedSectionsSnapshot { get; init; } = [];
+    public ProjectPerformanceDto? PerformanceSnapshot { get; init; }
     public string? CurrencyCodeSnapshot { get; init; }
     public decimal? BudgetAmountSnapshot { get; init; }
     public decimal? ActualCostAmountSnapshot { get; init; }
@@ -71,6 +75,7 @@ public class CreateProjectStatusReportDto
     public DateTime ReportDate { get; init; }
     public DateTime PeriodFrom { get; init; }
     public DateTime PeriodTo { get; init; }
+    public DateTime? StatusDate { get; init; }
     public string? ProjectLifecycleStatusAtReport { get; init; }
     public string? OverallHealth { get; init; }
     public decimal? OverallProgressPercent { get; init; }
@@ -136,4 +141,52 @@ public sealed class ProjectStatusReportChangeRequestSnapshotDto
     public DateTime RequestedAt { get; init; }
     public DateTime? ReviewedAt { get; init; }
     public string? DecisionNotes { get; init; }
+}
+
+public sealed class ProjectStatusReportComparisonDto
+{
+    public Guid EarlierReportId { get; init; }
+    public Guid LaterReportId { get; init; }
+    public DateTime EarlierStatusDate { get; init; }
+    public DateTime LaterStatusDate { get; init; }
+    public bool ReportingConfigurationChanged { get; init; }
+    public bool IncludedPlansChanged { get; init; }
+    public bool ReportingBaselinesChanged { get; init; }
+    public IReadOnlyList<ProjectStatusReportMetricDeltaDto> Metrics { get; init; } = [];
+    public IReadOnlyList<ProjectStatusReportMilestoneDeltaDto> MilestoneChanges { get; init; } = [];
+    public ProjectStatusReportTrendDto RiskTrend { get; init; } = new();
+    public ProjectStatusReportTrendDto IssueTrend { get; init; } = new();
+}
+
+public sealed class ProjectStatusReportMetricDeltaDto
+{
+    public string Code { get; init; } = string.Empty;
+    public decimal? EarlierValue { get; init; }
+    public decimal? LaterValue { get; init; }
+    public decimal? Change { get; init; }
+}
+
+public sealed class ProjectStatusReportMilestoneDeltaDto
+{
+    public Guid PlanId { get; init; }
+    public string PlanName { get; init; } = string.Empty;
+    public string Name { get; init; } = string.Empty;
+    public string? EarlierStatus { get; init; }
+    public string? LaterStatus { get; init; }
+    public DateTime? EarlierPlannedDate { get; init; }
+    public DateTime? LaterPlannedDate { get; init; }
+    public DateTime? EarlierActualCompletionDate { get; init; }
+    public DateTime? LaterActualCompletionDate { get; init; }
+    public decimal? EarlierVarianceDays { get; init; }
+    public decimal? LaterVarianceDays { get; init; }
+}
+
+public sealed class ProjectStatusReportTrendDto
+{
+    public int EarlierTotal { get; init; }
+    public int LaterTotal { get; init; }
+    public int EarlierOpen { get; init; }
+    public int LaterOpen { get; init; }
+    public int EarlierHighOrCriticalOpen { get; init; }
+    public int LaterHighOrCriticalOpen { get; init; }
 }

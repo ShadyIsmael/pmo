@@ -56,7 +56,7 @@ public sealed class DocumentController : ControllerBase
     [HttpPost("{id:guid}/versions")]
     [Authorize(Policy = DocumentPermissions.Edit)]
     [RequestSizeLimit(26 * 1024 * 1024)]
-    public async Task<IActionResult> AddVersion(Guid id, [FromForm] IFormFile file, [FromForm] string? changeNotes, CancellationToken cancellationToken)
+    public async Task<IActionResult> AddVersion(Guid id, IFormFile file, [FromForm] string? changeNotes, CancellationToken cancellationToken)
     {
         var result = await _documents.AddVersionAsync(id, file, changeNotes, CurrentUserId(), cancellationToken);
         return result.IsFailure ? StatusCode(result.Error?.StatusCode ?? 400, result.Error) : Ok(result.Value);

@@ -244,12 +244,13 @@ public class DemoAuthService : IAuthenticationService
 
     private async Task<Result<LoginResponseDto>> IssueSessionAsync(LoginUserSnapshot user, CancellationToken cancellationToken)
     {
-        var (token, expiresAt) = GenerateJwtToken(user);
+        var sessionId = Guid.NewGuid();
+        var (token, expiresAt) = GenerateJwtToken(user, sessionId);
 
         var refreshToken = GenerateRefreshToken();
         var session = new UserSession
         {
-            Id = Guid.NewGuid(),
+            Id = sessionId,
             TenantId = user.TenantId,
             UserId = user.Id,
             Token = token,
@@ -465,7 +466,7 @@ public class DemoAuthService : IAuthenticationService
         };
     }
 
-    private (string token, DateTime expiresAt) GenerateJwtToken(LoginUserSnapshot user)
+    private (string token, DateTime expiresAt) GenerateJwtToken(LoginUserSnapshot user, Guid sessionId)
     {
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(
             _configuration["Jwt:Secret"] ?? "NEXUS-Demo-Secret-Key-Minimum-16-Chars!"));
@@ -478,6 +479,7 @@ public class DemoAuthService : IAuthenticationService
             new(ClaimTypes.Email, user.Email),
             new(ClaimTypes.Name, $"{user.FirstName} {user.LastName}"),
             new("tenantId", user.TenantId.ToString()),
+            new("sid", sessionId.ToString()),
             new("pwdts", user.PasswordChangedAt?.Ticks.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "0")
         };
 

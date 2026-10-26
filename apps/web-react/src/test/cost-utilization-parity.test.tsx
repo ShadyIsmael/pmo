@@ -19,7 +19,7 @@ const metric = {
 const report = {
   from: "2026-09-01", to: "2026-09-30", canViewCosts: true, operational: metric, byCurrency: [metric],
   resources: [{ resourceId: "resource-1", resourceName: "Taylor Resource", resourceType: "Staff", departmentName: "Platform", vendorId: "vendor-1", vendorName: "Vendor One", metrics: metric }],
-  projects: [{ id: "project-1", name: "Project Atlas", ...metric, plannedHours: 120, actualHours: 110 }],
+  projects: [{ id: "project-1", projectPublicId: "public-project-1", name: "Project Atlas", ...metric, plannedHours: 120, actualHours: 110 }],
   vendors: [{ id: "vendor-1", name: "Vendor One", ...metric, plannedHours: 120, actualHours: 110 }],
   roles: [{ id: "role-1", name: "Delivery Lead", ...metric, plannedHours: 120, actualHours: 110 }],
   daily: [{ ...metric, resourceId: "resource-1", resourceName: "Taylor Resource", workDate: "2026-09-30" }],
@@ -64,7 +64,7 @@ describe("cost utilization React parity", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "All projects" }));
     fireEvent.click(screen.getByRole("option", { name: "Project Atlas" }));
-    expect(mocks.useCostUtilization).toHaveBeenLastCalledWith(expect.objectContaining({ departmentId: "department-uuid", projectId: "project-1" }));
+    expect(mocks.useCostUtilization).toHaveBeenLastCalledWith(expect.objectContaining({ departmentId: "department-uuid", projectId: "public-project-1" }));
   });
 
   it("keeps Western digits in Arabic for operational hour values", () => {

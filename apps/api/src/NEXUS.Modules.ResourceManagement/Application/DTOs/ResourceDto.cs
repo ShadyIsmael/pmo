@@ -1,3 +1,5 @@
+using NEXUS.Modules.ResourceManagement.Domain;
+
 namespace NEXUS.Modules.ResourceManagement.Application.DTOs;
 
 public class ResourceDto
@@ -51,6 +53,27 @@ public class ResourceBaseCalendarDto
     public bool IsDefault { get; set; }
 }
 
+public sealed class ResourceReferenceDataDto
+{
+    public IReadOnlyList<ResourceTypeOptionDto> ResourceTypes { get; init; } = Array.Empty<ResourceTypeOptionDto>();
+    public IReadOnlyList<ResourceSeniorityOptionDto> SeniorityLevels { get; init; } = Array.Empty<ResourceSeniorityOptionDto>();
+    public IReadOnlyList<string> CompensationTypes { get; init; } = Array.Empty<string>();
+}
+
+public sealed record ResourceTypeOptionDto(
+    string Code,
+    string NameEn,
+    string NameAr,
+    int DisplayOrder,
+    bool IsDefault,
+    bool RequiresVendor);
+
+public sealed record ResourceSeniorityOptionDto(
+    string Code,
+    string NameEn,
+    string NameAr,
+    int DisplayOrder);
+
 public class ResourceSkillDto
 {
     public Guid Id { get; set; }
@@ -82,7 +105,7 @@ public class CreateResourceDto
     public string? Email { get; set; }
     public string? Phone { get; set; }
     public string? AvatarUrl { get; set; }
-    public string Type { get; set; } = "Staff";
+    public ResourceType Type { get; set; } = ResourceType.Staff;
     public string Status { get; set; } = "Active";
     public string? EmploymentType { get; set; }
     public string? Seniority { get; set; }
@@ -110,7 +133,7 @@ public class UpdateResourceDto
     public string? Email { get; set; }
     public string? Phone { get; set; }
     public string? AvatarUrl { get; set; }
-    public string? Type { get; set; }
+    public ResourceType? Type { get; set; }
     public string? Status { get; set; }
     public string? EmploymentType { get; set; }
     public string? Seniority { get; set; }

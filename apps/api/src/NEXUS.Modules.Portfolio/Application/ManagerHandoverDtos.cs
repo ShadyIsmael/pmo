@@ -28,7 +28,7 @@ public sealed class ManagerHandoverRequestDto
     public string EntityType { get; set; } = string.Empty;
     public Guid EntityId { get; set; }
     public string EntityName { get; set; } = string.Empty;
-    public Guid CurrentManagerId { get; set; }
+    public Guid? CurrentManagerId { get; set; }
     public string CurrentManagerName { get; set; } = string.Empty;
     public Guid NewManagerId { get; set; }
     public string NewManagerName { get; set; } = string.Empty;
@@ -36,6 +36,7 @@ public sealed class ManagerHandoverRequestDto
     public string Reason { get; set; } = string.Empty;
     public string? Notes { get; set; }
     public string Status { get; set; } = string.Empty;
+    public string InitiationType { get; set; } = string.Empty;
     public Guid RequestedBy { get; set; }
     public string RequestedByName { get; set; } = string.Empty;
     public DateTime RequestedAt { get; set; }
@@ -44,6 +45,19 @@ public sealed class ManagerHandoverRequestDto
     public DateTime? RespondedAt { get; set; }
     public string? RejectionReason { get; set; }
     public Guid? SnapshotId { get; set; }
+}
+
+public sealed class ManagerHandoverCapabilitiesDto
+{
+    public Guid? CurrentManagerId { get; set; }
+    public string? CurrentManagerName { get; set; }
+    public bool CanViewRequests { get; set; }
+    public bool CanInitiate { get; set; }
+    public bool CanAdminInitiate { get; set; }
+    public bool CanAssignInitial { get; set; }
+    public bool CanApproveIncoming { get; set; }
+    public bool CanCancelOwnPending { get; set; }
+    public bool HasPendingRequest { get; set; }
 }
 
 public sealed class ManagerAssignmentDto
@@ -68,7 +82,7 @@ public sealed class ManagerSnapshotDto
     public string Name { get; set; } = string.Empty;
     public DateTime SnapshotDate { get; set; }
     public DateTime EffectiveEndDate { get; set; }
-    public Guid PreviousManagerId { get; set; }
+    public Guid? PreviousManagerId { get; set; }
     public string PreviousManagerName { get; set; } = string.Empty;
     public Guid NewManagerId { get; set; }
     public string NewManagerName { get; set; } = string.Empty;

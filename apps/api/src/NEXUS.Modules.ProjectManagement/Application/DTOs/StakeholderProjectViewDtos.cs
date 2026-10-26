@@ -9,6 +9,7 @@ namespace NEXUS.Modules.ProjectManagement.Application.DTOs;
 public sealed class StakeholderProjectViewDto
 {
     public Guid Id { get; init; }
+    public Guid PublicId { get; init; }
     public string Code { get; init; } = string.Empty;
     public string Name { get; init; } = string.Empty;
     public string? Description { get; init; }

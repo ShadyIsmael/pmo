@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using NEXUS.Modules.ProjectPlanning.Application;
 
 namespace NEXUS.Modules.ProjectPlanning.Api;
@@ -11,11 +12,16 @@ public class PlanVersionController : ControllerBase
 {
     private readonly IPlanVersionService _versionService;
     private readonly IPlanVersionComparisonService _comparisonService;
+    private readonly ILogger<PlanVersionController> _logger;
 
-    public PlanVersionController(IPlanVersionService versionService, IPlanVersionComparisonService comparisonService)
+    public PlanVersionController(
+        IPlanVersionService versionService,
+        IPlanVersionComparisonService comparisonService,
+        ILogger<PlanVersionController> logger)
     {
         _versionService = versionService;
         _comparisonService = comparisonService;
+        _logger = logger;
     }
 
     [Authorize(Policy = "Planning.View")]
@@ -67,8 +73,16 @@ public class PlanVersionController : ControllerBase
     [HttpPost("baseline")]
     public async Task<IActionResult> CaptureBaseline(Guid projectId, Guid planId, [FromQuery] byte[] rowVersion, CancellationToken cancellationToken)
     {
-        var result = await _versionService.CaptureBaselineAsync(planId, rowVersion, UserId(), cancellationToken);
-        return ToActionResult(result, value => CreatedAtAction(nameof(GetWorking), new { projectId, planId }, value));
+        try
+        {
+            var result = await _versionService.CaptureBaselineAsync(planId, rowVersion, UserId(), cancellationToken);
+            return ToActionResult(result, value => CreatedAtAction(nameof(GetWorking), new { projectId, planId }, value));
+        }
+        catch (Exception exception)
+        {
+            _logger.LogError(exception, "Unhandled error while capturing a plan baseline for project {ProjectId}, plan {PlanId}.", projectId, planId);
+            throw;
+        }
     }
 
     [Authorize(Policy = "Planning.Lifecycle")]

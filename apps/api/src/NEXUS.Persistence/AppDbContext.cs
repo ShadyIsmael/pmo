@@ -86,7 +86,11 @@ public class AppDbContext : DbContext
     public DbSet<ProjectStatusReportRiskSnapshot> ProjectStatusReportRiskSnapshots => Set<ProjectStatusReportRiskSnapshot>();
     public DbSet<ProjectStatusReportIssueSnapshot> ProjectStatusReportIssueSnapshots => Set<ProjectStatusReportIssueSnapshot>();
     public DbSet<ProjectStatusReportChangeRequestSnapshot> ProjectStatusReportChangeRequestSnapshots => Set<ProjectStatusReportChangeRequestSnapshot>();
+    public DbSet<ProjectReportingConfiguration> ProjectReportingConfigurations => Set<ProjectReportingConfiguration>();
+    public DbSet<ProjectReportingPlanSelection> ProjectReportingPlanSelections => Set<ProjectReportingPlanSelection>();
     public DbSet<ProjectChangeRequest> ProjectChangeRequests => Set<ProjectChangeRequest>();
+    public DbSet<ProjectChangeRequestApproval> ProjectChangeRequestApprovals => Set<ProjectChangeRequestApproval>();
+    public DbSet<ProjectChangeRequestApprovalHistory> ProjectChangeRequestApprovalHistories => Set<ProjectChangeRequestApprovalHistory>();
 
     public DbSet<Plan> Plans => Set<Plan>();
     public DbSet<PlanVersion> PlanVersions => Set<PlanVersion>();

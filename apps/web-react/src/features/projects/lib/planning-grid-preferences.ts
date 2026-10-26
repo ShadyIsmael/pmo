@@ -7,10 +7,10 @@ export type PlanningGridColumnId =
   | "predecessors" | "estimateHours" | "description";
 
 export const DEFAULT_PLANNING_GRID_COLUMNS: PlanningGridColumnId[] = [
-  "schedulingMode", "id", "taskName", "duration", "start", "finish", "progress", "predecessors",
+  "id", "schedulingMode", "wbs", "taskName", "duration", "start", "finish", "progress", "predecessors",
 ];
 
-export const REQUIRED_PLANNING_GRID_COLUMNS: PlanningGridColumnId[] = ["schedulingMode", "id", "taskName"];
+export const REQUIRED_PLANNING_GRID_COLUMNS: PlanningGridColumnId[] = ["id", "schedulingMode", "wbs", "taskName"];
 
 const KNOWN_PLANNING_GRID_COLUMNS = new Set<PlanningGridColumnId>([
   "id", "wbs", "outlineLevel", "taskName", "type", "schedulingMode", "duration", "start", "finish",

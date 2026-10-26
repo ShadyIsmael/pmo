@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { PlanCalendarDto } from "@features/projects/api/planningFull";
 import { PlanningCalendarsPanel } from "@features/projects/components/PlanningCalendarsPanel";
+import { I18nProvider } from "../i18n/messages";
 
 const t = (key: string) => key;
 
@@ -42,7 +43,7 @@ function renderPanel({
   onCalendarCreated?: (calendar: PlanCalendarDto) => void;
 } = {}) {
   const onSelectCalendar = vi.fn();
-  render(<PlanningCalendarsPanel calendars={calendars} isLoading={false} isFetching={false} isError={false} onRetry={vi.fn()} editable={editable} selectedCalendarId={selectedCalendarId} onSelectCalendar={onSelectCalendar} mutations={mutations} onCalendarCreated={onCalendarCreated} t={t} />);
+  render(<I18nProvider><PlanningCalendarsPanel calendars={calendars} isLoading={false} isFetching={false} isError={false} onRetry={vi.fn()} editable={editable} selectedCalendarId={selectedCalendarId} onSelectCalendar={onSelectCalendar} mutations={mutations} onCalendarCreated={onCalendarCreated} t={t} /></I18nProvider>);
   return { mutations, onCalendarCreated, onSelectCalendar };
 }
 
@@ -85,7 +86,7 @@ describe("planning calendars panel", () => {
         <PlanningCalendarsPanel calendars={calendars} isLoading={false} isFetching={false} isError={false} onRetry={vi.fn()} editable selectedCalendarId={selectedCalendarId} onSelectCalendar={setSelectedCalendarId} mutations={mutations} onCalendarCreated={(calendar) => setSelectedCalendarId(calendar.id)} t={t} />
       </>;
     }
-    render(<Harness />);
+    render(<I18nProvider><Harness /></I18nProvider>);
     fireEvent.change(screen.getByPlaceholderText("planning.calendarName"), { target: { value: "New calendar" } });
     fireEvent.click(screen.getByRole("button", { name: "planning.actionButtons.create" }));
 
@@ -95,7 +96,7 @@ describe("planning calendars panel", () => {
   });
 
   it("shows a retry action when calendar data cannot be loaded", () => {
-    render(<PlanningCalendarsPanel calendars={[]} isLoading={false} isFetching={false} isError editable={false} selectedCalendarId="" onSelectCalendar={vi.fn()} onRetry={vi.fn()} mutations={makeMutations()} onCalendarCreated={vi.fn()} t={t} />);
+    render(<I18nProvider><PlanningCalendarsPanel calendars={[]} isLoading={false} isFetching={false} isError editable={false} selectedCalendarId="" onSelectCalendar={vi.fn()} onRetry={vi.fn()} mutations={makeMutations()} onCalendarCreated={vi.fn()} t={t} /></I18nProvider>);
 
     expect(screen.getByRole("alert")).toHaveTextContent("planning.loadFailed");
     expect(screen.getByRole("button", { name: /common.retry/ })).toBeInTheDocument();

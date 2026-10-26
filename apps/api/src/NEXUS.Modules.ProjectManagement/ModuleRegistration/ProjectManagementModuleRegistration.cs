@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using NEXUS.Modules.ProjectManagement.Application;
 using NEXUS.Modules.ProjectManagement.Application.Validators;
 using NEXUS.SharedKernel;
+using NEXUS.Modules.WorkflowEngine.Application.Contracts;
 
 namespace NEXUS.Modules.ProjectManagement.ModuleRegistration;
 
@@ -11,15 +12,26 @@ public static class ProjectManagementModuleRegistration
     {
         services.AddScoped<ProjectService>();
         services.AddScoped<ProjectManagerMembershipSynchronizer>();
+        services.AddScoped<ProjectSponsorMembershipSynchronizer>();
         services.AddScoped<IProjectService>(sp => sp.GetRequiredService<ProjectService>());
         services.AddScoped<IProjectReferenceLookup>(sp => sp.GetRequiredService<ProjectService>());
+        services.AddScoped<IProjectPublicIdLookup>(sp => sp.GetRequiredService<ProjectService>());
         services.AddScoped<IMilestoneService, MilestoneService>();
         services.AddScoped<IBaselineService, BaselineService>();
         services.AddScoped<IProjectSnapshotService, ProjectSnapshotService>();
         services.AddScoped<IProjectHandoverRequestService, ProjectHandoverRequestService>();
-        services.AddScoped<IProjectChangeRequestService, ProjectChangeRequestService>();
+        services.AddScoped<IProjectChangeRequestService, ProjectChangeRequestWorkflowService>();
+        services.AddScoped<IProjectChangeRequestWorkflowProvisioningService, ProjectChangeRequestWorkflowProvisioningService>();
+        services.AddScoped<IWorkflowEntityAdapter, ProjectChangeRequestWorkflowAdapter>();
+        services.AddScoped<IWorkflowEntityMetadataProvider, ProjectChangeRequestWorkflowMetadataProvider>();
+        services.AddScoped<IWorkflowDefinitionConsumerValidator, ProjectChangeRequestWorkflowConsumerValidator>();
         services.AddScoped<IProjectBaselineService, ProjectBaselineService>();
         services.AddScoped<IProjectStatusReportService, ProjectStatusReportService>();
+        services.AddScoped<IProjectStatusReportWorkflowProvisioningService, ProjectStatusReportWorkflowProvisioningService>();
+        services.AddScoped<IWorkflowEntityAdapter, ProjectStatusReportWorkflowAdapter>();
+        services.AddScoped<IWorkflowEntityMetadataProvider, ProjectStatusReportWorkflowMetadataProvider>();
+        services.AddScoped<IWorkflowDefinitionConsumerValidator, ProjectStatusReportWorkflowConsumerValidator>();
+        services.AddScoped<IProjectReportingService, ProjectReportingService>();
         services.AddScoped<IProjectOverviewService, ProjectOverviewService>();
         services.AddScoped<IStakeholderProjectReadService, StakeholderProjectReadService>();
         services.AddScoped<IStakeholderInvitationService, StakeholderInvitationService>();

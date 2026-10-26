@@ -37,6 +37,9 @@ public class PlanAssignmentConfiguration : IEntityTypeConfiguration<PlanAssignme
 
         builder.HasIndex(e => new { e.TenantId, e.PlanVersionId, e.ActivityId, e.ResourceId })
             .IsUnique()
+            // Assignments are soft-deleted. Keep deleted rows for history, while
+            // allowing the same resource/activity pair to be assigned again.
+            .HasFilter("[IsDeleted] = 0")
             .HasDatabaseName("IX_PlanAssignments_Tenant_Version_Activity_Resource");
 
         builder.HasIndex(e => e.ResourceAllocationId)

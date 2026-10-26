@@ -9,6 +9,7 @@ using NEXUS.Modules.ProjectPlanning.Application.Import;
 using NEXUS.Modules.ProjectPlanning.Domain;
 using NEXUS.Modules.ResourceManagement.Application;
 using NEXUS.Modules.ResourceManagement.Application.DTOs;
+using NEXUS.Modules.ResourceManagement.Domain;
 using NEXUS.SharedKernel;
 using System.Security.Claims;
 using Xunit;
@@ -122,6 +123,42 @@ public sealed class PlanningImportServiceTests : IDisposable
         Assert.Empty(await _context.Plans.ToListAsync());
         Assert.Empty(await _context.PlanVersions.ToListAsync());
         Assert.Empty(await _context.PlanActivities.ToListAsync());
+    }
+
+    [Fact]
+    public async Task ResolveResource_RejectsUndefinedResourceTypeEnum()
+    {
+        SetResources();
+        var service = CreateService(FixtureDocument());
+        var session = await service.CreateSessionAsync(new MemoryStream([1]), "fixture.mpp", _projectId, null, _userId.ToString());
+        Assert.True(session.IsSuccess, session.Error?.Message);
+
+        var result = await service.ResolveResourceAsync(_projectId, session.Value!.Id, "r1", new PlanImportResourceResolutionDto
+        {
+            Resolution = "CreateNew",
+            CreateResource = new CreateResourceDto { Name = "Invalid type", Type = (ResourceType)99 }
+        }, _userId.ToString());
+
+        Assert.True(result.IsFailure);
+        Assert.Contains(string.Join(", ", Enum.GetNames<ResourceType>()), result.Error!.Message);
+    }
+
+    [Fact]
+    public async Task ResolveResource_VendorEnumRequiresVendorId()
+    {
+        SetResources();
+        var service = CreateService(FixtureDocument());
+        var session = await service.CreateSessionAsync(new MemoryStream([1]), "fixture.mpp", _projectId, null, _userId.ToString());
+        Assert.True(session.IsSuccess, session.Error?.Message);
+
+        var result = await service.ResolveResourceAsync(_projectId, session.Value!.Id, "r1", new PlanImportResourceResolutionDto
+        {
+            Resolution = "CreateNew",
+            CreateResource = new CreateResourceDto { Name = "Vendor resource", Type = ResourceType.Vendor }
+        }, _userId.ToString());
+
+        Assert.True(result.IsFailure);
+        Assert.Contains("Vendor", result.Error!.Message);
     }
 
     [Fact]

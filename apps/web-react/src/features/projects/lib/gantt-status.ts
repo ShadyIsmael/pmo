@@ -13,7 +13,7 @@ export const GANTT_STATUS_STYLES: Record<GanttStatus, { bar: string; selected: s
 
 export function getGanttStatus(row: PlanWorkspaceRow): GanttStatus {
   if (row.activity?.type === PLANNING_ACTIVITY_TYPE.milestone) return "milestone";
-  if (row.hasChildren || (row.wbs && !row.activity)) return "summary";
+  if (row.isSummary || row.hasChildren || (row.wbs && !row.activity)) return "summary";
   const progress = row.activity?.progress;
   if (progress != null && progress >= 100) return "completed";
   if (progress != null && progress > 0) return "inProgress";

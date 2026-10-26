@@ -1,4 +1,5 @@
 using NEXUS.SharedKernel;
+using NEXUS.Modules.Portfolio.Domain;
 
 namespace NEXUS.Modules.ProjectManagement.Domain;
 
@@ -20,8 +21,9 @@ public class ProjectHandoverRequest : BaseEntity
     public Guid ProjectId { get; set; }
     public Project? Project { get; set; }
 
-    public Guid CurrentProjectManagerId { get; set; }
+    public Guid? CurrentProjectManagerId { get; set; }
     public Guid NewProjectManagerId { get; set; }
+    public string InitiationType { get; set; } = ManagerHandoverInitiationType.ManagerInitiated;
 
     public DateTime EffectiveHandoverDate { get; set; }
     public string Reason { get; set; } = string.Empty;

@@ -111,6 +111,7 @@ describe("project handover approvals", () => {
     renderApprovalsPage(client);
 
     await screen.findByText("Core Modernization");
+    expect(screen.getByRole("link", { name: "Review request" })).toHaveAttribute("href", "/my-work/approvals/review/project-handover/handover-1");
     fireEvent.click(screen.getByRole("button", { name: "Approve" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("This handover request is no longer pending. The approvals list has been refreshed.");
@@ -141,7 +142,7 @@ describe("project handover approvals", () => {
     client.setQueryData(pendingKey, [{ id: "change-1" }]);
     client.setQueryData(projectChangeKey, [{ id: "change-1" }]);
     client.setQueryData(projectDetailKey, { id: "project-1" });
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: "change-1", projectId: "project-1" }), { status: 200 })));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: "change-1", number: 7, status: "Pending" }), { status: 200 })));
     const wrapper = ({ children }: { children: React.ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
     const { result } = renderHook(() => useApproveProjectChangeRequest(), { wrapper });
 
@@ -175,6 +176,7 @@ describe("project change request approvals", () => {
       {
         id: "change-1",
         projectId: "project-1",
+        projectPublicId: "project-public-1",
         projectName: "Core Modernization",
         number: 7,
         type: "Baseline",
@@ -183,10 +185,12 @@ describe("project change request approvals", () => {
         requestedBy: "requester-1",
         requestedByName: "Alex Admin",
         requestedAt: "2026-10-01T10:00:00Z",
+        pendingWith: ["Sponsor"], approvalCount: 0, requiredApprovalCount: 1, approvals: [],
       },
       {
         id: "change-2",
         projectId: "project-2",
+        projectPublicId: "project-public-2",
         projectName: "Customer Portal",
         number: 8,
         type: "Administrative",
@@ -195,6 +199,7 @@ describe("project change request approvals", () => {
         requestedBy: "requester-2",
         requestedByName: "Sam Lee",
         requestedAt: "2026-10-02T10:00:00Z",
+        pendingWith: ["Sponsor"], approvalCount: 0, requiredApprovalCount: 1, approvals: [],
       },
     ];
     const fetchMock = vi.fn().mockImplementation((input: string, init?: RequestInit) => {
@@ -211,16 +216,19 @@ describe("project change request approvals", () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } } });
     renderApprovalsPage(client);
 
-    const projectLink = await screen.findByRole("link", { name: "Core Modernization" });
-    const requestRow = projectLink.closest<HTMLElement>("div.flex.items-start");
+    const projectName = await screen.findByText("Core Modernization");
+    const requestRow = projectName.closest<HTMLElement>("div.flex.items-start");
     expect(requestRow).not.toBeNull();
+    expect(within(requestRow!).getByRole("link")).toHaveAttribute(
+      "href", "/my-work/approvals/review/change-request/change-1",
+    );
     fireEvent.click(within(requestRow!).getByRole("button", { name: "موافقة" }));
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("لم يعد طلب التغيير معلقًا. تم تحديث قائمة الموافقات.");
     expect(alert.closest("div.flex.items-start")).toBe(requestRow);
-    const otherProjectLink = screen.getByRole("link", { name: "Customer Portal" });
-    expect(within(otherProjectLink.closest<HTMLElement>("div.flex.items-start")!).queryByRole("alert")).not.toBeInTheDocument();
+    const otherProjectName = screen.getByText("Customer Portal");
+    expect(within(otherProjectName.closest<HTMLElement>("div.flex.items-start")!).queryByRole("alert")).not.toBeInTheDocument();
     client.clear();
   });
 
@@ -228,6 +236,7 @@ describe("project change request approvals", () => {
     const pendingRequest = {
       id: "change-1",
       projectId: "project-1",
+      projectPublicId: "project-public-1",
       projectName: "Core Modernization",
       number: 7,
       type: "Baseline",
@@ -237,6 +246,7 @@ describe("project change request approvals", () => {
       requestedBy: "requester-1",
       requestedByName: "Alex Admin",
       requestedAt: "2026-10-01T10:00:00Z",
+      pendingWith: ["Sponsor"], approvalCount: 0, requiredApprovalCount: 1, approvals: [],
     };
     let pendingCalls = 0;
     const fetchMock = vi.fn().mockImplementation((input: string, init?: RequestInit) => {
@@ -254,8 +264,12 @@ describe("project change request approvals", () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } } });
     renderApprovalsPage(client);
 
-    await screen.findByText("Core Modernization");
-    expect(screen.getByRole("link", { name: "Core Modernization" })).toHaveAttribute("href", "/projects/project-1");
+    const projectName = await screen.findByText("Core Modernization");
+    const requestRow = projectName.closest<HTMLElement>("div.flex.items-start");
+    expect(requestRow).not.toBeNull();
+    expect(within(requestRow!).getByRole("link")).toHaveAttribute(
+      "href", "/my-work/approvals/review/change-request/change-1",
+    );
     expect(screen.getByText(/Baseline Change/)).toBeInTheDocument();
     expect(screen.getByText("Pending")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Reject" }));

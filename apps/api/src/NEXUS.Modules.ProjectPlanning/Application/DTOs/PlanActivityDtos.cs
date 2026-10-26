@@ -71,6 +71,18 @@ public class UpdatePlanActivityDto
     public byte[] RowVersion { get; set; } = Array.Empty<byte>();
 }
 
+/// <summary>A bounded, atomic set of activity updates for the persisted planning grid.</summary>
+public sealed class BulkUpdatePlanActivitiesDto
+{
+    public List<BulkUpdatePlanActivityItemDto> Items { get; set; } = [];
+}
+
+public sealed class BulkUpdatePlanActivityItemDto
+{
+    public Guid ActivityId { get; set; }
+    public UpdatePlanActivityDto Update { get; set; } = new();
+}
+
 public enum PlanActivityMovePosition
 {
     Before,

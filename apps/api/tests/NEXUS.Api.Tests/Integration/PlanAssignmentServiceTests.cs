@@ -6,11 +6,13 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Moq;
 using NEXUS.Modules.Audit.Application;
 using NEXUS.Modules.Audit.Domain;
+using NEXUS.Modules.Organization.Domain;
 using NEXUS.Modules.ProjectPlanning.Application;
 using NEXUS.Modules.ProjectPlanning.Application.DTOs;
 using NEXUS.Modules.ProjectPlanning.Domain;
 using NEXUS.Modules.ResourceManagement.Application;
 using NEXUS.Modules.ResourceManagement.Application.DTOs;
+using NEXUS.Modules.ResourceManagement.Domain;
 using NEXUS.SharedKernel;
 using System.Security.Claims;
 using Xunit;
@@ -30,6 +32,7 @@ public class PlanAssignmentServiceTests : IDisposable
     private readonly Guid _tenantB = Guid.NewGuid();
     private readonly Guid _userA = Guid.NewGuid();
     private readonly Guid _projectId = Guid.NewGuid();
+    private readonly Guid _defaultCalendarId = Guid.NewGuid();
 
     public PlanAssignmentServiceTests()
     {
@@ -39,11 +42,41 @@ public class PlanAssignmentServiceTests : IDisposable
             new DbContextOptionsBuilder<PlanAssignmentTestDbContext>().UseSqlite(_connection).Options,
             _accessor.Object);
         _context.Database.EnsureCreated();
+        _context.WorkingCalendars.Add(new WorkingCalendar
+        {
+            Id = _defaultCalendarId,
+            TenantId = _tenantA,
+            Name = "48-hour resource week",
+            WorkingDaysPerWeek = 6,
+            HoursPerDay = 8,
+            IsDefault = true,
+            CreatedBy = "test"
+        });
+        _context.SaveChanges();
         _planningContextLookup.Setup(x => x.HasActiveProjectMemberRoleAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        _planningContextLookup.Setup(x => x.GetPlanningContextAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .Returns((Guid projectId, Guid resourceId, CancellationToken _) => Task.FromResult<ProjectResourcePlanningContext?>(PlanningContext(projectId, resourceId, 100m)));
         _assignmentService = new PlanAssignmentService(_context, _resourceService.Object, _auditService.Object, _accessor.Object, _planningContextLookup.Object);
         _resourceService.Setup(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
-            .Returns((Guid id, CancellationToken _) => Task.FromResult(Result<ResourceDto>.Success(new ResourceDto { Id = id })));
+            .Returns((Guid id, CancellationToken _) => Task.FromResult(Result<ResourceDto>.Success(new ResourceDto { Id = id, BaseCalendarId = _defaultCalendarId })));
     }
+
+    private ProjectResourcePlanningContext PlanningContext(Guid projectId, Guid resourceId, decimal allocationPercentage) => new(
+        Guid.NewGuid(), projectId, resourceId, "FollowResourceCalendar", null, Array.Empty<Guid>(), true,
+        allocationPercentage, new DateTime(2026, 1, 1), new DateTime(2026, 12, 31));
+
+    private void SetProjectAllocation(Guid resourceId, decimal allocationPercentage) =>
+        _planningContextLookup.Setup(x => x.GetPlanningContextAsync(_projectId, resourceId, It.IsAny<CancellationToken>()))
+            .Returns((Guid projectId, Guid requestedResourceId, CancellationToken _) => Task.FromResult<ProjectResourcePlanningContext?>(PlanningContext(projectId, requestedResourceId, allocationPercentage)));
+
+    private static CreatePlanAssignmentDto Assignment(Guid activityId, Guid resourceId, decimal workHours = 1m) => new()
+    {
+        ActivityId = activityId,
+        ResourceId = resourceId,
+        AssignedWorkHours = workHours,
+        StartDate = new DateTime(2026, 1, 4),
+        EndDate = new DateTime(2026, 1, 10)
+    };
 
     private void SetTenant(Guid tenantId, Guid userId)
     {
@@ -95,6 +128,8 @@ public class PlanAssignmentServiceTests : IDisposable
             PlanVersionId = version.Id,
             Code = code,
             Name = code,
+            StartDate = new DateTime(2026, 1, 4),
+            EndDate = new DateTime(2026, 1, 10),
             CreatedBy = _userA.ToString()
         };
         _context.PlanActivities.Add(activity);
@@ -139,9 +174,75 @@ public class PlanAssignmentServiceTests : IDisposable
 
         Assert.True(result.IsSuccess);
         Assert.Equal(resourceId, result.Value!.ResourceId);
-        Assert.Equal(50, result.Value.AllocationPct);
-        _resourceService.Verify(r => r.GetByIdAsync(resourceId, It.IsAny<CancellationToken>()), Times.Once);
+        Assert.Null(result.Value.AllocationPct);
+        Assert.Equal(100m, result.Value.AssignedWorkHours);
+        Assert.Equal(100m, result.Value.PlannedHours);
+        _resourceService.Verify(r => r.GetByIdAsync(resourceId, It.IsAny<CancellationToken>()), Times.Exactly(2));
         _auditService.Verify(a => a.LogAsync(It.Is<AuditEntry>(e => e.EntityType == "PlanAssignment" && e.Action == "Create"), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Assignments_ConsumeProjectAllocationAndRejectWorkAboveRemainingCapacity()
+    {
+        var planId = await CreatePlanAsync();
+        var resourceId = Guid.NewGuid();
+        SetProjectAllocation(resourceId, 50m);
+        var firstActivityId = await CreateActivityAsync(planId, "A1");
+        var secondActivityId = await CreateActivityAsync(planId, "A2");
+        var thirdActivityId = await CreateActivityAsync(planId, "A3");
+
+        var first = await _assignmentService.CreateAsync(planId, Assignment(firstActivityId, resourceId, 10m), _userA.ToString());
+        var second = await _assignmentService.CreateAsync(planId, Assignment(secondActivityId, resourceId, 6m), _userA.ToString());
+        var capacity = await _assignmentService.GetCapacityAsync(
+            _projectId, planId, resourceId, new DateTime(2026, 1, 4), new DateTime(2026, 1, 10));
+        var overLimit = await _assignmentService.CreateAsync(planId, Assignment(thirdActivityId, resourceId, 9m), _userA.ToString());
+
+        Assert.True(first.IsSuccess);
+        Assert.True(second.IsSuccess);
+        Assert.Equal(10m, first.Value!.AssignedWorkHours);
+        Assert.Equal(6m, second.Value!.AssignedWorkHours);
+        Assert.True(capacity.IsSuccess);
+        Assert.Equal(48m, capacity.Value!.ResourceCapacityHoursPerWeek);
+        Assert.Equal(24m, capacity.Value.ProjectCapacityHours);
+        Assert.Equal(16m, capacity.Value.AssignedWorkHours);
+        Assert.Equal(8m, capacity.Value.RemainingAssignableHours);
+        Assert.True(overLimit.IsFailure);
+        Assert.Contains("remaining project capacity", overLimit.Error!.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Assignments_AggregateAcrossMultiweekSchedulesAndOverlaps()
+    {
+        var planId = await CreatePlanAsync();
+        var resourceId = Guid.NewGuid();
+        SetProjectAllocation(resourceId, 50m);
+        var firstActivityId = await CreateActivityAsync(planId, "A1");
+        var secondActivityId = await CreateActivityAsync(planId, "A2");
+
+        var first = await _assignmentService.CreateAsync(planId, new CreatePlanAssignmentDto
+        {
+            ActivityId = firstActivityId, ResourceId = resourceId, AssignedWorkHours = 40m,
+            StartDate = new DateTime(2026, 1, 4), EndDate = new DateTime(2026, 1, 17)
+        }, _userA.ToString());
+        var beforeSecond = await _assignmentService.GetCapacityAsync(
+            _projectId, planId, resourceId, new DateTime(2026, 1, 4), new DateTime(2026, 1, 17));
+        var second = await _assignmentService.CreateAsync(planId, new CreatePlanAssignmentDto
+        {
+            ActivityId = secondActivityId, ResourceId = resourceId, AssignedWorkHours = 8m,
+            StartDate = new DateTime(2026, 1, 4), EndDate = new DateTime(2026, 1, 17)
+        }, _userA.ToString());
+        var afterSecond = await _assignmentService.GetCapacityAsync(
+            _projectId, planId, resourceId, new DateTime(2026, 1, 4), new DateTime(2026, 1, 17));
+
+        Assert.True(first.IsSuccess);
+        Assert.True(beforeSecond.IsSuccess);
+        Assert.Equal(48m, beforeSecond.Value!.ProjectCapacityHours);
+        Assert.Equal(40m, beforeSecond.Value.AssignedWorkHours);
+        Assert.Equal(8m, beforeSecond.Value.RemainingAssignableHours);
+        Assert.True(second.IsSuccess);
+        Assert.True(afterSecond.IsSuccess);
+        Assert.Equal(48m, afterSecond.Value!.AssignedWorkHours);
+        Assert.Equal(0m, afterSecond.Value.RemainingAssignableHours);
     }
 
     [Fact]
@@ -152,7 +253,7 @@ public class PlanAssignmentServiceTests : IDisposable
         _resourceService.Setup(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<ResourceDto>.Failure(Error.NotFound("Resource not found")));
 
-        var result = await _assignmentService.CreateAsync(planId, new CreatePlanAssignmentDto { ActivityId = activityId, ResourceId = Guid.NewGuid() }, _userA.ToString());
+        var result = await _assignmentService.CreateAsync(planId, Assignment(activityId, Guid.NewGuid()), _userA.ToString());
 
         Assert.True(result.IsFailure);
         Assert.Equal("VALIDATION_ERROR", result.Error!.Code, ignoreCase: true);
@@ -166,7 +267,7 @@ public class PlanAssignmentServiceTests : IDisposable
         var baselineAssignmentId = await CreateBaselineAssignmentAsync(planId);
         var baselineAssignment = await _context.PlanAssignments.IgnoreQueryFilters().SingleAsync(a => a.Id == baselineAssignmentId);
 
-        var result = await _assignmentService.CreateAsync(planId, new CreatePlanAssignmentDto { ActivityId = baselineAssignment.ActivityId, ResourceId = Guid.NewGuid() }, _userA.ToString());
+        var result = await _assignmentService.CreateAsync(planId, Assignment(baselineAssignment.ActivityId, Guid.NewGuid()), _userA.ToString());
 
         Assert.True(result.IsFailure);
         Assert.Equal("VALIDATION_ERROR", result.Error!.Code, ignoreCase: true);
@@ -177,7 +278,7 @@ public class PlanAssignmentServiceTests : IDisposable
     {
         var planId = await CreatePlanAsync();
         var activityId = await CreateActivityAsync(planId);
-        var dto = new CreatePlanAssignmentDto { ActivityId = activityId, ResourceId = Guid.NewGuid() };
+        var dto = Assignment(activityId, Guid.NewGuid());
         Assert.True((await _assignmentService.CreateAsync(planId, dto, _userA.ToString())).IsSuccess);
 
         var result = await _assignmentService.CreateAsync(planId, dto, _userA.ToString());
@@ -191,19 +292,20 @@ public class PlanAssignmentServiceTests : IDisposable
     {
         var planId = await CreatePlanAsync();
         var activityId = await CreateActivityAsync(planId);
-        var created = (await _assignmentService.CreateAsync(planId, new CreatePlanAssignmentDto { ActivityId = activityId, ResourceId = Guid.NewGuid() }, _userA.ToString())).Value!;
+        var created = (await _assignmentService.CreateAsync(planId, Assignment(activityId, Guid.NewGuid()), _userA.ToString())).Value!;
         await CreateBaselineAssignmentAsync(planId);
 
         var list = await _assignmentService.GetByPlanAsync(planId);
         var update = await _assignmentService.UpdateAsync(planId, created.Id, new UpdatePlanAssignmentDto
         {
-            ActivityId = activityId, ResourceId = created.ResourceId, AllocationPct = 75, RowVersion = created.RowVersion
+            ActivityId = activityId, ResourceId = created.ResourceId, AssignedWorkHours = 1m, RowVersion = created.RowVersion
         }, _userA.ToString());
 
         Assert.True(list.IsSuccess);
         Assert.Single(list.Value!);
         Assert.True(update.IsSuccess);
-        Assert.Equal(75, update.Value!.AllocationPct);
+        Assert.Null(update.Value!.AllocationPct);
+        Assert.Equal(1m, update.Value.AssignedWorkHours);
         _auditService.Verify(a => a.LogAsync(It.Is<AuditEntry>(e => e.EntityType == "PlanAssignment" && e.Action == "Update"), It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -227,7 +329,7 @@ public class PlanAssignmentServiceTests : IDisposable
     {
         var planId = await CreatePlanAsync();
         var activityId = await CreateActivityAsync(planId);
-        var created = (await _assignmentService.CreateAsync(planId, new CreatePlanAssignmentDto { ActivityId = activityId, ResourceId = Guid.NewGuid() }, _userA.ToString())).Value!;
+        var created = (await _assignmentService.CreateAsync(planId, Assignment(activityId, Guid.NewGuid()), _userA.ToString())).Value!;
 
         var result = await _assignmentService.DeleteAsync(planId, created.Id, created.RowVersion, _userA.ToString());
 
@@ -242,9 +344,9 @@ public class PlanAssignmentServiceTests : IDisposable
     {
         var planId = await CreatePlanAsync();
         var activityId = await CreateActivityAsync(planId);
-        var created = (await _assignmentService.CreateAsync(planId, new CreatePlanAssignmentDto { ActivityId = activityId, ResourceId = Guid.NewGuid() }, _userA.ToString())).Value!;
+        var created = (await _assignmentService.CreateAsync(planId, Assignment(activityId, Guid.NewGuid()), _userA.ToString())).Value!;
 
-        var update = await _assignmentService.UpdateAsync(planId, created.Id, new UpdatePlanAssignmentDto { ActivityId = activityId, ResourceId = created.ResourceId, RowVersion = new byte[8] }, _userA.ToString());
+        var update = await _assignmentService.UpdateAsync(planId, created.Id, new UpdatePlanAssignmentDto { ActivityId = activityId, ResourceId = created.ResourceId, AssignedWorkHours = 1m, RowVersion = new byte[8] }, _userA.ToString());
         var delete = await _assignmentService.DeleteAsync(planId, created.Id, new byte[8], _userA.ToString());
 
         Assert.True(update.IsFailure);
@@ -258,11 +360,11 @@ public class PlanAssignmentServiceTests : IDisposable
     {
         var planId = await CreatePlanAsync();
         var activityId = await CreateActivityAsync(planId);
-        var created = (await _assignmentService.CreateAsync(planId, new CreatePlanAssignmentDto { ActivityId = activityId, ResourceId = Guid.NewGuid() }, _userA.ToString())).Value!;
+        var created = (await _assignmentService.CreateAsync(planId, Assignment(activityId, Guid.NewGuid()), _userA.ToString())).Value!;
         SetTenant(_tenantB, Guid.NewGuid());
 
         var read = await _assignmentService.GetByPlanAsync(planId);
-        var update = await _assignmentService.UpdateAsync(planId, created.Id, new UpdatePlanAssignmentDto { ActivityId = activityId, ResourceId = created.ResourceId, RowVersion = created.RowVersion }, "other-user");
+        var update = await _assignmentService.UpdateAsync(planId, created.Id, new UpdatePlanAssignmentDto { ActivityId = activityId, ResourceId = created.ResourceId, AssignedWorkHours = 1m, RowVersion = created.RowVersion }, "other-user");
 
         Assert.True(read.IsFailure);
         Assert.True(update.IsFailure);
@@ -301,11 +403,17 @@ public class PlanAssignmentServiceTests : IDisposable
         }, _userA.ToString());
 
         var assignments = await _assignmentService.GetByPlanAsync(planId);
-        var assignmentId = assignments.Value!.First().Id;
+        var assignment = Assert.Single(assignments.Value!);
 
-        var result = await _assignmentService.UpdateAsync(planId, assignmentId, new UpdatePlanAssignmentDto
+        var result = await _assignmentService.UpdateAsync(planId, assignment.Id, new UpdatePlanAssignmentDto
         {
-            HoursPerWeek = 60, PlannedHours = 40
+            ActivityId = activityId,
+            ResourceId = resourceId,
+            HoursPerWeek = 60,
+            PlannedHours = 40,
+            StartDate = assignment.StartDate,
+            EndDate = assignment.EndDate,
+            RowVersion = assignment.RowVersion
         }, _userA.ToString());
 
         Assert.True(result.IsSuccess);
@@ -329,6 +437,11 @@ public class PlanAssignmentServiceTests : IDisposable
         Assert.True(result.IsSuccess);
         Assert.True(result.Value!.ResourceAllocationId.HasValue);
         Assert.NotEqual(Guid.Empty, result.Value!.ResourceAllocationId.Value);
+
+        var allocation = await _context.Set<ResourceAllocation>().SingleAsync(item => item.Id == result.Value.ResourceAllocationId.Value);
+        Assert.Equal(_tenantA, allocation.TenantId);
+        Assert.Equal(_projectId, allocation.ProjectId);
+        Assert.Equal(resourceId, allocation.ResourceId);
     }
 
     // ROLE CONTEXT hardening
@@ -378,6 +491,9 @@ internal sealed class PlanAssignmentTestDbContext : DbContext
     public DbSet<PlanVersion> PlanVersions => Set<PlanVersion>();
     public DbSet<PlanActivity> PlanActivities => Set<PlanActivity>();
     public DbSet<PlanAssignment> PlanAssignments => Set<PlanAssignment>();
+    public DbSet<WorkingCalendar> WorkingCalendars => Set<WorkingCalendar>();
+    public DbSet<Holiday> Holidays => Set<Holiday>();
+    public DbSet<ResourceCalendar> ResourceCalendars => Set<ResourceCalendar>();
 
     private Guid CurrentTenantId
     {
@@ -396,6 +512,16 @@ internal sealed class PlanAssignmentTestDbContext : DbContext
         ConfigureBase(modelBuilder.Entity<PlanVersion>());
         ConfigureBase(modelBuilder.Entity<PlanActivity>());
         ConfigureBase(modelBuilder.Entity<PlanAssignment>());
+        ConfigureBase(modelBuilder.Entity<WorkingCalendar>());
+        ConfigureBase(modelBuilder.Entity<Holiday>());
+        ConfigureBase(modelBuilder.Entity<ResourceCalendar>());
+        ConfigureBase(modelBuilder.Entity<ResourceAllocation>());
+        modelBuilder.Entity<ResourceAllocation>().Ignore(allocation => allocation.Resource);
+        modelBuilder.Entity<ResourceCalendar>().Ignore(calendar => calendar.Resource);
+        modelBuilder.Entity<WorkingCalendar>()
+            .HasMany(calendar => calendar.Holidays)
+            .WithOne(holiday => holiday.WorkingCalendar)
+            .HasForeignKey(holiday => holiday.WorkingCalendarId);
 
         modelBuilder.Entity<PlanActivity>().OwnsOne(e => e.TextFormat, format =>
         {

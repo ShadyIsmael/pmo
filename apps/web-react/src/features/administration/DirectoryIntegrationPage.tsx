@@ -4,6 +4,7 @@ import { ArrowLeft, CheckCircle2, PlugZap, Plus, RefreshCw, ShieldAlert, TestTub
 import { Link } from "react-router-dom";
 import { useAuth } from "@auth/AuthProvider";
 import { PageHeader } from "@components/layout/PageHeader";
+import { useConfirm } from "@components/ui/ConfirmProvider";
 import { Badge } from "@components/ui/Badge";
 import { Button } from "@components/ui/Button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@components/ui/Card";
@@ -36,6 +37,7 @@ const errorText = (error: unknown) => error instanceof Error ? error.message : "
 
 export function DirectoryIntegrationPage() {
   const { t, locale, formatDate } = useI18n();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const userPermissions = user?.permissions ?? [];
   const canView = hasAnyPermission(userPermissions, DirectoryAccessPermissions);
@@ -201,7 +203,7 @@ export function DirectoryIntegrationPage() {
   async function synchronizeSelected() {
     if (!activeConnectionId) return;
     const items = Object.values(selectedRows);
-    if (!items.length || !window.confirm(t("administration.integrations.directory.confirmSync"))) return;
+    if (!items.length || !await confirm({ description: t("administration.integrations.directory.confirmSync") })) return;
     setSyncMessage("");
     try {
       const result = await executeSync.mutateAsync({ id: activeConnectionId, items });

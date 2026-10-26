@@ -15,10 +15,10 @@ const fixtures = vi.hoisted(() => ({
     resources: { activeAllocationCount: 9, activeResourceCount: 6, sharedResourceCount: 1, overAllocatedResourceCount: 1, allocatedHoursPerWeek: 210, pressure: [] },
     statusReports: { publishedProjectCount: 6, currentCount: 4, staleCount: 1, missingCount: 1, freshnessDays: 30, latestPublished: [] },
     projects: [], projectsPage: 1, projectsTotalPages: 1,
-    milestones: [{ id: "milestone-1", projectId: "project-1", projectName: "Core Project", name: "Schedule baseline", state: "Overdue" }],
+    milestones: [{ id: "milestone-1", projectId: "project-1", publicId: "project-1", projectName: "Core Project", name: "Schedule baseline", state: "Overdue" }],
     topRisks: [], topIssues: [],
-    attentionItems: [{ level: "Critical", kind: "Milestone", message: "Schedule baseline needs recovery", projectId: "project-1", itemId: "milestone-1" }],
-    upcomingMeetings: [{ id: "meeting-1", title: "Weekly review", startTime: "2026-03-12T10:00:00Z", projectId: "project-1", projectName: "Core Project" }],
+    attentionItems: [{ level: "Critical", kind: "Milestone", message: "Schedule baseline needs recovery", projectId: "project-1", publicId: "project-1", itemId: "milestone-1" }],
+    upcomingMeetings: [{ id: "meeting-1", title: "Weekly review", startTime: "2026-03-12T10:00:00Z", projectId: "project-1", publicId: "project-1", projectName: "Core Project" }],
   },
   portfolioOverview: {
     portfolio: { id: "portfolio-1", name: "Technology", code: "PF-001", status: "Active", health: "Green", currency: "USD", ownerName: "Alex Manager", strategicObjective: "Modernize platforms", priority: "High", startDate: "2026-01-01", endDate: "2026-12-31" },
@@ -32,13 +32,28 @@ const fixtures = vi.hoisted(() => ({
     programs: [], projects: [], milestones: [], topRisks: [], topIssues: [], attentionItems: [], upcomingMeetings: [],
     programsPage: 1, programsTotalPages: 1, projectsPage: 1, projectsTotalPages: 1,
   },
-  portfolioRecord: { id: "portfolio-1", name: "Technology", code: "PF-001", status: "Active", rowVersion: [1] },
+  portfolioRecord: { id: "portfolio-1", name: "Technology", code: "PF-001", status: "Active", ownerId: "portfolio-manager-1", ownerName: "Alex Manager", rowVersion: [1] },
+  portfolioRecordLoading: false,
+  portfolioRecordError: false,
   programRecord: { id: "program-1", name: "Core Renewal", code: "PGM-001", status: "Active", portfolioId: "portfolio-1", rowVersion: [1] },
   archive: vi.fn(),
   reactivate: vi.fn(),
   permissions: [] as string[],
+  userId: "portfolio-manager-1",
   canMutate: false,
   effectiveReadOnly: false,
+  capabilities: {
+    canViewRequests: true,
+    canViewHistory: true,
+    canInitiate: true,
+    canAdminInitiate: false,
+    canAssignInitial: false,
+    canCancelOwnPending: true,
+    canApproveIncoming: true,
+    currentManagerId: "portfolio-manager-1",
+    currentManagerName: "Alex Manager",
+    hasPendingRequest: false,
+  },
 }));
 
 vi.mock("../features/delivery/api/delivery", async (importOriginal) => {
@@ -48,7 +63,7 @@ vi.mock("../features/delivery/api/delivery", async (importOriginal) => {
     useProgramManagementOverview: () => ({ data: fixtures.overview, isLoading: false, isError: false }),
     usePortfolioManagementOverview: () => ({ data: fixtures.portfolioOverview, isLoading: false, isError: false }),
     useProgram: () => ({ data: fixtures.programRecord, isLoading: false, isError: false }),
-    usePortfolio: () => ({ data: fixtures.portfolioRecord, isLoading: false, isError: false }),
+    usePortfolio: () => ({ data: fixtures.portfolioRecordLoading ? undefined : fixtures.portfolioRecord, isLoading: fixtures.portfolioRecordLoading, isError: fixtures.portfolioRecordError, refetch: vi.fn() }),
     useArchiveProgram: () => ({ mutateAsync: fixtures.archive, isPending: false }),
     useReactivateProgram: () => ({ mutateAsync: fixtures.reactivate, isPending: false }),
     useArchivePortfolio: () => ({ mutateAsync: fixtures.archive, isPending: false }),
@@ -56,7 +71,40 @@ vi.mock("../features/delivery/api/delivery", async (importOriginal) => {
   };
 });
 
-vi.mock("@auth/AuthProvider", () => ({ useAuth: () => ({ user: { permissions: fixtures.permissions } }) }));
+vi.mock("@auth/AuthProvider", () => ({ useAuth: () => ({ user: { id: fixtures.userId, permissions: fixtures.permissions } }) }));
+vi.mock("@components/ui/ConfirmProvider", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@components/ui/ConfirmProvider")>()),
+  useConfirm: () => vi.fn().mockResolvedValue(true),
+}));
+vi.mock("../features/delivery/api/managerHandovers", () => {
+  const emptyListQuery = () => ({ data: [], isLoading: false, isError: false, error: null, refetch: vi.fn() });
+  const capabilitiesQuery = () => {
+    const currentManagerId = fixtures.portfolioRecord.ownerId === "00000000-0000-0000-0000-000000000000" ? undefined : fixtures.portfolioRecord.ownerId;
+    return {
+      data: {
+        ...fixtures.capabilities,
+        canInitiate: fixtures.userId === currentManagerId,
+        currentManagerId,
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    };
+  };
+  return {
+    useManagerHandoverRequests: emptyListQuery,
+    useManagerHandoverCapabilities: capabilitiesQuery,
+    useSelfPendingManagerHandover: emptyListQuery,
+    useManagerAssignmentHistory: emptyListQuery,
+    useManagerHandoverSnapshots: emptyListQuery,
+    useEligibleManagerHandoverManagers: emptyListQuery,
+    useAcceptManagerHandover: () => ({ mutateAsync: vi.fn(), isPending: false }),
+    useCancelManagerHandover: () => ({ mutateAsync: vi.fn(), isPending: false }),
+    useCreateManagerHandover: () => ({ mutateAsync: vi.fn(), isPending: false }),
+    useRejectManagerHandover: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  };
+});
 vi.mock("@api/management", () => ({
   managementCacheScopeKey: (userId?: string) => userId ?? "anonymous",
   useManagement: () => ({ context: null, effectiveReadOnly: fixtures.effectiveReadOnly, loading: false, canMutate: fixtures.canMutate }),
@@ -82,6 +130,11 @@ describe("program management overview source parity", () => {
     fixtures.archive.mockReset().mockResolvedValue(undefined);
     fixtures.reactivate.mockReset().mockResolvedValue(undefined);
     fixtures.permissions = [];
+    fixtures.userId = "portfolio-manager-1";
+    fixtures.portfolioRecord.ownerId = "portfolio-manager-1";
+    fixtures.portfolioRecord.ownerName = "Alex Manager";
+    fixtures.portfolioRecordLoading = false;
+    fixtures.portfolioRecordError = false;
     fixtures.canMutate = false;
     fixtures.effectiveReadOnly = false;
   });
@@ -123,7 +176,7 @@ describe("program management overview source parity", () => {
 
     expect(screen.getByText("نظرة عامة على الصحة")).toBeInTheDocument();
     expect(screen.getByText("التنفيذ والمعالم")).toBeInTheDocument();
-    expect(screen.getAllByText("المخاطر والقضايا")).toHaveLength(2);
+    expect(screen.getAllByText("المخاطر والقضايا")).toHaveLength(1);
   });
 
   it("renders seven compact, grouped Portfolio overview cards", () => {
@@ -135,6 +188,57 @@ describe("program management overview source parity", () => {
     expect(dashboard.querySelector('[data-widget-id="portfolio.delivery-milestones"]')).toBeInTheDocument();
     expect(dashboard.querySelector('[data-widget-id="portfolio.risk-issues"]')).toBeInTheDocument();
     expect(dashboard.querySelectorAll('[class*="min-h-40"]')).toHaveLength(0);
+  });
+
+  it("uses the canonical Portfolio owner ID to show the request action to its current manager", () => {
+    fixtures.permissions = ["Handover.View", "Handover.Manage"];
+    fixtures.canMutate = true;
+    fixtures.userId = "portfolio-manager-1";
+    fixtures.portfolioRecord.ownerId = "portfolio-manager-1";
+    renderPortfolio();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Manager handover" }));
+
+    expect(screen.getByRole("button", { name: "Request handover" })).toBeInTheDocument();
+    expect(screen.queryByText("This entity has no current manager, so a handover cannot be initiated.")).not.toBeInTheDocument();
+  });
+
+  it("keeps the request action hidden from an admin who is not the current manager", () => {
+    fixtures.permissions = ["Handover.View", "Handover.Manage"];
+    fixtures.canMutate = true;
+    fixtures.userId = "unrelated-admin";
+    fixtures.portfolioRecord.ownerId = "portfolio-manager-1";
+    renderPortfolio();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Manager handover" }));
+
+    expect(screen.queryByRole("button", { name: "Request handover" })).not.toBeInTheDocument();
+    expect(screen.getByText("Only the current manager (Alex Manager) can initiate a handover.")).toBeInTheDocument();
+  });
+
+  it("does not report an unassigned portfolio while its manager details are loading", () => {
+    fixtures.permissions = ["Handover.View", "Handover.Manage"];
+    fixtures.canMutate = true;
+    fixtures.portfolioRecordLoading = true;
+    renderPortfolio();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Manager handover" }));
+
+    expect(screen.getByText("Loading...", { exact: true })).toBeInTheDocument();
+    expect(screen.queryByText("This entity has no current manager, so a handover cannot be initiated.")).not.toBeInTheDocument();
+  });
+
+  it("treats the API empty GUID as an unassigned Portfolio manager", () => {
+    fixtures.permissions = ["Handover.View", "Handover.Manage"];
+    fixtures.canMutate = true;
+    fixtures.userId = "unrelated-admin";
+    fixtures.portfolioRecord.ownerId = "00000000-0000-0000-0000-000000000000";
+    renderPortfolio();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Manager handover" }));
+
+    expect(screen.queryByRole("button", { name: "Request handover" })).not.toBeInTheDocument();
+    expect(screen.getByText("This entity has no current manager, so a handover cannot be initiated.")).toBeInTheDocument();
   });
 
   it("keeps the program sections as accessible tabs", () => {
@@ -150,7 +254,6 @@ describe("program management overview source parity", () => {
   it("supports edit and reversible archive with Program.Manage in mutable context", async () => {
     fixtures.permissions = ["Program.Manage"];
     fixtures.canMutate = true;
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     renderProgram();
 
     fireEvent.click(screen.getByRole("button", { name: "Edit Program" }));
@@ -158,7 +261,6 @@ describe("program management overview source parity", () => {
     fireEvent.click(screen.getByRole("button", { name: "Archive" }));
     await waitFor(() => expect(fixtures.archive).toHaveBeenCalledWith("program-1"));
     expect(screen.getByText("Programs list")).toBeInTheDocument();
-    confirm.mockRestore();
   });
 
   it("reactivates archived programs and hides mutations in read-only or unauthorized contexts", async () => {

@@ -147,6 +147,7 @@ public sealed class ProgramManagementService : IProgramManagementService
             return new ProgramProjectManagementDto
             {
                 Id = project.Id,
+                PublicId = project.PublicId,
                 Name = project.Name,
                 Code = project.Code,
                 Status = project.Status,
@@ -195,6 +196,7 @@ public sealed class ProgramManagementService : IProgramManagementService
                 ? new ProgramStatusReportDto
                 {
                     ProjectId = project.Id,
+                    ProjectPublicId = project.PublicId,
                     ProjectName = project.Name,
                     ReportDate = report.ReportDate,
                     Health = report.Health,
@@ -271,7 +273,7 @@ public sealed class ProgramManagementService : IProgramManagementService
         if (ids.Length == 0) return [];
         return await _db.Set<ProjectEntity>().AsNoTracking()
             .Where(project => project.ProgramId.HasValue && ids.Contains(project.ProgramId.Value))
-            .Select(project => new ProjectRow(project.Id, project.ProgramId!.Value, project.Name, project.Code, project.Status, project.Health, project.Priority, project.ProjectManagerId, project.StartDate, project.EndDate, project.Progress, project.Currency, project.Budget, project.ActualCost))
+            .Select(project => new ProjectRow(project.Id, project.PublicId, project.ProgramId!.Value, project.Name, project.Code, project.Status, project.Health, project.Priority, project.ProjectManagerId, project.StartDate, project.EndDate, project.Progress, project.Currency, project.Budget, project.ActualCost))
             .ToListAsync(cancellationToken);
     }
 
@@ -356,13 +358,14 @@ public sealed class ProgramManagementService : IProgramManagementService
         foreach (var project in projects)
         {
             var currency = NormalizeCurrency(project.Currency, program.Currency);
-            values[(project.Id, currency)] = new FinancialAccumulator(project.Id, project.Name, currency, project.Budget ?? 0m, project.ActualCost ?? 0m, 0m, project.Budget ?? 0m);
+            values[(project.Id, currency)] = new FinancialAccumulator(project.Id, project.PublicId, project.Name, currency, project.Budget ?? 0m, project.ActualCost ?? 0m, 0m, project.Budget ?? 0m);
         }
 
         foreach (var group in budgets.GroupBy(item => (item.ProjectId, Currency: NormalizeCurrency(item.Currency, program.Currency))))
         {
             var projectName = projects.FirstOrDefault(project => project.Id == group.Key.ProjectId)?.Name ?? "";
-            values[group.Key] = new FinancialAccumulator(group.Key.ProjectId, projectName, group.Key.Currency, group.Sum(item => item.Budget), group.Sum(item => item.Actual), group.Sum(item => item.Committed), group.Sum(item => item.Forecast));
+            var project = projects.FirstOrDefault(item => item.Id == group.Key.ProjectId);
+            values[group.Key] = new FinancialAccumulator(group.Key.ProjectId, project?.PublicId ?? Guid.Empty, projectName, group.Key.Currency, group.Sum(item => item.Budget), group.Sum(item => item.Actual), group.Sum(item => item.Committed), group.Sum(item => item.Forecast));
         }
         foreach (var group in costs.GroupBy(item => (item.ProjectId, Currency: NormalizeCurrency(item.Currency, program.Currency))))
         {
@@ -389,6 +392,7 @@ public sealed class ProgramManagementService : IProgramManagementService
                 Projects = group.OrderByDescending(value => value.Budget).Take(25).Select(value => new ProgramFinancialProjectDto
                 {
                     ProjectId = value.ProjectId,
+                    ProjectPublicId = value.ProjectPublicId,
                     ProjectName = value.ProjectName,
                     Budget = value.Budget,
                     Actual = value.Actual,
@@ -435,7 +439,8 @@ public sealed class ProgramManagementService : IProgramManagementService
             .OrderBy(meeting => meeting.StartTime).Take(8)
             .Select(meeting => new ProgramMeetingDto { Id = meeting.Id, ProjectId = meeting.ProjectId, Title = meeting.Title, StartTime = meeting.StartTime, EndTime = meeting.EndTime })
             .ToListAsync(cancellationToken);
-        foreach (var meeting in meetings) if (meeting.ProjectId.HasValue) meeting.ProjectName = names.GetValueOrDefault(meeting.ProjectId.Value);
+        var projectPublicIds = projects.ToDictionary(project => project.Id, project => project.PublicId);
+        foreach (var meeting in meetings) if (meeting.ProjectId.HasValue) { meeting.ProjectName = names.GetValueOrDefault(meeting.ProjectId.Value); meeting.ProjectPublicId = projectPublicIds.GetValueOrDefault(meeting.ProjectId.Value); }
         return meetings;
     }
 
@@ -449,6 +454,7 @@ public sealed class ProgramManagementService : IProgramManagementService
             Projects = group.GroupBy(item => item.ProjectId).Select(projectGroup => new ProgramResourceProjectDto
             {
                 ProjectId = projectGroup.Key,
+                ProjectPublicId = projects.FirstOrDefault(project => project.Id == projectGroup.Key)?.PublicId ?? Guid.Empty,
                 ProjectName = projectNames.GetValueOrDefault(projectGroup.Key, ""),
                 AllocationPercentage = projectGroup.Sum(item => item.AllocationPercentage)
             }).OrderByDescending(item => item.AllocationPercentage).ToList()
@@ -476,12 +482,12 @@ public sealed class ProgramManagementService : IProgramManagementService
     {
         var projectNames = allProjects.ToDictionary(project => project.Id, project => project.Name);
         var result = new List<ProgramAttentionItemDto>();
-        foreach (var project in projects.Where(project => project.RequiresAttention).Take(8)) result.Add(new ProgramAttentionItemDto { Level = project.Health.Equals("Red", StringComparison.OrdinalIgnoreCase) ? "Critical" : "NeedsAttention", Kind = "Project", Message = project.Name, ProjectId = project.Id });
-        foreach (var milestone in milestones.Where(item => MilestoneState(item, now) == "Overdue").Take(6)) result.Add(new ProgramAttentionItemDto { Level = "Critical", Kind = "Milestone", Message = milestone.Name, ItemId = milestone.Id, ProjectId = milestone.ProjectId });
-        foreach (var risk in risks.Where(IsOpenRisk).OrderByDescending(item => RiskRank(item.RiskLevel)).Take(6)) result.Add(new ProgramAttentionItemDto { Level = risk.RiskLevel == RiskLevel.Critical ? "Critical" : "NeedsAttention", Kind = "Risk", Message = risk.Title, ItemId = risk.Id, ProjectId = risk.ProjectId });
-        foreach (var issue in overdueIssues.Take(6)) result.Add(new ProgramAttentionItemDto { Level = "Critical", Kind = "Issue", Message = issue.Title, ItemId = issue.Id, ProjectId = issue.ProjectId });
-        foreach (var request in changeRequests.Take(4)) result.Add(new ProgramAttentionItemDto { Level = "NeedsAttention", Kind = "ChangeRequest", Message = request.Impact ?? "Pending change request", ItemId = request.Id, ProjectId = request.ProjectId });
-        foreach (var project in allProjects.Where(project => !latestReports.ContainsKey(project.Id)).Take(4)) result.Add(new ProgramAttentionItemDto { Level = "Informational", Kind = "StatusReport", Message = projectNames.GetValueOrDefault(project.Id, project.Name), ProjectId = project.Id });
+        foreach (var project in projects.Where(project => project.RequiresAttention).Take(8)) result.Add(new ProgramAttentionItemDto { Level = project.Health.Equals("Red", StringComparison.OrdinalIgnoreCase) ? "Critical" : "NeedsAttention", Kind = "Project", Message = project.Name, ProjectId = project.Id, ProjectPublicId = project.PublicId });
+        foreach (var milestone in milestones.Where(item => MilestoneState(item, now) == "Overdue").Take(6)) result.Add(new ProgramAttentionItemDto { Level = "Critical", Kind = "Milestone", Message = milestone.Name, ItemId = milestone.Id, ProjectId = milestone.ProjectId, ProjectPublicId = allProjects.FirstOrDefault(project => project.Id == milestone.ProjectId)?.PublicId });
+        foreach (var risk in risks.Where(IsOpenRisk).OrderByDescending(item => RiskRank(item.RiskLevel)).Take(6)) result.Add(new ProgramAttentionItemDto { Level = risk.RiskLevel == RiskLevel.Critical ? "Critical" : "NeedsAttention", Kind = "Risk", Message = risk.Title, ItemId = risk.Id, ProjectId = risk.ProjectId, ProjectPublicId = allProjects.FirstOrDefault(project => project.Id == risk.ProjectId)?.PublicId });
+        foreach (var issue in overdueIssues.Take(6)) result.Add(new ProgramAttentionItemDto { Level = "Critical", Kind = "Issue", Message = issue.Title, ItemId = issue.Id, ProjectId = issue.ProjectId, ProjectPublicId = issue.ProjectId.HasValue ? allProjects.FirstOrDefault(project => project.Id == issue.ProjectId.Value)?.PublicId : null });
+        foreach (var request in changeRequests.Take(4)) result.Add(new ProgramAttentionItemDto { Level = "NeedsAttention", Kind = "ChangeRequest", Message = request.Impact ?? "Pending change request", ItemId = request.Id, ProjectId = request.ProjectId, ProjectPublicId = allProjects.FirstOrDefault(project => project.Id == request.ProjectId)?.PublicId });
+        foreach (var project in allProjects.Where(project => !latestReports.ContainsKey(project.Id)).Take(4)) result.Add(new ProgramAttentionItemDto { Level = "Informational", Kind = "StatusReport", Message = projectNames.GetValueOrDefault(project.Id, project.Name), ProjectId = project.Id, ProjectPublicId = project.PublicId });
         return result.Take(20).ToList();
     }
 
@@ -489,6 +495,7 @@ public sealed class ProgramManagementService : IProgramManagementService
     {
         Id = milestone.Id,
         ProjectId = milestone.ProjectId,
+        ProjectPublicId = projects.FirstOrDefault(project => project.Id == milestone.ProjectId)?.PublicId ?? Guid.Empty,
         ProjectName = projects.FirstOrDefault(project => project.Id == milestone.ProjectId)?.Name ?? "",
         Name = milestone.Name,
         DueDate = milestone.DueDate,
@@ -501,6 +508,7 @@ public sealed class ProgramManagementService : IProgramManagementService
     {
         Id = risk.Id,
         ProjectId = risk.ProjectId,
+        ProjectPublicId = projects.FirstOrDefault(project => project.Id == risk.ProjectId)?.PublicId ?? Guid.Empty,
         ProjectName = projects.FirstOrDefault(project => project.Id == risk.ProjectId)?.Name ?? "",
         Title = risk.Title,
         Severity = risk.RiskLevel.ToString(),
@@ -512,6 +520,7 @@ public sealed class ProgramManagementService : IProgramManagementService
     {
         Id = issue.Id,
         ProjectId = issue.ProjectId ?? Guid.Empty,
+        ProjectPublicId = issue.ProjectId.HasValue ? projects.FirstOrDefault(project => project.Id == issue.ProjectId.Value)?.PublicId ?? Guid.Empty : Guid.Empty,
         ProjectName = issue.ProjectId.HasValue ? projects.FirstOrDefault(project => project.Id == issue.ProjectId.Value)?.Name ?? "" : "",
         Title = issue.Title,
         Severity = issue.Severity,
@@ -546,7 +555,7 @@ public sealed class ProgramManagementService : IProgramManagementService
     }
     private static int MilestoneSort(MilestoneRow milestone, DateTime now) => MilestoneState(milestone, now) switch { "Overdue" => 0, "DueSoon" => 1, "OnTrack" => 2, _ => 3 };
 
-    private sealed record ProjectRow(Guid Id, Guid ProgramId, string Name, string Code, string Status, string Health, string Priority, Guid? ProjectManagerId, DateTime? StartDate, DateTime? EndDate, decimal Progress, string Currency, decimal? Budget, decimal? ActualCost);
+    private sealed record ProjectRow(Guid Id, Guid PublicId, Guid ProgramId, string Name, string Code, string Status, string Health, string Priority, Guid? ProjectManagerId, DateTime? StartDate, DateTime? EndDate, decimal Progress, string Currency, decimal? Budget, decimal? ActualCost);
     private sealed record ScheduleRow(Guid ProjectId, DateTime? BaselineEndDate, DateTime? ForecastEndDate, DateTime UpdatedAt);
     private sealed record MilestoneRow(Guid Id, Guid ProjectId, string Name, DateTime? DueDate, DateTime? CompletedDate, string? Status);
     private sealed record RiskRow(Guid Id, Guid ProjectId, string Title, RiskLevel RiskLevel, RiskStatus Status, DateTime? IdentifiedDate);
@@ -556,9 +565,10 @@ public sealed class ProgramManagementService : IProgramManagementService
     private sealed record PublishedReportRow(Guid ProjectId, DateTime ReportDate, string? Health, decimal? Progress);
     private sealed record MoneyRow(Guid ProjectId, string Currency, decimal Budget, decimal Actual, decimal Committed, decimal Forecast);
 
-    private sealed class FinancialAccumulator(Guid projectId, string projectName, string currency, decimal budget, decimal actual, decimal committed, decimal forecast)
+    private sealed class FinancialAccumulator(Guid projectId, Guid projectPublicId, string projectName, string currency, decimal budget, decimal actual, decimal committed, decimal forecast)
     {
         public Guid ProjectId { get; } = projectId;
+        public Guid ProjectPublicId { get; } = projectPublicId;
         public string ProjectName { get; } = projectName;
         public string Currency { get; } = currency;
         public decimal Budget { get; set; } = budget;

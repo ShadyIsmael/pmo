@@ -345,7 +345,12 @@ public sealed class TimeEntryService : ITimeEntryService
     {
         var start = duration.StartTime;
         var end = duration.EndTime;
-        return await _context.Set<TimeEntry>().AnyAsync(entry => entry.ResourceId == resourceId && entry.WorkDate == workDate.Date && !entry.IsDeleted && (!excludeId.HasValue || entry.Id != excludeId.Value) && start < entry.EndTime && end > entry.StartTime, cancellationToken);
+        var existing = await _context.Set<TimeEntry>().AsNoTracking()
+            .Where(entry => entry.ResourceId == resourceId && entry.WorkDate == workDate.Date && !entry.IsDeleted
+                && (!excludeId.HasValue || entry.Id != excludeId.Value))
+            .Select(entry => new { entry.StartTime, entry.EndTime })
+            .ToListAsync(cancellationToken);
+        return existing.Any(entry => start < entry.EndTime && end > entry.StartTime);
     }
 
     private async Task AddAuditAsync(TimeEntry entry, string action, Guid actorId, CancellationToken cancellationToken)

@@ -8,12 +8,14 @@ const fixtures = vi.hoisted(() => ({
   permissions: ["Risk.View", "Risk.Edit", "Risk.Mitigate"] as string[],
   risk: { id: "risk-1", projectId: "project-1", projectName: "Delivery Project", title: "Supplier delay", description: "The supplier may be late.", riskLevel: "High", status: "Identified", ownerResourceId: "resource-1", ownerResourceName: "Alex Owner", createdAt: "2026-09-01T00:00:00Z", rowVersion: [1, 2] },
   actions: [{ id: "action-1", riskId: "risk-1", title: "Confirm alternate supplier", description: "Contact the backup vendor.", ownerResourceId: "resource-1", ownerResourceName: "Alex Owner", targetDate: "2026-10-20", nextFollowUpDate: "2026-10-12", status: "Planned", sortOrder: 0, createdAt: "2026-09-02T00:00:00Z", rowVersion: [3], updateCount: 0 }],
-  impacts: [{ id: "impact-1", riskId: "risk-1", impactTypes: ["Schedule", "Budget"], description: "Delivery may be delayed by two weeks." }],
+  impacts: [{ id: "impact-1", riskId: "risk-1", impactTypes: ["Schedule", "Budget"], description: "Delivery may be delayed by two weeks.", rowVersion: [7] }],
   updateRisk: vi.fn(),
   createAction: vi.fn(),
   updateAction: vi.fn(),
   addUpdate: vi.fn(),
   createImpact: vi.fn(),
+  updateImpact: vi.fn(),
+  deleteImpact: vi.fn(),
   updateStatus: vi.fn(),
 }));
 
@@ -27,7 +29,9 @@ vi.mock("../features/risks/api/risks", () => ({
   useUpdateRiskAction: () => ({ mutateAsync: fixtures.updateAction, isPending: false, isError: false, reset: vi.fn() }),
   useDeleteRiskAction: () => ({ mutateAsync: vi.fn(), isPending: false, isError: false }),
   useAddRiskActionUpdate: () => ({ mutateAsync: fixtures.addUpdate, isPending: false, isError: false }),
-  useCreateRiskImpact: () => ({ mutateAsync: fixtures.createImpact, isPending: false, isError: false }),
+  useCreateRiskImpact: () => ({ mutateAsync: fixtures.createImpact, isPending: false, isError: false, reset: vi.fn() }),
+  useUpdateRiskImpact: () => ({ mutateAsync: fixtures.updateImpact, isPending: false, isError: false, reset: vi.fn() }),
+  useDeleteRiskImpact: () => ({ mutateAsync: fixtures.deleteImpact, isPending: false, isError: false }),
   useUpdateRiskStatus: () => ({ mutateAsync: fixtures.updateStatus, isPending: false, isError: false }),
 }));
 
@@ -53,6 +57,8 @@ describe("risk detail parity", () => {
     fixtures.updateAction.mockReset().mockResolvedValue(fixtures.actions[0]);
     fixtures.addUpdate.mockReset().mockResolvedValue({});
     fixtures.createImpact.mockReset().mockResolvedValue({});
+    fixtures.updateImpact.mockReset().mockResolvedValue({});
+    fixtures.deleteImpact.mockReset().mockResolvedValue({});
     fixtures.updateStatus.mockReset().mockResolvedValue(fixtures.risk);
   });
 
@@ -104,5 +110,21 @@ describe("risk detail parity", () => {
     expect(screen.getByText("Delivery may be delayed by two weeks.")).toBeInTheDocument();
     expect(screen.getAllByText("Confirm alternate supplier").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText("Updates")).toBeInTheDocument();
+  });
+
+  it("edits an existing impact with its concurrency token instead of creating a second one", async () => {
+    renderRisk("/risks-issues/risks/risk-1");
+
+    expect(screen.queryByRole("button", { name: "Add impact" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Edit impact" }));
+    fireEvent.change(screen.getByLabelText("Impact description"), { target: { value: "Revised impact narrative." } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(fixtures.updateImpact).toHaveBeenCalledWith({
+      riskId: "risk-1",
+      impactId: "impact-1",
+      data: { impactTypes: ["Schedule", "Budget"], description: "Revised impact narrative.", rowVersion: [7] },
+    }));
+    expect(fixtures.createImpact).not.toHaveBeenCalled();
   });
 });

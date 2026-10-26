@@ -10,18 +10,18 @@ public class ResourceConfiguration : IEntityTypeConfiguration<Resource>
     {
         builder.ToTable("Resources");
         builder.HasKey(r => r.Id);
-        builder.Property(r => r.Name).HasMaxLength(200).IsRequired();
-        builder.Property(r => r.EmployeeId).HasMaxLength(50);
-        builder.Property(r => r.JobTitle).HasMaxLength(200);
-        builder.Property(r => r.Email).HasMaxLength(256);
-        builder.Property(r => r.Phone).HasMaxLength(50);
-        builder.Property(r => r.AvatarUrl).HasMaxLength(500);
-        builder.Property(r => r.Type).HasMaxLength(50).IsRequired();
-        builder.Property(r => r.Status).HasMaxLength(50).IsRequired();
-        builder.Property(r => r.EmploymentType).HasMaxLength(50);
-        builder.Property(r => r.Seniority).HasMaxLength(50);
-        builder.Property(r => r.Timezone).HasMaxLength(50);
-        builder.Property(r => r.Notes).HasMaxLength(2000);
+        builder.Property(r => r.Name).HasMaxLength(ResourceFieldLengths.Name).IsRequired();
+        builder.Property(r => r.EmployeeId).HasMaxLength(ResourceFieldLengths.EmployeeId);
+        builder.Property(r => r.JobTitle).HasMaxLength(ResourceFieldLengths.JobTitle);
+        builder.Property(r => r.Email).HasMaxLength(ResourceFieldLengths.Email);
+        builder.Property(r => r.Phone).HasMaxLength(ResourceFieldLengths.Phone);
+        builder.Property(r => r.AvatarUrl).HasMaxLength(ResourceFieldLengths.AvatarUrl);
+        builder.Property(r => r.Type).HasMaxLength(ResourceFieldLengths.Type).IsRequired();
+        builder.Property(r => r.Status).HasMaxLength(ResourceFieldLengths.Status).IsRequired();
+        builder.Property(r => r.EmploymentType).HasMaxLength(ResourceFieldLengths.EmploymentType);
+        builder.Property(r => r.Seniority).HasMaxLength(ResourceFieldLengths.Seniority);
+        builder.Property(r => r.Timezone).HasMaxLength(ResourceFieldLengths.Timezone);
+        builder.Property(r => r.Notes).HasMaxLength(ResourceFieldLengths.Notes);
 
         builder.HasIndex(r => r.TenantId);
         builder.HasIndex(r => r.Status);

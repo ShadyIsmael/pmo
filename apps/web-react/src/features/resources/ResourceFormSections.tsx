@@ -4,24 +4,22 @@ import { Input } from "@components/ui/Input";
 import { Label } from "@components/ui/Label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@components/ui/Select";
 import { Textarea } from "@components/ui/Textarea";
-import type { ResourceBaseCalendarDto } from "./api/resources";
+import type { ResourceBaseCalendarDto, ResourceReferenceDataDto } from "./api/resources";
 import type { UserLookupDto } from "../projects/lib/project-lookups";
 import type { VendorDto } from "../vendors/api/vendors";
-import { dialogValuesToResourceForm, validateResourceForm } from "./resource-form";
+import { dialogValuesToResourceForm, RESOURCE_FIELD_LIMITS, validateResourceForm } from "./resource-form";
 
 export type ResourceFormValues = {
   name: string;
   email: string;
   phone: string;
   jobTitle: string;
-  employeeId: string;
   organizationalUnitId: string;
-  resourceType: "Staff" | "VendorResource";
+  resourceType: string;
   status: "Active" | "Inactive";
   vendorId: string;
   baseCalendarId: string;
   systemUserId: string;
-  employmentType: string;
   seniority: string;
   notes: string;
 };
@@ -33,14 +31,12 @@ export const emptyResourceFormValues: ResourceFormValues = {
   email: "",
   phone: "",
   jobTitle: "",
-  employeeId: "",
   organizationalUnitId: "",
-  resourceType: "Staff",
+  resourceType: "",
   status: "Active",
   vendorId: "",
   baseCalendarId: "",
   systemUserId: "",
-  employmentType: "",
   seniority: "",
   notes: "",
 };
@@ -57,10 +53,29 @@ function FormSection({ number, title, children }: { number: number; title: strin
   );
 }
 
+function FieldLabel({ id, label, required = false, optionalText = "" }: { id: string; label: string; required?: boolean; optionalText?: string }) {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <div className="flex items-center gap-1">
+        <Label htmlFor={id}>{label}</Label>
+        {required ? <span className="text-destructive" aria-hidden="true">*</span> : null}
+      </div>
+      {!required ? <span className="text-xs text-muted-foreground">{optionalText}</span> : null}
+    </div>
+  );
+}
+
+function FieldError({ id, children }: { id: string; children?: React.ReactNode }) {
+  return children ? <p id={id} role="alert" className="text-xs text-destructive">{children}</p> : null;
+}
+
 export function ResourceFormSections({
   values,
   setValues,
   calendars = [],
+  referenceData,
+  referenceDataLoading = false,
+  referenceDataError = false,
   units = [],
   users = [],
   vendors = [],
@@ -74,6 +89,9 @@ export function ResourceFormSections({
   values: ResourceFormValues;
   setValues: React.Dispatch<React.SetStateAction<ResourceFormValues>>;
   calendars?: ResourceBaseCalendarDto[];
+  referenceData?: ResourceReferenceDataDto;
+  referenceDataLoading?: boolean;
+  referenceDataError?: boolean;
   units?: OrganizationalUnitOption[];
   users?: UserLookupDto[];
   vendors?: VendorDto[];
@@ -84,42 +102,55 @@ export function ResourceFormSections({
   currentVendorId?: string;
   submitted?: boolean;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const directory = "resources.directory";
-  const validation = validateResourceForm(dialogValuesToResourceForm(values));
+  const resourceTypes = referenceData?.resourceTypes ?? [];
+  const seniorityLevels = referenceData?.seniorityLevels ?? [];
+  const selectedType = resourceTypes.find((option) => option.code === values.resourceType);
+  const isVendorResource = selectedType?.requiresVendor ?? Boolean(currentVendorId);
+  const validation = validateResourceForm(dialogValuesToResourceForm(values, resourceTypes));
   const update = (field: keyof ResourceFormValues, value: string) => setValues((current) => ({ ...current, [field]: value }));
   const activeVendors = vendors.filter((vendor) => vendor.isActive || vendor.id === currentVendorId);
+  const optionalText = t(`${directory}.optional`);
 
   return (
     <div className="space-y-5">
       <FormSection number={1} title={t(`${directory}.basicInformation`)}>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
-            <Label htmlFor="resource-name">{t(`${directory}.name`)}</Label>
-            <Input id="resource-name" value={values.name} onChange={(event) => update("name", event.target.value)} required aria-invalid={submitted && validation.name ? true : undefined} />
-            {submitted && validation.name ? <p role="alert" className="text-xs text-destructive">{t(`${directory}.nameRequired`)}</p> : null}
+            <FieldLabel id="resource-name" label={t(`${directory}.name`)} required />
+            <Input id="resource-name" maxLength={RESOURCE_FIELD_LIMITS.name} value={values.name} onChange={(event) => update("name", event.target.value)} required aria-invalid={submitted && (validation.name || validation.nameTooLong) ? true : undefined} aria-describedby={submitted && (validation.name || validation.nameTooLong) ? "resource-name-error" : undefined} />
+            <FieldError id="resource-name-error">{submitted && validation.name ? t(`${directory}.nameRequired`) : submitted && validation.nameTooLong ? t(`${directory}.nameTooLong`) : undefined}</FieldError>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="resource-type">{t(`${directory}.resourceType`)}</Label>
+            <FieldLabel id="resource-type" label={t(`${directory}.resourceType`)} required />
             {readOnlyType ? (
               <>
-                <Input id="resource-type" readOnly value={values.resourceType === "VendorResource" ? t(`${directory}.vendorResource`) : t(`${directory}.staff`)} />
+                <Input id="resource-type" readOnly aria-required="true" value={selectedType ? (locale === "ar" ? selectedType.nameAr : selectedType.nameEn) : values.resourceType} />
                 <p className="text-xs text-muted-foreground">{t(`${directory}.typeReadOnlyHint`)}</p>
               </>
             ) : (
-              <Select value={values.resourceType} onValueChange={(value) => setValues((current) => ({ ...current, resourceType: value === "VendorResource" ? "VendorResource" : "Staff", vendorId: value === "VendorResource" ? current.vendorId : "" }))}>
-                <SelectTrigger id="resource-type"><SelectValue /></SelectTrigger>
+              <>
+              <Select value={values.resourceType} onValueChange={(value) => {
+                const next = resourceTypes.find((option) => option.code === value);
+                setValues((current) => ({ ...current, resourceType: value, vendorId: next?.requiresVendor ? current.vendorId : "", systemUserId: next?.requiresVendor ? "" : current.systemUserId }));
+              }}>
+                <SelectTrigger id="resource-type" aria-required="true"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Staff">{t(`${directory}.staff`)}</SelectItem>
-                  <SelectItem value="VendorResource">{t(`${directory}.vendorResource`)}</SelectItem>
+                  {referenceDataLoading ? <SelectItem value="__loading__" disabled>{t("common.loading")}</SelectItem> : null}
+                  {!referenceDataLoading && resourceTypes.length === 0 ? <SelectItem value="__empty__" disabled>{referenceDataError ? t("common.errorLoading") : t(`${directory}.noResourceTypes`)}</SelectItem> : null}
+                  {resourceTypes.map((option) => <SelectItem key={option.code} value={option.code}>{locale === "ar" ? option.nameAr : option.nameEn}</SelectItem>)}
                 </SelectContent>
               </Select>
+              <FieldError id="resource-type-error">{submitted && validation.type ? t(`${directory}.typeRequired`) : undefined}</FieldError>
+              {referenceDataError ? <p role="alert" className="text-xs text-destructive">{t("resources.finder.referenceDataFailed")}</p> : null}
+              </>
             )}
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="resource-status">{t(`${directory}.status`)}</Label>
+            <FieldLabel id="resource-status" label={t(`${directory}.status`)} required />
             <Select value={values.status} onValueChange={(value) => update("status", value === "Inactive" ? "Inactive" : "Active")}>
-              <SelectTrigger id="resource-status"><SelectValue /></SelectTrigger>
+              <SelectTrigger id="resource-status" aria-required="true"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="Active">{t(`${directory}.active`)}</SelectItem>
                 <SelectItem value="Inactive">{t(`${directory}.inactive`)}</SelectItem>
@@ -132,17 +163,19 @@ export function ResourceFormSections({
       <FormSection number={2} title={t(`${directory}.professionalInformation`)}>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
-            <Label htmlFor="resource-email">{t(`${directory}.email`)}</Label>
-            <Input id="resource-email" type="email" value={values.email} onChange={(event) => update("email", event.target.value)} aria-invalid={submitted && validation.email ? true : undefined} />
-            {submitted && validation.email ? <p role="alert" className="text-xs text-destructive">{t(`${directory}.emailInvalid`)}</p> : null}
+            <FieldLabel id="resource-email" label={t(`${directory}.email`)} optionalText={optionalText} />
+            <Input id="resource-email" type="email" maxLength={RESOURCE_FIELD_LIMITS.email} value={values.email} onChange={(event) => update("email", event.target.value)} aria-invalid={submitted && (validation.email || validation.emailTooLong) ? true : undefined} aria-describedby={submitted && (validation.email || validation.emailTooLong) ? "resource-email-error" : undefined} />
+            <FieldError id="resource-email-error">{submitted && validation.emailTooLong ? t(`${directory}.emailTooLong`) : submitted && validation.email ? t(`${directory}.emailInvalid`) : undefined}</FieldError>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="resource-phone">{t(`${directory}.phone`)}</Label>
-            <Input id="resource-phone" value={values.phone} onChange={(event) => update("phone", event.target.value)} />
+            <FieldLabel id="resource-phone" label={t(`${directory}.phone`)} optionalText={optionalText} />
+            <Input id="resource-phone" type="tel" maxLength={RESOURCE_FIELD_LIMITS.phone} value={values.phone} onChange={(event) => update("phone", event.target.value)} aria-invalid={submitted && validation.phoneTooLong ? true : undefined} aria-describedby={submitted && validation.phoneTooLong ? "resource-phone-error" : undefined} />
+            <FieldError id="resource-phone-error">{submitted && validation.phoneTooLong ? t(`${directory}.phoneTooLong`) : undefined}</FieldError>
           </div>
           <div className="space-y-1.5 sm:col-span-2">
-            <Label htmlFor="resource-job-title">{t(`${directory}.jobTitle`)}</Label>
-            <Input id="resource-job-title" value={values.jobTitle} onChange={(event) => update("jobTitle", event.target.value)} />
+            <FieldLabel id="resource-job-title" label={t(`${directory}.jobTitle`)} optionalText={optionalText} />
+            <Input id="resource-job-title" maxLength={RESOURCE_FIELD_LIMITS.jobTitle} value={values.jobTitle} onChange={(event) => update("jobTitle", event.target.value)} aria-invalid={submitted && validation.jobTitleTooLong ? true : undefined} aria-describedby={submitted && validation.jobTitleTooLong ? "resource-job-title-error" : undefined} />
+            <FieldError id="resource-job-title-error">{submitted && validation.jobTitleTooLong ? t(`${directory}.jobTitleTooLong`) : undefined}</FieldError>
           </div>
         </div>
       </FormSection>
@@ -150,9 +183,9 @@ export function ResourceFormSections({
       <FormSection number={3} title={t(`${directory}.associationInformation`)}>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
-            <Label htmlFor="resource-base-calendar">{t(`${directory}.baseCalendar`)}</Label>
+            <FieldLabel id="resource-base-calendar" label={t(`${directory}.baseCalendar`)} optionalText={optionalText} />
             <Select value={values.baseCalendarId || "__none__"} onValueChange={(value) => update("baseCalendarId", value === "__none__" ? "" : value)}>
-              <SelectTrigger id="resource-base-calendar" aria-invalid={submitted && validation.baseCalendar ? true : undefined}><SelectValue /></SelectTrigger>
+              <SelectTrigger id="resource-base-calendar" aria-invalid={submitted && validation.baseCalendar ? true : undefined} aria-describedby={submitted && validation.baseCalendar ? "resource-base-calendar-error" : undefined}><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="__none__">{t(`${directory}.optional`)}</SelectItem>
                 {calendarsLoading ? <SelectItem value="__loading__" disabled>{t(`${directory}.loadingCalendars`)}</SelectItem> : null}
@@ -161,10 +194,10 @@ export function ResourceFormSections({
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">{t(`${directory}.baseCalendarHint`)}</p>
-            {submitted && validation.baseCalendar ? <p role="alert" className="text-xs text-destructive">{t(`${directory}.baseCalendarInvalid`)}</p> : null}
+            <FieldError id="resource-base-calendar-error">{submitted && validation.baseCalendar ? t(`${directory}.baseCalendarInvalid`) : undefined}</FieldError>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="resource-organizational-unit">{t(`${directory}.organizationalUnit`)}</Label>
+            <FieldLabel id="resource-organizational-unit" label={t(`${directory}.organizationalUnit`)} optionalText={optionalText} />
             <Select value={values.organizationalUnitId || "__none__"} onValueChange={(value) => update("organizationalUnitId", value === "__none__" ? "" : value)}>
               <SelectTrigger id="resource-organizational-unit"><SelectValue placeholder={t(`${directory}.selectOrganizationalUnit`)} /></SelectTrigger>
               <SelectContent>
@@ -173,22 +206,22 @@ export function ResourceFormSections({
               </SelectContent>
             </Select>
           </div>
-          {values.resourceType === "VendorResource" ? (
+          {isVendorResource ? (
             <div className="space-y-1.5">
-              <Label htmlFor="resource-vendor">{t(`${directory}.vendor`)}</Label>
+              <FieldLabel id="resource-vendor" label={t(`${directory}.vendor`)} required />
               <Select value={values.vendorId} onValueChange={(value) => update("vendorId", value)}>
-                <SelectTrigger id="resource-vendor" aria-invalid={submitted && validation.vendor ? true : undefined}><SelectValue placeholder={t(`${directory}.selectVendor`)} /></SelectTrigger>
+                <SelectTrigger id="resource-vendor" aria-required="true" aria-invalid={submitted && validation.vendor ? true : undefined} aria-describedby={submitted && validation.vendor ? "resource-vendor-error" : undefined}><SelectValue placeholder={t(`${directory}.selectVendor`)} /></SelectTrigger>
                 <SelectContent>
                   {vendorsLoading ? <SelectItem value="__loading__" disabled>{t("common.loading")}</SelectItem> : null}
                   {activeVendors.map((vendor) => <SelectItem key={vendor.id} value={vendor.id}>{vendor.name}{vendor.code ? ` · ${vendor.code}` : ""}</SelectItem>)}
                 </SelectContent>
               </Select>
-              {submitted && validation.vendor ? <p role="alert" className="text-xs text-destructive">{t(`${directory}.vendorRequired`)}</p> : null}
+              <FieldError id="resource-vendor-error">{submitted && validation.vendor ? t(`${directory}.vendorRequired`) : undefined}</FieldError>
             </div>
           ) : (
             <>
               <div className="space-y-1.5">
-                <Label htmlFor="resource-system-user">{t(`${directory}.systemUser`)}</Label>
+                <FieldLabel id="resource-system-user" label={t(`${directory}.systemUser`)} optionalText={optionalText} />
                 <Select value={values.systemUserId || "__none__"} onValueChange={(value) => update("systemUserId", value === "__none__" ? "" : value)}>
                   <SelectTrigger id="resource-system-user"><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -200,20 +233,20 @@ export function ResourceFormSections({
                 <p className="text-xs text-muted-foreground">{t(`${directory}.systemUserHint`)}</p>
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="resource-employee-id">{t(`${directory}.employeeId`)}</Label>
-                <Input id="resource-employee-id" value={values.employeeId} onChange={(event) => update("employeeId", event.target.value)} />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="resource-employment-type">{t(`${directory}.employmentType`)}</Label>
-                <Input id="resource-employment-type" value={values.employmentType} onChange={(event) => update("employmentType", event.target.value)} />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="resource-seniority">{t(`${directory}.seniority`)}</Label>
-                <Input id="resource-seniority" value={values.seniority} onChange={(event) => update("seniority", event.target.value)} />
+                <FieldLabel id="resource-seniority" label={t(`${directory}.seniority`)} optionalText={optionalText} />
+                <Select value={values.seniority || "__none__"} onValueChange={(value) => update("seniority", value === "__none__" ? "" : value)}>
+                  <SelectTrigger id="resource-seniority"><SelectValue placeholder={optionalText} /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">{optionalText}</SelectItem>
+                    {values.seniority && !seniorityLevels.some((level) => level.code === values.seniority) ? <SelectItem value={values.seniority}>{values.seniority} · {t(`${directory}.legacyValue`)}</SelectItem> : null}
+                    {seniorityLevels.map((level) => <SelectItem key={level.code} value={level.code}>{locale === "ar" ? level.nameAr : level.nameEn}</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-1.5 sm:col-span-2">
-                <Label htmlFor="resource-notes">{t(`${directory}.notes`)}</Label>
-                <Textarea id="resource-notes" value={values.notes} onChange={(event) => update("notes", event.target.value)} rows={3} />
+                <FieldLabel id="resource-notes" label={t(`${directory}.notes`)} optionalText={optionalText} />
+                <Textarea id="resource-notes" maxLength={RESOURCE_FIELD_LIMITS.notes} value={values.notes} onChange={(event) => update("notes", event.target.value)} rows={3} aria-invalid={submitted && validation.notesTooLong ? true : undefined} aria-describedby={submitted && validation.notesTooLong ? "resource-notes-error" : undefined} />
+                <FieldError id="resource-notes-error">{submitted && validation.notesTooLong ? t(`${directory}.notesTooLong`) : undefined}</FieldError>
               </div>
             </>
           )}

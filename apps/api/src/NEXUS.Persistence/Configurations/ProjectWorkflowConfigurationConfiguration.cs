@@ -13,6 +13,9 @@ public sealed class ProjectWorkflowConfigurationConfiguration : IEntityTypeConfi
         builder.Property(item => item.Domain).HasMaxLength(30).IsRequired();
         builder.Property(item => item.Mode).HasMaxLength(20).IsRequired();
         builder.Property(item => item.ConfiguredBy).HasMaxLength(200).IsRequired();
+        builder.Property(item => item.SponsorApprovalRequired).HasDefaultValue(true);
+        builder.Property(item => item.AllowAnyOneOptionalApprover).HasDefaultValue(false);
+        builder.Property(item => item.AllowSequentialApprovers).HasDefaultValue(true);
         builder.HasIndex(item => new { item.TenantId, item.ProjectId, item.Domain }).IsUnique().HasFilter("[IsDeleted] = 0");
         builder.HasIndex(item => new { item.TenantId, item.WorkflowDefinitionId });
         builder.Property(item => item.RowVersion).IsRowVersion().IsConcurrencyToken();

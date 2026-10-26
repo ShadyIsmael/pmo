@@ -105,12 +105,15 @@ public sealed class UserPermissionAdministrationTests : IAsyncLifetime
         var (user, role) = AddUserWithRole(_tenantId, "member");
         var current = AddPermission(_tenantId, "projects", "read");
         role.Permissions.Add(current);
+        var sessionId = AddActiveSession(user, _tenantId);
         await _context.SaveChangesAsync();
 
         var identity = new ClaimsIdentity(
         [
             new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
             new Claim("tenantId", _tenantId.ToString()),
+            new Claim("sid", sessionId.ToString()),
+            new Claim(ClaimTypes.Role, "SystemAdministrator"),
             new Claim("permission", "projects.delete")
         ], "test");
         var httpContext = new DefaultHttpContext { User = new ClaimsPrincipal(identity) };
@@ -118,10 +121,72 @@ public sealed class UserPermissionAdministrationTests : IAsyncLifetime
         {
             Assert.Contains(context.User.FindAll("permission"), claim => claim.Value == "projects.read");
             Assert.DoesNotContain(context.User.FindAll("permission"), claim => claim.Value == "projects.delete");
+            Assert.Contains(context.User.FindAll(ClaimTypes.Role), claim => claim.Value == "member");
+            Assert.DoesNotContain(context.User.FindAll(ClaimTypes.Role), claim => claim.Value == "SystemAdministrator");
             return Task.CompletedTask;
         });
 
-        await middleware.InvokeAsync(httpContext, new UserEffectivePermissionService(_context));
+        await middleware.InvokeAsync(httpContext, new UserEffectivePermissionService(_context), new UserSessionValidator(_context));
+        Assert.Equal(StatusCodes.Status200OK, httpContext.Response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Middleware_rejects_revoked_access_token_session()
+    {
+        var (user, _) = AddUserWithRole(_tenantId, "member");
+        var sessionId = AddActiveSession(user, _tenantId);
+        _context.UserSessions.Local.Single(session => session.Id == sessionId).RevokedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+
+        var nextCalled = false;
+        var middleware = new UserPermissionClaimsMiddleware(_ =>
+        {
+            nextCalled = true;
+            return Task.CompletedTask;
+        });
+        var identity = new ClaimsIdentity(
+        [
+            new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
+            new Claim("tenantId", _tenantId.ToString()),
+            new Claim("sid", sessionId.ToString()),
+            new Claim("permission", "admin.write")
+        ], "test");
+        var httpContext = new DefaultHttpContext { User = new ClaimsPrincipal(identity) };
+
+        await middleware.InvokeAsync(httpContext, new UserEffectivePermissionService(_context), new UserSessionValidator(_context));
+
+        Assert.False(nextCalled);
+        Assert.Equal(StatusCodes.Status401Unauthorized, httpContext.Response.StatusCode);
+        Assert.DoesNotContain(httpContext.User.FindAll("permission"), claim => claim.Value == "admin.write");
+    }
+
+    [Fact]
+    public async Task Session_validator_rejects_session_bound_to_different_tenant_identity()
+    {
+        var (user, _) = AddUserWithRole(_tenantId, "member");
+        var sessionId = AddActiveSession(user, _tenantId);
+        await _context.SaveChangesAsync();
+
+        var validator = new UserSessionValidator(_context);
+
+        Assert.False(await validator.IsActiveAsync(sessionId, user.Id, Guid.NewGuid()));
+        Assert.False(await validator.IsActiveAsync(sessionId, Guid.NewGuid(), _tenantId));
+    }
+
+    [Fact]
+    public async Task Session_validator_rejects_expired_sessions_and_inactive_users()
+    {
+        var (user, _) = AddUserWithRole(_tenantId, "member");
+        var expiredSessionId = AddActiveSession(user, _tenantId);
+        _context.UserSessions.Local.Single(session => session.Id == expiredSessionId).ExpiresAt = DateTime.UtcNow.AddMinutes(-1);
+        var inactiveSessionId = AddActiveSession(user, _tenantId);
+        user.IsActive = false;
+        await _context.SaveChangesAsync();
+
+        var validator = new UserSessionValidator(_context);
+
+        Assert.False(await validator.IsActiveAsync(expiredSessionId, user.Id, _tenantId));
+        Assert.False(await validator.IsActiveAsync(inactiveSessionId, user.Id, _tenantId));
     }
 
     [Fact]
@@ -455,6 +520,23 @@ public sealed class UserPermissionAdministrationTests : IAsyncLifetime
         _context.Permissions.Add(permission);
         return permission;
     }
+
+    private Guid AddActiveSession(User user, Guid tenantId)
+    {
+        var session = new UserSession
+        {
+            Id = Guid.NewGuid(),
+            TenantId = tenantId,
+            UserId = user.Id,
+            User = user,
+            Token = "test-token-hash",
+            RefreshToken = "test-refresh-token-hash",
+            ExpiresAt = DateTime.UtcNow.AddHours(1),
+            CreatedBy = "test"
+        };
+        _context.UserSessions.Add(session);
+        return session.Id;
+    }
 }
 
 internal sealed class PermissionTestDbContext(DbContextOptions<PermissionTestDbContext> options) : DbContext(options)
@@ -469,8 +551,8 @@ internal sealed class PermissionTestDbContext(DbContextOptions<PermissionTestDbC
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.Entity<User>().Ignore(user => user.FullName).Ignore(user => user.Sessions);
-        modelBuilder.Entity<UserSession>().Ignore(session => session.User);
+        modelBuilder.Entity<User>().Ignore(user => user.FullName);
+        modelBuilder.Entity<UserSession>().HasOne(session => session.User).WithMany(user => user.Sessions).HasForeignKey(session => session.UserId);
         modelBuilder.Entity<Role>().HasMany(role => role.Permissions).WithMany(permission => permission.Roles);
         modelBuilder.Entity<UserRole>().HasOne(assignment => assignment.User).WithMany(user => user.UserRoles).HasForeignKey(assignment => assignment.UserId);
         modelBuilder.Entity<UserRole>().HasOne(assignment => assignment.Role).WithMany(role => role.UserRoles).HasForeignKey(assignment => assignment.RoleId);

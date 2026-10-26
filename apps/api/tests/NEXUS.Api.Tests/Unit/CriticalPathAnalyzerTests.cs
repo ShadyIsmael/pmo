@@ -65,6 +65,87 @@ public sealed class CriticalPathAnalyzerTests
     }
 
     [Fact]
+    public void IdentifiesMultipleCriticalPathsAndOnlyDrivingDependencyLinks()
+    {
+        var monday = new DateTime(2026, 1, 5, 8, 0, 0);
+        var tuesday = new DateTime(2026, 1, 6, 8, 0, 0);
+        var wednesday = new DateTime(2026, 1, 7, 8, 0, 0);
+        var a = Task("A", monday, monday.AddHours(9));
+        var b = Task("B", tuesday, tuesday.AddHours(9));
+        var d = Task("D", monday, monday.AddHours(9));
+        var e = Task("E", tuesday, tuesday.AddHours(9));
+        var shortPath = Task("SHORT", monday, monday.AddHours(9));
+        var finish = new AutoScheduleTask(Guid.NewGuid(), PlanActivityType.Milestone, 0, wednesday, wednesday, CalendarId);
+        var aToB = LinkWithId(a, b);
+        var bToFinish = LinkWithId(b, finish);
+        var dToE = LinkWithId(d, e);
+        var eToFinish = LinkWithId(e, finish);
+        var shortToFinish = LinkWithId(shortPath, finish);
+        var nonDrivingShortcut = LinkWithId(a, finish);
+
+        var result = _analyzer.Analyze(
+            [a, b, d, e, shortPath, finish],
+            [aToB, bToFinish, dToE, eToFinish, shortToFinish, nonDrivingShortcut],
+            [Calendar()],
+            CalendarId);
+
+        Assert.False(result.HasCycle);
+        Assert.Contains(a.Id, result.CriticalPathActivityIds);
+        Assert.Contains(b.Id, result.CriticalPathActivityIds);
+        Assert.Contains(d.Id, result.CriticalPathActivityIds);
+        Assert.Contains(e.Id, result.CriticalPathActivityIds);
+        Assert.Contains(finish.Id, result.CriticalPathActivityIds);
+        Assert.True(result.ActivityMetrics[shortPath.Id].TotalSlack > 0m);
+        Assert.Equal(monday, result.ActivityMetrics[a.Id].EarlyStart);
+        Assert.Equal(monday.AddHours(9), result.ActivityMetrics[a.Id].EarlyFinish);
+        Assert.Equal(monday, result.ActivityMetrics[a.Id].LateStart);
+        Assert.Equal(monday.AddHours(9), result.ActivityMetrics[a.Id].LateFinish);
+        Assert.Equal(new[] { aToB.Id!.Value, bToFinish.Id!.Value, dToE.Id!.Value, eToFinish.Id!.Value }.Order(), result.CriticalPathDependencyIds.Order());
+        Assert.DoesNotContain(shortToFinish.Id!.Value, result.CriticalPathDependencyIds);
+        Assert.DoesNotContain(nonDrivingShortcut.Id!.Value, result.CriticalPathDependencyIds);
+    }
+
+    [Fact]
+    public void ReanalysisAfterDurationRescheduleCanChangeTheCriticalPath()
+    {
+        var monday = new DateTime(2026, 1, 5, 8, 0, 0);
+        var tuesday = new DateTime(2026, 1, 6, 8, 0, 0);
+        var wednesday = new DateTime(2026, 1, 7, 8, 0, 0);
+        var first = Task("A", monday, monday.AddHours(9));
+        var second = Task("B", tuesday, tuesday.AddHours(9));
+        var alternate = new AutoScheduleTask(Guid.NewGuid(), PlanActivityType.Task, 2, monday, tuesday.AddHours(9), CalendarId);
+        var finish = new AutoScheduleTask(Guid.NewGuid(), PlanActivityType.Milestone, 0, wednesday, wednesday, CalendarId);
+        var firstToSecond = LinkWithId(first, second);
+        var secondToFinish = LinkWithId(second, finish);
+        var alternateToFinish = LinkWithId(alternate, finish);
+        var links = new[] { firstToSecond, secondToFinish, alternateToFinish };
+        var calendar = Calendar();
+
+        var before = _analyzer.Analyze([first, second, alternate, finish], links, [calendar], CalendarId);
+        Assert.Contains(alternate.Id, before.CriticalPathActivityIds);
+
+        var shorterAlternate = alternate with { Duration = 1, Anchor = SchedulingAnchor.Duration };
+        var scheduled = new AutoSchedulingEngine().Recalculate(
+            [first, second, shorterAlternate, finish],
+            links,
+            [calendar],
+            CalendarId,
+            [alternate.Id]);
+        var revisedTasks = new[] { first, second, shorterAlternate, finish }
+            .Select(task => scheduled.ChangedTasks.FirstOrDefault(changed => changed.Id == task.Id) is { } changed
+                ? task with { Start = changed.Start, Finish = changed.Finish, Duration = changed.Duration, Anchor = SchedulingAnchor.None }
+                : task)
+            .ToArray();
+        var after = _analyzer.Analyze(revisedTasks, links, [calendar], CalendarId);
+
+        Assert.DoesNotContain(alternate.Id, after.CriticalPathActivityIds);
+        Assert.Contains(first.Id, after.CriticalPathActivityIds);
+        Assert.Contains(second.Id, after.CriticalPathActivityIds);
+        Assert.DoesNotContain(alternateToFinish.Id!.Value, after.CriticalPathDependencyIds);
+        Assert.Contains(secondToFinish.Id!.Value, after.CriticalPathDependencyIds);
+    }
+
+    [Fact]
     public void CycleIsReportedWithoutProducingMetrics()
     {
         var first = Task("A", new DateTime(2026, 1, 5, 8, 0, 0), new DateTime(2026, 1, 5, 17, 0, 0));
@@ -81,6 +162,9 @@ public sealed class CriticalPathAnalyzerTests
 
     private static AutoScheduleDependency Link(AutoScheduleTask predecessor, AutoScheduleTask successor, PlanDependencyType type = PlanDependencyType.FinishToStart, int lag = 0) =>
         new(predecessor.Id, successor.Id, type, lag);
+
+    private static AutoScheduleDependency LinkWithId(AutoScheduleTask predecessor, AutoScheduleTask successor, PlanDependencyType type = PlanDependencyType.FinishToStart, int lag = 0) =>
+        new(predecessor.Id, successor.Id, type, lag, Guid.NewGuid());
 
     private static AutoScheduleCalendar Calendar() => new(
         CalendarId,

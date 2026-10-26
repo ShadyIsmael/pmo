@@ -19,7 +19,7 @@ public interface IProjectWorkflowConfigurationService
 
 public sealed class ProjectWorkflowConfigurationService : IProjectWorkflowConfigurationService
 {
-    private static readonly string[] Domains = { WorkflowDomains.Task, WorkflowDomains.Risk, WorkflowDomains.Finance };
+    private static readonly string[] Domains = { WorkflowDomains.Task, WorkflowDomains.Risk, WorkflowDomains.Finance, WorkflowDomains.ChangeRequest };
     private readonly DbContext _context;
     private readonly IProjectReferenceLookup _projectLookup;
     private readonly IManagementContextAccessor _managementContext;
@@ -62,7 +62,7 @@ public sealed class ProjectWorkflowConfigurationService : IProjectWorkflowConfig
 
         var normalizedDomain = WorkflowDomains.Normalize(domain);
         if (!WorkflowDomains.IsSupported(normalizedDomain))
-            return Result<ProjectWorkflowConfigurationDto>.Failure(Error.Validation("Workflow domain must be Task, Risk, or Finance."));
+            return Result<ProjectWorkflowConfigurationDto>.Failure(Error.Validation("Workflow domain must be a supported workflow domain."));
         var mode = request.Mode.Trim();
         if (!ProjectWorkflowModes.IsSupported(mode))
             return Result<ProjectWorkflowConfigurationDto>.Failure(Error.Validation("Workflow mode must be Standard or Custom."));
@@ -113,6 +113,12 @@ public sealed class ProjectWorkflowConfigurationService : IProjectWorkflowConfig
         }
 
         row.Mode = mode;
+        if (normalizedDomain.Equals(WorkflowDomains.ChangeRequest, StringComparison.OrdinalIgnoreCase))
+        {
+            row.SponsorApprovalRequired = request.SponsorApprovalRequired ?? row.SponsorApprovalRequired;
+            row.AllowAnyOneOptionalApprover = request.AllowAnyOneOptionalApprover ?? row.AllowAnyOneOptionalApprover;
+            row.AllowSequentialApprovers = request.AllowSequentialApprovers ?? row.AllowSequentialApprovers;
+        }
         row.WorkflowDefinitionId = definition?.Id;
         row.EffectiveWorkflowVersionId = version?.Id;
         row.ConfiguredBy = actor;
@@ -184,7 +190,7 @@ public sealed class ProjectWorkflowConfigurationService : IProjectWorkflowConfig
 
     private static ProjectWorkflowConfigurationDto ToDto(ProjectWorkflowConfiguration? row, Guid projectId, string domain) => row is null
         ? new(Guid.Empty, projectId, domain, ProjectWorkflowModes.Standard, null, null, null, null, false, "New records use Standard NEXUS behavior. Existing records remain unchanged.", DateTime.MinValue, string.Empty, null)
-        : new(row.Id, projectId, row.Domain, row.Mode, row.WorkflowDefinitionId, row.WorkflowDefinition?.Name, row.EffectiveWorkflowVersionId, row.EffectiveWorkflowVersion?.VersionNumber, row.EffectiveWorkflowVersion?.LifecycleStatus == WorkflowDefinitionVersionLifecycleStatus.Published, row.Mode == ProjectWorkflowModes.Custom ? "New records use the selected Published workflow. Existing workflow instances remain unchanged." : "New records use Standard NEXUS behavior. Existing records remain unchanged.", row.ConfiguredAt, row.ConfiguredBy, row.RowVersion);
+        : new(row.Id, projectId, row.Domain, row.Mode, row.WorkflowDefinitionId, row.WorkflowDefinition?.Name, row.EffectiveWorkflowVersionId, row.EffectiveWorkflowVersion?.VersionNumber, row.EffectiveWorkflowVersion?.LifecycleStatus == WorkflowDefinitionVersionLifecycleStatus.Published, row.Mode == ProjectWorkflowModes.Custom ? "New records use the selected Published workflow. Existing workflow instances remain unchanged." : "New records use Standard NEXUS behavior. Existing records remain unchanged.", row.ConfiguredAt, row.ConfiguredBy, row.RowVersion, row.SponsorApprovalRequired, row.AllowAnyOneOptionalApprover, row.AllowSequentialApprovers);
 
     private bool IsReadOnlyClaim() => string.Equals(_httpContextAccessor.HttpContext?.User.FindFirstValue("readOnly"), "true", StringComparison.OrdinalIgnoreCase)
         || string.Equals(_httpContextAccessor.HttpContext?.User.FindFirstValue("viewAs"), "true", StringComparison.OrdinalIgnoreCase);

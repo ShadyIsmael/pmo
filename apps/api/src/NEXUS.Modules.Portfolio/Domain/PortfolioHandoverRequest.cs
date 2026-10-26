@@ -6,8 +6,9 @@ public sealed class PortfolioHandoverRequest : BaseEntity
 {
     public Guid PortfolioId { get; set; }
     public Portfolio Portfolio { get; set; } = null!;
-    public Guid CurrentPortfolioManagerId { get; set; }
+    public Guid? CurrentPortfolioManagerId { get; set; }
     public Guid NewPortfolioManagerId { get; set; }
+    public string InitiationType { get; set; } = ManagerHandoverInitiationType.ManagerInitiated;
     public DateTime EffectiveHandoverDate { get; set; }
     public string Reason { get; set; } = string.Empty;
     public string? Notes { get; set; }

@@ -36,7 +36,7 @@ html[dir="rtl"] .app-shell { direction: rtl; }
     border: 1px solid hsl(var(--border) / 0.86);
     border-radius: 0.75rem;
     background: hsl(var(--card) / 0.76);
-    box-shadow: 0 12px 28px -26px hsl(228 35% 5% / 0.9);
+    box-shadow: 0 12px 28px -26px hsl(var(--overlay) / 0.32);
     position: relative;
     scrollbar-width: thin;
   }
@@ -59,7 +59,7 @@ html[dir="rtl"] .app-shell { direction: rtl; }
     transition: background-color 150ms ease, box-shadow 150ms ease;
   }
   .nexus-table-row:hover {
-    background: linear-gradient(90deg, hsl(247 78% 58% / 0.07), hsl(190 96% 62% / 0.025));
+    background: linear-gradient(90deg, hsl(var(--primary) / 0.07), hsl(var(--ring) / 0.03));
   }
   .nexus-projects .nexus-table-row { font-size: 0.78rem; }
   .nexus-projects .nexus-table-surface::before,
@@ -71,7 +71,7 @@ html[dir="rtl"] .app-shell { direction: rtl; }
     z-index: 1;
     height: 2px;
     pointer-events: none;
-    background: linear-gradient(90deg, hsl(247 78% 58%), hsl(190 96% 62%), hsl(38 96% 61%));
+    background: linear-gradient(90deg, hsl(var(--primary)), hsl(var(--ring)));
   }
   .nexus-metric-card {
     position: relative;

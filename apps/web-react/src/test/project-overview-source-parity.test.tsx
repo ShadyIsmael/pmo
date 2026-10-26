@@ -1,19 +1,34 @@
 import { Outlet, MemoryRouter, Route, Routes } from "react-router-dom";
 import { render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import userEvent from "@testing-library/user-event";
 import { I18nProvider } from "../i18n/messages";
 import { ProjectOverviewTab } from "../features/projects/ProjectOverviewTab";
 
 const fixtures = vi.hoisted(() => ({
   query: { isLoading: false, isError: false, data: undefined as unknown, refetch: vi.fn() },
+  reportingConfiguration: { isLoading: false, isError: false, data: undefined as unknown, refetch: vi.fn() },
+  performance: { isLoading: false, isError: false, data: undefined as unknown },
+  teamCapacity: { isLoading: false, isError: false, data: undefined as unknown, refetch: vi.fn() },
+  capacityHook: vi.fn(),
+  permissions: [] as string[],
 }));
 
 vi.mock("../features/projects/api/projects", () => ({
   useProjectOverview: () => fixtures.query,
+  useProjectPerformance: () => fixtures.performance,
+  useProjectReportingConfiguration: () => fixtures.reportingConfiguration,
+  useProjectTeamCapacity: (...args: unknown[]) => {
+    fixtures.capacityHook(...args);
+    return fixtures.teamCapacity;
+  },
 }));
+
+vi.mock("@auth/AuthProvider", () => ({ useAuth: () => ({ user: { id: "viewer-1", permissions: fixtures.permissions } }) }));
 
 const project = {
   id: "project-1",
+  publicId: "project-public-1",
   code: "PRJ-0042",
   name: "Cloud Modernization",
   status: "Active",
@@ -35,6 +50,8 @@ const overview = {
   risks: {
     openCount: 1,
     highCriticalOpenCount: 1,
+    statusCounts: [{ status: "Identified", count: 1 }],
+    levelCounts: [{ riskLevel: "High", count: 1, displayOrder: 2 }],
     topRisks: [{ id: "risk-1", title: "Supplier delay", riskLevel: "High", status: "Identified" }],
   },
   issues: {
@@ -80,6 +97,21 @@ const overview = {
   },
 };
 
+const teamCapacityOverview = {
+  startDate: "2026-10-01",
+  endDate: "2026-11-01",
+  activeResourceCount: 2,
+  idleResourceCount: 1,
+  totalCapacityHours: 80,
+  utilizedHours: 40,
+  availableHours: 40,
+  overallocatedHours: 0,
+  utilizedPercent: 50,
+  availablePercent: 50,
+  isCapacityDataAvailable: true,
+  isAllocationDataAvailable: true,
+};
+
 function ProjectOutlet() {
   return <Outlet context={{ projectId: project.id, project }} />;
 }
@@ -102,82 +134,398 @@ describe("project overview source parity", () => {
   beforeEach(() => {
     window.localStorage.setItem("nexus-locale", "en");
     fixtures.query = { isLoading: false, isError: false, data: overview, refetch: vi.fn() };
+    fixtures.permissions = [];
+    fixtures.reportingConfiguration = { isLoading: false, isError: false, data: undefined, refetch: vi.fn() };
+    fixtures.performance = { isLoading: false, isError: false, data: undefined };
+    fixtures.teamCapacity = { isLoading: false, isError: false, data: teamCapacityOverview, refetch: vi.fn() };
+    fixtures.capacityHook.mockClear();
   });
 
-  it("localizes risk level and latest published health and links top issues to their work item", () => {
+  it("uses the public project identifier when opening the issue register", () => {
     renderOverview();
 
-    expect(screen.getByText("High")).toHaveAttribute("title", "Identified");
-    expect(screen.getByText("At Risk")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Deployment issue/i })).toHaveAttribute("href", "/work-items/issue%2F1");
+    const issueLink = screen.getAllByRole("link", { name: "View all" })
+      .find((link) => link.getAttribute("href")?.startsWith("/risks-issues/issues?projectId="));
+
+    expect(issueLink).toHaveAttribute("href", "/risks-issues/issues?projectId=project-public-1");
   });
 
-  it("keeps risk and health labels localized in Arabic", () => {
-    window.localStorage.setItem("nexus-locale", "ar");
-    renderOverview();
-
-    expect(screen.getByText("مرتفع")).toHaveAttribute("title", "تم التعرف عليه");
-    expect(screen.getByText("في خطر")).toBeInTheDocument();
-  });
 
   it("uses project progress when the overview has no plan progress, matching Next", () => {
     fixtures.query = { isLoading: false, isError: false, data: { ...overview, progress: 78, planProgress: null }, refetch: vi.fn() };
     renderOverview();
 
-    expect(screen.getByRole("img", { name: "Overall Progress: 35%" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Project record progress: 35%" })).toBeInTheDocument();
   });
 
-  it("links the empty-state status reports button to the status-reports tab, not the dashboard", () => {
+  it("distinguishes active-plan progress from the published snapshot", () => {
     fixtures.query = {
       isLoading: false,
       isError: false,
-      data: { ...overview, statusReports: { totalCount: 0, publishedCount: 0, latestPublishedReport: undefined } },
+      data: {
+        ...overview,
+        planProgress: 0,
+        statusDate: "2026-10-19",
+        statusReports: {
+          ...overview.statusReports,
+          latestPublishedReport: {
+            ...overview.statusReports.latestPublishedReport,
+            periodTo: "2026-10-31",
+            overallProgressPercent: 73,
+          },
+        },
+      },
       refetch: vi.fn(),
     };
     renderOverview();
 
-    expect(screen.getAllByText("No status reports").length).toBeGreaterThan(0);
-    expect(screen.getByRole("link", { name: "Status Reports" })).toHaveAttribute("href", "/projects/project-1/status-reports");
+    expect(screen.getByRole("img", { name: "Active Working plan progress: 0%" })).toBeInTheDocument();
+    expect(screen.getByText("-73 pp")).toBeInTheDocument();
+    expect(screen.getByText("vs published report (73%)")).toBeInTheDocument();
   });
 
-  it("renders the complete golden-copy overview information and reporting sections", () => {
+  it("localizes the progress sources in Arabic", () => {
+    window.localStorage.setItem("nexus-locale", "ar");
+    fixtures.query = {
+      isLoading: false,
+      isError: false,
+      data: {
+        ...overview,
+        planProgress: 0,
+        statusDate: "2026-10-19",
+        statusReports: {
+          ...overview.statusReports,
+          latestPublishedReport: {
+            ...overview.statusReports.latestPublishedReport,
+            periodTo: "2026-10-31",
+            overallProgressPercent: 73,
+          },
+        },
+      },
+      refetch: vi.fn(),
+    };
+    renderOverview();
+
+    expect(screen.getByRole("img", { name: "التقدم حسب خطة العمل النشطة: 0%" })).toBeInTheDocument();
+    expect(screen.getByText("مقارنة بالتقرير المنشور (73%)")).toBeInTheDocument();
+  });
+
+  it("renders the complete golden-copy overview information sections", () => {
     renderOverview();
 
     const renderedText = document.body.textContent?.toLocaleLowerCase() ?? "";
     for (const heading of [
-      "Project Information", "KPI Summary", "Project Performance", "Attention Required", "Milestones",
-      "Latest Published Status", "Resource & Allocation", "Governance & Reporting",
+      "Project Information", "KPI Summary", "Change Requests", "Milestones",
+      "Team, resources & allocation", "Governance & Reporting", "Risks overview",
     ]) {
       expect(renderedText).toContain(heading.toLocaleLowerCase());
     }
-    expect(screen.getByRole("img", { name: /^Project Performance$/i })).toBeInTheDocument();
-    expect(screen.getByText("Original Approved Budget")).toBeInTheDocument();
-    expect(screen.getByText("Pending Revision", { exact: true })).toBeInTheDocument();
   });
 
-  it("explains SPI and CPI with concise localized tooltips", () => {
+  it("shows one capacity donut and exactly four API-backed KPI cards", () => {
+    renderOverview();
+
+    const card = screen.getByTestId("project-team-capacity-kpis");
+    expect(card.children).toHaveLength(4);
+    expect(within(card).getByText("Team members")).toBeInTheDocument();
+    expect(within(card).getByText("Assigned resources")).toBeInTheDocument();
+    expect(within(card).getByText("Idle resources")).toBeInTheDocument();
+    expect(within(card).getByText("No allocated work")).toBeInTheDocument();
+    expect(screen.getByText("80.0 hours")).toBeInTheDocument();
+    expect(within(card).getAllByText("50.0%", { exact: true })).toHaveLength(2);
+    expect(screen.getByRole("img", { name: /Capacity distribution/ })).toBeInTheDocument();
+    expect(within(card).getByText("Available capacity")).toBeInTheDocument();
+  });
+
+  it("keeps four KPI cards visible while capacity data is loading or unavailable", () => {
+    fixtures.teamCapacity = { isLoading: true, isError: false, data: undefined, refetch: vi.fn() };
+    const { rerender } = renderOverview();
+
+    expect(screen.getByTestId("project-team-capacity-kpis").children).toHaveLength(4);
+    expect(screen.getByRole("status", { name: "Loading..." })).toBeInTheDocument();
+
+    fixtures.teamCapacity = { isLoading: false, isError: true, data: undefined, refetch: vi.fn() };
+    rerender(
+      <I18nProvider>
+        <MemoryRouter initialEntries={["/projects/project-1/overview"]}>
+          <Routes>
+            <Route path="/projects/:id" element={<ProjectOutlet />}>
+              <Route path="overview" element={<ProjectOverviewTab />} />
+            </Route>
+          </Routes>
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+    expect(screen.getByTestId("project-team-capacity-kpis").children).toHaveLength(4);
+    expect(screen.getByText("Capacity data unavailable")).toBeInTheDocument();
+  });
+
+  it("keeps the capacity donut visible as an empty ring when calendar data is incomplete", () => {
+    fixtures.teamCapacity = {
+      isLoading: false,
+      isError: false,
+      data: {
+        ...teamCapacityOverview,
+        totalCapacityHours: null,
+        utilizedHours: null,
+        availableHours: null,
+        utilizedPercent: null,
+        availablePercent: null,
+        isCapacityDataAvailable: false,
+      },
+      refetch: vi.fn(),
+    };
+    renderOverview();
+
+    expect(screen.getByRole("img", { name: "Capacity distribution unavailable" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Capacity data unavailable" }))
+      .toHaveAttribute("aria-describedby", "project-team-capacity-unavailable-tooltip");
+    expect(screen.getByRole("tooltip")).toHaveTextContent("A working calendar or allocation status is incomplete, so capacity totals and idle counts cannot be confirmed.");
+    expect(screen.getByTestId("project-team-capacity-kpis")).toHaveTextContent("—");
+    expect(screen.getByTestId("project-team-capacity-kpis").children).toHaveLength(4);
+  });
+
+  it("does not report idle resources when allocation data is incomplete", () => {
+    fixtures.teamCapacity = {
+      isLoading: false,
+      isError: false,
+      data: { ...teamCapacityOverview, idleResourceCount: null, isAllocationDataAvailable: false },
+      refetch: vi.fn(),
+    };
+    renderOverview();
+
+    const card = screen.getByTestId("project-team-capacity-kpis");
+    const idleMetric = within(card).getByText("Idle resources").parentElement;
+    expect(idleMetric).toHaveTextContent("—");
+  });
+
+  it("shows an explicit empty state and four zero-valued KPI cards when the project team is empty", () => {
+    fixtures.teamCapacity = {
+      isLoading: false,
+      isError: false,
+      data: {
+        ...teamCapacityOverview,
+        activeResourceCount: 0,
+        idleResourceCount: 0,
+        totalCapacityHours: 0,
+        utilizedHours: 0,
+        availableHours: 0,
+        utilizedPercent: 0,
+        availablePercent: 0,
+      },
+      refetch: vi.fn(),
+    };
+    renderOverview();
+
+    expect(screen.getByText("No team members assigned to this project.")).toBeInTheDocument();
+    const kpis = screen.getByTestId("project-team-capacity-kpis");
+    expect(kpis.children).toHaveLength(4);
+    expect(within(kpis).getAllByText("0", { exact: true })).toHaveLength(2);
+  });
+
+  it("caps the donut at total capacity and reports overallocation separately", () => {
+    fixtures.teamCapacity = {
+      isLoading: false,
+      isError: false,
+      data: {
+        ...teamCapacityOverview,
+        totalCapacityHours: 40,
+        utilizedHours: 50,
+        availableHours: 0,
+        overallocatedHours: 10,
+        utilizedPercent: 125,
+        availablePercent: 0,
+      },
+      refetch: vi.fn(),
+    };
+    renderOverview();
+
+    expect(screen.getByText(/Allocations exceed effective capacity by 10\.0 hours\./)).toBeInTheDocument();
+    expect(screen.getByText("50.0 hours")).toBeInTheDocument();
+    expect(screen.getByText("125.0%")).toBeInTheDocument();
+    expect(screen.getByText("40.0 hours")).toBeInTheDocument();
+  });
+
+  it("requests capacity for the selected reporting period", async () => {
+    const user = userEvent.setup();
+    renderOverview();
+
+    await user.click(screen.getByRole("button", { name: "Reporting Period" }));
+    await user.click(screen.getByRole("option", { name: "This week" }));
+
+    expect(fixtures.capacityHook).toHaveBeenLastCalledWith(
+      project.id,
+      "Week",
+      expect.any(String),
+      expect.any(String),
+      true,
+    );
+  });
+
+  it("keeps issue KPIs and removes risk KPIs from the KPI summary", () => {
+    renderOverview();
+
+    const row = screen.getByTestId("project-overview-kpi-performance-row");
+    const summary = within(row).getByRole("region", { name: "KPI Summary" });
+
+    expect(row.children).toHaveLength(1);
+    expect(within(summary).getByRole("img", { name: "Project record progress: 35%" })).toBeInTheDocument();
+    expect(within(summary).getByText("Schedule Variance")).toBeInTheDocument();
+    expect(within(summary).getByText("Cost Variance")).toBeInTheDocument();
+    expect(within(summary).getByText("Overdue open issues", { selector: "dt" })).toBeInTheDocument();
+    expect(within(summary).queryByText("Critical attention")).not.toBeInTheDocument();
+    expect(within(summary).queryByText("high/critical risks")).not.toBeInTheDocument();
+  });
+
+  it("shows issue totals, per-status counts, percentages, and configured chart colors", () => {
+    fixtures.query = {
+      isLoading: false,
+      isError: false,
+      data: {
+        ...overview,
+        issues: {
+          ...overview.issues,
+          statusCounts: [
+            { status: "ToDo", count: 3, nameEn: "To Do", nameAr: "للتنفيذ", displayOrder: 10, color: "blue" },
+            { status: "InProgress", count: 1, nameEn: "In Progress", nameAr: "قيد التنفيذ", displayOrder: 20, color: "amber" },
+            { status: "Done", count: 2, nameEn: "Done", nameAr: "مكتمل", displayOrder: 30, color: "emerald" },
+          ],
+        },
+      },
+      refetch: vi.fn(),
+    };
+    renderOverview();
+
+    expect(screen.getByRole("img", { name: "Issues by status: Total issues 6" })).toBeInTheDocument();
+    const legend = screen.getByRole("list", { name: "Issues by status" });
+    const toDoRow = within(legend).getByText("To Do").closest("li");
+    expect(toDoRow).toHaveTextContent(/3\s+\(50%\)/);
+    expect(within(legend).getByText("In Progress").closest("li")).toHaveTextContent(/1\s+\(17%\)/);
+    expect(within(legend).getByText("Done").closest("li")).toHaveTextContent(/2\s+\(33%\)/);
+    expect(toDoRow?.querySelector("[aria-hidden='true']")).toHaveStyle({ backgroundColor: "hsl(var(--info))" });
+  });
+
+  it("offers project-scoped View all links for both Issues and Risks", () => {
+    renderOverview();
+
+    const viewAllLinks = screen.getAllByRole("link", { name: "View all" });
+    const issueLink = viewAllLinks.find((link) => link.getAttribute("href")?.startsWith("/risks-issues/issues?projectId="));
+    const riskLink = viewAllLinks.find((link) => link.getAttribute("href")?.startsWith("/risks-issues/risks?projectId="));
+
+    expect(issueLink).toHaveAttribute("href", "/risks-issues/issues?projectId=project-public-1");
+    expect(riskLink).toHaveAttribute("href", "/risks-issues/risks?projectId=project-public-1");
+  });
+
+  it("shows one non-closed risk status donut with count, percent, and mitigated risks", () => {
+    fixtures.query = {
+      isLoading: false,
+      isError: false,
+      data: {
+        ...overview,
+        risks: {
+          ...overview.risks,
+          openCount: 3,
+          statusCounts: [
+            { status: "Identified", count: 1 },
+            { status: "Mitigated", count: 2 },
+          ],
+          topRisks: [
+            { id: "risk-1", title: "Supplier delay", riskLevel: "High", status: "Identified" },
+            { id: "risk-2", title: "Mitigated but open", riskLevel: "Medium", status: "Mitigated" },
+          ],
+        },
+      },
+      refetch: vi.fn(),
+    };
+    renderOverview();
+
+    expect(screen.getByRole("img", { name: "Risks by status: Non-closed risks 3" })).toBeInTheDocument();
+    const legend = screen.getByRole("list", { name: "Risks by status" });
+    expect(within(legend).getByText("Identified")).toBeInTheDocument();
+    expect(within(legend).getByText("Mitigated")).toBeInTheDocument();
+    expect(within(legend).getByText("67%")).toBeInTheDocument();
+    expect(within(legend).queryByText("Closed")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("img", { name: /Risks by status/ })).toHaveLength(1);
+  });
+
+  it("localizes the risk status donut and follows RTL in Arabic", () => {
+    window.localStorage.setItem("nexus-locale", "ar");
+    fixtures.query = {
+      isLoading: false,
+      isError: false,
+      data: {
+        ...overview,
+        risks: {
+          ...overview.risks,
+          openCount: 2,
+          statusCounts: [
+            { status: "Identified", count: 1 },
+            { status: "Mitigated", count: 1 },
+          ],
+        },
+      },
+      refetch: vi.fn(),
+    };
+    renderOverview();
+
+    expect(document.documentElement.dir).toBe("rtl");
+    expect(screen.getByRole("img", { name: /المخاطر حسب الحالة: المخاطر غير المغلقة/ })).toBeInTheDocument();
+    const legend = screen.getByRole("list", { name: "المخاطر حسب الحالة" });
+    expect(within(legend).getByText("تم التعرف عليه")).toBeInTheDocument();
+    expect(within(legend).getByText("تمت المعالجة")).toBeInTheDocument();
+  });
+
+  it("shows an explicit empty state when every project risk is formally closed", () => {
+    fixtures.query = {
+      isLoading: false,
+      isError: false,
+      data: { ...overview, risks: { ...overview.risks, openCount: 0, statusCounts: [], topRisks: [] } },
+      refetch: vi.fn(),
+    };
+    renderOverview();
+
+    expect(screen.getByText("No risks remain open.")).toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: /Risks by status/ })).not.toBeInTheDocument();
+  });
+
+  it("places Milestones above the Change Requests and Governance row", () => {
+    renderOverview();
+
+    const overviewLayout = screen.getByTestId("project-overview-milestones-layout");
+    const secondaryPanels = screen.getByTestId("project-overview-secondary-panels");
+
+    expect(within(overviewLayout).getByRole("heading", { name: /^Milestones$/i })).toBeInTheDocument();
+    expect(secondaryPanels).toHaveClass("grid");
+    expect(secondaryPanels).toHaveClass("xl:grid-cols-3");
+    expect(secondaryPanels.children).toHaveLength(2);
+    expect(within(secondaryPanels.children[0] as HTMLElement).getByRole("heading", { name: /^Change Requests$/i })).toBeInTheDocument();
+    expect(within(secondaryPanels.children[1] as HTMLElement).getByRole("heading", { name: /^Governance & Reporting$/i })).toBeInTheDocument();
+  });
+
+
+  it("shows the specific baseline-data reason when Schedule Variance is unavailable", () => {
+    fixtures.query = {
+      isLoading: false,
+      isError: false,
+      data: {
+        ...overview,
+        plannedValue: null,
+        earnedValue: null,
+        scheduleVariance: null,
+        schedulePerformanceIndex: null,
+        plannedValueUnavailableReason: "NO_BASELINE_ASSIGNMENTS",
+        earnedValueUnavailableReason: "NO_BASELINE_ASSIGNMENTS",
+        schedulePerformanceIndexUnavailableReason: "NO_BASELINE_ASSIGNMENTS",
+      },
+      refetch: vi.fn(),
+    };
     renderOverview();
 
     const summary = screen.getByRole("region", { name: "KPI Summary" });
-    expect(within(summary).queryByText("SPI")).not.toBeInTheDocument();
-    expect(within(summary).queryByText("CPI")).not.toBeInTheDocument();
-    expect(within(summary).queryByText("Next milestone")).not.toBeInTheDocument();
-    expect(within(summary).getByText("Schedule Variance")).toBeInTheDocument();
-    expect(within(summary).getByText("Cost Variance")).toBeInTheDocument();
-    expect(within(summary).getByText("Critical attention")).toBeInTheDocument();
-    expect(within(summary).getByText("Team signal")).toBeInTheDocument();
-
-    const spiHint = screen.getByLabelText("SPI = Earned Value ÷ Planned Value. Above 1: ahead of schedule; below 1: behind; 1: on plan.");
-    const cpiHint = screen.getByLabelText("CPI = Earned Value ÷ Actual Cost. Above 1: under budget; below 1: over budget; 1: on budget.");
-    expect(spiHint).toHaveAttribute("title", spiHint.getAttribute("aria-label"));
-    expect(cpiHint).toHaveAttribute("title", cpiHint.getAttribute("aria-label"));
-    expect(spiHint.parentElement).toHaveTextContent("SPI");
-    expect(cpiHint.parentElement).toHaveTextContent("CPI");
-    expect(screen.getByText("0.90")).toBeInTheDocument();
-    expect(screen.getByText("0.95")).toBeInTheDocument();
+    expect(within(summary).getByText("The approved baseline has no resource assignments.")).toBeInTheDocument();
   });
 
-  it("explains SPI and CPI in Arabic and reports why unavailable values are missing", () => {
+  it("localizes the specific Schedule Variance reason in Arabic", () => {
     window.localStorage.setItem("nexus-locale", "ar");
     fixtures.query = {
       isLoading: false,
@@ -186,31 +534,20 @@ describe("project overview source parity", () => {
         ...overview,
         plannedValue: null,
         earnedValue: null,
-        actualCost: null,
         scheduleVariance: null,
-        costVariance: null,
         schedulePerformanceIndex: null,
-        costPerformanceIndex: null,
-        plannedValueUnavailableReason: "NO_APPROVED_BASELINE",
-        earnedValueUnavailableReason: "NO_APPROVED_BASELINE",
-        actualCostUnavailableReason: "NO_ACTUAL_COST_DATA",
-        schedulePerformanceIndexUnavailableReason: "NO_APPROVED_BASELINE",
-        costPerformanceIndexUnavailableReason: "NO_APPROVED_BASELINE",
-        costVarianceUnavailableReason: "NON_LABOR_COSTS_NOT_BASELINED",
+        plannedValueUnavailableReason: "NO_BASELINE_ASSIGNMENTS",
+        earnedValueUnavailableReason: "NO_BASELINE_ASSIGNMENTS",
+        schedulePerformanceIndexUnavailableReason: "NO_BASELINE_ASSIGNMENTS",
       },
       refetch: vi.fn(),
     };
     renderOverview();
 
     const summary = screen.getByRole("region", { name: "ملخص مؤشرات الأداء" });
-    expect(within(summary).queryByText("مؤشر الأداء الزمني")).not.toBeInTheDocument();
-    expect(within(summary).queryByText("مؤشر الأداء التكلفي")).not.toBeInTheDocument();
-    expect(within(summary).queryByText("المعلم التالي")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("SPI = القيمة المكتسبة ÷ القيمة المخططة. أكبر من 1: متقدم عن الجدول؛ أقل من 1: متأخر؛ 1: حسب الخطة.")).toBeInTheDocument();
-    expect(screen.getByLabelText("CPI = القيمة المكتسبة ÷ التكلفة الفعلية. أكبر من 1: أقل من الميزانية؛ أقل من 1: تجاوز الميزانية؛ 1: مطابق للميزانية.")).toBeInTheDocument();
-    expect(screen.getAllByText("لا يوجد خط أساس معتمد للخطة.").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("انحراف التكلفة ومؤشر CPI غير متاحين لأن التكاليف المباشرة غير المرتبطة بالعمل لم تُربط بمهام ممولة في خط الأساس المعتمد.").length).toBeGreaterThan(0);
+    expect(within(summary).getByText("لا يحتوي خط الأساس المعتمد على موارد مخصصة.")).toBeInTheDocument();
   });
+
 
   it("does not fall back to manually stored project EVM values when canonical overview values are absent", () => {
     fixtures.query = {
@@ -244,7 +581,6 @@ describe("project overview source parity", () => {
       </I18nProvider>,
     );
 
-    expect(screen.getAllByText("No approved plan baseline is available.").length).toBeGreaterThan(0);
     expect(screen.queryByText("$1,234.00")).not.toBeInTheDocument();
     expect(screen.queryByText("$1,000.00")).not.toBeInTheDocument();
     expect(screen.queryByText("$456.00")).not.toBeInTheDocument();

@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Http;
+using System.Security.Claims;
+using System.Text.Json;
 using NEXUS.Modules.Audit.Application;
 using NEXUS.Modules.Audit.Domain;
 using NEXUS.Modules.CostManagement.Domain;
@@ -9,7 +11,10 @@ using NEXUS.Modules.ProjectManagement.Application.DTOs;
 using NEXUS.Modules.ProjectManagement.Domain;
 using NEXUS.Modules.ResourceManagement.Domain;
 using NEXUS.Modules.RiskManagement.Domain;
+using NEXUS.Modules.WorkflowEngine.Application.Contracts;
+using NEXUS.Modules.WorkflowEngine.Domain;
 using NEXUS.SharedKernel;
+using NEXUS.SharedKernel.Management;
 
 namespace NEXUS.Modules.ProjectManagement.Application;
 
@@ -21,14 +26,25 @@ public sealed class ProjectStatusReportService : IProjectStatusReportService
     private readonly DbContext _context;
     private readonly IAuditService _auditService;
     private readonly IHttpContextAccessor _httpContextAccessor;
-    private readonly IProjectPlanProgressLookup _projectPlanProgressLookup;
+    private readonly IProjectReportingService _projectReportingService;
+    private readonly IProjectStatusReportWorkflowProvisioningService _workflowProvisioning;
+    private readonly IWorkflowInstanceService _workflowInstances;
+    private readonly IWorkflowExecutionService _workflowExecution;
+    private readonly IManagementContextAccessor _managementContextAccessor;
 
-    public ProjectStatusReportService(DbContext context, IAuditService auditService, IHttpContextAccessor httpContextAccessor, IProjectPlanProgressLookup projectPlanProgressLookup)
+    public ProjectStatusReportService(DbContext context, IAuditService auditService, IHttpContextAccessor httpContextAccessor,
+        IProjectReportingService projectReportingService, IProjectStatusReportWorkflowProvisioningService workflowProvisioning,
+        IWorkflowInstanceService workflowInstances, IWorkflowExecutionService workflowExecution,
+        IManagementContextAccessor managementContextAccessor)
     {
         _context = context;
         _auditService = auditService;
         _httpContextAccessor = httpContextAccessor;
-        _projectPlanProgressLookup = projectPlanProgressLookup;
+        _projectReportingService = projectReportingService;
+        _workflowProvisioning = workflowProvisioning;
+        _workflowInstances = workflowInstances;
+        _workflowExecution = workflowExecution;
+        _managementContextAccessor = managementContextAccessor;
     }
 
     public async Task<Result<PagedResult<ProjectStatusReportListDto>>> GetPagedAsync(Guid projectId, int page, int pageSize, CancellationToken cancellationToken = default)
@@ -48,6 +64,7 @@ public sealed class ProjectStatusReportService : IProjectStatusReportService
                 ReportDate = x.ReportDate,
                 PeriodFrom = x.PeriodFrom,
                 PeriodTo = x.PeriodTo,
+                StatusDate = x.StatusDate,
                 ReportState = x.ReportState,
                 ProjectLifecycleStatusAtReport = x.ProjectLifecycleStatusAtReport,
                 OverallHealth = x.OverallHealth,
@@ -83,12 +100,13 @@ public sealed class ProjectStatusReportService : IProjectStatusReportService
         });
     }
 
-    public async Task<Result<ProjectStatusReportCurrentProgressDto>> GetCurrentProgressAsync(Guid projectId, CancellationToken cancellationToken = default)
+    public async Task<Result<ProjectStatusReportCurrentProgressDto>> GetCurrentProgressAsync(Guid projectId, DateTime? statusDate = null, CancellationToken cancellationToken = default)
     {
         if (!await ProjectExistsAsync(projectId, cancellationToken)) return Result<ProjectStatusReportCurrentProgressDto>.Failure(Error.NotFound("Project not found"));
+        var performance = await _projectReportingService.GetPerformanceAsync(projectId, statusDate, cancellationToken: cancellationToken);
         return Result<ProjectStatusReportCurrentProgressDto>.Success(new ProjectStatusReportCurrentProgressDto
         {
-            ProjectPlanProgressPercent = await _projectPlanProgressLookup.GetAsync(projectId, cancellationToken)
+            ProjectPlanProgressPercent = performance.IsSuccess ? performance.Value?.OverallProgressPercent : null
         });
     }
 
@@ -102,12 +120,33 @@ public sealed class ProjectStatusReportService : IProjectStatusReportService
             : Result<ProjectStatusReportDto>.Success(MapDetail(report));
     }
 
+    public async Task<Result<ProjectStatusReportComparisonDto>> ComparePublishedReportsAsync(
+        Guid projectId, Guid firstReportId, Guid secondReportId, CancellationToken cancellationToken = default)
+    {
+        if (firstReportId == secondReportId)
+            return Result<ProjectStatusReportComparisonDto>.Failure(Error.Validation("Select two different reports to compare."));
+
+        var firstResult = await GetByIdAsync(projectId, firstReportId, cancellationToken);
+        if (firstResult.IsFailure)
+            return Result<ProjectStatusReportComparisonDto>.Failure(firstResult.Error!);
+        var secondResult = await GetByIdAsync(projectId, secondReportId, cancellationToken);
+        if (secondResult.IsFailure)
+            return Result<ProjectStatusReportComparisonDto>.Failure(secondResult.Error!);
+
+        var reports = new[] { firstResult.Value!, secondResult.Value! };
+        if (reports.Any(report => report.ReportState != ProjectStatusReportState.Published || report.PerformanceSnapshot is null))
+            return Result<ProjectStatusReportComparisonDto>.Failure(Error.Conflict("Only published reports with frozen performance snapshots can be compared."));
+
+        return Result<ProjectStatusReportComparisonDto>.Success(ProjectStatusReportComparison.Build(reports[0], reports[1]));
+    }
+
     public async Task<Result<ProjectStatusReportDto>> CreateAsync(Guid projectId, CreateProjectStatusReportDto dto, string userId, CancellationToken cancellationToken = default)
     {
         var project = await _context.Set<Project>().FirstOrDefaultAsync(x => x.Id == projectId, cancellationToken);
         if (project is null) return Result<ProjectStatusReportDto>.Failure(Error.NotFound("Project not found"));
-        var projectPlanProgress = await _projectPlanProgressLookup.GetAsync(projectId, cancellationToken);
-        var progress = projectPlanProgress ?? dto.OverallProgressPercent ?? project.Progress;
+        var statusDate = (dto.StatusDate ?? dto.ReportDate).Date;
+        var performance = await _projectReportingService.GetPerformanceAsync(projectId, statusDate, cancellationToken: cancellationToken);
+        var progress = performance.IsSuccess ? performance.Value?.OverallProgressPercent : null;
         var validation = ValidateDraft(dto.ReportDate, dto.PeriodFrom, dto.PeriodTo, progress);
         if (validation is not null) return Result<ProjectStatusReportDto>.Failure(validation);
         var latestProjectStatus = await _context.Set<ProjectStatusReport>().AsNoTracking()
@@ -124,6 +163,7 @@ public sealed class ProjectStatusReportService : IProjectStatusReportService
             ReportDate = dto.ReportDate,
             PeriodFrom = dto.PeriodFrom,
             PeriodTo = dto.PeriodTo,
+            StatusDate = statusDate,
             ReportState = ProjectStatusReportState.Draft,
             ProjectLifecycleStatusAtReport = dto.ProjectLifecycleStatusAtReport ?? latestProjectStatus ?? project.Status,
             OverallHealth = dto.OverallHealth ?? project.Health,
@@ -156,14 +196,16 @@ public sealed class ProjectStatusReportService : IProjectStatusReportService
         if (report.ReportState != ProjectStatusReportState.Draft) return Result<ProjectStatusReportDto>.Failure(Error.Conflict("Published status reports are immutable"));
         if (dto.RowVersion is { Length: > 0 }) _context.Entry(report).Property(x => x.RowVersion).OriginalValue = dto.RowVersion;
 
-        var projectPlanProgress = await _projectPlanProgressLookup.GetAsync(projectId, cancellationToken);
-        var progress = projectPlanProgress ?? dto.OverallProgressPercent;
+        var statusDate = (dto.StatusDate ?? dto.ReportDate).Date;
+        var performance = await _projectReportingService.GetPerformanceAsync(projectId, statusDate, cancellationToken: cancellationToken);
+        var progress = performance.IsSuccess ? performance.Value?.OverallProgressPercent : null;
         var validation = ValidateDraft(dto.ReportDate, dto.PeriodFrom, dto.PeriodTo, progress);
         if (validation is not null) return Result<ProjectStatusReportDto>.Failure(validation);
 
         report.ReportDate = dto.ReportDate;
         report.PeriodFrom = dto.PeriodFrom;
         report.PeriodTo = dto.PeriodTo;
+        report.StatusDate = statusDate;
         if (!string.IsNullOrWhiteSpace(dto.ProjectLifecycleStatusAtReport)) report.ProjectLifecycleStatusAtReport = dto.ProjectLifecycleStatusAtReport;
         report.OverallHealth = dto.OverallHealth;
         report.OverallProgressPercent = progress;
@@ -192,36 +234,46 @@ public sealed class ProjectStatusReportService : IProjectStatusReportService
         return await GetByIdAsync(projectId, report.Id, cancellationToken);
     }
 
-    public async Task<Result<ProjectStatusReportDto>> PublishAsync(Guid projectId, Guid reportId, string userId, CancellationToken cancellationToken = default)
+    public async Task<Result<ProjectStatusReportDto>> GenerateAsync(Guid projectId, Guid reportId, string userId, CancellationToken cancellationToken = default)
     {
-        await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
-        var report = await _context.Set<ProjectStatusReport>()
-            .Include(x => x.RiskSnapshots).Include(x => x.IssueSnapshots).Include(x => x.ChangeRequestSnapshots)
-            .FirstOrDefaultAsync(x => x.Id == reportId && x.ProjectId == projectId, cancellationToken);
+        var report = await _context.Set<ProjectStatusReport>().FirstOrDefaultAsync(x => x.Id == reportId && x.ProjectId == projectId, cancellationToken);
         if (report is null) return Result<ProjectStatusReportDto>.Failure(Error.NotFound("Status report not found"));
-        if (report.ReportState != ProjectStatusReportState.Draft) return Result<ProjectStatusReportDto>.Failure(Error.Conflict("Only draft status reports can be published"));
+        if (report.ReportState != ProjectStatusReportState.Draft) return Result<ProjectStatusReportDto>.Failure(Error.Conflict("Only Draft reports can generate a snapshot."));
 
-        var validation = ValidateForPublish(report);
+        var validation = ValidateForGenerate(report);
         if (validation is not null) return Result<ProjectStatusReportDto>.Failure(validation);
         var project = await _context.Set<Project>().FirstOrDefaultAsync(x => x.Id == projectId, cancellationToken);
         if (project is null) return Result<ProjectStatusReportDto>.Failure(Error.NotFound("Project not found"));
 
+        var workflow = await EnsureWorkflowInstanceAsync(report, userId, cancellationToken);
+        if (workflow.IsFailure) return Result<ProjectStatusReportDto>.Failure(workflow.Error!);
+        if (!string.Equals(workflow.Value!.CurrentStateCode, ProjectStatusReportState.Draft.ToString(), StringComparison.OrdinalIgnoreCase))
+            return Result<ProjectStatusReportDto>.Failure(Error.Conflict("The report state and workflow state do not match. Refresh before generating."));
+
+        await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
         var now = DateTime.UtcNow;
         var preparedBy = report.PreparedByUserId ?? ParseUserId(userId);
         var preparedByName = report.PreparedByNameSnapshot ?? await ResolveUserNameAsync(preparedBy, userId, cancellationToken);
-        var publisherName = await ResolveUserNameAsync(ParseUserId(userId), userId, cancellationToken);
-
         var managerName = await ResolveUserNameAsync(project.ProjectManagerId, "System", cancellationToken);
+        var performanceResult = await _projectReportingService.GetPerformanceAsync(projectId, report.StatusDate, cancellationToken: cancellationToken);
+        if (!performanceResult.IsSuccess || performanceResult.Value is null)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return Result<ProjectStatusReportDto>.Failure(performanceResult.Error ?? Error.Validation("Project performance is unavailable for the report status date."));
+        }
+        if (performanceResult.Value.ReportingConfigurationVersion is null || performanceResult.Value.IncludedReportSections.Count == 0)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return Result<ProjectStatusReportDto>.Failure(Error.Conflict("An approved reporting configuration with at least one included section is required before generating the report."));
+        }
+        report.PerformanceSnapshotJson = JsonSerializer.Serialize(performanceResult.Value);
+        report.ReportingConfigurationVersionSnapshot = performanceResult.Value.ReportingConfigurationVersion;
+        report.OverallProgressPercent = performanceResult.Value.OverallProgressPercent;
         CaptureProjectSnapshot(report, project, managerName, preparedBy, preparedByName);
         await CaptureFinancialSnapshotAsync(report, project, cancellationToken);
         await CaptureScheduleSnapshotAsync(report, projectId, cancellationToken);
         await CaptureBaselineSnapshotAsync(report, projectId, cancellationToken);
         await CaptureRelatedSnapshotsAsync(report, projectId, cancellationToken);
-
-        report.ReportState = ProjectStatusReportState.Published;
-        report.PublishedAt = now;
-        report.PublishedByUserId = ParseUserId(userId);
-        report.PublishedByNameSnapshot = publisherName;
         report.SourceDataCapturedAt = now;
         report.PreparedByUserId ??= preparedBy;
         report.PreparedByNameSnapshot ??= preparedByName;
@@ -230,13 +282,12 @@ public sealed class ProjectStatusReportService : IProjectStatusReportService
 
         try
         {
-            await _context.SaveChangesAsync(cancellationToken);
-            await _auditService.LogAsync(new AuditEntry
+            var transition = await ExecuteWorkflowTransitionAsync(report, workflow.Value, ProjectStatusReportWorkflow.Generate, userId, cancellationToken);
+            if (transition.IsFailure)
             {
-                EntityType = "ProjectStatusReport", EntityId = report.Id, Action = "Publish", UserId = ParseUserId(userId),
-                NewValues = System.Text.Json.JsonSerializer.Serialize(new { report.ReportState, report.SourceDataCapturedAt }),
-                Timestamp = now, CreatedBy = userId
-            }, cancellationToken);
+                await transaction.RollbackAsync(cancellationToken);
+                return Result<ProjectStatusReportDto>.Failure(transition.Error!);
+            }
             await transaction.CommitAsync(cancellationToken);
         }
         catch (DbUpdateConcurrencyException)
@@ -245,7 +296,81 @@ public sealed class ProjectStatusReportService : IProjectStatusReportService
             return Result<ProjectStatusReportDto>.Failure(Error.Conflict("Status report was changed by another user"));
         }
 
-        return Result<ProjectStatusReportDto>.Success(MapDetail(report));
+        return await GetByIdAsync(projectId, report.Id, cancellationToken);
+    }
+
+    public Task<Result<ProjectStatusReportDto>> SubmitAsync(Guid projectId, Guid reportId, string userId, CancellationToken cancellationToken = default) =>
+        TransitionAsync(projectId, reportId, ProjectStatusReportWorkflow.Submit, userId, cancellationToken);
+
+    public Task<Result<ProjectStatusReportDto>> ApproveAsync(Guid projectId, Guid reportId, string userId, CancellationToken cancellationToken = default) =>
+        TransitionAsync(projectId, reportId, ProjectStatusReportWorkflow.Approve, userId, cancellationToken);
+
+    public Task<Result<ProjectStatusReportDto>> ReturnAsync(Guid projectId, Guid reportId, string userId, CancellationToken cancellationToken = default) =>
+        TransitionAsync(projectId, reportId, ProjectStatusReportWorkflow.Return, userId, cancellationToken);
+
+    public Task<Result<ProjectStatusReportDto>> ReopenAsync(Guid projectId, Guid reportId, string userId, CancellationToken cancellationToken = default) =>
+        TransitionAsync(projectId, reportId, ProjectStatusReportWorkflow.Reopen, userId, cancellationToken);
+
+    public Task<Result<ProjectStatusReportDto>> PublishAsync(Guid projectId, Guid reportId, string userId, CancellationToken cancellationToken = default) =>
+        TransitionAsync(projectId, reportId, ProjectStatusReportWorkflow.Publish, userId, cancellationToken);
+
+    private async Task<Result<ProjectStatusReportDto>> TransitionAsync(Guid projectId, Guid reportId, string transitionCode, string userId, CancellationToken cancellationToken)
+    {
+        var report = await _context.Set<ProjectStatusReport>().AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == reportId && x.ProjectId == projectId, cancellationToken);
+        if (report is null) return Result<ProjectStatusReportDto>.Failure(Error.NotFound("Status report not found"));
+        var workflow = await EnsureWorkflowInstanceAsync(report, userId, cancellationToken);
+        if (workflow.IsFailure) return Result<ProjectStatusReportDto>.Failure(workflow.Error!);
+        if (!string.Equals(workflow.Value!.CurrentStateCode, report.ReportState.ToString(), StringComparison.OrdinalIgnoreCase))
+            return Result<ProjectStatusReportDto>.Failure(Error.Conflict("The report state and workflow state do not match. Refresh before continuing."));
+        var result = await ExecuteWorkflowTransitionAsync(report, workflow.Value, transitionCode, userId, cancellationToken);
+        if (result.IsFailure) return Result<ProjectStatusReportDto>.Failure(result.Error!);
+        return await GetByIdAsync(projectId, reportId, cancellationToken);
+    }
+
+    private async Task<Result<WorkflowInstanceSummary>> EnsureWorkflowInstanceAsync(ProjectStatusReport report, string userId, CancellationToken cancellationToken)
+    {
+        var execution = BuildWorkflowContext(userId);
+        if (execution.TenantId == Guid.Empty || execution.TenantId != report.TenantId)
+            return Result<WorkflowInstanceSummary>.Failure(Error.Forbidden("The authenticated tenant does not own this report."));
+        var existing = await _workflowInstances.GetInstanceAsync(ProjectStatusReportWorkflow.EntityType, report.Id, execution, cancellationToken);
+        if (existing.IsFailure) return Result<WorkflowInstanceSummary>.Failure(existing.Error!);
+        if (existing.Value is { } currentInstance) return Result<WorkflowInstanceSummary>.Success(currentInstance);
+        var definition = await _workflowProvisioning.EnsureAsync(report.TenantId, userId, cancellationToken);
+        if (definition.IsFailure) return Result<WorkflowInstanceSummary>.Failure(definition.Error!);
+        return await _workflowInstances.ProvisionAsync(ProjectStatusReportWorkflow.EntityType, report.Id,
+            definition.Value!.DefinitionId, definition.Value.VersionId, execution, cancellationToken);
+    }
+
+    private async Task<Result<WorkflowTransitionResult>> ExecuteWorkflowTransitionAsync(ProjectStatusReport report,
+        WorkflowInstanceSummary workflow, string transitionCode, string userId, CancellationToken cancellationToken)
+    {
+        var execution = BuildWorkflowContext(userId);
+        return await _workflowExecution.ExecuteTransitionAsync(new WorkflowTransitionRequest(
+            ProjectStatusReportWorkflow.EntityType, report.Id, transitionCode,
+            ExpectedStateCode: workflow.CurrentStateCode, ExpectedRowVersion: workflow.RowVersion,
+            CorrelationId: execution.CorrelationId), execution, cancellationToken);
+    }
+
+    private WorkflowExecutionContext BuildWorkflowContext(string userId)
+    {
+        var principal = _httpContextAccessor.HttpContext?.User;
+        var tenantId = Guid.TryParse(principal?.FindFirst("tenantId")?.Value, out var parsedTenant) ? parsedTenant : Guid.Empty;
+        var effectiveReadOnly = principal?.FindFirst("readOnly")?.Value == "true"
+            || principal?.FindFirst("viewAs")?.Value == "true"
+            || _managementContextAccessor.Current?.EffectiveReadOnly == true;
+        return new WorkflowExecutionContext(
+            tenantId,
+            userId,
+            principal?.FindFirst(ClaimTypes.Name)?.Value ?? principal?.FindFirst("name")?.Value,
+            effectiveReadOnly,
+            _httpContextAccessor.HttpContext?.Request.Headers["X-Correlation-ID"].FirstOrDefault(),
+            null,
+            new Dictionary<string, string?>
+            {
+                ["permissions"] = principal?.FindFirst("permissions")?.Value,
+                ["roles"] = principal?.FindFirst("roles")?.Value
+            });
     }
 
     public async Task<Result> DeleteAsync(Guid projectId, Guid reportId, string userId, CancellationToken cancellationToken = default)
@@ -390,19 +515,19 @@ public sealed class ProjectStatusReportService : IProjectStatusReportService
         return null;
     }
 
-    private static Error? ValidateForPublish(ProjectStatusReport report)
+    private static Error? ValidateForGenerate(ProjectStatusReport report)
     {
         var draftValidation = ValidateDraft(report.ReportDate, report.PeriodFrom, report.PeriodTo, report.OverallProgressPercent);
         if (draftValidation is not null) return draftValidation;
         var healthValues = new[] { report.OverallHealth, report.ScheduleHealth, report.CostHealth, report.ScopeHealth, report.QualityHealth, report.ResourceHealth };
-        if (healthValues.Any(x => string.IsNullOrWhiteSpace(x) || !HealthValues.Contains(x, StringComparer.OrdinalIgnoreCase))) return Error.Validation("All health dimensions must be Green, Amber, or Red before publishing");
-        if (string.IsNullOrWhiteSpace(report.ExecutiveSummary)) return Error.Validation("Executive summary is required before publishing");
+        if (healthValues.Any(x => string.IsNullOrWhiteSpace(x) || !HealthValues.Contains(x, StringComparer.OrdinalIgnoreCase))) return Error.Validation("All health dimensions must be Green, Amber, or Red before generating the report snapshot.");
+        if (string.IsNullOrWhiteSpace(report.ExecutiveSummary)) return Error.Validation("Executive summary is required before generating the report snapshot.");
         return null;
     }
 
     private static ProjectStatusReportDto MapDetail(ProjectStatusReport x) => new()
     {
-        Id = x.Id, ProjectId = x.ProjectId, ReportDate = x.ReportDate, PeriodFrom = x.PeriodFrom, PeriodTo = x.PeriodTo,
+        Id = x.Id, ProjectId = x.ProjectId, ReportDate = x.ReportDate, PeriodFrom = x.PeriodFrom, PeriodTo = x.PeriodTo, StatusDate = x.StatusDate,
         ReportState = x.ReportState, OverallHealth = x.OverallHealth, OverallProgressPercent = x.OverallProgressPercent,
         PreparedByNameSnapshot = x.PreparedByNameSnapshot, PublishedAt = x.PublishedAt, ProjectNameSnapshot = x.ProjectNameSnapshot,
         ProjectCodeSnapshot = x.ProjectCodeSnapshot, ProjectManagerIdAtReport = x.ProjectManagerIdAtReport, ProjectManagerNameSnapshot = x.ProjectManagerNameSnapshot,
@@ -410,7 +535,9 @@ public sealed class ProjectStatusReportService : IProjectStatusReportService
         ScopeHealth = x.ScopeHealth, QualityHealth = x.QualityHealth, ResourceHealth = x.ResourceHealth, ExecutiveSummary = x.ExecutiveSummary,
         KeyAchievements = x.KeyAchievements, ChallengesConcerns = x.ChallengesConcerns, NextPeriodPriorities = x.NextPeriodPriorities,
         PreparedByUserId = x.PreparedByUserId, PublishedByUserId = x.PublishedByUserId, PublishedByNameSnapshot = x.PublishedByNameSnapshot,
-        SourceDataCapturedAt = x.SourceDataCapturedAt, CurrencyCodeSnapshot = x.CurrencyCodeSnapshot, BudgetAmountSnapshot = x.BudgetAmountSnapshot,
+        SourceDataCapturedAt = x.SourceDataCapturedAt, ReportingConfigurationVersionSnapshot = x.ReportingConfigurationVersionSnapshot,
+        IncludedSectionsSnapshot = DeserializePerformanceSnapshot(x.PerformanceSnapshotJson)?.IncludedReportSections ?? [],
+        PerformanceSnapshot = DeserializePerformanceSnapshot(x.PerformanceSnapshotJson), CurrencyCodeSnapshot = x.CurrencyCodeSnapshot, BudgetAmountSnapshot = x.BudgetAmountSnapshot,
         ActualCostAmountSnapshot = x.ActualCostAmountSnapshot, CommittedCostAmountSnapshot = x.CommittedCostAmountSnapshot,
         ForecastCostAmountSnapshot = x.ForecastCostAmountSnapshot, CostVarianceAmountSnapshot = x.CostVarianceAmountSnapshot,
         ScheduleVarianceDaysSnapshot = x.ScheduleVarianceDaysSnapshot, ScheduleVariancePercentSnapshot = x.ScheduleVariancePercentSnapshot,
@@ -434,6 +561,13 @@ public sealed class ProjectStatusReportService : IProjectStatusReportService
         }).ToList(),
         RowVersion = x.RowVersion
     };
+
+    private static ProjectPerformanceDto? DeserializePerformanceSnapshot(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return null;
+        try { return JsonSerializer.Deserialize<ProjectPerformanceDto>(json); }
+        catch (JsonException) { return null; }
+    }
 
     private static Guid? ParseUserId(string userId) => Guid.TryParse(userId, out var id) ? id : null;
     private static int RiskLevelRank(RiskLevel value) => value switch { RiskLevel.Critical => 4, RiskLevel.High => 3, RiskLevel.Medium => 2, _ => 1 };

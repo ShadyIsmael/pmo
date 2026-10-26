@@ -14,9 +14,9 @@ public sealed class PlanImportSessionConfiguration : IEntityTypeConfiguration<Pl
         builder.Property(item => item.Format).HasMaxLength(50).IsRequired();
         builder.Property(item => item.SuggestedPlanName).HasMaxLength(250).IsRequired();
         builder.Property(item => item.Status).HasConversion<string>().HasMaxLength(40).IsRequired();
-        builder.Property(item => item.ParsedDocumentJson).HasColumnType("nvarchar(max)").IsRequired();
-        builder.Property(item => item.ResolutionJson).HasColumnType("nvarchar(max)").IsRequired();
-        builder.Property(item => item.CommitResultJson).HasColumnType("nvarchar(max)");
+        builder.Property(item => item.ParsedDocumentJson).IsRequired();
+        builder.Property(item => item.ResolutionJson).IsRequired();
+        builder.Property(item => item.CommitResultJson);
         builder.HasIndex(item => new { item.TenantId, item.ProjectId, item.Status });
         builder.HasMany(item => item.Issues)
             .WithOne(issue => issue.PlanImportSession)

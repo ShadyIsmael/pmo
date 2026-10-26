@@ -1,7 +1,7 @@
 import * as React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { AuthProvider } from "../auth/AuthProvider";
 import { ManagementProvider } from "../api/management";
@@ -45,7 +45,7 @@ describe("Directory Integration permission access", () => {
     );
 
     render(<MemoryRouter initialEntries={["/administration/integrations/directory"]}><AppRoutes /></MemoryRouter>, { wrapper: Wrapper });
-    await waitFor(() => expect(screen.getAllByText(/No directory connections are configured yet/).length).toBeGreaterThan(0));
+    expect((await screen.findAllByText(/No directory connections are configured yet/, {}, { timeout: 5000 })).length).toBeGreaterThan(0);
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/directory-integrations/connections"))).toBe(true);
   });
 });

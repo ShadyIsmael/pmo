@@ -39,6 +39,20 @@ public class UpdatePlanWbsNodeDto
     public byte[] RowVersion { get; set; } = Array.Empty<byte>();
 }
 
+/// <summary>A bounded, atomic set of WBS hierarchy placements for the active Working version.</summary>
+public sealed class BulkUpdatePlanWbsPlacementsDto
+{
+    public List<PlanWbsPlacementItemDto> Items { get; set; } = [];
+}
+
+public sealed class PlanWbsPlacementItemDto
+{
+    public Guid NodeId { get; set; }
+    public Guid? ParentWbsId { get; set; }
+    public int SortOrder { get; set; }
+    public byte[] RowVersion { get; set; } = [];
+}
+
 /// <summary>
 /// Projection of a single <see cref="PlanWbsNode"/> including its children,
 /// forming the WBS tree.

@@ -81,6 +81,7 @@ public sealed class ProgramDeliverySummaryDto
 public sealed class ProgramProjectManagementDto
 {
     public Guid Id { get; init; }
+    public Guid PublicId { get; init; }
     public string Name { get; init; } = string.Empty;
     public string Code { get; init; } = string.Empty;
     public string Status { get; init; } = string.Empty;
@@ -123,6 +124,7 @@ public sealed class ProgramFinancialCurrencyGroupDto
 public sealed class ProgramFinancialProjectDto
 {
     public Guid ProjectId { get; init; }
+    public Guid ProjectPublicId { get; init; }
     public string ProjectName { get; init; } = string.Empty;
     public decimal Budget { get; init; }
     public decimal Actual { get; init; }
@@ -141,6 +143,7 @@ public sealed class ProgramRiskDto
 {
     public Guid Id { get; init; }
     public Guid ProjectId { get; init; }
+    public Guid ProjectPublicId { get; init; }
     public string ProjectName { get; init; } = string.Empty;
     public string Title { get; init; } = string.Empty;
     public string Severity { get; init; } = string.Empty;
@@ -159,6 +162,7 @@ public sealed class ProgramIssueDto
 {
     public Guid Id { get; init; }
     public Guid ProjectId { get; init; }
+    public Guid ProjectPublicId { get; init; }
     public string ProjectName { get; init; } = string.Empty;
     public string Title { get; init; } = string.Empty;
     public string Severity { get; init; } = string.Empty;
@@ -189,6 +193,7 @@ public sealed class ProgramResourcePressureDto
 public sealed class ProgramResourceProjectDto
 {
     public Guid ProjectId { get; init; }
+    public Guid ProjectPublicId { get; init; }
     public string ProjectName { get; init; } = string.Empty;
     public decimal AllocationPercentage { get; init; }
 }
@@ -206,6 +211,7 @@ public sealed class ProgramStatusReportSummaryDto
 public sealed class ProgramStatusReportDto
 {
     public Guid ProjectId { get; init; }
+    public Guid ProjectPublicId { get; init; }
     public string ProjectName { get; init; } = string.Empty;
     public DateTime ReportDate { get; init; }
     public string? Health { get; init; }
@@ -217,6 +223,7 @@ public sealed class ProgramMilestoneDto
 {
     public Guid Id { get; init; }
     public Guid ProjectId { get; init; }
+    public Guid ProjectPublicId { get; init; }
     public string ProjectName { get; init; } = string.Empty;
     public string Name { get; init; } = string.Empty;
     public DateTime? DueDate { get; init; }
@@ -231,6 +238,7 @@ public sealed class ProgramAttentionItemDto
     public string Kind { get; init; } = string.Empty;
     public string Message { get; init; } = string.Empty;
     public Guid? ProjectId { get; init; }
+    public Guid? ProjectPublicId { get; init; }
     public Guid? ItemId { get; init; }
 }
 
@@ -238,6 +246,7 @@ public sealed class ProgramMeetingDto
 {
     public Guid Id { get; init; }
     public Guid? ProjectId { get; init; }
+    public Guid? ProjectPublicId { get; set; }
     public string? ProjectName { get; set; }
     public string Title { get; init; } = string.Empty;
     public DateTime StartTime { get; init; }

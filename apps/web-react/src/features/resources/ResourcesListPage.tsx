@@ -1,5 +1,5 @@
 import * as React from "react";
-import { useResource, useResources, useCreateResource, useUpdateResource, useDeleteResource, useBaseCalendars, type ResourceDto, type ResourceBaseCalendarDto } from "./api/resources";
+import { useResource, useResources, useCreateResource, useUpdateResource, useDeleteResource, useBaseCalendars, useResourceReferenceData, type ResourceDto, type ResourceBaseCalendarDto, type ResourceReferenceDataDto, type ResourceTypeOptionDto } from "./api/resources";
 import { useOrganizationUnits } from "../organization/api/organization";
 import { useUserLookup, type UserLookupDto } from "../projects/lib/project-lookups";
 import { useVendors, type VendorDto } from "../vendors/api/vendors";
@@ -20,6 +20,13 @@ import { SideSheet, SideSheetBody, SideSheetFooter } from "@components/ui/SideSh
 import { dialogValuesToResourceForm, toCreateResourcePayload, toUpdateResourcePayload, validateResourceForm } from "./resource-form";
 import { emptyResourceFormValues, ResourceFormSections, type ResourceFormValues } from "./ResourceFormSections";
 import { ResourceFinderDialog } from "./ResourceFinderDialog";
+import { ResourceCostProfilesSheet } from "./ResourceCostProfilesSheet";
+
+function getResourceTypeLabel(code: string | undefined, options: ResourceTypeOptionDto[], locale: string) {
+  if (!code) return "";
+  const option = options.find((item) => item.code === code);
+  return option ? (locale === "ar" ? option.nameAr : option.nameEn) : code;
+}
 
 interface ResourceTableRowProps {
   resource: ResourceDto;
@@ -28,11 +35,13 @@ interface ResourceTableRowProps {
   onDelete: (resource: ResourceDto) => void;
   canEdit: boolean;
   canDelete: boolean;
+  resourceTypes: ResourceTypeOptionDto[];
+  locale: string;
 }
 
-function ResourceTableRow({ resource, onEdit, onView, onDelete, canEdit, canDelete }: ResourceTableRowProps) {
+function ResourceTableRow({ resource, onEdit, onView, onDelete, canEdit, canDelete, resourceTypes, locale }: ResourceTableRowProps) {
   const { t } = useI18n();
-  const typeLabel = resource.type === "Staff" ? t("resources.directory.staff") : t("resources.directory.vendorResource");
+  const typeLabel = getResourceTypeLabel(resource.type, resourceTypes, locale);
   const statusLabel = resource.isActive ? t("resources.directory.active") : t("resources.directory.inactive");
 
   return (
@@ -59,7 +68,7 @@ function ResourceTableRow({ resource, onEdit, onView, onDelete, canEdit, canDele
   );
 }
 
-function ResourceDetailsSheet({ resource, detail, loading, error, onRetry, onClose, onEdit, canEdit }: {
+function ResourceDetailsSheet({ resource, detail, loading, error, onRetry, onClose, onEdit, onManageCostProfiles, canEdit, canViewCostProfiles, resourceTypes, seniorityLevels, locale }: {
   resource: ResourceDto | null;
   detail?: ResourceDto;
   loading: boolean;
@@ -67,11 +76,18 @@ function ResourceDetailsSheet({ resource, detail, loading, error, onRetry, onClo
   onRetry: () => void;
   onClose: () => void;
   onEdit: (resource: ResourceDto) => void;
+  onManageCostProfiles: (resource: ResourceDto) => void;
   canEdit: boolean;
+  canViewCostProfiles: boolean;
+  resourceTypes: ResourceTypeOptionDto[];
+  seniorityLevels: ResourceReferenceDataDto["seniorityLevels"];
+  locale: string;
 }) {
   const { t } = useI18n();
   const record = detail ?? resource;
-  const typeLabel = record?.type === "VendorResource" ? t("resources.directory.vendorResource") : t("resources.directory.staff");
+  const typeLabel = record ? getResourceTypeLabel(record.type, resourceTypes, locale) : "";
+  const seniority = record?.seniority ? seniorityLevels.find((level) => level.code === record.seniority) : undefined;
+  const seniorityLabel = seniority ? (locale === "ar" ? seniority.nameAr : seniority.nameEn) : record?.seniority;
   const statusLabel = record?.isActive ? t("resources.directory.active") : t("resources.directory.inactive");
   return (
     <SideSheet open={Boolean(resource)} onOpenChange={(open) => { if (!open) onClose(); }} title={record?.name ?? t("resources.directory.detailsTitle")} description={t("resources.directory.detailsDescription")}>
@@ -88,11 +104,14 @@ function ResourceDetailsSheet({ resource, detail, loading, error, onRetry, onClo
               <div><dt className="text-muted-foreground">{t("resources.directory.organization")}</dt><dd>{record.primaryOrganizationalUnitName || record.departmentName || t("resources.directory.notProvided")}</dd></div>
               <div><dt className="text-muted-foreground">{t("resources.directory.vendor")}</dt><dd>{record.vendorName || t("resources.directory.notProvided")}</dd></div>
               <div><dt className="text-muted-foreground">{t("resources.directory.baseCalendar")}</dt><dd>{record.baseCalendarName || t("resources.directory.notProvided")}</dd></div>
-              <div><dt className="text-muted-foreground">{t("resources.directory.employmentType")}</dt><dd>{record.employmentType || t("resources.directory.notProvided")}</dd></div>
-              <div><dt className="text-muted-foreground">{t("resources.directory.seniority")}</dt><dd>{record.seniority || t("resources.directory.notProvided")}</dd></div>
+              <div><dt className="text-muted-foreground">{t("resources.directory.seniority")}</dt><dd>{seniorityLabel || t("resources.directory.notProvided")}</dd></div>
             </dl>
             {record.notes ? <div className="mt-3 border-t pt-3 text-sm"><p className="text-muted-foreground">{t("resources.directory.notes")}</p><p className="whitespace-pre-wrap">{record.notes}</p></div> : null}
           </section>
+          {canViewCostProfiles && record ? <section className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4">
+            <div><h3 className="text-sm font-semibold">{t("resources.costProfiles.sectionTitle")}</h3><p className="mt-1 text-xs text-muted-foreground">{t("resources.costProfiles.sectionDescription")}</p></div>
+            <Button type="button" size="sm" variant="outline" onClick={() => onManageCostProfiles(record)}>{t("resources.costProfiles.openAction")}</Button>
+          </section> : null}
           <section>
             <h3 className="mb-2 text-sm font-semibold">{t("resources.directory.allocations")}</h3>
             {record.allocations?.length ? <div className="space-y-2">{record.allocations.map((allocation) => <div key={allocation.id} className="rounded-lg border p-3 text-sm"><div className="flex items-center justify-between gap-2"><span className="font-medium">{allocation.projectName || t("resources.directory.unassignedProject")}</span><span className={`text-xs font-medium ${getStatusTextClass(allocation.status ?? "Tentative")}`}>{t(`resources.directory.${(allocation.status ?? "tentative").toLowerCase()}`)}</span></div><p className="mt-1 text-xs text-muted-foreground">{allocation.role} · {allocation.allocationPercentage}% · {allocation.startDate.slice(0, 10)} – {allocation.endDate.slice(0, 10)}</p></div>)}</div> : <p className="text-sm text-muted-foreground">{t("resources.directory.noAllocations")}</p>}
@@ -104,9 +123,9 @@ function ResourceDetailsSheet({ resource, detail, loading, error, onRetry, onClo
   );
 }
 
-type ResourceLookups = { calendars?: ResourceBaseCalendarDto[]; units?: { id: string; name: string; code?: string; isActive?: boolean }[]; users?: UserLookupDto[]; vendors?: VendorDto[]; calendarsLoading?: boolean; usersLoading?: boolean; vendorsLoading?: boolean };
+type ResourceLookups = { calendars?: ResourceBaseCalendarDto[]; referenceData?: ResourceReferenceDataDto; referenceDataLoading?: boolean; referenceDataError?: boolean; units?: { id: string; name: string; code?: string; isActive?: boolean }[]; users?: UserLookupDto[]; vendors?: VendorDto[]; calendarsLoading?: boolean; usersLoading?: boolean; vendorsLoading?: boolean };
 
-function CreateResourceDialog({ open, onOpenChange, onSubmit, calendars, units, users, vendors, calendarsLoading, usersLoading, vendorsLoading, isPending, error }: { open: boolean; onOpenChange: (open: boolean) => void; onSubmit: (data: Record<string, string>) => void; isPending: boolean; error?: string } & ResourceLookups) {
+function CreateResourceDialog({ open, onOpenChange, onSubmit, calendars, referenceData, referenceDataLoading, referenceDataError, units, users, vendors, calendarsLoading, usersLoading, vendorsLoading, isPending, error }: { open: boolean; onOpenChange: (open: boolean) => void; onSubmit: (data: Record<string, string>) => void; isPending: boolean; error?: string } & ResourceLookups) {
   const { t } = useI18n();
   const [formData, setFormData] = React.useState<ResourceFormValues>(emptyResourceFormValues);
   const [submitted, setSubmitted] = React.useState(false);
@@ -117,12 +136,20 @@ function CreateResourceDialog({ open, onOpenChange, onSubmit, calendars, units, 
     setSubmitted(false);
   }, [open]);
 
+  React.useEffect(() => {
+    if (!open || !referenceData?.resourceTypes.length) return;
+    setFormData((current) => current.resourceType ? current : {
+      ...current,
+      resourceType: referenceData.resourceTypes.find((type) => type.isDefault)?.code ?? referenceData.resourceTypes[0].code,
+    });
+  }, [open, referenceData]);
+
   if (!open) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitted(true);
-    if (Object.values(validateResourceForm(dialogValuesToResourceForm(formData))).some(Boolean)) return;
+    if (Object.values(validateResourceForm(dialogValuesToResourceForm(formData, referenceData?.resourceTypes))).some(Boolean)) return;
     onSubmit(formData);
   };
 
@@ -131,18 +158,18 @@ function CreateResourceDialog({ open, onOpenChange, onSubmit, calendars, units, 
         <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
           <SideSheetBody>
             {error ? <p role="alert" className="mb-4 text-sm text-destructive">{error}</p> : null}
-            <ResourceFormSections values={formData} setValues={setFormData} calendars={calendars} units={units} users={users} vendors={vendors} calendarsLoading={calendarsLoading} usersLoading={usersLoading} vendorsLoading={vendorsLoading} submitted={submitted} />
+            <ResourceFormSections values={formData} setValues={setFormData} calendars={calendars} referenceData={referenceData} referenceDataLoading={referenceDataLoading} referenceDataError={referenceDataError} units={units} users={users} vendors={vendors} calendarsLoading={calendarsLoading} usersLoading={usersLoading} vendorsLoading={vendorsLoading} submitted={submitted} />
           </SideSheetBody>
           <SideSheetFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>{t("common.cancel")}</Button>
-            <Button type="submit" disabled={isPending || !formData.name.trim()}>{isPending ? t("common.saving") : t("common.create")}</Button>
+            <Button type="submit" disabled={isPending || !formData.name.trim() || !referenceData?.resourceTypes.length}>{isPending ? t("common.saving") : t("common.create")}</Button>
           </SideSheetFooter>
         </form>
     </SideSheet>
   );
 }
 
-function EditResourceDialog({ open, onOpenChange, resource, onSubmit, calendars, units, users, vendors, calendarsLoading, usersLoading, vendorsLoading, isPending, error }: { open: boolean; onOpenChange: (open: boolean) => void; resource: ResourceDto | null; onSubmit: (data: Record<string, string> & { id: string }) => void; isPending: boolean; error?: string } & ResourceLookups) {
+function EditResourceDialog({ open, onOpenChange, resource, onSubmit, calendars, referenceData, referenceDataLoading, referenceDataError, units, users, vendors, calendarsLoading, usersLoading, vendorsLoading, isPending, error }: { open: boolean; onOpenChange: (open: boolean) => void; resource: ResourceDto | null; onSubmit: (data: Record<string, string> & { id: string }) => void; isPending: boolean; error?: string } & ResourceLookups) {
   const { t } = useI18n();
   const [formData, setFormData] = React.useState<ResourceFormValues>(emptyResourceFormValues);
   const [submitted, setSubmitted] = React.useState(false);
@@ -151,9 +178,9 @@ function EditResourceDialog({ open, onOpenChange, resource, onSubmit, calendars,
     if (!resource) return;
     setFormData({
       name: resource.name ?? "", email: resource.email ?? "", phone: resource.phone ?? "", jobTitle: resource.jobTitle ?? "",
-      employeeId: resource.employeeId ?? "", organizationalUnitId: resource.primaryOrganizationalUnitId ?? "",
-      resourceType: resource.type === "VendorResource" ? "VendorResource" : "Staff", status: resource.isActive ? "Active" : "Inactive", vendorId: resource.vendorId ?? "",
-      baseCalendarId: resource.baseCalendarId ?? "", systemUserId: resource.userId ?? "", employmentType: resource.employmentType ?? "",
+      organizationalUnitId: resource.primaryOrganizationalUnitId ?? "",
+      resourceType: resource.type ?? "", status: resource.isActive ? "Active" : "Inactive", vendorId: resource.vendorId ?? "",
+      baseCalendarId: resource.baseCalendarId ?? "", systemUserId: resource.userId ?? "",
       seniority: resource.seniority ?? "", notes: resource.notes ?? "",
     });
     setSubmitted(false);
@@ -164,7 +191,7 @@ function EditResourceDialog({ open, onOpenChange, resource, onSubmit, calendars,
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitted(true);
-    if (Object.values(validateResourceForm(dialogValuesToResourceForm(formData))).some(Boolean)) return;
+    if (Object.values(validateResourceForm(dialogValuesToResourceForm(formData, referenceData?.resourceTypes))).some(Boolean)) return;
     onSubmit({ id: resource.id, ...formData });
   };
 
@@ -173,7 +200,7 @@ function EditResourceDialog({ open, onOpenChange, resource, onSubmit, calendars,
         <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
           <SideSheetBody>
             {error ? <p role="alert" className="mb-4 text-sm text-destructive">{error}</p> : null}
-            <ResourceFormSections values={formData} setValues={setFormData} calendars={calendars} units={units} users={users} vendors={vendors} calendarsLoading={calendarsLoading} usersLoading={usersLoading} vendorsLoading={vendorsLoading} readOnlyType currentVendorId={resource.vendorId} submitted={submitted} />
+            <ResourceFormSections values={formData} setValues={setFormData} calendars={calendars} referenceData={referenceData} referenceDataLoading={referenceDataLoading} referenceDataError={referenceDataError} units={units} users={users} vendors={vendors} calendarsLoading={calendarsLoading} usersLoading={usersLoading} vendorsLoading={vendorsLoading} readOnlyType currentVendorId={resource.vendorId} submitted={submitted} />
           </SideSheetBody>
           <SideSheetFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>{t("common.cancel")}</Button>
@@ -185,7 +212,7 @@ function EditResourceDialog({ open, onOpenChange, resource, onSubmit, calendars,
 }
 
 export function ResourcesListPage() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { user } = useAuth();
   const { canMutate, effectiveReadOnly } = useManagement();
   const canView = Boolean(user && hasPermission(user.permissions, Permissions.Resources.View));
@@ -194,6 +221,8 @@ export function ResourcesListPage() {
   const canCreate = hasAnyPermission(permissions, [Permissions.Resources.Create, Permissions.Resources.Manage]) && mutable;
   const canEdit = hasAnyPermission(permissions, [Permissions.Resources.Edit, Permissions.Resources.Manage]) && mutable;
   const canDelete = hasAnyPermission(permissions, [Permissions.Resources.Delete, Permissions.Resources.Manage]) && mutable;
+  const canViewCostProfiles = hasAnyPermission(permissions, [Permissions.Resources.ViewCostRate, Permissions.Resources.EditCostRate, Permissions.Resources.ManageRates, Permissions.Resources.Manage]);
+  const canManageCostProfiles = hasAnyPermission(permissions, [Permissions.Resources.EditCostRate, Permissions.Resources.ManageRates, Permissions.Resources.Manage]) && mutable;
 
   const [filters, setFilters] = React.useState({
     search: "",
@@ -206,6 +235,7 @@ export function ResourcesListPage() {
   const [createOpen, setCreateOpen] = React.useState(false);
   const [editResource, setEditResource] = React.useState<ResourceDto | null>(null);
   const [detailResource, setDetailResource] = React.useState<ResourceDto | null>(null);
+  const [costProfileResource, setCostProfileResource] = React.useState<ResourceDto | null>(null);
   const [confirmResource, setConfirmResource] = React.useState<ResourceDto | null>(null);
 
   const query = useResources({ ...filters, search: filters.search.trim() || undefined, type: filters.type || undefined, status: filters.status || undefined, isActive: filters.status ? filters.status === "Active" : undefined, userId: filters.systemUserId || undefined }, canView);
@@ -214,9 +244,12 @@ export function ResourcesListPage() {
   const deleteMutation = useDeleteResource();
   const detailQuery = useResource(detailResource?.id ?? "");
   const calendarsQuery = useBaseCalendars(canView);
+  const referenceDataQuery = useResourceReferenceData(canView);
   const usersQuery = useUserLookup(undefined, canView);
   const unitsQuery = useOrganizationUnits(canView);
   const vendorsQuery = useVendors(undefined, undefined, "all", canView && (createOpen || Boolean(editResource)));
+  const resourceTypes = referenceDataQuery.data?.resourceTypes ?? [];
+  const seniorityLevels = referenceDataQuery.data?.seniorityLevels ?? [];
   const mutationError = createMutation.error ?? updateMutation.error ?? deleteMutation.error;
 
   const handleFilterChange = (newFilters: typeof filters) => {
@@ -224,13 +257,13 @@ export function ResourcesListPage() {
   };
 
   const handleCreate = (data: Record<string, string>) => {
-    createMutation.mutate(toCreateResourcePayload(dialogValuesToResourceForm(data)), {
+    createMutation.mutate(toCreateResourcePayload(dialogValuesToResourceForm(data, resourceTypes)), {
       onSuccess: () => setCreateOpen(false),
     });
   };
 
   const handleUpdate = (data: Record<string, string> & { id: string }) => {
-    updateMutation.mutate({ id: data.id, data: toUpdateResourcePayload(dialogValuesToResourceForm(data)) }, {
+    updateMutation.mutate({ id: data.id, data: toUpdateResourcePayload(dialogValuesToResourceForm(data, resourceTypes)) }, {
       onSuccess: () => setEditResource(null),
     });
   };
@@ -277,8 +310,7 @@ export function ResourcesListPage() {
                   <SelectTrigger className="w-full"><SelectValue placeholder={t("resources.directory.allTypes")} /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="">{t("resources.directory.allTypes")}</SelectItem>
-                    <SelectItem value="Staff">{t("resources.directory.staff")}</SelectItem>
-                    <SelectItem value="VendorResource">{t("resources.directory.vendorResource")}</SelectItem>
+                    {resourceTypes.map((type) => <SelectItem key={type.code} value={type.code}>{locale === "ar" ? type.nameAr : type.nameEn}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
@@ -339,6 +371,8 @@ export function ResourcesListPage() {
                     onDelete={setConfirmResource}
                     canEdit={canEdit}
                     canDelete={canDelete}
+                    resourceTypes={resourceTypes}
+                    locale={locale}
                   />
                 ))}
                 {query.data?.items.length === 0 ? (
@@ -365,10 +399,11 @@ export function ResourcesListPage() {
       </Card>
 
           {mutationError && !createOpen && !editResource ? <p className="text-sm text-destructive" role="alert">{mutationError instanceof Error ? mutationError.message : t("resources.directory.mutationError")}</p> : null}
-      <CreateResourceDialog open={createOpen} onOpenChange={setCreateOpen} onSubmit={handleCreate} calendars={calendarsQuery.data} units={unitsQuery.data} users={usersQuery.data} vendors={vendorsQuery.data?.items} calendarsLoading={calendarsQuery.isLoading} usersLoading={usersQuery.isLoading} vendorsLoading={vendorsQuery.isLoading} isPending={createMutation.isPending} error={createMutation.error ? createMutation.error instanceof Error ? createMutation.error.message : t("resources.directory.mutationError") : undefined} />
-      <EditResourceDialog open={!!editResource} onOpenChange={(open) => { if (!open) setEditResource(null); }} resource={editResource} onSubmit={handleUpdate} calendars={calendarsQuery.data} units={unitsQuery.data} users={usersQuery.data} vendors={vendorsQuery.data?.items} calendarsLoading={calendarsQuery.isLoading} usersLoading={usersQuery.isLoading} vendorsLoading={vendorsQuery.isLoading} isPending={updateMutation.isPending} error={updateMutation.error ? updateMutation.error instanceof Error ? updateMutation.error.message : t("resources.directory.mutationError") : undefined} />
+      <CreateResourceDialog open={createOpen} onOpenChange={setCreateOpen} onSubmit={handleCreate} calendars={calendarsQuery.data} referenceData={referenceDataQuery.data} referenceDataLoading={referenceDataQuery.isLoading} referenceDataError={referenceDataQuery.isError} units={unitsQuery.data} users={usersQuery.data} vendors={vendorsQuery.data?.items} calendarsLoading={calendarsQuery.isLoading} usersLoading={usersQuery.isLoading} vendorsLoading={vendorsQuery.isLoading} isPending={createMutation.isPending} error={createMutation.error ? createMutation.error instanceof Error ? createMutation.error.message : t("resources.directory.mutationError") : undefined} />
+      <EditResourceDialog open={!!editResource} onOpenChange={(open) => { if (!open) setEditResource(null); }} resource={editResource} onSubmit={handleUpdate} calendars={calendarsQuery.data} referenceData={referenceDataQuery.data} referenceDataLoading={referenceDataQuery.isLoading} referenceDataError={referenceDataQuery.isError} units={unitsQuery.data} users={usersQuery.data} vendors={vendorsQuery.data?.items} calendarsLoading={calendarsQuery.isLoading} usersLoading={usersQuery.isLoading} vendorsLoading={vendorsQuery.isLoading} isPending={updateMutation.isPending} error={updateMutation.error ? updateMutation.error instanceof Error ? updateMutation.error.message : t("resources.directory.mutationError") : undefined} />
       <ConfirmDialog open={!!confirmResource} onOpenChange={(open) => { if (!open) setConfirmResource(null); }} title={confirmResource?.isActive ? t("resources.directory.deactivateConfirm") : t("resources.directory.activateConfirm")} confirmLabel={confirmResource?.isActive ? t("resources.directory.deactivate") : t("resources.directory.activate")} destructive={Boolean(confirmResource?.isActive)} loading={deleteMutation.isPending || updateMutation.isPending} onConfirm={confirmStatusChange} />
-      <ResourceDetailsSheet resource={detailResource} detail={detailQuery.data} loading={detailQuery.isLoading} error={detailQuery.isError} onRetry={() => void detailQuery.refetch()} onClose={() => setDetailResource(null)} onEdit={(resource) => { setDetailResource(null); setEditResource(resource); }} canEdit={canEdit} />
+      <ResourceDetailsSheet resource={detailResource} detail={detailQuery.data} loading={detailQuery.isLoading} error={detailQuery.isError} onRetry={() => void detailQuery.refetch()} onClose={() => setDetailResource(null)} onEdit={(resource) => { setDetailResource(null); setEditResource(resource); }} onManageCostProfiles={(resource) => { setDetailResource(null); setCostProfileResource(resource); }} canEdit={canEdit} canViewCostProfiles={canViewCostProfiles} resourceTypes={resourceTypes} seniorityLevels={seniorityLevels} locale={locale} />
+      <ResourceCostProfilesSheet open={Boolean(costProfileResource)} resource={costProfileResource} canView={canViewCostProfiles} canManage={canManageCostProfiles} onOpenChange={(open) => { if (!open) setCostProfileResource(null); }} />
     </div>
   );
 }

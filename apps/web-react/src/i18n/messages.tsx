@@ -1,6 +1,7 @@
 import * as React from "react";
 import enMessages from "./messages/en.json";
 import arMessages from "./messages/ar.json";
+import { ConfirmProvider } from "@components/ui/ConfirmProvider";
 
 export type Locale = "en" | "ar";
 
@@ -90,7 +91,7 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
     [locale, t, formatNumber, formatCurrency, formatPercent, formatDate]
   );
 
-  return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
+  return <I18nContext.Provider value={value}><ConfirmProvider translate={(key) => t(key)}>{children}</ConfirmProvider></I18nContext.Provider>;
 }
 
 export function useI18n(): I18nContextValue {

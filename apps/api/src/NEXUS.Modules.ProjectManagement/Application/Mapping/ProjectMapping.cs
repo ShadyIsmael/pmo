@@ -10,6 +10,7 @@ public static class ProjectMapping
         return new ProjectDto
         {
             Id = project.Id,
+            PublicId = project.PublicId,
             TenantId = project.TenantId,
             Name = project.Name,
             Code = project.Code,
@@ -53,6 +54,7 @@ public static class ProjectMapping
         return new ProjectSummaryDto
         {
             Id = project.Id,
+            PublicId = project.PublicId,
             Name = project.Name,
             Code = project.Code,
             Status = project.Status,
@@ -82,8 +84,9 @@ public static class ProjectMapping
             StartDate = member.StartDate,
             EndDate = member.EndDate,
             Status = member.Status,
+            CalendarPolicy = member.CalendarPolicy,
             IsBillable = member.IsBillable,
-            Notes = member.Notes,
+            Notes = ProjectSponsorMembershipSynchronizer.IsManagedMembership(member) ? null : member.Notes,
             CreatedAt = member.CreatedAt,
             UpdatedAt = member.UpdatedAt
         };
@@ -129,7 +132,8 @@ public static class ProjectMapping
         if (dto.Priority != null) project.Priority = dto.Priority;
         if (dto.Category != null) project.Category = dto.Category;
         if (dto.ProjectManagerId.HasValue) project.ProjectManagerId = dto.ProjectManagerId;
-        if (dto.SponsorId.HasValue) project.SponsorId = dto.SponsorId;
+        if (dto.ClearSponsor) project.SponsorId = null;
+        else if (dto.SponsorId.HasValue) project.SponsorId = dto.SponsorId;
         if (dto.PortfolioId.HasValue) project.PortfolioId = dto.PortfolioId;
         if (dto.DepartmentId.HasValue) project.DepartmentId = dto.DepartmentId;
         if (dto.StartDate.HasValue) project.StartDate = dto.StartDate;
@@ -196,12 +200,13 @@ public static class ProjectMapping
         member.UpdatedBy = userId;
     }
 
-    public static ProjectChangeRequestDto ToDto(this ProjectChangeRequest request, string projectName, string requestedByName, string? reviewedByName = null)
+    public static ProjectChangeRequestDto ToDto(this ProjectChangeRequest request, string projectName, string requestedByName, string? reviewedByName = null, Guid? projectPublicId = null)
     {
         return new ProjectChangeRequestDto
         {
             Id = request.Id,
             ProjectId = request.ProjectId,
+            ProjectPublicId = projectPublicId,
             ProjectName = projectName,
             Number = request.Number,
             Type = request.Type,
@@ -223,7 +228,11 @@ public static class ProjectMapping
             CreatedAt = request.CreatedAt,
             CreatedBy = request.CreatedBy,
             UpdatedAt = request.UpdatedAt,
-            UpdatedBy = request.UpdatedBy
+            UpdatedBy = request.UpdatedBy,
+            ApprovalStrategy = request.ApprovalStrategy,
+            SubmittedAt = request.SubmittedAt,
+            WorkflowInstanceId = request.WorkflowInstanceId,
+            RowVersion = request.RowVersion
         };
     }
 
@@ -237,6 +246,8 @@ public static class ProjectMapping
             Justification = dto.Justification,
             Impact = dto.Impact,
             Attachments = dto.Attachments,
+            ApprovalStrategy = dto.ApprovalStrategy,
+            SelectedApproverUserIdsJson = System.Text.Json.JsonSerializer.Serialize(dto.ApproverUserIds.Distinct().ToList()),
             RequestedBy = Guid.Parse(userId), // Assuming userId is a string representation of Guid
             RequestedAt = DateTime.UtcNow,
             CreatedBy = userId

@@ -17,8 +17,8 @@ function LocationProbe() {
 
 const page = {
   items: [
-    { id: "p1", name: "Healthy Project", code: "HP-1", status: "Active", health: "Green", ragStatus: "Green", progress: 40, currency: "USD", projectManagerName: "A Lead" },
-    { id: "p2", name: "Risky Project", code: "RP-2", status: "Active", health: "Amber", ragStatus: "Amber", progress: 20, currency: "USD", projectManagerName: "B Lead" },
+    { id: "p1", publicId: "public-p1", name: "Healthy Project", code: "HP-1", status: "Active", health: "Green", ragStatus: "Green", progress: 40, planProgress: 65.4, currency: "USD", projectManagerName: "A Lead" },
+    { id: "p2", publicId: "public-p2", name: "Risky Project", code: "RP-2", status: "Active", health: "Amber", ragStatus: "Amber", progress: 20, planProgress: null, currency: "USD", projectManagerName: "B Lead" },
   ],
   totalCount: 2,
   page: 1,
@@ -108,6 +108,32 @@ describe("projects list polish", () => {
     await waitFor(() => expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/users/lookup") && String(input).includes("project.manager"))).toBe(true));
   });
 
+  it("uses active Working plan progress in both registry views and does not fall back to stale project progress", async () => {
+    const fetchMock = vi.fn().mockImplementation((input: string) => {
+      if (input.includes("/api/auth/me")) {
+        return Promise.resolve(new Response(JSON.stringify({ id: "u", email: "a@b.c", firstName: "A", lastName: "B", fullName: "A B", roles: [], permissions: ["projects.read"] }), { status: 200 }));
+      }
+      if (input.includes("/api/me/perspectives")) {
+        return Promise.resolve(new Response(JSON.stringify({ availablePerspectives: [], scope: { portfolioIds: [], programIds: [], projectIds: [] } }), { status: 200 }));
+      }
+      if (input.includes("/api/projects")) return Promise.resolve(new Response(JSON.stringify(page), { status: 200 }));
+      return Promise.resolve(new Response("null", { status: 200 }));
+    });
+    renderPage(fetchMock);
+
+    const tableProject = await screen.findByRole("link", { name: /Healthy Project/ });
+    expect(within(tableProject).getByText("65%")).toBeInTheDocument();
+    expect(within(tableProject).queryByText("40%")).not.toBeInTheDocument();
+    const noPlanProject = screen.getByRole("link", { name: /Risky Project/ });
+    expect(within(noPlanProject).queryByRole("progressbar")).not.toBeInTheDocument();
+    expect(within(noPlanProject).queryByText("20%")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: /Card View/i }));
+    const projectCard = await screen.findByRole("link", { name: /Healthy Project/ });
+    expect(within(projectCard).getByText("65%")).toBeInTheDocument();
+    expect(within(projectCard).queryByText("40%")).not.toBeInTheDocument();
+  });
+
   it("creates a project with API currency inheritance and selected manager, then opens the created project", async () => {
     const user = userEvent.setup();
     const fetchMock = vi.fn().mockImplementation((input: string, init?: RequestInit) => {
@@ -139,7 +165,7 @@ describe("projects list polish", () => {
         return Promise.resolve(new Response(JSON.stringify({ items: [{ id: "program-1", name: "Program One", portfolioId: "portfolio-1", currency: "JPY" }] }), { status: 200 }));
       }
       if (url.includes("/api/projects") && init?.method === "POST") {
-        return Promise.resolve(new Response(JSON.stringify({ id: "created-project" }), { status: 201 }));
+        return Promise.resolve(new Response(JSON.stringify({ id: "created-project", publicId: "created-project-public" }), { status: 201 }));
       }
       if (url.includes("/api/projects")) return Promise.resolve(new Response(JSON.stringify(page), { status: 200 }));
       return Promise.resolve(new Response("null", { status: 200 }));
@@ -169,6 +195,6 @@ describe("projects list polish", () => {
     const createCall = fetchMock.mock.calls.find(([input, init]) => String(input).includes("/api/projects") && init?.method === "POST");
     const payload = JSON.parse(String(createCall?.[1]?.body));
     expect(payload).toMatchObject({ name: "Created Project", projectManagerId: "manager-1", portfolioId: "portfolio-1", programId: "program-1", currency: "JPY" });
-    await waitFor(() => expect(screen.getByTestId("current-path")).toHaveTextContent("/projects/created-project"));
+    await waitFor(() => expect(screen.getByTestId("current-path")).toHaveTextContent("/projects/created-project-public"));
   });
 });

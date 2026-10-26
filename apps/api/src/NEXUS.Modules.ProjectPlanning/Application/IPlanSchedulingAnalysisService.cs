@@ -5,7 +5,7 @@ namespace NEXUS.Modules.ProjectPlanning.Application;
 
 public interface IPlanSchedulingAnalysisService
 {
-    Task<Result<Guid>> GetActiveWorkingVersionIdAsync(Guid planId, CancellationToken cancellationToken = default);
+    Task<Result<Guid>> GetActiveWorkingVersionIdAsync(Guid projectId, Guid planId, CancellationToken cancellationToken = default);
     Task<Result<CriticalPathAnalysisResult>> AnalyzeAsync(Guid planVersionId, CancellationToken cancellationToken = default);
     Task<Result<SchedulingExplanation>> ExplainAsync(Guid planVersionId, Guid activityId, CancellationToken cancellationToken = default);
 }

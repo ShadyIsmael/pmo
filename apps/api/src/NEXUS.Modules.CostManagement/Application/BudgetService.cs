@@ -7,6 +7,7 @@ using NEXUS.Modules.CostManagement.Application.DTOs;
 using NEXUS.Modules.CostManagement.Domain;
 using NEXUS.SharedKernel;
 using NEXUS.SharedKernel.Helpers;
+using NEXUS.SharedKernel.Management;
 
 namespace NEXUS.Modules.CostManagement.Application;
 
@@ -16,22 +17,23 @@ public sealed class BudgetService : IBudgetService
     private readonly IAuditService _auditService;
     private readonly IProjectReferenceLookup _projectLookup;
     private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly IManagementContextAccessor? _managementContext;
 
-    public BudgetService(DbContext context, IAuditService auditService, IProjectReferenceLookup projectLookup, IHttpContextAccessor httpContextAccessor)
+    public BudgetService(DbContext context, IAuditService auditService, IProjectReferenceLookup projectLookup, IHttpContextAccessor httpContextAccessor, IManagementContextAccessor? managementContext = null)
     {
-        _context = context; _auditService = auditService; _projectLookup = projectLookup; _httpContextAccessor = httpContextAccessor;
+        _context = context; _auditService = auditService; _projectLookup = projectLookup; _httpContextAccessor = httpContextAccessor; _managementContext = managementContext;
     }
 
     public async Task<Result<BudgetDto>> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var budget = await _context.Set<Budget>().FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
-        return budget is null ? Result<BudgetDto>.Failure(Error.NotFound()) : Result<BudgetDto>.Success(budget.ToDto());
+        return budget is null ? Result<BudgetDto>.Failure(Error.NotFound()) : Result<BudgetDto>.Success(await ToDtoAsync(budget, cancellationToken));
     }
 
     public async Task<PagedResult<BudgetDto>> GetPagedAsync(int page, int pageSize, Guid? projectId = null, Guid? portfolioId = null, bool? hasForecast = null, CancellationToken cancellationToken = default)
     {
         page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 1, 200);
-        var query = _context.Set<Budget>().AsNoTracking();
+        var query = ApplyManagementScope(_context.Set<Budget>().AsNoTracking());
         if (projectId.HasValue) query = query.Where(item => item.ProjectId == projectId);
         if (portfolioId.HasValue) query = query.Where(item => item.PortfolioId == portfolioId);
         if (hasForecast == true) query = query.Where(item => item.ForecastAmount > 0);
@@ -39,7 +41,11 @@ public sealed class BudgetService : IBudgetService
         var total = await query.CountAsync(cancellationToken);
         var items = await query.OrderBy(item => item.FiscalYear).ThenBy(item => item.FiscalQuarter).ThenBy(item => item.Name)
             .Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(cancellationToken);
-        return new PagedResult<BudgetDto>(items.Select(item => item.ToDto()).ToList(), page, pageSize, total);
+        var projects = (await _projectLookup.GetFinancialReferencesAsync(cancellationToken))
+            .ToDictionary(project => project.Id, project => project.PublicId);
+        var dtos = items.Select(item => item.ToDto(
+            item.ProjectId.HasValue && projects.TryGetValue(item.ProjectId.Value, out var publicId) ? publicId : null)).ToList();
+        return new PagedResult<BudgetDto>(dtos, page, pageSize, total);
     }
 
     public async Task<Result<BudgetDto>> CreateAsync(CreateBudgetDto dto, string userId, CancellationToken cancellationToken = default)
@@ -60,7 +66,7 @@ public sealed class BudgetService : IBudgetService
         _context.Set<Budget>().Add(budget); await _context.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         await AuditAsync("Budget", budget.Id, "Create", userId, null, dto, cancellationToken);
-        return Result<BudgetDto>.Success(budget.ToDto());
+        return Result<BudgetDto>.Success(await ToDtoAsync(budget, cancellationToken));
     }
 
     public async Task<Result<BudgetDto>> UpdateAsync(Guid id, UpdateBudgetDto dto, string userId, CancellationToken cancellationToken = default)
@@ -83,7 +89,7 @@ public sealed class BudgetService : IBudgetService
         budget.Status = dto.Status.Trim(); budget.StartDate = dto.StartDate; budget.EndDate = dto.EndDate;
         budget.UpdatedBy = userId; budget.UpdatedAt = DateTime.UtcNow; budget.RowVersion = NewVersion();
         await _context.SaveChangesAsync(cancellationToken); await transaction.CommitAsync(cancellationToken); await AuditAsync("Budget", budget.Id, "Update", userId, original, dto, cancellationToken);
-        return Result<BudgetDto>.Success(budget.ToDto());
+        return Result<BudgetDto>.Success(await ToDtoAsync(budget, cancellationToken));
     }
 
     public async Task<Result> DeleteAsync(Guid id, byte[] rowVersion, string userId, CancellationToken cancellationToken = default)
@@ -111,6 +117,27 @@ public sealed class BudgetService : IBudgetService
             if (!string.Equals(NormalizeCurrency(currency), NormalizeCurrency(project.Currency), StringComparison.OrdinalIgnoreCase)) return Error.Validation("Budget currency must match the project currency");
         }
         return null;
+    }
+
+    private async Task<BudgetDto> ToDtoAsync(Budget budget, CancellationToken cancellationToken)
+    {
+        var project = budget.ProjectId.HasValue
+            ? await _projectLookup.FindAsync(budget.ProjectId.Value, cancellationToken)
+            : null;
+        return budget.ToDto(project?.PublicId);
+    }
+
+    private IQueryable<Budget> ApplyManagementScope(IQueryable<Budget> query)
+    {
+        if (_managementContext is null) return query;
+        var scope = _managementContext.Current?.Scope;
+        if (scope is null) return query.Where(_ => false);
+        var projectIds = scope.ProjectIds.ToArray();
+        var portfolioIds = scope.PortfolioIds.ToArray();
+        return query.Where(item =>
+            item.ProjectId.HasValue
+                ? projectIds.Contains(item.ProjectId.Value)
+                : item.PortfolioId.HasValue && portfolioIds.Contains(item.PortfolioId.Value));
     }
 
     private Guid CurrentTenant() => Guid.TryParse(_httpContextAccessor.HttpContext?.User.FindFirst("tenantId")?.Value, out var tenant) ? tenant : TenantConstants.DemoTenantId;

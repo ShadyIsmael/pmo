@@ -88,14 +88,16 @@ public sealed class MeetingService : IMeetingService
                 meeting.Minutes.OrderByDescending(minutes => minutes.CreatedAt).Select(minutes => minutes.State).FirstOrDefault()))
             .ToListAsync(cancellationToken);
 
-        var projectNames = await _projectLookup.GetNamesAsync(rows.Where(row => row.ProjectId.HasValue).Select(row => row.ProjectId.GetValueOrDefault()), cancellationToken);
+        var projectReferences = await _projectLookup.GetFinancialReferencesAsync(cancellationToken);
+        var projectById = projectReferences.ToDictionary(project => project.Id);
         var organizerNames = await _userLookup.GetManyAsync(rows.Where(row => row.OrganizerId.HasValue).Select(row => row.OrganizerId.GetValueOrDefault()), cancellationToken);
         var items = rows.Select(row => new MeetingListDto
         {
             Id = row.Id,
             Title = row.Title,
             ProjectId = row.ProjectId,
-            ProjectName = row.ProjectId.HasValue && projectNames.TryGetValue(row.ProjectId.Value, out var projectName) ? projectName : null,
+            ProjectPublicId = row.ProjectId.HasValue && projectById.TryGetValue(row.ProjectId.Value, out var projectReference) ? projectReference.PublicId : null,
+            ProjectName = row.ProjectId.HasValue && projectById.TryGetValue(row.ProjectId.Value, out var meetingProject) ? meetingProject.Name : null,
             OrganizerId = row.OrganizerId,
             OrganizerName = row.OrganizerId.HasValue && organizerNames.TryGetValue(row.OrganizerId.Value, out var organizerName) ? organizerName.FullName : null,
             StartTime = row.StartTime,
@@ -144,6 +146,7 @@ public sealed class MeetingService : IMeetingService
             Title = meeting.Title,
             Objective = meeting.Description,
             ProjectId = meeting.ProjectId,
+            ProjectPublicId = project?.PublicId,
             ProjectName = project?.Name,
             OrganizerId = meeting.OrganizerId,
             OrganizerName = meeting.OrganizerId.HasValue && users.TryGetValue(meeting.OrganizerId.Value, out var organizer) ? organizer.FullName : null,
@@ -572,6 +575,11 @@ public sealed class MeetingService : IMeetingService
         if (minutes is null) return Result<IReadOnlyList<MeetingWorkItemLinkDto>>.Failure(Error.NotFound("Meeting minutes not found"));
         var links = await _context.Set<MeetingMinutesWorkItemLink>().AsNoTracking().Where(item => item.MeetingMinutesId == minutes.Id).OrderBy(item => item.CreatedAt).ThenBy(item => item.Id).ToListAsync(cancellationToken);
         var workItems = await _workItemLookup.GetManyAsync(links.Select(item => item.WorkItemId), cancellationToken);
+        var visibleWorkItemIds = workItems.Values
+            .Where(IsWorkItemInScope)
+            .Select(item => item.Id)
+            .ToHashSet();
+        links = links.Where(item => visibleWorkItemIds.Contains(item.WorkItemId)).ToList();
         return Result<IReadOnlyList<MeetingWorkItemLinkDto>>.Success(links.Select(item => ToLink(item, workItems)).ToList());
     }
 
@@ -583,6 +591,7 @@ public sealed class MeetingService : IMeetingService
         if (minutes is null) return Result<MeetingWorkItemLinkDto>.Failure(Error.NotFound("Meeting minutes not found"));
         var workItem = await _workItemLookup.FindAsync(request.WorkItemId, cancellationToken);
         if (workItem is null) return Result<MeetingWorkItemLinkDto>.Failure(Error.NotFound("Linkable task or issue not found"));
+        if (!IsWorkItemInScope(workItem)) return Result<MeetingWorkItemLinkDto>.Failure(Error.NotFound("Linkable task or issue not found"));
         if (await _context.Set<MeetingMinutesWorkItemLink>().AnyAsync(item => item.MeetingMinutesId == minutes.Id && item.WorkItemId == request.WorkItemId, cancellationToken)) return Result<MeetingWorkItemLinkDto>.Failure(Error.Conflict("The work item is already linked"));
         var link = await _context.Set<MeetingMinutesWorkItemLink>().IgnoreQueryFilters().FirstOrDefaultAsync(item => item.MeetingMinutesId == minutes.Id && item.WorkItemId == request.WorkItemId && item.TenantId == minutes.TenantId, cancellationToken);
         if (link is null)
@@ -743,6 +752,9 @@ public sealed class MeetingService : IMeetingService
         var context = _managementContext.Current;
         return context is null || context.Scope.ProjectIds.Contains(projectId);
     }
+
+    private bool IsWorkItemInScope(WorkItemReference workItem) =>
+        !workItem.ProjectId.HasValue || IsProjectInScope(workItem.ProjectId.Value);
 
     private async Task<bool> MeetingExistsAsync(Guid id, CancellationToken cancellationToken) => await InScope(_context.Set<Meeting>()).AnyAsync(item => item.Id == id, cancellationToken);
 

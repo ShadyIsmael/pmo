@@ -1,3 +1,4 @@
+import { brand, brandCopy } from "@lib/brand";
 import * as React from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { ChevronRight, Search, X, PanelLeft, PanelLeftClose, Menu } from "lucide-react";
@@ -159,15 +160,15 @@ export function Sidebar() {
         <div className={`relative flex h-[56px] shrink-0 items-center border-b border-sidebar-border/60 px-3 ${collapsed && "md:justify-center md:px-2"}`}>
           <div className={`flex items-center gap-2.5 ${collapsed && "md:hidden"}`}>
             <div className="relative flex h-8 w-8 items-center justify-center overflow-hidden rounded-lg bg-primary-gradient shadow-primary-sm">
-              <span className="text-lg font-bold text-white">N</span>
+              <span className="text-lg font-bold text-white">{brand.product.monogram}</span>
             </div>
             <div>
-              <div className="text-sm font-bold tracking-tight text-sidebar-foreground">{t("app.name")}</div>
-              <div className="text-[9px] font-medium uppercase tracking-[0.16em] text-sidebar-foreground/40">Enterprise PMO</div>
+              <div className="text-sm font-bold tracking-tight text-sidebar-foreground">{brand.product.name}</div>
+              <div className="text-[9px] font-medium uppercase tracking-[0.16em] text-sidebar-foreground/40">{brandCopy(locale).tagline}</div>
             </div>
           </div>
           <div className={`hidden h-8 w-8 items-center justify-center overflow-hidden rounded-lg bg-primary-gradient shadow-primary-sm ${collapsed && "md:flex"}`}>
-            <span className="text-lg font-bold text-white">N</span>
+            <span className="text-lg font-bold text-white">{brand.product.monogram}</span>
           </div>
           <button
             type="button"
@@ -240,7 +241,7 @@ export function Sidebar() {
             {!collapsed && (
               <div className="min-w-0">
                 <div className="truncate text-[11px] font-medium text-sidebar-foreground">{user?.fullName || "User"}</div>
-                <div className="truncate text-[9px] text-sidebar-muted/70">{user?.roles?.[0]?.name || user?.jobTitle || "NEXUS user"}</div>
+                <div className="truncate text-[9px] text-sidebar-muted/70">{user?.roles?.[0]?.name || user?.jobTitle || brand.product.name}</div>
               </div>
             )}
           </div>

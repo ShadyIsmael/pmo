@@ -117,7 +117,11 @@ public sealed class CostUtilizationAnalyticsService : ICostUtilizationAnalyticsS
         var resourceById = resources.ToDictionary(resource => resource.Id);
 
         // Fetch department names for resources
-        var departmentIds = resources.Where(r => r.DepartmentId.HasValue).Select(r => r.DepartmentId.Value).Distinct().ToList();
+        var departmentIds = resources
+            .Where(resource => resource.DepartmentId.HasValue)
+            .Select(resource => resource.DepartmentId.GetValueOrDefault())
+            .Distinct()
+            .ToList();
         var departmentNames = new Dictionary<Guid, string>();
         if (departmentIds.Count > 0)
         {
@@ -138,7 +142,7 @@ public sealed class CostUtilizationAnalyticsService : ICostUtilizationAnalyticsS
             .ToListAsync(cancellationToken);
         var defaultCalendar = calendars.FirstOrDefault(calendar => calendar.IsDefault)
             ?? calendars.FirstOrDefault()
-            ?? new WorkingCalendar { HoursPerDay = 8, WorkingDaysPerWeek = 5 };
+            ?? new WorkingCalendar();
         var calendarById = calendars.ToDictionary(calendar => calendar.Id);
 
         var resourceCalendars = await _context.Set<ResourceCalendar>()
@@ -234,6 +238,9 @@ public sealed class CostUtilizationAnalyticsService : ICostUtilizationAnalyticsS
         var projectNames = projectIds.Count == 0
             ? new Dictionary<Guid, string>()
             : (await _projects.GetNamesAsync(projectIds, cancellationToken)).ToDictionary(pair => pair.Key, pair => pair.Value);
+        var projectReferences = projectIds.Count == 0
+            ? new Dictionary<Guid, ProjectReference>()
+            : await _projects.GetReferencesAsync(projectIds, cancellationToken);
         var vendorIds = resources.Where(resource => resource.VendorId.HasValue).Select(resource => resource.VendorId!.Value).Distinct().ToList();
         var vendorNames = vendorIds.Count == 0
             ? new Dictionary<Guid, string>()
@@ -378,13 +385,13 @@ public sealed class CostUtilizationAnalyticsService : ICostUtilizationAnalyticsS
             {
                 ResourceId = item.Key.ResourceId,
                 ResourceName = resourceById[item.Key.ResourceId].Name,
-                ResourceType = resourceById[item.Key.ResourceId].Type,
-                DepartmentName = resourceById[item.Key.ResourceId].DepartmentId.HasValue && departmentNames.TryGetValue(resourceById[item.Key.ResourceId].DepartmentId.Value, out var deptName) ? deptName : null,
+                ResourceType = ResourceTypeConstants.ToApiCode(resourceById[item.Key.ResourceId].Type),
+                DepartmentName = resourceById[item.Key.ResourceId].DepartmentId is { } departmentId && departmentNames.TryGetValue(departmentId, out var deptName) ? deptName : null,
                 VendorId = resourceById[item.Key.ResourceId].VendorId,
                 VendorName = GetVendorName(resourceById[item.Key.ResourceId], vendorNames),
                 Metrics = item.Value.ToDto(item.Key.Currency)
             }).ToList(),
-            Projects = BuildAttributions(projectMetrics, projectNames, "Unassigned Project"),
+            Projects = BuildAttributions(projectMetrics, projectNames, "Unassigned Project", projectReferences),
             Vendors = vendorMetrics.OrderBy(item => item.Key.Currency).ThenBy(item => item.Key.Id).Select(item => new CostUtilizationAttributionDto
             {
                 Id = item.Key.Id,
@@ -427,11 +434,13 @@ public sealed class CostUtilizationAnalyticsService : ICostUtilizationAnalyticsS
     private static IReadOnlyList<CostUtilizationAttributionDto> BuildAttributions(
         Dictionary<(Guid? Id, string Currency), AttributionAccumulator> source,
         IReadOnlyDictionary<Guid, string> names,
-        string unassignedLabel)
+        string unassignedLabel,
+        IReadOnlyDictionary<Guid, ProjectReference>? projectReferences = null)
         => source.OrderBy(item => item.Key.Currency).ThenBy(item => item.Key.Id).Select(item => item.Value.ToDto(
             item.Key.Id.HasValue ? names.GetValueOrDefault(item.Key.Id.Value, item.Key.Id.Value.ToString()) : unassignedLabel,
             item.Key.Id,
-            item.Key.Currency)).ToList();
+            item.Key.Currency,
+            item.Key.Id.HasValue ? projectReferences?.GetValueOrDefault(item.Key.Id.Value)?.PublicId : null)).ToList();
 
     private static string? GetVendorName(Resource resource, IReadOnlyDictionary<Guid, string> vendorNames)
         => resource.VendorId.HasValue && vendorNames.TryGetValue(resource.VendorId.Value, out var name) ? name : null;
@@ -633,7 +642,7 @@ public sealed class CostUtilizationAnalyticsService : ICostUtilizationAnalyticsS
             Operational = Redact(report.Operational),
             ByCurrency = report.ByCurrency.Select(Redact).ToList(),
             Resources = report.Resources.Select(resource => new CostUtilizationResourceDto { ResourceId = resource.ResourceId, ResourceName = resource.ResourceName, ResourceType = resource.ResourceType, VendorId = resource.VendorId, VendorName = resource.VendorName, Metrics = Redact(resource.Metrics) }).ToList(),
-            Projects = report.Projects.Select(project => new CostUtilizationAttributionDto { Id = project.Id, Name = project.Name, Currency = project.Currency, PlannedHours = project.PlannedHours, ActualHours = project.ActualHours, RegularHours = project.RegularHours, ExcessHours = project.ExcessHours, OvertimeHours = project.OvertimeHours, CostProfileMissing = project.CostProfileMissing, CostCoverageComplete = project.CostCoverageComplete }).ToList(),
+            Projects = report.Projects.Select(project => new CostUtilizationAttributionDto { Id = project.Id, ProjectPublicId = project.ProjectPublicId, Name = project.Name, Currency = project.Currency, PlannedHours = project.PlannedHours, ActualHours = project.ActualHours, RegularHours = project.RegularHours, ExcessHours = project.ExcessHours, OvertimeHours = project.OvertimeHours, CostProfileMissing = project.CostProfileMissing, CostCoverageComplete = project.CostCoverageComplete }).ToList(),
             Vendors = report.Vendors.Select(vendor => new CostUtilizationAttributionDto { Id = vendor.Id, Name = vendor.Name, Currency = vendor.Currency, PlannedHours = vendor.PlannedHours, ActualHours = vendor.ActualHours, RegularHours = vendor.RegularHours, ExcessHours = vendor.ExcessHours, OvertimeHours = vendor.OvertimeHours, CostProfileMissing = vendor.CostProfileMissing, CostCoverageComplete = vendor.CostCoverageComplete }).ToList(),
             Roles = report.Roles.Select(role => new CostUtilizationAttributionDto { Id = role.Id, Name = role.Name, Currency = role.Currency, PlannedHours = role.PlannedHours, ActualHours = role.ActualHours, RegularHours = role.RegularHours, ExcessHours = role.ExcessHours, OvertimeHours = role.OvertimeHours, CostProfileMissing = role.CostProfileMissing, CostCoverageComplete = role.CostCoverageComplete }).ToList(),
             Daily = report.Daily.Select(day => new CostUtilizationDailyDto { ResourceId = day.ResourceId, ResourceName = day.ResourceName, WorkDate = day.WorkDate, Currency = day.Currency, CapacityHours = day.CapacityHours, PlannedHours = day.PlannedHours, ActualHours = day.ActualHours, RegularHours = day.RegularHours, PlanningGapHours = day.PlanningGapHours, ExecutionGapHours = day.ExecutionGapHours, UnusedCapacityHours = day.UnusedCapacityHours, ExcessHours = day.ExcessHours, OvertimeHours = day.OvertimeHours, PlannedUtilization = day.PlannedUtilization, ActualUtilization = day.ActualUtilization, CostProfileMissing = day.CostProfileMissing, CostCoverageComplete = day.CostCoverageComplete, UncostedActualHours = day.UncostedActualHours, UncostedPlannedHours = day.UncostedPlannedHours }).ToList(),
@@ -808,12 +817,13 @@ public sealed class CostUtilizationAnalyticsService : ICostUtilizationAnalyticsS
             OvertimeCost += overtime ?? 0m;
         }
 
-        public CostUtilizationAttributionDto ToDto(string name, Guid? id, string currency)
+        public CostUtilizationAttributionDto ToDto(string name, Guid? id, string currency, Guid? projectPublicId = null)
         {
             var costAvailable = HasCostValues && CostCoverageComplete && !CostProfileMissing;
             return new CostUtilizationAttributionDto
             {
                 Id = id,
+                ProjectPublicId = projectPublicId,
                 Name = name,
                 Currency = currency,
                 PlannedHours = PlannedHours,

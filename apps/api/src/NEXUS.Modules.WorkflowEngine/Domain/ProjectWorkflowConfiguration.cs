@@ -24,6 +24,9 @@ public sealed class ProjectWorkflowConfiguration : BaseEntity
     public Guid? EffectiveWorkflowVersionId { get; set; }
     public string ConfiguredBy { get; set; } = string.Empty;
     public DateTime ConfiguredAt { get; set; } = DateTime.UtcNow;
+    public bool SponsorApprovalRequired { get; set; } = true;
+    public bool AllowAnyOneOptionalApprover { get; set; }
+    public bool AllowSequentialApprovers { get; set; } = true;
     public WorkflowDefinition? WorkflowDefinition { get; set; }
     public WorkflowDefinitionVersion? EffectiveWorkflowVersion { get; set; }
 }

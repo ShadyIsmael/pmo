@@ -64,6 +64,22 @@ public class PlanWbsController : ControllerBase
     }
 
     [Authorize(Policy = "Planning.Manage")]
+    [HttpPut("bulk-placement")]
+    public async Task<IActionResult> UpdatePlacements(Guid projectId, Guid planId, [FromBody] BulkUpdatePlanWbsPlacementsDto dto, CancellationToken cancellationToken)
+    {
+        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        var result = await _wbsService.UpdatePlacementsAsync(planId, dto, userId, cancellationToken);
+        if (result.IsFailure)
+            return result.Error?.StatusCode switch
+            {
+                404 => NotFound(new { error = result.Error.Message }),
+                409 => Conflict(new { error = result.Error.Message }),
+                _ => BadRequest(new { error = result.Error?.Message })
+            };
+        return Ok(result.Value);
+    }
+
+    [Authorize(Policy = "Planning.Manage")]
     [HttpDelete("{nodeId:guid}")]
     public async Task<IActionResult> Delete(Guid projectId, Guid planId, Guid nodeId, [FromQuery] byte[] rowVersion, CancellationToken cancellationToken)
     {

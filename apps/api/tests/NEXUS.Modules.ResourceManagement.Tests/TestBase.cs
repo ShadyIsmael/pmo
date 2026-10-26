@@ -49,6 +49,7 @@ public class TestBase : IDisposable
         SeedAllocations(context);
         SeedHolidays(context);
         SeedVendors(context);
+        SeedCurrencies(context);
         SeedProjectRoles(context);
     }
 
@@ -232,6 +233,19 @@ public class TestBase : IDisposable
             Name = "Acme Corp",
             Code = "ACME",
             IsActive = true
+        });
+    }
+
+    private static void SeedCurrencies(TestDbContext context)
+    {
+        context.Set<Currency>().Add(new Currency
+        {
+            Id = Guid.Parse("D3000000-0000-0000-0000-000000000010"),
+            TenantId = TenantConstants.DemoTenantId,
+            Code = "GBP",
+            Name = "Pound Sterling",
+            Symbol = "£",
+            IsBase = true
         });
     }
 

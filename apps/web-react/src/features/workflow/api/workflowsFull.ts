@@ -4,7 +4,7 @@ import { endpoints } from "@api/endpoints";
 import { workflowKeys } from "./workflows";
 
 export type WorkflowLifecycleStatus = "Draft" | "Published" | "Retired";
-export type WorkflowDomain = "Task" | "Risk" | "Finance";
+export type WorkflowDomain = "Task" | "Risk" | "Finance" | "ChangeRequest";
 export type WorkflowRowVersion = string | number[];
 export interface WorkflowDefinitionListItem { id: string; name: string; code: string; domain: WorkflowDomain; entityType: string; isActive: boolean; activePublishedVersionId?: string; activePublishedVersionNumber?: number; activePublishedLifecycleStatus?: WorkflowLifecycleStatus; versionCount: number; updatedAt?: string; rowVersion?: WorkflowRowVersion; }
 export interface WorkflowVersionListItem { id: string; versionNumber: number; lifecycleStatus: WorkflowLifecycleStatus; changeLog?: string; createdAt: string; createdBy: string; publishedAt?: string; publishedBy?: string; stateCount: number; transitionCount: number; guardCount: number; actionCount: number; rowVersion?: WorkflowRowVersion; }

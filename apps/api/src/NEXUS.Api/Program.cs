@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -37,13 +38,25 @@ using NEXUS.SharedKernel.Management;
 using NEXUS.Api.Management;
 using NEXUS.Api.ProgramManagement;
 using NEXUS.Api.PortfolioManagement;
+using NEXUS.Api.Governance;
 
 var builder = WebApplication.CreateBuilder(args);
 var seedOnly = args.Contains("--seed-only", StringComparer.OrdinalIgnoreCase);
+var skipDevelopmentDatabaseInitialization = args.Contains("--skip-development-database-initialization", StringComparer.OrdinalIgnoreCase);
 
 if (seedOnly && !builder.Environment.IsDevelopment())
 {
     throw new InvalidOperationException("The --seed-only option is available only in the Development environment.");
+}
+
+if (skipDevelopmentDatabaseInitialization && !builder.Environment.IsDevelopment())
+{
+    throw new InvalidOperationException("The --skip-development-database-initialization option is available only in the Development environment.");
+}
+
+if (skipDevelopmentDatabaseInitialization && (seedOnly || args.Contains("--seed-identity", StringComparer.OrdinalIgnoreCase)))
+{
+    throw new InvalidOperationException("The database initialization skip option cannot be combined with a seed option.");
 }
 
 builder.Services.AddControllers()
@@ -105,7 +118,7 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("Resource.Edit", policy => policy.RequireClaim("permission", "Resource.Edit", "Resource.Manage"));
     options.AddPolicy("Resource.Delete", policy => policy.RequireClaim("permission", "Resource.Delete", "Resource.Manage"));
     options.AddPolicy("Resource.Manage", policy => policy.RequireClaim("permission", "Resource.Manage"));
-    options.AddPolicy("Resource.ViewCostRate", policy => policy.RequireClaim("permission", "Resource.ViewCostRate", "Resource.ManageRates", "Resource.Manage"));
+    options.AddPolicy("Resource.ViewCostRate", policy => policy.RequireClaim("permission", "Resource.ViewCostRate", "Resource.EditCostRate", "Resource.ManageRates", "Resource.Manage"));
     options.AddPolicy("Resource.EditCostRate", policy => policy.RequireClaim("permission", "Resource.EditCostRate", "Resource.ManageRates", "Resource.Manage"));
     options.AddPolicy("Team.View", policy => policy.RequireClaim("permission", "Team.View", "Team.Manage"));
     options.AddPolicy("Team.Create", policy => policy.RequireClaim("permission", "Team.Create", "Team.Manage"));
@@ -142,6 +155,15 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("Project.Create", policy => policy.RequireClaim("permission", "Project.Create"));
     options.AddPolicy("Project.Edit", policy => policy.RequireClaim("permission", "Project.Edit"));
     options.AddPolicy("Project.Delete", policy => policy.RequireClaim("permission", "Project.Delete"));
+    options.AddPolicy("StatusReport.View", policy => policy.RequireClaim("permission", "StatusReport.View"));
+    options.AddPolicy("StatusReport.Create", policy => policy.RequireClaim("permission", "StatusReport.Create"));
+    options.AddPolicy("StatusReport.Edit", policy => policy.RequireClaim("permission", "StatusReport.Edit"));
+    options.AddPolicy("StatusReport.Generate", policy => policy.RequireClaim("permission", "StatusReport.Generate"));
+    options.AddPolicy("StatusReport.Submit", policy => policy.RequireClaim("permission", "StatusReport.Submit"));
+    options.AddPolicy("StatusReport.Approve", policy => policy.RequireClaim("permission", "StatusReport.Approve"));
+    options.AddPolicy("StatusReport.Publish", policy => policy.RequireClaim("permission", "StatusReport.Publish"));
+    options.AddPolicy("StatusReport.Export", policy => policy.RequireClaim("permission", "StatusReport.Export"));
+    options.AddPolicy("StatusReport.ManageConfiguration", policy => policy.RequireClaim("permission", "StatusReport.ManageConfiguration"));
     options.AddPolicy("Stakeholders.Read", policy => policy.RequireClaim("permission", "Stakeholders.Read"));
     options.AddPolicy("Stakeholders.Manage", policy => policy.RequireClaim("permission", "Stakeholders.Manage"));
     options.AddPolicy("ChangeRequest.View", policy => policy.RequireClaim("permission", "ChangeRequest.View"));
@@ -151,6 +173,19 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("Handover.View", policy => policy.RequireClaim("permission", "Handover.View"));
     options.AddPolicy("Handover.Manage", policy => policy.RequireClaim("permission", "Handover.Manage"));
     options.AddPolicy("Handover.Approve", policy => policy.RequireClaim("permission", "Handover.Approve"));
+    options.AddPolicy("Handover.AdminInitiate", policy => policy.RequireClaim("permission", "Handover.AdminInitiate"));
+    options.AddPolicy("Handover.Initiate", policy => policy.RequireAssertion(context =>
+        context.User.HasClaim("permission", "Handover.Manage")
+        || context.User.HasClaim("permission", "Handover.AdminInitiate")));
+    options.AddPolicy("Handover.Access", policy => policy.RequireAssertion(context =>
+        context.User.HasClaim("permission", "Handover.View")
+        || context.User.HasClaim("permission", "Handover.Manage")
+        || context.User.HasClaim("permission", "Handover.AdminInitiate")));
+    options.AddPolicy("Handover.Capabilities", policy => policy.RequireAssertion(context =>
+        context.User.HasClaim("permission", "Handover.View")
+        || context.User.HasClaim("permission", "Handover.Manage")
+        || context.User.HasClaim("permission", "Handover.AdminInitiate")
+        || context.User.HasClaim("permission", "Handover.Approve")));
 
     options.AddPolicy("Risk.View", policy => policy.RequireClaim("permission", "Risk.View"));
     options.AddPolicy("Risk.Create", policy => policy.RequireClaim("permission", "Risk.Create"));
@@ -196,6 +231,16 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("Workflow.View", policy => policy.RequireClaim("permission", "Workflow.View"));
     options.AddPolicy("Workflow.Manage", policy => policy.RequireClaim("permission", "Workflow.Manage"));
     options.AddPolicy("Workflow.Publish", policy => policy.RequireClaim("permission", "Workflow.Publish"));
+    options.AddPolicy(AssignmentRecoveryPermissions.View, policy => policy.RequireClaim("permission", AssignmentRecoveryPermissions.View));
+    options.AddPolicy(AssignmentRecoveryPermissions.Initiate, policy => policy.RequireClaim("permission", AssignmentRecoveryPermissions.Initiate));
+    options.AddPolicy(AssignmentRecoveryPermissions.Manage, policy => policy.RequireClaim("permission", AssignmentRecoveryPermissions.Manage));
+    options.AddPolicy("AssignmentRecovery.Act", policy => policy.RequireAssertion(context =>
+        context.User.HasClaim("permission", AssignmentRecoveryPermissions.Initiate)
+        || context.User.HasClaim("permission", AssignmentRecoveryPermissions.Manage)));
+    options.AddPolicy("AssignmentRecovery.Discover", policy => policy.RequireAssertion(context =>
+        context.User.HasClaim("permission", AssignmentRecoveryPermissions.View)
+        || context.User.HasClaim("permission", AssignmentRecoveryPermissions.Initiate)
+        || context.User.HasClaim("permission", AssignmentRecoveryPermissions.Manage)));
 });
 
 builder.Services.AddDbContext<AppDbContext>(options =>
@@ -215,7 +260,10 @@ builder.Services.Configure<WorkItemAttachmentOptions>(builder.Configuration.GetS
 builder.Services.AddScoped<IWorkItemAttachmentStorage, WorkItemAttachmentStorage>();
 builder.Services.AddScoped<IMeetingMinutesAttachmentStorage, MeetingMinutesAttachmentStorage>();
 builder.Services.AddScoped<IMeetingMinutesAttachmentPolicy, MeetingMinutesAttachmentPolicy>();
-builder.Services.AddHostedService<MeetingReminderScheduler>();
+// An isolated Development host used to verify an existing database can serve requests
+// without running migrations, seeders, or unrelated background writes on startup.
+if (!skipDevelopmentDatabaseInitialization)
+    builder.Services.AddHostedService<MeetingReminderScheduler>();
 
 var corsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? Array.Empty<string>();
 
@@ -242,6 +290,7 @@ builder.Services.AddScoped<IManagementContextAccessor, ManagementContextAccessor
 builder.Services.AddScoped<IManagementScopeResolver, ManagementScopeResolver>();
 builder.Services.AddScoped<IProgramManagementService, ProgramManagementService>();
 builder.Services.AddScoped<IPortfolioManagementService, PortfolioManagementService>();
+builder.Services.AddScoped<AssignmentRecoveryService>();
 
 builder.Services.AddIdentityModule();
 builder.Services.AddOrganizationModule();
@@ -264,6 +313,17 @@ builder.Services.AddPluginManagementModule();
 builder.Services.AddAIPlanningModule();
 builder.Services.AddProjectPlanningModule();
 
+if (skipDevelopmentDatabaseInitialization)
+{
+    // Keep isolated host validation side-effect free: do not reuse local key-ring files
+    // and do not start database-backed background workers.
+    var isolatedDataProtectionPath = Path.Combine(AppContext.BaseDirectory, ".isolated-data-protection");
+    Directory.CreateDirectory(isolatedDataProtectionPath);
+    builder.Services.AddDataProtection().PersistKeysToFileSystem(new DirectoryInfo(isolatedDataProtectionPath));
+    foreach (var hostedService in builder.Services.Where(service => service.ServiceType == typeof(IHostedService)).ToArray())
+        builder.Services.Remove(hostedService);
+}
+
 var app = builder.Build();
 
 AppDbContext.ConfigureTenantResolution(app.Services.GetRequiredService<IHttpContextAccessor>());
@@ -273,30 +333,37 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 
-    using var scope = app.Services.CreateScope();
-    var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    await context.Database.MigrateAsync();
-
-    if (args.Contains("--seed-identity"))
+    if (skipDevelopmentDatabaseInitialization)
     {
-        await SeedDataProvider.SeedIdentityOnlyAsync(context);
-        return;
+        app.Logger.LogWarning("Development database migrations, seeding, and workflow provisioning were skipped by command-line option.");
     }
-
-    await SeedDataProvider.SeedAsync(context);
-
-    var workItemWorkflowProvisioning = scope.ServiceProvider.GetRequiredService<IWorkItemWorkflowProvisioningService>();
-    var workflowProvisioning = await workItemWorkflowProvisioning.EnsureCurrentTenantAsync("System", CancellationToken.None);
-    if (workflowProvisioning.IsFailure)
-        throw new InvalidOperationException(workflowProvisioning.Error?.Message ?? "Work Item workflow provisioning failed.");
-    var workflowOnboarding = await workItemWorkflowProvisioning.OnboardCurrentTenantAsync("System", CancellationToken.None);
-    if (workflowOnboarding.IsSuccess && workflowOnboarding.Value!.Exceptions.Count > 0)
-        app.Logger.LogWarning("Work Item workflow onboarding completed with {Count} exceptions.", workflowOnboarding.Value.Exceptions.Count);
-
-    if (seedOnly)
+    else
     {
-        app.Logger.LogInformation("Database migration and development seeding completed; exiting before opening an HTTP listener.");
-        return;
+        using var scope = app.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        await context.Database.MigrateAsync();
+
+        if (args.Contains("--seed-identity", StringComparer.OrdinalIgnoreCase))
+        {
+            await SeedDataProvider.SeedIdentityOnlyAsync(context);
+            return;
+        }
+
+        await SeedDataProvider.SeedAsync(context);
+
+        var workItemWorkflowProvisioning = scope.ServiceProvider.GetRequiredService<IWorkItemWorkflowProvisioningService>();
+        var workflowProvisioning = await workItemWorkflowProvisioning.EnsureCurrentTenantAsync("System", CancellationToken.None);
+        if (workflowProvisioning.IsFailure)
+            throw new InvalidOperationException(workflowProvisioning.Error?.Message ?? "Work Item workflow provisioning failed.");
+        var workflowOnboarding = await workItemWorkflowProvisioning.OnboardCurrentTenantAsync("System", CancellationToken.None);
+        if (workflowOnboarding.IsSuccess && workflowOnboarding.Value!.Exceptions.Count > 0)
+            app.Logger.LogWarning("Work Item workflow onboarding completed with {Count} exceptions.", workflowOnboarding.Value.Exceptions.Count);
+
+        if (seedOnly)
+        {
+            app.Logger.LogInformation("Database migration and development seeding completed; exiting before opening an HTTP listener.");
+            return;
+        }
     }
 }
 
@@ -305,7 +372,9 @@ app.UseCors("FrontendCors");
 app.UseAuthentication();
 app.UseMiddleware<InitialPasswordEnforcementMiddleware>();
 app.UseMiddleware<UserPermissionClaimsMiddleware>();
+app.UseMiddleware<ProjectPublicIdRoutingMiddleware>();
 app.UseMiddleware<ManagementContextMiddleware>();
+app.UseMiddleware<ProjectResourceScopeMiddleware>();
 app.UseAuthorization();
 app.MapControllers();
 app.MapHealthChecks("/health");

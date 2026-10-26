@@ -120,10 +120,14 @@ public sealed class PlanningImportService : IPlanningImportService
         {
             if (resolution.CreateResource is null || string.IsNullOrWhiteSpace(resolution.CreateResource.Name))
                 return Result<PlanImportSessionDto>.Failure(Error.Validation("Provide the Resource details before creating a new Resource"));
-            if (!ResourceTypeConstants.IsValid(resolution.CreateResource.Type))
-                return Result<PlanImportSessionDto>.Failure(Error.Validation("Resource type must be Staff or VendorResource"));
-            if (resolution.CreateResource.Type == ResourceTypeConstants.VendorResource && !resolution.CreateResource.VendorId.HasValue)
-                return Result<PlanImportSessionDto>.Failure(Error.Validation("A Vendor is required when creating a VendorResource"));
+            if (!Enum.IsDefined(resolution.CreateResource.Type))
+            {
+                var supportedTypes = string.Join(", ", Enum.GetNames<ResourceType>());
+                return Result<PlanImportSessionDto>.Failure(Error.Validation(
+                    $"Resource type must be one of the supported values: {supportedTypes}."));
+            }
+            if (resolution.CreateResource.Type == ResourceType.Vendor && !resolution.CreateResource.VendorId.HasValue)
+                return Result<PlanImportSessionDto>.Failure(Error.Validation("Select a Vendor for this resource."));
         }
 
         var state = DeserializeResolutionState(session.ResolutionJson);
@@ -292,14 +296,15 @@ public sealed class PlanningImportService : IPlanningImportService
         {
             var planName = FirstNonBlank(request.NewPlanName, document.ProjectName, Path.GetFileNameWithoutExtension(fileName));
             if (string.IsNullOrWhiteSpace(planName)) return Result<PlanImportResultDto>.Failure(Error.Validation("A Plan name is required"));
-            if (await _context.Set<Plan>().AnyAsync(candidate => candidate.ProjectId == request.ProjectId && candidate.PlanType == request.NewPlanType, cancellationToken))
-                return Result<PlanImportResultDto>.Failure(Error.Conflict("A Plan of this type already exists for the project. Import into that Plan or choose another type."));
+            var normalizedPlanName = Truncate(planName.Trim(), 250);
+            if (await _context.Set<Plan>().AnyAsync(candidate => candidate.ProjectId == request.ProjectId && candidate.PlanType == request.NewPlanType && candidate.Name == normalizedPlanName, cancellationToken))
+                return Result<PlanImportResultDto>.Failure(Error.Conflict("A Plan with this name and type already exists for the project. Import into that Plan or choose another name."));
             plan = new Plan
             {
                 TenantId = tenantId,
                 ProjectId = request.ProjectId,
                 PlanType = request.NewPlanType!.Value,
-                Name = Truncate(planName, 250),
+                Name = normalizedPlanName,
                 Description = $"Imported from {fileName}",
                 Status = PlanStatus.Draft,
                 CreatedBy = userId
@@ -586,11 +591,12 @@ public sealed class PlanningImportService : IPlanningImportService
             var planName = FirstNonBlank(request.NewPlanName, document.ProjectName, Path.GetFileNameWithoutExtension(fileName));
             if (string.IsNullOrWhiteSpace(planName))
                 return Result<PlanImportResultDto>.Failure(Error.Validation("A Plan name is required"));
+            var normalizedPlanName = Truncate(planName.Trim(), 250);
             if (await _context.Set<Plan>().AnyAsync(
-                    candidate => candidate.ProjectId == request.ProjectId && candidate.PlanType == request.NewPlanType,
+                    candidate => candidate.ProjectId == request.ProjectId && candidate.PlanType == request.NewPlanType && candidate.Name == normalizedPlanName,
                     cancellationToken))
             {
-                return Result<PlanImportResultDto>.Failure(Error.Conflict("A Plan of this type already exists for the project. Import into that Plan or choose another type."));
+                return Result<PlanImportResultDto>.Failure(Error.Conflict("A Plan with this name and type already exists for the project. Import into that Plan or choose another name."));
             }
 
             plan = new Plan
@@ -598,7 +604,7 @@ public sealed class PlanningImportService : IPlanningImportService
                 TenantId = tenantId,
                 ProjectId = request.ProjectId,
                 PlanType = request.NewPlanType!.Value,
-                Name = Truncate(planName, 250),
+                Name = normalizedPlanName,
                 Description = $"Imported from {fileName}",
                 Status = PlanStatus.Draft,
                 CreatedBy = userId

@@ -5,6 +5,7 @@ namespace NEXUS.Modules.ProjectManagement.Application.DTOs;
 public class ProjectDto
 {
     public Guid Id { get; set; }
+    public Guid PublicId { get; set; }
     public Guid TenantId { get; set; }
     public string Name { get; set; } = string.Empty;
     public string Code { get; set; } = string.Empty;
@@ -59,6 +60,7 @@ public class ProjectMemberDto
     public DateTime StartDate { get; set; }
     public DateTime EndDate { get; set; }
     public string Status { get; set; } = string.Empty;
+    public string CalendarPolicy { get; set; } = CalendarPolicyConstants.UseResourceCalendar;
     public bool IsBillable { get; set; }
     public string? Notes { get; set; }
     public DateTime CreatedAt { get; set; }
@@ -99,6 +101,7 @@ public class UpdateProjectDto
     public string? Category { get; set; }
     public Guid? ProjectManagerId { get; set; }
     public Guid? SponsorId { get; set; }
+    public bool ClearSponsor { get; set; }
     public Guid? PortfolioId { get; set; }
     public Guid? DepartmentId { get; set; }
     public DateTime? StartDate { get; set; }
@@ -170,12 +173,14 @@ public class UpdateProjectMemberDto
 public class ProjectSummaryDto
 {
     public Guid Id { get; set; }
+    public Guid PublicId { get; set; }
     public string Name { get; set; } = string.Empty;
     public string Code { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
     public string Health { get; set; } = string.Empty;
     public string RagStatus { get; set; } = string.Empty;
     public decimal Progress { get; set; }
+    public decimal? PlanProgress { get; set; }
     public DateTime? StartDate { get; set; }
     public DateTime? EndDate { get; set; }
     public decimal? Budget { get; set; }

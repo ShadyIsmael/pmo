@@ -13,7 +13,12 @@ export type ProjectChangeRequestFormResult =
   | { ok: true; value: CreateProjectChangeRequestDto }
   | { ok: false; error: ProjectChangeRequestFormError };
 
-export function buildProjectChangeRequestInput(projectId: string, formData: FormData, projectBudget?: number | null): ProjectChangeRequestFormResult {
+export function buildProjectChangeRequestInput(
+  projectId: string,
+  formData: FormData,
+  projectBudget?: number | null,
+  approvals: { strategy: string; approverUserIds: string[] } = { strategy: "AllRequired", approverUserIds: [] },
+): ProjectChangeRequestFormResult {
   const reason = String(formData.get("reason") ?? "").trim();
   if (!reason) return { ok: false, error: "changeReasonRequired" };
 
@@ -45,6 +50,8 @@ export function buildProjectChangeRequestInput(projectId: string, formData: Form
       justification: optionalText("justification"),
       impact: optionalText("impact"),
       attachments: optionalText("attachments"),
+      approvalStrategy: approvals.strategy,
+      approverUserIds: approvals.approverUserIds,
     },
   };
 }

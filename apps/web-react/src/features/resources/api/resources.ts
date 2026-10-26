@@ -1,5 +1,28 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@api/client";
+import { endpoints } from "@api/endpoints";
+
+export interface ResourceTypeOptionDto {
+  code: string;
+  nameEn: string;
+  nameAr: string;
+  displayOrder: number;
+  isDefault: boolean;
+  requiresVendor: boolean;
+}
+
+export interface ResourceSeniorityOptionDto {
+  code: string;
+  nameEn: string;
+  nameAr: string;
+  displayOrder: number;
+}
+
+export interface ResourceReferenceDataDto {
+  resourceTypes: ResourceTypeOptionDto[];
+  seniorityLevels: ResourceSeniorityOptionDto[];
+  compensationTypes: string[];
+}
 
 export interface ResourceBaseCalendarDto {
   id: string;
@@ -106,6 +129,15 @@ export interface ResourceCostProfileDto {
   rowVersion: number[];
 }
 
+export interface CreateResourceCostProfileInput {
+  effectiveFrom: string;
+  effectiveTo?: string;
+  compensationType: string;
+  amount: number;
+  currency: string;
+  overtimeEligible: false;
+}
+
 export interface ProjectRoleDto {
   id: string;
   code: string;
@@ -165,13 +197,15 @@ const resourceKeys = {
   lists: resourceKeysLists,
   list: (params: ResourceFilterParams) => [...resourceKeysLists(), params] as const,
   detail: (id: string) => [...resourceKeysAll, "detail", id] as const,
+  costProfiles: (id: string) => [...resourceKeysAll, "cost-profiles", id] as const,
   baseCalendars: [...resourceKeysAll, "baseCalendars"] as const,
+  referenceData: [...resourceKeysAll, "referenceData"] as const,
 };
 
 export function useResources(filter: ResourceFilterParams = {}, enabled = true) {
   return useQuery({
     queryKey: resourceKeys.list(filter),
-    queryFn: () => api.get<PagedResult<ResourceDto>>("/api/resources", filter),
+    queryFn: () => api.get<PagedResult<ResourceDto>>(endpoints.resources.root, filter),
     staleTime: 30_000,
     enabled,
   });
@@ -180,7 +214,7 @@ export function useResources(filter: ResourceFilterParams = {}, enabled = true) 
 export function useResourceFinder(query: ResourceFinderQuery, enabled = true) {
   return useQuery({
     queryKey: [...resourceKeys.all, "finder", query],
-    queryFn: () => api.post<ResourceFinderResult>("/api/resource-finder/find", query),
+    queryFn: () => api.post<ResourceFinderResult>(endpoints.resourceFinder.find, query),
     enabled,
     staleTime: 15_000,
   });
@@ -189,7 +223,7 @@ export function useResourceFinder(query: ResourceFinderQuery, enabled = true) {
 export function useResourceSkills(enabled = true) {
   return useQuery({
     queryKey: [...resourceKeys.all, "skills"],
-    queryFn: async () => (await api.get<PagedResult<ResourceSkillLookup>>("/api/skills", { pageSize: 200 })).items ?? [],
+    queryFn: async () => (await api.get<PagedResult<ResourceSkillLookup>>(endpoints.skills.root, { pageSize: 200 })).items ?? [],
     enabled,
     staleTime: 60_000,
   });
@@ -198,16 +232,25 @@ export function useResourceSkills(enabled = true) {
 export function useBaseCalendars(enabled = true) {
   return useQuery({
     queryKey: resourceKeys.baseCalendars,
-    queryFn: () => api.get<ResourceBaseCalendarDto[]>("/api/resources/base-calendars"),
+    queryFn: () => api.get<ResourceBaseCalendarDto[]>(endpoints.resources.baseCalendars),
     staleTime: 60_000,
     enabled,
+  });
+}
+
+export function useResourceReferenceData(enabled = true) {
+  return useQuery({
+    queryKey: resourceKeys.referenceData,
+    queryFn: () => api.get<ResourceReferenceDataDto>(endpoints.resources.referenceData),
+    enabled,
+    staleTime: 300_000,
   });
 }
 
 export function useResource(id: string) {
   return useQuery({
     queryKey: resourceKeys.detail(id),
-    queryFn: () => api.get<ResourceDto>(`/api/resources/${id}`),
+    queryFn: () => api.get<ResourceDto>(endpoints.resources.detail(id)),
     enabled: !!id,
     staleTime: 30_000,
   });
@@ -216,7 +259,7 @@ export function useResource(id: string) {
 export function useCreateResource() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (data: Record<string, unknown>) => api.post<ResourceDto>("/api/resources", data),
+    mutationFn: async (data: Record<string, unknown>) => api.post<ResourceDto>(endpoints.resources.root, data),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: resourceKeys.all }),
   });
 }
@@ -224,7 +267,7 @@ export function useCreateResource() {
 export function useUpdateResource(defaultId?: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (input: { id?: string; data: Record<string, unknown> }) => api.put<ResourceDto>(`/api/resources/${input.id ?? defaultId ?? ""}`, input.data),
+    mutationFn: async (input: { id?: string; data: Record<string, unknown> }) => api.put<ResourceDto>(endpoints.resources.detail(input.id ?? defaultId ?? ""), input.data),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: resourceKeys.all }),
   });
 }
@@ -232,24 +275,37 @@ export function useUpdateResource(defaultId?: string) {
 export function useDeleteResource() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (id: string) => api.delete<void>(`/api/resources/${id}`),
+    mutationFn: async (id: string) => api.delete<void>(endpoints.resources.detail(id)),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: resourceKeys.all }),
   });
 }
 
 export function useCostProfiles(resourceId: string, enabled = true) {
   return useQuery({
-    queryKey: [...resourceKeys.all, "cost-profiles", resourceId],
-    queryFn: () => api.get<ResourceCostProfileDto[]>(`/api/resources/${resourceId}/cost-profiles`),
+    queryKey: resourceKeys.costProfiles(resourceId),
+    queryFn: () => api.get<ResourceCostProfileDto[]>(endpoints.resources.costProfiles(resourceId)),
     enabled: !!resourceId && enabled,
     staleTime: 30_000,
+  });
+}
+
+export function useCreateCostProfile() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ resourceId, body }: { resourceId: string; body: CreateResourceCostProfileInput }) =>
+      api.post<ResourceCostProfileDto>(endpoints.resources.costProfiles(resourceId), body),
+    onSuccess: (_result, input) => {
+      void queryClient.invalidateQueries({ queryKey: resourceKeys.costProfiles(input.resourceId) });
+      void queryClient.invalidateQueries({ queryKey: resourceKeys.detail(input.resourceId) });
+      void queryClient.invalidateQueries({ queryKey: resourceKeys.lists() });
+    },
   });
 }
 
 export function useProjectRoles(activeOnly = true, enabled = true) {
   return useQuery({
     queryKey: [...resourceKeys.all, "project-roles", activeOnly],
-    queryFn: () => api.get<ProjectRoleDto[]>("/api/project-roles", { activeOnly }),
+    queryFn: () => api.get<ProjectRoleDto[]>(endpoints.projectRoles.root, { activeOnly }),
     enabled,
     staleTime: 60_000,
   });
@@ -258,7 +314,7 @@ export function useProjectRoles(activeOnly = true, enabled = true) {
 export function useProjectRoleNextCode(enabled = true, requestKey: number | string = 0) {
   return useQuery({
     queryKey: [...resourceKeys.all, "project-role-next-code", requestKey],
-    queryFn: () => api.get<{ code: string }>("/api/project-roles/next-code"),
+    queryFn: () => api.get<{ code: string }>(endpoints.projectRoles.nextCode),
     enabled,
     staleTime: 0,
   });
@@ -267,7 +323,7 @@ export function useProjectRoleNextCode(enabled = true, requestKey: number | stri
 export function useCreateProjectRole() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (data: Record<string, unknown>) => api.post<ProjectRoleDto>("/api/project-roles", data),
+    mutationFn: async (data: Record<string, unknown>) => api.post<ProjectRoleDto>(endpoints.projectRoles.root, data),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: [...resourceKeys.all, "project-roles"] }),
   });
 }
@@ -275,7 +331,7 @@ export function useCreateProjectRole() {
 export function useUpdateProjectRole() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (data: { id: string; body: Record<string, unknown> }) => api.put<ProjectRoleDto>(`/api/project-roles/${data.id}`, data.body),
+    mutationFn: async (data: { id: string; body: Record<string, unknown> }) => api.put<ProjectRoleDto>(endpoints.projectRoles.detail(data.id), data.body),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: [...resourceKeys.all, "project-roles"] }),
   });
 }
@@ -283,7 +339,7 @@ export function useUpdateProjectRole() {
 export function useDeactivateProjectRole() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (id: string) => api.put<void>(`/api/project-roles/${id}/deactivate`, {}),
+    mutationFn: async (id: string) => api.put<void>(`${endpoints.projectRoles.detail(id)}/deactivate`, {}),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: [...resourceKeys.all, "project-roles"] }),
   });
 }

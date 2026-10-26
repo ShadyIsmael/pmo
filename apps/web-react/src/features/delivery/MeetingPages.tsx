@@ -2,6 +2,7 @@ import * as React from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, CalendarCheck, CheckCircle2, ExternalLink, Eye, FileText, Filter, Pencil, Plus, Search, Save, Trash2, UserRound, Users, X, XCircle } from "lucide-react";
 import { PageHeader } from "@components/layout/PageHeader";
+import { useConfirm } from "@components/ui/ConfirmProvider";
 import { Button } from "@components/ui/Button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@components/ui/Card";
 import { Input } from "@components/ui/Input";
@@ -62,7 +63,7 @@ export function MeetingsPageFull() {
   }), [dateFrom, dateTo, deferredSearch, page, projectId, status]);
   const query = useFullMeetings(filters, canQuery);
   const projects = projectsQuery.data?.items ?? [];
-  const selectedProject = projects.find((project) => project.id === projectId);
+  const selectedProject = projects.find((project) => project.publicId === projectId);
   const meetings = query.data?.items ?? [];
   const totalPages = query.data?.totalPages ?? Math.ceil((query.data?.totalCount ?? 0) / MEETINGS_PAGE_SIZE);
 
@@ -72,7 +73,7 @@ export function MeetingsPageFull() {
     <PageHeader title={t("meetings.title")} description={t("meetings.description", { count: query.data?.totalCount ?? 0 })} actions={canCreate ? <Button size="sm" onClick={() => setFormOpen(true)}><Plus className="me-1.5 h-4 w-4" />{t("meetings.createMeeting")}</Button> : undefined} />
     <Card><CardContent className="space-y-3 p-4">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
-        <label className="w-full space-y-1.5 lg:w-60"><span className="text-xs font-medium text-muted-foreground">{t("common.project")}</span><SearchableSelect options={projects.map((project) => ({ value: project.id, label: `${project.name} · ${project.code}`, keywords: [project.code] }))} value={projectId || undefined} onValueChange={(value) => { setPage(1); setProjectId(value); }} placeholder={t("meetings.allProjects")} searchPlaceholder={t("meetings.searchProjects")} emptyText={t("meetings.noProjects")} loading={projectsQuery.isLoading} /></label>
+        <label className="w-full space-y-1.5 lg:w-60"><span className="text-xs font-medium text-muted-foreground">{t("common.project")}</span><SearchableSelect options={projects.map((project) => ({ value: project.publicId, label: `${project.name} · ${project.code}`, keywords: [project.code] }))} value={projectId || undefined} onValueChange={(value) => { setPage(1); setProjectId(value); }} placeholder={t("meetings.allProjects")} searchPlaceholder={t("meetings.searchProjects")} emptyText={t("meetings.noProjects")} loading={projectsQuery.isLoading} /></label>
         <div className="w-full space-y-1.5 lg:w-48"><Label htmlFor="meeting-status-filter">{t("common.status")}</Label><Select value={status} onValueChange={(value) => { if (isMeetingStatus(value)) { setPage(1); setStatus(value); } }}><SelectTrigger id="meeting-status-filter"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{t("common.all")}</SelectItem>{MEETING_STATUSES.map((value) => <SelectItem key={value} value={value}>{getMeetingStatusLabel(value, t)}</SelectItem>)}</SelectContent></Select></div>
         <div className="min-w-0 flex-1 space-y-1.5"><Label htmlFor="meeting-search">{t("common.search")}</Label><div className="relative"><Search className="pointer-events-none absolute start-3 top-2.5 h-4 w-4 text-muted-foreground" /><Input id="meeting-search" value={search} onChange={(event) => { setPage(1); setSearch(event.target.value); }} placeholder={t("meetings.searchPlaceholder")} className="ps-9" /></div></div>
         <div className="grid w-full grid-cols-2 gap-2 lg:w-64"><div className="space-y-1.5"><Label htmlFor="meeting-date-from">{t("meetings.from")}</Label><Input id="meeting-date-from" type="date" value={dateFrom} onChange={(event) => { setPage(1); setDateFrom(event.target.value); }} /></div><div className="space-y-1.5"><Label htmlFor="meeting-date-to">{t("meetings.to")}</Label><Input id="meeting-date-to" type="date" value={dateTo} onChange={(event) => { setPage(1); setDateTo(event.target.value); }} /></div></div>
@@ -112,6 +113,7 @@ function MeetingsTable({ meetings, showProject, canManageMinutes, formatDate }: 
 export function MeetingDetailPageFull() {
   const { id } = useParams<{ id: string }>();
   const { t, formatDate } = useI18n();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const { canMutate, effectiveReadOnly } = useManagement();
   const location = useLocation();
@@ -153,8 +155,8 @@ export function MeetingDetailPageFull() {
     mutations.update.mutate({ body }, { onError: () => setActionError(t("meetings.actionError")) });
   }
 
-  function removeMeeting() {
-    if (!window.confirm(t("meetings.deleteConfirm"))) return;
+  async function removeMeeting() {
+    if (!await confirm({ description: t("meetings.deleteConfirm"), destructive: true })) return;
     setActionError(null);
     mutations.delete.mutate(meeting.id, {
       onSuccess: () => navigate("/meetings"),
@@ -177,7 +179,7 @@ export function MeetingDetailPageFull() {
     <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
       <Card><CardHeader><CardTitle>{t("meetings.details")}</CardTitle></CardHeader><CardContent className="grid gap-5 sm:grid-cols-2">
         <MeetingInfoField label={t("meetings.objective")} value={meeting.objective?.trim() || t("meetings.noObjective")} wide />
-        <MeetingInfoField label={t("meetings.project")} value={meeting.projectId && meeting.projectName ? <Link className="font-medium text-primary hover:underline" to={`/projects/${encodeURIComponent(meeting.projectId)}`}>{meeting.projectName}</Link> : t("meetings.noProject")} />
+        <MeetingInfoField label={t("meetings.project")} value={meeting.projectPublicId && meeting.projectName ? <Link className="font-medium text-primary hover:underline" to={`/projects/${encodeURIComponent(meeting.projectPublicId)}`}>{meeting.projectName}</Link> : t("meetings.noProject")} />
         <MeetingInfoField label={t("meetings.start")} value={formatDate(meeting.startTime)} />
         <MeetingInfoField label={t("meetings.end")} value={formatDate(meeting.endTime)} />
         <MeetingInfoField label={t("meetings.duration")} value={formatMeetingDuration(meeting.startTime, meeting.endTime, t)} />

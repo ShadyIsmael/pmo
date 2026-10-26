@@ -1,6 +1,7 @@
 import * as React from "react";
 import { Edit3, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
 import { Button } from "@components/ui/Button";
+import { useConfirm } from "@components/ui/ConfirmProvider";
 import { Input } from "@components/ui/Input";
 import { Skeleton } from "@components/ui/Skeleton";
 import { toast } from "@hooks/use-toast";
@@ -109,6 +110,7 @@ export function PlanningCalendarsPanel({
   onCalendarCreated: (calendar: PlanCalendarDto) => void;
   t: (key: string) => string;
 }) {
+  const confirm = useConfirm();
   const [newName, setNewName] = React.useState("");
   const [tab, setTab] = React.useState<CalendarTab>("general");
   const [draft, setDraft] = React.useState<CalendarDraft | null>(null);
@@ -217,7 +219,7 @@ export function PlanningCalendarsPanel({
   };
 
   const deleteCalendar = async (calendar: PlanCalendarDto) => {
-    if (!window.confirm(t("planning.confirmDelete")) || mutations.deleteCalendar.isPending) return;
+    if (mutations.deleteCalendar.isPending || !await confirm({ description: t("planning.confirmDelete"), destructive: true })) return;
     try {
       await mutations.deleteCalendar.mutateAsync({ id: calendar.id, rowVersion: calendar.rowVersion });
       if (calendar.id === selectedCalendarId) {

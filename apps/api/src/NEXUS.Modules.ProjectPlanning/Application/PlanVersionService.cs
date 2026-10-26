@@ -407,7 +407,8 @@ public sealed class PlanVersionService : IPlanVersionService
         Guid? sourceVersionId,
         Guid? sourceBaselineId)
     {
-        var activityIds = source.Activities.ToDictionary(a => a.Id, _ => Guid.NewGuid());
+        var activeActivities = source.Activities.Where(activity => !activity.IsDeleted).ToList();
+        var activityIds = activeActivities.ToDictionary(a => a.Id, _ => Guid.NewGuid());
         var wbsIds = source.WbsNodes.ToDictionary(n => n.Id, _ => Guid.NewGuid());
         var deliverableIds = source.Deliverables.ToDictionary(d => d.Id, _ => Guid.NewGuid());
         var calendarIds = source.Calendars.ToDictionary(c => c.Id, _ => Guid.NewGuid());
@@ -440,7 +441,7 @@ public sealed class PlanVersionService : IPlanVersionService
             CreatedBy = userId
         }).ToList();
 
-        clone.Activities = source.Activities.Select(a => new PlanActivity
+        clone.Activities = activeActivities.Select(a => new PlanActivity
         {
             Id = activityIds[a.Id],
             TenantId = tenantId,
@@ -482,7 +483,12 @@ public sealed class PlanVersionService : IPlanVersionService
             CreatedBy = userId
         }).ToList();
 
-        clone.Dependencies = source.Dependencies.Select(d => new PlanDependency
+        // Legacy data can contain active relationship rows pointing at an
+        // activity that was soft-deleted before activity deletion also cleaned
+        // up its relationships. Snapshot only edges wholly inside this version.
+        clone.Dependencies = source.Dependencies
+            .Where(d => !d.IsDeleted && activityIds.ContainsKey(d.ActivityId) && activityIds.ContainsKey(d.PredecessorActivityId))
+            .Select(d => new PlanDependency
         {
             Id = Guid.NewGuid(),
             TenantId = tenantId,
@@ -494,7 +500,9 @@ public sealed class PlanVersionService : IPlanVersionService
             CreatedBy = userId
         }).ToList();
 
-        clone.Assignments = source.Assignments.Select(a => new PlanAssignment
+        clone.Assignments = source.Assignments
+            .Where(a => !a.IsDeleted && activityIds.ContainsKey(a.ActivityId))
+            .Select(a => new PlanAssignment
         {
             Id = Guid.NewGuid(),
             TenantId = tenantId,
@@ -503,8 +511,11 @@ public sealed class PlanVersionService : IPlanVersionService
             ResourceId = a.ResourceId,
             AllocationPct = a.AllocationPct,
             HoursPerWeek = a.HoursPerWeek,
+            PlannedHours = a.PlannedHours,
             StartDate = a.StartDate,
             EndDate = a.EndDate,
+            ProjectRoleId = a.ProjectRoleId,
+            ResourceAllocationId = a.ResourceAllocationId,
             CreatedBy = userId
         }).ToList();
 

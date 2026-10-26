@@ -10,6 +10,7 @@ public class ProjectStatusReport : BaseEntity
     public DateTime ReportDate { get; set; }
     public DateTime PeriodFrom { get; set; }
     public DateTime PeriodTo { get; set; }
+    public DateTime StatusDate { get; set; }
     public ProjectStatusReportState ReportState { get; set; } = ProjectStatusReportState.Draft;
 
     public string? OverallHealth { get; set; }
@@ -36,6 +37,8 @@ public class ProjectStatusReport : BaseEntity
     public Guid? PublishedByUserId { get; set; }
     public string? PublishedByNameSnapshot { get; set; }
     public DateTime? SourceDataCapturedAt { get; set; }
+    public string? PerformanceSnapshotJson { get; set; }
+    public int? ReportingConfigurationVersionSnapshot { get; set; }
 
     public string? CurrencyCodeSnapshot { get; set; }
     public decimal? BudgetAmountSnapshot { get; set; }
@@ -65,5 +68,9 @@ public class ProjectStatusReport : BaseEntity
 public enum ProjectStatusReportState
 {
     Draft,
-    Published
+    Published,
+    Generated,
+    Submitted,
+    Approved,
+    Returned
 }

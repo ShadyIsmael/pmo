@@ -8,6 +8,7 @@ import { Label } from "@components/ui/Label";
 import { SideSheet, SideSheetBody, SideSheetFooter } from "@components/ui/SideSheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@components/ui/Table";
 import { useAuth } from "@auth/AuthProvider";
+import { useConfirm } from "@components/ui/ConfirmProvider";
 import { useI18n } from "@i18n/messages";
 import { getStatusTextClass } from "@lib/status-presentation";
 import { hasPermission, Permissions } from "@lib/permissions";
@@ -33,6 +34,7 @@ const EMPTY_FORM: RoleForm = { code: "", nameEn: "", nameAr: "", description: ""
 
 export function ProjectRolesPage() {
   const { t } = useI18n();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const canManage = Boolean(user && hasPermission(user.permissions, Permissions.Resources.Manage));
   const rolesQuery = useProjectRoles(false, true);
@@ -121,7 +123,7 @@ export function ProjectRolesPage() {
   }
 
   async function toggleActive(role: ProjectRoleDto) {
-    if (role.isActive && !window.confirm(t("administration.projectRoles.deactivateConfirm"))) return;
+    if (role.isActive && !await confirm({ description: t("administration.projectRoles.deactivateConfirm"), destructive: true })) return;
     const actionId = `active-${role.id}`;
     setActionError(null);
     setPendingAction(actionId);

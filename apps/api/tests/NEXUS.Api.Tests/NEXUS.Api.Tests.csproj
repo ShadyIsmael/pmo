@@ -11,12 +11,19 @@
     <FocusedProjectPlanningDependencies Condition="'$(FocusedProjectPlanningDependencies)' == ''">false</FocusedProjectPlanningDependencies>
     <FocusedTeamCode Condition="'$(FocusedTeamCode)' == ''">false</FocusedTeamCode>
     <FocusedHandoverManagers Condition="'$(FocusedHandoverManagers)' == ''">false</FocusedHandoverManagers>
+    <FocusedPortfolioProgramHandover Condition="'$(FocusedPortfolioProgramHandover)' == ''">false</FocusedPortfolioProgramHandover>
+    <FocusedProjectSecureRouting Condition="'$(FocusedProjectSecureRouting)' == ''">false</FocusedProjectSecureRouting>
     <FocusedAuditSearch Condition="'$(FocusedAuditSearch)' == ''">false</FocusedAuditSearch>
     <FocusedUserPermissions Condition="'$(FocusedUserPermissions)' == ''">false</FocusedUserPermissions>
     <FocusedLocalPasswordLifecycle Condition="'$(FocusedLocalPasswordLifecycle)' == ''">false</FocusedLocalPasswordLifecycle>
     <FocusedNotifications Condition="'$(FocusedNotifications)' == ''">false</FocusedNotifications>
     <FocusedEvm Condition="'$(FocusedEvm)' == ''">false</FocusedEvm>
+    <FocusedProjectReporting Condition="'$(FocusedProjectReporting)' == ''">false</FocusedProjectReporting>
     <FocusedPortfolioProgramRead Condition="'$(FocusedPortfolioProgramRead)' == ''">false</FocusedPortfolioProgramRead>
+    <FocusedProjectStatusReports Condition="'$(FocusedProjectStatusReports)' == ''">false</FocusedProjectStatusReports>
+    <FocusedProjectGovernanceApprovals Condition="'$(FocusedProjectGovernanceApprovals)' == ''">false</FocusedProjectGovernanceApprovals>
+    <FocusedAssignmentRecovery Condition="'$(FocusedAssignmentRecovery)' == ''">false</FocusedAssignmentRecovery>
+    <FocusedManagementScope Condition="'$(FocusedManagementScope)' == ''">false</FocusedManagementScope>
   </PropertyGroup>
 
   <ItemGroup>
@@ -77,14 +84,46 @@
     <Compile Remove="**\*.cs" />
     <Compile Include="Unit\WorkflowDefinitionValidatorTests.cs" />
     <Compile Include="Unit\WorkflowExecutionPhase2Tests.cs" />
+    <Compile Include="Unit\ProjectStatusReportWorkflowTests.cs" />
     <ProjectReference Remove="..\..\src\NEXUS.Api\NEXUS.Api.csproj" />
     <ProjectReference Remove="..\..\src\NEXUS.Modules.Identity\NEXUS.Modules.Identity.csproj" />
     <ProjectReference Remove="..\..\src\NEXUS.Modules.RiskManagement\NEXUS.Modules.RiskManagement.csproj" />
     <ProjectReference Remove="..\..\src\NEXUS.Modules.ProjectManagement\NEXUS.Modules.ProjectManagement.csproj" />
     <ProjectReference Remove="..\..\src\NEXUS.Modules.ProjectPlanning\NEXUS.Modules.ProjectPlanning.csproj" />
     <ProjectReference Include="..\..\src\NEXUS.Modules.WorkflowEngine\NEXUS.Modules.WorkflowEngine.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.ProjectManagement\NEXUS.Modules.ProjectManagement.csproj" />
     <ProjectReference Include="..\..\src\NEXUS.Persistence\NEXUS.Persistence.csproj" />
     <ProjectReference Include="..\..\src\NEXUS.Modules.Audit\NEXUS.Modules.Audit.csproj" />
+  </ItemGroup>
+
+  <!-- Status-report domain tests avoid the API host, persistence, and unrelated AIPlanning build graph. -->
+  <ItemGroup Condition="'$(FocusedProjectStatusReports)' == 'true'">
+    <Compile Remove="**\*.cs" />
+    <Compile Include="Unit\ProjectStatusReportWorkflowTests.cs" />
+    <Compile Include="Unit\ProjectStatusReportComparisonTests.cs" />
+    <ProjectReference Remove="@(ProjectReference)" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.ProjectManagement\NEXUS.Modules.ProjectManagement.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.WorkflowEngine\NEXUS.Modules.WorkflowEngine.csproj" />
+  </ItemGroup>
+
+  <!-- Sponsor synchronization and assigned Change Request reviews can be tested without
+       building the API host into its locked runtime output directory. -->
+  <ItemGroup Condition="'$(FocusedProjectGovernanceApprovals)' == 'true'">
+    <Compile Remove="**\*.cs" />
+    <Compile Include="Integration\ProjectChangeRequestServiceIntegrationTests.cs" />
+    <Compile Include="Integration\ProjectSponsorMembershipSynchronizerTests.cs" />
+    <ProjectReference Remove="..\..\src\NEXUS.Api\NEXUS.Api.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(FocusedAssignmentRecovery)' == 'true'">
+    <Compile Remove="**\*.cs" />
+    <Compile Include="Integration\AssignmentRecoveryServiceTests.cs" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(FocusedManagementScope)' == 'true'">
+    <Compile Remove="**\*.cs" />
+    <Compile Include="Integration\ManagementScopeResolverTests.cs" />
+    <ProjectReference Remove="..\..\src\NEXUS.Api\NEXUS.Api.csproj" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(FocusedTeamCode)' == 'true'">
@@ -105,11 +144,41 @@
   <ItemGroup Condition="'$(FocusedHandoverManagers)' == 'true'">
     <Compile Remove="**\*.cs" />
     <Compile Include="Integration\ProjectHandoverManagerServiceTests.cs" />
+    <Compile Include="Integration\ManagerHandoverSelfScopedPendingTests.cs" />
     <ProjectReference Remove="..\..\src\NEXUS.Api\NEXUS.Api.csproj" />
     <ProjectReference Remove="..\..\src\NEXUS.Modules.RiskManagement\NEXUS.Modules.RiskManagement.csproj" />
     <ProjectReference Remove="..\..\src\NEXUS.Modules.ProjectPlanning\NEXUS.Modules.ProjectPlanning.csproj" />
     <ProjectReference Remove="..\..\src\NEXUS.Persistence\NEXUS.Persistence.csproj" />
     <ProjectReference Remove="..\..\src\NEXUS.Modules.WorkflowEngine\NEXUS.Modules.WorkflowEngine.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.Portfolio\NEXUS.Modules.Portfolio.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.Audit\NEXUS.Modules.Audit.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.Notifications\NEXUS.Modules.Notifications.csproj" />
+  </ItemGroup>
+
+  <!-- Portfolio/Program handover tests avoid the Project handover and API graphs. -->
+  <ItemGroup Condition="'$(FocusedPortfolioProgramHandover)' == 'true'">
+    <Compile Remove="**\*.cs" />
+    <Compile Include="Integration\ManagerHandoverSelfScopedPendingTests.cs" />
+    <ProjectReference Remove="@(ProjectReference)" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.Identity\NEXUS.Modules.Identity.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.Portfolio\NEXUS.Modules.Portfolio.csproj" />
+  </ItemGroup>
+
+  <!-- Secure project routing tests compile independently from unrelated API test suites. -->
+  <ItemGroup Condition="'$(FocusedProjectSecureRouting)' == 'true'">
+    <Compile Remove="**\*.cs" />
+    <Compile Include="Unit\ProjectPublicIdRoutingMiddlewareTests.cs" />
+    <Compile Include="Unit\MeetingWorkItemScopeTests.cs" />
+    <ProjectReference Remove="@(ProjectReference)" />
+    <ProjectReference Include="..\..\src\NEXUS.Api\NEXUS.Api.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Persistence\NEXUS.Persistence.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.ProjectManagement\NEXUS.Modules.ProjectManagement.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.ProjectPlanning\NEXUS.Modules.ProjectPlanning.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.RiskManagement\NEXUS.Modules.RiskManagement.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.Meetings\NEXUS.Modules.Meetings.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.WorkItems\NEXUS.Modules.WorkItems.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.CostManagement\NEXUS.Modules.CostManagement.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.Audit\NEXUS.Modules.Audit.csproj" />
   </ItemGroup>
 
   <!-- Focused audit search tests avoid unrelated host tests and API project dependencies. -->
@@ -165,12 +234,29 @@
     <Compile Remove="**\*.cs" />
     <Compile Include="Integration\ProjectEvmPersistenceTests.cs" />
     <Compile Include="Integration\ProjectEvmCalculatorTests.cs" />
+    <Compile Include="Integration\ProjectOverviewSignalsTests.cs" />
+    <Compile Include="Integration\PlanAssignmentServiceTests.cs" />
     <ProjectReference Remove="@(ProjectReference)" />
     <ProjectReference Include="..\..\src\NEXUS.Persistence\NEXUS.Persistence.csproj" />
     <ProjectReference Include="..\..\src\NEXUS.Modules.ProjectManagement\NEXUS.Modules.ProjectManagement.csproj" />
     <ProjectReference Include="..\..\src\NEXUS.Modules.ProjectPlanning\NEXUS.Modules.ProjectPlanning.csproj" />
     <ProjectReference Include="..\..\src\NEXUS.Modules.ResourceManagement\NEXUS.Modules.ResourceManagement.csproj" />
     <ProjectReference Include="..\..\src\NEXUS.Modules.CostManagement\NEXUS.Modules.CostManagement.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.WorkItems\NEXUS.Modules.WorkItems.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.WorkflowEngine\NEXUS.Modules.WorkflowEngine.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(FocusedProjectReporting)' == 'true'">
+    <Compile Remove="**\*.cs" />
+    <Compile Include="Integration\ProjectReportingPersistenceTests.cs" />
+    <ProjectReference Remove="@(ProjectReference)" />
+    <ProjectReference Include="..\..\src\NEXUS.Persistence\NEXUS.Persistence.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.ProjectManagement\NEXUS.Modules.ProjectManagement.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.ProjectPlanning\NEXUS.Modules.ProjectPlanning.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.ResourceManagement\NEXUS.Modules.ResourceManagement.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.CostManagement\NEXUS.Modules.CostManagement.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.WorkItems\NEXUS.Modules.WorkItems.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.WorkflowEngine\NEXUS.Modules.WorkflowEngine.csproj" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(FocusedPortfolioProgramRead)' == 'true'">

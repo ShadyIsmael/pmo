@@ -17,7 +17,7 @@ public static class ResourceMapping
             Email = resource.Email,
             Phone = resource.Phone,
             AvatarUrl = resource.AvatarUrl,
-            Type = resource.Type,
+            Type = ResourceTypeConstants.ToApiCode(resource.Type),
             Status = resource.Status,
             EmploymentType = resource.EmploymentType,
             Seniority = resource.Seniority,
@@ -39,22 +39,9 @@ public static class ResourceMapping
             UpdatedAt = resource.UpdatedAt,
             Skills = resource.Skills?.Select(s => s.ToDto()).ToList() ?? new(),
             Allocations = resource.Allocations?.Select(a => a.ToDto()).ToList() ?? new(),
-            CostProfiles = resource.CostProfiles?.Where(cp => !cp.IsDeleted).Select(cp => new ResourceCostProfileDto
-            {
-                Id = cp.Id,
-                ResourceId = cp.ResourceId,
-                EffectiveFrom = cp.EffectiveFrom,
-                EffectiveTo = cp.EffectiveTo,
-                CompensationType = cp.CompensationType,
-                Amount = cp.Amount,
-                Currency = cp.Currency,
-                OvertimeEligible = cp.OvertimeEligible,
-                OvertimeRateType = cp.OvertimeRateType,
-                OvertimeRateValue = cp.OvertimeRateValue,
-                CreatedAt = cp.CreatedAt,
-                UpdatedAt = cp.UpdatedAt,
-                RowVersion = cp.RowVersion
-            }).ToList() ?? new()
+            // Cost rates are confidential and are returned only by the separately
+            // authorized ResourceCostProfile endpoint.
+            CostProfiles = new()
         };
     }
 
@@ -97,7 +84,7 @@ public static class ResourceMapping
             Email = dto.Email,
             Phone = dto.Phone,
             AvatarUrl = dto.AvatarUrl,
-            Type = dto.Type,
+            Type = ResourceTypeConstants.ToStoredCode(dto.Type),
             Status = dto.Status,
             EmploymentType = dto.EmploymentType,
             Seniority = dto.Seniority,
@@ -125,7 +112,7 @@ public static void ApplyUpdate(this Resource resource, UpdateResourceDto dto)
         if (dto.Email != null) resource.Email = dto.Email;
         if (dto.Phone != null) resource.Phone = dto.Phone;
         if (dto.AvatarUrl != null) resource.AvatarUrl = dto.AvatarUrl;
-        if (dto.Type != null) resource.Type = dto.Type;
+        if (dto.Type.HasValue) resource.Type = ResourceTypeConstants.ToStoredCode(dto.Type.Value);
         if (dto.Status != null) resource.Status = dto.Status;
         if (dto.EmploymentType != null) resource.EmploymentType = dto.EmploymentType;
         if (dto.Seniority != null) resource.Seniority = dto.Seniority;

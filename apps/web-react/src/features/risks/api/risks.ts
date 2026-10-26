@@ -6,7 +6,7 @@ export type RiskLevel = "Low" | "Medium" | "High" | "Critical";
 export type RiskStatus = "Identified" | "ActionRequired" | "FollowUp" | "Mitigated" | "Closed";
 export type RiskActionStatus = "Planned" | "InProgress" | "Completed" | "Cancelled";
 export type RiskImpactType = "Schedule" | "Budget" | "Scope" | "Quality" | "Resources" | "Procurement" | "Compliance" | "Reputation" | "Operations" | "Other";
-export interface RiskDto { id: string; projectId: string; projectName: string; title: string; description: string; riskLevel: RiskLevel; impact?: string; likelihood?: string; status: RiskStatus; ownerResourceId?: string; ownerResourceName?: string; createdAt: string; updatedAt?: string; lastActionUpdateAt?: string; lastActionUpdateText?: string; impactTypes?: string[]; rowVersion: number[]; }
+export interface RiskDto { id: string; projectId: string; projectPublicId: string; projectName: string; title: string; description: string; riskLevel: RiskLevel; impact?: string; likelihood?: string; status: RiskStatus; ownerResourceId?: string; ownerResourceName?: string; createdAt: string; updatedAt?: string; lastActionUpdateAt?: string; lastActionUpdateText?: string; impactTypes?: string[]; rowVersion: number[]; }
 export interface CreateRiskDto { projectId: string; title: string; description: string; riskLevel: RiskLevel; impact?: string; likelihood?: string; ownerResourceId?: string; impactAssessment?: { impactTypes: RiskImpactType[]; description: string }; }
 export interface UpdateRiskDto { title: string; description: string; riskLevel: RiskLevel; ownerResourceId?: string; rowVersion?: number[]; }
 export interface RiskImpactAssessmentDto { id: string; riskId: string; impactTypes: RiskImpactType[]; description: string; createdAt: string; rowVersion: number[]; }
@@ -116,6 +116,14 @@ export function useRiskActionUpdates(riskId: string, actionId: string, enabled =
 export function useCreateRiskImpact() {
   const client = useQueryClient();
   return useMutation({ mutationFn: ({ riskId, data }: { riskId: string; data: { impactTypes: RiskImpactType[]; description: string } }) => api.post<RiskImpactAssessmentDto>(endpoints.risks.impacts(riskId), data), onSuccess: (_value, variables) => { void client.invalidateQueries({ queryKey: riskKeys.impacts(variables.riskId) }); void client.invalidateQueries({ queryKey: riskKeys.detail(variables.riskId) }); } });
+}
+export function useUpdateRiskImpact() {
+  const client = useQueryClient();
+  return useMutation({ mutationFn: ({ riskId, impactId, data }: { riskId: string; impactId: string; data: { impactTypes: RiskImpactType[]; description: string; rowVersion?: number[] } }) => api.put<RiskImpactAssessmentDto>(endpoints.risks.impact(riskId, impactId), data), onSuccess: (_value, variables) => { void client.invalidateQueries({ queryKey: riskKeys.impacts(variables.riskId) }); void client.invalidateQueries({ queryKey: riskKeys.detail(variables.riskId) }); } });
+}
+export function useDeleteRiskImpact() {
+  const client = useQueryClient();
+  return useMutation({ mutationFn: ({ riskId, impactId }: { riskId: string; impactId: string }) => api.delete<void>(endpoints.risks.impact(riskId, impactId)), onSuccess: (_value, variables) => { void client.invalidateQueries({ queryKey: riskKeys.impacts(variables.riskId) }); void client.invalidateQueries({ queryKey: riskKeys.detail(variables.riskId) }); } });
 }
 export function useCreateRiskAction() {
   const client = useQueryClient();

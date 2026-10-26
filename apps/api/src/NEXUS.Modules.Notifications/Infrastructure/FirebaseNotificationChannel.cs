@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NEXUS.Modules.Notifications.Application;
 using NEXUS.Modules.Notifications.Domain;
+using NEXUS.SharedKernel;
 
 namespace NEXUS.Modules.Notifications.Infrastructure;
 
@@ -12,26 +13,35 @@ public sealed class FirebaseNotificationChannel : IPushNotificationSender
     private readonly FirebaseMessagingClient _client;
     private readonly NotificationDeliveryOptions _options;
     private readonly ILogger<FirebaseNotificationChannel> _logger;
+    private readonly IProjectPublicIdLookup _projectPublicIdLookup;
 
-    public FirebaseNotificationChannel(FirebaseMessagingClient client, IOptions<NotificationDeliveryOptions> options, ILogger<FirebaseNotificationChannel> logger)
+    public FirebaseNotificationChannel(FirebaseMessagingClient client, IOptions<NotificationDeliveryOptions> options, ILogger<FirebaseNotificationChannel> logger, IProjectPublicIdLookup projectPublicIdLookup)
     {
         _client = client;
         _options = options.Value;
         _logger = logger;
+        _projectPublicIdLookup = projectPublicIdLookup;
     }
 
     public bool IsConfigured => _client.IsConfigured;
 
     public async Task<PushSendResult> SendAsync(NEXUS.Modules.Notifications.Domain.Notification notification, UserDeviceToken device, CancellationToken cancellationToken = default)
     {
-        // Push may appear on a lock screen. Keep payload content generic and send only
-        // internal reference metadata; the authenticated NEXUS route performs access checks.
+        // Push may appear on a lock screen. Keep payload content generic. Project links
+        // use only the tenant-scoped public identifier; the API rechecks user access.
+        var referenceId = notification.ReferenceId?.ToString() ?? string.Empty;
+        if (string.Equals(notification.ReferenceType, "Project", StringComparison.OrdinalIgnoreCase))
+        {
+            referenceId = notification.ReferenceId.HasValue
+                ? (await _projectPublicIdLookup.FindPublicIdAsync(notification.ReferenceId.Value, notification.TenantId, cancellationToken))?.ToString("D") ?? string.Empty
+                : string.Empty;
+        }
         var data = new Dictionary<string, string>
         {
             ["notificationId"] = notification.Id.ToString(),
             ["type"] = notification.Type,
             ["referenceType"] = notification.ReferenceType ?? string.Empty,
-            ["referenceId"] = notification.ReferenceId?.ToString() ?? string.Empty,
+            ["referenceId"] = referenceId,
         };
 
         try

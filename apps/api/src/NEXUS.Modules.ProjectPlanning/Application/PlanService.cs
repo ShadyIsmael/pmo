@@ -55,12 +55,10 @@ public class PlanService : IPlanService
 
         var tenantId = GetCurrentTenantId();
 
-        var duplicate = await _context.Set<Plan>()
-            .AnyAsync(p => p.ProjectId == dto.ProjectId && p.PlanType == dto.PlanType.Value, cancellationToken);
-        if (duplicate)
-        {
-            return Result<PlanDto>.Failure(Error.Conflict("A plan of this type already exists for the project"));
-        }
+        var duplicateName = await _context.Set<Plan>()
+            .AnyAsync(p => p.ProjectId == dto.ProjectId && p.PlanType == dto.PlanType.Value && p.Name == name, cancellationToken);
+        if (duplicateName)
+            return Result<PlanDto>.Failure(Error.Conflict("A plan with this name and type already exists for the project"));
 
         var plan = new Plan
         {
@@ -92,9 +90,8 @@ public class PlanService : IPlanService
         }
         catch (DbUpdateException)
         {
-            // The unique (TenantId, ProjectId, PlanType) index guards the racy
-            // create path when two requests create the same plan type at once.
-            return Result<PlanDto>.Failure(Error.Conflict("A plan of this type already exists for the project"));
+            // The unique project/type/name index guards a concurrent duplicate.
+            return Result<PlanDto>.Failure(Error.Conflict("A plan with this name and type already exists for the project"));
         }
 
         await _auditService.LogAsync(new AuditEntry

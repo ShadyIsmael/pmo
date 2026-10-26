@@ -27,6 +27,7 @@ public class PlanDependencyServiceTests : IDisposable
     private readonly PlanService _planService;
     private readonly PlanActivityService _activityService;
     private readonly PlanDependencyService _dependencyService;
+    private readonly PlanGridCommandHistoryService _history;
 
     private readonly Guid _tenantA = Guid.NewGuid();
     private readonly Guid _tenantB = Guid.NewGuid();
@@ -45,8 +46,11 @@ public class PlanDependencyServiceTests : IDisposable
         _accessor = new Mock<IHttpContextAccessor>();
         _auditService = new Mock<IAuditService>();
         _planService = new PlanService(_context, _auditService.Object, _accessor.Object);
-        _activityService = new PlanActivityService(_context, _auditService.Object, _accessor.Object);
-        _dependencyService = new PlanDependencyService(_context, _auditService.Object, _accessor.Object);
+        var scheduling = new PlanSchedulingService(_context, new NEXUS.Modules.ProjectPlanning.Domain.Scheduling.AutoSchedulingEngine());
+        var rollup = new SummaryTaskRollupService(_context);
+        _history = new PlanGridCommandHistoryService(_context, _accessor.Object, scheduling, rollup);
+        _activityService = new PlanActivityService(_context, _auditService.Object, _accessor.Object, scheduling, summaryRollup: rollup);
+        _dependencyService = new PlanDependencyService(_context, _auditService.Object, _accessor.Object, scheduling, rollup, _history);
     }
 
     private void SetTenant(Guid tenantId, Guid userId)
@@ -97,6 +101,50 @@ public class PlanDependencyServiceTests : IDisposable
         }, _userA.ToString());
         Assert.True(result.IsSuccess, result.Error?.Message);
         return result.Value!.Id;
+    }
+
+    [Fact]
+    public async Task BulkDependencyEdit_UndoAndRedoRestorePersistedPredecessors()
+    {
+        var planId = await CreatePlanAsync();
+        var first = await CreateActivityAsync(planId, "HISTORY-LINK-A");
+        var second = await CreateActivityAsync(planId, "HISTORY-LINK-B");
+        var third = await CreateActivityAsync(planId, "HISTORY-LINK-C");
+        var originalDependencyId = await CreateDependencyAsync(planId, third, first);
+
+        var edit = await _dependencyService.ReplacePredecessorsBulkAsync(planId, new BulkReplacePlanPredecessorsDto
+        {
+            Items =
+            [
+                new ReplacePlanPredecessorsDto { ActivityId = second, Predecessors = [new PlanPredecessorInputDto { PredecessorActivityId = first }] },
+                new ReplacePlanPredecessorsDto { ActivityId = third, Predecessors = [new PlanPredecessorInputDto { PredecessorActivityId = second }] }
+            ]
+        }, _userA.ToString());
+        Assert.True(edit.IsSuccess, edit.Error?.Message);
+        _context.ChangeTracker.Clear();
+
+        var afterEdit = (await _dependencyService.GetByPlanAsync(planId)).Value!;
+        Assert.Contains(afterEdit, dependency => dependency.ActivityId == second && dependency.PredecessorActivityId == first);
+        Assert.Contains(afterEdit, dependency => dependency.ActivityId == third && dependency.PredecessorActivityId == second);
+        Assert.DoesNotContain(afterEdit, dependency => dependency.Id == originalDependencyId);
+
+        var state = await _history.GetStateAsync(_projectId, planId, _userA.ToString());
+        Assert.True(state.Value!.CanUndo);
+        var commandId = state.Value.UndoCommandId!.Value;
+        var undo = await _history.UndoAsync(_projectId, planId, commandId, _userA.ToString());
+        Assert.True(undo.IsSuccess, undo.Error?.Message);
+        _context.ChangeTracker.Clear();
+        var afterUndo = (await _dependencyService.GetByPlanAsync(planId)).Value!;
+        Assert.DoesNotContain(afterUndo, dependency => dependency.ActivityId == second);
+        Assert.Contains(afterUndo, dependency => dependency.Id == originalDependencyId && dependency.ActivityId == third && dependency.PredecessorActivityId == first);
+
+        var redo = await _history.RedoAsync(_projectId, planId, commandId, _userA.ToString());
+        Assert.True(redo.IsSuccess, redo.Error?.Message);
+        _context.ChangeTracker.Clear();
+        var afterRedo = (await _dependencyService.GetByPlanAsync(planId)).Value!;
+        Assert.Contains(afterRedo, dependency => dependency.ActivityId == second && dependency.PredecessorActivityId == first);
+        Assert.Contains(afterRedo, dependency => dependency.ActivityId == third && dependency.PredecessorActivityId == second);
+        Assert.DoesNotContain(afterRedo, dependency => dependency.Id == originalDependencyId);
     }
 
     [Fact]
@@ -544,6 +592,28 @@ public class PlanDependencyServiceTests : IDisposable
         Assert.True(cycle.IsFailure);
         Assert.Equal("VALIDATION_ERROR", cycle.Error!.Code, ignoreCase: true);
         Assert.Equal(1, _context.PlanDependencies.Count());
+    }
+
+    [Fact]
+    public async Task ReplacePredecessorsBulk_InvalidLaterCycleRollsBackEarlierChange()
+    {
+        var planId = await CreatePlanAsync();
+        var a = await CreateActivityAsync(planId, "BULK-A");
+        var b = await CreateActivityAsync(planId, "BULK-B");
+
+        var result = await _dependencyService.ReplacePredecessorsBulkAsync(planId, new BulkReplacePlanPredecessorsDto
+        {
+            Items =
+            [
+                new ReplacePlanPredecessorsDto { ActivityId = b, Predecessors = [new PlanPredecessorInputDto { PredecessorActivityId = a }] },
+                new ReplacePlanPredecessorsDto { ActivityId = a, Predecessors = [new PlanPredecessorInputDto { PredecessorActivityId = b }] },
+            ],
+        }, _userA.ToString());
+
+        Assert.True(result.IsFailure);
+        _context.ChangeTracker.Clear();
+        Assert.Empty(await _context.PlanDependencies.ToListAsync());
+        Assert.Empty(await _context.Set<AuditEntry>().Where(entry => entry.EntityType == "PlanDependency" && entry.Action == "ReplacePredecessors").ToListAsync());
     }
 
     [Fact]

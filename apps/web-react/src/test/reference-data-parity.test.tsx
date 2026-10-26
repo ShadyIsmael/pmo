@@ -32,6 +32,10 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@auth/AuthProvider", () => ({ useAuth: mocks.useAuth }));
+vi.mock("@components/ui/ConfirmProvider", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@components/ui/ConfirmProvider")>()),
+  useConfirm: () => vi.fn().mockResolvedValue(true),
+}));
 vi.mock("../features/administration/api/admin", () => ({
   useVendorCategories: mocks.categories,
   useCreateVendorCategory: mocks.createHook,

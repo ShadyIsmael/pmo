@@ -20,6 +20,7 @@ import { hasPermission, Permissions } from "@lib/permissions";
 import { useDocuments, type DocumentDto } from "@features/delivery/api/delivery";
 import { useProjects, type ProjectSummaryDto } from "./api/projects";
 import { usePlanningActivitiesFull, usePlanningPlansFull, type PlanActivityDto } from "./api/planningFull";
+import { roundPlanProgress } from "./lib/plan-progress";
 import { useResources } from "@features/resources/api/resources";
 
 const emptyProjectBoardItems: WorkItemDto[] = [];
@@ -35,7 +36,7 @@ function ProjectPicker({ projects, value, onChange, label }: { projects: readonl
       <span className="text-xs font-medium text-muted-foreground">{label}</span>
       <select className="h-10 min-w-[16rem] rounded-md border border-input bg-background px-3 text-sm" value={value} onChange={(event) => onChange(event.target.value)} disabled={!projects.length}>
         {!projects.length ? <option value="">—</option> : null}
-        {projects.map((project) => <option key={project.id} value={project.id}>{project.name} · {project.code}</option>)}
+        {projects.map((project) => <option key={project.publicId} value={project.publicId}>{project.name} · {project.code}</option>)}
       </select>
     </label>
   );
@@ -47,7 +48,7 @@ function useWorkspaceProjectId(projects: readonly ProjectSummaryDto[], routeProj
     if (routeProjectId) setSelectedId(routeProjectId);
   }, [routeProjectId]);
   React.useEffect(() => {
-    if (!selectedId && projects[0]) setSelectedId(projects[0].id);
+    if (!selectedId && projects[0]) setSelectedId(projects[0].publicId);
   }, [projects, selectedId]);
   return [selectedId, setSelectedId] as const;
 }
@@ -84,30 +85,30 @@ export function ProjectBoardPage() {
   const canCreate = Boolean(user && hasPermission(user.permissions, Permissions.WorkItem.Create) && canMutate && !effectiveReadOnly);
   const canEdit = Boolean(user && hasPermission(user.permissions, Permissions.WorkItem.Edit) && canMutate && !effectiveReadOnly);
   const mutations = useFullWorkItemMutations();
-  const selectedProject = projects.find((project) => project.id === projectId);
+  const selectedProject = projects.find((project) => project.publicId === projectId);
   const [createOpen, setCreateOpen] = React.useState(false);
-  const [draft, setDraft] = React.useState<SaveWorkItemDto>(() => emptyProjectBoardTask(projectId));
+  const [draft, setDraft] = React.useState<SaveWorkItemDto>(() => emptyProjectBoardTask(selectedProject?.id));
   const [createError, setCreateError] = React.useState("");
-  const createAssignees = useFullWorkItemAssignees(draft.projectId, createOpen);
+  const createAssignees = useFullWorkItemAssignees(selectedProject?.publicId, createOpen);
   const [movingItemId, setMovingItemId] = React.useState<string>();
   const [moveError, setMoveError] = React.useState("");
   const [pendingTransition, setPendingTransition] = React.useState<{ itemId: string; targetStatus: string; options: WorkflowTransitionOption[] }>();
   const transitionMove = useWorkItemWorkflowTransition();
 
   function openCreateTask() {
-    setDraft(emptyProjectBoardTask(projectId));
+    setDraft(emptyProjectBoardTask(selectedProject?.id));
     setCreateError("");
     setCreateOpen(true);
   }
   function closeCreate(open: boolean) {
     setCreateOpen(open);
-    if (!open) { setDraft(emptyProjectBoardTask(projectId)); setCreateError(""); }
+    if (!open) { setDraft(emptyProjectBoardTask(selectedProject?.id)); setCreateError(""); }
   }
   async function saveTask() {
     if (!draft.title.trim()) { setCreateError(t("workItems.validation")); return; }
     setCreateError("");
     try {
-      await mutations.create.mutateAsync({ ...draft, title: draft.title.trim(), projectId, dueDate: draft.dueDate || undefined });
+      await mutations.create.mutateAsync({ ...draft, title: draft.title.trim(), projectId: selectedProject?.id, dueDate: draft.dueDate || undefined });
       closeCreate(false);
     } catch {
       setCreateError(t("workItems.createError"));
@@ -221,7 +222,7 @@ function GanttActivityRow({ activity, rangeStart, rangeEnd, months, monthWidth, 
     <div className="grid items-center border-b last:border-0" style={{ gridTemplateColumns: `16rem repeat(${months.length}, ${monthWidth}px)` }} data-testid="gantt-activity-row">
       <div className="border-e px-3 py-2" dir={locale === "ar" ? "rtl" : "ltr"}>
         <div className="flex items-center gap-2">
-          <span aria-hidden="true" className={`h-2.5 w-2.5 shrink-0 rounded-full ${isMilestone ? "bg-primary" : activity.critical ? "bg-destructive" : "bg-emerald-600"}`} />
+          <span aria-hidden="true" className={`h-2.5 w-2.5 shrink-0 rounded-full ${isMilestone ? "bg-primary" : activity.critical ? "bg-destructive" : "bg-success"}`} />
           <p className={`truncate text-xs ${isMilestone ? "font-semibold text-primary" : "font-medium"}`}>{activity.name}</p>
         </div>
         <p className="truncate ps-[1.125rem] font-mono text-[10px] text-muted-foreground">{activity.code}</p>
@@ -234,11 +235,11 @@ function GanttActivityRow({ activity, rangeStart, rangeEnd, months, monthWidth, 
           <div
             className={`absolute top-3 h-5 ${isMilestone ? `h-3 w-3 ${locale === "ar" ? "translate-x-1/2" : "-translate-x-1/2"} rotate-45 rounded-sm` : "rounded"} ${isMilestone ? "bg-primary" : activity.critical ? "bg-destructive" : "bg-primary"}`}
             style={{ insetInlineStart: `${left * 100}%`, width: isMilestone ? undefined : `${width * 100}%`, minWidth: isMilestone ? undefined : "3px" }}
-            title={`${activity.progress ?? 0}%`}
+            title={`${roundPlanProgress(activity.progress) ?? 0}%`}
             role="img"
-            aria-label={`${activity.name}: ${activity.progress ?? 0}%`}
+            aria-label={`${activity.name}: ${roundPlanProgress(activity.progress) ?? 0}%`}
           >
-            {!isMilestone ? <div className="h-full rounded bg-white/25" style={{ width: `${Math.max(0, Math.min(100, activity.progress ?? 0))}%` }} /> : null}
+            {!isMilestone ? <div className="h-full rounded bg-white/25" style={{ width: `${Math.max(0, Math.min(100, roundPlanProgress(activity.progress) ?? 0))}%` }} /> : null}
           </div>
         ) : null}
         <span className="absolute bottom-0 start-1 text-[9px] text-muted-foreground">{startLabel}</span>
@@ -269,7 +270,7 @@ export function ProjectGanttPage() {
   const visibleActivities = React.useMemo(() => activities
     .filter((activity) => `${activity.name} ${activity.code}`.toLocaleLowerCase().includes(filterText.trim().toLocaleLowerCase()))
     .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.name.localeCompare(b.name)), [activities, filterText]);
-  const project = projects.find((item) => item.id === projectId);
+  const project = projects.find((item) => item.publicId === projectId);
   const months = React.useMemo(() => buildGanttMonths([
     utcDateValue(project?.startDate),
     utcDateValue(project?.endDate),

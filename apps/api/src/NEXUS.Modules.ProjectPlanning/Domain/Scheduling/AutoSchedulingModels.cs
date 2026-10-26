@@ -25,7 +25,8 @@ public sealed record AutoScheduleDependency(
     Guid PredecessorId,
     Guid SuccessorId,
     PlanDependencyType Type,
-    int LagDays);
+    int LagDays,
+    Guid? Id = null);
 
 public sealed record CalendarDayDefinition(
     DayOfWeek DayOfWeek,

@@ -16,8 +16,14 @@ public sealed class PlanSchedulingAnalysisService : IPlanSchedulingAnalysisServi
         _analyzer = analyzer;
     }
 
-    public async Task<Result<Guid>> GetActiveWorkingVersionIdAsync(Guid planId, CancellationToken cancellationToken = default)
+    public async Task<Result<Guid>> GetActiveWorkingVersionIdAsync(Guid projectId, Guid planId, CancellationToken cancellationToken = default)
     {
+        var planExistsInProject = await _context.Set<Plan>()
+            .AsNoTracking()
+            .AnyAsync(item => item.Id == planId && item.ProjectId == projectId, cancellationToken);
+        if (!planExistsInProject)
+            return Result<Guid>.Failure(Error.NotFound("Plan not found"));
+
         var version = await _context.Set<PlanVersion>()
             .FirstOrDefaultAsync(item => item.PlanId == planId && item.Type == PlanVersionType.Working && item.Status == PlanVersionStatus.Active, cancellationToken);
         return version is null
@@ -63,7 +69,8 @@ public sealed class PlanSchedulingAnalysisService : IPlanSchedulingAnalysisServi
             link.PredecessorActivityId,
             link.ActivityId,
             link.Type,
-            link.Lag ?? 0)).ToList();
+            link.Lag ?? 0,
+            link.Id)).ToList();
         var calendarModels = calendars.Select(calendar => new AutoScheduleCalendar(
             calendar.Id,
             calendar.DayRules.Where(rule => !rule.IsDeleted).Select(rule => new CalendarDayDefinition(
@@ -91,7 +98,7 @@ public sealed class PlanSchedulingAnalysisService : IPlanSchedulingAnalysisServi
         var dependencies = await _context.Set<PlanDependency>().AsNoTracking().Where(item => item.PlanVersionId == planVersionId && !item.IsDeleted).ToListAsync(cancellationToken);
         var calendars = await _context.Set<PlanCalendar>().Include(item => item.DayRules).Include(item => item.Holidays).AsNoTracking().Where(item => item.PlanVersionId == planVersionId && !item.IsDeleted).ToListAsync(cancellationToken);
         var taskModels = activities.Select(ToTaskModel).ToList();
-        var links = dependencies.Select(link => new AutoScheduleDependency(link.PredecessorActivityId, link.ActivityId, link.Type, link.Lag ?? 0)).ToList();
+        var links = dependencies.Select(link => new AutoScheduleDependency(link.PredecessorActivityId, link.ActivityId, link.Type, link.Lag ?? 0, link.Id)).ToList();
         var calendarModels = calendars.Select(ToCalendarModel).ToList();
         var defaultCalendarId = calendars.OrderByDescending(item => item.IsDefault).ThenBy(item => item.Name).Select(item => (Guid?)item.Id).FirstOrDefault();
         var analysis = _analyzer.Analyze(taskModels, links, calendarModels, defaultCalendarId);

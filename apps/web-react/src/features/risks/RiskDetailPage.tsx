@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { ArrowLeft, CalendarDays, Clock3, FolderKanban, History, Loader2, MessageSquare, Pencil, Plus, Save, UserRound } from "lucide-react";
+import { ArrowLeft, CalendarDays, Clock3, FolderKanban, History, Loader2, MessageSquare, Pencil, Plus, Save, Trash2, UserRound } from "lucide-react";
 import { Button } from "@components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@components/ui/Card";
 import { Input } from "@components/ui/Input";
@@ -18,12 +18,14 @@ import {
   useCreateRiskAction,
   useCreateRiskImpact,
   useDeleteRiskAction,
+  useDeleteRiskImpact,
   useRisk,
   useRiskActionUpdates,
   useRiskActions,
   useRiskImpacts,
   useUpdateRisk,
   useUpdateRiskAction,
+  useUpdateRiskImpact,
   useUpdateRiskStatus,
   type RiskActionDto,
   type RiskActionStatus,
@@ -48,6 +50,7 @@ export function RiskDetailPage() {
   const formatDateTime = (value: string) => formatDate(value, { dateStyle: "medium", timeStyle: "short" });
   const { user } = useAuth();
   const canEdit = Boolean(user && hasPermission(user.permissions, Permissions.Risk.Edit));
+  const canDelete = Boolean(user && hasPermission(user.permissions, Permissions.Risk.Delete));
   const canMitigate = Boolean(user && hasPermission(user.permissions, Permissions.Risk.Mitigate));
   const projectId = searchParams.get("projectId") ?? "";
   const fromProject = searchParams.get("from") === "project" && Boolean(projectId);
@@ -63,6 +66,7 @@ export function RiskDetailPage() {
   const [updateText, setUpdateText] = React.useState("");
   const [impactTypes, setImpactTypes] = React.useState<RiskImpactType[]>([]);
   const [impactDescription, setImpactDescription] = React.useState("");
+  const [editingImpact, setEditingImpact] = React.useState(false);
 
   const query = useRisk(id, Boolean(id));
   const actions = useRiskActions(id, query.isSuccess);
@@ -73,6 +77,8 @@ export function RiskDetailPage() {
   const deleteAction = useDeleteRiskAction();
   const addUpdate = useAddRiskActionUpdate();
   const createImpact = useCreateRiskImpact();
+  const updateImpact = useUpdateRiskImpact();
+  const deleteImpact = useDeleteRiskImpact();
   const updateRisk = useUpdateRisk();
   const updateStatus = useUpdateRiskStatus();
   const lookupsEnabled = editingRisk || showActionForm || editingAction;
@@ -89,6 +95,10 @@ export function RiskDetailPage() {
   }, [risk]);
 
   React.useEffect(() => {
+    if (impact) { setImpactTypes(impact.impactTypes); setImpactDescription(impact.description); }
+  }, [impact]);
+
+  React.useEffect(() => {
     if (!actions.isSuccess || actions.isFetching) return;
     const next = actionItems.find((action) => action.id === requestedActionId)
       ?? actionItems.find((action) => action.id === selectedAction)
@@ -96,7 +106,7 @@ export function RiskDetailPage() {
     if (next?.id !== selectedAction) setSelectedAction(next?.id ?? "");
   }, [actions.isFetching, actions.isSuccess, actionItems, requestedActionId, selectedAction]);
 
-  const backHref = fromProject ? `/projects/${encodeURIComponent(projectId)}/risks-issues` : "/risks-issues/risks";
+  const backHref = fromProject && risk?.projectPublicId ? `/projects/${encodeURIComponent(risk.projectPublicId)}/risks-issues` : "/risks-issues/risks";
   const ownerName = (resourceId?: string) => resources.data?.items.find((resource) => resource.id === resourceId)?.name;
   const userName = (userId: string) => users.data?.find((item) => item.id.toLowerCase() === userId.toLowerCase())?.fullName ?? t("risks.unknownUser");
   const setActionUrl = (actionId?: string) => {
@@ -185,9 +195,36 @@ export function RiskDetailPage() {
     event.preventDefault();
     if (!risk || !impactTypes.length || !impactDescription.trim()) return;
     try {
-      await createImpact.mutateAsync({ riskId: risk.id, data: { impactTypes, description: impactDescription.trim() } });
-      setImpactTypes([]);
-      setImpactDescription("");
+      if (impact) {
+        await updateImpact.mutateAsync({ riskId: risk.id, impactId: impact.id, data: { impactTypes, description: impactDescription.trim(), rowVersion: impact.rowVersion } });
+        setEditingImpact(false);
+      } else {
+        await createImpact.mutateAsync({ riskId: risk.id, data: { impactTypes, description: impactDescription.trim() } });
+        setImpactTypes([]);
+        setImpactDescription("");
+      }
+    } catch { /* mutation state is rendered beside the impact form */ }
+  }
+
+  function openImpactEdit() {
+    if (!impact) return;
+    updateImpact.reset();
+    createImpact.reset();
+    setImpactTypes(impact.impactTypes);
+    setImpactDescription(impact.description);
+    setEditingImpact(true);
+  }
+
+  function cancelImpactEdit() {
+    setEditingImpact(false);
+    setImpactTypes([]);
+    setImpactDescription("");
+  }
+
+  async function removeImpact() {
+    if (!risk || !impact) return;
+    try {
+      await deleteImpact.mutateAsync({ riskId: risk.id, impactId: impact.id });
     } catch { /* mutation state is rendered beside the impact form */ }
   }
 
@@ -208,6 +245,7 @@ export function RiskDetailPage() {
   const canMarkMitigated = ["Identified", "ActionRequired", "FollowUp"].includes(risk.status);
   const canCloseRisk = risk.status === "Mitigated";
   const actionPending = createAction.isPending || updateAction.isPending;
+  const impactPending = createImpact.isPending || updateImpact.isPending;
   const riskRequired = (value: string) => riskSubmitted && !value.trim() ? <p className="text-xs text-destructive">{t("risks.required")}</p> : null;
 
   return <div className="space-y-5">
@@ -221,7 +259,7 @@ export function RiskDetailPage() {
     </div>
     {updateStatus.isError ? <p role="alert" className="text-sm text-destructive">{t("risks.statusUpdateError")}</p> : null}
 
-    <Card className="overflow-hidden border-primary/15 bg-card/80"><CardContent className="flex flex-col gap-4 p-5 sm:p-6 lg:flex-row lg:items-start lg:justify-between"><div className="min-w-0"><p className="mb-2 text-xs font-medium uppercase tracking-[0.18em] text-primary">{t("risks.riskOverview")}</p><h1 className="text-xl font-bold tracking-tight sm:text-2xl">{risk.title}</h1><Link to={`/projects/${encodeURIComponent(risk.projectId)}/risks-issues`} className="mt-1 inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"><FolderKanban className="h-3.5 w-3.5" />{risk.projectName || "—"}</Link></div><div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm"><span><span className="text-muted-foreground">{t("risks.riskLevel")}: </span><span className={getStatusTextClass(risk.riskLevel)}>{t(`enums.riskLevel.${risk.riskLevel.toLowerCase()}`)}</span></span><span><span className="text-muted-foreground">{t("risks.status")}: </span><span className={getStatusTextClass(risk.status)}>{t(`enums.riskStatus.${risk.status.charAt(0).toLowerCase()}${risk.status.slice(1)}`)}</span></span></div></CardContent></Card>
+    <Card className="overflow-hidden border-primary/15 bg-card/80"><CardContent className="flex flex-col gap-4 p-5 sm:p-6 lg:flex-row lg:items-start lg:justify-between"><div className="min-w-0"><p className="mb-2 text-xs font-medium uppercase tracking-[0.18em] text-primary">{t("risks.riskOverview")}</p><h1 className="text-xl font-bold tracking-tight sm:text-2xl">{risk.title}</h1><Link to={`/projects/${encodeURIComponent(risk.projectPublicId)}/risks-issues`} className="mt-1 inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"><FolderKanban className="h-3.5 w-3.5" />{risk.projectName || "—"}</Link></div><div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm"><span><span className="text-muted-foreground">{t("risks.riskLevel")}: </span><span className={getStatusTextClass(risk.riskLevel)}>{t(`enums.riskLevel.${risk.riskLevel.toLowerCase()}`)}</span></span><span><span className="text-muted-foreground">{t("risks.status")}: </span><span className={getStatusTextClass(risk.status)}>{t(`enums.riskStatus.${risk.status.charAt(0).toLowerCase()}${risk.status.slice(1)}`)}</span></span></div></CardContent></Card>
 
     <Card>
       <CardHeader><CardTitle>{t("risks.overview")}</CardTitle></CardHeader>
@@ -229,7 +267,7 @@ export function RiskDetailPage() {
         <div className="space-y-5 text-sm">
           <p className="whitespace-pre-wrap leading-6 text-muted-foreground">{risk.description || "—"}</p>
           <div className="grid gap-4 sm:grid-cols-2">
-            <div><Label className="text-xs text-muted-foreground">{t("risks.project")}</Label><p className="mt-1"><Link to={`/projects/${encodeURIComponent(risk.projectId)}/risks-issues`} className="inline-flex items-center gap-1.5 font-medium text-primary hover:underline"><FolderKanban className="h-3.5 w-3.5" />{risk.projectName || "—"}</Link></p></div>
+            <div><Label className="text-xs text-muted-foreground">{t("risks.project")}</Label><p className="mt-1"><Link to={`/projects/${encodeURIComponent(risk.projectPublicId)}/risks-issues`} className="inline-flex items-center gap-1.5 font-medium text-primary hover:underline"><FolderKanban className="h-3.5 w-3.5" />{risk.projectName || "—"}</Link></p></div>
             <div><Label className="text-xs text-muted-foreground">{t("risks.owner")}</Label><p className="mt-1 font-medium">{risk.ownerResourceName || "—"}</p></div>
             <div><Label className="text-xs text-muted-foreground">{t("risks.identifiedDate")}</Label><p className="mt-1 font-medium">{formatDate(risk.createdAt)}</p></div>
             <div><Label className="text-xs text-muted-foreground">{t("risks.lastUpdate")}</Label><p className="mt-1 font-medium">{formatDate(risk.updatedAt ?? risk.createdAt)}</p></div>
@@ -237,8 +275,8 @@ export function RiskDetailPage() {
         </div>
         <div className="rounded-xl border bg-muted/20 p-4">
           <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t("risks.riskImpact")}</p>
-          {impacts.isError ? <p role="alert" className="mt-4 text-sm text-destructive">{t("risks.loadError")}</p> : impacts.isLoading ? <p className="mt-4 text-sm text-muted-foreground">{t("common.loading")}</p> : impact ? <div className="mt-4 space-y-4"><div className="flex flex-wrap gap-2">{impact.impactTypes.map((value) => <span key={value} className="text-sm font-medium text-primary">{t(`enums.riskImpactType.${value.charAt(0).toLowerCase()}${value.slice(1)}`)}</span>)}</div><p className="whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{impact.description || "—"}</p></div> : <p className="mt-4 text-sm text-muted-foreground">{t("risks.noImpacts")}</p>}
-          {canEdit ? <form onSubmit={(event) => void saveImpact(event)} className="mt-4 space-y-3 border-t pt-4"><Label>{t("risks.selectImpactTypes")}</Label><div className="grid gap-2 sm:grid-cols-2">{RISK_IMPACT_TYPES.map((impactType) => <label key={impactType} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={impactTypes.includes(impactType)} onChange={() => setImpactTypes((current) => current.includes(impactType) ? current.filter((item) => item !== impactType) : [...current, impactType])} />{t(`enums.riskImpactType.${impactType.charAt(0).toLowerCase()}${impactType.slice(1)}`)}</label>)}</div><Label htmlFor="risk-impact-description">{t("risks.impactDescription")}</Label><Textarea id="risk-impact-description" value={impactDescription} onChange={(event) => setImpactDescription(event.target.value)} rows={3} />{createImpact.isError ? <p role="alert" className="text-sm text-destructive">{t("risks.riskSaveError")}</p> : null}<Button size="sm" type="submit" disabled={createImpact.isPending || !impactTypes.length || !impactDescription.trim()}>{createImpact.isPending ? <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" /> : <Plus className="me-1.5 h-3.5 w-3.5" />}{t("risks.addImpact")}</Button></form> : null}
+          {impacts.isError ? <p role="alert" className="mt-4 text-sm text-destructive">{t("risks.loadError")}</p> : impacts.isLoading ? <p className="mt-4 text-sm text-muted-foreground">{t("common.loading")}</p> : impact ? <div className="mt-4 space-y-4"><div className="flex flex-wrap gap-2">{impact.impactTypes.map((value) => <span key={value} className="text-sm font-medium text-primary">{t(`enums.riskImpactType.${value.charAt(0).toLowerCase()}${value.slice(1)}`)}</span>)}</div><p className="whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{impact.description || "—"}</p>{canEdit && !editingImpact ? <div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={openImpactEdit}><Pencil className="me-1.5 h-3.5 w-3.5" />{t("risks.editImpact")}</Button>{canDelete ? <Button size="sm" variant="ghost" onClick={() => void removeImpact()} disabled={deleteImpact.isPending}>{deleteImpact.isPending ? <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" /> : <Trash2 className="me-1.5 h-3.5 w-3.5" />}{t("risks.removeImpact")}</Button> : null}</div> : null}{deleteImpact.isError ? <p role="alert" className="text-sm text-destructive">{t("risks.riskSaveError")}</p> : null}</div> : <p className="mt-4 text-sm text-muted-foreground">{t("risks.noImpacts")}</p>}
+          {canEdit && (!impact || editingImpact) ? <form onSubmit={(event) => void saveImpact(event)} className="mt-4 space-y-3 border-t pt-4"><Label>{t("risks.selectImpactTypes")}</Label><div className="grid gap-2 sm:grid-cols-2">{RISK_IMPACT_TYPES.map((impactType) => <label key={impactType} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={impactTypes.includes(impactType)} onChange={() => setImpactTypes((current) => current.includes(impactType) ? current.filter((item) => item !== impactType) : [...current, impactType])} />{t(`enums.riskImpactType.${impactType.charAt(0).toLowerCase()}${impactType.slice(1)}`)}</label>)}</div><Label htmlFor="risk-impact-description">{t("risks.impactDescription")}</Label><Textarea id="risk-impact-description" value={impactDescription} onChange={(event) => setImpactDescription(event.target.value)} rows={3} />{createImpact.isError || updateImpact.isError ? <p role="alert" className="text-sm text-destructive">{t("risks.riskSaveError")}</p> : null}<div className="flex flex-wrap gap-2"><Button size="sm" type="submit" disabled={impactPending || !impactTypes.length || !impactDescription.trim()}>{impactPending ? <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" /> : editingImpact ? <Save className="me-1.5 h-3.5 w-3.5" /> : <Plus className="me-1.5 h-3.5 w-3.5" />}{editingImpact ? t("risks.saveChanges") : t("risks.addImpact")}</Button>{editingImpact ? <Button size="sm" type="button" variant="ghost" onClick={cancelImpactEdit}>{t("risks.cancel")}</Button> : null}</div></form> : null}
         </div>
       </CardContent>
     </Card>

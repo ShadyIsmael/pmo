@@ -1,9 +1,18 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
+import { readFileSync } from "node:fs";
+const brand = JSON.parse(readFileSync(new URL("./brand.json", import.meta.url), "utf8"));
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), {
+    name: "fopx-brand-metadata",
+    transformIndexHtml(html) {
+      return html.split("%BRAND_PRODUCT%").join(brand.product.name)
+        .split("%BRAND_DESCRIPTION%").join(brand.product.description)
+        .split("%BRAND_FAVICON%").join(brand.product.favicon);
+    },
+  }],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

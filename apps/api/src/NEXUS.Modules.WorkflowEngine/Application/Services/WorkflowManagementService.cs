@@ -152,7 +152,7 @@ public sealed class WorkflowManagementService : IWorkflowManagementService
             return Result<WorkflowDefinitionDetailsDto>.Failure(Error.Validation("Name, code, and workflow domain are required."));
         var domain = WorkflowDomains.Normalize(request.Domain);
         if (!WorkflowDomains.IsSupported(domain))
-            return Result<WorkflowDefinitionDetailsDto>.Failure(Error.Validation("Workflow domain must be Task, Risk, or Finance."));
+            return Result<WorkflowDefinitionDetailsDto>.Failure(Error.Validation("Workflow domain must be Task, Risk, Finance, or Reporting."));
         var entityType = string.IsNullOrWhiteSpace(request.EntityType)
             ? WorkflowDomains.EntityTypeFor(domain)
             : request.EntityType.Trim();

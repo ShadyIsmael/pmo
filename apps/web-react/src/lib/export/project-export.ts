@@ -1,4 +1,4 @@
-import { api } from "@api/client";
+﻿import { api } from "@api/client";
 
 interface ExportProjectSummary {
   id: string;
@@ -6,7 +6,7 @@ interface ExportProjectSummary {
   code: string;
   status: string;
   health?: string;
-  progress: number;
+  planProgress?: number | null;
   endDate?: string;
   budget?: number;
   actualCost?: number;
@@ -62,8 +62,8 @@ export async function fetchFilteredProjects(params: ProjectExportParams = {}): P
     if (code?.trim() && !p.code.toLowerCase().includes(code.toLowerCase())) return false;
     if (statuses && statuses.length > 0 && !statuses.includes(p.status)) return false;
     if (healths && healths.length > 0 && p.health && !healths.includes(p.health)) return false;
-    if (progressMin !== undefined && p.progress < progressMin) return false;
-    if (progressMax !== undefined && p.progress > progressMax) return false;
+    if (progressMin !== undefined && (p.planProgress == null || p.planProgress < progressMin)) return false;
+    if (progressMax !== undefined && (p.planProgress == null || p.planProgress > progressMax)) return false;
     if (budgetMin !== undefined && (p.budget || 0) < budgetMin) return false;
     if (budgetMax !== undefined && (p.budget || 0) > budgetMax) return false;
     if (forecastMin !== undefined && (p.actualCost || 0) < forecastMin) return false;
@@ -201,7 +201,7 @@ export async function generateProjectsPdf(options: ProjectsPdfOptions): Promise<
     text: header,
     bold: true,
     color: "#FFFFFF",
-    fillColor: "#1F6E8C",
+    fillColor: "#2469A8",
     alignment: align,
     margin: [4, 4, 4, 4] as [number, number, number, number],
   }));
@@ -223,9 +223,9 @@ export async function generateProjectsPdf(options: ProjectsPdfOptions): Promise<
     info: { title },
     content: [
       { text: title, fontSize: 16, bold: true, alignment: align, margin: [0, 0, 0, 6] },
-      { text: `${exportDateLabel}: ${exportDate}`, fontSize: 9, color: "#475569", alignment: align, margin: [0, 0, 0, 3] },
-      { text: `${filtersLabel}: ${filtersSummary}`, fontSize: 9, color: "#475569", alignment: align, margin: [0, 0, 0, 3] },
-      { text: `${countLabel}: ${rows.length}`, fontSize: 9, color: "#475569", alignment: align, margin: [0, 0, 0, 10] },
+      { text: `${exportDateLabel}: ${exportDate}`, fontSize: 9, color: "#697586", alignment: align, margin: [0, 0, 0, 3] },
+      { text: `${filtersLabel}: ${filtersSummary}`, fontSize: 9, color: "#697586", alignment: align, margin: [0, 0, 0, 3] },
+      { text: `${countLabel}: ${rows.length}`, fontSize: 9, color: "#697586", alignment: align, margin: [0, 0, 0, 10] },
       {
         table: {
           rtl: isRtl,
@@ -236,8 +236,8 @@ export async function generateProjectsPdf(options: ProjectsPdfOptions): Promise<
         layout: {
           hLineWidth: () => 0.5,
           vLineWidth: () => 0.5,
-          hLineColor: () => "#E2E8F0",
-          vLineColor: () => "#E2E8F0",
+          hLineColor: () => "#DDE3E9",
+          vLineColor: () => "#DDE3E9",
           paddingTop: () => 4,
           paddingBottom: () => 4,
           paddingLeft: () => 4,
@@ -249,7 +249,7 @@ export async function generateProjectsPdf(options: ProjectsPdfOptions): Promise<
       text: `${currentPage} / ${pageCount}`,
       alignment: "center",
       fontSize: 8,
-      color: "#64748B",
+      color: "#697586",
       margin: [0, 10, 0, 0] as [number, number, number, number],
     }),
   };

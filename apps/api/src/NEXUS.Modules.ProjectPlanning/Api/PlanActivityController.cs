@@ -64,6 +64,22 @@ public class PlanActivityController : ControllerBase
     }
 
     [Authorize(Policy = "Planning.Manage")]
+    [HttpPost("bulk-update")]
+    public async Task<IActionResult> BulkUpdate(Guid projectId, Guid planId, [FromBody] BulkUpdatePlanActivitiesDto dto, CancellationToken cancellationToken)
+    {
+        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        var result = await _activityService.BulkUpdateAsync(planId, dto, userId, cancellationToken);
+        if (result.IsFailure)
+            return result.Error?.StatusCode switch
+            {
+                404 => NotFound(new { error = result.Error.Message }),
+                409 => Conflict(new { error = result.Error.Message }),
+                _ => BadRequest(new { error = result.Error?.Message })
+            };
+        return Ok(result.Value);
+    }
+
+    [Authorize(Policy = "Planning.Manage")]
     [HttpPost("{activityId:guid}/move")]
     public async Task<IActionResult> Move(Guid projectId, Guid planId, Guid activityId, [FromBody] MovePlanActivityDto dto, CancellationToken cancellationToken)
     {

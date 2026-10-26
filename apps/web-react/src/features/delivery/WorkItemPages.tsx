@@ -175,7 +175,8 @@ export function WorkItemsPageFull() {
   const [moveError, setMoveError] = React.useState("");
   const [pendingTransition, setPendingTransition] = React.useState<{ itemId: string; targetStatus: string; options: WorkflowTransitionOption[] }>();
   const transitionMove = useWorkItemWorkflowTransition();
-  const createAssignees = useFullWorkItemAssignees(draft.projectId, createOpen);
+  const draftProjectPublicId = formProjects.data?.items.find((project) => project.id === draft.projectId)?.publicId;
+  const createAssignees = useFullWorkItemAssignees(draftProjectPublicId, createOpen);
   const items = React.useMemo(() => query.data?.items ?? [], [query.data?.items]);
   const statuses = statusesQuery.data ?? emptyWorkItemStatuses;
   const activeStatuses = React.useMemo(() => statuses.filter((status) => status.isActive).sort((a, b) => a.displayOrder - b.displayOrder), [statuses]);
@@ -305,7 +306,7 @@ export function WorkItemsPageFull() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title={t("nav.workItems")} description={t("workItems.pageDescription")} actions={<div className="flex flex-wrap items-center gap-2"><label className="sr-only" htmlFor="work-items-project-scope">{t("workItems.projectScope")}</label><select id="work-items-project-scope" className="input-field h-9 max-w-[16rem]" value={filters.projectId} onChange={(event) => changeProject(event.target.value)}><option value="">{t("workItems.allProjects")}</option>{(projectsQuery.data?.items ?? []).map((project) => <option key={project.id} value={project.id}>{project.code ? `${project.code} · ${project.name}` : project.name}</option>)}</select><Button size="sm" disabled={!canCreate} onClick={() => closeCreate(true)}><Plus className="me-1.5 h-4 w-4" />{t("workItems.create")}</Button></div>} />
+      <PageHeader title={t("nav.workItems")} description={t("workItems.pageDescription")} actions={<div className="flex flex-wrap items-center gap-2"><label className="sr-only" htmlFor="work-items-project-scope">{t("workItems.projectScope")}</label><select id="work-items-project-scope" className="input-field h-9 max-w-[16rem]" value={filters.projectId} onChange={(event) => changeProject(event.target.value)}><option value="">{t("workItems.allProjects")}</option>{(projectsQuery.data?.items ?? []).map((project) => <option key={project.publicId} value={project.publicId}>{project.code ? `${project.code} · ${project.name}` : project.name}</option>)}</select><Button size="sm" disabled={!canCreate} onClick={() => closeCreate(true)}><Plus className="me-1.5 h-4 w-4" />{t("workItems.create")}</Button></div>} />
       <Tabs value={activeTab} onValueChange={(value) => changeTab(value as "backlog" | "board" | "my-work")}>
         <TabsList aria-label={t("workItems.viewMode")} className="h-auto flex-wrap">
           <TabsTrigger value="backlog">{t("workItems.tabBacklog")}</TabsTrigger>
@@ -367,13 +368,13 @@ export function WorkItemsPageFull() {
           <div className="space-y-1.5"><Label>{t("common.status")}</Label><select className="input-field w-full" value={filterDraft.status} onChange={(event) => setFilterDraft((current) => ({ ...current, status: event.target.value }))}><option value="all">{t("common.all")}</option>{(statusesQuery.data ?? []).filter((status) => status.isActive).sort((a, b) => a.displayOrder - b.displayOrder).map((status) => <option key={status.id} value={status.code}>{locale === "ar" ? status.nameAr : status.nameEn}</option>)}</select></div>
           <div className="space-y-1.5"><Label>{t("common.priority")}</Label><select className="input-field w-full" value={filterDraft.priority} onChange={(event) => setFilterDraft((current) => ({ ...current, priority: event.target.value }))}><option value="all">{t("common.all")}</option>{priorities.map((item) => <option key={item} value={item}>{t(`workItems.priority${item}`)}</option>)}</select></div>
           <div className="space-y-1.5"><Label>{t("workItems.assignee")}</Label><select className="input-field w-full" value={filterDraft.assignee} onChange={(event) => setFilterDraft((current) => ({ ...current, assignee: event.target.value }))}><option value="all">{t("workItems.assigneeAll")}</option><option value="me">{t("workItems.assigneeMe")}</option><option value="unassigned">{t("workItems.unassigned")}</option>{(usersQuery.data ?? []).map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.fullName}</option>)}</select></div>
-          <div className="space-y-1.5"><Label>{t("workItems.project")}</Label><select className="input-field w-full" value={filterDraft.projectId} onChange={(event) => setFilterDraft((current) => ({ ...current, projectId: event.target.value }))}><option value="">{t("workItems.allProjects")}</option>{(projectsQuery.data?.items ?? []).map((project) => <option key={project.id} value={project.id}>{project.code ? `${project.code} · ${project.name}` : project.name}</option>)}</select></div>
+          <div className="space-y-1.5"><Label>{t("workItems.project")}</Label><select className="input-field w-full" value={filterDraft.projectId} onChange={(event) => setFilterDraft((current) => ({ ...current, projectId: event.target.value }))}><option value="">{t("workItems.allProjects")}</option>{(projectsQuery.data?.items ?? []).map((project) => <option key={project.publicId} value={project.publicId}>{project.code ? `${project.code} · ${project.name}` : project.name}</option>)}</select></div>
           <div className="space-y-1.5"><Label>{t("workItems.dueDateRange")}</Label><div className="grid gap-3 sm:grid-cols-2"><label className="space-y-1 text-xs text-muted-foreground">{t("workItems.fromDate")}<Input type="date" value={filterDraft.dueFrom} onChange={(event) => setFilterDraft((current) => ({ ...current, dueFrom: event.target.value }))} /></label><label className="space-y-1 text-xs text-muted-foreground">{t("workItems.toDate")}<Input type="date" value={filterDraft.dueTo} onChange={(event) => setFilterDraft((current) => ({ ...current, dueTo: event.target.value }))} /></label></div></div>
         </SideSheetBody>
         <SideSheetFooter><Button type="button" variant="ghost" onClick={() => setFilterDraft(emptyWorkItemListFilters)}>{t("common.clearFilters")}</Button><Button type="button" variant="outline" onClick={() => setFiltersOpen(false)}>{t("common.cancel")}</Button><Button type="button" onClick={applyFilters}>{t("workItems.applyFilters")}</Button></SideSheetFooter>
       </SideSheet>
-      <SideSheet open={createOpen} onOpenChange={closeCreate} title={t("workItems.create")}>
-        <SideSheetBody className="space-y-4">{createError ? <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">{createError}</p> : null}<WorkItemForm draft={draft} onChange={updateDraft} t={t} assignees={createAssignees.data ?? []} assigneesLoading={createAssignees.isLoading} projects={formProjects.data?.items ?? []} richTextDescription /></SideSheetBody>
+      <SideSheet open={createOpen} onOpenChange={closeCreate} title={t("workItems.create")} description={t("workItems.createDescription")} size="xl">
+        <SideSheetBody className="flex flex-col gap-4">{createError ? <p role="alert" className="shrink-0 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">{createError}</p> : null}<WorkItemForm draft={draft} onChange={updateDraft} t={t} assignees={createAssignees.data ?? []} assigneesLoading={createAssignees.isLoading} projects={formProjects.data?.items ?? []} richTextDescription layout="structured" /></SideSheetBody>
         <SideSheetFooter><Button type="button" variant="outline" onClick={() => closeCreate(false)}>{t("common.cancel")}</Button><Button type="button" onClick={() => void save()} disabled={mutations.create.isPending}><Save className="me-1.5 h-4 w-4" />{mutations.create.isPending ? t("common.loading") : t("common.save")}</Button></SideSheetFooter>
       </SideSheet>
       <WorkItemDetailsSideSheetFull id={detailItemId} open={Boolean(detailItemId)} onOpenChange={(open) => { if (!open) setDetailItemId(undefined); }} canEdit={canEdit} statuses={statuses} />
@@ -402,7 +403,10 @@ export function WorkItemDetailPageFull() {
   const formProjects = useProjects({ page: 1, pageSize: 200 }, editOpen);
   const mutations = useFullWorkItemMutations();
   const commentMutation = useFullWorkItemCommentMutation(id ?? "");
-  const assignees = useFullWorkItemAssignees(draft?.projectId ?? item?.projectId, editOpen);
+  const draftProjectPublicId = draft?.projectId
+    ? formProjects.data?.items.find((project) => project.id === draft.projectId)?.publicId
+    : item?.projectPublicId;
+  const assignees = useFullWorkItemAssignees(draftProjectPublicId, editOpen);
   const workflow = useFullWorkItemWorkflow(id, Boolean(id));
   const statusReferences = useWorkItemStatuses(Boolean(id));
   const comments = useFullWorkItemComments(id, tab === "comments", commentsPage, 20);

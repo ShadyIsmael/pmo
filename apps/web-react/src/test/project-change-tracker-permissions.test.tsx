@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Outlet, Route, Routes } from "react-router-dom";
 import { I18nProvider } from "@i18n/messages";
@@ -15,14 +15,20 @@ vi.mock("@api/management", () => ({ useManagement: () => ({ canMutate: true, eff
 vi.mock("@features/projects/api/projects", () => ({
   useProjectChangeRequests: fixtures.useProjectChangeRequests,
   useCreateProjectChangeRequest: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useUpdateProjectChangeRequestDraft: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useSubmitProjectChangeRequest: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useCancelProjectChangeRequest: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useRemediateProjectChangeRequest: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useReassignProjectChangeRequestApproval: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useProjectChangeRequestApproverOptions: () => ({ data: { approvers: [], allowedStrategies: ["AllRequired"], sponsorUserId: null, policyMessage: null }, isLoading: false, isError: false }),
 }));
 
 const project = { id: "project-1", name: "Core Modernization", code: "PRJ-1", budget: 1000, currency: "USD" };
 const request = {
   id: "change-1", projectId: "project-1", number: 7, type: "Baseline", reason: "Adjust the delivery baseline",
   budgetChangeAmount: 125.5, proposedProjectBudget: 1125.5, status: "Pending", requestedBy: "requester-1",
-  requestedByName: "Alex Admin", requestedAt: "2026-10-01T10:00:00Z",
+  requestedByName: "Alex Admin", requestedAt: "2026-10-01T10:00:00Z", pendingWith: [], approvalCount: 0,
+  requiredApprovalCount: 1, requiresApprovalSetup: false, approvals: [],
 };
 
 function renderTab(locale: "en" | "ar" = "en") {
@@ -64,6 +70,15 @@ describe("project change tracker permission parity", () => {
     expect(fixtures.useProjectChangeRequests).toHaveBeenCalledWith("project-1", true);
     expect(screen.getByText("Adjust the delivery baseline")).toBeInTheDocument();
     expect(screen.getByRole("row", { name: /Adjust the delivery baseline/ })).toHaveTextContent("+$125.5");
+  });
+
+  it("offers a create button that opens the change request sheet for managers", () => {
+    fixtures.user = { id: "requester-1", permissions: ["ChangeRequest.View", "ChangeRequest.Manage"] };
+
+    renderTab();
+    fireEvent.click(screen.getByRole("button", { name: "New change request" }));
+
+    expect(screen.getByRole("dialog", { name: "Project Change Request" })).toBeInTheDocument();
   });
 
   it("waits for authentication before displaying an access denial", () => {

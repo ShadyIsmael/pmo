@@ -1,9 +1,10 @@
 import * as React from "react";
 import { useOutletContext } from "react-router-dom";
 import { useDebouncedCallback } from "use-debounce";
-import { Mail, Pencil, Plus, UserMinus, UserRound } from "lucide-react";
+import { Mail, Pencil, Plus, UserMinus, UserRound, X } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@components/ui/Card";
 import { Button } from "@components/ui/Button";
+import { useConfirm } from "@components/ui/ConfirmProvider";
 import { Input } from "@components/ui/Input";
 import { Label } from "@components/ui/Label";
 import { Checkbox } from "@components/ui/Checkbox";
@@ -20,19 +21,20 @@ import { getLookupTextClass } from "@lib/utils";
 import { getResourceTypeTextClass, getSystemUserTextClass } from "@lib/status-presentation";
 import { useManagement } from "@api/management";
 import { useResources } from "@features/resources/api/resources";
+import { useResourceAvailability } from "@features/resources/api/capacity";
 import { useProjectRoles } from "@features/administration/api/admin";
-import { useAddProjectPerson, useCheckResourceConflicts, useProjectPeople, useRemoveProjectPerson, useUpdateProjectPerson, type ProjectPersonDto } from "./api/projects";
+import { useAddProjectPerson, useCheckResourceConflicts, useProjectPeople, useRemoveProjectPerson, useClearProjectSponsor, useUpdateProjectPerson, type ProjectPersonDto } from "./api/projects";
 import { useRevokeStakeholderInvitation, useSendStakeholderInvitation, useStakeholderInvitation } from "./api/stakeholder-invitations";
 import { getProjectPersonSubmitAction, hasActiveProjectPerson, hasInvalidProjectPersonDateRange } from "./project-member-rules";
 
 type Context = { projectId: string; project?: { sponsorId?: string | null } };
-type PersonForm = { resourceId: string; relationshipType: string; role: string; allocationPercentage: string; hoursPerWeek: string; startDate: string; endDate: string; isBillable: boolean; interest: string; influence: string; projectRoleIds: string[] };
-const blankForm = (): PersonForm => ({ resourceId: "", relationshipType: "TeamMember", role: "", allocationPercentage: "", hoursPerWeek: "", startDate: new Date().toISOString().slice(0, 10), endDate: "", isBillable: true, interest: "", influence: "", projectRoleIds: [] });
+type PersonForm = { resourceId: string; relationshipType: string; role: string; allocationPercentage: string; startDate: string; endDate: string; isBillable: boolean; interest: string; influence: string; projectRoleIds: string[] };
+const blankForm = (): PersonForm => ({ resourceId: "", relationshipType: "TeamMember", role: "", allocationPercentage: "", startDate: new Date().toISOString().slice(0, 10), endDate: "", isBillable: true, interest: "", influence: "", projectRoleIds: [] });
 
 const RELATIONSHIP_FILTERS = ["All", "TeamMember", "Stakeholder", "Sponsor", "Other"] as const;
 
 function canEditPerson(person: ProjectPersonDto): boolean {
-  return person.source !== "Governance" && person.source === "TeamMember" && person.status === "Active" && Boolean(person.resourceId) && !person.isLegacy;
+  return person.source === "TeamMember" && person.relationshipType !== "Sponsor" && person.status === "Active" && Boolean(person.resourceId) && !person.isLegacy;
 }
 
 function canInvitePerson(person: ProjectPersonDto): boolean {
@@ -49,8 +51,12 @@ function formatInvitationExpiry(value: string, locale: "en" | "ar"): string {
 }
 
 function canRemovePerson(person: ProjectPersonDto): boolean {
-  if (person.source === "TeamMember") return person.status === "Active" && person.relationshipType !== "ProjectManager";
+  if (person.source === "TeamMember") return person.status === "Active" && person.relationshipType === "TeamMember";
   return person.source === "Stakeholder" && person.status !== "Revoked";
+}
+
+function hasRelationship(person: ProjectPersonDto, relationshipType: string): boolean {
+  return person.relationshipType === relationshipType || (person.additionalRelationshipTypes ?? []).includes(relationshipType);
 }
 
 function relationshipLabel(relationshipType: string, t: (key: string) => string): string {
@@ -67,6 +73,7 @@ function relationshipLabel(relationshipType: string, t: (key: string) => string)
 export function ProjectMembersTab() {
   const { projectId } = useOutletContext<Context>();
   const { t, formatNumber, locale } = useI18n();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const { canMutate, effectiveReadOnly } = useManagement();
   const canViewPeople = Boolean(user && hasAnyPermission(user.permissions, [Permissions.Resources.Assign, Permissions.Stakeholders.Read]));
@@ -74,6 +81,7 @@ export function ProjectMembersTab() {
   const peopleQuery = useProjectPeople(projectId, Boolean(projectId && canViewPeople));
   const addPerson = useAddProjectPerson(projectId);
   const removePerson = useRemoveProjectPerson(projectId);
+  const clearSponsor = useClearProjectSponsor(projectId);
   const [open, setOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<ProjectPersonDto | null>(null);
   const [removeCandidate, setRemoveCandidate] = React.useState<ProjectPersonDto | null>(null);
@@ -93,11 +101,18 @@ export function ProjectMembersTab() {
   const rolesQuery = useProjectRoles(open);
   const updatePerson = useUpdateProjectPerson(projectId, editing?.id ?? "");
   const people = peopleQuery.data ?? [];
-  const visiblePeople = relationshipFilter === "All" ? people : people.filter((p) => p.relationshipType === relationshipFilter);
+  const visiblePeople = relationshipFilter === "All" ? people : people.filter((p) => hasRelationship(p, relationshipFilter));
   const resourceOptions = (resourcesQuery.data?.items ?? []).map((r) => ({ value: r.id, label: `${r.name}${r.jobTitle ? ` · ${r.jobTitle}` : ""}`, keywords: [r.email ?? "", r.type] }));
   const selectedResource = (resourcesQuery.data?.items ?? []).find((resource) => resource.id === form.resourceId);
+  const capacityStartDate = form.startDate || new Date().toISOString().slice(0, 10);
+  const capacityEndDate = React.useMemo(() => {
+    const start = new Date(`${capacityStartDate}T00:00:00`);
+    start.setDate(start.getDate() + 7);
+    return start.toISOString().slice(0, 10);
+  }, [capacityStartDate]);
+  const resourceCapacityQuery = useResourceAvailability(form.resourceId, capacityStartDate, capacityEndDate);
   const hasHistoricalForSelectedRelationship = people.some((person) => person.resourceId === form.resourceId && person.relationshipType === form.relationshipType && person.status !== "Active");
-  const sponsorTaken = people.some((p) => p.relationshipType === "Sponsor" && p.status === "Active" && (!editing || p.id !== editing.id));
+  const sponsorTaken = people.some((p) => hasRelationship(p, "Sponsor") && p.status === "Active" && (!editing || p.id !== editing.id));
   const sponsorConflict = !editing && form.relationshipType === "Sponsor" && sponsorTaken;
   const activeDuplicate = !editing && hasActiveProjectPerson(people, form.resourceId, form.relationshipType);
   const submitAction = getProjectPersonSubmitAction(people, Boolean(editing), form.resourceId, form.relationshipType);
@@ -120,7 +135,7 @@ export function ProjectMembersTab() {
     setEditing(person ?? null);
     setForm(person ? {
       resourceId: person.resourceId ?? "", relationshipType: person.relationshipType, role: person.role ?? "",
-      allocationPercentage: person.allocationPercentage == null ? "" : String(person.allocationPercentage), hoursPerWeek: person.hoursPerWeek == null ? "" : String(person.hoursPerWeek),
+      allocationPercentage: person.allocationPercentage == null ? "" : String(person.allocationPercentage),
       startDate: person.startDate?.slice(0, 10) ?? "", endDate: person.endDate?.slice(0, 10) ?? "", isBillable: person.isBillable ?? true,
       interest: person.interest ?? "", influence: person.influence ?? "", projectRoleIds: (person.functionalRoles ?? []).map((r) => r.id),
     } : blankForm());
@@ -139,6 +154,7 @@ export function ProjectMembersTab() {
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault(); setError(null);
     if (!editing && !form.resourceId) { setError(t("projects.selectExistingResource")); return; }
+    if (form.relationshipType === "TeamMember" && !form.allocationPercentage.trim()) { setError(t("projects.projectAllocationRequired")); return; }
     const allocation = form.allocationPercentage ? Number(form.allocationPercentage) : undefined;
     if (form.relationshipType === "TeamMember" && allocation !== undefined && (!Number.isFinite(allocation) || allocation < 0 || allocation > 100)) { setError(t("projects.allocationRangeInvalid")); return; }
     if (hasInvalidProjectPersonDateRange(form.relationshipType, form.startDate, form.endDate)) { setError(t("projects.endDateAfterStartDate")); return; }
@@ -147,9 +163,9 @@ export function ProjectMembersTab() {
     if (activeDuplicate) { setError(t("projects.alreadyInProject")); return; }
     try {
       if (editing) {
-        await updatePerson.mutateAsync({ source: editing.source, relationshipType: form.relationshipType, role: form.role || undefined, allocationPercentage: form.relationshipType === "TeamMember" ? allocation : undefined, hoursPerWeek: form.relationshipType === "TeamMember" && form.hoursPerWeek ? Number(form.hoursPerWeek) : undefined, startDate: form.relationshipType === "TeamMember" ? form.startDate || undefined : undefined, endDate: form.relationshipType === "TeamMember" ? form.endDate || undefined : undefined, isBillable: form.relationshipType === "TeamMember" ? form.isBillable : undefined, interest: form.interest || undefined, influence: form.influence || undefined, projectRoleIds: form.projectRoleIds, rowVersion: editing.rowVersion });
+        await updatePerson.mutateAsync({ source: editing.source, relationshipType: editing.source === "TeamMember" ? "TeamMember" : form.relationshipType, role: form.role || undefined, allocationPercentage: form.relationshipType === "TeamMember" ? allocation : undefined, startDate: form.relationshipType === "TeamMember" ? form.startDate || undefined : undefined, endDate: form.relationshipType === "TeamMember" ? form.endDate || undefined : undefined, isBillable: form.relationshipType === "TeamMember" ? form.isBillable : undefined, interest: form.interest || undefined, influence: form.influence || undefined, projectRoleIds: form.projectRoleIds, rowVersion: editing.rowVersion });
       } else {
-        await addPerson.mutateAsync({ resourceId: form.resourceId, relationshipType: form.relationshipType, role: form.role || undefined, allocationPercentage: form.relationshipType === "TeamMember" ? allocation : undefined, hoursPerWeek: form.relationshipType === "TeamMember" && form.hoursPerWeek ? Number(form.hoursPerWeek) : undefined, startDate: form.relationshipType === "TeamMember" ? form.startDate || undefined : undefined, endDate: form.relationshipType === "TeamMember" ? form.endDate || undefined : undefined, isBillable: form.relationshipType === "TeamMember" ? form.isBillable : undefined, interest: form.interest || undefined, influence: form.influence || undefined, projectRoleIds: form.projectRoleIds.length ? form.projectRoleIds : undefined });
+        await addPerson.mutateAsync({ resourceId: form.resourceId, relationshipType: form.relationshipType, role: form.role || undefined, allocationPercentage: form.relationshipType === "TeamMember" ? allocation : undefined, startDate: form.relationshipType === "TeamMember" ? form.startDate || undefined : undefined, endDate: form.relationshipType === "TeamMember" ? form.endDate || undefined : undefined, isBillable: form.relationshipType === "TeamMember" ? form.isBillable : undefined, interest: form.interest || undefined, influence: form.influence || undefined, projectRoleIds: form.projectRoleIds.length ? form.projectRoleIds : undefined });
       }
       closeForm();
     } catch (reason) { setError(reason instanceof Error ? reason.message : t("projects.projectPeopleLoadError")); }
@@ -167,6 +183,16 @@ export function ProjectMembersTab() {
       setRemoveCandidate(null);
     } catch (reason) {
       setRemoveError(reason instanceof Error ? reason.message : t("projects.projectPeopleLoadError"));
+    }
+  };
+
+  const confirmClearSponsor = async () => {
+    const accepted = await confirm({ description: t("projects.removeSponsorConfirmation"), destructive: true });
+    if (!accepted) return;
+    try {
+      await clearSponsor.mutateAsync();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : t("projects.projectPeopleLoadError"));
     }
   };
 
@@ -207,7 +233,11 @@ export function ProjectMembersTab() {
               </div>
             </TableCell>
             <TableCell>
-              <span className={`text-sm font-medium ${getLookupTextClass(person.relationshipType)}`}>{relationshipLabel(person.relationshipType, t)}</span>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`text-sm font-medium ${getLookupTextClass(person.relationshipType)}`}>{relationshipLabel(person.relationshipType, t)}</span>
+                {(person.additionalRelationshipTypes ?? []).map((relationship) => <Badge key={relationship} variant="secondary" className={`px-1.5 py-0 text-[10px] ${getLookupTextClass(relationship)}`}>{relationshipLabel(relationship, t)}</Badge>)}
+                {canManage && hasRelationship(person, "Sponsor") && person.status === "Active" ? <Button type="button" size="sm" variant="ghost" className="h-6 px-1.5 text-destructive" onClick={() => void confirmClearSponsor()} aria-label={t("projects.removeSponsor")} disabled={clearSponsor.isPending || effectiveReadOnly}><X className="h-3.5 w-3.5" /><span className="sr-only">{t("projects.removeSponsor")}</span></Button> : null}
+              </div>
               <p className="mt-1 text-xs text-muted-foreground">{person.role || "—"}</p>
               {(person.functionalRoles ?? []).length > 0 ? <div className="mt-1 flex flex-wrap gap-1">{person.functionalRoles?.map((role) => <Badge key={role.id} variant="secondary" className="px-1.5 py-0 text-[10px]">{role.nameEn}</Badge>)}</div> : null}
             </TableCell>
@@ -247,10 +277,12 @@ export function ProjectMembersTab() {
           </div>
           <div><Label>{t("projects.role")}</Label><Input value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value })} /></div>
           {form.relationshipType === "TeamMember" ? <>
-            <div className="grid grid-cols-2 gap-2">
-              <div><Label>{t("projects.allocationPercentage")}</Label><Input type="number" min="0" max="100" step="0.1" value={form.allocationPercentage} onChange={(event) => setForm({ ...form, allocationPercentage: event.target.value })} /></div>
-              <div><Label>{t("projects.hoursPerWeek")}</Label><Input type="number" min="0" step="0.5" value={form.hoursPerWeek} onChange={(event) => setForm({ ...form, hoursPerWeek: event.target.value })} /></div>
-            </div>
+            <div><Label>{t("projects.allocationPercentage")} <span aria-hidden="true" className="ms-1 text-destructive">*</span></Label><Input type="number" min="0" max="100" step="0.1" value={form.allocationPercentage} onChange={(event) => setForm({ ...form, allocationPercentage: event.target.value })} required aria-required="true" /></div>
+            <section className="grid grid-cols-2 gap-3 rounded-md border bg-muted/20 p-3" aria-live="polite">
+              <div><p className="text-xs text-muted-foreground">{t("projects.resourceCapacityPerWeek")}</p><p className="mt-1 text-sm font-semibold tabular-nums">{resourceCapacityQuery.isLoading ? "—" : resourceCapacityQuery.data ? `${formatNumber(resourceCapacityQuery.data.weeklyCapacityHours)} ${t("common.hours")}` : "—"}</p></div>
+              <div><p className="text-xs text-muted-foreground">{t("projects.projectCapacityPerWeek")}</p><p className="mt-1 text-sm font-semibold tabular-nums">{resourceCapacityQuery.data && Number.isFinite(proposedAllocation) ? `${formatNumber(resourceCapacityQuery.data.weeklyCapacityHours * proposedAllocation / 100)} ${t("common.hours")}` : "—"}</p></div>
+              {resourceCapacityQuery.isError ? <p className="col-span-2 text-xs text-destructive">{t("projects.resourceCapacityLoadError")}</p> : null}
+            </section>
             <div>
               <Label>{t("projects.functionalRoles")}</Label>
               <div className="mt-1 flex flex-wrap gap-1.5">
@@ -271,7 +303,6 @@ export function ProjectMembersTab() {
           {allocationConflicts.length > 0 ? <div className="space-y-2 rounded-md border border-warning/40 bg-warning/10 p-3" role="alert">
             <p className="text-sm font-medium text-warning-foreground">{t("projects.conflictsDetected")}</p>
             <div className="space-y-1">{allocationConflicts.map((conflict) => <div key={conflict.allocationId} className="flex flex-wrap items-center justify-between gap-2 text-xs"><span>{conflict.resourceName}{conflict.role ? ` · ${conflict.role}` : ""}</span><span className="text-muted-foreground">{formatNumber(conflict.allocationPercentage)}% · {conflict.startDate.slice(0, 10)} – {conflict.endDate.slice(0, 10)}</span></div>)}</div>
-            <p className="text-xs text-muted-foreground">{t("projects.totalAllocation")}: {formatNumber(proposedAllocation + allocationConflicts.reduce((total, conflict) => total + conflict.allocationPercentage, 0))}%</p>
           </div> : null}
           {error ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}
         </SideSheetBody>
@@ -310,7 +341,7 @@ export function ProjectMembersTab() {
       {invitationMutationErrorMessage ? <p className="text-sm text-destructive" role="alert">{invitationMutationErrorMessage}</p> : null}
     </SideSheetBody>
     <SideSheetFooter>
-      {invitation.data?.status === "Pending" ? <Button type="button" variant="outline" onClick={() => { if (window.confirm(t("projects.revokeInvitationConfirm"))) void revokeInvitation.mutateAsync(); }} disabled={revokeInvitation.isPending}>{revokeInvitation.isPending ? t("common.saving") : t("projects.revokeInvitation")}</Button> : null}
+      {invitation.data?.status === "Pending" ? <Button type="button" variant="outline" onClick={() => { void confirm({ description: t("projects.revokeInvitationConfirm"), destructive: true }).then((accepted) => { if (accepted) return revokeInvitation.mutateAsync(); }); }} disabled={revokeInvitation.isPending}>{revokeInvitation.isPending ? t("common.saving") : t("projects.revokeInvitation")}</Button> : null}
       <Button type="button" onClick={() => void sendInvitation.mutateAsync()} disabled={sendInvitation.isPending || !inviteSelected}>{sendInvitation.isPending ? t("common.saving") : invitation.data?.status === "Pending" ? t("projects.resendInvitation") : t("projects.inviteStakeholder")}</Button>
     </SideSheetFooter>
   </SideSheet>

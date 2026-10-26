@@ -6,9 +6,8 @@ namespace NEXUS.Modules.ProjectPlanning.Application;
 public interface IPlanService
 {
     /// <summary>
-    /// Creates a Plan for a project and its initial Working version. A project can
-    /// have only one plan per <see cref="PlanType"/>, so a second plan with the same
-    /// type is rejected.
+    /// Creates a Plan for a project and its initial Working version. A project may
+    /// have multiple plans of the same type, but not duplicate names within that type.
     /// </summary>
     Task<Result<PlanDto>> CreateAsync(CreatePlanDto dto, string userId, CancellationToken cancellationToken = default);
 

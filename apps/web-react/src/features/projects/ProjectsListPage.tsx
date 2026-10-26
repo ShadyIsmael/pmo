@@ -26,6 +26,7 @@ import { getStatusTone, statusToneClasses } from "@lib/status-presentation";
 const ProjectAdvancedSearch = React.lazy(() => import("./components/ProjectAdvancedSearch").then((module) => ({ default: module.ProjectAdvancedSearch })));
 
 const STATUS_TAB_VALUES = ["all", "active", "atRisk", "delayed", "onHold", "completed", "cancelled"] as const;
+const PROJECT_TABLE_COLUMNS = "minmax(15.5rem, 2.2fr) minmax(5rem, 0.8fr) minmax(7rem, 1fr) 2rem minmax(7rem, 1fr) minmax(6.5rem, 0.9fr) minmax(9rem, 1.4fr) minmax(7rem, 1fr) 1.75rem";
 
 type StatusTab = (typeof STATUS_TAB_VALUES)[number];
 
@@ -84,8 +85,6 @@ export function ProjectsListPage() {
   const [filterProgressMax, setFilterProgressMax] = React.useState("");
   const [filterBudgetMin, setFilterBudgetMin] = React.useState("");
   const [filterBudgetMax, setFilterBudgetMax] = React.useState("");
-  const [filterForecastMin, setFilterForecastMin] = React.useState("");
-  const [filterForecastMax, setFilterForecastMax] = React.useState("");
   const [filterProjectManager, setFilterProjectManager] = React.useState("");
   const [filterProjectManagerName, setFilterProjectManagerName] = React.useState("");
   const [filterDueDateFrom, setFilterDueDateFrom] = React.useState("");
@@ -116,7 +115,6 @@ export function ProjectsListPage() {
     (filterHealths.length > 0 ? 1 : 0) +
     (filterProgressMin.trim() || filterProgressMax.trim() ? 1 : 0) +
     (filterBudgetMin.trim() || filterBudgetMax.trim() ? 1 : 0) +
-    (filterForecastMin.trim() || filterForecastMax.trim() ? 1 : 0) +
     (filterProjectManager.trim() ? 1 : 0) +
     (filterDueDateFrom.trim() || filterDueDateTo.trim() ? 1 : 0);
 
@@ -129,8 +127,6 @@ export function ProjectsListPage() {
     setFilterProgressMax("");
     setFilterBudgetMin("");
     setFilterBudgetMax("");
-    setFilterForecastMin("");
-    setFilterForecastMax("");
     setFilterProjectManager("");
     setFilterProjectManagerName("");
     setFilterDueDateFrom("");
@@ -150,12 +146,10 @@ export function ProjectsListPage() {
     if (filterCode.trim() && !p.code.toLowerCase().includes(filterCode.toLowerCase())) return false;
     if (filterStatuses.length > 0 && !filterStatuses.includes(p.status)) return false;
     if (filterHealths.length > 0 && p.health && !filterHealths.includes(p.health)) return false;
-    if (filterProgressMin.trim() && p.progress < parseFloat(filterProgressMin)) return false;
-    if (filterProgressMax.trim() && p.progress > parseFloat(filterProgressMax)) return false;
+    if (filterProgressMin.trim() && (p.planProgress == null || p.planProgress < parseFloat(filterProgressMin))) return false;
+    if (filterProgressMax.trim() && (p.planProgress == null || p.planProgress > parseFloat(filterProgressMax))) return false;
     if (filterBudgetMin.trim() && (p.budget || 0) < parseFloat(filterBudgetMin)) return false;
     if (filterBudgetMax.trim() && (p.budget || 0) > parseFloat(filterBudgetMax)) return false;
-    if (filterForecastMin.trim() && (p.actualCost || 0) < parseFloat(filterForecastMin)) return false;
-    if (filterForecastMax.trim() && (p.actualCost || 0) > parseFloat(filterForecastMax)) return false;
     if (filterProjectManager.trim() && p.projectManagerId !== filterProjectManager) return false;
     if (filterDueDateFrom.trim() && p.endDate && new Date(p.endDate) < new Date(filterDueDateFrom)) return false;
     if (filterDueDateTo.trim() && p.endDate && new Date(p.endDate) > new Date(filterDueDateTo)) return false;
@@ -164,13 +158,9 @@ export function ProjectsListPage() {
 
   const currencyCode = (value?: string): string | undefined => (value?.trim() ? value : undefined);
   const budgetProjects = filtered.filter((p: ProjectSummaryDto) => typeof p.budget === "number" && Number.isFinite(p.budget));
-  const forecastProjects = filtered.filter((p: ProjectSummaryDto) => typeof p.actualCost === "number" && Number.isFinite(p.actualCost));
   const budgetCurrencies = [...new Set(budgetProjects.map((p: ProjectSummaryDto) => currencyCode(p.currency)).filter(Boolean))];
-  const forecastCurrencies = [...new Set(forecastProjects.map((p: ProjectSummaryDto) => currencyCode(p.currency)).filter(Boolean))];
   const budgetCurrency = budgetCurrencies.length === 1 ? budgetCurrencies[0] : undefined;
-  const forecastCurrency = forecastCurrencies.length === 1 ? forecastCurrencies[0] : undefined;
   const totalBudget = budgetProjects.length === 0 || budgetCurrencies.length !== 1 ? null : budgetProjects.reduce((s, p) => s + (p.budget ?? 0), 0);
-  const totalForecast = forecastProjects.length === 0 || forecastCurrencies.length !== 1 ? null : forecastProjects.reduce((s, p) => s + (p.actualCost ?? 0), 0);
 
   async function handleExport(format: "excel" | "pdf") {
     if (exporting) return;
@@ -195,8 +185,6 @@ export function ProjectsListPage() {
         progressMax: filterProgressMax.trim() ? parseFloat(filterProgressMax) : undefined,
         budgetMin: filterBudgetMin.trim() ? parseFloat(filterBudgetMin) : undefined,
         budgetMax: filterBudgetMax.trim() ? parseFloat(filterBudgetMax) : undefined,
-        forecastMin: filterForecastMin.trim() ? parseFloat(filterForecastMin) : undefined,
-        forecastMax: filterForecastMax.trim() ? parseFloat(filterForecastMax) : undefined,
         projectManager: selectedProjectManager?.fullName || undefined,
         dueDateFrom: filterDueDateFrom.trim() || undefined,
         dueDateTo: filterDueDateTo.trim() || undefined,
@@ -207,9 +195,8 @@ export function ProjectsListPage() {
         t("common.code"),
         t("common.status"),
         t("common.health"),
-        t("common.progress"),
+        t("projects.progressSourceWorkingPlan"),
         t("common.budget"),
-        t("common.forecast"),
         t("projects.pm"),
         t("common.dueDate"),
       ];
@@ -219,9 +206,8 @@ export function ProjectsListPage() {
         p.code,
         statusLabel(p.status),
         healthLabel(p.health),
-        `${p.progress}%`,
+        p.planProgress == null ? "—" : `${Math.round(p.planProgress)}%`,
         currencyFormatter.format(p.budget, p.currency),
-        currencyFormatter.format(p.actualCost, p.currency),
         p.projectManagerName || "—",
         p.endDate ? formatDate(p.endDate, locale) : "—",
       ]);
@@ -240,15 +226,11 @@ export function ProjectsListPage() {
         if (filterHealths.length > 0) filterParts.push(`${t("common.health")}: ${filterHealths.map(healthLabel).join(", ")}`);
         if (filterProgressMin.trim() || filterProgressMax.trim()) {
           const range = [filterProgressMin.trim() || "0", filterProgressMax.trim() || "100"].join(" - ");
-          filterParts.push(`${t("common.progress")}: ${range}%`);
+          filterParts.push(`${t("projects.progressSourceWorkingPlan")}: ${range}%`);
         }
         if (filterBudgetMin.trim() || filterBudgetMax.trim()) {
           const range = [filterBudgetMin.trim() || "0", filterBudgetMax.trim() || "∞"].join(" - ");
           filterParts.push(`${t("common.budget")}: ${range}`);
-        }
-        if (filterForecastMin.trim() || filterForecastMax.trim()) {
-          const range = [filterForecastMin.trim() || "0", filterForecastMax.trim() || "∞"].join(" - ");
-          filterParts.push(`${t("common.forecast")}: ${range}`);
         }
         if (selectedProjectManager) filterParts.push(`${t("projects.pm")}: "${selectedProjectManager.fullName}"`);
         if (filterDueDateFrom.trim() || filterDueDateTo.trim()) {
@@ -282,7 +264,7 @@ export function ProjectsListPage() {
   if (isLoading) {
     return (
       <div dir={locale === "ar" ? "rtl" : "ltr"} className="nexus-page nexus-projects space-y-6">
-        <PageHeader title={t("projects.title")} description={t("projects.description")} />
+        <PageHeader title={t("projects.title")} description={t("projects.registryDescription")} />
         <div className="grid gap-4 md:grid-cols-4">
           {[1, 2, 3, 4].map((i) => (
             <div key={i} className="h-28 animate-pulse rounded-xl border bg-card" />
@@ -296,7 +278,7 @@ export function ProjectsListPage() {
   if (isError) {
     return (
       <div dir={locale === "ar" ? "rtl" : "ltr"} className="nexus-page nexus-projects space-y-6">
-        <PageHeader title={t("projects.title")} description={t("projects.description")} />
+        <PageHeader title={t("projects.title")} description={t("projects.registryDescription")} />
         <ErrorState
           title={t("common.errorLoading")}
           onRetry={() => void refetch()}
@@ -309,7 +291,7 @@ export function ProjectsListPage() {
     <div dir={locale === "ar" ? "rtl" : "ltr"} className="nexus-page nexus-projects space-y-6">
       <PageHeader
         title={t("projects.title")}
-        description={t("projects.description")}
+        description={t("projects.registryDescription")}
         actions={
           <div className="flex gap-2">
             <DropdownMenu>
@@ -348,7 +330,6 @@ export function ProjectsListPage() {
         <KpiCard
           label={t("common.budget")}
           value={currencyFormatter.format(totalBudget, budgetCurrency)}
-          hint={`${t("common.forecast")}: ${currencyFormatter.format(totalForecast, forecastCurrency)}`}
           icon={Banknote}
           semantic="navy"
         />
@@ -397,10 +378,6 @@ export function ProjectsListPage() {
           setFilterBudgetMin={setFilterBudgetMin}
           filterBudgetMax={filterBudgetMax}
           setFilterBudgetMax={setFilterBudgetMax}
-          filterForecastMin={filterForecastMin}
-          setFilterForecastMin={setFilterForecastMin}
-          filterForecastMax={filterForecastMax}
-          setFilterForecastMax={setFilterForecastMax}
           filterProjectManager={filterProjectManager}
           setFilterProjectManager={setFilterProjectManager}
           setFilterProjectManagerName={setFilterProjectManagerName}
@@ -421,42 +398,40 @@ export function ProjectsListPage() {
 
         <TabsContent value="table">
           <div className="nexus-table-surface">
-            <div className="min-w-[980px]">
-              <div className="nexus-table-header grid grid-cols-12 gap-2 px-4 py-3">
-                <div className="col-span-3">{t("common.project")}</div>
-                <div className="col-span-1">{t("common.code")}</div>
-                <div className="col-span-1">{t("common.status")}</div>
-                <div className="col-span-1">{t("common.health")}</div>
-                <div className="col-span-1">{t("common.progress")}</div>
-                <div className="col-span-1">{t("common.budget")}</div>
-                <div className="col-span-1">{t("common.forecast")}</div>
-                <div className="col-span-1">{t("projects.pm")}</div>
-                <div className="col-span-1">{t("common.dueDate")}</div>
-                <div className="col-span-1"></div>
+            <div className="min-w-[1080px]">
+              <div className="nexus-table-header grid gap-2 px-4 py-3" style={{ gridTemplateColumns: PROJECT_TABLE_COLUMNS }}>
+                <div className="!text-start">{t("common.project")}</div>
+                <div className="text-center">{t("common.code")}</div>
+                <div className="text-center">{t("common.status")}</div>
+                <div className="text-center">{t("common.health")}</div>
+                <div className="text-center" title={t("projects.progressSourceWorkingPlan")}>{t("common.progress")}</div>
+                <div className="text-center">{t("common.budget")}</div>
+                <div className="text-center">{t("projects.pm")}</div>
+                <div className="text-center">{t("common.dueDate")}</div>
+                <div aria-hidden="true"></div>
               </div>
               {filtered.length === 0 ? (
                 <div className="px-4 py-12 text-center text-muted-foreground">{t("common.noResults")}</div>
               ) : (
                 filtered.map((project: ProjectSummaryDto) => (
-                  <Link key={project.id} to={`/projects/${project.id}`} className="nexus-table-row grid grid-cols-12 gap-2 px-4 py-3 text-sm">
-                    <div className="col-span-3 min-w-0 truncate font-medium">{project.name}</div>
-                    <div className="col-span-1 min-w-0 truncate text-muted-foreground">{project.code}</div>
-                    <div className="col-span-1 min-w-0 truncate"><ProjectStatusBadge status={project.status}>{statusLabel(project.status)}</ProjectStatusBadge></div>
-                    <div className="col-span-1 flex items-center"><span className={`h-2.5 w-2.5 shrink-0 rounded-full ${getHealthDotColor(project.health)}`} /></div>
-                    <div className="col-span-1 flex min-w-0 items-center gap-1">
-                      <Progress value={project.progress} className="h-1.5 w-12 shrink-0" />
-                      <span className="whitespace-nowrap text-xs tabular-nums">{project.progress}%</span>
+                  <Link key={project.publicId} to={`/projects/${project.publicId}`} className="nexus-table-row group grid gap-2 px-4 py-3 text-sm even:bg-muted/10 last:border-b-0" style={{ gridTemplateColumns: PROJECT_TABLE_COLUMNS }}>
+                    <div className="min-w-0 truncate font-medium text-foreground group-hover:text-primary">{project.name}</div>
+                    <div className="min-w-0 truncate text-center text-xs text-muted-foreground tabular-nums">{project.code}</div>
+                    <div className="flex min-w-0 justify-center truncate"><ProjectStatusBadge status={project.status}>{statusLabel(project.status)}</ProjectStatusBadge></div>
+                    <div className="flex items-center justify-center"><span className={`h-2.5 w-2.5 shrink-0 rounded-full ${getHealthDotColor(project.health)}`} title={healthLabel(project.health)} aria-label={healthLabel(project.health)} role="img" /></div>
+                    <div className="flex min-w-0 items-center justify-center gap-2" title={t("projects.progressSourceWorkingPlan")}>
+                      {project.planProgress != null ? <Progress value={Math.round(project.planProgress)} className="h-1.5 w-12 shrink-0" /> : null}
+                      <span className="whitespace-nowrap text-xs tabular-nums">{project.planProgress == null ? "—" : `${Math.round(project.planProgress)}%`}</span>
                     </div>
-                    <div className="col-span-1 min-w-0 truncate whitespace-nowrap text-muted-foreground tabular-nums">{currencyFormatter.format(project.budget, project.currency)}</div>
-                    <div className="col-span-1 min-w-0 truncate whitespace-nowrap text-muted-foreground tabular-nums">{currencyFormatter.format(project.actualCost, project.currency)}</div>
-                    <div className="col-span-1 min-w-0">
+                    <div className="min-w-0 truncate whitespace-nowrap text-center font-medium tabular-nums">{currencyFormatter.format(project.budget, project.currency)}</div>
+                    <div className="min-w-0">
                       <div className="flex min-w-0 items-center gap-1">
                         <Avatar className="h-5 w-5 shrink-0"><AvatarFallback className="text-[8px]">{project.projectManagerName?.charAt(0) || "?"}</AvatarFallback></Avatar>
-                        <span className="min-w-0 truncate text-xs text-muted-foreground">{project.projectManagerName?.split(" ")[1] || ""}</span>
+                        <span className="min-w-0 truncate text-xs text-muted-foreground">{project.projectManagerName || "—"}</span>
                       </div>
                     </div>
-                    <div className="col-span-1 min-w-0 truncate whitespace-nowrap text-xs text-muted-foreground tabular-nums">{project.endDate ? formatDate(project.endDate, locale) : "-"}</div>
-                    <div className="col-span-1 flex items-center"><ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /></div>
+                    <div className="min-w-0 truncate whitespace-nowrap text-center text-xs text-muted-foreground tabular-nums">{project.endDate ? formatDate(project.endDate, locale) : "—"}</div>
+                    <div className="flex items-center justify-end"><ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" /></div>
                   </Link>
                 ))
               )}
@@ -470,7 +445,7 @@ export function ProjectsListPage() {
               <div className="col-span-full py-12 text-center text-muted-foreground">{t("common.noResults")}</div>
             ) : (
               filtered.slice(0, 12).map((project: ProjectSummaryDto) => (
-                <Link key={project.id} to={`/projects/${project.id}`}>
+                <Link key={project.publicId} to={`/projects/${project.publicId}`}>
                   <Card className="h-full transition-colors hover:bg-muted/50">
                     <CardHeader>
                       <div className="flex items-start justify-between">
@@ -483,12 +458,17 @@ export function ProjectsListPage() {
                     </CardHeader>
                     <CardContent className="space-y-3">
                       <div className="flex items-center gap-2"><ProjectStatusBadge status={project.status}>{statusLabel(project.status)}</ProjectStatusBadge></div>
-                      <Progress value={project.progress} className="h-2" />
-                      <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between gap-2 text-xs">
+                          <span className="text-muted-foreground">{t("projects.progressSourceWorkingPlan")}</span>
+                          <span className="tabular-nums">{project.planProgress == null ? "—" : `${Math.round(project.planProgress)}%`}</span>
+                        </div>
+                        {project.planProgress != null ? <Progress value={Math.round(project.planProgress)} className="h-2" /> : null}
+                      </div>
+                      <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
                         <div><span className="text-muted-foreground">{t("common.budget")}</span><p className="font-medium">{currencyFormatter.format(project.budget, project.currency)}</p></div>
-                        <div><span className="text-muted-foreground">{t("common.forecast")}</span><p className="font-medium">{currencyFormatter.format(project.actualCost, project.currency)}</p></div>
                         <div><span className="text-muted-foreground">{t("projects.pm")}</span><p className="font-medium">{project.projectManagerName || "N/A"}</p></div>
-                        <div><span className="text-muted-foreground">{t("common.dueDate")}</span><p className="font-medium">{project.endDate ? formatDate(project.endDate, locale) : "N/A"}</p></div>
+                        <div className="col-span-2"><span className="text-muted-foreground">{t("common.dueDate")}</span><p className="font-medium">{project.endDate ? formatDate(project.endDate, locale) : "—"}</p></div>
                       </div>
                     </CardContent>
                   </Card>

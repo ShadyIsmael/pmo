@@ -13,7 +13,7 @@ public sealed class TimeEntryDurationTests
 
         result.IsSuccess.Should().BeTrue();
         result.Value!.ElapsedSeconds.Should().Be(28_800);
-        result.Value.ActualSeconds.Should().Be(25_200);
+        result.Value.ActualSeconds.Should().Be(23_400);
     }
 
     [Fact]

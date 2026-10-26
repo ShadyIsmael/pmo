@@ -31,6 +31,12 @@ public interface IPlanDependencyService
     Task<Result<ReplacePlanPredecessorsResultDto>> ReplacePredecessorsAsync(Guid planId, ReplacePlanPredecessorsDto dto, string userId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Replaces predecessor sets for multiple activities atomically. Every item
+    /// is validated and persisted through the canonical single-activity operation.
+    /// </summary>
+    Task<Result<IReadOnlyList<ReplacePlanPredecessorsResultDto>>> ReplacePredecessorsBulkAsync(Guid planId, BulkReplacePlanPredecessorsDto dto, string userId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Returns all dependencies of the active Working version of a plan.
     /// </summary>
     Task<Result<IReadOnlyList<PlanDependencyDto>>> GetByPlanAsync(Guid planId, CancellationToken cancellationToken = default);

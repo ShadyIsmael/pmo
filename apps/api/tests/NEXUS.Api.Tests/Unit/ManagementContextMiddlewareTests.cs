@@ -285,6 +285,52 @@ public sealed class ManagementContextMiddlewareTests
     }
 
     [Fact]
+    public async Task Explicit_admin_handover_permission_allows_native_initiation_and_own_cancel_paths_outside_manager_scope()
+    {
+        foreach (var (path, method) in new[]
+        {
+            ($"/api/projects/{Guid.NewGuid()}/handover-capabilities", HttpMethods.Get),
+            ($"/api/projects/{Guid.NewGuid()}/handover-managers", HttpMethods.Get),
+            ($"/api/projects/{Guid.NewGuid()}/handover-requests/admin", HttpMethods.Post),
+            ($"/api/projects/{Guid.NewGuid()}/handover-requests/initial-assignment", HttpMethods.Post),
+            ($"/api/manager-handovers/programs/{Guid.NewGuid()}/capabilities", HttpMethods.Get),
+            ($"/api/manager-handovers/portfolios/{Guid.NewGuid()}/eligible-managers", HttpMethods.Get),
+            ($"/api/manager-handovers/programs/{Guid.NewGuid()}/admin-requests", HttpMethods.Post),
+            ($"/api/manager-handovers/portfolios/{Guid.NewGuid()}/initial-assignment-requests", HttpMethods.Post),
+            ($"/api/handover-requests/{Guid.NewGuid()}/cancel", HttpMethods.Post),
+            ($"/api/manager-handovers/programs/requests/{Guid.NewGuid()}/cancel", HttpMethods.Post)
+        })
+        {
+            var nextCalled = false;
+            var middleware = new ManagementContextMiddleware(_ =>
+            {
+                nextCalled = true;
+                return Task.CompletedTask;
+            });
+            var resolver = new Mock<IManagementScopeResolver>();
+            resolver.Setup(item => item.IsTenantAdministratorAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync(false);
+            resolver.Setup(item => item.GetPerspectiveSnapshotAsync(
+                It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<ManagementContext?>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new ManagementPerspectiveSnapshot(
+                    Array.Empty<ManagementPerspective>(),
+                    Array.Empty<ManagementPerspectiveAvailability>(),
+                    null,
+                    false,
+                    ManagementScope.Empty,
+                    null));
+            var accessor = new Mock<IManagementContextAccessor>();
+            var httpContext = CreateAuthenticatedContext(path);
+            httpContext.User.AddIdentity(new ClaimsIdentity(new[] { new Claim("permission", "Handover.AdminInitiate") }, "admin-permission"));
+            httpContext.Request.Method = method;
+
+            await middleware.InvokeAsync(httpContext, resolver.Object, accessor.Object, NullLogger<ManagementContextMiddleware>.Instance);
+
+            Assert.True(nextCalled);
+            Assert.Equal(StatusCodes.Status200OK, httpContext.Response.StatusCode);
+        }
+    }
+
+    [Fact]
     public async Task Handover_tenant_read_scope_does_not_apply_to_non_admin_or_view_as_requests()
     {
         foreach (var (isAdmin, viewMode, expectedStatus) in new[]
@@ -462,6 +508,96 @@ public sealed class ManagementContextMiddlewareTests
             Assert.False(nextCalled);
             Assert.Equal(expectedStatus, httpContext.Response.StatusCode);
             resolver.Verify(item => item.IsTenantAdministratorAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+        }
+    }
+
+    [Fact]
+    public async Task Self_scoped_handover_pending_is_addressable_without_management_assignment()
+    {
+        foreach (var path in new[]
+        {
+            $"/api/manager-handovers/portfolios/{Guid.NewGuid()}/pending-for-me",
+            $"/api/manager-handovers/programs/{Guid.NewGuid()}/pending-for-me"
+        })
+        {
+            var nextCalled = false;
+            var middleware = new ManagementContextMiddleware(_ =>
+            {
+                nextCalled = true;
+                return Task.CompletedTask;
+            });
+            var resolver = new Mock<IManagementScopeResolver>();
+            resolver.Setup(item => item.IsTenantAdministratorAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync(false);
+            resolver
+                .Setup(item => item.ResolveAsync(
+                    It.IsAny<Guid>(),
+                    It.IsAny<Guid>(),
+                    It.IsAny<ManagementPerspective?>(),
+                    It.IsAny<ManagementViewMode>(),
+                    It.IsAny<Guid?>(),
+                    It.IsAny<Guid?>(),
+                    It.IsAny<Guid?>(),
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync((ManagementContext?)null);
+            resolver.Setup(item => item.GetPerspectiveSnapshotAsync(
+                It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<ManagementContext?>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new ManagementPerspectiveSnapshot(
+                    Array.Empty<ManagementPerspective>(),
+                    Array.Empty<ManagementPerspectiveAvailability>(),
+                    null,
+                    false,
+                    ManagementScope.Empty,
+                    null));
+            var accessor = new Mock<IManagementContextAccessor>();
+            var httpContext = CreateAuthenticatedContext(path);
+            httpContext.Request.Method = HttpMethods.Get;
+
+            await middleware.InvokeAsync(httpContext, resolver.Object, accessor.Object, NullLogger<ManagementContextMiddleware>.Instance);
+
+            Assert.True(nextCalled);
+        }
+    }
+
+    [Fact]
+    public async Task ReadOnlyViewAs_blocks_handover_mutations()
+    {
+        foreach (var path in new[]
+        {
+            $"/api/manager-handovers/portfolios/requests/{Guid.NewGuid()}/accept",
+            $"/api/manager-handovers/portfolios/requests/{Guid.NewGuid()}/reject",
+            $"/api/manager-handovers/portfolios/requests/{Guid.NewGuid()}/cancel",
+            $"/api/handover-requests/{Guid.NewGuid()}/cancel"
+        })
+        {
+            var nextCalled = false;
+            var middleware = new ManagementContextMiddleware(_ =>
+            {
+                nextCalled = true;
+                return Task.CompletedTask;
+            });
+            var readOnlyContext = new ManagementContext(
+                Guid.NewGuid(), Guid.NewGuid(), ManagementPerspective.PortfolioManager,
+                ManagementViewMode.ReadOnlyViewAs, null, null, null, ManagementScope.Empty);
+            var resolver = new Mock<IManagementScopeResolver>();
+            resolver
+                .Setup(item => item.ResolveAsync(
+                    It.IsAny<Guid>(),
+                    It.IsAny<Guid>(),
+                    It.IsAny<ManagementPerspective?>(),
+                    It.IsAny<ManagementViewMode>(),
+                    It.IsAny<Guid?>(),
+                    It.IsAny<Guid?>(),
+                    It.IsAny<Guid?>(),
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync(readOnlyContext);
+            var accessor = new Mock<IManagementContextAccessor>();
+            var httpContext = CreateAuthenticatedContext(path);
+            httpContext.Request.Method = HttpMethods.Post;
+
+            await middleware.InvokeAsync(httpContext, resolver.Object, accessor.Object, NullLogger<ManagementContextMiddleware>.Instance);
+
+            Assert.False(nextCalled);
+            Assert.Equal(StatusCodes.Status403Forbidden, httpContext.Response.StatusCode);
         }
     }
 

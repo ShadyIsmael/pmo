@@ -32,13 +32,14 @@ import { useRisks, type RiskDto } from "@features/risks/api/risks";
 import { useNotifications, type NotificationListItem } from "@api/notifications";
 import { usePortfolioManagementOverview, useProgramManagementOverview } from "@features/delivery/api/delivery";
 import { type ManagementPerspective } from "@lib/perspective";
+import { getApprovalReviewPath } from "@lib/approval-navigation";
 import {
   usePendingHandoverRequestsForMe,
   usePendingManagerHandovers,
   usePendingProjectChangeRequests,
   type HandoverRequestDto,
   type ManagerHandoverRequestDto,
-  type ProjectChangeRequestDto,
+  type PendingProjectChangeApprovalDto,
 } from "@features/my-work/api/myWork";
 import { dashboardViewsStorageKey, loadDashboardViews, saveDashboardViews } from "./dashboardStorage";
 import { createDashboardWidgetCopies, type DashboardStartMode } from "./dashboard-view-creation";
@@ -341,7 +342,7 @@ function VisibleWidget({ children, className, style }: { children: React.ReactNo
   return <div ref={ref} className={`min-h-[10rem] ${className ?? ""}`} style={style}>{visible ? children : <div className="h-full min-h-[10rem] animate-pulse rounded-lg bg-muted/30" aria-label="Loading widget" />}</div>;
 }
 
-type DashboardApprovals = { handovers: readonly HandoverRequestDto[]; managerHandovers: readonly ManagerHandoverRequestDto[]; projectChanges: readonly ProjectChangeRequestDto[] };
+type DashboardApprovals = { handovers: readonly HandoverRequestDto[]; managerHandovers: readonly ManagerHandoverRequestDto[]; projectChanges: readonly PendingProjectChangeApprovalDto[] };
 type StatusReportFreshness = { currentCount: number; staleCount: number; missingCount: number };
 
 function DashboardWidgetContent({ type, summary, workItems, meetings, projects, capacity, resources, risks, notifications, approvals, statusReports, permissions, maxRecords }: { type: WidgetType; summary?: HomeSummary; workItems?: readonly WorkItemDto[]; meetings?: readonly MeetingListDto[]; projects?: readonly ProjectSummaryDto[]; capacity?: CapacityMatrixDto; resources?: readonly ResourceDto[]; risks?: readonly RiskDto[]; notifications?: readonly NotificationListItem[]; approvals?: DashboardApprovals; statusReports?: StatusReportFreshness; permissions: readonly string[]; maxRecords: number }) {
@@ -359,11 +360,11 @@ function DashboardWidgetContent({ type, summary, workItems, meetings, projects, 
   }
   if (type === "pending-approvals") {
     const rows = [
-      ...(approvals?.handovers ?? []).map((item) => ({ id: `project-${item.id}`, label: t("approvals.handoverRequest"), name: item.projectName })),
-      ...(approvals?.managerHandovers ?? []).map((item) => ({ id: `${item.entityType}-${item.id}`, label: `${item.entityType} ${t("approvals.handoverRequest")}`, name: item.entityName })),
-      ...(approvals?.projectChanges ?? []).map((item) => ({ id: `change-${item.id}`, label: t("approvals.changeRequest"), name: item.projectName })),
+      ...(approvals?.handovers ?? []).map((item) => ({ id: `project-${item.id}`, label: t("approvals.handoverRequest"), name: item.projectName, path: getApprovalReviewPath("project-handover", item.id) })),
+      ...(approvals?.managerHandovers ?? []).map((item) => ({ id: `${item.entityType}-${item.id}`, label: `${item.entityType} ${t("approvals.handoverRequest")}`, name: item.entityName, path: getApprovalReviewPath(item.entityType === "Program" ? "program-handover" : "portfolio-handover", item.id) })),
+      ...(approvals?.projectChanges ?? []).map((item) => ({ id: `change-${item.id}`, label: t("approvals.changeRequest"), name: item.projectName, path: getApprovalReviewPath("change-request", item.id) })),
     ].slice(0, maxRecords);
-    return rows.length ? <div className="space-y-1.5">{rows.map((row) => <Link key={row.id} to="/my-work/approvals" className="flex items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-muted/50"><span className="h-2 w-2 shrink-0 rounded-full bg-warning" /><span className="min-w-0 flex-1 truncate font-medium">{row.name}</span><span className="shrink-0 text-muted-foreground">{row.label}</span></Link>)}</div> : <div className="flex min-h-32 items-center justify-center text-sm text-muted-foreground">{t("dashboard.noData")}</div>;
+    return rows.length ? <div className="space-y-1.5">{rows.map((row) => <Link key={row.id} to={row.path} className="flex items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-muted/50"><span className="h-2 w-2 shrink-0 rounded-full bg-warning" /><span className="min-w-0 flex-1 truncate font-medium">{row.name}</span><span className="shrink-0 text-muted-foreground">{row.label}</span></Link>)}</div> : <div className="flex min-h-32 items-center justify-center text-sm text-muted-foreground">{t("dashboard.noData")}</div>;
   }
   if (type === "my-work" || type === "my-todo" || type === "upcoming-milestones") {
     const today = new Date().toISOString().slice(0, 10);
@@ -553,7 +554,7 @@ function DashboardWidgetData({ widget, filters, title, editMode, index, total, o
     : context?.perspective === "ProgramManager"
       ? programManagement.data?.projects
       : undefined;
-  const projectRowsForScope: readonly { id: string; programId?: string | null }[] = managedProjects ?? projects.data?.items ?? [];
+  const projectRowsForScope: readonly { id: string; publicId?: string; programId?: string | null }[] = managedProjects ?? projects.data?.items ?? [];
   const scopedProjectRows = scopeDashboardProjects(projectRowsForScope, filters.projectId, filters.programId, context?.perspective);
   const scopedProjectIds = new Set(scopedProjectRows.map((project) => project.id));
   const widgetProjects = needsManagedProjectScope
@@ -734,7 +735,7 @@ export function DashboardBuilder() {
       </select>
       <select className="input-field" value={filters.portfolioId ?? ""} onChange={(event) => setFilters({ ...filters, portfolioId: event.target.value || undefined, programId: undefined, projectId: undefined })} aria-label={t("dashboard.portfolio")}><option value="">{t("dashboard.allPortfolios")}</option>{(portfoliosQuery.data?.items ?? []).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
       <select className="input-field" value={filters.programId ?? ""} onChange={(event) => setFilters({ ...filters, programId: event.target.value || undefined, projectId: undefined })} aria-label={t("dashboard.program")}><option value="">{t("dashboard.allPrograms")}</option>{(programsQuery.data?.items ?? []).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
-      <select className="input-field" value={filters.projectId ?? ""} onChange={(event) => setFilters({ ...filters, projectId: event.target.value || undefined })} aria-label={t("dashboard.project")}><option value="">{t("dashboard.allProjects")}</option>{(projectsQuery.data?.items ?? []).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
+      <select className="input-field" value={filters.projectId ?? ""} onChange={(event) => setFilters({ ...filters, projectId: event.target.value || undefined })} aria-label={t("dashboard.project")}><option value="">{t("dashboard.allProjects")}</option>{(projectsQuery.data?.items ?? []).map((item) => <option key={item.publicId} value={item.publicId}>{item.name}</option>)}</select>
       <Button variant="outline" onClick={() => setFilters(normalizeDashboardFilters({ dateRange: filters.dateRange }))}>{t("common.clearFilters")}</Button>
     </div> : null}
     <div className="dashboard-widget-grid" data-dashboard-grid>{widgets.map((widget, index) => <DashboardWidget key={widget.id} widget={widget} layoutSnapshot={widgets} filters={filters} editMode={editMode && currentViewCanEdit} index={index} total={widgets.length} onMove={move} onRemove={(id) => setWidgets((items) => items.filter((item) => item.id !== id))} onSettings={setSettingsWidget} onToggleCollapse={toggleWidgetCollapse} onDuplicate={duplicateWidget} onResize={resizeWidget} />)}</div>

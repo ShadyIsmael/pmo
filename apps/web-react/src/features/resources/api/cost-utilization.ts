@@ -50,6 +50,7 @@ export interface CostUtilizationResource {
 
 export interface CostUtilizationAttribution {
   id?: string;
+  projectPublicId?: string;
   name: string;
   currency?: string;
   plannedHours: number;

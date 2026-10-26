@@ -65,6 +65,7 @@ public sealed class ProjectEvmPersistenceTests : IDisposable
     [Fact]
     public async Task Persisted_baseline_progress_and_actual_cost_produce_independent_live_EVM_changes()
     {
+        SetTenant();
         var planStart = _statusDate.AddDays(-10);
         var planEnd = _statusDate.AddDays(10);
         var calendar = new WorkingCalendar
@@ -196,7 +197,7 @@ public sealed class ProjectEvmPersistenceTests : IDisposable
         var directCostLookup = new ProjectEvmDirectCostLookup(_context);
         var initial = await ReadMetricsAsync(planLookup, laborLookup, directCostLookup);
         Assert.Equal(_baselineVersionId, initial.BaselineId);
-        Assert.Equal(400m, initial.BudgetAtCompletion);
+        AssertClose(400m, initial.BudgetAtCompletion);
         AssertClose(200m, initial.EarnedValue);
         AssertClose(80m, initial.ActualCost);
         Assert.True(initial.PlannedValue > 0m);

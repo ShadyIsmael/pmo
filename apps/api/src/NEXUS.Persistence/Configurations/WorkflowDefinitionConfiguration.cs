@@ -100,7 +100,7 @@ public sealed class WorkflowTransitionGuardConfiguration : IEntityTypeConfigurat
         builder.ToTable("WorkflowTransitionGuards");
         builder.HasKey(item => item.Id);
         builder.Property(item => item.GuardType).HasMaxLength(100).IsRequired();
-        builder.Property(item => item.ConfigurationJson).HasColumnType("nvarchar(max)").IsRequired();
+        builder.Property(item => item.ConfigurationJson).IsRequired();
         builder.HasIndex(item => new { item.TenantId, item.WorkflowTransitionId, item.ExecutionOrder });
         builder.Property(item => item.RowVersion).IsRowVersion().IsConcurrencyToken();
         builder.HasOne(item => item.WorkflowTransition).WithMany(item => item.Guards).HasForeignKey(item => item.WorkflowTransitionId).OnDelete(DeleteBehavior.NoAction);
@@ -114,7 +114,7 @@ public sealed class WorkflowTransitionActionConfiguration : IEntityTypeConfigura
         builder.ToTable("WorkflowTransitionActions");
         builder.HasKey(item => item.Id);
         builder.Property(item => item.ActionType).HasMaxLength(100).IsRequired();
-        builder.Property(item => item.ConfigurationJson).HasColumnType("nvarchar(max)").IsRequired();
+        builder.Property(item => item.ConfigurationJson).IsRequired();
         builder.HasIndex(item => new { item.TenantId, item.WorkflowTransitionId, item.ExecutionOrder });
         builder.Property(item => item.RowVersion).IsRowVersion().IsConcurrencyToken();
         builder.HasOne(item => item.WorkflowTransition).WithMany(item => item.Actions).HasForeignKey(item => item.WorkflowTransitionId).OnDelete(DeleteBehavior.NoAction);
@@ -157,7 +157,7 @@ public sealed class WorkflowTransitionHistoryConfiguration : IEntityTypeConfigur
         builder.Property(item => item.ExecutedBy).HasMaxLength(200).IsRequired();
         builder.Property(item => item.ExecutedByNameSnapshot).HasMaxLength(200);
         builder.Property(item => item.Comment).HasMaxLength(4000);
-        builder.Property(item => item.MetadataJson).HasColumnType("nvarchar(max)");
+        builder.Property(item => item.MetadataJson);
         builder.Property(item => item.CorrelationId).HasMaxLength(100);
         builder.HasIndex(item => new { item.TenantId, item.WorkflowInstanceId, item.ExecutedAt });
         builder.HasOne(item => item.WorkflowInstance).WithMany(item => item.History).HasForeignKey(item => item.WorkflowInstanceId).OnDelete(DeleteBehavior.NoAction);

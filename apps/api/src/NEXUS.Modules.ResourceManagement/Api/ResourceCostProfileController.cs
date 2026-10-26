@@ -18,7 +18,7 @@ public class ResourceCostProfileController : ControllerBase
     }
 
     [HttpGet]
-    [Authorize(Policy = "Resource.View")]
+    [Authorize(Policy = "Resource.ViewCostRate")]
     public async Task<IActionResult> GetByResource(Guid resourceId, CancellationToken cancellationToken)
     {
         var result = await _service.GetByResourceAsync(resourceId, cancellationToken);
@@ -27,16 +27,16 @@ public class ResourceCostProfileController : ControllerBase
     }
 
     [HttpGet("{id:guid}")]
-    [Authorize(Policy = "Resource.View")]
-    public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
+    [Authorize(Policy = "Resource.ViewCostRate")]
+    public async Task<IActionResult> GetById(Guid resourceId, Guid id, CancellationToken cancellationToken)
     {
-        var result = await _service.GetByIdAsync(id, cancellationToken);
+        var result = await _service.GetByIdAsync(resourceId, id, cancellationToken);
         if (result.IsFailure) return NotFound(new { error = result.Error?.Message });
         return Ok(result.Value);
     }
 
     [HttpPost]
-    [Authorize(Policy = "Resource.Manage")]
+    [Authorize(Policy = "Resource.EditCostRate")]
     public async Task<IActionResult> Create(Guid resourceId, [FromBody] CreateResourceCostProfileDto dto, CancellationToken cancellationToken)
     {
         dto.ResourceId = resourceId;
@@ -52,11 +52,11 @@ public class ResourceCostProfileController : ControllerBase
     }
 
     [HttpPut("{id:guid}")]
-    [Authorize(Policy = "Resource.Manage")]
+    [Authorize(Policy = "Resource.EditCostRate")]
     public async Task<IActionResult> Update(Guid resourceId, Guid id, [FromBody] UpdateResourceCostProfileDto dto, CancellationToken cancellationToken)
     {
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
-        var result = await _service.UpdateAsync(id, dto, userId, cancellationToken);
+        var result = await _service.UpdateAsync(resourceId, id, dto, userId, cancellationToken);
         if (result.IsFailure)
             return result.Error?.StatusCode switch
             {
@@ -68,11 +68,11 @@ public class ResourceCostProfileController : ControllerBase
     }
 
     [HttpDelete("{id:guid}")]
-    [Authorize(Policy = "Resource.Manage")]
+    [Authorize(Policy = "Resource.EditCostRate")]
     public async Task<IActionResult> Delete(Guid resourceId, Guid id, CancellationToken cancellationToken)
     {
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
-        var result = await _service.DeleteAsync(id, userId, cancellationToken);
+        var result = await _service.DeleteAsync(resourceId, id, userId, cancellationToken);
         if (result.IsFailure) return NotFound(new { error = result.Error?.Message });
         return NoContent();
     }

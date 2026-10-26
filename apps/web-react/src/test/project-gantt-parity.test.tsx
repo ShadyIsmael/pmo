@@ -6,8 +6,8 @@ import { ProjectGanttPage } from "../features/projects/ProjectWorkspaceViews";
 
 const ganttMocks = vi.hoisted(() => ({
   projects: [
-    { id: "active-1", name: "Active project", code: "PRJ-100", status: "Active", startDate: "2026-01-15", endDate: "2027-03-20" },
-    { id: "completed-1", name: "Completed project", code: "PRJ-101", status: "Completed", startDate: "2025-01-01", endDate: "2025-12-31" },
+    { id: "active-1", publicId: "public-active-1", name: "Active project", code: "PRJ-100", status: "Active", startDate: "2026-01-15", endDate: "2027-03-20" },
+    { id: "completed-1", publicId: "public-completed-1", name: "Completed project", code: "PRJ-101", status: "Completed", startDate: "2025-01-01", endDate: "2025-12-31" },
   ],
   plans: [{ id: "plan-1", name: "Delivery plan", status: "Working" }],
   activities: [

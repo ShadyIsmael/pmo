@@ -46,97 +46,113 @@ public class ProjectSnapshotService : IProjectSnapshotService
     private string? CurrentUserName => _httpContextAccessor.HttpContext?.User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value
         ?? _httpContextAccessor.HttpContext?.User.FindFirst("name")?.Value;
 
-    public async Task<Result<ProjectSnapshotDto>> CompleteHandoverAsync(Guid projectId, ProjectHandoverRequest request, string userId, CancellationToken cancellationToken = default)
+    public async Task<Result<ProjectSnapshotDto?>> CompleteHandoverAsync(Guid projectId, ProjectHandoverRequest request, string userId, CancellationToken cancellationToken = default)
     {
-        if (request.Status != ProjectHandoverRequest.Statuses.Pending)
+        await using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
+        var pendingRequest = await _context.Set<ProjectHandoverRequest>()
+            .FirstOrDefaultAsync(item => item.Id == request.Id && item.ProjectId == projectId
+                && item.TenantId == request.TenantId && item.Status == ProjectHandoverRequest.Statuses.Pending
+                && !item.IsDeleted, cancellationToken);
+        if (pendingRequest is null)
         {
-            return Result<ProjectSnapshotDto>.Failure(Error.Conflict("The handover request is no longer pending and cannot be accepted"));
+            return Result<ProjectSnapshotDto?>.Failure(Error.Conflict("The handover request is no longer pending and cannot be accepted"));
         }
+        request = pendingRequest;
 
         var project = await _context.Set<Project>()
-            .FirstOrDefaultAsync(p => p.Id == projectId && !p.IsDeleted, cancellationToken);
-        if (project is null) return Result<ProjectSnapshotDto>.Failure(Error.NotFound("Project not found"));
+            .FirstOrDefaultAsync(p => p.Id == projectId && p.TenantId == request.TenantId && !p.IsDeleted, cancellationToken);
+        if (project is null) return Result<ProjectSnapshotDto?>.Failure(Error.NotFound("Project not found"));
 
         var previousManagerId = project.ProjectManagerId;
-        if (previousManagerId.HasValue && previousManagerId.Value != request.CurrentProjectManagerId)
+        if (previousManagerId != request.CurrentProjectManagerId)
         {
-            return Result<ProjectSnapshotDto>.Failure(Error.Conflict("The current project manager has changed since the request was submitted"));
+            return Result<ProjectSnapshotDto?>.Failure(Error.Conflict("The current project manager has changed since the request was submitted"));
         }
         if (previousManagerId.HasValue && previousManagerId.Value == request.NewProjectManagerId)
         {
-            return Result<ProjectSnapshotDto>.Failure(Error.Validation("The new project manager must be different from the current project manager"));
+            return Result<ProjectSnapshotDto?>.Failure(Error.Validation("The new project manager must be different from the current project manager"));
         }
+        if (!previousManagerId.HasValue && request.InitiationType != ManagerHandoverInitiationType.InitialAssignment)
+            return Result<ProjectSnapshotDto?>.Failure(Error.Conflict("This request requires an assigned current manager"));
+        if (previousManagerId.HasValue && request.InitiationType == ManagerHandoverInitiationType.InitialAssignment)
+            return Result<ProjectSnapshotDto?>.Failure(Error.Conflict("The Project already has an assigned manager"));
 
-        var newManager = await _context.Set<User>().FirstOrDefaultAsync(u => u.Id == request.NewProjectManagerId && !u.IsDeleted, cancellationToken);
+        var newManager = await _context.Set<User>().FirstOrDefaultAsync(u => u.Id == request.NewProjectManagerId && u.TenantId == project.TenantId && u.IsActive && !u.IsDeleted, cancellationToken);
         if (newManager is null)
         {
-            return Result<ProjectSnapshotDto>.Failure(Error.Validation("The new project manager could not be found"));
+            return Result<ProjectSnapshotDto?>.Failure(Error.Validation("The new project manager could not be found"));
         }
 
         // The previous manager is historical context only. A project can retain a
         // manager id after that user is removed, so acceptance must not depend on
         // resolving the old user record.
         var previousManager = previousManagerId.HasValue
-            ? await _context.Set<User>().FirstOrDefaultAsync(u => u.Id == previousManagerId.Value && !u.IsDeleted, cancellationToken)
+            ? await _context.Set<User>().FirstOrDefaultAsync(u => u.Id == previousManagerId.Value && u.TenantId == project.TenantId && !u.IsDeleted, cancellationToken)
             : null;
 
         var handoverDate = request.EffectiveHandoverDate.Date;
         var reason = request.Reason?.Trim();
         if (string.IsNullOrWhiteSpace(reason))
         {
-            return Result<ProjectSnapshotDto>.Failure(Error.Validation("Handover reason is required"));
+            return Result<ProjectSnapshotDto?>.Failure(Error.Validation("Handover reason is required"));
         }
         if (reason.Length > 500)
         {
-            return Result<ProjectSnapshotDto>.Failure(Error.Validation("Handover reason cannot exceed 500 characters"));
+            return Result<ProjectSnapshotDto?>.Failure(Error.Validation("Handover reason cannot exceed 500 characters"));
         }
         if (!string.IsNullOrWhiteSpace(request.Notes) && request.Notes!.Length > 2000)
         {
-            return Result<ProjectSnapshotDto>.Failure(Error.Validation("Handover notes cannot exceed 2000 characters"));
+            return Result<ProjectSnapshotDto?>.Failure(Error.Validation("Handover notes cannot exceed 2000 characters"));
         }
         if (project.StartDate.HasValue && handoverDate < project.StartDate.Value.Date)
         {
-            return Result<ProjectSnapshotDto>.Failure(Error.Validation("Handover date cannot be before the project start date"));
+            return Result<ProjectSnapshotDto?>.Failure(Error.Validation("Handover date cannot be before the project start date"));
         }
         if (project.EndDate.HasValue && handoverDate > project.EndDate.Value.Date)
         {
-            return Result<ProjectSnapshotDto>.Failure(Error.Validation("Handover date cannot be after the project end date"));
+            return Result<ProjectSnapshotDto?>.Failure(Error.Validation("Handover date cannot be after the project end date"));
         }
 
         var currentAssignments = await _context.Set<ProjectManagerAssignment>()
-            .Where(a => a.ProjectId == projectId && a.IsCurrent && !a.IsDeleted)
+            .Where(a => a.ProjectId == projectId && a.TenantId == project.TenantId && a.IsCurrent && !a.IsDeleted)
             .OrderByDescending(a => a.StartDate)
             .ThenByDescending(a => a.CreatedAt)
             .ToListAsync(cancellationToken);
         var currentAssignment = currentAssignments.FirstOrDefault();
+        if (!previousManagerId.HasValue && currentAssignments.Count > 0)
+            return Result<ProjectSnapshotDto?>.Failure(Error.Conflict("The Project has an inconsistent active manager assignment. Resolve it before initial assignment."));
+        if (previousManagerId.HasValue && currentAssignment is not null && currentAssignment.ProjectManagerId != previousManagerId.Value)
+            return Result<ProjectSnapshotDto?>.Failure(Error.Conflict("The active manager assignment has changed since the request was submitted"));
         if (currentAssignment is not null && handoverDate < currentAssignment.StartDate.Date)
         {
-            return Result<ProjectSnapshotDto>.Failure(Error.Validation("Handover date cannot be before the current project manager's start date"));
+            return Result<ProjectSnapshotDto?>.Failure(Error.Validation("Handover date cannot be before the current project manager's start date"));
         }
 
-        var snapshotNumber = (await _context.Set<ProjectSnapshot>()
-            .CountAsync(s => s.ProjectId == projectId, cancellationToken)) + 1;
-
-        var payload = await BuildSnapshotPayloadAsync(projectId, cancellationToken);
-
-        var snapshot = new ProjectSnapshot
+        ProjectSnapshot? snapshot = null;
+        var snapshotNumber = 0;
+        if (previousManagerId.HasValue)
         {
-            TenantId = GetCurrentTenantId(),
-            ProjectId = projectId,
-            SnapshotNumber = snapshotNumber,
-            SnapshotName = $"Handover Snapshot #{snapshotNumber}",
-            SnapshotType = "ManagerHandover",
-            SnapshotDate = DateTime.UtcNow,
-            EffectiveEndDate = handoverDate,
-            PreviousProjectManagerId = previousManagerId,
-            NewProjectManagerId = request.NewProjectManagerId,
-            HandoverReason = reason,
-            HandoverNotes = request.Notes,
-            Data = JsonSerializer.Serialize(payload, DataJsonOptions),
-            CreatedBy = userId
-        };
-        ApplyProjectFields(snapshot, project);
-        _context.Set<ProjectSnapshot>().Add(snapshot);
+            snapshotNumber = (await _context.Set<ProjectSnapshot>().CountAsync(s => s.ProjectId == projectId && s.TenantId == project.TenantId, cancellationToken)) + 1;
+            var payload = await BuildSnapshotPayloadAsync(projectId, cancellationToken);
+            snapshot = new ProjectSnapshot
+            {
+                TenantId = project.TenantId,
+                ProjectId = projectId,
+                SnapshotNumber = snapshotNumber,
+                SnapshotName = $"Handover Snapshot #{snapshotNumber}",
+                SnapshotType = "ManagerHandover",
+                SnapshotDate = DateTime.UtcNow,
+                EffectiveEndDate = handoverDate,
+                PreviousProjectManagerId = previousManagerId,
+                NewProjectManagerId = request.NewProjectManagerId,
+                HandoverReason = reason,
+                HandoverNotes = request.Notes,
+                Data = JsonSerializer.Serialize(payload, DataJsonOptions),
+                CreatedBy = userId
+            };
+            ApplyProjectFields(snapshot, project);
+            _context.Set<ProjectSnapshot>().Add(snapshot);
+        }
 
         project.ProjectManagerId = request.NewProjectManagerId;
         project.UpdatedBy = userId;
@@ -150,7 +166,7 @@ public class ProjectSnapshotService : IProjectSnapshotService
 
         _context.Set<ProjectManagerAssignment>().Add(new ProjectManagerAssignment
         {
-            TenantId = GetCurrentTenantId(),
+            TenantId = project.TenantId,
             ProjectId = projectId,
             ProjectManagerId = request.NewProjectManagerId,
             StartDate = handoverDate,
@@ -173,16 +189,17 @@ public class ProjectSnapshotService : IProjectSnapshotService
         request.Status = ProjectHandoverRequest.Statuses.Accepted;
         request.RespondedBy = TryParseGuid(userId);
         request.RespondedAt = DateTime.UtcNow;
-        request.SnapshotId = snapshot.Id;
+        request.SnapshotId = snapshot?.Id;
         request.UpdatedBy = userId;
 
-        await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
 
-        var previousManagerName = previousManager?.FullName ?? "Unassigned";
+        var previousManagerName = previousManager?.FullName ?? "Not Assigned";
         var managerChange = JsonSerializer.Serialize(new { projectManager = new { from = previousManagerName, to = newManager.FullName } });
 
-        await _auditService.LogAsync(new AuditEntry
+        if (snapshot is not null)
+        {
+            await _auditService.LogAsync(new AuditEntry
         {
             EntityType = "ProjectSnapshot",
             EntityId = snapshot.Id,
@@ -206,7 +223,8 @@ public class ProjectSnapshotService : IProjectSnapshotService
             }, DataJsonOptions),
             Timestamp = DateTime.UtcNow,
             CreatedBy = userId
-        }, cancellationToken);
+            }, cancellationToken);
+        }
 
         await _auditService.LogAsync(new AuditEntry
         {
@@ -226,6 +244,7 @@ public class ProjectSnapshotService : IProjectSnapshotService
                 NewProjectManagerName = newManager.FullName,
                 HandoverDate = handoverDate,
                 HandoverReason = reason,
+                InitiationType = request.InitiationType,
                 HandoverRequestId = request.Id
             }, DataJsonOptions),
             NewValues = JsonSerializer.Serialize(new
@@ -239,8 +258,8 @@ public class ProjectSnapshotService : IProjectSnapshotService
 
         await transaction.CommitAsync(cancellationToken);
 
-        var resultDto = await BuildSnapshotDtoAsync(snapshot, cancellationToken);
-        return Result<ProjectSnapshotDto>.Success(resultDto);
+        var resultDto = snapshot is null ? null : await BuildSnapshotDtoAsync(snapshot, cancellationToken);
+        return Result<ProjectSnapshotDto?>.Success(resultDto);
     }
 
     public async Task<Result<ProjectSnapshotSummaryDto>> CreateBaselineSnapshotAsync(Guid projectId, string snapshotType, string snapshotName, string userId, CancellationToken cancellationToken = default)
@@ -516,7 +535,7 @@ public class ProjectSnapshotService : IProjectSnapshotService
             EndDate = m.EndDate,
             Status = m.Status,
             IsBillable = m.IsBillable,
-            Notes = m.Notes
+            Notes = ProjectSponsorMembershipSynchronizer.IsManagedMembership(m) ? null : m.Notes
         }).ToList();
     }
 

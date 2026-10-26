@@ -16,9 +16,61 @@ public sealed record ProjectEvmPlanSnapshot(
     DateTime? BaselineDate,
     IReadOnlyList<ProjectEvmAssignmentInput> Assignments);
 
+public sealed record ProjectEvmPlanVersionOption(
+    Guid Id,
+    int VersionNumber,
+    string Name,
+    string Type,
+    string Status,
+    DateTime CreatedAt,
+    IReadOnlyList<Guid> ActivityScopeKeys);
+
+public sealed record ProjectEvmPlanOption(
+    Guid Id,
+    string Name,
+    string PlanType,
+    string Status,
+    Guid? CurrentWorkingVersionId,
+    int? CurrentWorkingVersionNumber,
+    IReadOnlyList<ProjectEvmPlanVersionOption> Versions);
+
+public sealed record ProjectEvmPlanSelection(
+    Guid PlanId,
+    Guid WorkingVersionId,
+    Guid BaselineVersionId);
+
+public sealed record ProjectEvmMilestoneInput(
+    Guid ActivityKey,
+    string Name,
+    DateTime? BaselineDate,
+    DateTime? PlannedDate,
+    DateTime? ActualCompletionDate,
+    decimal? Progress);
+
+public sealed record ProjectEvmReportingPlanData(
+    Guid PlanId,
+    string PlanName,
+    string PlanType,
+    string PlanStatus,
+    Guid WorkingVersionId,
+    int WorkingVersionNumber,
+    Guid BaselineVersionId,
+    string BaselineName,
+    int BaselineVersionNumber,
+    IReadOnlyList<ProjectEvmAssignmentInput> Assignments,
+    IReadOnlyList<Guid> ActivityScopeKeys,
+    IReadOnlyList<Guid> CurrentActivityIds,
+    IReadOnlyList<ProjectEvmMilestoneInput> Milestones);
+
 public interface IProjectEvmPlanLookup
 {
     Task<ProjectEvmPlanSnapshot> GetAsync(Guid projectId, Guid tenantId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<ProjectEvmPlanOption>> GetReportingOptionsAsync(Guid projectId, Guid tenantId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<ProjectEvmReportingPlanData>> GetReportingPlansAsync(
+        Guid projectId,
+        Guid tenantId,
+        IReadOnlyList<ProjectEvmPlanSelection> selections,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -43,7 +95,9 @@ public interface IProjectEvmLaborCostLookup
         string projectCurrency,
         DateTime statusDate,
         IReadOnlyList<ProjectEvmAssignmentInput> assignments,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        IReadOnlyCollection<Guid>? includedPlanActivityIds = null,
+        bool includeUnassignedProjectActuals = false);
 }
 
 public sealed record ProjectEvmDirectCostSummary(

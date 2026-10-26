@@ -62,7 +62,7 @@ describe("routing and permission guards", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
     render(<MemoryRouter initialEntries={["/workflows"]}><AppRoutes /></MemoryRouter>, { wrapper: shell([]) });
-    await waitFor(() => expect(screen.getByText(/do not have access/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/do not have permission/i)).toBeInTheDocument());
   });
 
   it.each([
@@ -81,7 +81,7 @@ describe("routing and permission guards", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<MemoryRouter initialEntries={[path]}><AppRoutes /></MemoryRouter>, { wrapper: shell(["projects.read"]) });
 
-    await waitFor(() => expect(screen.getByText(/do not have access/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/do not have permission/i)).toBeInTheDocument());
     for (const endpoint of restrictedEndpoints) {
       expect(fetchMock.mock.calls.some(([input]) => String(input).includes(endpoint))).toBe(false);
     }
@@ -102,7 +102,7 @@ describe("routing and permission guards", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<MemoryRouter initialEntries={[path]}><AppRoutes /></MemoryRouter>, { wrapper: shell(["projects.read"]) });
 
-    await waitFor(() => expect(screen.getByText(/do not have access/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/do not have permission/i)).toBeInTheDocument());
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes(restrictedEndpoint))).toBe(false);
   });
 
@@ -116,7 +116,7 @@ describe("routing and permission guards", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
     render(<MemoryRouter initialEntries={["/administration/organization"]}><AppRoutes /></MemoryRouter>, { wrapper: shell([]) });
-    await waitFor(() => expect(screen.getByText(/do not have access/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/do not have permission/i)).toBeInTheDocument());
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/organization/"))).toBe(false);
   });
 });

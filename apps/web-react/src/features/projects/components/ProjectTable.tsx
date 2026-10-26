@@ -67,7 +67,7 @@ export function ProjectTable({ data, isLoading, isError, onRetry }: ProjectTable
             <th className="hidden px-4 py-3 text-start font-semibold lg:table-cell">{t("projects.pm")}</th>
             <th className="px-4 py-3 text-start font-semibold">{t("common.status")}</th>
             <th className="px-4 py-3 text-start font-semibold">{t("common.health")}</th>
-            <th className="hidden px-4 py-3 text-start font-semibold xl:table-cell">{t("common.progress")}</th>
+            <th className="hidden px-4 py-3 text-start font-semibold xl:table-cell" title={t("projects.progressSourceWorkingPlan")}>{t("common.progress")}</th>
             <th className="hidden px-4 py-3 text-end font-semibold md:table-cell">{t("projects.budget")}</th>
           </tr>
         </thead>
@@ -75,7 +75,7 @@ export function ProjectTable({ data, isLoading, isError, onRetry }: ProjectTable
           {data.items.map((project) => (
             <tr
               key={project.id}
-              onClick={() => navigate(`/projects/${project.id}/overview`)}
+              onClick={() => navigate(`/projects/${project.publicId}/overview`)}
               className="cursor-pointer border-b transition-colors last:border-0 hover:bg-muted/40"
             >
               <td className="max-w-[260px] px-4 py-3">
@@ -108,8 +108,8 @@ export function ProjectTable({ data, isLoading, isError, onRetry }: ProjectTable
               </td>
               <td className="hidden min-w-[140px] px-4 py-3 xl:table-cell">
                 <span className="flex items-center gap-2">
-                  <Progress value={project.progress} className="flex-1" />
-                  <span className="w-10 text-end text-xs tabular-nums text-muted-foreground">{project.progress}%</span>
+                  {project.planProgress != null ? <Progress value={project.planProgress} className="flex-1" /> : null}
+                  <span className="w-10 text-end text-xs tabular-nums text-muted-foreground">{project.planProgress == null ? "—" : `${Math.round(project.planProgress)}%`}</span>
                 </span>
               </td>
               <td className="hidden whitespace-nowrap px-4 py-3 text-end tabular-nums md:table-cell">

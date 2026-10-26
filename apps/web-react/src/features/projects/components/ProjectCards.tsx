@@ -55,11 +55,11 @@ export function ProjectCards({ data, isLoading, isError, onRetry }: ProjectCards
           role="link"
           tabIndex={0}
           aria-label={project.name}
-          onClick={() => navigate(`/projects/${project.id}/overview`)}
+          onClick={() => navigate(`/projects/${project.publicId}/overview`)}
           onKeyDown={(e) => {
             if (e.key === "Enter" || e.key === " ") {
               e.preventDefault();
-              navigate(`/projects/${project.id}/overview`);
+              navigate(`/projects/${project.publicId}/overview`);
             }
           }}
           className="cursor-pointer transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md"
@@ -79,9 +79,12 @@ export function ProjectCards({ data, isLoading, isError, onRetry }: ProjectCards
               </span>
               {project.endDate ? <span className="shrink-0 tabular-nums">{formatDate(project.endDate, locale)}</span> : null}
             </div>
-            <div className="flex items-center gap-2">
-              <Progress value={project.progress} className="flex-1" />
-              <span className="w-10 text-end text-xs tabular-nums text-muted-foreground">{project.progress}%</span>
+            <div className="w-full space-y-1">
+              <div className="flex items-center justify-between gap-2 text-xs">
+                <span className="text-muted-foreground">{t("projects.progressSourceWorkingPlan")}</span>
+                <span className="tabular-nums">{project.planProgress == null ? "—" : `${Math.round(project.planProgress)}%`}</span>
+              </div>
+              {project.planProgress != null ? <Progress value={project.planProgress} className="w-full" /> : null}
             </div>
             <div className="flex items-center justify-between gap-2 border-t pt-3 text-xs">
               <span className="inline-flex min-w-0 items-center gap-1.5">

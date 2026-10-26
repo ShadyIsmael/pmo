@@ -8,13 +8,13 @@ import { Progress } from "@components/ui/Progress";
 import { SearchableSelect, type SelectOption } from "@components/ui/SearchableSelect";
 import { Skeleton } from "@components/ui/Skeleton";
 import { getResourceTypeTextClass, getStatusTextClass } from "@lib/status-presentation";
-import { useResources, useResourceFinder, useResourceSkills } from "./api/resources";
+import { useResources, useResourceFinder, useResourceSkills, useResourceReferenceData } from "./api/resources";
 import { useVendors } from "../vendors/api/vendors";
 
 type ViewMode = "list" | "gantt";
 
 export function ResourceFinderDialog() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [open, setOpen] = React.useState(false);
   const [role, setRole] = React.useState("");
   const [seniority, setSeniority] = React.useState("");
@@ -28,6 +28,7 @@ export function ResourceFinderDialog() {
   const [view, setView] = React.useState<ViewMode>("list");
 
   const skills = useResourceSkills(open);
+  const referenceData = useResourceReferenceData(open);
   const vendors = useVendors(undefined, undefined, "active", open);
   const resources = useResources({ pageSize: 200 }, open);
   const query = React.useMemo(() => ({
@@ -50,7 +51,7 @@ export function ResourceFinderDialog() {
     return Array.from(options, ([value, label]) => ({ value, label }));
   }, [resources.data]);
   const vendorOptions = (vendors.data?.items ?? []).map((vendor) => ({ value: vendor.id, label: vendor.name }));
-  const seniorityOptions: SelectOption[] = ["Junior", "Mid", "Senior", "Lead", "Principal"].map((value) => ({ value, label: value }));
+  const seniorityOptions: SelectOption[] = (referenceData.data?.seniorityLevels ?? []).map((level) => ({ value: level.code, label: locale === "ar" ? level.nameAr : level.nameEn }));
 
   const reset = () => { setRole(""); setSeniority(""); setSkillIds([]); setDepartmentId(""); setLocationId(""); setVendorId(""); setRequiredAllocation(""); setStartDate(""); setEndDate(""); setView("list"); };
 
@@ -88,7 +89,7 @@ export function ResourceFinderDialog() {
           {results.data && hasFilters && dateRangeValid ? <div className="space-y-2">
             <p className="text-xs text-muted-foreground">{results.data.totalCount} {t("resources.finder.results")}</p>
             {results.data.items.length === 0 ? <p className="py-6 text-center text-sm text-muted-foreground">{t("resources.finder.noMatches")}</p> : view === "gantt" ? <AvailabilityChart items={results.data.items} start={startDate} end={endDate} t={t} /> : <div className="max-h-[38vh] space-y-2 overflow-auto">{results.data.items.map((item) => <article key={item.resourceId} className="flex flex-col gap-3 rounded-md border p-3 md:flex-row md:items-center">
-              <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><span className="font-medium">{item.resourceName}</span><span className="text-xs font-medium text-info">{Math.round(item.matchScore)}% {t("resources.finder.matchScore")}</span><span className={`text-xs font-medium ${getResourceTypeTextClass(item.resourceType)}`}>{item.resourceType === "VendorResource" ? t("resources.directory.vendorResource") : t("resources.directory.staff")}</span></div><p className="text-xs text-muted-foreground">{item.jobTitle || t("resources.directory.notProvided")} · {item.departmentName || t("resources.directory.notProvided")} {item.seniority ? `· ${item.seniority}` : ""}</p>
+              <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><span className="font-medium">{item.resourceName}</span><span className="text-xs font-medium text-info">{Math.round(item.matchScore)}% {t("resources.finder.matchScore")}</span><span className={`text-xs font-medium ${getResourceTypeTextClass(item.resourceType)}`}>{referenceData.data?.resourceTypes.find((type) => type.code === item.resourceType)?.[locale === "ar" ? "nameAr" : "nameEn"] ?? item.resourceType}</span></div><p className="text-xs text-muted-foreground">{item.jobTitle || t("resources.directory.notProvided")} · {item.departmentName || t("resources.directory.notProvided")} {item.seniority ? `· ${referenceData.data?.seniorityLevels.find((level) => level.code === item.seniority)?.[locale === "ar" ? "nameAr" : "nameEn"] ?? item.seniority}` : ""}</p>
                 {item.skillMatches.length ? <p className="mt-1 text-xs">{item.skillMatches.map((skill) => <span key={skill.skillName} className={`me-2 font-medium ${skill.isMatch ? "text-success" : "text-muted-foreground"}`}>{skill.isMatch ? "✓" : "—"} {skill.skillName}</span>)}</p> : null}
                 {item.conflictingAllocations.length ? <p className="mt-1 text-xs text-muted-foreground">{item.conflictingAllocations.map((conflict) => `${conflict.projectName} (${conflict.allocationPercentage}%)`).join(" · ")}</p> : null}
               </div><div className="w-full space-y-1 md:w-40"><div className="flex items-center gap-2"><span className="text-xs text-muted-foreground">{t("resources.finder.load")}</span><Progress value={item.currentLoadPercent} tone={item.currentLoadPercent > 80 ? "warning" : "success"} className="h-1.5" /><span className={`text-xs font-medium ${getStatusTextClass(item.currentLoadPercent > 80 ? "High" : "Active")}`}>{Math.round(item.currentLoadPercent)}%</span></div><p className="text-xs text-muted-foreground">{Math.round(item.availableCapacityHours)} {t("resources.finder.hoursAvailable")}{item.earliestAvailableDate ? ` · ${t("resources.finder.from")} ${item.earliestAvailableDate.slice(0, 10)}` : ""}</p></div>

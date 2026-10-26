@@ -37,7 +37,8 @@ public sealed class WorkflowInstanceService : IWorkflowInstanceService
 
         var definition = await definitions
             .AsNoTracking()
-            .FirstOrDefaultAsync(d => d.Code == workflowDefinitionCode && d.EntityType == entityType && d.IsActive && !d.IsDeleted, cancellationToken);
+            .FirstOrDefaultAsync(d => d.TenantId == context.TenantId && d.Code == workflowDefinitionCode
+                && d.EntityType == entityType && d.IsActive && !d.IsDeleted, cancellationToken);
 
         if (definition is null)
             return Result<WorkflowInstanceSummary>.Failure(WorkflowErrors.WorkflowNotConfigured(entityType));
@@ -48,7 +49,8 @@ public sealed class WorkflowInstanceService : IWorkflowInstanceService
         var version = await versions
             .Include(v => v.States)
             .AsNoTracking()
-            .FirstOrDefaultAsync(v => v.Id == definition.ActivePublishedVersionId.Value, cancellationToken);
+            .FirstOrDefaultAsync(v => v.Id == definition.ActivePublishedVersionId.Value
+                && v.TenantId == context.TenantId && v.WorkflowDefinitionId == definition.Id, cancellationToken);
 
         if (version is null)
             return Result<WorkflowInstanceSummary>.Failure(WorkflowErrors.NoActivePublishedVersion);
@@ -60,7 +62,8 @@ public sealed class WorkflowInstanceService : IWorkflowInstanceService
             return Result<WorkflowInstanceSummary>.Failure(WorkflowErrors.RetiredCannotStart);
 
         var existingInstance = await instances
-            .FirstOrDefaultAsync(i => i.EntityType == entityType && i.EntityId == entityId && i.IsActive && !i.IsDeleted, cancellationToken);
+            .FirstOrDefaultAsync(i => i.TenantId == context.TenantId && i.EntityType == entityType
+                && i.EntityId == entityId && i.IsActive && !i.IsDeleted, cancellationToken);
 
         if (existingInstance is not null)
             return Result<WorkflowInstanceSummary>.Failure(WorkflowErrors.DuplicateInstance);
@@ -123,11 +126,13 @@ public sealed class WorkflowInstanceService : IWorkflowInstanceService
 
         var definition = await _context.Set<WorkflowDefinition>()
             .AsNoTracking()
-            .FirstOrDefaultAsync(item => item.Id == workflowDefinitionId && item.IsActive && !item.IsDeleted, cancellationToken);
+            .FirstOrDefaultAsync(item => item.Id == workflowDefinitionId && item.TenantId == context.TenantId
+                && item.IsActive && !item.IsDeleted, cancellationToken);
         var version = await _context.Set<WorkflowDefinitionVersion>()
             .Include(item => item.States)
             .AsNoTracking()
-            .FirstOrDefaultAsync(item => item.Id == workflowVersionId && item.WorkflowDefinitionId == workflowDefinitionId && !item.IsDeleted, cancellationToken);
+            .FirstOrDefaultAsync(item => item.Id == workflowVersionId && item.TenantId == context.TenantId
+                && item.WorkflowDefinitionId == workflowDefinitionId && !item.IsDeleted, cancellationToken);
         if (definition is null || version is null || definition.ActivePublishedVersionId != version.Id)
             return Result<WorkflowInstanceSummary>.Failure(WorkflowErrors.NoActivePublishedVersion);
         if (version.LifecycleStatus == WorkflowDefinitionVersionLifecycleStatus.Draft)
@@ -136,7 +141,8 @@ public sealed class WorkflowInstanceService : IWorkflowInstanceService
             return Result<WorkflowInstanceSummary>.Failure(WorkflowErrors.RetiredCannotStart);
 
         var instances = _context.Set<WorkflowInstance>();
-        if (await instances.AnyAsync(item => item.EntityType == entityType && item.EntityId == entityId && item.IsActive && !item.IsDeleted, cancellationToken))
+        if (await instances.AnyAsync(item => item.TenantId == context.TenantId && item.EntityType == entityType
+            && item.EntityId == entityId && item.IsActive && !item.IsDeleted, cancellationToken))
             return Result<WorkflowInstanceSummary>.Failure(WorkflowErrors.DuplicateInstance);
         var initialState = version.States.FirstOrDefault(item => item.IsInitial && item.IsActive && !item.IsDeleted);
         if (initialState is null)
@@ -180,7 +186,7 @@ public sealed class WorkflowInstanceService : IWorkflowInstanceService
             .Include(i => i.WorkflowDefinitionVersion)
             .AsNoTracking()
             .OrderByDescending(i => i.StartedAt)
-            .FirstOrDefaultAsync(i => i.EntityType == entityType && i.EntityId == entityId && !i.IsDeleted, cancellationToken);
+            .FirstOrDefaultAsync(i => i.TenantId == context.TenantId && i.EntityType == entityType && i.EntityId == entityId && !i.IsDeleted, cancellationToken);
 
         if (instance is null)
             return Result<WorkflowInstanceSummary?>.Success(null);

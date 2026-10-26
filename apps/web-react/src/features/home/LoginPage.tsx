@@ -1,3 +1,4 @@
+import { brand, brandCopy } from "@lib/brand";
 import * as React from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "@auth/AuthProvider";
@@ -10,7 +11,7 @@ import { Label } from "@components/ui/Label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@components/ui/Card";
 
 export function LoginPage() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const navigate = useNavigate();
   const location = useLocation();
   const { login, isAuthenticated, status, user } = useAuth();
@@ -50,7 +51,7 @@ export function LoginPage() {
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4">
           <div className="relative flex h-14 w-14 items-center justify-center rounded-2xl bg-primary-gradient text-lg font-bold text-white shadow-primary">
-            N
+            {brand.product.monogram}
           </div>
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
@@ -71,9 +72,9 @@ export function LoginPage() {
         <Card className="border border-border/50 shadow-elevated bg-card/80 backdrop-blur-sm">
           <CardHeader className="space-y-2 text-center pb-3">
             <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary-gradient text-lg font-bold text-white shadow-primary">
-              N
+              {brand.product.monogram}
             </div>
-            <CardTitle className="text-2xl font-bold tracking-tight text-foreground">{t("app.name")}</CardTitle>
+            <CardTitle className="text-2xl font-bold tracking-tight text-foreground">{brand.product.name}</CardTitle>
             <CardDescription className="text-muted-foreground">{t("auth.signInDescription")}</CardDescription>
           </CardHeader>
 
@@ -155,7 +156,8 @@ export function LoginPage() {
         </Card>
 
         <div className="mt-6 text-center text-xs text-muted-foreground/60">
-          <p>Enterprise Project Portfolio Management Platform</p>
+          <p>{brandCopy(locale).description}</p>
+          <p>{brandCopy(locale).tagline} · {brand.company.name} — {brand.company.domain}</p>
         </div>
       </div>
     </div>

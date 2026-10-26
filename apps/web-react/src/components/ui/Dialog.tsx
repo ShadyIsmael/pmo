@@ -7,16 +7,19 @@ interface DialogProps {
   children: React.ReactNode;
   className?: string;
   contentClassName?: string;
+  role?: "dialog" | "alertdialog";
   ariaLabel?: string;
+  ariaLabelledBy?: string;
+  ariaDescribedBy?: string;
 }
 
 const Dialog = React.forwardRef<HTMLDivElement, DialogProps>(
-      ({ className, contentClassName, ariaLabel, children, open, onOpenChange, ...props }, ref) => {
+      ({ className, contentClassName, role = "dialog", ariaLabel, ariaLabelledBy, ariaDescribedBy, children, open, onOpenChange, ...props }, ref) => {
     // Render nothing while closed: an empty fixed inset-0 wrapper would sit
     // above the page (z-50) and swallow every pointer event.
     if (!open) return null;
     return (
-      <div ref={ref} className={cn("fixed inset-0 z-50", className)} role="dialog" aria-modal="true" aria-label={ariaLabel} {...props}>
+      <div ref={ref} className={cn("fixed inset-0 z-50", className)} role={role} aria-modal="true" aria-label={ariaLabelledBy ? undefined : ariaLabel} aria-labelledby={ariaLabelledBy} aria-describedby={ariaDescribedBy} {...props}>
         <div className="fixed inset-0 bg-black/50 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" onClick={() => onOpenChange?.(false)} />
         <div className={cn("fixed left-1/2 top-1/2 z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 sm:max-w-lg", contentClassName)}>
           {children}

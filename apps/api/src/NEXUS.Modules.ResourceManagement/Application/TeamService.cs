@@ -406,7 +406,7 @@ public class TeamService : ITeamService
             if (resources.TryGetValue(m.ResourceId, out var resource))
             {
                 dto.ResourceName = resource.Name;
-                dto.ResourceType = resource.Type.ToString();
+                dto.ResourceType = ResourceTypeConstants.ToApiCode(resource.Type);
             }
             return dto;
         }).ToList();

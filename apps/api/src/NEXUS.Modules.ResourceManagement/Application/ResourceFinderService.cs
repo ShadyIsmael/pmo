@@ -28,7 +28,12 @@ public class ResourceFinderService : IResourceFinderService
         if (!string.IsNullOrEmpty(query.Seniority))
             resourcesQuery = resourcesQuery.Where(r => r.Seniority == query.Seniority);
         if (!string.IsNullOrEmpty(query.ResourceType))
-            resourcesQuery = resourcesQuery.Where(r => r.Type == query.ResourceType);
+        {
+            var storedType = ResourceTypeConstants.TryGetKnownStoredCode(query.ResourceType, out var canonicalType)
+                ? canonicalType
+                : query.ResourceType;
+            resourcesQuery = resourcesQuery.Where(r => r.Type == storedType);
+        }
         if (query.DepartmentId.HasValue)
             resourcesQuery = resourcesQuery.Where(r => r.DepartmentId == query.DepartmentId);
         if (query.LocationId.HasValue)
@@ -60,7 +65,7 @@ public class ResourceFinderService : IResourceFinderService
             .ToListAsync(cancellationToken);
 
         var calendars = await _context.Set<WorkingCalendar>().Include(c => c.Holidays).ToListAsync(cancellationToken);
-        var defaultCalendar = calendars.FirstOrDefault(c => c.IsDefault) ?? new WorkingCalendar { HoursPerDay = 8, WorkingDaysPerWeek = 5 };
+        var defaultCalendar = calendars.FirstOrDefault(c => c.IsDefault) ?? new WorkingCalendar();
 
         var results = resources.Select(r =>
         {
@@ -102,7 +107,7 @@ public class ResourceFinderService : IResourceFinderService
                 Seniority = r.Seniority,
                 Email = r.Email,
                 Phone = r.Phone,
-                ResourceType = r.Type,
+                ResourceType = ResourceTypeConstants.ToApiCode(r.Type),
                 AvatarUrl = r.AvatarUrl,
                 MatchScore = matchScore,
                 AvailableCapacityHours = Math.Round(availableHours, 1),
@@ -144,7 +149,9 @@ public class ResourceFinderService : IResourceFinderService
             else score += availableRatio / requiredRatio * 15;
         }
 
-        if (!string.IsNullOrEmpty(query.ResourceType) && resource.Type == query.ResourceType)
+        if (!string.IsNullOrEmpty(query.ResourceType) &&
+            ResourceTypeConstants.TryGetKnownStoredCode(query.ResourceType, out var expectedType) &&
+            string.Equals(resource.Type, expectedType, StringComparison.OrdinalIgnoreCase))
             score += 5;
 
         return Math.Round(Math.Min(100, score), 1);

@@ -4,7 +4,7 @@ import { clampPlanningGridWidth, DEFAULT_PLANNING_GRID_COLUMNS, getPlanningGridF
 describe("planning grid preferences", () => {
   it("keeps required columns and ignores unknown or duplicate saved columns", () => {
     expect(normalizePlanningGridColumns(["progress", "progress", "not-a-column", "description"])).toEqual([
-      "schedulingMode", "id", "taskName", "progress", "description",
+      "id", "schedulingMode", "wbs", "taskName", "progress", "description",
     ]);
   });
 
@@ -14,7 +14,7 @@ describe("planning grid preferences", () => {
 
   it("reorders optional columns without moving the required identity columns", () => {
     expect(reorderPlanningGridColumn(DEFAULT_PLANNING_GRID_COLUMNS, "predecessors", "duration")).toEqual([
-      "schedulingMode", "id", "taskName", "predecessors", "duration", "start", "finish", "progress",
+      "id", "schedulingMode", "wbs", "taskName", "predecessors", "duration", "start", "finish", "progress",
     ]);
     expect(reorderPlanningGridColumn(DEFAULT_PLANNING_GRID_COLUMNS, "taskName", "duration")).toEqual(DEFAULT_PLANNING_GRID_COLUMNS);
   });

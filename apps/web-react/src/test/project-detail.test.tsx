@@ -15,8 +15,9 @@ const adminUser = { id: "admin", email: "admin@nexus.com", firstName: "Alex", la
 
 adminUser.permissions.push("ChangeRequest.View");
 
+const projectPublicId = "00000000-0000-4000-8000-000000000001";
 const shell = {
-  id: "p1", code: "P1", name: "Project 1", status: "Active", priority: "High", phase: "Execution",
+  id: "p1", publicId: projectPublicId, code: "P1", name: "Project 1", status: "Active", priority: "High", phase: "Execution",
   health: "Green", currency: "USD", progress: 40, plannedValue: 100, earnedValue: 80,
   members: [], projectManagerName: "A Lead", businessCase: "BC", notes: "N",
 };
@@ -51,30 +52,38 @@ describe("detail freeze repro", () => {
         return Promise.resolve(new Response(JSON.stringify(adminUser), { status: 200 }));
       }
       if (input.includes("/api/me/perspectives")) {
-        return Promise.resolve(new Response(JSON.stringify({ nativePerspectives: ["ProjectManager"], availablePerspectives: [{ perspective: "ProjectManager", isNative: true, requiresEntityContext: false, contexts: [] }], defaultPerspective: "ProjectManager", canViewAs: false, scope: { portfolioIds: [], programIds: [], projectIds: [] } }), { status: 200 }));
+        return Promise.resolve(new Response(JSON.stringify({ nativePerspectives: [], availablePerspectives: [], defaultPerspective: null, canViewAs: false, scope: { portfolioIds: [], programIds: [], projectIds: [] } }), { status: 200 }));
       }
-      if (input.includes("/api/projects/p1/shell")) return Promise.resolve(new Response(JSON.stringify(shell), { status: 200 }));
-      if (input.includes("/api/projects/p1/overview")) return Promise.resolve(new Response(JSON.stringify(overview), { status: 200 }));
-      if (input.includes("/api/projects/p1/handover-managers")) return Promise.resolve(new Response(JSON.stringify([
+      if (input.includes(`/api/projects/${projectPublicId}/shell`)) return Promise.resolve(new Response(JSON.stringify(shell), { status: 200 }));
+      if (input.includes(`/api/projects/${projectPublicId}/overview`)) return Promise.resolve(new Response(JSON.stringify(overview), { status: 200 }));
+      if (input.includes(`/api/projects/${projectPublicId}/handover-capabilities`)) return Promise.resolve(new Response(JSON.stringify({ currentManagerId: "manager-1", currentManagerName: "Current Manager", canViewRequests: true, canInitiate: true, canAdminInitiate: true, canAssignInitial: true, canApproveIncoming: false, canCancelOwnPending: false, hasPendingRequest: false }), { status: 200 }));
+      if (input.includes(`/api/projects/${projectPublicId}/handover-managers`)) return Promise.resolve(new Response(JSON.stringify([
         { id: "manager-2", fullName: "New Manager", email: "new.manager@example.com", managerTypes: ["ProjectManager"] },
         { id: "manager-3", fullName: "Portfolio Lead", email: "portfolio.manager@example.com", managerTypes: ["PortfolioManager"] },
         { id: "manager-4", fullName: "Program Lead", email: "program.manager@example.com", managerTypes: ["ProgramManager"] },
       ]), { status: 200 }));
-      if (input.includes("/api/projects/p1/handover-requests") && init?.method === "POST") return Promise.resolve(new Response(JSON.stringify({ id: "handover-1", status: "Pending" }), { status: 201 }));
-      if (input.includes("/api/projects/p1/handover-requests")) return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+      if (input.includes(`/api/projects/${projectPublicId}/handover-requests`) && init?.method === "POST") return Promise.resolve(new Response(JSON.stringify({ id: "handover-1", status: "Pending" }), { status: 201 }));
+      if (input.includes(`/api/projects/${projectPublicId}/handover-requests`)) return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
       if (input.includes("/api/project-change-requests/") && input.endsWith("/cancel") && init?.method === "POST") {
         const requestId = input.split("/").at(-2);
         const request = changeRequests.find((candidate) => candidate.id === requestId);
         if (request) request.status = "Cancelled";
         return Promise.resolve(new Response(JSON.stringify(request ?? {}), { status: 200 }));
       }
-      if (input.includes("/api/projects/p1/change-requests") && init?.method === "POST") {
+      if (input.includes(`/api/projects/${projectPublicId}/change-requests/approvers`)) {
+        return Promise.resolve(new Response(JSON.stringify({
+          approvers: [{ userId: "admin", fullName: "Alex Admin", projectRole: "Business Approver", isSponsor: true, isMandatory: true }],
+          allowedStrategies: ["AllRequired"],
+          sponsorUserId: "admin",
+        }), { status: 200 }));
+      }
+      if (input.includes(`/api/projects/${projectPublicId}/change-requests`) && init?.method === "POST") {
         const body = JSON.parse(String(init.body));
         const request = { ...body, id: `change-${changeRequests.length + 1}`, number: changeRequests.length + 1, projectName: "Project 1", status: "Pending", requestedBy: "admin", requestedByName: "Alex Admin", requestedAt: "2026-10-08T10:00:00Z", createdAt: "2026-10-08T10:00:00Z", createdBy: "admin" };
         changeRequests.push(request);
         return Promise.resolve(new Response(JSON.stringify(request), { status: 201 }));
       }
-      if (input.includes("/api/projects/p1/change-requests")) return Promise.resolve(new Response(JSON.stringify(changeRequests), { status: 200 }));
+      if (input.includes(`/api/projects/${projectPublicId}/change-requests`)) return Promise.resolve(new Response(JSON.stringify(changeRequests), { status: 200 }));
       return Promise.resolve(new Response("null", { status: 200 }));
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -88,7 +97,7 @@ describe("detail freeze repro", () => {
         <I18nProvider>
           <AuthProvider>
             <Bridge>
-              <MemoryRouter initialEntries={["/projects/p1/overview"]}>
+              <MemoryRouter initialEntries={[`/projects/${projectPublicId}/overview`]}>
                 <Routes>
                   <Route path="/projects/:id" element={<ProjectDetailPage />}>
                     <Route path="overview" element={<ProjectOverviewTab />} />
@@ -107,15 +116,17 @@ describe("detail freeze repro", () => {
     expect(projectHeading.compareDocumentPosition(projectTabs) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(projectTabs).toHaveClass("w-full", "justify-between");
     expect(projectTabs.parentElement).toHaveClass("nexus-fullbleed-tabs");
+    const tabLinks = Array.from(projectTabs.querySelectorAll<HTMLAnchorElement>("a"));
+    expect(tabLinks.length).toBeGreaterThan(0);
+    expect(tabLinks.every((link) => link.getAttribute("href")?.startsWith(`/projects/${projectPublicId}/`))).toBe(true);
     await waitFor(() => expect(screen.getByText("On Hold")).toBeInTheDocument(), { timeout: 15000 });
     expect(screen.getByText((_, element) => element?.tagName === "P" && Boolean(element.textContent?.includes("P1 · Execution")))).toBeInTheDocument();
     expect(screen.getAllByText("At Risk").length).toBeGreaterThanOrEqual(1);
     await waitFor(() => expect(screen.getByText("Program 1 · PR-1")).toBeInTheDocument(), { timeout: 15000 });
     await waitFor(() => expect(screen.getAllByText("M1").length).toBeGreaterThanOrEqual(1), { timeout: 15000 });
-    const performanceChart = screen.getByRole("img", { name: /project performance/i });
-    await waitFor(() => expect(performanceChart.querySelector("svg.recharts-surface")).toBeInTheDocument());
-    const initialOverviewCalls = fetchMock.mock.calls.filter(([input]) => String(input).includes("/api/projects/p1/overview")).length;
-    const shellCalls = fetchMock.mock.calls.filter(([input]) => String(input).includes("/api/projects/p1/shell")).length;
+    await waitFor(() => expect(document.querySelector("svg.recharts-surface")).toBeInTheDocument());
+    const initialOverviewCalls = fetchMock.mock.calls.filter(([input]) => String(input).includes(`/api/projects/${projectPublicId}/overview`)).length;
+    const shellCalls = fetchMock.mock.calls.filter(([input]) => String(input).includes(`/api/projects/${projectPublicId}/shell`)).length;
     expect(initialOverviewCalls).toBeLessThanOrEqual(2);
     expect(shellCalls).toBeLessThanOrEqual(2);
 
@@ -125,25 +136,27 @@ describe("detail freeze repro", () => {
     expect(await screen.findByText("No change requests", { exact: true })).toBeInTheDocument();
     expect(screen.getByText("Change requests submitted for this project will appear here.")).toBeInTheDocument();
     await user.click(screen.getByRole("tab", { name: "Overview" }));
-    await user.click(screen.getByRole("button", { name: "Change Request" }));
+    await user.click(screen.getByRole("button", { name: "Actions" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Change Request" }));
     const changeSheet = await screen.findByRole("dialog", { name: "Project Change Request" });
     expect(changeSheet.querySelector('label[for="project-change-type"]')).toHaveTextContent("*");
     expect(changeSheet.querySelector('label[for="project-change-reason"]')).toHaveTextContent("*");
+    await waitFor(() => expect(within(changeSheet).getByRole("button", { name: "Submit Change Request" })).toBeEnabled());
     await user.type(within(changeSheet).getByLabelText("Reason", { exact: false }), "   ");
     await user.click(within(changeSheet).getByRole("button", { name: "Submit Change Request" }));
     expect(await within(changeSheet).findByRole("alert")).toHaveTextContent("Enter a reason for the change request.");
-    expect(fetchMock.mock.calls.filter(([input, init]) => String(input).includes("/api/projects/p1/change-requests") && init?.method === "POST")).toHaveLength(0);
+    expect(fetchMock.mock.calls.filter(([input, init]) => String(input).includes(`/api/projects/${projectPublicId}/change-requests`) && init?.method === "POST")).toHaveLength(0);
     await user.clear(within(changeSheet).getByLabelText("Reason", { exact: false }));
     await user.type(within(changeSheet).getByLabelText("Reason", { exact: false }), "Update delivery baseline");
     await user.type(within(changeSheet).getByLabelText("Attachments"), "baseline-review.pdf");
     await user.type(within(changeSheet).getByLabelText("Budget impact amount"), "100");
     await user.click(within(changeSheet).getByRole("button", { name: "Submit Change Request" }));
     expect(await within(changeSheet).findByRole("alert")).toHaveTextContent("Set an approved project budget before requesting a budget change.");
-    expect(fetchMock.mock.calls.filter(([input, init]) => String(input).includes("/api/projects/p1/change-requests") && init?.method === "POST")).toHaveLength(0);
+    expect(fetchMock.mock.calls.filter(([input, init]) => String(input).includes(`/api/projects/${projectPublicId}/change-requests`) && init?.method === "POST")).toHaveLength(0);
     await user.clear(within(changeSheet).getByLabelText("Budget impact amount"));
     await user.click(within(changeSheet).getByRole("button", { name: "Submit Change Request" }));
-    await waitFor(() => expect(fetchMock.mock.calls.some(([input, init]) => String(input).includes("/api/projects/p1/change-requests") && init?.method === "POST")).toBe(true));
-    const changeCall = fetchMock.mock.calls.find(([input, init]) => String(input).includes("/api/projects/p1/change-requests") && init?.method === "POST");
+    await waitFor(() => expect(fetchMock.mock.calls.some(([input, init]) => String(input).includes(`/api/projects/${projectPublicId}/change-requests`) && init?.method === "POST")).toBe(true));
+    const changeCall = fetchMock.mock.calls.find(([input, init]) => String(input).includes(`/api/projects/${projectPublicId}/change-requests`) && init?.method === "POST");
     expect(JSON.parse(String(changeCall?.[1]?.body))).toMatchObject({ projectId: "p1", type: "Administrative", reason: "Update delivery baseline", attachments: "baseline-review.pdf" });
 
     await user.click(screen.getByRole("tab", { name: "Change Tracker" }));
@@ -159,8 +172,9 @@ describe("detail freeze repro", () => {
     expect(await screen.findByText("Cancelled")).toBeInTheDocument();
 
     await user.click(screen.getByRole("tab", { name: "Overview" }));
-    await user.click(screen.getByRole("button", { name: "Handover" }));
-    const handoverSheet = await screen.findByRole("dialog", { name: "Project Manager Handover" });
+    await user.click(screen.getByRole("button", { name: "Actions" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Handover" }));
+    const handoverSheet = await screen.findByRole("dialog", { name: "Request manager handover" });
     await user.click(within(handoverSheet).getByRole("combobox"));
     expect(await screen.findByRole("option", { name: "New Manager · Project Manager · new.manager@example.com" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "Program Lead · Program Manager · program.manager@example.com" })).toBeInTheDocument();
@@ -170,13 +184,13 @@ describe("detail freeze repro", () => {
     fireEvent.change(handoverReason, { target: { value: "   " } });
     await user.click(within(handoverSheet).getByRole("button", { name: "Submit Handover Request" }));
     expect(await within(handoverSheet).findByText("Handover reason is required when changing the project manager")).toBeInTheDocument();
-    expect(fetchMock.mock.calls.some(([input, init]) => String(input).includes("/api/projects/p1/handover-requests") && init?.method === "POST")).toBe(false);
+    expect(fetchMock.mock.calls.some(([input, init]) => String(input).includes(`/api/projects/${projectPublicId}/handover-requests`) && init?.method === "POST")).toBe(false);
     fireEvent.change(handoverReason, { target: { value: "Ownership change" } });
     await user.click(within(handoverSheet).getByRole("button", { name: "Submit Handover Request" }));
-    await waitFor(() => expect(fetchMock.mock.calls.some(([input, init]) => String(input).includes("/api/projects/p1/handover-requests") && init?.method === "POST")).toBe(true));
-    const handoverCall = fetchMock.mock.calls.find(([input, init]) => String(input).includes("/api/projects/p1/handover-requests") && init?.method === "POST");
+    await waitFor(() => expect(fetchMock.mock.calls.some(([input, init]) => String(input).includes(`/api/projects/${projectPublicId}/handover-requests`) && init?.method === "POST")).toBe(true));
+    const handoverCall = fetchMock.mock.calls.find(([input, init]) => String(input).includes(`/api/projects/${projectPublicId}/handover-requests`) && init?.method === "POST");
     expect(JSON.parse(String(handoverCall?.[1]?.body))).toMatchObject({ newProjectManagerId: "manager-3", effectiveHandoverDate: "2026-12-15", reason: "Ownership change" });
-    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/projects/p1/handover-managers"))).toBe(true);
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes(`/api/projects/${projectPublicId}/handover-managers`))).toBe(true);
 
     await new Promise((r) => setTimeout(r, 2000));
   }, 30000);

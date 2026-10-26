@@ -9,7 +9,7 @@ using NEXUS.SharedKernel;
 
 namespace NEXUS.Modules.ProjectManagement.Application;
 
-public class ProjectChangeRequestService : IProjectChangeRequestService
+internal sealed class LegacyProjectChangeRequestService
 {
     private const string PmoAdminRole = "pmo.admin";
 
@@ -18,7 +18,7 @@ public class ProjectChangeRequestService : IProjectChangeRequestService
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly IProjectFinancialLookup? _financialLookup;
 
-    public ProjectChangeRequestService(DbContext context, IAuditService auditService, IHttpContextAccessor httpContextAccessor, IProjectFinancialLookup? financialLookup = null)
+    public LegacyProjectChangeRequestService(DbContext context, IAuditService auditService, IHttpContextAccessor httpContextAccessor, IProjectFinancialLookup? financialLookup = null)
     {
         _context = context;
         _auditService = auditService;
@@ -84,7 +84,7 @@ public class ProjectChangeRequestService : IProjectChangeRequestService
         var user = await _context.Set<NEXUS.Modules.Identity.Domain.User>().FirstOrDefaultAsync(u => u.Id == request.RequestedBy, cancellationToken);
         var requesterName = user?.FullName ?? "Unknown";
 
-        var projectDto = request.ToDto(project.Name, requesterName);
+        var projectDto = request.ToDto(project.Name, requesterName, projectPublicId: project.PublicId);
 
         return Result<ProjectChangeRequestDto>.Success(projectDto);
     }
@@ -119,7 +119,7 @@ public class ProjectChangeRequestService : IProjectChangeRequestService
         var reviewer = await _context.Set<NEXUS.Modules.Identity.Domain.User>().FirstOrDefaultAsync(u => u.Id == request.ReviewedBy, cancellationToken);
         var reviewerName = reviewer?.FullName;
 
-        var dto = request.ToDto(project.Name, requesterName, reviewerName);
+        var dto = request.ToDto(project.Name, requesterName, reviewerName, project.PublicId);
         return Result<ProjectChangeRequestDto>.Success(dto);
     }
 
@@ -172,6 +172,7 @@ public class ProjectChangeRequestService : IProjectChangeRequestService
         foreach (var dto in dtos)
         {
             dto.ProjectName = projectName;
+            dto.ProjectPublicId = project?.PublicId;
         }
 
         return Result<IReadOnlyList<ProjectChangeRequestDto>>.Success(dtos);
@@ -218,7 +219,7 @@ public class ProjectChangeRequestService : IProjectChangeRequestService
             var requesterName = users.TryGetValue(r.RequestedBy, out var reqUser) ? reqUser.FullName : "Unknown";
             var reviewerName = r.ReviewedBy.HasValue && users.TryGetValue(r.ReviewedBy.Value, out var revUser) ? revUser.FullName : null;
             var projectName = projects.TryGetValue(r.ProjectId, out var project) ? project.Name : "Unknown Project";
-            return r.ToDto(projectName, requesterName, reviewerName);
+            return r.ToDto(projectName, requesterName, reviewerName, project?.PublicId);
         }).ToList();
 
         return Result<IReadOnlyList<ProjectChangeRequestDto>>.Success(dtos);
@@ -452,7 +453,7 @@ public class ProjectChangeRequestService : IProjectChangeRequestService
             : null;
         var reviewerName = reviewer?.FullName;
 
-        var dto = request.ToDto(project?.Name ?? "Unknown Project", requesterName, reviewerName);
+        var dto = request.ToDto(project?.Name ?? "Unknown Project", requesterName, reviewerName, project?.PublicId);
         return Result<ProjectChangeRequestDto>.Success(dto);
     }
 

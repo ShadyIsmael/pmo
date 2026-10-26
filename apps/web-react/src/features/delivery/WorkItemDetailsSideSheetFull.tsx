@@ -32,7 +32,7 @@ export function WorkItemDetailsSideSheetFull({ id, open, onOpenChange, canEdit, 
   const [commentsPage, setCommentsPage] = React.useState(1);
   const [activityPage, setActivityPage] = React.useState(1);
   const [expandedReplies, setExpandedReplies] = React.useState<Record<string, boolean>>({});
-  const assigneesQuery = useFullWorkItemAssignees(item?.projectId, open && canEdit && Boolean(item?.projectId));
+  const assigneesQuery = useFullWorkItemAssignees(item?.projectPublicId, open && canEdit && Boolean(item?.projectPublicId));
   const workflow = useFullWorkItemWorkflow(id, open && Boolean(item));
   const mutations = useFullWorkItemMutations();
   const commentsQuery = useFullWorkItemComments(id ?? "", open && tab === "comments", commentsPage, 20);

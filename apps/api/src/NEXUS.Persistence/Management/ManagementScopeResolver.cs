@@ -165,7 +165,12 @@ public sealed class ManagementScopeResolver : IManagementScopeResolver
     private async Task<IReadOnlyList<ManagementEntityReference>> GetProgramContextsAsync(AssignmentSet assignments, IReadOnlySet<ManagementPerspective> native, CancellationToken cancellationToken)
     {
         var scope = await BuildScopeAsync(assignments, native.Contains(ManagementPerspective.PortfolioManager) ? ManagementPerspective.PortfolioManager : ManagementPerspective.ProgramManager, cancellationToken);
-        return await _db.Set<Program>().AsNoTracking().Where(x => x.TenantId == assignments.TenantId && scope.ProgramIds.Contains(x.Id)).OrderBy(x => x.Name).ThenBy(x => x.Code).ThenBy(x => x.Id).Select(x => new ManagementEntityReference(x.Id, x.Name, x.Code)).ToListAsync(cancellationToken);
+        var programIds = scope.ProgramIds.ToHashSet();
+        if (native.Contains(ManagementPerspective.ProgramManager))
+        {
+            foreach (var program in assignments.Programs) programIds.Add(program.Id);
+        }
+        return await _db.Set<Program>().AsNoTracking().Where(x => x.TenantId == assignments.TenantId && programIds.Contains(x.Id)).OrderBy(x => x.Name).ThenBy(x => x.Code).ThenBy(x => x.Id).Select(x => new ManagementEntityReference(x.Id, x.Name, x.Code)).ToListAsync(cancellationToken);
     }
 
     private async Task<IReadOnlyList<ManagementEntityReference>> GetProjectContextsAsync(AssignmentSet assignments, IReadOnlySet<ManagementPerspective> native, CancellationToken cancellationToken)
@@ -175,7 +180,12 @@ public sealed class ManagementScopeResolver : IManagementScopeResolver
             : native.Contains(ManagementPerspective.ProgramManager)
                 ? await BuildScopeAsync(assignments, ManagementPerspective.ProgramManager, cancellationToken)
                 : await BuildScopeAsync(assignments, ManagementPerspective.ProjectManager, cancellationToken);
-        return await _db.Set<Project>().AsNoTracking().Where(x => x.TenantId == assignments.TenantId && scope.ProjectIds.Contains(x.Id)).OrderBy(x => x.Name).ThenBy(x => x.Code).ThenBy(x => x.Id).Select(x => new ManagementEntityReference(x.Id, x.Name, x.Code)).ToListAsync(cancellationToken);
+        var projectIds = scope.ProjectIds.ToHashSet();
+        if (native.Contains(ManagementPerspective.ProjectManager))
+        {
+            foreach (var project in assignments.Projects) projectIds.Add(project.Id);
+        }
+        return await _db.Set<Project>().AsNoTracking().Where(x => x.TenantId == assignments.TenantId && projectIds.Contains(x.Id)).OrderBy(x => x.Name).ThenBy(x => x.Code).ThenBy(x => x.Id).Select(x => new ManagementEntityReference(x.Id, x.Name, x.Code)).ToListAsync(cancellationToken);
     }
 
     private async Task<AssignmentSet> LoadAssignmentsAsync(Guid userId, Guid tenantId, CancellationToken cancellationToken)

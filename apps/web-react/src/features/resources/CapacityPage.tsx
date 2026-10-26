@@ -1,6 +1,7 @@
 import * as React from "react";
 import { AlertTriangle, Briefcase, Filter, GitBranch, LayoutGrid, Pencil, Plus, Trash2, Users } from "lucide-react";
 import { PageHeader } from "@components/layout/PageHeader";
+import { useConfirm } from "@components/ui/ConfirmProvider";
 import { Badge } from "@components/ui/Badge";
 import { Button } from "@components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@components/ui/Card";
@@ -27,6 +28,7 @@ function utilizationTone(value: number): "success" | "warning" | "destructive" {
 
 export function CapacityPage() {
   const { t, formatNumber, formatPercent } = useI18n();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const { canMutate, effectiveReadOnly } = useManagement();
   const canAssign = Boolean(user && hasAnyPermission(user.permissions, [Permissions.Resources.Assign, Permissions.Resources.Allocate, Permissions.Resources.Manage]) && canMutate && !effectiveReadOnly);
@@ -57,7 +59,7 @@ export function CapacityPage() {
   const openCreate = () => { setActionError(null); setAllocationSheet({ open: true, allocation: null }); };
   const openEdit = (allocation: AllocationDto) => { setActionError(null); setAllocationSheet({ open: true, allocation }); };
   const removeAllocation = async (allocation: AllocationDto) => {
-    if (!window.confirm(t("resources.capacity.deleteConfirm"))) return;
+    if (!await confirm({ description: t("resources.capacity.deleteConfirm"), destructive: true })) return;
     try { await deleteAllocation.mutateAsync(allocation.id); } catch (reason) { setActionError(reason instanceof Error ? reason.message : t("resources.capacity.deleteError")); }
   };
 

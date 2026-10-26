@@ -16,6 +16,7 @@ public static class ProjectPlanningModuleRegistration
         services.AddScoped<IProjectPlanMilestoneLookup, ProjectPlanMilestoneLookup>();
         services.AddScoped<IPlanWbsService, PlanWbsService>();
         services.AddScoped<IPlanActivityService, PlanActivityService>();
+        services.AddScoped<IPlanGridCommandHistoryService, PlanGridCommandHistoryService>();
         services.AddScoped<IPlanDependencyService, PlanDependencyService>();
         services.AddSingleton<AutoSchedulingEngine>();
         services.AddScoped<IPlanSchedulingService, PlanSchedulingService>();

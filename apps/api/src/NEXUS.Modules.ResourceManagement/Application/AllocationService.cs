@@ -46,15 +46,23 @@ public class AllocationService : IAllocationService
         var query = _context.Set<ResourceAllocation>().AsNoTracking()
             .Where(allocation => allocation.ProjectId == projectId
                 && !allocation.IsDeleted
-                && allocation.Status != ResourceAllocation.StatusCancelled
+                && allocation.Status == ResourceAllocation.StatusConfirmed
                 && allocation.StartDate <= now
                 && allocation.EndDate >= now);
 
+        var activeAllocationCount = await query.CountAsync(cancellationToken);
+        var hasMissingHours = await query.AnyAsync(allocation => !allocation.HoursPerWeek.HasValue, cancellationToken);
+        decimal? allocatedHoursPerWeek = activeAllocationCount == 0
+            ? 0m
+            : hasMissingHours
+                ? null
+                : await query.SumAsync(allocation => allocation.HoursPerWeek!.Value, cancellationToken);
+
         return new ProjectAllocationOverviewDto
         {
-            ActiveAllocationCount = await query.CountAsync(cancellationToken),
+            ActiveAllocationCount = activeAllocationCount,
             ActiveResourceCount = await query.Select(allocation => allocation.ResourceId).Distinct().CountAsync(cancellationToken),
-            AllocatedHoursPerWeek = await query.Select(allocation => allocation.HoursPerWeek ?? 0m).SumAsync(cancellationToken)
+            AllocatedHoursPerWeek = allocatedHoursPerWeek
         };
     }
 
@@ -271,7 +279,7 @@ public class AllocationService : IAllocationService
             ResourceId = a.ResourceId,
             ResourceName = a.Resource?.Name ?? string.Empty,
             ResourceJobTitle = a.Resource?.JobTitle,
-            ResourceType = a.Resource?.Type,
+            ResourceType = a.Resource is null ? null : ResourceTypeConstants.ToApiCode(a.Resource.Type),
             ProjectId = a.ProjectId,
             ProjectName = a.ProjectName,
             WorkItemId = a.WorkItemId,

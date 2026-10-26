@@ -26,6 +26,7 @@ public class ProjectStatusReportConfiguration : IEntityTypeConfiguration<Project
         builder.Property(x => x.PublishedByNameSnapshot).HasMaxLength(300);
         builder.Property(x => x.CurrencyCodeSnapshot).HasMaxLength(10);
         builder.Property(x => x.BaselineNameSnapshot).HasMaxLength(300);
+        builder.Property(x => x.PerformanceSnapshotJson);
         builder.Property(x => x.Status).HasMaxLength(50);
 
         builder.Property(x => x.ExecutiveSummary).HasMaxLength(4000);

@@ -43,14 +43,14 @@ export function scopeDashboardResources<T extends { id: string }>(resources: rea
   return resources.filter((resource) => managedResourceIds.has(resource.id));
 }
 
-export function scopeDashboardProjects<T extends { id: string; programId?: string | null }>(
+export function scopeDashboardProjects<T extends { id: string; publicId?: string; programId?: string | null }>(
   projects: readonly T[],
   projectId: string | undefined,
   programId: string | undefined,
   perspective: string | undefined,
 ): T[] {
   return projects.filter((project) =>
-    (!projectId || project.id === projectId)
+    (!projectId || project.publicId === projectId || project.id === projectId)
     && (!(perspective === "PortfolioManager" && programId) || project.programId === programId),
   );
 }

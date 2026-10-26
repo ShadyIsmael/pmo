@@ -194,6 +194,53 @@ public sealed class RiskServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ProjectOverview_CountsAllNonClosedStatusesIncludingMitigated_AndMatchesScopedRiskRegister()
+    {
+        var project = await AddProjectAsync(_tenantA, "Project A");
+        var otherProject = await AddProjectAsync(_tenantA, "Project A2");
+        var otherTenantProject = await AddProjectAsync(_tenantB, "Project B");
+        SetTenant(_tenantA);
+
+        async Task<RiskDto> CreateRiskAsync(Guid projectId, RiskStatus status, RiskLevel level = RiskLevel.Medium)
+        {
+            var dto = ValidDto(projectId);
+            dto.Title = $"Risk {status} {Guid.NewGuid():N}";
+            dto.RiskLevel = level;
+            var created = await _service.CreateAsync(dto, _user.ToString());
+            Assert.True(created.IsSuccess, created.Error?.Message);
+            if (status == RiskStatus.Identified) return created.Value!;
+
+            var updated = await _service.UpdateStatusAsync(created.Value!.Id, new UpdateRiskStatusDto { Status = status }, _user.ToString());
+            Assert.True(updated.IsSuccess, updated.Error?.Message);
+            return updated.Value!;
+        }
+
+        await CreateRiskAsync(project.Id, RiskStatus.Identified);
+        await CreateRiskAsync(project.Id, RiskStatus.ActionRequired);
+        await CreateRiskAsync(project.Id, RiskStatus.FollowUp);
+        var mitigated = await CreateRiskAsync(project.Id, RiskStatus.Mitigated, RiskLevel.High);
+        await CreateRiskAsync(project.Id, RiskStatus.Closed);
+        await CreateRiskAsync(otherProject.Id, RiskStatus.Identified);
+
+        SetTenant(_tenantB);
+        await CreateRiskAsync(otherTenantProject.Id, RiskStatus.Identified);
+        SetTenant(_tenantA);
+
+        var overview = await _service.GetProjectOverviewAsync(project.Id, previewLimit: 10);
+        var register = await _service.GetPagedAsync(1, 100, project.Id);
+
+        Assert.Equal(4, overview.OpenCount);
+        Assert.Equal(register.Items.Count(risk => risk.Status != RiskStatus.Closed), overview.OpenCount);
+        Assert.Equal(overview.OpenCount, overview.StatusCounts.Sum(item => item.Count));
+        Assert.Equal(1, overview.StatusCounts.Single(item => item.Status == nameof(RiskStatus.Mitigated)).Count);
+        Assert.DoesNotContain(overview.StatusCounts, item => item.Status == nameof(RiskStatus.Closed));
+        Assert.Equal(1, overview.HighCriticalOpenCount);
+        Assert.Contains(overview.TopRisks, risk => risk.Id == mitigated.Id);
+        Assert.All(overview.TopRisks, risk => Assert.NotEqual(RiskStatus.Closed, risk.Status));
+        Assert.Equal(5, register.Items.Count);
+    }
+
+    [Fact]
     public async Task NestedWorkflowQueries_ReturnEmptyCollectionsForExistingRisk_And404ForMissingRisk()
     {
         var project = await AddProjectAsync(_tenantA, "Project A");
@@ -276,15 +323,16 @@ public sealed class RiskServiceTests : IDisposable
         Assert.True(secondUpdate.IsSuccess, secondUpdate.Error?.Message);
         var history = await _service.GetActionUpdatesAsync(created.Value.Id, action.Value.Id);
         Assert.True(history.IsSuccess);
-        Assert.Equal(2, history.Value!.Count);
-        Assert.Equal("Supplier acknowledged the request.", history.Value[0].UpdateText);
+        Assert.Equal(3, history.Value!.Count);
+        Assert.Equal("Action updated", history.Value[0].UpdateText);
+        Assert.Equal("Supplier acknowledged the request.", history.Value[1].UpdateText);
 
         var mitigated = await _service.UpdateStatusAsync(created.Value.Id, new UpdateRiskStatusDto { Status = RiskStatus.Mitigated }, _user.ToString());
         Assert.True(mitigated.IsSuccess, mitigated.Error?.Message);
         var closed = await _service.UpdateStatusAsync(created.Value.Id, new UpdateRiskStatusDto { Status = RiskStatus.Closed }, _user.ToString());
         Assert.True(closed.IsSuccess, closed.Error?.Message);
         var preserved = await _service.GetActionUpdatesAsync(created.Value.Id, action.Value.Id);
-        Assert.Equal(2, preserved.Value!.Count);
+        Assert.Equal(3, preserved.Value!.Count);
     }
 
     [Fact]
@@ -373,6 +421,13 @@ public sealed class RiskServiceTests : IDisposable
         public Task<ProjectReference?> FindAsync(Guid projectId, CancellationToken cancellationToken = default) => context.Projects.Where(project => project.Id == projectId).Select(project => new ProjectReference(project.Id, project.Name)).FirstOrDefaultAsync(cancellationToken);
         public async Task<IReadOnlyDictionary<Guid, string>> GetNamesAsync(IEnumerable<Guid> projectIds, CancellationToken cancellationToken = default) => await context.Projects.Where(project => projectIds.Contains(project.Id)).ToDictionaryAsync(project => project.Id, project => project.Name, cancellationToken);
         public async Task<IReadOnlyList<ProjectReference>> GetFinancialReferencesAsync(CancellationToken cancellationToken = default) => await context.Projects.Select(project => new ProjectReference(project.Id, project.Name)).ToListAsync(cancellationToken);
+        public async Task<IReadOnlyDictionary<Guid, ProjectReference>> GetReferencesAsync(IEnumerable<Guid> projectIds, CancellationToken cancellationToken = default)
+        {
+            var ids = projectIds.Distinct().ToArray();
+            return await context.Projects.Where(project => ids.Contains(project.Id))
+                .Select(project => new ProjectReference(project.Id, project.Name))
+                .ToDictionaryAsync(project => project.Id, cancellationToken);
+        }
     }
 
     private sealed class ResourceReferenceLookup(AppDbContext context) : IResourceReferenceLookup

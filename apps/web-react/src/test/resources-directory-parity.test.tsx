@@ -7,23 +7,27 @@ const mocks = vi.hoisted(() => ({
   permissions: ["Resource.View", "Resource.Create", "Resource.Edit", "Resource.Delete"],
   canMutate: true,
   effectiveReadOnly: false,
-  useResources: vi.fn(), useResource: vi.fn(), useBaseCalendars: vi.fn(), useCreateResource: vi.fn(), useUpdateResource: vi.fn(), useDeleteResource: vi.fn(),
+  useResources: vi.fn(), useResource: vi.fn(), useBaseCalendars: vi.fn(), useCreateResource: vi.fn(), useUpdateResource: vi.fn(), useDeleteResource: vi.fn(), useCostProfiles: vi.fn(), useCreateCostProfile: vi.fn(),
+  useResourceReferenceData: vi.fn(),
   useUsers: vi.fn(), useUnits: vi.fn(), useVendors: vi.fn(), useFinder: vi.fn(), useSkills: vi.fn(),
 }));
 
 vi.mock("../features/resources/api/resources", () => ({
   useResources: mocks.useResources, useResource: mocks.useResource, useBaseCalendars: mocks.useBaseCalendars,
+  useResourceReferenceData: mocks.useResourceReferenceData,
   useCreateResource: mocks.useCreateResource, useUpdateResource: mocks.useUpdateResource, useDeleteResource: mocks.useDeleteResource,
+  useCostProfiles: mocks.useCostProfiles, useCreateCostProfile: mocks.useCreateCostProfile,
   useResourceFinder: mocks.useFinder, useResourceSkills: mocks.useSkills,
 }));
 vi.mock("../features/organization/api/organization", () => ({ useOrganizationUnits: mocks.useUnits }));
 vi.mock("../features/projects/lib/project-lookups", () => ({ useUserLookup: mocks.useUsers }));
 vi.mock("../features/vendors/api/vendors", () => ({ useVendors: mocks.useVendors }));
+vi.mock("../features/administration/api/admin", () => ({ useCurrencies: () => ({ data: [{ id: "currency-gbp", code: "GBP", name: "Pound Sterling", symbol: "£", exchangeRate: 1, isBase: true }], isLoading: false, isError: false, refetch: vi.fn() }) }));
 vi.mock("@auth/AuthProvider", () => ({ useAuth: () => ({ user: { permissions: mocks.permissions } }) }));
 vi.mock("@api/management", () => ({ useManagement: () => ({ canMutate: mocks.canMutate, effectiveReadOnly: mocks.effectiveReadOnly }) }));
 
 const resource = {
-  id: "resource-1", name: "Morgan Resource", email: "morgan@example.com", employeeId: "EMP-1", jobTitle: "Delivery Lead", type: "Staff", status: "Active", isActive: true,
+  id: "resource-1", name: "Morgan Resource", email: "morgan@example.com", employeeId: "EMP-1", employmentType: "Permanent", jobTitle: "Delivery Lead", type: "Staff", status: "Active", isActive: true,
   userId: "user-1", primaryOrganizationalUnitId: "unit-1", primaryOrganizationalUnitName: "Technology", allocations: [{ id: "allocation-1", projectName: "Core Upgrade", role: "Lead", allocationPercentage: 50, startDate: "2026-01-01", endDate: "2026-12-31", status: "Confirmed" }],
 } as const;
 const finderItem = { resourceId: "resource-1", resourceName: "Morgan Resource", resourceType: "Staff", matchScore: 94, availableCapacityHours: 32, currentLoadPercent: 45, skillMatches: [], conflictingAllocations: [] };
@@ -41,6 +45,7 @@ describe("resource directory React parity", () => {
     mocks.useResources.mockReset().mockReturnValue({ data: { items: [resource], page: 1, pageSize: 20, totalCount: 1, totalPages: 1 }, isLoading: false, isError: false });
     mocks.useResource.mockReset().mockReturnValue({ data: resource, isLoading: false, isError: false, refetch: vi.fn() });
     mocks.useBaseCalendars.mockReset().mockReturnValue({ data: [{ id: "calendar-1", name: "Standard", isDefault: true }] });
+    mocks.useResourceReferenceData.mockReset().mockReturnValue({ data: { resourceTypes: [{ code: "Staff", nameEn: "Staff", nameAr: "موظف", displayOrder: 1, isDefault: true, requiresVendor: false }, { code: "Vendor", nameEn: "Vendor", nameAr: "مورد", displayOrder: 2, isDefault: false, requiresVendor: true }], seniorityLevels: [{ code: "Senior", nameEn: "Senior", nameAr: "خبير", displayOrder: 3 }], compensationTypes: ["Hourly", "Weekly", "Monthly"] }, isLoading: false, isError: false, refetch: vi.fn() });
     mocks.useUsers.mockReset().mockReturnValue({ data: [{ id: "user-1", fullName: "Alex Admin", email: "admin@nexus.com" }] });
     mocks.useUnits.mockReset().mockReturnValue({ data: [{ id: "unit-1", name: "Technology", code: "TECH", isActive: true }] });
     mocks.useVendors.mockReset().mockReturnValue({ data: { items: [{ id: "vendor-1", name: "Vendor One", isActive: true }] } });
@@ -49,6 +54,8 @@ describe("resource directory React parity", () => {
     mocks.useCreateResource.mockReset().mockReturnValue({ mutate: vi.fn(), reset: vi.fn(), isPending: false, error: null });
     mocks.useUpdateResource.mockReset().mockReturnValue({ mutate: vi.fn(), mutateAsync: vi.fn(), reset: vi.fn(), isPending: false, error: null });
     mocks.useDeleteResource.mockReset().mockReturnValue({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false, error: null });
+    mocks.useCostProfiles.mockReset().mockReturnValue({ data: [], isLoading: false, isError: false, isSuccess: true, refetch: vi.fn() });
+    mocks.useCreateCostProfile.mockReset().mockReturnValue({ mutateAsync: vi.fn(), reset: vi.fn(), isPending: false, error: null });
   });
 
   it("shows authoritative directory fields, localized filters, and source pagination", () => {
@@ -76,18 +83,74 @@ describe("resource directory React parity", () => {
     expect(screen.getByText("Current allocations")).toBeInTheDocument();
   });
 
-  it("opens Add Resource as a side sheet with the full association fields", () => {
+  it("creates an effective-dated resource cost profile only for rate managers", async () => {
+    mocks.permissions = ["Resource.View", "Resource.ViewCostRate", "Resource.EditCostRate"];
+    const createMutation = { mutateAsync: vi.fn().mockResolvedValue({ id: "rate-1" }), reset: vi.fn(), isPending: false, error: null };
+    mocks.useCreateCostProfile.mockReturnValue(createMutation);
+    renderPage();
+
+    fireEvent.click(screen.getByRole("button", { name: "Morgan Resource" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cost profiles" }));
+    const sheet = screen.getByRole("dialog", { name: "Cost profiles · Morgan Resource" });
+    fireEvent.change(within(sheet).getByLabelText("Rate amount"), { target: { value: "100" } });
+    fireEvent.change(within(sheet).getByLabelText("Effective from"), { target: { value: "2026-10-01" } });
+    fireEvent.change(within(sheet).getByLabelText("Effective to"), { target: { value: "2026-10-31" } });
+    fireEvent.click(within(sheet).getByRole("button", { name: "Add rate" }));
+
+    await waitFor(() => expect(createMutation.mutateAsync).toHaveBeenCalledWith({
+      resourceId: "resource-1",
+      body: { amount: 100, compensationType: "Hourly", currency: "GBP", effectiveFrom: "2026-10-01", effectiveTo: "2026-10-31", overtimeEligible: false },
+    }));
+  });
+
+  it("does not expose cost-rate profile actions without rate access", () => {
+    mocks.permissions = ["Resource.View"];
+    renderPage();
+
+    fireEvent.click(screen.getByRole("button", { name: "Morgan Resource" }));
+
+    expect(screen.queryByRole("button", { name: "Cost profiles" })).not.toBeInTheDocument();
+  });
+
+  it("opens Add Resource with grouped fields and omits manual HR-only identifiers", () => {
     renderPage();
     fireEvent.click(screen.getByRole("button", { name: "Add Resource" }));
     const sheet = screen.getByRole("dialog", { name: "Create Resource" });
     expect(sheet.querySelector(".absolute.inset-y-0")).toBeTruthy();
-    expect(within(sheet).getByRole("heading", { name: "Basic information" })).toBeInTheDocument();
-    expect(within(sheet).getByRole("heading", { name: "Professional information" })).toBeInTheDocument();
-    expect(within(sheet).getByRole("heading", { name: "Calendar and association" })).toBeInTheDocument();
+    expect(within(sheet).getByRole("heading", { name: "Resource information" })).toBeInTheDocument();
+    expect(within(sheet).getByRole("heading", { name: "Professional profile" })).toBeInTheDocument();
+    expect(within(sheet).getByRole("heading", { name: "Organization and planning" })).toBeInTheDocument();
     expect(within(sheet).getByLabelText("System User")).toBeInTheDocument();
     expect(within(sheet).getByLabelText("Organizational unit")).toBeInTheDocument();
     expect(within(sheet).getByLabelText("Base calendar")).toBeInTheDocument();
-    expect(within(sheet).getByLabelText("Employee ID")).toBeInTheDocument();
+    expect(within(sheet).queryByLabelText("Employee ID")).not.toBeInTheDocument();
+    expect(within(sheet).queryByLabelText("Employment Type")).not.toBeInTheDocument();
+    expect(within(sheet).getByLabelText("Name")).toBeRequired();
+  });
+
+  it("opens Edit Resource without exposing persisted HR-only fields", () => {
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Morgan Resource" }));
+    fireEvent.click(screen.getByRole("button", { name: "Edit Resource" }));
+    const sheet = screen.getByRole("dialog", { name: "Edit Resource" });
+
+    expect(within(sheet).getByLabelText("Name")).toHaveValue("Morgan Resource");
+    expect(within(sheet).queryByLabelText("Employee ID")).not.toBeInTheDocument();
+    expect(within(sheet).queryByLabelText("Employment Type")).not.toBeInTheDocument();
+  });
+
+  it("renders localized required and optional cues in Arabic RTL", () => {
+    window.localStorage.setItem("nexus-locale", "ar");
+    renderPage();
+
+    fireEvent.click(screen.getByRole("button", { name: "إضافة مورد" }));
+    const sheet = screen.getByRole("dialog", { name: "إنشاء مورد" });
+    expect(document.documentElement.dir).toBe("rtl");
+    expect(within(sheet).getByRole("heading", { name: "معلومات المورد" })).toBeInTheDocument();
+    expect(within(sheet).getByLabelText("الاسم")).toBeRequired();
+    expect(within(sheet).getAllByText("اختياري").length).toBeGreaterThan(0);
+    expect(within(sheet).queryByLabelText("معرف الموظف")).not.toBeInTheDocument();
+    expect(within(sheet).queryByLabelText("نوع التوظيف")).not.toBeInTheDocument();
   });
 
   it("shows a failed create response inside the open Add Resource side sheet", () => {
@@ -118,7 +181,7 @@ describe("resource directory React parity", () => {
     const { rerender } = renderPage();
 
     fireEvent.click(screen.getByRole("button", { name: "Deactivate" }));
-    const confirmation = screen.getByRole("dialog");
+    const confirmation = screen.getByRole("alertdialog");
     fireEvent.click(within(confirmation).getByRole("button", { name: "Deactivate" }));
     await waitFor(() => expect(deleteMutation.mutateAsync).toHaveBeenCalledWith(resource.id));
 
@@ -134,7 +197,7 @@ describe("resource directory React parity", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add Resource" }));
     const sheet = screen.getByRole("dialog", { name: "Create Resource" });
     fireEvent.click(within(sheet).getByLabelText("Resource Type"));
-    fireEvent.click(screen.getByRole("option", { name: "Vendor Resource" }));
+    fireEvent.click(screen.getByRole("option", { name: "Vendor" }));
     expect(within(sheet).getByLabelText("Vendor")).toBeInTheDocument();
     expect(within(sheet).queryByLabelText("Employee ID")).not.toBeInTheDocument();
     expect(within(sheet).queryByLabelText("System User")).not.toBeInTheDocument();

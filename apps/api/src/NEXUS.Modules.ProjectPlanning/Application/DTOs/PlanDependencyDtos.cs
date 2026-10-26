@@ -54,6 +54,11 @@ public sealed class ReplacePlanPredecessorsDto
     public IReadOnlyList<PlanPredecessorInputDto> Predecessors { get; set; } = [];
 }
 
+public sealed class BulkReplacePlanPredecessorsDto
+{
+    public IReadOnlyList<ReplacePlanPredecessorsDto> Items { get; set; } = [];
+}
+
 public sealed class PlanPredecessorInputDto
 {
     public Guid PredecessorActivityId { get; set; }

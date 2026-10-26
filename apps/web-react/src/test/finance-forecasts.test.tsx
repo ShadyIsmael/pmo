@@ -16,6 +16,7 @@ function budget(overrides: Partial<BudgetDto> = {}): BudgetDto {
   return {
     id: "budget-1",
     projectId: "PRJ-100",
+    projectPublicId: "PRJ-100",
     name: "Data center",
     description: "Primary hosting",
     category: "Infrastructure",

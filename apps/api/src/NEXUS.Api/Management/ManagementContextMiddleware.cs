@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
+using NEXUS.SharedKernel;
 using NEXUS.SharedKernel.Management;
 
 namespace NEXUS.Api.Management;
@@ -40,6 +41,11 @@ public sealed class ManagementContextMiddleware
             return;
         }
         var viewMode = parsedViewMode ?? ManagementViewMode.Native;
+        var hasAssignmentRecoveryPermission = viewMode == ManagementViewMode.Native
+            && IsAssignmentRecoveryPath(httpContext.Request.Path)
+            && (httpContext.User.HasClaim("permission", AssignmentRecoveryPermissions.View)
+                || httpContext.User.HasClaim("permission", AssignmentRecoveryPermissions.Initiate)
+                || httpContext.User.HasClaim("permission", AssignmentRecoveryPermissions.Manage));
         var canReadAllTenantPortfolioProgramData = HttpMethods.IsGet(httpContext.Request.Method)
             && viewMode == ManagementViewMode.Native
             && IsTenantAdminPortfolioProgramReadPath(httpContext.Request.Path)
@@ -50,7 +56,8 @@ public sealed class ManagementContextMiddleware
             && await resolver.IsTenantAdministratorAsync(userId, tenantId, httpContext.RequestAborted);
         var hasTenantPortfolioAdminScope = canReadAllTenantPortfolioProgramData || hasTenantAdministratorPortfolioWriteScope;
         var context = await resolver.ResolveAsync(userId, tenantId, perspective, viewMode, ParseGuid(httpContext.Request.Headers[PortfolioHeader]), ParseGuid(httpContext.Request.Headers[ProgramHeader]), ParseGuid(httpContext.Request.Headers[ProjectHeader]), httpContext.RequestAborted);
-        if (context is null && (perspective.HasValue || viewMode == ManagementViewMode.ReadOnlyViewAs) && !hasTenantPortfolioAdminScope)
+        if (context is null && (perspective.HasValue || viewMode == ManagementViewMode.ReadOnlyViewAs)
+            && !hasTenantPortfolioAdminScope && !hasAssignmentRecoveryPermission)
         {
             // Timer sessions are personal to the authenticated Resource owner
             // and are intentionally started before a project is selected.
@@ -112,6 +119,16 @@ public sealed class ManagementContextMiddleware
 
     private static async Task<bool> IsAddressableResourceInScopeAsync(HttpContext httpContext, IManagementScopeResolver resolver, Guid userId, Guid tenantId, ManagementContext context)
     {
+        // The recovery controller applies its own recovery permissions, authenticated-tenant
+        // filtering, and PublicId resolution. This narrowly scoped path exception is only for
+        // native mode; it does not grant access to normal entity routes or ReadOnlyViewAs writes.
+        if (context.ViewMode == ManagementViewMode.Native
+            && IsAssignmentRecoveryPath(httpContext.Request.Path)
+            && (httpContext.User.HasClaim("permission", AssignmentRecoveryPermissions.View)
+                || httpContext.User.HasClaim("permission", AssignmentRecoveryPermissions.Initiate)
+                || httpContext.User.HasClaim("permission", AssignmentRecoveryPermissions.Manage)))
+            return true;
+
         if (context.CanReadAllTenantPortfolioProgramData
             && HttpMethods.IsGet(httpContext.Request.Method)
             && IsTenantAdminPortfolioProgramReadPath(httpContext.Request.Path))
@@ -121,6 +138,26 @@ public sealed class ManagementContextMiddleware
             && HttpMethods.IsPut(httpContext.Request.Method)
             && IsTenantAdminPortfolioUpdatePath(httpContext.Request.Path))
             return true;
+
+        // Self-scoped handover approvals are addressable without a management assignment:
+        // the ManagerHandoverService enforces Handover.Approve, tenant isolation, and
+        // request.NewManagerId == current user before returning anything.
+        if (IsSelfScopedHandoverPendingPath(httpContext.Request.Path))
+            return true;
+
+        // Only callers with the explicit administrative initiation permission may
+        // address an entity outside their manager assignment scope. Read-only view-as
+        // was rejected above; the service still verifies tenant and effective access.
+        if (context.ViewMode == ManagementViewMode.Native
+            && httpContext.User.HasClaim("permission", "Handover.AdminInitiate")
+            && IsAdminHandoverInitiationPath(httpContext.Request.Method, httpContext.Request.Path))
+            return true;
+
+        if (ProjectRequestContext.GetInternalProjectId(httpContext) is { } addressedProjectId)
+        {
+            return ProjectRequestContext.ShouldSkipManagementScope(httpContext)
+                || context.Scope.ProjectIds.Contains(addressedProjectId);
+        }
 
         var segments = httpContext.Request.Path.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) ?? Array.Empty<string>();
         for (var i = 0; i < segments.Length - 1; i++)
@@ -134,6 +171,7 @@ public sealed class ManagementContextMiddleware
     }
 
     private static bool IsMutation(string method) => HttpMethods.IsPost(method) || HttpMethods.IsPut(method) || HttpMethods.IsPatch(method) || HttpMethods.IsDelete(method);
+    private static bool IsAssignmentRecoveryPath(PathString path) => path.StartsWithSegments("/api/governance/assignment-recovery");
     private static bool IsSessionEndpoint(PathString path) => path.StartsWithSegments("/api/auth");
     private static bool IsTimerEndpoint(PathString path) => path.StartsWithSegments("/api/timer");
     private static bool IsTenantAdminPortfolioProgramReadPath(PathString path)
@@ -183,6 +221,81 @@ public sealed class ManagementContextMiddleware
             && segments[0].Equals("api", StringComparison.OrdinalIgnoreCase)
             && segments[1].Equals("portfolios", StringComparison.OrdinalIgnoreCase)
             && Guid.TryParse(segments[2], out _);
+    }
+    private static bool IsSelfScopedHandoverPendingPath(PathString path)
+    {
+        var segments = path.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) ?? Array.Empty<string>();
+        return segments.Length == 5
+            && segments[0].Equals("api", StringComparison.OrdinalIgnoreCase)
+            && segments[1].Equals("manager-handovers", StringComparison.OrdinalIgnoreCase)
+            && (segments[2].Equals("portfolios", StringComparison.OrdinalIgnoreCase)
+                || segments[2].Equals("programs", StringComparison.OrdinalIgnoreCase))
+            && Guid.TryParse(segments[3], out _)
+            && segments[4].Equals("pending-for-me", StringComparison.OrdinalIgnoreCase);
+    }
+    private static bool IsAdminHandoverInitiationPath(string method, PathString path)
+    {
+        var segments = path.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) ?? Array.Empty<string>();
+        if (segments.Length == 4
+            && segments[0].Equals("api", StringComparison.OrdinalIgnoreCase)
+            && segments[1].Equals("projects", StringComparison.OrdinalIgnoreCase)
+            && Guid.TryParse(segments[2], out _)
+            && HttpMethods.IsGet(method))
+            return segments[3].Equals("handover-capabilities", StringComparison.OrdinalIgnoreCase)
+                || segments[3].Equals("handover-managers", StringComparison.OrdinalIgnoreCase);
+
+        if (segments.Length == 5
+            && segments[0].Equals("api", StringComparison.OrdinalIgnoreCase)
+            && segments[1].Equals("projects", StringComparison.OrdinalIgnoreCase)
+            && Guid.TryParse(segments[2], out _)
+            && segments[3].Equals("handover-requests", StringComparison.OrdinalIgnoreCase)
+            && HttpMethods.IsPost(method))
+            return segments[4].Equals("admin", StringComparison.OrdinalIgnoreCase)
+                || segments[4].Equals("initial-assignment", StringComparison.OrdinalIgnoreCase);
+
+        if (segments.Length == 5
+            && segments[0].Equals("api", StringComparison.OrdinalIgnoreCase)
+            && segments[1].Equals("manager-handovers", StringComparison.OrdinalIgnoreCase)
+            && (segments[2].Equals("programs", StringComparison.OrdinalIgnoreCase)
+                || segments[2].Equals("portfolios", StringComparison.OrdinalIgnoreCase))
+            && Guid.TryParse(segments[3], out _)
+            && HttpMethods.IsGet(method))
+            return segments[4].Equals("eligible-managers", StringComparison.OrdinalIgnoreCase)
+                || segments[4].Equals("capabilities", StringComparison.OrdinalIgnoreCase);
+
+        if (segments.Length == 5
+            && segments[0].Equals("api", StringComparison.OrdinalIgnoreCase)
+            && segments[1].Equals("manager-handovers", StringComparison.OrdinalIgnoreCase)
+            && (segments[2].Equals("programs", StringComparison.OrdinalIgnoreCase)
+                || segments[2].Equals("portfolios", StringComparison.OrdinalIgnoreCase))
+            && Guid.TryParse(segments[3], out _)
+            && HttpMethods.IsPost(method))
+            return segments[4].Equals("admin-requests", StringComparison.OrdinalIgnoreCase)
+                || segments[4].Equals("initial-assignment-requests", StringComparison.OrdinalIgnoreCase);
+
+        // The handover services additionally require this caller to be the
+        // active-tenant requester of the pending request. The opaque request ID
+        // does not grant access to other users' or tenants' requests.
+        if (segments.Length == 4
+            && segments[0].Equals("api", StringComparison.OrdinalIgnoreCase)
+            && segments[1].Equals("handover-requests", StringComparison.OrdinalIgnoreCase)
+            && Guid.TryParse(segments[2], out _)
+            && segments[3].Equals("cancel", StringComparison.OrdinalIgnoreCase)
+            && HttpMethods.IsPost(method))
+            return true;
+
+        if (segments.Length == 6
+            && segments[0].Equals("api", StringComparison.OrdinalIgnoreCase)
+            && segments[1].Equals("manager-handovers", StringComparison.OrdinalIgnoreCase)
+            && (segments[2].Equals("programs", StringComparison.OrdinalIgnoreCase)
+                || segments[2].Equals("portfolios", StringComparison.OrdinalIgnoreCase))
+            && segments[3].Equals("requests", StringComparison.OrdinalIgnoreCase)
+            && Guid.TryParse(segments[4], out _)
+            && segments[5].Equals("cancel", StringComparison.OrdinalIgnoreCase)
+            && HttpMethods.IsPost(method))
+            return true;
+
+        return false;
     }
     private static Guid? ParseGuid(string? value) => Guid.TryParse(value, out var id) ? id : null;
     private static T? ParseEnum<T>(string? value) where T : struct, Enum => Enum.TryParse<T>(value, true, out var parsed) ? parsed : null;

@@ -1,11 +1,13 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Http;
+using FluentValidation;
 using System.Security.Claims;
 using NEXUS.Modules.Audit.Application;
 using NEXUS.Modules.Audit.Domain;
 using NEXUS.Modules.Organization.Domain;
 using NEXUS.Modules.ResourceManagement.Application.DTOs;
 using NEXUS.Modules.ResourceManagement.Application.Mapping;
+using NEXUS.Modules.ResourceManagement.Application.Validators;
 using NEXUS.Modules.ResourceManagement.Domain;
 using NEXUS.SharedKernel;
 using NEXUS.SharedKernel.Helpers;
@@ -18,17 +20,23 @@ public class ResourceService : IResourceService, IResourceReferenceLookup, IReso
     private readonly IAuditService _auditService;
     private readonly IUserReferenceLookup _userLookup;
     private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly IValidator<CreateResourceDto> _createValidator;
+    private readonly IValidator<UpdateResourceDto> _updateValidator;
 
     public ResourceService(
         DbContext context,
         IAuditService auditService,
         IUserReferenceLookup userLookup,
-        IHttpContextAccessor httpContextAccessor)
+        IHttpContextAccessor httpContextAccessor,
+        IValidator<CreateResourceDto> createValidator,
+        IValidator<UpdateResourceDto> updateValidator)
     {
         _context = context;
         _auditService = auditService;
         _userLookup = userLookup;
         _httpContextAccessor = httpContextAccessor;
+        _createValidator = createValidator;
+        _updateValidator = updateValidator;
     }
 
     public Task<bool> ExistsAsync(Guid resourceId, CancellationToken cancellationToken = default)
@@ -108,7 +116,6 @@ public class ResourceService : IResourceService, IResourceReferenceLookup, IReso
             .Include(r => r.Allocations)
             .Include(r => r.Vendor)
             .Include(r => r.BaseCalendar)
-            .Include(r => r.CostProfiles.Where(cp => !cp.IsDeleted))
             .FirstOrDefaultAsync(r => r.Id == id && !r.IsDeleted, cancellationToken);
 
         if (resource is null)
@@ -140,7 +147,12 @@ public class ResourceService : IResourceService, IResourceReferenceLookup, IReso
         if (!string.IsNullOrWhiteSpace(filter.Status))
             query = query.Where(r => r.Status == filter.Status);
         if (!string.IsNullOrWhiteSpace(filter.Type))
-            query = query.Where(r => r.Type == filter.Type);
+        {
+            var storedType = ResourceTypeConstants.TryGetKnownStoredCode(filter.Type, out var canonicalType)
+                ? canonicalType
+                : filter.Type;
+            query = query.Where(r => r.Type == storedType);
+        }
         if (filter.UserId.HasValue)
             query = query.Where(r => r.UserId == filter.UserId);
         if (filter.DepartmentId.HasValue)
@@ -191,19 +203,67 @@ public class ResourceService : IResourceService, IResourceReferenceLookup, IReso
             .ToListAsync(cancellationToken);
     }
 
+    public Task<ResourceReferenceDataDto> GetReferenceDataAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var resourceTypes = Enum.GetValues<ResourceType>()
+            .Select(type => new ResourceTypeOptionDto(
+                type.ToString(),
+                type.ToString(),
+                type switch
+                {
+                    ResourceType.Staff => "موظف",
+                    ResourceType.Vendor => "مورد",
+                    _ => type.ToString()
+                },
+                (int)type + 1,
+                type == ResourceType.Staff,
+                type == ResourceType.Vendor))
+            .ToArray();
+
+        var seniorityLevels = Enum.GetValues<ResourceSeniorityLevel>()
+            .Select(level => new ResourceSeniorityOptionDto(
+                level.ToString(),
+                level == ResourceSeniorityLevel.Mid ? "Mid-Level" : level.ToString(),
+                level switch
+                {
+                    ResourceSeniorityLevel.Junior => "مبتدئ",
+                    ResourceSeniorityLevel.Mid => "متوسط",
+                    ResourceSeniorityLevel.Senior => "خبير",
+                    ResourceSeniorityLevel.Lead => "قائد",
+                    ResourceSeniorityLevel.Principal => "خبير رئيسي",
+                    _ => level.ToString()
+                },
+                (int)level + 1))
+            .ToArray();
+
+        return Task.FromResult(new ResourceReferenceDataDto
+        {
+            ResourceTypes = resourceTypes,
+            SeniorityLevels = seniorityLevels,
+            CompensationTypes = CompensationType.Values
+        });
+    }
+
     public async Task<Result<ResourceDto>> CreateAsync(CreateResourceDto dto, string userId, CancellationToken cancellationToken = default)
     {
+        var inputValidation = await _createValidator.ValidateAsync(dto, cancellationToken);
+        if (!inputValidation.IsValid)
+            return Result<ResourceDto>.Failure(Error.Validation(
+                string.Join("; ", inputValidation.Errors.Select(error => $"{error.PropertyName}: {error.ErrorMessage}")),
+                inputValidation.Errors.FirstOrDefault()?.PropertyName));
+
         var identityValidation = await ValidateIdentityAsync(dto.UserId, null, dto.Email, null, cancellationToken);
         if (identityValidation.IsFailure) return Result<ResourceDto>.Failure(identityValidation.Error!);
 
-        if (!ResourceTypeConstants.IsValid(dto.Type))
-            return Result<ResourceDto>.Failure(Error.Validation("Invalid resource type. Must be 'Staff' or 'VendorResource'"));
+        if (!Enum.IsDefined(dto.Type))
+            return Result<ResourceDto>.Failure(Error.Validation("Select a supported resource type.", nameof(dto.Type)));
 
-        if (dto.Type == ResourceTypeConstants.Staff && dto.VendorId.HasValue)
-            return Result<ResourceDto>.Failure(Error.Validation("Staff resources cannot reference a Vendor"));
+        if (dto.Type == ResourceType.Staff && dto.VendorId.HasValue)
+            return Result<ResourceDto>.Failure(Error.Validation("Staff resources cannot reference a Vendor.", nameof(dto.Type)));
 
-        if (dto.Type == ResourceTypeConstants.VendorResource && !dto.VendorId.HasValue)
-            return Result<ResourceDto>.Failure(Error.Validation("VendorResource requires a Vendor"));
+        if (dto.Type == ResourceType.Vendor && !dto.VendorId.HasValue)
+            return Result<ResourceDto>.Failure(Error.Validation("Vendor resources require a Vendor.", nameof(dto.Type)));
 
         if (dto.VendorId.HasValue)
         {
@@ -279,6 +339,12 @@ public class ResourceService : IResourceService, IResourceReferenceLookup, IReso
 
     public async Task<Result<ResourceDto>> UpdateAsync(Guid id, UpdateResourceDto dto, string userId, CancellationToken cancellationToken = default)
     {
+        var inputValidation = await _updateValidator.ValidateAsync(dto, cancellationToken);
+        if (!inputValidation.IsValid)
+            return Result<ResourceDto>.Failure(Error.Validation(
+                string.Join("; ", inputValidation.Errors.Select(error => $"{error.PropertyName}: {error.ErrorMessage}")),
+                inputValidation.Errors.FirstOrDefault()?.PropertyName));
+
         var resource = await _context.Set<Resource>()
             .Include(r => r.Skills).ThenInclude(rs => rs.Skill)
             .FirstOrDefaultAsync(r => r.Id == id && !r.IsDeleted, cancellationToken);
@@ -298,14 +364,14 @@ public class ResourceService : IResourceService, IResourceReferenceLookup, IReso
             resource.DepartmentId, resource.LocationId
         });
 
-        if (dto.Type != null && !ResourceTypeConstants.IsValid(dto.Type))
-            return Result<ResourceDto>.Failure(Error.Validation("Invalid resource type. Must be 'Staff' or 'VendorResource'"));
+        if (dto.Type.HasValue && !Enum.IsDefined(dto.Type.Value))
+            return Result<ResourceDto>.Failure(Error.Validation("Select a supported resource type.", nameof(dto.Type)));
 
-        if (dto.Type == ResourceTypeConstants.Staff && dto.VendorId.HasValue)
-            return Result<ResourceDto>.Failure(Error.Validation("Staff resources cannot reference a Vendor"));
+        if (dto.Type == ResourceType.Staff && (dto.VendorId ?? resource.VendorId).HasValue)
+            return Result<ResourceDto>.Failure(Error.Validation("Staff resources cannot reference a Vendor.", nameof(dto.Type)));
 
-        if (dto.Type == ResourceTypeConstants.VendorResource && dto.VendorId == null && resource.VendorId == null)
-            return Result<ResourceDto>.Failure(Error.Validation("VendorResource requires a Vendor"));
+        if (dto.Type == ResourceType.Vendor && dto.VendorId == null && resource.VendorId == null)
+            return Result<ResourceDto>.Failure(Error.Validation("Vendor resources require a Vendor.", nameof(dto.Type)));
 
         if (dto.VendorId.HasValue)
         {

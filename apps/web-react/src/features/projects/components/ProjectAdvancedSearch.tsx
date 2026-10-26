@@ -30,10 +30,6 @@ interface ProjectAdvancedSearchProps {
   setFilterBudgetMin: (value: string) => void;
   filterBudgetMax: string;
   setFilterBudgetMax: (value: string) => void;
-  filterForecastMin: string;
-  setFilterForecastMin: (value: string) => void;
-  filterForecastMax: string;
-  setFilterForecastMax: (value: string) => void;
   filterProjectManager: string;
   setFilterProjectManager: (value: string) => void;
   setFilterProjectManagerName: (value: string) => void;
@@ -62,10 +58,6 @@ export function ProjectAdvancedSearch({
   setFilterBudgetMin,
   filterBudgetMax,
   setFilterBudgetMax,
-  filterForecastMin,
-  setFilterForecastMin,
-  filterForecastMax,
-  setFilterForecastMax,
   filterProjectManager,
   setFilterProjectManager,
   setFilterProjectManagerName,
@@ -154,9 +146,9 @@ export function ProjectAdvancedSearch({
                 </div>
               </div>
 
-              <div className="grid gap-4 md:grid-cols-3">
+              <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
-                  <Label className="text-xs font-medium">{t("common.progress")} (%)</Label>
+                  <Label className="text-xs font-medium">{t("projects.progressSourceWorkingPlan")} (%)</Label>
                   <div className="flex gap-2">
                     <Input placeholder="Min" type="number" min="0" max="100" value={filterProgressMin} onChange={(e) => setFilterProgressMin(e.target.value)} />
                     <Input placeholder="Max" type="number" min="0" max="100" value={filterProgressMax} onChange={(e) => setFilterProgressMax(e.target.value)} />
@@ -167,13 +159,6 @@ export function ProjectAdvancedSearch({
                   <div className="flex gap-2">
                     <Input placeholder="Min" type="number" value={filterBudgetMin} onChange={(e) => setFilterBudgetMin(e.target.value)} />
                     <Input placeholder="Max" type="number" value={filterBudgetMax} onChange={(e) => setFilterBudgetMax(e.target.value)} />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-xs font-medium">{t("common.forecast")}</Label>
-                  <div className="flex gap-2">
-                    <Input placeholder="Min" type="number" value={filterForecastMin} onChange={(e) => setFilterForecastMin(e.target.value)} />
-                    <Input placeholder="Max" type="number" value={filterForecastMax} onChange={(e) => setFilterForecastMax(e.target.value)} />
                   </div>
                 </div>
               </div>

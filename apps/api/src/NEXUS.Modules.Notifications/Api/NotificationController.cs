@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using NEXUS.Modules.Notifications.Application;
+using NEXUS.SharedKernel;
 using System.Security.Claims;
 
 namespace NEXUS.Modules.Notifications.Api;
@@ -12,11 +13,13 @@ public class NotificationController : ControllerBase
 {
     private readonly INotificationService _notificationService;
     private readonly IDeviceTokenService _deviceTokenService;
+    private readonly IProjectPublicIdLookup? _projectPublicIdLookup;
 
-    public NotificationController(INotificationService notificationService, IDeviceTokenService deviceTokenService)
+    public NotificationController(INotificationService notificationService, IDeviceTokenService deviceTokenService, IProjectPublicIdLookup? projectPublicIdLookup = null)
     {
         _notificationService = notificationService;
         _deviceTokenService = deviceTokenService;
+        _projectPublicIdLookup = projectPublicIdLookup;
     }
 
     [HttpGet]
@@ -26,7 +29,26 @@ public class NotificationController : ControllerBase
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 100);
         var result = await _notificationService.GetUserNotificationsAsync(tenantId, userId, page, pageSize, unreadOnly, cancellationToken);
-        return Ok(result);
+        var items = new List<NotificationListItemDto>(result.Items.Count);
+        foreach (var notification in result.Items)
+        {
+            var projectReference = string.Equals(notification.ReferenceType, "Project", StringComparison.OrdinalIgnoreCase);
+            Guid? referencePublicId = null;
+            if (projectReference && notification.ReferenceId.HasValue && _projectPublicIdLookup is not null)
+                referencePublicId = await _projectPublicIdLookup.FindPublicIdAsync(notification.ReferenceId.Value, tenantId, cancellationToken);
+            items.Add(new NotificationListItemDto(
+                notification.Id,
+                notification.Title,
+                notification.Body,
+                notification.Type,
+                notification.IsRead,
+                notification.ReadAt,
+                notification.SentAt,
+                notification.ReferenceType,
+                projectReference ? null : notification.ReferenceId,
+                referencePublicId));
+        }
+        return Ok(new PagedResult<NotificationListItemDto>(items, result.Page, result.PageSize, result.TotalCount));
     }
 
     [HttpGet("unread-count")]
@@ -98,4 +120,16 @@ public class NotificationController : ControllerBase
         var hasTenant = Guid.TryParse(User.FindFirstValue("tenantId"), out tenantId);
         return hasUser && hasTenant;
     }
+
+    private sealed record NotificationListItemDto(
+        Guid Id,
+        string Title,
+        string? Body,
+        string Type,
+        bool IsRead,
+        DateTime? ReadAt,
+        DateTime SentAt,
+        string? ReferenceType,
+        Guid? ReferenceId,
+        Guid? ReferencePublicId);
 }

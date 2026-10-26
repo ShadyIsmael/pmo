@@ -19,7 +19,36 @@ public class CapacityMatrixRowDto
     public DateTime? EarliestAvailableDate { get; set; }
     public decimal? CostPerHour { get; set; }
     public string? Currency { get; set; }
+    public bool HasCapacityData { get; set; }
     public List<CapacityCellDto> Cells { get; set; } = new();
+}
+
+public sealed class ProjectTeamCapacityMemberInputDto
+{
+    public Guid ResourceId { get; init; }
+    public Guid? ProjectId { get; init; }
+    public DateTime StartDate { get; init; }
+    public DateTime EndDate { get; init; }
+    public decimal? AllocationPercentage { get; init; }
+    public decimal? HoursPerWeek { get; init; }
+    public bool UseProjectCalendar { get; init; }
+    public Guid? ProjectCalendarId { get; init; }
+}
+
+public sealed class ProjectTeamCapacityOverviewDto
+{
+    public DateTime StartDate { get; init; }
+    public DateTime EndDate { get; init; }
+    public int ActiveResourceCount { get; init; }
+    public int? IdleResourceCount { get; init; }
+    public decimal? TotalCapacityHours { get; init; }
+    public decimal? UtilizedHours { get; init; }
+    public decimal? AvailableHours { get; init; }
+    public decimal? OverallocatedHours { get; init; }
+    public decimal? UtilizedPercent { get; init; }
+    public decimal? AvailablePercent { get; init; }
+    public bool IsCapacityDataAvailable { get; init; }
+    public bool IsAllocationDataAvailable { get; init; }
 }
 
 public class CapacityCellDto

@@ -17,6 +17,10 @@ export interface PlanWorkspaceRow {
   wbs?: PlanWbsNodeDto;
   textFormat?: PlanTextFormatDto | null;
   hasChildren: boolean;
+  /** True when the row aggregates child rows (WBS parent or backend summary activity). */
+  isSummary: boolean;
+  /** Microsoft Project-style hierarchical outline number (e.g. "1.2.1"); display-only. */
+  outlineNumber?: string;
 }
 
 function compareOrder(left: { sortOrder?: number; code: string }, right: { sortOrder?: number; code: string }) {
@@ -36,21 +40,43 @@ export function buildPlanWorkspaceRows(wbs: PlanWbsNodeDto[], activities: PlanAc
   }
   for (const linked of activitiesByWbs.values()) linked.sort(compareOrder);
   const sortedActivities = [...activities].sort(compareOrder);
-  const visit = (nodes: PlanWbsNodeDto[], depth: number) => {
-    for (const node of nodes.slice().sort(compareOrder)) {
+  const visit = (nodes: PlanWbsNodeDto[], depth: number, prefix: string) => {
+    const ordered = nodes.slice().sort(compareOrder);
+    ordered.forEach((node, index) => {
       const linked = activitiesByWbs.get(node.id) ?? [];
       const primary = (node.activityId ? activitiesById.get(node.activityId) : undefined) ?? linked[0];
       if (primary) placedActivities.add(primary.id);
-      rows.push({ id: primary ? `activity:${primary.id}` : `wbs:${node.id}`, depth, activity: primary, wbs: node, textFormat: primary?.textFormat ?? node.textFormat, hasChildren: (node.children?.length ?? 0) > 0 || linked.length > 1 });
-      for (const activity of linked.filter((item) => item.id !== primary?.id)) {
+      const outlineNumber = prefix ? `${prefix}.${index + 1}` : String(index + 1);
+      const childRows = (node.children?.length ?? 0) > 0 || linked.filter((item) => item.id !== primary?.id).length > 0;
+      rows.push({
+        id: primary ? `activity:${primary.id}` : `wbs:${node.id}`,
+        depth,
+        activity: primary,
+        wbs: node,
+        textFormat: primary?.textFormat ?? node.textFormat,
+        hasChildren: childRows,
+        isSummary: childRows || Boolean(primary?.isSummaryTask),
+        outlineNumber,
+      });
+      linked.filter((item) => item.id !== primary?.id).forEach((activity, extraIndex) => {
         placedActivities.add(activity.id);
-        rows.push({ id: `activity:${activity.id}`, depth: depth + 1, activity, textFormat: activity.textFormat, hasChildren: false });
-      }
-      visit(node.children ?? [], depth + 1);
-    }
+        rows.push({
+          id: `activity:${activity.id}`,
+          depth: depth + 1,
+          activity,
+          textFormat: activity.textFormat,
+          hasChildren: false,
+          isSummary: Boolean(activity.isSummaryTask),
+          outlineNumber: `${outlineNumber}.${extraIndex + 1}`,
+        });
+      });
+      visit(node.children ?? [], depth + 1, outlineNumber);
+    });
   };
-  visit(wbs, 0);
-  for (const activity of sortedActivities.filter((item) => !placedActivities.has(item.id))) rows.push({ id: `activity:${activity.id}`, depth: 0, activity, textFormat: activity.textFormat, hasChildren: false });
+  visit(wbs, 0, "");
+  for (const activity of sortedActivities.filter((item) => !placedActivities.has(item.id))) {
+    rows.push({ id: `activity:${activity.id}`, depth: 0, activity, textFormat: activity.textFormat, hasChildren: false, isSummary: Boolean(activity.isSummaryTask) });
+  }
   return rows.map((row, index) => ({ ...row, rowNumber: index + 1 }));
 }
 
@@ -63,6 +89,20 @@ export function visiblePlanWorkspaceRows(rows: PlanWorkspaceRow[], collapsedWbsI
     if (row.wbs && collapsedWbsIds.has(row.wbs.id)) hiddenDepths.push(row.depth);
   }
   return visible;
+}
+
+export function collapsePlanWorkspaceToOutlineLevel(rows: PlanWorkspaceRow[], outlineLevel: number) {
+  const level = Math.max(1, Math.floor(outlineLevel));
+  return new Set(rows.flatMap((row) => row.wbs && row.hasChildren && row.depth + 1 >= level ? [row.wbs.id] : []));
+}
+
+export function getPlanWorkspaceOutlineLevel(rows: PlanWorkspaceRow[], collapsedWbsIds: ReadonlySet<string>) {
+  const maxLevel = Math.max(1, ...rows.map((row) => row.depth + 1));
+  for (let level = 1; level <= maxLevel; level += 1) {
+    const expected = collapsePlanWorkspaceToOutlineLevel(rows, level);
+    if (expected.size === collapsedWbsIds.size && [...expected].every((id) => collapsedWbsIds.has(id))) return String(level);
+  }
+  return "all";
 }
 
 export function findWbsNode(nodes: PlanWbsNodeDto[], id: string): PlanWbsNodeDto | undefined {

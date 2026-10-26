@@ -7,6 +7,7 @@ public sealed class MeetingListDto
     public Guid Id { get; init; }
     public string Title { get; init; } = string.Empty;
     public Guid? ProjectId { get; init; }
+    public Guid? ProjectPublicId { get; init; }
     public string? ProjectName { get; init; }
     public Guid? OrganizerId { get; init; }
     public string? OrganizerName { get; init; }
@@ -24,6 +25,7 @@ public sealed class MeetingDetailDto
     public string Title { get; init; } = string.Empty;
     public string? Objective { get; init; }
     public Guid? ProjectId { get; init; }
+    public Guid? ProjectPublicId { get; init; }
     public string? ProjectName { get; init; }
     public Guid? OrganizerId { get; init; }
     public string? OrganizerName { get; init; }

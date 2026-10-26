@@ -1,3 +1,4 @@
+import type * as React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -19,6 +20,10 @@ const fixtures = vi.hoisted(() => ({
 vi.mock("@api/client", () => ({ api: { get: fixtures.get, put: fixtures.put, post: vi.fn(), patch: vi.fn(), delete: vi.fn() } }));
 vi.mock("@auth/AuthProvider", () => ({ useAuth: () => ({ user: { permissions: fixtures.permissions } }) }));
 vi.mock("@api/management", () => ({ useManagement: () => ({ canMutate: fixtures.canMutate, effectiveReadOnly: fixtures.effectiveReadOnly }) }));
+vi.mock("@components/ui/ConfirmProvider", () => ({
+  useConfirm: () => vi.fn().mockResolvedValue(true),
+  ConfirmProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
 
 const projectSettings = {
   projectId: "project-1",
@@ -39,7 +44,7 @@ const projectSettings = {
 };
 
 const headerProject: ProjectDto = {
-  id: "project-1", tenantId: "tenant-1", code: "PRJ-001", name: "Delivery Project", status: "InProgress", priority: "High",
+  id: "project-1", publicId: "public-project-1", tenantId: "tenant-1", code: "PRJ-001", name: "Delivery Project", status: "InProgress", priority: "High",
   currency: "USD", progress: 35, health: "Green", ragStatus: "Green", confidenceLevel: "Green",
   createdAt: "2026-01-01T00:00:00.000Z", createdBy: "admin", isDeleted: false, members: [],
 };
@@ -80,7 +85,7 @@ describe("project workflow settings parity", () => {
       throw new Error(`Unexpected request: ${url}`);
     });
     fixtures.put.mockReset().mockImplementation(async (url: string, body?: Record<string, unknown>) => {
-      if (url === "/api/projects/project-1") return { ...headerProject, ...body };
+      if (url === "/api/projects/public-project-1") return { ...headerProject, ...body };
       return { ...projectSettings.domains[0], mode: "Standard", workflowDefinitionId: undefined };
     });
   });
@@ -149,7 +154,7 @@ describe("project workflow settings parity", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Project settings" }));
 
-    expect(screen.getByTestId("location")).toHaveTextContent("/projects/project-1/workflows");
+    expect(screen.getByTestId("location")).toHaveTextContent("/projects/public-project-1/workflows");
   });
 
   it("opens the full source-parity project edit sheet and saves through the project API", async () => {
@@ -164,7 +169,8 @@ describe("project workflow settings parity", () => {
       </QueryClientProvider>,
     );
 
-    await user.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Actions" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Edit" }));
     const sheet = await screen.findByRole("dialog", { name: "Edit Project" });
     expect(screen.getByText("Ownership & Hierarchy")).toBeInTheDocument();
     expect(screen.getByText("Financial Foundation")).toBeInTheDocument();
@@ -176,7 +182,7 @@ describe("project workflow settings parity", () => {
     await user.type(nameField, "Delivery Project Revised");
     await user.click(within(sheet).getByRole("button", { name: "Update Project" }));
 
-    await waitFor(() => expect(fixtures.put).toHaveBeenCalledWith("/api/projects/project-1", expect.objectContaining({
+    await waitFor(() => expect(fixtures.put).toHaveBeenCalledWith("/api/projects/public-project-1", expect.objectContaining({
       name: "Delivery Project Revised",
       status: "InProgress",
       priority: "High",

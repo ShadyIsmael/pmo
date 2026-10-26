@@ -72,6 +72,7 @@ public sealed class WorkflowExecutionPhase2Tests : IDisposable
     {
         var def = new WorkflowDefinition
         {
+            TenantId = TenantId,
             Code = code,
             Name = $"Test Workflow {code}",
             EntityType = entityType,
@@ -82,6 +83,7 @@ public sealed class WorkflowExecutionPhase2Tests : IDisposable
 
         var version = new WorkflowDefinitionVersion
         {
+            TenantId = TenantId,
             WorkflowDefinitionId = def.Id,
             VersionNumber = 1,
             LifecycleStatus = status,
@@ -93,6 +95,7 @@ public sealed class WorkflowExecutionPhase2Tests : IDisposable
 
         var openState = new WorkflowState
         {
+            TenantId = TenantId,
             WorkflowDefinitionVersionId = version.Id,
             Code = "Open",
             NameEn = "Open",
@@ -104,6 +107,7 @@ public sealed class WorkflowExecutionPhase2Tests : IDisposable
         };
         var closedState = new WorkflowState
         {
+            TenantId = TenantId,
             WorkflowDefinitionVersionId = version.Id,
             Code = "Closed",
             NameEn = "Closed",
@@ -119,6 +123,7 @@ public sealed class WorkflowExecutionPhase2Tests : IDisposable
 
         var transition = new WorkflowTransition
         {
+            TenantId = TenantId,
             WorkflowDefinitionVersionId = version.Id,
             Code = "Close",
             NameEn = "Close",
@@ -291,7 +296,7 @@ public sealed class WorkflowExecutionPhase2Tests : IDisposable
         var version = _db.Set<WorkflowDefinitionVersion>().First(v => v.WorkflowDefinitionId == def.Id);
         var transition = _db.Set<WorkflowTransition>().First(t => t.WorkflowDefinitionVersionId == version.Id);
 
-        transition.Guards.Add(new WorkflowTransitionGuard
+        _db.Set<WorkflowTransitionGuard>().Add(new WorkflowTransitionGuard
         {
             WorkflowTransitionId = transition.Id,
             GuardType = "RequireComment",
@@ -319,7 +324,7 @@ public sealed class WorkflowExecutionPhase2Tests : IDisposable
         var version = _db.Set<WorkflowDefinitionVersion>().First(v => v.WorkflowDefinitionId == def.Id);
         var transition = _db.Set<WorkflowTransition>().First(t => t.WorkflowDefinitionVersionId == version.Id);
 
-        transition.Guards.Add(new WorkflowTransitionGuard
+        _db.Set<WorkflowTransitionGuard>().Add(new WorkflowTransitionGuard
         {
             WorkflowTransitionId = transition.Id,
             GuardType = "RequireComment",
@@ -346,7 +351,7 @@ public sealed class WorkflowExecutionPhase2Tests : IDisposable
         var version = _db.Set<WorkflowDefinitionVersion>().First(v => v.WorkflowDefinitionId == def.Id);
         var transition = _db.Set<WorkflowTransition>().First(t => t.WorkflowDefinitionVersionId == version.Id);
 
-        transition.Guards.Add(new WorkflowTransitionGuard
+        _db.Set<WorkflowTransitionGuard>().Add(new WorkflowTransitionGuard
         {
             WorkflowTransitionId = transition.Id,
             GuardType = "RequirePermission",
@@ -374,7 +379,7 @@ public sealed class WorkflowExecutionPhase2Tests : IDisposable
         var version = _db.Set<WorkflowDefinitionVersion>().First(v => v.WorkflowDefinitionId == def.Id);
         var transition = _db.Set<WorkflowTransition>().First(t => t.WorkflowDefinitionVersionId == version.Id);
 
-        transition.Guards.Add(new WorkflowTransitionGuard
+        _db.Set<WorkflowTransitionGuard>().Add(new WorkflowTransitionGuard
         {
             WorkflowTransitionId = transition.Id,
             GuardType = "RequireRole",
@@ -402,7 +407,7 @@ public sealed class WorkflowExecutionPhase2Tests : IDisposable
         var version = _db.Set<WorkflowDefinitionVersion>().First(v => v.WorkflowDefinitionId == def.Id);
         var transition = _db.Set<WorkflowTransition>().First(t => t.WorkflowDefinitionVersionId == version.Id);
 
-        transition.Guards.Add(new WorkflowTransitionGuard
+        _db.Set<WorkflowTransitionGuard>().Add(new WorkflowTransitionGuard
         {
             WorkflowTransitionId = transition.Id,
             GuardType = "RequireFact",
@@ -430,7 +435,7 @@ public sealed class WorkflowExecutionPhase2Tests : IDisposable
         var version = _db.Set<WorkflowDefinitionVersion>().First(v => v.WorkflowDefinitionId == def.Id);
         var transition = _db.Set<WorkflowTransition>().First(t => t.WorkflowDefinitionVersionId == version.Id);
 
-        transition.Guards.Add(new WorkflowTransitionGuard
+        _db.Set<WorkflowTransitionGuard>().Add(new WorkflowTransitionGuard
         {
             WorkflowTransitionId = transition.Id,
             GuardType = "UnknownGuard",
@@ -458,7 +463,7 @@ public sealed class WorkflowExecutionPhase2Tests : IDisposable
         var version = _db.Set<WorkflowDefinitionVersion>().First(v => v.WorkflowDefinitionId == def.Id);
         var transition = _db.Set<WorkflowTransition>().First(t => t.WorkflowDefinitionVersionId == version.Id);
 
-        transition.Actions.Add(new WorkflowTransitionAction
+        _db.Set<WorkflowTransitionAction>().Add(new WorkflowTransitionAction
         {
             WorkflowTransitionId = transition.Id,
             ActionType = "UnknownAction",
@@ -645,7 +650,7 @@ public sealed class WorkflowExecutionPhase2Tests : IDisposable
         var version = _db.Set<WorkflowDefinitionVersion>().First(v => v.WorkflowDefinitionId == def.Id);
         var transition = _db.Set<WorkflowTransition>().First(t => t.WorkflowDefinitionVersionId == version.Id);
 
-        transition.Guards.Add(new WorkflowTransitionGuard
+        _db.Set<WorkflowTransitionGuard>().Add(new WorkflowTransitionGuard
         {
             WorkflowTransitionId = transition.Id,
             GuardType = "RequireComment",
@@ -653,7 +658,7 @@ public sealed class WorkflowExecutionPhase2Tests : IDisposable
             ExecutionOrder = 1,
             IsActive = true
         });
-        transition.Guards.Add(new WorkflowTransitionGuard
+        _db.Set<WorkflowTransitionGuard>().Add(new WorkflowTransitionGuard
         {
             WorkflowTransitionId = transition.Id,
             GuardType = "RequireComment",

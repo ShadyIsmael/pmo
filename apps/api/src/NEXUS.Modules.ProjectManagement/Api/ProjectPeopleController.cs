@@ -57,6 +57,14 @@ public sealed class ProjectPeopleController : ControllerBase
         return result.IsFailure ? Map(result.Error!) : Ok(result.Value);
     }
 
+    [HttpDelete("sponsor")]
+    public async Task<IActionResult> ClearSponsor(Guid projectId, CancellationToken cancellationToken)
+    {
+        if (!await CanManageAsync(ProjectRelationshipType.Sponsor)) return Forbid();
+        var result = await _service.ClearSponsorAsync(projectId, ActorId(), cancellationToken);
+        return result.IsFailure ? Map(result.Error!) : NoContent();
+    }
+
     private async Task<bool> CanManageAsync(string? relationship)
     {
         var resource = await _authorization.AuthorizeAsync(User, "Resource.Assign");

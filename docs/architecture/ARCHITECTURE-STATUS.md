@@ -54,7 +54,7 @@ NEXUS PMO is in the **Foundation Phase** -- a functional shell with working dash
 | Aspect | Status | Evidence |
 |--------|--------|----------|
 | **Schema** | Exists in EF Core entity configurations | `AppDbContext.cs:141-159` applies configurations |
-| **Migrations** | EF Core migrations are applied at startup with `MigrateAsync`; notification delivery migration is generated and included | `Program.cs:278`, `Migrations/20261012110228_AddNotificationDeliveryFoundation.cs` |
+| **Migrations** | Development startup applies EF Core migrations, seed data, and workflow provisioning; `--skip-development-database-initialization` skips all three for read-only runtime checks | `Program.cs`, `Migrations/20261012110228_AddNotificationDeliveryFoundation.cs` |
 | **Provider** | SQL Server | `Program.cs:205` configures `UseSqlServer` |
 | **Seed data** | 591 lines, 8 users, 24 projects, 320 work items, etc. | `SeedDataProvider.cs` |
 | **Concurrency** | RowVersion (byte array) on BaseEntity | `BaseEntity.cs` |

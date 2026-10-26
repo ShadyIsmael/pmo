@@ -2,13 +2,15 @@ import type { ReactNode } from "react";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "@auth/AuthProvider";
 import { hasAnyPermission } from "@lib/permissions";
+import { useI18n } from "../i18n/messages";
 
 export function RequirePermission({ permissions, children }: { permissions: string | string[]; children: ReactNode }) {
   const { user, status } = useAuth();
-  if (status === "loading") return <p className="py-12 text-center text-sm text-muted-foreground">Loading...</p>;
+  const { t } = useI18n();
+  if (status !== "authenticated") return <div className="route-state" role="status">{t("auth.loadingAuthorization")}</div>;
   const required = Array.isArray(permissions) ? permissions : [permissions];
   if (!user || !hasAnyPermission(user.permissions ?? [], required)) {
-    return <p className="py-12 text-center text-sm text-muted-foreground">You do not have access to this area.</p>;
+    return <div className="route-state" role="alert">{t("auth.accessDenied")}</div>;
   }
   return <>{children}</>;
 }

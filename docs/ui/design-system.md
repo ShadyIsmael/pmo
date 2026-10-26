@@ -143,6 +143,17 @@ NEXUS PMO uses **shadcn/ui** -- a collection of re-usable components built on Ra
 | **Form** | `react-hook-form` | Form validation |
 | **Label** | `@radix-ui/react-label` | Form labels |
 
+### Confirmation dialogs
+
+- Use `useConfirm` from `@components/ui/ConfirmProvider` for confirmations requested by event handlers; it returns a promise that resolves to `true` only after confirmation and `false` when dismissed.
+- Keep operation-specific, localized context in the caller's description, and pass `destructive: true` only for destructive actions. The shared provider owns the title, button labels, keyboard behavior, focus handling, and dialog presentation.
+- For a confirmation that must run an asynchronous action while the dialog remains open, use the shared `ConfirmDialog` component and keep the action's existing loading/error handling.
+- Do not use `window.confirm` in the React application.
+
+### Rich-text editors in height-constrained forms
+
+- Rich-text editors may opt into a fill-available mode when their parent is a height-constrained Side Sheet or workspace. Keep the toolbar fixed, let the editor occupy the remaining vertical space, and scroll long text inside the editing area. The mode is opt-in so standard rich-text fields retain their natural height and existing behavior.
+
 ---
 
 ## Layout Patterns

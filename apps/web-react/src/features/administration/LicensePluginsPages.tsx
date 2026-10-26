@@ -1,3 +1,4 @@
+import { brand } from "@lib/brand";
 import { PuzzleIcon, Settings, Trash2 } from "lucide-react";
 import { PageHeader } from "@components/layout/PageHeader";
 import { Button } from "@components/ui/Button";
@@ -21,7 +22,7 @@ export function LicensePage() {
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             <div className="flex justify-between"><span className="text-muted-foreground">License Key</span><span className="font-mono text-xs font-medium">NEXUS-ENT-2026-XXXXXXXX</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">Issued To</span><span className="font-medium">NEXUS Corporation</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Issued To</span><span className="font-medium">{brand.company.name}</span></div>
             <div className="flex justify-between"><span className="text-muted-foreground">Expires</span><span className="font-medium">Dec 31, 2027</span></div>
             <div className="flex justify-between"><span className="text-muted-foreground">Max Users</span><span className="font-medium">100</span></div>
           </CardContent>
@@ -34,9 +35,9 @@ export function LicensePage() {
 export function PluginsPage() {
   const { t } = useI18n();
   const installed = [
-    { id: "plg-1", name: "Advanced Gantt Chart", version: "2.1.0", status: "Active", author: "NEXUS Labs" },
-    { id: "plg-2", name: "SAP Integration", version: "1.0.2", status: "Active", author: "NEXUS Labs" },
-    { id: "plg-5", name: "Timesheet Automation", version: "2.0.0", status: "Active", author: "NEXUS Labs" },
+    { id: "plg-1", name: "Advanced Gantt Chart", version: "2.1.0", status: "Active", author: brand.company.name },
+    { id: "plg-2", name: "SAP Integration", version: "1.0.2", status: "Active", author: brand.company.name },
+    { id: "plg-5", name: "Timesheet Automation", version: "2.0.0", status: "Active", author: brand.company.name },
   ];
   return (
     <div className="space-y-6">

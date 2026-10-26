@@ -13,9 +13,10 @@ public class ProjectHandoverRequestConfiguration : IEntityTypeConfiguration<Proj
         builder.Property(r => r.Reason).HasMaxLength(500);
         builder.Property(r => r.Notes).HasMaxLength(2000);
         builder.Property(r => r.Status).HasMaxLength(20);
+        builder.Property(r => r.InitiationType).HasMaxLength(40).IsRequired().HasDefaultValue("ManagerInitiated");
         builder.Property(r => r.RejectionReason).HasMaxLength(500);
         builder.HasIndex(r => r.TenantId);
-        builder.HasIndex(r => r.ProjectId);
+        builder.HasIndex(r => new { r.TenantId, r.ProjectId, r.Status }).IsUnique().HasFilter("[Status] = 'Pending' AND [IsDeleted] = 0");
         builder.HasIndex(r => r.NewProjectManagerId);
         builder.HasIndex(r => r.Status);
         builder.Property(r => r.RowVersion).IsRowVersion();

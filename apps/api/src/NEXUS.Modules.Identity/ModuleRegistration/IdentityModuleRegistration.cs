@@ -24,6 +24,7 @@ public static class IdentityModuleRegistration
         services.AddScoped<IUserAdministrationService, UserAdministrationService>();
         services.AddScoped<IRoleAdministrationService, RoleAdministrationService>();
         services.AddScoped<IUserEffectivePermissionService, UserEffectivePermissionService>();
+        services.AddScoped<IUserSessionValidator, UserSessionValidator>();
         services.AddScoped<IPasswordHasher<User>, PasswordHasher<User>>();
         return services;
     }

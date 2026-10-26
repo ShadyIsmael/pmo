@@ -58,6 +58,7 @@ public sealed class WorkItemDto
     public string Status { get; set; } = string.Empty;
     public string Source { get; set; } = string.Empty;
     public Guid? ProjectId { get; set; }
+    public Guid? ProjectPublicId { get; set; }
     public string? ProjectName { get; set; }
     public Guid? AssignedResourceId { get; set; }
     public string? AssignedResourceName { get; set; }

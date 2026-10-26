@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@api/client";
 import { endpoints } from "@api/endpoints";
 
-export interface MeetingDto { id: string; title: string; startTime: string; endTime: string; status?: string; projectName?: string; }
+export interface MeetingDto { id: string; title: string; startTime: string; endTime: string; status?: string; projectId?: string; projectPublicId?: string; projectName?: string; }
 export interface WorkItemDto { id: string; title: string; type: string; status: string; priority?: string; projectName?: string; dueDate?: string; }
 export interface DocumentDto {
   id: string;

@@ -50,6 +50,7 @@ vi.mock("@features/projects/api/projects", () => ({
   useAddProjectPerson: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useRemoveProjectPerson: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUpdateProjectPerson: () => ({ mutateAsync: fixtures.updatePerson, isPending: false }),
+  useClearProjectSponsor: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useCheckResourceConflicts: () => ({ data: [], isFetching: false }),
 }));
 

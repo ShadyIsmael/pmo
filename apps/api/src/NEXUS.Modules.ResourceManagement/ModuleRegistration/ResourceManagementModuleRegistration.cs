@@ -1,5 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
+using FluentValidation;
 using NEXUS.Modules.ResourceManagement.Application;
+using NEXUS.Modules.ResourceManagement.Application.DTOs;
+using NEXUS.Modules.ResourceManagement.Application.Validators;
 using NEXUS.SharedKernel;
 
 namespace NEXUS.Modules.ResourceManagement.ModuleRegistration;
@@ -8,6 +11,8 @@ public static class ResourceManagementModuleRegistration
 {
     public static IServiceCollection AddResourceManagementModule(this IServiceCollection services)
     {
+        services.AddScoped<IValidator<CreateResourceDto>, CreateResourceValidator>();
+        services.AddScoped<IValidator<UpdateResourceDto>, UpdateResourceValidator>();
         services.AddScoped<ResourceService>();
         services.AddScoped<IResourceService>(sp => sp.GetRequiredService<ResourceService>());
         services.AddScoped<IResourceReferenceLookup>(sp => sp.GetRequiredService<ResourceService>());

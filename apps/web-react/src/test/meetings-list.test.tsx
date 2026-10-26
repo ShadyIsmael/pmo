@@ -13,7 +13,7 @@ vi.mock("@auth/AuthProvider", () => ({
 }));
 vi.mock("@api/management", () => ({ useManagement: () => ({ canMutate: true, effectiveReadOnly: false }) }));
 vi.mock("@features/projects/api/projects", () => ({
-  useProjects: () => ({ data: { items: [{ id: "project-1", name: "Core Modernization", code: "PRJ-1" }] }, isLoading: false }),
+  useProjects: () => ({ data: { items: [{ id: "project-1", publicId: "public-project-1", name: "Core Modernization", code: "PRJ-1" }] }, isLoading: false }),
 }));
 vi.mock("../features/delivery/MeetingCreateSheet", () => ({
   MeetingCreateSheet: ({ open, onOpenChange, onCreated }: { open: boolean; onOpenChange: (open: boolean) => void; onCreated?: (meeting: { id: string }) => void }) => open
@@ -63,14 +63,14 @@ describe("standalone meetings list", () => {
       page: 1,
       pageSize: 20,
       search: "planning",
-      projectId: "project-1",
+      projectId: "public-project-1",
       status: "Completed",
       dateFrom: "2026-10-01",
       dateTo: "2026-10-31T23:59:59",
     }), true));
 
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
-    await waitFor(() => expect(mocks.useFullMeetings).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2, projectId: "project-1" }), true));
+    await waitFor(() => expect(mocks.useFullMeetings).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2, projectId: "public-project-1" }), true));
     expect(screen.getByText("Planning review")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Enter minutes/ })).toHaveAttribute("href", "/meetings/meeting-1/minutes");
   });

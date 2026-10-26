@@ -16,4 +16,7 @@ public interface IPlanAssignmentService
 
     /// <summary>Lists assignments in a plan's active Working version.</summary>
     Task<Result<IReadOnlyList<PlanAssignmentDto>>> GetByPlanAsync(Guid planId, CancellationToken cancellationToken = default);
+
+    /// <summary>Returns project-allocated and remaining task-work capacity for a resource and schedule.</summary>
+    Task<Result<PlanAssignmentCapacityDto>> GetCapacityAsync(Guid projectId, Guid planId, Guid resourceId, DateTime startDate, DateTime endDate, Guid? excludeAssignmentId = null, CancellationToken cancellationToken = default);
 }

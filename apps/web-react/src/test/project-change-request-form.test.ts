@@ -28,6 +28,8 @@ describe("buildProjectChangeRequestInput", () => {
         justification: "Approved scope adjustment",
         impact: "Schedule remains unchanged",
         attachments: "baseline-review.pdf",
+        approvalStrategy: "AllRequired",
+        approverUserIds: [],
       },
     });
   });

@@ -16,6 +16,9 @@ public interface IPlanWbsService
     /// </summary>
     Task<Result<PlanWbsNodeDto>> UpdateAsync(Guid planId, Guid nodeId, UpdatePlanWbsNodeDto dto, string userId, CancellationToken cancellationToken = default);
 
+    /// <summary>Atomically moves a bounded set of WBS nodes within the active Working version.</summary>
+    Task<Result<IReadOnlyList<PlanWbsNodeDto>>> UpdatePlacementsAsync(Guid planId, BulkUpdatePlanWbsPlacementsDto dto, string userId, CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Soft-deletes a WBS node from the active Working version. Enforces optimistic
     /// concurrency via RowVersion.

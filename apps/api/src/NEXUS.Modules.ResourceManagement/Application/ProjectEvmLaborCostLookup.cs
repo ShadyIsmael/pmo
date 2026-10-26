@@ -31,7 +31,9 @@ public sealed class ProjectEvmLaborCostLookup : IProjectEvmLaborCostLookup
         string projectCurrency,
         DateTime statusDate,
         IReadOnlyList<ProjectEvmAssignmentInput> assignments,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IReadOnlyCollection<Guid>? includedPlanActivityIds = null,
+        bool includeUnassignedProjectActuals = false)
     {
         var currency = NormalizeCurrency(projectCurrency);
         var datedAssignments = assignments.Where(item => item.PlannedHours.GetValueOrDefault() > 0m).ToList();
@@ -86,7 +88,11 @@ public sealed class ProjectEvmLaborCostLookup : IProjectEvmLaborCostLookup
             statusDate.Date,
             projectIds: [projectId],
             cancellationToken: cancellationToken);
-        var actualEntries = actualSlices.Where(item => item.ActualSeconds > 0 && item.WorkDate.Date <= statusDate.Date).ToList();
+        var actualEntries = actualSlices.Where(item => item.ActualSeconds > 0 && item.WorkDate.Date <= statusDate.Date
+            && (includedPlanActivityIds is null
+                || item.PlanActivityId.HasValue && includedPlanActivityIds.Contains(item.PlanActivityId.Value)
+                || includeUnassignedProjectActuals && !item.PlanActivityId.HasValue))
+            .ToList();
         if (actualEntries.Count > 0 && actualEntries.Min(item => item.WorkDate.Date) < earliestDate)
             earliestDate = actualEntries.Min(item => item.WorkDate.Date);
         var resourceIds = validAssignments.Select(item => item.ResourceId)
@@ -116,7 +122,7 @@ public sealed class ProjectEvmLaborCostLookup : IProjectEvmLaborCostLookup
         var calendars = await _context.Set<WorkingCalendar>().AsNoTracking().Include(item => item.Holidays)
             .Where(item => item.TenantId == tenantId && !item.IsDeleted).ToListAsync(cancellationToken);
         var defaultCalendar = calendars.FirstOrDefault(item => item.IsDefault) ?? calendars.FirstOrDefault()
-            ?? new WorkingCalendar { WorkingDaysPerWeek = 5, HoursPerDay = 8 };
+            ?? new WorkingCalendar();
         var calendarById = calendars.ToDictionary(item => item.Id);
         List<ResourceCalendar> resourceCalendars = resourceIds.Count == 0
             ? new List<ResourceCalendar>()

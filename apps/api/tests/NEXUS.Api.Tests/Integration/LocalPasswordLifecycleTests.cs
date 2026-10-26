@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.IdentityModel.Tokens.Jwt;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
@@ -63,7 +64,7 @@ public sealed class LocalPasswordLifecycleTests : IAsyncLifetime
         Assert.InRange(user.TemporaryPasswordExpiresAt!.Value, DateTime.UtcNow.AddHours(5.9), DateTime.UtcNow.AddHours(6.1));
         Assert.NotEqual(temporaryPassword, user.PasswordHash);
         Assert.Equal(PasswordVerificationResult.Success, _hasher.VerifyHashedPassword(user, user.PasswordHash!, temporaryPassword));
-        Assert.DoesNotContain("temporaryPassword", JsonSerializer.Serialize(result.Value.User), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(temporaryPassword, JsonSerializer.Serialize(result.Value.User), StringComparison.Ordinal);
 
         var audit = await _context.AuditEntries.SingleAsync();
         Assert.Equal("LocalUserCreated", audit.Action);
@@ -88,7 +89,9 @@ public sealed class LocalPasswordLifecycleTests : IAsyncLifetime
         Assert.True(result.Value.User.MustChangePassword);
         Assert.Empty(result.Value.User.Permissions);
         Assert.Empty(result.Value.User.Roles);
-        Assert.Single(await _context.UserSessions.ToListAsync());
+        var session = await _context.UserSessions.SingleAsync();
+        var accessToken = new JwtSecurityTokenHandler().ReadJwtToken(result.Value.Token);
+        Assert.Equal(session.Id.ToString(), accessToken.Claims.Single(claim => claim.Type == "sid").Value);
     }
 
     [Fact]

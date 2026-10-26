@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@i18n/messages";
 import { meetingsApiFull, type ChecklistItemDto, type MeetingAttachmentDto, type MeetingCommentDto } from "@api/meetingsFull";
@@ -87,8 +87,6 @@ describe("meeting minutes collaboration", () => {
     vi.spyOn(meetingsApiFull, "deleteChecklist").mockImplementation(async (_meetingId, itemId) => {
       checklist = checklist.filter((item) => item.id !== itemId);
     });
-    vi.spyOn(window, "confirm").mockReturnValue(true);
-
     renderPanel(true);
     await screen.findByText("Review scope");
     fireEvent.change(screen.getByPlaceholderText("Add a follow-up item..."), { target: { value: "Prepare deck" } });
@@ -103,8 +101,10 @@ describe("meeting minutes collaboration", () => {
     await waitFor(() => expect(meetingsApiFull.reorderChecklist).toHaveBeenCalledWith("meeting-1", ["item-2", "item-1", "item-3"]));
 
     fireEvent.click(screen.getAllByRole("button", { name: "Delete item" })[0]);
+    const confirmation = screen.getByRole("alertdialog", { name: "Confirm action" });
+    expect(confirmation).toHaveTextContent("Delete this checklist item?");
+    fireEvent.click(within(confirmation).getByRole("button", { name: "Confirm" }));
     await waitFor(() => expect(meetingsApiFull.deleteChecklist).toHaveBeenCalledWith("meeting-1", "item-2"));
-    expect(window.confirm).toHaveBeenCalled();
   });
 
   it("uploads selected attachments and deletes an attachment with confirmation", async () => {
@@ -122,8 +122,6 @@ describe("meeting minutes collaboration", () => {
     vi.spyOn(meetingsApiFull, "deleteAttachment").mockImplementation(async (_meetingId, attachmentId) => {
       attachments = attachments.filter((attachment) => attachment.id !== attachmentId);
     });
-    vi.spyOn(window, "confirm").mockReturnValue(true);
-
     const { container } = renderPanel(true);
     await screen.findByText("agenda.pdf");
     const uploadFile = new File(["minutes"], "minutes.txt", { type: "text/plain" });
@@ -135,7 +133,9 @@ describe("meeting minutes collaboration", () => {
     expect(meetingsApiFull.uploadAttachments).toHaveBeenCalledWith("meeting-1", [uploadFile]);
 
     fireEvent.click(screen.getByRole("button", { name: "Delete attachment: agenda.pdf" }));
+    const confirmation = screen.getByRole("alertdialog", { name: "Confirm action" });
+    expect(confirmation).toHaveTextContent("Delete this attachment?");
+    fireEvent.click(within(confirmation).getByRole("button", { name: "Confirm" }));
     await waitFor(() => expect(meetingsApiFull.deleteAttachment).toHaveBeenCalledWith("meeting-1", "attachment-1"));
-    expect(window.confirm).toHaveBeenCalled();
   });
 });

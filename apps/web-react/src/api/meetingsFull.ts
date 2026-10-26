@@ -3,7 +3,7 @@ import { api } from "@api/client";
 import { endpoints } from "@api/endpoints";
 
 type PagedResult<T> = { items: T[]; totalCount: number; page?: number; pageSize?: number; totalPages?: number };
-export interface MeetingListDto { id: string; title: string; projectId?: string | null; projectName?: string | null; organizerId?: string | null; organizerName?: string | null; startTime: string; endTime: string; status?: string | null; attendeeCount: number; minutesState?: "Draft" | "Final" | null; reminderOffsetMinutes?: number | null; }
+export interface MeetingListDto { id: string; title: string; projectId?: string | null; projectPublicId?: string | null; projectName?: string | null; organizerId?: string | null; organizerName?: string | null; startTime: string; endTime: string; status?: string | null; attendeeCount: number; minutesState?: "Draft" | "Final" | null; reminderOffsetMinutes?: number | null; }
 export interface MeetingAttendeeDto { id: string; meetingId: string; userId?: string | null; displayName?: string | null; email: string; isInternalUser: boolean; }
 export interface MeetingDetailDto extends MeetingListDto { objective?: string | null; location?: string | null; meetingLink?: string | null; attendees: readonly MeetingAttendeeDto[]; rowVersion: string; }
 export interface MeetingMinutesDto { id: string; meetingId: string; summary?: string | null; discussionNotes?: string | null; decisions?: string | null; outcomes?: string | null; state: "Draft" | "Final"; recordedBy?: string | null; recordedAt: string; rowVersion: string; }

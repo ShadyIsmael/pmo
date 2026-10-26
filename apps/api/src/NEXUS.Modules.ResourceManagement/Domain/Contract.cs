@@ -10,7 +10,7 @@ public class Contract : BaseEntity
     public DateTime StartDate { get; set; }
     public DateTime? EndDate { get; set; }
     public decimal? Value { get; set; }
-    public string Currency { get; set; } = "GBP";
+    public string Currency { get; set; } = string.Empty;
     public string? Terms { get; set; }
     public string? VendorName { get; set; }
     public string Status { get; set; } = string.Empty;

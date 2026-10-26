@@ -28,6 +28,23 @@ public class HandoverRequestController : ControllerBase
     }
 
     [Authorize(Policy = "Handover.Approve")]
+    [HttpGet("{id:guid}/review")]
+    public async Task<IActionResult> Review(Guid id, CancellationToken cancellationToken)
+    {
+        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? string.Empty;
+        var result = await _handoverRequestService.GetApprovalReviewAsync(id, userId, cancellationToken);
+        if (result.IsFailure)
+            return result.Error?.StatusCode switch
+            {
+                401 => Unauthorized(new { error = result.Error.Message }),
+                403 => Forbid(),
+                404 => NotFound(new { error = result.Error.Message }),
+                _ => BadRequest(new { error = result.Error?.Message })
+            };
+        return Ok(result.Value);
+    }
+
+    [Authorize(Policy = "Handover.Approve")]
     [HttpPost("{id:guid}/accept")]
     public async Task<IActionResult> Accept(Guid id, CancellationToken cancellationToken)
     {
@@ -59,7 +76,7 @@ public class HandoverRequestController : ControllerBase
         return Ok(result.Value);
     }
 
-    [Authorize(Policy = "Handover.Manage")]
+    [Authorize(Policy = "Handover.Initiate")]
     [HttpPost("{id:guid}/cancel")]
     public async Task<IActionResult> Cancel(Guid id, CancellationToken cancellationToken)
     {

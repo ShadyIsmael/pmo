@@ -6,6 +6,7 @@ import { projectKeys } from "@features/projects/api/projects";
 export interface BudgetDto {
   id: string;
   projectId?: string;
+  projectPublicId?: string;
   name: string;
   description?: string;
   category: string;
@@ -133,6 +134,7 @@ export interface CurrencyFinancialSummary {
 
 export interface ProjectFinancialBreakdown {
   projectId: string;
+  projectPublicId: string;
   projectName: string;
   currency: string;
   originalApprovedBudget: number;

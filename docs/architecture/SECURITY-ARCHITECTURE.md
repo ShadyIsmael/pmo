@@ -9,7 +9,7 @@
 | Aspect | Detail |
 |--------|--------|
 | **Scheme** | JWT Bearer (Bearer) |
-| **Secret** | `NEXUS-Demo-Secret-Key-Minimum-16-Chars!` (hardcoded in `appsettings.json`) |
+| **Secret** | `Jwt:Secret` setting; source includes a local/demo fallback that must be overridden by deployment secrets |
 | **Issuer** | `NEXUS` (`appsettings.json`) |
 | **Audience** | `NEXUS-API` (`appsettings.json`) |
 | **Access-token expiry** | 8 hours (`Jwt:ExpiryHours`) |
@@ -28,6 +28,7 @@ Access tokens embed the following claims:
 | `email` (ClaimTypes.Email) | User email |
 | `unique_name` (ClaimTypes.Name) | Display name |
 | `tenantId` | Current tenant GUID |
+| `sid` | Persisted `UserSession.Id` for this access-token session |
 | `role` | One claim per role name |
 | `permission` | One claim per `Resource.Action` permission |
 
@@ -46,6 +47,16 @@ Access tokens embed the following claims:
 | **Session rotation** | `RefreshAsync` revokes the old `UserSession` and creates a new one on every refresh |
 
 **Evidence:** `IdentityModuleRegistration.cs` registers `IPasswordHasher<User>`; `DemoAuthService.cs` implements hashing + rotation.
+
+### Session and authorization isolation
+
+- `UserPermissionClaimsMiddleware` runs after JWT authentication and before authorization. Each authenticated request must carry a valid `sid` whose `UserSession` row matches the token's user and tenant, is not revoked or expired, and belongs to an active, non-deleted user in that tenant. Missing or invalid session binding returns `401`.
+- The middleware removes JWT role and permission snapshots and reloads the user's effective role names and permissions from the same tenant before authorization policies execute. Role or direct-permission revocation therefore applies on the next request.
+- Refresh revokes the old persisted session and issues the new access token with the replacement session's id. The existing `UserSession.Id` column is reused; no migration is needed.
+- In React, `AuthProvider` revalidates `/api/auth/me` before releasing protected UI, scopes React Query to one authenticated session, and clears the previous cache on login/logout/session change. The API client aborts and rejects work started under an older session or management context; those fenced failures are not retried. Cross-tab changes are synchronized using a non-secret localStorage session marker.
+- Logout removes the local authenticated view/cache immediately and starts server-session revocation without waiting for best-effort push-device cleanup. An already-authorized server operation may finish, but its stale response is not exposed to the next client session.
+
+Regression coverage is in `apps/api/tests/NEXUS.Api.Tests/Integration/UserPermissionAdministrationTests.cs` and `apps/web-react/src/test/auth-session-isolation.test.tsx`. Compilation, automated test execution, and live browser UAT must be reported separately; compilation alone is not UAT evidence.
 
 ### Demo Accounts
 
@@ -73,6 +84,10 @@ All seeded accounts use password `Demo123!` (Development only; seeding is skippe
 ---
 
 ## Authorization
+
+### Assignment-scoped approval review
+
+An actionable approval assignment may expose only its bounded review projection when the authenticated user is the current assignee, the request is still reviewable, the effective approval permission and tenant match, and the owning object is valid. This is not a general Management Scope exemption: ordinary object reads and mutations remain scope checked. The Change Request exception is limited to its exact pending assignment, review, and canonical decision path, with authorization revalidated by the domain service. Handover decisions continue through the existing accept/reject services; role activation occurs only after acceptance. Knowing an approval identifier is never authorization.
 
 ### ASP.NET Core Authorization
 
@@ -159,6 +174,21 @@ The backend defines roles with associated permissions in `SeedDataProvider.cs`:
 | **Data Scope** (tenant isolation) | Enforced per request | `GetCurrentTenantId()` resolves the `tenantId` JWT claim; falls back to the demo tenant outside an HTTP context (`AppDbContext.cs`) |
 | **Field-level permissions** | Constants defined, NOT enforced | `Project.ViewFinancials`, `Costs.Approve` in `permissions.ts` |
 
+### Project public identifiers and object scope
+
+- Browser-facing `/api/projects/{id}/...` routes and `projectId` query filters accept only `Project.PublicId`. The API resolves that value within the authenticated tenant; an internal `Project.Id` in either external position is rejected, with no fallback lookup.
+- `ManagementContextMiddleware` checks the resolved internal project against the caller's effective management scope. Endpoint authorization policies independently enforce effective permissions; the public ID is not an authorization credential.
+- `ProjectResourceScopeMiddleware` applies object-level scope checks to direct project-owned records and validates parent ownership for plan/version/content and risk action/impact routes. Tenant predicates are used when resolving owners.
+- React owns a QueryClient per authenticated session and discards it on login, logout, expiry, or observed session change. The API remains the authority; frontend guards/cache isolation are not substitutes for server authorization.
+- `Project.Id` may remain in response DTOs and relationship request bodies for internal joins and existing domain contracts. It must not be used in browser project URLs or `projectId` query filters; project DTOs provide `PublicId` for those external references.
+
+### Administrative assignment recovery scope
+
+- `/api/governance/assignment-recovery` is a deliberately tenant-wide administrative discovery surface for Projects, Programs, and Portfolios. It is not an entity-data read bypass: it returns a bounded recovery projection, resolves entities by tenant + `PublicId`, and rechecks the active actor and effective recovery permission in the service.
+- `ManagementContextMiddleware` skips normal Management Scope addressability only for this exact route prefix, authenticated Native mode, and a user carrying at least one recovery permission. Controller policies and service-level effective permission checks remain mandatory. ReadOnlyViewAs does not receive this exception, and ordinary entity routes retain their existing Management Scope checks.
+- State changes use canonical manager-handover acceptance or the existing Sponsor synchronizer, are tenant-validated and audited, and do not make a proposed incoming manager current before acceptance. Reconciliation is an explicit `Manage` action with history preservation and concurrency handling.
+- Implementation and current verification limits: [Entity Assignment Recovery](../modules/ENTITY-ASSIGNMENT-RECOVERY.md).
+
 ### Tenant Isolation Infrastructure
 
 | Component | Implementation | Status |
@@ -177,7 +207,7 @@ The backend defines roles with associated permissions in `SeedDataProvider.cs`:
 | Gap | Severity | Detail |
 |-----|----------|--------|
 | Demo credentials | Critical | Seeded accounts use hardcoded password `Demo123!` (Dev-only; seeding skipped in Production) |
-| Hardcoded JWT secret | Critical | `"NEXUS-Demo-Secret-Key-Minimum-16-Chars!"` in `appsettings.json` |
+| JWT secret fallback | Critical | A demo fallback remains in source; production must configure a high-entropy secret through a secret store |
 | No HTTPS enforcement | High | `ASPNETCORE_URLS=http://+:5000` in Dockerfile |
 | No rate limiting | High | No rate limiting middleware found |
 | No CORS restrictions (methods/headers) | Medium | `AllowAnyHeader().AllowAnyMethod()` in `Program.cs` |

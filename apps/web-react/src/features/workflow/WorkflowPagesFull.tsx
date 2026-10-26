@@ -75,7 +75,7 @@ export function WorkflowsPageFull() {
           <SideSheetBody className="space-y-4">
             <div className="space-y-1.5"><Label>{t("workflows.name")}</Label><Input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></div>
             <div className="space-y-1.5"><Label>{t("workflows.code")}</Label><Input required value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value.toUpperCase() })} /></div>
-            <div className="space-y-1.5"><Label>{t("workflows.domain")}</Label><select className="input-field" value={form.domain} onChange={(event) => setForm({ ...form, domain: event.target.value as WorkflowDomain })}><option value="Task">Task</option><option value="Risk">Risk</option><option value="Finance">Finance</option></select></div>
+            <div className="space-y-1.5"><Label>{t("workflows.domain")}</Label><select className="input-field" value={form.domain} onChange={(event) => setForm({ ...form, domain: event.target.value as WorkflowDomain })}><option value="Task">{t("workflows.domainTask")}</option><option value="Risk">{t("workflows.domainRisk")}</option><option value="Finance">{t("workflows.domainFinance")}</option><option value="ChangeRequest">{t("workflows.domainChangeRequest")}</option></select></div>
             <div className="space-y-1.5"><Label>{t("workflows.entityType")}</Label><Input value={form.entityType} onChange={(event) => setForm({ ...form, entityType: event.target.value })} /></div>
             <div className="space-y-1.5"><Label>{t("workflows.description")}</Label><Textarea value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /></div>
           </SideSheetBody>

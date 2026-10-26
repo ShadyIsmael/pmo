@@ -16,6 +16,10 @@ public class TestDbContext : DbContext
     public DbSet<Holiday> Holidays => Set<Holiday>();
     public DbSet<Contract> Contracts => Set<Contract>();
     public DbSet<Department> Departments => Set<Department>();
+    public DbSet<Currency> Currencies => Set<Currency>();
+    public DbSet<OrganizationalUnit> OrganizationalUnits => Set<OrganizationalUnit>();
+    public DbSet<ResourceOrganizationalUnit> ResourceOrganizationalUnits => Set<ResourceOrganizationalUnit>();
+    public DbSet<ResourceReportingLine> ResourceReportingLines => Set<ResourceReportingLine>();
     public DbSet<ResourceCalendar> ResourceCalendars => Set<ResourceCalendar>();
     public DbSet<Vendor> Vendors => Set<Vendor>();
     public DbSet<ResourceCostProfile> ResourceCostProfiles => Set<ResourceCostProfile>();

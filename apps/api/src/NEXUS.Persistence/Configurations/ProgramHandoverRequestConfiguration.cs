@@ -11,6 +11,7 @@ public sealed class ProgramHandoverRequestConfiguration : IEntityTypeConfigurati
         builder.ToTable("ProgramHandoverRequests");
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Status).HasMaxLength(30).IsRequired();
+        builder.Property(x => x.InitiationType).HasMaxLength(40).IsRequired().HasDefaultValue("ManagerInitiated");
         builder.Property(x => x.Reason).HasMaxLength(500).IsRequired();
         builder.Property(x => x.Notes).HasMaxLength(2000);
         builder.Property(x => x.RejectionReason).HasMaxLength(500);

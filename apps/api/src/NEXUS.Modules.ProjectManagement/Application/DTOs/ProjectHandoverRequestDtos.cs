@@ -26,9 +26,10 @@ public class ProjectHandoverRequestDto
 {
     public Guid Id { get; set; }
     public Guid ProjectId { get; set; }
+    public Guid? ProjectPublicId { get; set; }
     public string ProjectName { get; set; } = string.Empty;
     public string ProjectCode { get; set; } = string.Empty;
-    public Guid CurrentProjectManagerId { get; set; }
+    public Guid? CurrentProjectManagerId { get; set; }
     public string CurrentProjectManagerName { get; set; } = string.Empty;
     public Guid NewProjectManagerId { get; set; }
     public string NewProjectManagerName { get; set; } = string.Empty;
@@ -36,6 +37,7 @@ public class ProjectHandoverRequestDto
     public string Reason { get; set; } = string.Empty;
     public string? Notes { get; set; }
     public string Status { get; set; } = string.Empty;
+    public string InitiationType { get; set; } = string.Empty;
     public Guid RequestedBy { get; set; }
     public string RequestedByName { get; set; } = string.Empty;
     public DateTime RequestedAt { get; set; }

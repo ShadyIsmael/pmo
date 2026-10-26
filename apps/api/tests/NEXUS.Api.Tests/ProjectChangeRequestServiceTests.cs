@@ -15,7 +15,7 @@ public class ProjectChangeRequestServiceTests
     private readonly Mock<DbContext> _mockContext;
     private readonly Mock<IAuditService> _mockAuditService;
     private readonly Mock<IHttpContextAccessor> _mockHttpContextAccessor;
-    private readonly ProjectChangeRequestService _service;
+    private readonly ProjectChangeRequestWorkflowService _service;
 
     private readonly Guid _tenantA_Id = Guid.NewGuid();
     private readonly Guid _userA_Id = Guid.NewGuid();
@@ -26,7 +26,8 @@ public class ProjectChangeRequestServiceTests
         _mockContext = new Mock<DbContext>();
         _mockAuditService = new Mock<IAuditService>();
         _mockHttpContextAccessor = new Mock<IHttpContextAccessor>();
-        _service = new ProjectChangeRequestService(_mockContext.Object, _mockAuditService.Object, _mockHttpContextAccessor.Object);
+        _service = new ProjectChangeRequestWorkflowService(_mockContext.Object, _mockAuditService.Object, _mockHttpContextAccessor.Object,
+            null!, null!, null!, null!, null!, null!, null!);
     }
 
     [Fact]

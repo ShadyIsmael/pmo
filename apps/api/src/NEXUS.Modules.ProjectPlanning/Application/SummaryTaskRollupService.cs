@@ -65,7 +65,6 @@ public sealed class SummaryTaskRollupService
         var resultByNode = new Dictionary<Guid, RollupResult>();
         var visiting = new HashSet<Guid>();
         var summaryActivityIds = new HashSet<Guid>();
-
         bool HasEffectiveTask(Guid nodeId, HashSet<Guid>? path = null)
         {
             if (FindActivity(nodeId) is not null) return true;
@@ -95,7 +94,7 @@ public sealed class SummaryTaskRollupService
             else
             {
                 if (own is not null) summaryActivityIds.Add(own.Id);
-                result = Aggregate(childResults, own, own is null ? defaultCalendar : CalendarFor(own));
+                result = Aggregate(childResults, own is null ? defaultCalendar : CalendarFor(own));
                 if (own is not null) Apply(own, result, userId);
             }
 
@@ -140,6 +139,7 @@ public sealed class SummaryTaskRollupService
             activity.CalendarId.HasValue && calendarById.TryGetValue(activity.CalendarId.Value, out var selected)
                 ? selected
                 : defaultCalendar;
+
     }
 
     public async Task<bool> IsSummaryTaskAsync(Guid activityId, Guid planVersionId, CancellationToken cancellationToken = default)
@@ -156,7 +156,6 @@ public sealed class SummaryTaskRollupService
 
     private static RollupResult Aggregate(
         IReadOnlyCollection<RollupResult> children,
-        PlanActivity? own,
         PlanningWorkingCalendar calendar)
     {
         var dated = children.Where(child => child.Start.HasValue || child.Finish.HasValue).ToList();
@@ -164,8 +163,9 @@ public sealed class SummaryTaskRollupService
         var finish = dated.Where(child => child.Finish.HasValue).Select(child => child.Finish!.Value).DefaultIfEmpty().Max();
         DateTime? effectiveStart = dated.Any(child => child.Start.HasValue) ? start : null;
         DateTime? effectiveFinish = dated.Any(child => child.Finish.HasValue) ? finish : null;
-        var duration = effectiveStart.HasValue && effectiveFinish.HasValue
-            ? Math.Max(0, (int)Math.Round(calendar.WorkingMinutesBetween(effectiveStart.Value, effectiveFinish.Value) / (double)calendar.WorkingDayMinutes, MidpointRounding.AwayFromZero))
+        var durationStart = dated.Any(child => child.Start.HasValue) ? start : (DateTime?)null;
+        var duration = durationStart.HasValue && effectiveFinish.HasValue
+            ? Math.Max(0, (int)Math.Round(calendar.WorkingMinutesBetween(durationStart.Value, effectiveFinish.Value) / (double)calendar.WorkingDayMinutes, MidpointRounding.AwayFromZero))
             : 0;
 
         var weighted = children.Where(child => child.Duration > 0 && child.Progress.HasValue).ToList();

@@ -111,12 +111,13 @@ public sealed class WorkItemService : IWorkItemService
 
         var total = await query.CountAsync(cancellationToken);
         var items = await ApplySort(query, sortBy).Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(cancellationToken);
-        var projectNames = await _projectLookup.GetNamesAsync(items.Where(item => item.ProjectId.HasValue).Select(item => item.ProjectId!.Value), cancellationToken);
+        var projectReferences = await _projectLookup.GetReferencesAsync(items.Where(item => item.ProjectId.HasValue).Select(item => item.ProjectId!.Value), cancellationToken);
         var resourceNames = await _resourceLookup.GetNamesAsync(items.Where(item => item.AssignedResourceId.HasValue).Select(item => item.AssignedResourceId!.Value), cancellationToken);
         var teamNames = (await _assigneeLookup.GetEligibleTeamsAsync(cancellationToken)).ToDictionary(team => team.TeamId, team => team.Name);
         var dtos = items.Select(item => ToDto(
             item,
-            item.ProjectId.HasValue ? projectNames.GetValueOrDefault(item.ProjectId.Value) : null,
+            item.ProjectId.HasValue ? projectReferences.GetValueOrDefault(item.ProjectId.Value)?.Name : null,
+            item.ProjectId.HasValue ? projectReferences.GetValueOrDefault(item.ProjectId.Value)?.PublicId : null,
             item.AssignedResourceId.HasValue ? resourceNames.GetValueOrDefault(item.AssignedResourceId.Value) : null,
             item.AssignedTeamId.HasValue ? teamNames.GetValueOrDefault(item.AssignedTeamId.Value) : null)).ToList();
         return new PagedResult<WorkItemDto>(dtos, page, pageSize, total);
@@ -204,21 +205,45 @@ public sealed class WorkItemService : IWorkItemService
     public async Task<ProjectWorkItemOverviewDto> GetProjectOverviewAsync(Guid projectId, int previewLimit = 3, CancellationToken cancellationToken = default)
     {
         previewLimit = Math.Clamp(previewLimit, 1, 10);
-        var openIssueQuery = ScopedWorkItems().AsNoTracking()
-            .Where(item => item.ProjectId == projectId
-                && item.Type == WorkItemType.Issue.ToString()
-                && item.ResolvedDate == null
+        var issueQuery = ScopedWorkItems().AsNoTracking()
+            .Where(item => item.ProjectId == projectId && item.Type == WorkItemType.Issue.ToString());
+        var openIssueQuery = issueQuery
+            .Where(item => item.ResolvedDate == null
                 && item.CompletedAt == null
                 && item.Status != "Done"
                 && item.Status != "Resolved"
                 && item.Status != "Closed");
 
         var now = DateTime.UtcNow;
+        var groupedStatusCounts = await issueQuery
+            .GroupBy(item => item.Status)
+            .Select(group => new { Status = group.Key, Count = group.Count() })
+            .ToListAsync(cancellationToken);
+        var statusReferences = await _statusLookup.GetAsync(cancellationToken: cancellationToken);
+        var statusCounts = groupedStatusCounts
+            .Select(group =>
+            {
+                var reference = statusReferences.FirstOrDefault(status => string.Equals(status.Code, group.Status, StringComparison.OrdinalIgnoreCase));
+                return new ProjectWorkItemStatusCountDto
+                {
+                    Status = group.Status,
+                    Count = group.Count,
+                    NameEn = reference?.NameEn,
+                    NameAr = reference?.NameAr,
+                    DisplayOrder = reference?.DisplayOrder ?? int.MaxValue,
+                    Color = reference?.Color
+                };
+            })
+            .OrderBy(status => status.DisplayOrder)
+            .ThenBy(status => status.Status)
+            .ToList();
         var openIssueCount = await openIssueQuery.CountAsync(cancellationToken);
-        var overdueOpenIssueCount = await openIssueQuery.CountAsync(item => item.DueDate.HasValue && item.DueDate.Value < now, cancellationToken);
+        var overdueOpenIssueCount = await openIssueQuery.CountAsync(
+            item => (item.TargetResolutionDate ?? item.DueDate) < now,
+            cancellationToken);
         var topIssues = await openIssueQuery
-            .OrderBy(item => item.DueDate == null)
-            .ThenBy(item => item.DueDate)
+            .OrderBy(item => item.TargetResolutionDate == null && item.DueDate == null)
+            .ThenBy(item => item.TargetResolutionDate ?? item.DueDate)
             .ThenByDescending(item => item.CreatedAt)
             .Take(previewLimit)
             .Select(item => new ProjectWorkItemOverviewItemDto
@@ -227,7 +252,7 @@ public sealed class WorkItemService : IWorkItemService
                 Title = item.Title,
                 Status = item.Status,
                 Priority = item.Priority,
-                DueDate = item.DueDate
+                DueDate = item.TargetResolutionDate ?? item.DueDate
             })
             .ToListAsync(cancellationToken);
 
@@ -235,6 +260,7 @@ public sealed class WorkItemService : IWorkItemService
         {
             OpenIssueCount = openIssueCount,
             OverdueOpenIssueCount = overdueOpenIssueCount,
+            StatusCounts = statusCounts,
             TopIssues = topIssues
         };
     }
@@ -251,7 +277,7 @@ public sealed class WorkItemService : IWorkItemService
             return Result<WorkItemDto>.Failure(Error.Validation("A new Work Item starts at the configured workflow initial state."));
         var status = await _statusLookup.FindAsync(workflow.Value!.InitialStateCode, cancellationToken);
         if (status is null || !status.IsActive) return Result<WorkItemDto>.Failure(Error.Validation("The configured workflow initial Work Item status is not active"));
-        var validation = await ValidateAsync(dto.Title, dto.Type, dto.Priority, status.Code, dto.ProjectId, dto.AssignedResourceId, dto.AssignedTeamId, cancellationToken);
+        var validation = await ValidateAsync(dto.Title, dto.Type, dto.Priority, status.Code, dto.ProjectId, dto.ParentId, null, dto.AssignedResourceId, dto.AssignedTeamId, cancellationToken);
         if (validation is not null) return Result<WorkItemDto>.Failure(validation);
 
         var now = DateTime.UtcNow;
@@ -295,7 +321,7 @@ public sealed class WorkItemService : IWorkItemService
 
         if (!string.IsNullOrWhiteSpace(dto.Status) && !string.Equals(dto.Status.Trim(), item.Status, StringComparison.OrdinalIgnoreCase))
             return Result<WorkItemDto>.Failure(Error.Validation("Work Item status must be changed through a workflow transition."));
-        var validation = await ValidateAsync(dto.Title, dto.Type, dto.Priority, item.Status, dto.ProjectId, dto.AssignedResourceId, dto.AssignedTeamId, cancellationToken);
+        var validation = await ValidateAsync(dto.Title, dto.Type, dto.Priority, item.Status, dto.ProjectId, dto.ParentId, item.Id, dto.AssignedResourceId, dto.AssignedTeamId, cancellationToken);
         if (validation is not null) return Result<WorkItemDto>.Failure(validation);
         if (dto.RowVersion.Length > 0) _context.Entry(item).Property(workItem => workItem.RowVersion).OriginalValue = dto.RowVersion;
 
@@ -526,7 +552,7 @@ public sealed class WorkItemService : IWorkItemService
         return Result.Success();
     }
 
-    private async Task<Error?> ValidateAsync(string title, WorkItemType type, WorkItemPriority priority, string status, Guid? projectId, Guid? assignedResourceId, Guid? assignedTeamId, CancellationToken cancellationToken)
+    private async Task<Error?> ValidateAsync(string title, WorkItemType type, WorkItemPriority priority, string status, Guid? projectId, Guid? parentId, Guid? updatingWorkItemId, Guid? assignedResourceId, Guid? assignedTeamId, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(title)) return Error.Validation("Title is required");
         if (title.Trim().Length > 500) return Error.Validation("Title must not exceed 500 characters");
@@ -536,6 +562,13 @@ public sealed class WorkItemService : IWorkItemService
         if (projectId.HasValue && await _projectLookup.FindAsync(projectId.Value, cancellationToken) is null) return Error.NotFound("Project not found");
         var allowedProjectIds = _managementContext.Current?.Scope.ProjectIds;
         if (allowedProjectIds is not null && (!projectId.HasValue || !allowedProjectIds.Contains(projectId.Value))) return Error.Forbidden("The project is outside the current management scope");
+        if (parentId.HasValue)
+        {
+            if (updatingWorkItemId == parentId.Value) return Error.Validation("A work item cannot be its own parent.");
+            var parent = await _context.Set<WorkItem>().FirstOrDefaultAsync(item => item.Id == parentId.Value && !item.IsDeleted, cancellationToken);
+            if (parent is null) return Error.NotFound("Parent work item not found.");
+            if (parent.ProjectId != projectId) return Error.Validation("Parent and child work items must belong to the same project.");
+        }
         if (assignedResourceId.HasValue && assignedTeamId.HasValue)
             return Error.Validation("A Work Item can be assigned to one Resource or one Team, not both.");
         if (assignedResourceId.HasValue || assignedTeamId.HasValue)
@@ -599,15 +632,15 @@ public sealed class WorkItemService : IWorkItemService
 
     private async Task<WorkItemDto> ToDtoAsync(WorkItem item, CancellationToken cancellationToken)
     {
-        var projectName = item.ProjectId.HasValue ? (await _projectLookup.FindAsync(item.ProjectId.Value, cancellationToken))?.Name : null;
+        var project = item.ProjectId.HasValue ? await _projectLookup.FindAsync(item.ProjectId.Value, cancellationToken) : null;
         var resourceName = item.AssignedResourceId.HasValue ? (await _resourceLookup.FindAsync(item.AssignedResourceId.Value, cancellationToken))?.Name : null;
         var teamName = item.AssignedTeamId.HasValue ? (await _assigneeLookup.GetEligibleTeamsAsync(cancellationToken)).FirstOrDefault(team => team.TeamId == item.AssignedTeamId.Value)?.Name : null;
-        return ToDto(item, projectName, resourceName, teamName);
+        return ToDto(item, project?.Name, project?.PublicId, resourceName, teamName);
     }
 
-    private static WorkItemDto ToDto(WorkItem item, string? projectName, string? resourceName = null, string? teamName = null) => new()
+    private static WorkItemDto ToDto(WorkItem item, string? projectName, Guid? projectPublicId = null, string? resourceName = null, string? teamName = null) => new()
     {
-        Id = item.Id, Title = item.Title, Description = item.Description, Type = Parse(item.Type, WorkItemType.Task), Priority = Parse(item.Priority, WorkItemPriority.Medium), Status = item.Status, Source = item.Source, ProjectId = item.ProjectId, ProjectName = projectName, AssignedResourceId = item.AssignedResourceId, AssignedResourceName = resourceName, AssignedTeamId = item.AssignedTeamId, AssignedTeamName = teamName, ReporterId = item.ReporterId, ParentId = item.ParentId, StoryPoints = item.StoryPoints, EstimatedHours = item.EstimatedHours, ActualHours = item.ActualHours, StartDate = item.StartDate, DueDate = item.DueDate, CompletedAt = item.CompletedAt, Severity = item.Severity, IdentifiedDate = item.IdentifiedDate, TargetResolutionDate = item.TargetResolutionDate, ResolvedDate = item.ResolvedDate, Resolution = item.Resolution, Tags = item.Tags, Labels = item.Labels, CreatedAt = item.CreatedAt, UpdatedAt = item.UpdatedAt, CreatedBy = item.CreatedBy, UpdatedBy = item.UpdatedBy, RowVersion = item.RowVersion
+        Id = item.Id, Title = item.Title, Description = item.Description, Type = Parse(item.Type, WorkItemType.Task), Priority = Parse(item.Priority, WorkItemPriority.Medium), Status = item.Status, Source = item.Source, ProjectId = item.ProjectId, ProjectPublicId = projectPublicId, ProjectName = projectName, AssignedResourceId = item.AssignedResourceId, AssignedResourceName = resourceName, AssignedTeamId = item.AssignedTeamId, AssignedTeamName = teamName, ReporterId = item.ReporterId, ParentId = item.ParentId, StoryPoints = item.StoryPoints, EstimatedHours = item.EstimatedHours, ActualHours = item.ActualHours, StartDate = item.StartDate, DueDate = item.DueDate, CompletedAt = item.CompletedAt, Severity = item.Severity, IdentifiedDate = item.IdentifiedDate, TargetResolutionDate = item.TargetResolutionDate, ResolvedDate = item.ResolvedDate, Resolution = item.Resolution, Tags = item.Tags, Labels = item.Labels, CreatedAt = item.CreatedAt, UpdatedAt = item.UpdatedAt, CreatedBy = item.CreatedBy, UpdatedBy = item.UpdatedBy, RowVersion = item.RowVersion
     };
 
     private static WorkItemAttachmentDto ToAttachmentDto(WorkItemAttachment attachment) => new()

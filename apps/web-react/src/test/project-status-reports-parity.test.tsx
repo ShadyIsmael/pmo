@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Outlet, Route, Routes } from "react-router-dom";
 import { I18nProvider } from "../i18n/messages";
@@ -10,11 +10,20 @@ const reportMocks = vi.hoisted(() => ({
   details: {} as Record<string, ProjectStatusReportDto>,
   update: vi.fn(),
   create: vi.fn(),
+  generate: vi.fn(),
+  submit: vi.fn(),
+  approve: vi.fn(),
+  returnReport: vi.fn(),
+  reopen: vi.fn(),
   publish: vi.fn(),
   remove: vi.fn(),
   canEdit: true,
   canView: true,
   canExport: true,
+  canGenerate: true,
+  canSubmit: true,
+  canApprove: true,
+  canPublish: true,
   canMutate: true,
   readOnly: false,
 }));
@@ -22,9 +31,15 @@ const reportMocks = vi.hoisted(() => ({
 vi.mock("../features/projects/api/projects", () => ({
   useProjectStatusReports: () => ({ data: { items: reportMocks.reports }, isLoading: false, isError: false, refetch: vi.fn() }),
   useProjectStatusReport: (_projectId: string, reportId: string) => ({ data: reportMocks.details[reportId], isLoading: false, isError: false }),
+  useProjectStatusReportComparison: () => ({ data: undefined, isLoading: false, isError: false }),
   useProjectStatusReportCurrentProgress: () => ({ data: { projectPlanProgressPercent: 42 }, isLoading: false }),
   useCreateProjectStatusReport: () => ({ mutateAsync: reportMocks.create, isPending: false }),
   useUpdateProjectStatusReport: () => ({ mutateAsync: reportMocks.update, isPending: false }),
+  useGenerateProjectStatusReport: () => ({ mutateAsync: reportMocks.generate, isPending: false }),
+  useSubmitProjectStatusReport: () => ({ mutateAsync: reportMocks.submit, isPending: false }),
+  useApproveProjectStatusReport: () => ({ mutateAsync: reportMocks.approve, isPending: false }),
+  useReturnProjectStatusReport: () => ({ mutateAsync: reportMocks.returnReport, isPending: false }),
+  useReopenProjectStatusReport: () => ({ mutateAsync: reportMocks.reopen, isPending: false }),
   usePublishProjectStatusReport: () => ({ mutateAsync: reportMocks.publish, isPending: false }),
   useDeleteProjectStatusReport: () => ({ mutateAsync: reportMocks.remove, isPending: false }),
 }));
@@ -34,7 +49,7 @@ vi.mock("../api/management", () => ({ useManagement: () => ({ canMutate: reportM
 vi.mock("../features/projects/lib/project-labels", () => ({ useProjectEnumLabels: () => ({ statusLabel: (value?: string | null) => value ?? "—", healthLabel: (value?: string | null) => value ?? "—" }) }));
 vi.mock("../lib/permissions", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/permissions")>();
-  return { ...actual, hasPermission: (_permissions: readonly string[], permission: string) => permission === actual.Permissions.Project.Edit ? reportMocks.canEdit : permission === actual.Permissions.Project.View ? reportMocks.canView : permission === actual.Permissions.Reports.Export ? reportMocks.canExport : false };
+  return { ...actual, hasPermission: (_permissions: readonly string[], permission: string) => permission === actual.Permissions.StatusReport.Create || permission === actual.Permissions.StatusReport.Edit ? reportMocks.canEdit : permission === actual.Permissions.StatusReport.Generate ? reportMocks.canGenerate : permission === actual.Permissions.StatusReport.Submit ? reportMocks.canSubmit : permission === actual.Permissions.StatusReport.Approve ? reportMocks.canApprove : permission === actual.Permissions.StatusReport.Publish ? reportMocks.canPublish : permission === actual.Permissions.StatusReport.View ? reportMocks.canView : permission === actual.Permissions.StatusReport.Export ? reportMocks.canExport : false };
 });
 
 const draft: ProjectStatusReportDto = {
@@ -45,6 +60,7 @@ const draft: ProjectStatusReportDto = {
   reportDate: "2026-09-30",
   periodFrom: "2026-09-01",
   periodTo: "2026-09-30",
+  statusDate: "2026-09-30",
   reportState: "Draft",
   projectLifecycleStatusAtReport: "Active",
   overallHealth: "Amber",
@@ -109,11 +125,20 @@ beforeEach(() => {
   reportMocks.details = { [draft.id]: draft, [published.id]: published };
   reportMocks.update.mockReset().mockResolvedValue(undefined);
   reportMocks.create.mockReset().mockResolvedValue(undefined);
+  reportMocks.generate.mockReset().mockResolvedValue(undefined);
+  reportMocks.submit.mockReset().mockResolvedValue(undefined);
+  reportMocks.approve.mockReset().mockResolvedValue(undefined);
+  reportMocks.returnReport.mockReset().mockResolvedValue(undefined);
+  reportMocks.reopen.mockReset().mockResolvedValue(undefined);
   reportMocks.publish.mockReset().mockResolvedValue(undefined);
   reportMocks.remove.mockReset().mockResolvedValue(undefined);
   reportMocks.canEdit = true;
   reportMocks.canView = true;
   reportMocks.canExport = true;
+  reportMocks.canGenerate = true;
+  reportMocks.canSubmit = true;
+  reportMocks.canApprove = true;
+  reportMocks.canPublish = true;
   reportMocks.canMutate = true;
   reportMocks.readOnly = false;
 });
@@ -157,6 +182,18 @@ describe("project status report source parity", () => {
     expect(within(details).queryByRole("button", { name: "Publish" })).not.toBeInTheDocument();
   });
 
+  it("renders only the sections frozen into a report configuration", () => {
+    const configured = { ...draft, includedSectionsSnapshot: ["PerformanceKPIs"] };
+    reportMocks.reports = [configured];
+    reportMocks.details = { [configured.id]: configured };
+    renderStatusReports();
+    fireEvent.click(screen.getByRole("button", { name: "View" }));
+    const details = screen.getByRole("dialog", { name: "Status Report Details" });
+    expect(within(details).getByText("Performance KPIs")).toBeInTheDocument();
+    expect(within(details).queryByText("Draft executive summary")).not.toBeInTheDocument();
+    expect(within(details).queryByText("Vendor delay")).not.toBeInTheDocument();
+  });
+
   it("hides report mutations in a read-only management context while keeping view access", () => {
     reportMocks.canMutate = false;
     renderStatusReports();
@@ -167,5 +204,15 @@ describe("project status report source parity", () => {
     expect(within(details).queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
     expect(within(details).queryByRole("button", { name: "Publish" })).not.toBeInTheDocument();
     expect(within(details).queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
+  });
+
+  it("routes generated reports through the workflow submit action", async () => {
+    const generated = { ...draft, reportState: "Generated" as const };
+    reportMocks.reports = [generated];
+    reportMocks.details = { [generated.id]: generated };
+    renderStatusReports();
+    fireEvent.click(screen.getByRole("button", { name: "View" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Status Report Details" })).getByRole("button", { name: "Submit for review" }));
+    await waitFor(() => expect(reportMocks.submit).toHaveBeenCalledWith(generated.id));
   });
 });

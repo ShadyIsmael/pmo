@@ -18,34 +18,59 @@ using System.Text.Json;
 
 namespace NEXUS.Modules.ProjectManagement.Application;
 
-public class ProjectService : IProjectService, IProjectReferenceLookup
+public class ProjectService : IProjectService, IProjectReferenceLookup, IProjectPublicIdLookup
 {
     private readonly DbContext _context;
     private readonly IAuditService _auditService;
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly IManagementContextAccessor? _managementContext;
     private readonly ProjectManagerMembershipSynchronizer _membershipSynchronizer;
+    private readonly ProjectSponsorMembershipSynchronizer _sponsorMembershipSynchronizer;
+    private readonly IProjectPlanProgressLookup? _planProgressLookup;
 
-    public ProjectService(DbContext context, IAuditService auditService, IHttpContextAccessor httpContextAccessor, ProjectManagerMembershipSynchronizer membershipSynchronizer, IManagementContextAccessor? managementContext = null)
+    public ProjectService(DbContext context, IAuditService auditService, IHttpContextAccessor httpContextAccessor, ProjectManagerMembershipSynchronizer membershipSynchronizer, IManagementContextAccessor? managementContext = null, IProjectPlanProgressLookup? planProgressLookup = null)
     {
         _context = context;
         _auditService = auditService;
         _httpContextAccessor = httpContextAccessor;
         _membershipSynchronizer = membershipSynchronizer;
+        _sponsorMembershipSynchronizer = new ProjectSponsorMembershipSynchronizer(context);
         _managementContext = managementContext;
+        _planProgressLookup = planProgressLookup;
     }
 
     public async Task<ProjectReference?> FindAsync(Guid projectId, CancellationToken cancellationToken = default)
     {
         return await InScope(_context.Set<Project>())
             .Where(project => project.Id == projectId)
-            .Select(project => new ProjectReference(project.Id, project.Name, project.Currency, project.Budget))
+            .Select(project => new ProjectReference(project.Id, project.Name, project.Currency, project.Budget, project.PublicId))
             .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    public async Task<Guid?> FindPublicIdAsync(Guid projectId, Guid tenantId, CancellationToken cancellationToken = default)
+    {
+        var publicId = await _context.Set<Project>()
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(project => project.Id == projectId && project.TenantId == tenantId && !project.IsDeleted)
+            .Select(project => (Guid?)project.PublicId)
+            .FirstOrDefaultAsync(cancellationToken);
+        return publicId == Guid.Empty ? null : publicId;
     }
 
     public async Task<IReadOnlyList<ProjectReference>> GetFinancialReferencesAsync(CancellationToken cancellationToken = default)
         => await InScope(_context.Set<Project>().AsNoTracking())
-            .Select(p => new ProjectReference(p.Id, p.Name, p.Currency, p.Budget)).ToListAsync(cancellationToken);
+            .Select(p => new ProjectReference(p.Id, p.Name, p.Currency, p.Budget, p.PublicId)).ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyDictionary<Guid, ProjectReference>> GetReferencesAsync(IEnumerable<Guid> projectIds, CancellationToken cancellationToken = default)
+    {
+        var ids = projectIds.Distinct().ToArray();
+        if (ids.Length == 0) return new Dictionary<Guid, ProjectReference>();
+        return await InScope(_context.Set<Project>().AsNoTracking())
+            .Where(project => ids.Contains(project.Id))
+            .Select(project => new ProjectReference(project.Id, project.Name, project.Currency, project.Budget, project.PublicId))
+            .ToDictionaryAsync(project => project.Id, cancellationToken);
+    }
 
     public async Task<IReadOnlyDictionary<Guid, string>> GetNamesAsync(IEnumerable<Guid> projectIds, CancellationToken cancellationToken = default)
     {
@@ -97,6 +122,7 @@ public class ProjectService : IProjectService, IProjectReferenceLookup
             .Select(p => new ProjectSummaryDto
             {
                 Id = p.Id,
+                PublicId = p.PublicId,
                 Name = p.Name,
                 Code = p.Code,
                 Status = p.Status,
@@ -116,6 +142,19 @@ public class ProjectService : IProjectService, IProjectReferenceLookup
                 WorkingCalendarId = p.WorkingCalendarId
             })
             .ToListAsync(cancellationToken);
+
+        if (_planProgressLookup is not null && summaries.Count > 0)
+        {
+            var progressByProject = await _planProgressLookup.GetManyAsync(
+                summaries.Select(summary => summary.Id), cancellationToken);
+            foreach (var summary in summaries)
+            {
+                if (progressByProject.TryGetValue(summary.Id, out var planProgress))
+                {
+                    summary.PlanProgress = planProgress;
+                }
+            }
+        }
 
         return new PagedResult<ProjectSummaryDto>(summaries, page, pageSize, total);
     }
@@ -146,6 +185,9 @@ public class ProjectService : IProjectService, IProjectReferenceLookup
         project.TenantId = GetCurrentTenantId();
         project.ProjectManagerId = dto.ProjectManagerId.Value;
 
+        var sponsorError = await _sponsorMembershipSynchronizer.ValidateAssignmentAsync(project.SponsorId, project.TenantId, cancellationToken);
+        if (sponsorError is not null) return Result<ProjectDto>.Failure(sponsorError);
+
         // Set default WorkingCalendarId if not provided
         if (!project.WorkingCalendarId.HasValue)
         {
@@ -156,6 +198,7 @@ public class ProjectService : IProjectService, IProjectReferenceLookup
         }
 
         _context.Set<Project>().Add(project);
+        await _sponsorMembershipSynchronizer.SynchronizeAsync(project, null, project.SponsorId, userId, cancellationToken);
 
         _context.Set<ProjectManagerAssignment>().Add(new ProjectManagerAssignment
         {
@@ -221,6 +264,7 @@ public class ProjectService : IProjectService, IProjectReferenceLookup
         ["status"] = project.Status,
         ["priority"] = project.Priority,
         ["category"] = project.Category,
+        ["sponsorId"] = project.SponsorId,
         ["startDate"] = project.StartDate,
         ["endDate"] = project.EndDate,
         ["currency"] = project.Currency,
@@ -243,7 +287,7 @@ public class ProjectService : IProjectService, IProjectReferenceLookup
         ["endDate"] = member.EndDate,
         ["status"] = member.Status,
         ["isBillable"] = member.IsBillable,
-        ["notes"] = member.Notes
+        ["notes"] = ProjectSponsorMembershipSynchronizer.IsManagedMembership(member) ? null : member.Notes
     };
 
     private static Dictionary<string, object?> BuildChanges(Dictionary<string, object?> before, Dictionary<string, object?> after)
@@ -286,6 +330,15 @@ public class ProjectService : IProjectService, IProjectReferenceLookup
         if (dto.Currency != null && !await IsValidCurrencyAsync(dto.Currency.Trim(), cancellationToken))
             return Result<ProjectDto>.Failure(Error.Validation("Currency must be an active configured currency"));
 
+        var previousSponsorId = project.SponsorId;
+        var nextSponsorId = dto.ClearSponsor ? null : dto.SponsorId ?? project.SponsorId;
+        var sponsorChanged = nextSponsorId != project.SponsorId;
+        if (sponsorChanged)
+        {
+            var sponsorError = await _sponsorMembershipSynchronizer.ValidateAssignmentAsync(nextSponsorId, project.TenantId, cancellationToken);
+            if (sponsorError is not null) return Result<ProjectDto>.Failure(sponsorError);
+        }
+
         var oldValues = System.Text.Json.JsonSerializer.Serialize(project.ToDto());
         var beforeValues = Snapshot(project);
 
@@ -295,6 +348,8 @@ public class ProjectService : IProjectService, IProjectReferenceLookup
         {
             dto.UpdateEntity(project, userId);
             if (hierarchy.PortfolioId.HasValue) project.PortfolioId = hierarchy.PortfolioId;
+            if (sponsorChanged)
+                await _sponsorMembershipSynchronizer.SynchronizeAsync(project, previousSponsorId, project.SponsorId, userId, cancellationToken);
             await _context.SaveChangesAsync(cancellationToken);
 
             await _auditService.LogAsync(new AuditEntry
@@ -364,6 +419,8 @@ public class ProjectService : IProjectService, IProjectReferenceLookup
 
         dto.UpdateEntity(project, userId);
         if (hierarchy.PortfolioId.HasValue) project.PortfolioId = hierarchy.PortfolioId;
+        if (sponsorChanged)
+            await _sponsorMembershipSynchronizer.SynchronizeAsync(project, previousSponsorId, project.SponsorId, userId, cancellationToken);
 
         foreach (var assignment in currentAssignments)
         {
@@ -638,12 +695,13 @@ public class ProjectService : IProjectService, IProjectReferenceLookup
                 ResourceJobTitle = resource?.JobTitle,
                 Role = member.Role,
                 AllocationPercentage = member.AllocationPercentage,
-                HoursPerWeek = member.HoursPerWeek,
+                HoursPerWeek = null,
                 StartDate = member.StartDate,
                 EndDate = member.EndDate,
                 Status = member.Status,
+                CalendarPolicy = member.CalendarPolicy,
                 IsBillable = member.IsBillable,
-                Notes = member.Notes,
+                Notes = ProjectSponsorMembershipSynchronizer.IsManagedMembership(member) ? null : member.Notes,
                 CreatedAt = member.CreatedAt,
                 UpdatedAt = member.UpdatedAt
             });
@@ -654,6 +712,12 @@ public class ProjectService : IProjectService, IProjectReferenceLookup
 
     public async Task<Result<ProjectMemberDto>> AddTeamMemberAsync(Guid projectId, CreateProjectMemberDto dto, string userId, CancellationToken cancellationToken = default)
     {
+        if (ProjectSponsorMembershipSynchronizer.IsReservedManagedMembershipNote(dto.Notes))
+            return Result<ProjectMemberDto>.Failure(Error.Validation("This Project Team note is reserved for the system-managed Sponsor relationship."));
+        if (dto.AllocationPercentage is < 0m or > 100m)
+            return Result<ProjectMemberDto>.Failure(Error.Validation("Project allocation must be between 0 and 100 percent."));
+        if (dto.EndDate.Date < dto.StartDate.Date)
+            return Result<ProjectMemberDto>.Failure(Error.Validation("Project team end date cannot be earlier than its start date."));
         var project = await _context.Set<Project>().FirstOrDefaultAsync(p => p.Id == projectId && !p.IsDeleted, cancellationToken);
         if (project is null) return Result<ProjectMemberDto>.Failure(Error.NotFound("Project not found"));
 
@@ -670,6 +734,9 @@ public class ProjectService : IProjectService, IProjectReferenceLookup
         }
 
         var member = dto.ToEntity(userId);
+        // Project membership records dedication only. Weekly resource capacity is
+        // derived from the resource calendar, never supplied as task work here.
+        member.HoursPerWeek = null;
         _context.Set<ProjectMember>().Add(member);
         await _context.SaveChangesAsync(cancellationToken);
 
@@ -699,10 +766,19 @@ public class ProjectService : IProjectService, IProjectReferenceLookup
             .Include(m => m.Project)
             .FirstOrDefaultAsync(m => m.Id == memberId && m.ProjectId == projectId && !m.IsDeleted, cancellationToken);
         if (member is null) return Result<ProjectMemberDto>.Failure(Error.NotFound("Project member not found"));
+        if (ProjectSponsorMembershipSynchronizer.IsManagedMembership(member)
+            || await IsCurrentSponsorMemberAsync(member, cancellationToken))
+            return Result<ProjectMemberDto>.Failure(Error.Conflict("This Project Team relationship is governed by Project Sponsor settings. Change the Sponsor through Project Governance."));
+        if (ProjectSponsorMembershipSynchronizer.IsReservedManagedMembershipNote(dto.Notes))
+            return Result<ProjectMemberDto>.Failure(Error.Validation("This Project Team note is reserved for the system-managed Sponsor relationship."));
 
         var startDate = dto.StartDate ?? member.StartDate;
         var endDate = dto.EndDate ?? member.EndDate;
         var allocationPercentage = dto.AllocationPercentage ?? member.AllocationPercentage;
+        if (allocationPercentage is < 0m or > 100m)
+            return Result<ProjectMemberDto>.Failure(Error.Validation("Project allocation must be between 0 and 100 percent."));
+        if (endDate.Date < startDate.Date)
+            return Result<ProjectMemberDto>.Failure(Error.Validation("Project team end date cannot be earlier than its start date."));
 
         var conflicts = await CheckResourceConflictsInternalAsync(member.ResourceId, startDate, endDate, allocationPercentage, memberId, cancellationToken);
         if (conflicts.Count > 0)
@@ -714,6 +790,7 @@ public class ProjectService : IProjectService, IProjectReferenceLookup
 
         var beforeMemberValues = Snapshot(member);
         dto.UpdateEntity(member, userId);
+        member.HoursPerWeek = null;
         await _context.SaveChangesAsync(cancellationToken);
 
         await _auditService.LogAsync(new AuditEntry
@@ -742,6 +819,9 @@ public class ProjectService : IProjectService, IProjectReferenceLookup
         var member = await _context.Set<ProjectMember>()
             .FirstOrDefaultAsync(m => m.Id == memberId && m.ProjectId == projectId && !m.IsDeleted, cancellationToken);
         if (member is null) return Result.Failure(Error.NotFound("Project member not found"));
+        if (ProjectSponsorMembershipSynchronizer.IsManagedMembership(member)
+            || await IsCurrentSponsorMemberAsync(member, cancellationToken))
+            return Result.Failure(Error.Conflict("This Project Team relationship is governed by Project Sponsor settings. Change the Sponsor through Project Governance."));
 
         member.IsDeleted = true;
         member.UpdatedBy = userId;
@@ -763,6 +843,17 @@ public class ProjectService : IProjectService, IProjectReferenceLookup
         return Result.Success();
     }
 
+    private async Task<bool> IsCurrentSponsorMemberAsync(ProjectMember member, CancellationToken cancellationToken)
+    {
+        var projectSponsorId = await _context.Set<Project>().AsNoTracking()
+            .Where(project => project.Id == member.ProjectId && project.TenantId == member.TenantId && !project.IsDeleted)
+            .Select(project => project.SponsorId)
+            .FirstOrDefaultAsync(cancellationToken);
+        return projectSponsorId.HasValue && await _context.Set<Resource>().AsNoTracking()
+            .AnyAsync(resource => resource.Id == member.ResourceId && resource.TenantId == member.TenantId
+                && resource.UserId == projectSponsorId.Value && !resource.IsDeleted, cancellationToken);
+    }
+
     public async Task<Result<List<ProjectTeamMemberAllocationDto>>> CheckResourceConflictsAsync(Guid resourceId, DateTime startDate, DateTime endDate, decimal allocationPercentage, Guid? excludeMemberId, CancellationToken cancellationToken = default)
     {
         var conflicts = await CheckResourceConflictsInternalAsync(resourceId, startDate, endDate, allocationPercentage, excludeMemberId, cancellationToken);
@@ -771,6 +862,8 @@ public class ProjectService : IProjectService, IProjectReferenceLookup
 
     private async Task<List<ProjectTeamMemberAllocationDto>> CheckResourceConflictsInternalAsync(Guid resourceId, DateTime startDate, DateTime endDate, decimal allocationPercentage, Guid? excludeMemberId, CancellationToken cancellationToken)
     {
+        var requestedStart = startDate.Date;
+        var requestedEnd = endDate.Date;
         var query = _context.Set<ProjectMember>()
             .Include(m => m.Project)
             .Where(m => m.ResourceId == resourceId && m.Status == "Active" && !m.IsDeleted);
@@ -779,34 +872,46 @@ public class ProjectService : IProjectService, IProjectReferenceLookup
             query = query.Where(m => m.Id != excludeMemberId.Value);
 
         var overlapping = await query
-            .Where(m => m.StartDate < endDate && m.EndDate > startDate)
+            .Where(m => m.StartDate.Date <= requestedEnd && m.EndDate.Date >= requestedStart)
             .ToListAsync(cancellationToken);
 
-        var conflicts = new List<ProjectTeamMemberAllocationDto>();
-        var totalPercentage = overlapping.Sum(m => m.AllocationPercentage) + allocationPercentage;
+        // Membership dates are inclusive. The total changes on the requested
+        // start date or when another membership begins, so evaluate each such
+        // boundary instead of summing commitments from separate periods.
+        var conflictIds = new HashSet<Guid>();
+        var evaluationDates = overlapping
+            .Select(member => member.StartDate.Date)
+            .Where(date => date >= requestedStart && date <= requestedEnd)
+            .Append(requestedStart)
+            .Distinct();
 
-        if (totalPercentage > 100)
+        foreach (var date in evaluationDates)
         {
-            foreach (var m in overlapping)
+            var activeAtDate = overlapping.Where(member =>
+                member.StartDate.Date <= date && member.EndDate.Date >= date).ToList();
+            if (activeAtDate.Sum(member => member.AllocationPercentage) + allocationPercentage > 100m)
             {
-                conflicts.Add(new ProjectTeamMemberAllocationDto
-                {
-                    AllocationId = m.Id,
-                    ResourceId = m.ResourceId,
-                    ResourceName = m.Project?.Name ?? "Unknown",
-                    ProjectName = m.Project?.Name ?? "Unknown",
-                    Role = m.Role,
-                    AllocationPercentage = m.AllocationPercentage,
-                    HoursPerWeek = m.HoursPerWeek,
-                    StartDate = m.StartDate,
-                    EndDate = m.EndDate,
-                    Status = m.Status,
-                    IsBillable = m.IsBillable,
-                    Notes = m.Notes
-                });
+                foreach (var member in activeAtDate)
+                    conflictIds.Add(member.Id);
             }
         }
 
-        return conflicts;
+        return overlapping.Where(member => conflictIds.Contains(member.Id))
+            .Select(member => new ProjectTeamMemberAllocationDto
+            {
+                AllocationId = member.Id,
+                ResourceId = member.ResourceId,
+                ResourceName = member.Project?.Name ?? "Unknown",
+                ProjectName = member.Project?.Name ?? "Unknown",
+                Role = member.Role,
+                AllocationPercentage = member.AllocationPercentage,
+                HoursPerWeek = member.HoursPerWeek,
+                StartDate = member.StartDate,
+                EndDate = member.EndDate,
+                Status = member.Status,
+                IsBillable = member.IsBillable,
+                Notes = ProjectSponsorMembershipSynchronizer.IsManagedMembership(member) ? null : member.Notes
+            })
+            .ToList();
     }
 }

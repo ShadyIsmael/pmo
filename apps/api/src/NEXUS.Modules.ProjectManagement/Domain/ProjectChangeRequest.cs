@@ -12,6 +12,7 @@ public class ProjectChangeRequest : BaseEntity
 
     public enum Statuses
     {
+        Draft,
         Pending,
         Approved,
         Rejected,
@@ -32,7 +33,16 @@ public class ProjectChangeRequest : BaseEntity
     public decimal? BudgetChangeAmount { get; set; }
     public string? Attachments { get; set; }
 
-    public Statuses Status { get; set; } = Statuses.Pending;
+    /// <summary>Approval strategy selected for this request and frozen when submitted.</summary>
+    public string ApprovalStrategy { get; set; } = ProjectChangeRequestApprovalStrategies.AllRequired;
+    /// <summary>Approver selection saved while the request is still a draft.</summary>
+    public string SelectedApproverUserIdsJson { get; set; } = "[]";
+    /// <summary>Canonical workflow instance for this request's lifecycle.</summary>
+    public Guid? WorkflowInstanceId { get; set; }
+    public DateTime? SubmittedAt { get; set; }
+    public ICollection<ProjectChangeRequestApproval> ApprovalAssignments { get; set; } = new List<ProjectChangeRequestApproval>();
+
+    public Statuses Status { get; set; } = Statuses.Draft;
 
     public Guid RequestedBy { get; set; }
     public DateTime RequestedAt { get; set; }
@@ -46,4 +56,16 @@ public class ProjectChangeRequest : BaseEntity
     public bool IsBaselineChange => Type == ChangeTypes.Baseline;
     public bool IsAdminChange => Type == ChangeTypes.Administrative;
     public bool IsPending => Status == Statuses.Pending;
+}
+
+public static class ProjectChangeRequestApprovalStrategies
+{
+    public const string AllRequired = "AllRequired";
+    public const string AnyOneOptional = "AnyOneOptional";
+    public const string Sequential = "Sequential";
+
+    public static bool IsSupported(string? value) => value is not null
+        && (value.Equals(AllRequired, StringComparison.OrdinalIgnoreCase)
+            || value.Equals(AnyOneOptional, StringComparison.OrdinalIgnoreCase)
+            || value.Equals(Sequential, StringComparison.OrdinalIgnoreCase));
 }

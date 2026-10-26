@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using NEXUS.Modules.ProjectManagement.Domain;
+using NEXUS.Modules.WorkflowEngine.Domain;
 
 namespace NEXUS.Persistence.Configurations;
 
@@ -34,6 +35,9 @@ public class ProjectChangeRequestConfiguration : IEntityTypeConfiguration<Projec
         builder.Property(x => x.Attachments)
             .HasMaxLength(4000);
 
+        builder.Property(x => x.ApprovalStrategy).HasMaxLength(40).IsRequired();
+        builder.Property(x => x.SelectedApproverUserIdsJson).IsRequired();
+
         builder.Property(x => x.Status)
             .HasConversion<string>()
             .HasMaxLength(20)
@@ -48,5 +52,9 @@ public class ProjectChangeRequestConfiguration : IEntityTypeConfiguration<Projec
             .WithMany()
             .HasForeignKey(x => x.ProjectId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasIndex(x => new { x.TenantId, x.WorkflowInstanceId }).IsUnique()
+            .HasFilter("[IsDeleted] = 0 AND [WorkflowInstanceId] IS NOT NULL");
+        builder.HasOne<WorkflowInstance>().WithMany().HasForeignKey(x => x.WorkflowInstanceId).OnDelete(DeleteBehavior.NoAction);
     }
 }

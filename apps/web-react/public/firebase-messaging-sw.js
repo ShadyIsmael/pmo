@@ -42,7 +42,7 @@ self.addEventListener("notificationclick", (event) => {
   event.waitUntil(
     (async () => {
       const data = event.notification.data || {};
-      const target = resolveInternalTarget(data.referenceType, data.referenceId);
+      const target = resolveNotificationTarget(data.referenceType, data.referenceId);
       const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
       if (clients.length > 0) {
         const client = clients.find((candidate) => new URL(candidate.url).origin === self.location.origin) || clients[0];
@@ -55,7 +55,7 @@ self.addEventListener("notificationclick", (event) => {
   );
 });
 
-function resolveInternalTarget(referenceType, referenceId) {
+function resolveNotificationTarget(referenceType, referenceId) {
   if (typeof referenceType !== "string" || typeof referenceId !== "string"
       || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(referenceId)) return null;
   const id = encodeURIComponent(referenceId);

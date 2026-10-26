@@ -115,20 +115,20 @@ export function getSystemUserTextClass(linked: boolean): string {
 }
 
 const RISK_LEVEL_TEXT_CLASSES: Record<string, string> = {
-  low: "text-emerald-700 dark:text-emerald-400",
-  medium: "text-amber-700 dark:text-amber-300",
-  high: "text-orange-700 dark:text-orange-400",
-  critical: "text-red-800 dark:text-red-300",
+  low: "text-success",
+  medium: "text-warning",
+  high: "text-warning",
+  critical: "text-destructive",
 };
 
 const RISK_STATUS_TEXT_CLASSES: Record<string, string> = {
-  identified: "text-blue-700 dark:text-blue-300",
-  actionrequired: "text-amber-700 dark:text-amber-300",
-  followup: "text-cyan-700 dark:text-cyan-300",
-  mitigated: "text-emerald-700 dark:text-emerald-400",
-  closed: "text-slate-600 dark:text-slate-300",
-  expected: "text-blue-700 dark:text-blue-300",
-  active: "text-emerald-700 dark:text-emerald-400",
+  identified: "text-info",
+  actionrequired: "text-warning",
+  followup: "text-info",
+  mitigated: "text-success",
+  closed: "text-muted-foreground",
+  expected: "text-info",
+  active: "text-success",
 };
 
 export function getRiskLevelTextClass(value: string | null | undefined): string {

@@ -7,4 +7,8 @@ namespace NEXUS.SharedKernel;
 public interface IProjectPlanProgressLookup
 {
     Task<decimal?> GetAsync(Guid projectId, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyDictionary<Guid, decimal?>> GetManyAsync(
+        IEnumerable<Guid> projectIds,
+        CancellationToken cancellationToken = default);
 }

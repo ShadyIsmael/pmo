@@ -1,8 +1,9 @@
 import * as React from "react";
 import { Navigate, Route, Routes, Outlet } from "react-router-dom";
 import { AppShell } from "../components/AppShell";
-import { RequireAuth } from "../auth/RequireAuth";
+import { RequireAuth, RequireManagementAuthorization } from "../auth/RequireAuth";
 import { RequirePermission } from "../auth/RequirePermission";
+import { RequireFreshPermission } from "../auth/RequireFreshPermission";
 import { DirectoryAccessPermissions, Permissions } from "../lib/permissions";
 // Eager: migration order 1–6 core (Home, Projects, My Work, Resources, Vendors, Teams)
 import { HomePage } from "../features/home/HomePage";
@@ -11,6 +12,7 @@ import { ChangeInitialPasswordPage } from "../features/account/ChangeInitialPass
 import { ProjectsListPage } from "../features/projects/ProjectsListPage";
 import { ProjectDetailPage } from "../features/projects/ProjectDetailPage";
 import { ProjectOverviewTab } from "../features/projects/ProjectOverviewTab";
+import { ProjectReportingConfigurationPage } from "../features/projects/ProjectReportingConfigurationPage";
 import { ProjectTasksTab } from "../features/projects/ProjectTasksTab";
 import { ProjectRisksTab } from "../features/projects/ProjectRisksTab";
 import { ProjectFinanceTab } from "../features/projects/ProjectFinanceTab";
@@ -22,6 +24,7 @@ import { ProjectChangeTrackerTab, ProjectHandoverTab, ProjectHistoryTab, Project
 import { MyWorkLayout } from "../features/my-work/MyWorkLayout";
 import { MyWorkTasksPage } from "../features/my-work/MyWorkTasksPage";
 import { MyWorkApprovalsPage } from "../features/my-work/MyWorkApprovalsPage";
+import { ApprovalReviewPage } from "../features/my-work/ApprovalReviewPage";
 import { MyWorkTimesheetsPage } from "../features/my-work/MyWorkTimesheetsPage";
 import { ResourcesListPage } from "../features/resources/ResourcesListPage";
 import { VendorsPage } from "../features/vendors/VendorsPage";
@@ -58,6 +61,7 @@ const PlatformSettingsPage = React.lazy(() => import("../features/administration
 const IntegrationsPage = React.lazy(() => import("../features/administration/AdminPages").then((m) => ({ default: m.IntegrationsPage })));
 const DirectoryIntegrationPage = React.lazy(() => import("../features/administration/DirectoryIntegrationPage").then((m) => ({ default: m.DirectoryIntegrationPage })));
 const GovernancePage = React.lazy(() => import("../features/administration/AdminPages").then((m) => ({ default: m.GovernancePage })));
+const EntityAssignmentRecoveryPage = React.lazy(() => import("../features/administration/EntityAssignmentRecoveryPage").then((m) => ({ default: m.EntityAssignmentRecoveryPage })));
 const CurrenciesPage = React.lazy(() => import("../features/administration/AdminPages").then((m) => ({ default: m.CurrenciesPage })));
 const LicensePage = React.lazy(() => import("../features/administration/LicensePluginsPages").then((m) => ({ default: m.LicensePage })));
 const PluginsPage = React.lazy(() => import("../features/administration/LicensePluginsPages").then((m) => ({ default: m.PluginsPage })));
@@ -108,7 +112,7 @@ export function AppRoutes() {
       <Route path="/account/change-initial-password" element={<Suspended><RequireAuth><ChangeInitialPasswordPage /></RequireAuth></Suspended>} />
       {/* Public stakeholder invitation (no auth, no shell) */}
       <Route path="/stakeholder/accept-invitation" element={<AcceptInvitationPage />} />
-      <Route element={<RequireAuth><AppShell><Outlet /></AppShell></RequireAuth>}>
+      <Route element={<RequireAuth><RequireManagementAuthorization><AppShell><Outlet /></AppShell></RequireManagementAuthorization></RequireAuth>}>
         <Route path="/home" element={<HomePage />} />
 
         <Route path="/projects" element={<Guard permissions={Permissions.Projects.Read}><ProjectsListPage /></Guard>} />
@@ -124,7 +128,8 @@ export function AppRoutes() {
           <Route path="team" element={<ProjectMembersTab />} />
           <Route path="financials" element={<ProjectFinanceTab />} />
           <Route path="risks-issues" element={<ProjectRisksTab />} />
-          <Route path="status-reports" element={<ProjectStatusReportsTab />} />
+          <Route path="status-reports" element={<Guard permissions={Permissions.StatusReport.View}><ProjectStatusReportsTab /></Guard>} />
+          <Route path="settings/reporting" element={<Guard permissions={Permissions.StatusReport.ManageConfiguration}><ProjectReportingConfigurationPage /></Guard>} />
           <Route path="meetings" element={<ProjectMeetingsTab />} />
           <Route path="handover" element={<ProjectHandoverTab />} />
           <Route path="history" element={<ProjectHistoryTab />} />
@@ -150,6 +155,10 @@ export function AppRoutes() {
           <Route index element={<Navigate to="tasks" replace />} />
           <Route path="tasks" element={<MyWorkTasksPage />} />
           <Route path="approvals" element={<MyWorkApprovalsPage />} />
+          <Route path="approvals/review/project-handover/:id" element={<ApprovalReviewPage type="project-handover" />} />
+          <Route path="approvals/review/program-handover/:id" element={<ApprovalReviewPage type="program-handover" />} />
+          <Route path="approvals/review/portfolio-handover/:id" element={<ApprovalReviewPage type="portfolio-handover" />} />
+          <Route path="approvals/review/change-request/:id" element={<ApprovalReviewPage type="change-request" />} />
           <Route path="timesheets" element={<MyWorkTimesheetsPage />} />
         </Route>
 
@@ -213,7 +222,8 @@ export function AppRoutes() {
           <Route path="/administration/settings" element={<Guard permissions={Permissions.Settings.Read}><Suspended><PlatformSettingsPage /></Suspended></Guard>} />
           <Route path="/administration/integrations" element={<Guard permissions={[Permissions.Settings.Read, ...DirectoryAccessPermissions]}><Suspended><IntegrationsPage /></Suspended></Guard>} />
           <Route path="/administration/integrations/directory" element={<Guard permissions={DirectoryAccessPermissions}><Suspended><DirectoryIntegrationPage /></Suspended></Guard>} />
-          <Route path="/administration/governance" element={<Guard permissions={[Permissions.Settings.Read, Permissions.Workflow.View]}><Suspended><GovernancePage /></Suspended></Guard>} />
+          <Route path="/administration/governance" element={<RequireFreshPermission permissions={[Permissions.Settings.Read, Permissions.Workflow.View, Permissions.AssignmentRecovery.View, Permissions.AssignmentRecovery.Initiate, Permissions.AssignmentRecovery.Manage]}><Suspended><GovernancePage /></Suspended></RequireFreshPermission>} />
+          <Route path="/administration/governance/entity-assignment-recovery" element={<RequireFreshPermission permissions={[Permissions.AssignmentRecovery.View, Permissions.AssignmentRecovery.Initiate, Permissions.AssignmentRecovery.Manage]}><Suspended><EntityAssignmentRecoveryPage /></Suspended></RequireFreshPermission>} />
           <Route path="/administration/currencies" element={<Guard permissions={Permissions.Settings.Read}><Suspended><CurrenciesPage /></Suspended></Guard>} />
           <Route path="/administration/license" element={<Guard permissions={Permissions.Settings.Read}><Suspended><LicensePage /></Suspended></Guard>} />
           <Route path="/administration/plugins" element={<Guard permissions={Permissions.Settings.Read}><Suspended><PluginsPage /></Suspended></Guard>} />

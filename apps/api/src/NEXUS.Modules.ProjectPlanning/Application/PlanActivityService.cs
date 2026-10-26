@@ -19,8 +19,9 @@ public class PlanActivityService : IPlanActivityService
     private readonly IPlanSchedulingService _schedulingService;
     private readonly IPlanSchedulingAnalysisService _analysisService;
     private readonly SummaryTaskRollupService _summaryRollup;
+    private readonly IPlanGridCommandHistoryService? _commandHistory;
 
-    public PlanActivityService(DbContext context, IAuditService auditService, IHttpContextAccessor httpContextAccessor, IPlanSchedulingService? schedulingService = null, IPlanSchedulingAnalysisService? analysisService = null, SummaryTaskRollupService? summaryRollup = null)
+    public PlanActivityService(DbContext context, IAuditService auditService, IHttpContextAccessor httpContextAccessor, IPlanSchedulingService? schedulingService = null, IPlanSchedulingAnalysisService? analysisService = null, SummaryTaskRollupService? summaryRollup = null, IPlanGridCommandHistoryService? commandHistory = null)
     {
         _context = context;
         _auditService = auditService;
@@ -28,6 +29,7 @@ public class PlanActivityService : IPlanActivityService
         _schedulingService = schedulingService ?? new PlanSchedulingService(context, new AutoSchedulingEngine());
         _analysisService = analysisService ?? new PlanSchedulingAnalysisService(context, new CriticalPathAnalyzer());
         _summaryRollup = summaryRollup ?? new SummaryTaskRollupService(context);
+        _commandHistory = commandHistory;
     }
 
     public async Task<Result<PlanActivityDto>> CreateAsync(Guid planId, CreatePlanActivityDto dto, string userId, CancellationToken cancellationToken = default)
@@ -60,6 +62,12 @@ public class PlanActivityService : IPlanActivityService
             return Result<PlanActivityDto>.Failure(Error.Validation("Milestones always have zero duration"));
         }
 
+        if (dto.Type == PlanActivityType.Task && dto.Duration == 0)
+        {
+            // New tasks default to one working day when a caller omits duration.
+            dto.Duration = 1;
+        }
+
         if (dto.ActualFinish.HasValue && !dto.ActualStart.HasValue)
         {
             return Result<PlanActivityDto>.Failure(Error.Validation("Actual Finish requires Actual Start"));
@@ -87,11 +95,29 @@ public class PlanActivityService : IPlanActivityService
             return Result<PlanActivityDto>.Failure(Error.Conflict($"An activity code '{code}' already exists in this plan version"));
         }
 
+        var hasExistingActivities = await _context.Set<PlanActivity>()
+            .AnyAsync(a => a.PlanVersionId == workingVersion.Id && !a.IsDeleted, cancellationToken)
+            || _context.ChangeTracker.Entries<PlanActivity>()
+                .Any(entry => entry.State == EntityState.Added &&
+                              entry.Entity.PlanVersionId == workingVersion.Id &&
+                              !entry.Entity.IsDeleted);
+        if (!hasExistingActivities)
+        {
+            // Keep the first plan activity anchored to the project start until a
+            // user explicitly changes its scheduling mode.
+            dto.SchedulingMode = PlanSchedulingMode.Manual;
+        }
+
         var tenantId = GetCurrentTenantId();
         var sortOrder = dto.SortOrder ?? await NextSortOrderAsync(workingVersion.Id, cancellationToken);
 
         var activity = dto.ToEntity(tenantId, workingVersion.Id, userId);
         activity.SortOrder = sortOrder;
+        if (activity.SchedulingMode == PlanSchedulingMode.Automatic &&
+            !activity.StartDate.HasValue && !activity.EndDate.HasValue && activity.WbsId.HasValue)
+        {
+            activity.StartDate = await GetParentActivityStartDateAsync(activity.WbsId.Value, workingVersion.Id, cancellationToken);
+        }
         _context.Set<PlanActivity>().Add(activity);
         if (activity.SchedulingMode == PlanSchedulingMode.Automatic)
         {
@@ -115,6 +141,9 @@ public class PlanActivityService : IPlanActivityService
             Timestamp = DateTime.UtcNow,
             CreatedBy = userId
         }, cancellationToken);
+
+        if (_commandHistory is not null)
+            await _commandHistory.RecordBarrierAsync(planId, workingVersion.Id, userId, "CreateActivity", cancellationToken);
 
         return Result<PlanActivityDto>.Success(await BuildComputedDtoAsync(activity, cancellationToken));
     }
@@ -178,6 +207,9 @@ public class PlanActivityService : IPlanActivityService
         }
 
         var originalValues = System.Text.Json.JsonSerializer.Serialize(activity.ToDto());
+        var historyBefore = _commandHistory is null || _commandHistory.IsReplaying
+            ? null
+            : PlanGridCommandHistoryService.CaptureActivityFields(activity);
         var previousSummaryIds = await _summaryRollup.RecalculateAsync(activity.PlanVersionId, userId, cancellationToken: cancellationToken);
         var isSummaryTask = previousSummaryIds.Contains(activity.Id);
         // Planning editors submit date-only values, while persisted schedule
@@ -204,6 +236,7 @@ public class PlanActivityService : IPlanActivityService
             activity.StartDate = dto.StartDate;
             activity.EndDate = dto.EndDate;
         }
+
         activity.ActualStart = dto.ActualStart;
         activity.ActualFinish = dto.ActualFinish;
         activity.CalendarId = dto.CalendarId;
@@ -234,28 +267,145 @@ public class PlanActivityService : IPlanActivityService
 
         await _summaryRollup.RecalculateAsync(activity.PlanVersionId, userId, previousSummaryIds, cancellationToken);
 
+        await using var transaction = _commandHistory is { IsReplaying: false } && _context.Database.CurrentTransaction is null
+            ? await _context.Database.BeginTransactionAsync(cancellationToken)
+            : null;
         try
         {
             await _context.SaveChangesAsync(cancellationToken);
+            await _auditService.LogAsync(new AuditEntry
+            {
+                EntityType = "PlanActivity",
+                EntityId = activity.Id,
+                Action = "Update",
+                UserId = TryParseGuid(userId),
+                OriginalValues = originalValues,
+                NewValues = System.Text.Json.JsonSerializer.Serialize(activity.ToDto()),
+                Timestamp = DateTime.UtcNow,
+                CreatedBy = userId
+            }, cancellationToken);
+            if (historyBefore is not null && _commandHistory is not null)
+                await _commandHistory.RecordActivityUpdateAsync(planId, activity.PlanVersionId, userId, historyBefore, activity, cancellationToken);
+            if (transaction is not null) await transaction.CommitAsync(cancellationToken);
         }
         catch (DbUpdateConcurrencyException)
         {
+            if (transaction is not null) await transaction.RollbackAsync(cancellationToken);
             return Result<PlanActivityDto>.Failure(Error.Conflict("The activity was modified by another user. Reload and try again."));
         }
-
-        await _auditService.LogAsync(new AuditEntry
+        catch
         {
-            EntityType = "PlanActivity",
-            EntityId = activity.Id,
-            Action = "Update",
-            UserId = TryParseGuid(userId),
-            OriginalValues = originalValues,
-            NewValues = System.Text.Json.JsonSerializer.Serialize(activity.ToDto()),
-            Timestamp = DateTime.UtcNow,
-            CreatedBy = userId
-        }, cancellationToken);
+            if (transaction is not null) await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
 
         return Result<PlanActivityDto>.Success(await BuildComputedDtoAsync(activity, cancellationToken));
+    }
+
+    public async Task<Result<IReadOnlyList<PlanActivityDto>>> BulkUpdateAsync(Guid planId, BulkUpdatePlanActivitiesDto dto, string userId, CancellationToken cancellationToken = default)
+    {
+        if (dto.Items is null || dto.Items.Count is < 1 or > 500)
+            return Result<IReadOnlyList<PlanActivityDto>>.Failure(Error.Validation("Bulk updates must contain between 1 and 500 activities"));
+        if (dto.Items.Any(item => item.ActivityId == Guid.Empty || item.Update is null || item.Update.RowVersion.Length == 0)
+            || dto.Items.Select(item => item.ActivityId).Distinct().Count() != dto.Items.Count)
+            return Result<IReadOnlyList<PlanActivityDto>>.Failure(Error.Validation("Each activity must be unique and include its row version"));
+
+        var workingVersion = await GetActiveWorkingVersionAsync(planId, cancellationToken);
+        if (workingVersion is null)
+            return Result<IReadOnlyList<PlanActivityDto>>.Failure(Error.NotFound(await GetActiveWorkingVersionNotAvailableMessageAsync(planId, cancellationToken)));
+
+        await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+        using var commandCollection = _commandHistory?.BeginCollection("BulkEdit");
+        var results = new List<PlanActivityDto>(dto.Items.Count);
+        foreach (var item in dto.Items)
+        {
+            var result = await UpdateAsync(planId, item.ActivityId, item.Update, userId, cancellationToken);
+            if (result.IsFailure)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return Result<IReadOnlyList<PlanActivityDto>>.Failure(result.Error!);
+            }
+            results.Add(result.Value!);
+        }
+
+        if (_commandHistory is not null)
+            await _commandHistory.CommitCollectionAsync(planId, workingVersion.Id, userId, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return Result<IReadOnlyList<PlanActivityDto>>.Success(results);
+    }
+
+    public async Task<Result<PlanSchedulingResult>> RecalculateScheduleAsync(Guid planId, string userId, CancellationToken cancellationToken = default)
+    {
+        var workingVersion = await GetActiveWorkingVersionAsync(planId, cancellationToken);
+        if (workingVersion is null)
+            return Result<PlanSchedulingResult>.Failure(Error.NotFound(await GetActiveWorkingVersionNotAvailableMessageAsync(planId, cancellationToken)));
+
+        await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+        using var commandCollection = _commandHistory?.BeginCollection("RecalculateSchedule");
+        var activities = await _context.Set<PlanActivity>()
+            .Where(activity => activity.PlanVersionId == workingVersion.Id && !activity.IsDeleted)
+            .ToListAsync(cancellationToken);
+        if (activities.Count == 0)
+        {
+            await transaction.CommitAsync(cancellationToken);
+            return Result<PlanSchedulingResult>.Success(new PlanSchedulingResult(0, []));
+        }
+
+        var beforeValues = activities.ToDictionary(activity => activity.Id, PlanGridCommandHistoryService.CaptureActivityFields);
+        try
+        {
+            var recalculation = await _schedulingService.RecalculateAsync(
+                workingVersion.Id,
+                activities.Select(activity => new SchedulingSeed(activity.Id)).ToList(),
+                userId,
+                cancellationToken);
+            if (recalculation.IsFailure)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return Result<PlanSchedulingResult>.Failure(recalculation.Error!);
+            }
+
+            // Persist schedule and summary changes first so the command history
+            // records the post-save RowVersions used for optimistic concurrency.
+            await _context.SaveChangesAsync(cancellationToken);
+            foreach (var activity in activities)
+            {
+                var before = beforeValues[activity.Id];
+                var after = PlanGridCommandHistoryService.CaptureActivityFields(activity);
+                var beforeJson = System.Text.Json.JsonSerializer.Serialize(before);
+                var afterJson = System.Text.Json.JsonSerializer.Serialize(after);
+                if (string.Equals(beforeJson, afterJson, StringComparison.Ordinal)) continue;
+
+                await _auditService.LogAsync(new AuditEntry
+                {
+                    EntityType = "PlanActivity",
+                    EntityId = activity.Id,
+                    Action = "RecalculateSchedule",
+                    UserId = TryParseGuid(userId),
+                    OriginalValues = beforeJson,
+                    NewValues = afterJson,
+                    Timestamp = DateTime.UtcNow,
+                    CreatedBy = userId
+                }, cancellationToken);
+                if (_commandHistory is not null)
+                    await _commandHistory.RecordActivityUpdateAsync(planId, workingVersion.Id, userId, before, activity, cancellationToken);
+            }
+
+            if (_commandHistory is not null)
+                await _commandHistory.CommitCollectionAsync(planId, workingVersion.Id, userId, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return Result<PlanSchedulingResult>.Success(recalculation.Value!);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return Result<PlanSchedulingResult>.Failure(Error.Conflict("The plan changed while its schedule was being recalculated. Reload and try again."));
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
     }
 
     public async Task<Result<PlanActivityDto>> MoveAsync(Guid planId, Guid activityId, MovePlanActivityDto dto, string userId, CancellationToken cancellationToken = default)
@@ -304,27 +454,43 @@ public class PlanActivityService : IPlanActivityService
             var targetIndex = rootActivities.FindIndex(item => item.Id == targetActivity!.Id);
             if (sourceIndex < 0 || targetIndex < 0)
                 return Result<PlanActivityDto>.Failure(Error.Validation("The activity is not in the current root structure"));
+            var historyBefore = rootActivities.ToDictionary(item => item.Id, PlanGridCommandHistoryService.CaptureActivityFields);
             rootActivities.RemoveAt(sourceIndex);
             targetIndex = rootActivities.FindIndex(item => item.Id == targetActivity!.Id);
             rootActivities.Insert(Math.Clamp(dto.Position == PlanActivityMovePosition.Before ? targetIndex : targetIndex + 1, 0, rootActivities.Count), activity);
             var originalValues = System.Text.Json.JsonSerializer.Serialize(activity.ToDto());
             for (var index = 0; index < rootActivities.Count; index++) rootActivities[index].SortOrder = index;
             _context.Entry(activity).Property(item => item.RowVersion).OriginalValue = dto.RowVersion;
+            await using var reorderTransaction = await _context.Database.BeginTransactionAsync(cancellationToken);
             try
             {
                 await _context.SaveChangesAsync(cancellationToken);
+                await _auditService.LogAsync(new AuditEntry
+                {
+                    EntityType = "PlanActivity", EntityId = activity.Id, Action = "Move", UserId = TryParseGuid(userId),
+                    OriginalValues = originalValues,
+                    NewValues = System.Text.Json.JsonSerializer.Serialize(new { activity.Id, dto.Position, dto.TargetActivityId }),
+                    Timestamp = DateTime.UtcNow, CreatedBy = userId
+                }, cancellationToken);
+                if (_commandHistory is not null)
+                {
+                    using var collection = _commandHistory.BeginCollection("MoveActivity");
+                    foreach (var item in rootActivities)
+                        await _commandHistory.RecordActivityUpdateAsync(planId, activity.PlanVersionId, userId, historyBefore[item.Id], item, cancellationToken);
+                    await _commandHistory.CommitCollectionAsync(planId, activity.PlanVersionId, userId, cancellationToken);
+                }
+                await reorderTransaction.CommitAsync(cancellationToken);
             }
             catch (DbUpdateConcurrencyException)
             {
+                await reorderTransaction.RollbackAsync(cancellationToken);
                 return Result<PlanActivityDto>.Failure(Error.Conflict("The activity was modified by another user. Reload and try again."));
             }
-            await _auditService.LogAsync(new AuditEntry
+            catch
             {
-                EntityType = "PlanActivity", EntityId = activity.Id, Action = "Move", UserId = TryParseGuid(userId),
-                OriginalValues = originalValues,
-                NewValues = System.Text.Json.JsonSerializer.Serialize(new { activity.Id, dto.Position, dto.TargetActivityId }),
-                Timestamp = DateTime.UtcNow, CreatedBy = userId
-            }, cancellationToken);
+                await reorderTransaction.RollbackAsync(cancellationToken);
+                throw;
+            }
             return Result<PlanActivityDto>.Success(await BuildComputedDtoAsync(activity, cancellationToken));
         }
 
@@ -346,28 +512,43 @@ public class PlanActivityService : IPlanActivityService
             if (sourceIndex < 0 || targetIndex < 0)
                 return Result<PlanActivityDto>.Failure(Error.Validation("The activity is not in the current WBS structure"));
 
+            var historyBefore = activitiesInNode.ToDictionary(item => item.Id, PlanGridCommandHistoryService.CaptureActivityFields);
             var originalValues = System.Text.Json.JsonSerializer.Serialize(activity.ToDto());
             activitiesInNode.RemoveAt(sourceIndex);
             targetIndex = activitiesInNode.FindIndex(item => item.Id == targetActivity.Id);
             activitiesInNode.Insert(Math.Clamp(dto.Position == PlanActivityMovePosition.Before ? targetIndex : targetIndex + 1, 0, activitiesInNode.Count), activity);
             for (var index = 0; index < activitiesInNode.Count; index++) activitiesInNode[index].SortOrder = index;
             _context.Entry(activity).Property(item => item.RowVersion).OriginalValue = dto.RowVersion;
+            await using var reorderTransaction = await _context.Database.BeginTransactionAsync(cancellationToken);
             try
             {
                 await _context.SaveChangesAsync(cancellationToken);
+                await _auditService.LogAsync(new AuditEntry
+                {
+                    EntityType = "PlanActivity", EntityId = activity.Id, Action = "Move", UserId = TryParseGuid(userId),
+                    OriginalValues = originalValues,
+                    NewValues = System.Text.Json.JsonSerializer.Serialize(new { activity.Id, dto.Position, dto.TargetActivityId, sourceWbsId = sourceNode.Id }),
+                    Timestamp = DateTime.UtcNow, CreatedBy = userId
+                }, cancellationToken);
+                if (_commandHistory is not null)
+                {
+                    using var collection = _commandHistory.BeginCollection("MoveActivity");
+                    foreach (var item in activitiesInNode)
+                        await _commandHistory.RecordActivityUpdateAsync(planId, activity.PlanVersionId, userId, historyBefore[item.Id], item, cancellationToken);
+                    await _commandHistory.CommitCollectionAsync(planId, activity.PlanVersionId, userId, cancellationToken);
+                }
+                await reorderTransaction.CommitAsync(cancellationToken);
             }
             catch (DbUpdateConcurrencyException)
             {
+                await reorderTransaction.RollbackAsync(cancellationToken);
                 return Result<PlanActivityDto>.Failure(Error.Conflict("The plan structure was modified by another user. Reload and try again."));
             }
-
-            await _auditService.LogAsync(new AuditEntry
+            catch
             {
-                EntityType = "PlanActivity", EntityId = activity.Id, Action = "Move", UserId = TryParseGuid(userId),
-                OriginalValues = originalValues,
-                NewValues = System.Text.Json.JsonSerializer.Serialize(new { activity.Id, dto.Position, dto.TargetActivityId, sourceWbsId = sourceNode.Id }),
-                Timestamp = DateTime.UtcNow, CreatedBy = userId
-            }, cancellationToken);
+                await reorderTransaction.RollbackAsync(cancellationToken);
+                throw;
+            }
             return Result<PlanActivityDto>.Success(await BuildComputedDtoAsync(activity, cancellationToken));
         }
 
@@ -394,6 +575,7 @@ public class PlanActivityService : IPlanActivityService
             return Result<PlanActivityDto>.Failure(Error.Validation("An activity cannot be moved under itself or one of its descendants"));
 
         var originalNodeValues = System.Text.Json.JsonSerializer.Serialize(sourceNode.ToDto());
+        var historyBeforeNodes = nodes.ToDictionary(node => node.Id, PlanGridCommandHistoryService.CaptureWbsFields);
         var oldParent = sourceNode.ParentWbsId;
         var siblings = nodes.Where(node => node.ParentWbsId == parentWbsId && node.Id != sourceNode.Id)
             .OrderBy(node => node.SortOrder).ThenBy(node => node.Code).ToList();
@@ -429,6 +611,20 @@ public class PlanActivityService : IPlanActivityService
         try
         {
             await _context.SaveChangesAsync(cancellationToken);
+            await _auditService.LogAsync(new AuditEntry
+            {
+                EntityType = "PlanActivity", EntityId = activity.Id, Action = "Move", UserId = TryParseGuid(userId),
+                OriginalValues = originalNodeValues,
+                NewValues = System.Text.Json.JsonSerializer.Serialize(new { activity.Id, oldParent, parentWbsId, dto.Position, dto.TargetActivityId }),
+                Timestamp = DateTime.UtcNow, CreatedBy = userId
+            }, cancellationToken);
+            if (_commandHistory is not null)
+            {
+                using var collection = _commandHistory.BeginCollection("MoveActivity");
+                foreach (var node in nodes)
+                    await _commandHistory.RecordWbsUpdateAsync(planId, activity.PlanVersionId, userId, historyBeforeNodes[node.Id], node, cancellationToken);
+                await _commandHistory.CommitCollectionAsync(planId, activity.PlanVersionId, userId, cancellationToken);
+            }
             await transaction.CommitAsync(cancellationToken);
         }
         catch (DbUpdateConcurrencyException)
@@ -436,14 +632,11 @@ public class PlanActivityService : IPlanActivityService
             await transaction.RollbackAsync(cancellationToken);
             return Result<PlanActivityDto>.Failure(Error.Conflict("The plan structure was modified by another user. Reload and try again."));
         }
-
-        await _auditService.LogAsync(new AuditEntry
+        catch
         {
-            EntityType = "PlanActivity", EntityId = activity.Id, Action = "Move", UserId = TryParseGuid(userId),
-            OriginalValues = originalNodeValues,
-            NewValues = System.Text.Json.JsonSerializer.Serialize(new { activity.Id, oldParent, parentWbsId, dto.Position, dto.TargetActivityId }),
-            Timestamp = DateTime.UtcNow, CreatedBy = userId
-        }, cancellationToken);
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
         return Result<PlanActivityDto>.Success(await BuildComputedDtoAsync(activity, cancellationToken));
     }
 
@@ -470,9 +663,31 @@ public class PlanActivityService : IPlanActivityService
         var editError = await GetEditErrorAsync(activity, planId, cancellationToken);
         if (editError is not null) return Result.Failure(editError);
 
+        var dependencies = await _context.Set<PlanDependency>()
+            .Where(dependency => dependency.PlanVersionId == activity.PlanVersionId
+                && (dependency.ActivityId == activity.Id || dependency.PredecessorActivityId == activity.Id))
+            .ToListAsync(cancellationToken);
+        var assignments = await _context.Set<PlanAssignment>()
+            .Where(assignment => assignment.PlanVersionId == activity.PlanVersionId && assignment.ActivityId == activity.Id)
+            .ToListAsync(cancellationToken);
+
+        var deletedAt = DateTime.UtcNow;
         var previousSummaryIds = await _summaryRollup.RecalculateAsync(activity.PlanVersionId, userId, cancellationToken: cancellationToken);
+        foreach (var dependency in dependencies)
+        {
+            dependency.IsDeleted = true;
+            dependency.UpdatedBy = userId;
+            dependency.UpdatedAt = deletedAt;
+        }
+        foreach (var assignment in assignments)
+        {
+            assignment.IsDeleted = true;
+            assignment.UpdatedBy = userId;
+            assignment.UpdatedAt = deletedAt;
+        }
         activity.IsDeleted = true;
         activity.UpdatedBy = userId;
+        activity.UpdatedAt = deletedAt;
         await _summaryRollup.RecalculateAsync(activity.PlanVersionId, userId, previousSummaryIds, cancellationToken);
 
         _context.Entry(activity).Property(a => a.RowVersion).OriginalValue = rowVersion;
@@ -495,6 +710,9 @@ public class PlanActivityService : IPlanActivityService
             Timestamp = DateTime.UtcNow,
             CreatedBy = userId
         }, cancellationToken);
+
+        if (_commandHistory is not null)
+            await _commandHistory.RecordBarrierAsync(planId, activity.PlanVersionId, userId, "DeleteActivity", cancellationToken);
 
         return Result.Success();
     }
@@ -659,6 +877,31 @@ public class PlanActivityService : IPlanActivityService
     {
         return await _context.Set<PlanWbsNode>()
             .AnyAsync(n => n.Id == wbsId && n.PlanVersionId == planVersionId, cancellationToken);
+    }
+
+    private async Task<DateTime?> GetParentActivityStartDateAsync(Guid wbsId, Guid planVersionId, CancellationToken cancellationToken)
+    {
+        var node = await _context.Set<PlanWbsNode>()
+            .Where(item => item.Id == wbsId && item.PlanVersionId == planVersionId && !item.IsDeleted)
+            .Select(item => new { item.ParentWbsId, item.ActivityId })
+            .FirstOrDefaultAsync(cancellationToken);
+        if (node?.ParentWbsId is not Guid parentWbsId) return null;
+
+        if (node.ActivityId.HasValue)
+        {
+            var linkedActivity = await _context.Set<PlanActivity>()
+                .Where(activity => activity.Id == node.ActivityId.Value && activity.PlanVersionId == planVersionId && !activity.IsDeleted)
+                .Select(activity => new { activity.Id, activity.StartDate })
+                .FirstOrDefaultAsync(cancellationToken);
+            if (linkedActivity is not null) return linkedActivity.StartDate;
+        }
+
+        return await _context.Set<PlanActivity>()
+            .Where(activity => activity.PlanVersionId == planVersionId && !activity.IsDeleted && activity.WbsId == parentWbsId)
+            .OrderBy(activity => activity.SortOrder)
+            .ThenBy(activity => activity.Code)
+            .Select(activity => activity.StartDate)
+            .FirstOrDefaultAsync(cancellationToken);
     }
 
     private async Task<bool> CalendarExistsInVersionAsync(Guid calendarId, Guid planVersionId, CancellationToken cancellationToken)

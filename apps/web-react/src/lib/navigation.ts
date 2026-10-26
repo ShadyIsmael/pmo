@@ -51,7 +51,7 @@ export const administrationCategoryConfig: AdministrationCategory[] = [
   { id: "reference-data", href: "/administration/reference-data", labelKey: "nav.referenceData", icon: ListFilter, requiredPermissions: [Permissions.Settings.Read] },
   { id: "platform-settings", href: "/administration/settings", labelKey: "nav.platformSettings", icon: Settings2, requiredPermissions: [Permissions.Settings.Read] },
   { id: "integrations", href: "/administration/integrations", labelKey: "nav.integrations", icon: Plug, requiredPermissions: [Permissions.Settings.Read, ...DirectoryAccessPermissions] },
-  { id: "governance", href: "/administration/governance", labelKey: "nav.governance", icon: GitBranch, requiredPermissions: [Permissions.Settings.Read, Permissions.Workflow.View] },
+  { id: "governance", href: "/administration/governance", labelKey: "nav.governance", icon: GitBranch, requiredPermissions: [Permissions.Settings.Read, Permissions.Workflow.View, Permissions.AssignmentRecovery.View, Permissions.AssignmentRecovery.Initiate, Permissions.AssignmentRecovery.Manage] },
 ];
 
 /** Single source of truth for enterprise navigation — mirrors Next.js navigationConfig. */

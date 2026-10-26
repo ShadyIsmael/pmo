@@ -29,9 +29,11 @@ const scopedAliases = new Map([
   [path.join(sourceRoot, "features", "projects", "components", "PlanningImportSheet.tsx"), [["planning.", "projects.planning."]]],
   [path.join(sourceRoot, "features", "projects", "components", "PlanningGrid.tsx"), [["planning.", "projects.planning."]]],
   [path.join(sourceRoot, "features", "projects", "components", "PlanningCalendarsPanel.tsx"), [["planning.", "projects.planning."]]],
+  [path.join(sourceRoot, "features", "projects", "components", "CriticalPathExportDialog.tsx"), [["", "projects.planning.exportDiagram."]]],
 ]);
 const helperAliases = new Map([
   [path.join(sourceRoot, "features", "projects", "components", "PlanTimelineGantt.tsx"), [["", "projects.planning."]]],
+  [path.join(sourceRoot, "features", "projects", "components", "CriticalPathNetworkDiagram.tsx"), [["", "projects.planning."]]],
   [path.join(sourceRoot, "features", "projects", "components", "BudgetRevisionSection.tsx"), [["", "projects.budgetRevisions."]]],
 ]);
 for (const file of files(sourceRoot)) {
@@ -41,6 +43,8 @@ for (const file of files(sourceRoot)) {
     { regex: /\btr\(\s*["']([^"']+)["']/g, aliases: helperAliases.get(file) ?? [] },
     { regex: /\blabelKey\s*:\s*["']([^"']+)["']/g, aliases: scopedAliases.get(file) ?? [] },
     { regex: /\breasonKey\s*=\s*["']([^"']+)["']/g, aliases: scopedAliases.get(file) ?? [] },
+    { regex: /\blabelKey\(\s*t\s*,\s*["']([^"']+)["']/g, aliases: scopedAliases.get(file) ?? [] },
+    { regex: /\bkey\(\s*["']([^"']+)["']/g, aliases: scopedAliases.get(file) ?? [] },
   ]) {
     for (const match of source.matchAll(regex)) {
       const alias = aliases.find(([from]) => match[1].startsWith(from));

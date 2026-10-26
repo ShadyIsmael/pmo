@@ -24,6 +24,7 @@ All endpoints require JWT Bearer authentication unless noted.
 | GET | `/projects` | List projects (paginated, filterable) |
 | POST | `/projects` | Create a new project |
 | GET | `/projects/{id}` | Get project details |
+| GET | `/projects/{id}/overview/team-capacity?periodType={week|month|quarter}&startDate={date}&endDate={date}` | Get project team's period capacity and cross-project utilization summary (requires Project.View and Resource.View) |
 | PUT | `/projects/{id}` | Update project |
 | DELETE | `/projects/{id}` | Delete project |
 | GET | `/projects/{id}/milestones` | List project milestones |
@@ -38,12 +39,74 @@ All endpoints require JWT Bearer authentication unless noted.
 | POST | `/projects/{id}/deliverables` | Create deliverable |
 | GET | `/projects/{id}/status-reports` | List status reports |
 | POST | `/projects/{id}/status-reports` | Create status report |
+| GET | `/projects/{id}/status-reports/current-progress?statusDate={date}` | Read backend-calculated reporting progress at a status date |
+| GET | `/projects/{id}/status-reports/{reportId}` | Read a status report and its frozen performance snapshot |
+| GET | `/projects/{id}/status-reports/compare?firstReportId={id}&secondReportId={id}` | Compare two Published reports for the same project using their frozen snapshots |
+| PUT | `/projects/{id}/status-reports/{reportId}` | Update a Draft status report |
+| POST | `/projects/{id}/status-reports/{reportId}/generate` | Capture the immutable performance/configuration snapshot and enter Generated (`StatusReport.Generate`) |
+| POST | `/projects/{id}/status-reports/{reportId}/submit` | Submit a generated report for review (`StatusReport.Submit`) |
+| POST | `/projects/{id}/status-reports/{reportId}/approve` | Approve a submitted report; the author cannot approve their own report (`StatusReport.Approve`) |
+| POST | `/projects/{id}/status-reports/{reportId}/return` | Return a submitted report for revision (`StatusReport.Approve`) |
+| POST | `/projects/{id}/status-reports/{reportId}/reopen` | Reopen a returned report as a draft and clear its generated snapshot (`StatusReport.Edit`) |
+| POST | `/projects/{id}/status-reports/{reportId}/publish` | Publish an approved report; the frozen snapshot is immutable (`StatusReport.Publish`) |
+| GET | `/projects/{id}/reporting/options` | List eligible project plans and versions for reporting configuration |
+| GET | `/projects/{id}/reporting/configuration?effectiveAt={date}` | Read the effective reporting configuration |
+| PUT | `/projects/{id}/reporting/configuration` | Create a versioned, effective-dated reporting configuration |
+| GET | `/projects/{id}/performance?statusDate={date}&perspective={value}` | Read consolidated, individual-plan, or comparison EVM from the backend |
 | GET | `/projects/{id}/members` | List project team members |
 | POST | `/projects/{id}/members` | Add team member |
 | DELETE | `/projects/{id}/members/{uid}` | Remove team member |
 | GET | `/projects/{id}/phases` | List project phases |
 | GET | `/projects/{id}/stakeholders` | List stakeholders |
 | GET | `/projects/{id}/work-breakdown` | Get WBS |
+| GET | `/projects/{id}/change-requests` | List persisted project change requests (`ChangeRequest.View`) |
+| GET | `/projects/{id}/change-requests/approvers` | List active same-tenant project participants and external business approvers with effective `ChangeRequest.Approve`, plus project approval policy (`ChangeRequest.Manage`) |
+| POST | `/projects/{id}/change-requests` | Create and persist a workflow-backed Draft (`ChangeRequest.Manage`) |
+
+### Project Change Requests
+
+| Method | Endpoint | Description | Auth |
+|--------|----------|-------------|------|
+| GET | `/project-change-requests/{id}` | Read a tenant- and management-scope-authorized request (`ChangeRequest.View`) | Yes |
+| GET | `/project-change-requests/{id}/review` | Read the bounded projection for the current assigned approver (`ChangeRequest.Approve`); does not grant general Project access | Yes |
+| PUT | `/project-change-requests/{id}` | Update a persisted Draft with row-version concurrency (`ChangeRequest.Manage`) | Yes |
+| POST | `/project-change-requests/{id}/submit` | Snapshot selected approvers and submit through the configured Change Request workflow | Yes |
+| GET | `/project-change-requests/pending-for-me` | List actionable assignments as a bounded inbox summary (no other approver identities/history) (`ChangeRequest.Approve`) | Yes |
+| POST | `/project-change-requests/{id}/approve` | Approve through the canonical workflow; returns only a decision receipt (`ChangeRequest.Approve`) | Yes |
+| POST | `/project-change-requests/{id}/reject` | Reject with a required decision note through the canonical workflow; returns only a decision receipt (`ChangeRequest.Approve`) | Yes |
+| POST | `/project-change-requests/{id}/cancel` | Cancel a Draft or Pending request when authorized | Yes |
+| POST | `/project-change-requests/{id}/remediate` | Reopen a legacy Pending request that has no assignment so approval setup can be completed | Yes |
+| POST | `/project-change-requests/{id}/approvals/{assignmentId}/reassign` | Reassign a pending approval and preserve its reason/history | Yes |
+
+### Project identifier contract
+
+For every project-addressed URL (`/api/projects/{id}/...`) and project filter query (`projectId`), `{id}` / `projectId` is the tenant-scoped `Project.PublicId`. The API does not fall back to the database `Project.Id`; requests using an internal project ID in these external positions return `404`. The API resolves the public ID to the internal key only after validating the authenticated tenant, then applies the effective endpoint permission and management-scope checks before project data is returned.
+
+Nested plan, plan-version, plan-content, and plan-import identifiers are checked against their parent project. Directly addressed project-owned resources (for example budgets, risks, work items, meetings, documents, baselines, and milestones) are checked against their owning project and the caller's management scope. Cross-reference bodies also validate parent ownership, including work-item parent links, meeting-linked work items, and commitment budget lines. Request-body foreign keys such as `projectId` remain internal relationship keys for existing create/update contracts; they are not project URL identifiers.
+
+### Project manager handovers
+
+All handover resources and candidate users are scoped to the authenticated tenant. The selected incoming manager must be active and have effective `Handover.Approve`. Manager-initiated requests require the current manager plus `Handover.Manage`; administrative handover and first assignment require `Handover.AdminInitiate`. The current manager changes only after the selected incoming manager accepts.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/projects/{id}/handover-capabilities` | Resolve the current user's available handover actions |
+| GET | `/projects/{id}/handover-managers` | List eligible active same-tenant incoming managers |
+| GET | `/projects/{id}/handover-requests` | List requests for the Project (`Handover.View`, `Handover.Manage`, or `Handover.AdminInitiate`) |
+| POST | `/projects/{id}/handover-requests` | Current manager requests a transfer (`Handover.Manage`) |
+| POST | `/projects/{id}/handover-requests/admin` | Administrator starts a transfer for an assigned Project (`Handover.AdminInitiate`) |
+| POST | `/projects/{id}/handover-requests/initial-assignment` | Administrator requests the first manager for an unassigned Project (`Handover.AdminInitiate`) |
+| GET | `/handover-requests/pending-for-me` | List pending requests addressed to the current manager (`Handover.Approve`) |
+| GET | `/handover-requests/{requestId}/review` | Read the bounded projection for the assigned incoming Project manager (`Handover.Approve`) |
+| POST | `/handover-requests/{requestId}/accept` | Accept the request and apply the manager assignment (`Handover.Approve`) |
+| POST | `/handover-requests/{requestId}/reject` | Reject the request with a reason (`Handover.Approve`) |
+| POST | `/handover-requests/{requestId}/cancel` | Requester cancels their pending request; requires the permission matching its initiation type |
+
+For Project handovers, only manager-to-manager transfers capture a prior-owner snapshot. Initial Project assignment behavior is unchanged by the Portfolio and Program handover snapshot policy below.
+
+### Assignment-scoped approval review
+
+The remaining supported review routes are `GET /api/manager-handovers/programs/requests/{id}/review` and `GET /api/manager-handovers/portfolios/requests/{id}/review`. Project, Program, and Portfolio handovers and Project Change Requests return only a bounded read-only review projection after validating tenant, current actionable assignment, effective approval permission, request state, and owning object. This does not grant general access to the Project, Program, or Portfolio; decisions remain on their canonical accept/reject or workflow transition endpoints.
 
 ---
 
@@ -74,21 +137,26 @@ All endpoints require JWT Bearer authentication unless noted.
 
 ### Manager handovers (portfolio and program)
 
-These authenticated routes use the matching `Handover.View`, `Handover.Manage`, or `Handover.Approve` permission. Resource and user queries remain tenant-scoped.
+These authenticated routes use the matching `Handover.View`, `Handover.Manage`, `Handover.AdminInitiate`, or `Handover.Approve` permission. Resource and user queries remain tenant-scoped.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/manager-handovers/pending-for-me` | List pending transfers addressed to the current manager (`Handover.Approve`) |
-| GET | `/manager-handovers/{programs|portfolios}/{id}/eligible-managers` | List active same-tenant managers with effective handover-approval access (`Handover.Manage`) |
-| GET | `/manager-handovers/{programs|portfolios}/{id}/requests` | List transfer requests for the resource (`Handover.View`) |
+| GET | `/manager-handovers/{programs|portfolios}/{id}/capabilities` | Resolve current user's available actions (`Handover.Access`) |
+| GET | `/manager-handovers/{programs|portfolios}/{id}/eligible-managers` | List active same-tenant managers with effective handover-approval access (`Handover.Manage` or `Handover.AdminInitiate`) |
+| GET | `/manager-handovers/{programs|portfolios}/{id}/requests` | List transfer requests for the resource (`Handover.View`, `Handover.Manage`, or `Handover.AdminInitiate`) |
 | POST | `/manager-handovers/{programs|portfolios}/{id}/requests` | Request manager transfer; the current manager remains assigned until acceptance (`Handover.Manage`) |
+| POST | `/manager-handovers/{programs|portfolios}/{id}/admin-requests` | Administrator requests transfer from an existing manager (`Handover.AdminInitiate`) |
+| POST | `/manager-handovers/{programs|portfolios}/{id}/initial-assignment-requests` | Administrator requests first assignment for an unassigned entity (`Handover.AdminInitiate`) |
 | POST | `/manager-handovers/{programs|portfolios}/requests/{requestId}/accept` | Accept transfer, update manager assignment, and capture a snapshot (`Handover.Approve`) |
 | POST | `/manager-handovers/{programs|portfolios}/requests/{requestId}/reject` | Reject transfer with a reason (`Handover.Approve`) |
-| POST | `/manager-handovers/{programs|portfolios}/requests/{requestId}/cancel` | Cancel a pending request created by the current user (`Handover.Manage`) |
+| POST | `/manager-handovers/{programs|portfolios}/requests/{requestId}/cancel` | Requester cancels their pending request; requires the permission matching its initiation type |
 | GET | `/manager-handovers/{programs|portfolios}/{id}/history` | List manager assignment history (`Handover.View`) |
 | GET | `/manager-handovers/{programs|portfolios}/{id}/snapshots` | List immutable handover snapshots (`Handover.View`) |
 
-`PUT /portfolios/{id}` and `PUT /programs/{id}` cannot change an already-assigned manager. Initial assignment remains available during creation, and an unassigned legacy Portfolio or Program can receive its first manager; later manager changes must use the governed handover routes above.
+`PUT /portfolios/{id}` and `PUT /programs/{id}` cannot change an already-assigned manager. Initial assignment during creation remains available; an unassigned legacy entity may receive its first manager through the initial-assignment request above. The recipient must accept before that first assignment is applied. Later manager changes must use the governed handover routes above.
+
+Every accepted Portfolio or Program handover, including an initial manager assignment, captures an immutable snapshot in the same database transaction as the accepted request and manager assignment. For an initial assignment, the snapshot's previous manager ID is null; no synthetic manager is created.
 
 ---
 
@@ -111,6 +179,7 @@ These authenticated routes use the matching `Handover.View`, `Handover.Manage`, 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/resources` | List resources (paginated, filterable) |
+| GET | `/resources/reference-data` | Get enum-derived resource type and seniority choices with EN/AR labels; requires `Resource.View` |
 | POST | `/resources` | Create resource |
 | GET | `/resources/{id}` | Get resource details |
 | PUT | `/resources/{id}` | Update resource |
@@ -121,6 +190,8 @@ These authenticated routes use the matching `Handover.View`, `Handover.Manage`, 
 | POST | `/resources/{id}/skills` | Add skill to resource |
 | GET | `/resources/{id}/calendar` | Get resource calendar |
 | GET | `/resources/{id}/utilization` | Get utilization metrics |
+
+Resource create/update JSON represents `Type` as the `Staff` or `Vendor` enum name. `Vendor` continues to be stored using the existing `VendorResource` value; this does not add or require lookup data or a database migration.
 
 ### Allocations
 
@@ -396,6 +467,23 @@ Every route also requires JWT authentication. Secrets are resolved only by the A
 | GET | `/admin/settings` | Get system settings |
 | PUT | `/admin/settings` | Update system settings |
 | GET | `/admin/license` | Get license information |
+
+### Entity assignment recovery
+
+These administrative discovery routes accept `Project`, `Program`, or `Portfolio` plus a tenant-scoped `PublicId` (never an internal entity key). Discovery is limited to the authenticated tenant. `Governance.AssignmentRecovery.View`, `.Initiate`, and `.Manage` are independently assignable permissions; manager initiation also requires `Handover.AdminInitiate`, while administrative handover additionally requires `.Manage`.
+
+| Method | Endpoint | Description | Authorization |
+|--------|----------|-------------|---------------|
+| GET | `/api/governance/assignment-recovery/{entityType}` | Tenant-scoped, paginated recovery list, summary, search, and state filter | Any recovery permission |
+| GET | `/api/governance/assignment-recovery/{entityType}/{publicId}/manager-candidates` | Eligible incoming managers for the entity | Initiate or Manage |
+| GET | `/api/governance/assignment-recovery/projects/{publicId}/sponsor-candidates` | Active same-tenant Sponsor candidates | Manage |
+| GET | `/api/governance/assignment-recovery/{entityType}/{publicId}/history` | Assignment and handover history for that entity | Any recovery permission |
+| POST | `/api/governance/assignment-recovery/{entityType}/{publicId}/initial-assignment` | Start the canonical first-manager approval flow; manager is not changed until acceptance | Initiate + `Handover.AdminInitiate` |
+| POST | `/api/governance/assignment-recovery/{entityType}/{publicId}/administrative-handover` | Start a canonical manager-transfer approval flow | Manage + `Handover.AdminInitiate` |
+| POST | `/api/governance/assignment-recovery/projects/{publicId}/sponsor` | Assign an unassigned Sponsor and synchronize the existing project-team projection | Manage |
+| POST | `/api/governance/assignment-recovery/{entityType}/{publicId}/reconcile` | Reconcile legacy direct manager, current assignment, and Project PM team projection | Manage |
+
+Incoming-manager decisions remain on the existing canonical My Approvals/handover routes. Recovery does not directly set the manager on first assignment or bypass the acceptance step.
 
 ---
 

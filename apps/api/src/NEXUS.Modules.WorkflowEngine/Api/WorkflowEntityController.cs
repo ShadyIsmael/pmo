@@ -110,7 +110,8 @@ public class WorkflowEntityController : ControllerBase
 
         var instance = await _context.Set<WorkflowInstance>()
             .AsNoTracking()
-            .FirstOrDefaultAsync(i => i.EntityType == entityType && i.EntityId == entityId && !i.IsDeleted, cancellationToken);
+            .FirstOrDefaultAsync(i => i.TenantId == ctx.TenantId && i.EntityType == entityType
+                && i.EntityId == entityId && !i.IsDeleted, cancellationToken);
 
         if (instance is null)
             return HandleError(WorkflowErrors.WorkflowInstanceNotFound(entityType, entityId));

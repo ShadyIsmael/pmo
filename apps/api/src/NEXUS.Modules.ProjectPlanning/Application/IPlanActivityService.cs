@@ -16,6 +16,12 @@ public interface IPlanActivityService
     /// </summary>
     Task<Result<PlanActivityDto>> UpdateAsync(Guid planId, Guid activityId, UpdatePlanActivityDto dto, string userId, CancellationToken cancellationToken = default);
 
+    /// <summary>Applies a bounded set of canonical activity updates atomically.</summary>
+    Task<Result<IReadOnlyList<PlanActivityDto>>> BulkUpdateAsync(Guid planId, BulkUpdatePlanActivitiesDto dto, string userId, CancellationToken cancellationToken = default);
+
+    /// <summary>Recalculates the active Working version through the canonical scheduler.</summary>
+    Task<Result<PlanSchedulingResult>> RecalculateScheduleAsync(Guid planId, string userId, CancellationToken cancellationToken = default);
+
     /// <summary>Moves an activity/WBS node atomically within its Working version.</summary>
     Task<Result<PlanActivityDto>> MoveAsync(Guid planId, Guid activityId, MovePlanActivityDto dto, string userId, CancellationToken cancellationToken = default);
 

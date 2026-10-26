@@ -4,6 +4,7 @@ import { AlertTriangle, Archive, Ban, Pencil, Plus, Trash2, TrendingDown } from 
 import { Card, CardContent, CardHeader, CardTitle } from "@components/ui/Card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@components/ui/Table";
 import { Button } from "@components/ui/Button";
+import { useConfirm } from "@components/ui/ConfirmProvider";
 import { Input } from "@components/ui/Input";
 import { Label } from "@components/ui/Label";
 import { SideSheet, SideSheetBody, SideSheetFooter } from "@components/ui/SideSheet";
@@ -77,6 +78,7 @@ function FinancialTableState({ loading, error, colSpan, onRetry, t }: { loading:
 export function ProjectFinanceTab() {
   const { projectId, project } = useOutletContext<ProjectContext>();
   const { t, formatCurrency } = useI18n();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const { canMutate, effectiveReadOnly } = useManagement();
   const canView = Boolean(user && hasPermission(user.permissions, Permissions.Finances.Read));
@@ -153,7 +155,7 @@ export function ProjectFinanceTab() {
     if (!Number.isInteger(fiscalYear) || fiscalYear < 1900 || fiscalYear > 2200) { setBudgetFormError(t("projects.budgetLineFiscalYearInvalid")); return; }
     if (fiscalQuarter !== undefined && (!Number.isInteger(fiscalQuarter) || fiscalQuarter < 1 || fiscalQuarter > 4)) { setBudgetFormError(t("projects.budgetLineFiscalQuarterInvalid")); return; }
     const body = {
-      projectId, name: budgetForm.name.trim(), description: budgetForm.description.trim() || undefined, category: budgetForm.category.trim(),
+      projectId: project.id, name: budgetForm.name.trim(), description: budgetForm.description.trim() || undefined, category: budgetForm.category.trim(),
       plannedAmount: amount, approvedAmount: Number(budgetForm.approvedAmount), forecastAmount: Number(budgetForm.forecastAmount),
       currency, fiscalYear, fiscalQuarter, status: budgetForm.status, startDate: budgetForm.startDate || undefined, endDate: budgetForm.endDate || undefined,
     };
@@ -170,7 +172,7 @@ export function ProjectFinanceTab() {
     const taxAmount = costForm.taxAmount === "" ? undefined : Number(costForm.taxAmount);
     if (!costForm.category.trim() || !Number.isFinite(amount) || amount < 0 || (taxAmount !== undefined && (!Number.isFinite(taxAmount) || taxAmount < 0)) || !costForm.incurredDate) { setCostFormError(t("projects.budgetLineAmountsInvalid")); return; }
     const body = {
-      projectId, budgetId: costForm.budgetId, subCategory: costForm.subCategory, category: costForm.category.trim(), description: costForm.description.trim() || undefined, amount, currency,
+      projectId: project.id, budgetId: costForm.budgetId, subCategory: costForm.subCategory, category: costForm.category.trim(), description: costForm.description.trim() || undefined, amount, currency,
       taxAmount, incurredDate: costForm.incurredDate, type: costForm.type.trim() || "Actual",
       reference: costForm.reference.trim() || undefined, vendorName: costForm.vendorName.trim() || undefined, status: costForm.status,
     };
@@ -191,22 +193,22 @@ export function ProjectFinanceTab() {
     };
     try {
       if (editingCommitment) await mutations.updateCommitment.mutateAsync({ id: editingCommitment.id, body: { ...base, rowVersion: editingCommitment.rowVersion } });
-      else await mutations.createCommitment.mutateAsync({ ...base, projectId });
+      else await mutations.createCommitment.mutateAsync({ ...base, projectId: project.id });
       setCommitmentOpen(false);
     } catch (error) { setCommitmentFormError(error instanceof Error ? error.message : t("projects.commitmentSaveFailed")); }
   };
 
   const deleteBudget = async (item: BudgetDto) => {
-    if (!window.confirm(t("projects.deleteBudgetLineConfirm", { name: item.name }))) return;
+    if (!await confirm({ description: t("projects.deleteBudgetLineConfirm", { name: item.name }), destructive: true })) return;
     try { await mutations.deleteBudget.mutateAsync(item.id); } catch (error) { setActionError(error instanceof Error ? error.message : t("projects.budgetLineDeleteFailed")); }
   };
   const deleteCost = async (item: CostEntryDto) => {
-    if (!window.confirm(t("projects.deleteCostEntryConfirm", { amount: money(item.amount, item.currency, formatCurrency) }))) return;
+    if (!await confirm({ description: t("projects.deleteCostEntryConfirm", { amount: money(item.amount, item.currency, formatCurrency) }), destructive: true })) return;
     try { await mutations.deleteCost.mutateAsync(item.id); } catch (error) { setActionError(error instanceof Error ? error.message : t("projects.costEntryDeleteFailed")); }
   };
   const changeCommitmentStatus = async (item: PurchaseCommitmentDto, action: "close" | "cancel") => {
     const message = action === "close" ? t("projects.closeCommitmentConfirm", { reference: item.purchaseOrderNumber }) : t("projects.cancelCommitmentConfirm", { reference: item.purchaseOrderNumber });
-    if (!window.confirm(message)) return;
+    if (!await confirm({ description: message, destructive: action === "cancel" })) return;
     try {
       if (action === "close") await mutations.closeCommitment.mutateAsync({ id: item.id, rowVersion: item.rowVersion });
       else await mutations.cancelCommitment.mutateAsync({ id: item.id, rowVersion: item.rowVersion });

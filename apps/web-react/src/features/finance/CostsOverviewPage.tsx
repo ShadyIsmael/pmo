@@ -231,7 +231,7 @@ function ProjectFinancialTable({ projects, t, formatCurrency }: {
         const forecast = forecastState(project.forecastVariance, t);
         const projectName = project.projectName?.trim() || project.projectId;
         return <TableRow key={project.projectId}>
-          <TableCell className="min-w-48"><Link to={`/projects/${encodeURIComponent(project.projectId)}?tab=financials`} className="group inline-flex max-w-full items-center gap-1 font-medium hover:text-primary"><span className="truncate">{projectName}</span><ArrowUpRight className="h-3.5 w-3.5 shrink-0 opacity-60 transition-opacity group-hover:opacity-100" /></Link><span className="mt-1 block text-[10px] text-muted-foreground">{project.projectId}</span></TableCell>
+          <TableCell className="min-w-48">{project.projectPublicId ? <Link to={`/projects/${encodeURIComponent(project.projectPublicId)}?tab=financials`} className="group inline-flex max-w-full items-center gap-1 font-medium hover:text-primary"><span className="truncate">{projectName}</span><ArrowUpRight className="h-3.5 w-3.5 shrink-0 opacity-60 transition-opacity group-hover:opacity-100" /></Link> : <span className="font-medium">{projectName}</span>}</TableCell>
           <TableCell className="text-end font-medium tabular-nums">{formattedMoney(project.approvedBudget, project.currency, formatCurrency)}</TableCell>
           <TableCell className="text-end tabular-nums text-fin-indigo">{formattedMoney(project.allocatedBudget, project.currency, formatCurrency)}</TableCell>
           <TableCell className="text-end tabular-nums text-fin-blue">{formattedMoney(project.actualCost, project.currency, formatCurrency)}</TableCell>

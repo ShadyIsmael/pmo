@@ -11,10 +11,12 @@ public static class WorkflowDomains
     public const string Task = "Task";
     public const string Risk = "Risk";
     public const string Finance = "Finance";
+    public const string Reporting = "Reporting";
+    public const string ChangeRequest = "ChangeRequest";
 
     public static readonly IReadOnlySet<string> Supported = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
-        Task, Risk, Finance
+        Task, Risk, Finance, Reporting, ChangeRequest
     };
 
     public static bool IsSupported(string? value) => !string.IsNullOrWhiteSpace(value) && Supported.Contains(value.Trim());
@@ -24,6 +26,8 @@ public static class WorkflowDomains
         "task" or "tasks" or "workitem" or "workitems" => Task,
         "risk" or "risks" => Risk,
         "finance" or "financial" or "budgetrevision" => Finance,
+        "report" or "reports" or "statusreport" or "statusreports" or "reporting" => Reporting,
+        "changerequest" or "changerequests" or "change request" or "change requests" => ChangeRequest,
         _ => value.Trim()
     };
 
@@ -32,6 +36,8 @@ public static class WorkflowDomains
         Task => "WorkItem",
         Risk => "Risk",
         Finance => "BudgetRevision",
+        Reporting => "ProjectStatusReport",
+        ChangeRequest => "ProjectChangeRequest",
         _ => throw new ArgumentOutOfRangeException(nameof(domain), domain, "Unsupported workflow domain.")
     };
 }

@@ -6,13 +6,19 @@ public sealed class PlanSchedulingAnalysisDto
 {
     public Guid PlanVersionId { get; set; }
     public bool HasCycle { get; set; }
+    public DateTime? ProjectFinishDate { get; set; }
     public IReadOnlyList<Guid> CriticalPathActivityIds { get; set; } = [];
+    public IReadOnlyList<Guid> CriticalPathDependencyIds { get; set; } = [];
     public IReadOnlyList<PlanActivitySchedulingMetricsDto> Activities { get; set; } = [];
 }
 
 public sealed class PlanActivitySchedulingMetricsDto
 {
     public Guid ActivityId { get; set; }
+    public DateTime? EarlyStart { get; set; }
+    public DateTime? EarlyFinish { get; set; }
+    public DateTime? LateStart { get; set; }
+    public DateTime? LateFinish { get; set; }
     public decimal? TotalSlack { get; set; }
     public decimal? FreeSlack { get; set; }
     public bool Critical { get; set; }

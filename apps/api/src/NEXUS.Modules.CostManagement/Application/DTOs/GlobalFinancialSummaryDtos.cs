@@ -19,6 +19,7 @@ public sealed class CurrencyFinancialSummary
 public sealed record ProjectFinancialBreakdown
 {
     public Guid ProjectId { get; init; }
+    public Guid ProjectPublicId { get; init; }
     public string ProjectName { get; init; } = string.Empty;
     public string Currency { get; init; } = string.Empty;
     public decimal OriginalApprovedBudget { get; init; }

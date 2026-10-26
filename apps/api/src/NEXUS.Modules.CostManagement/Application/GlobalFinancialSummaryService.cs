@@ -75,7 +75,7 @@ public sealed class GlobalFinancialSummaryService : IGlobalFinancialSummaryServi
             var forecast = lines.Sum(b => b.ForecastAmount);
             return new ProjectFinancialBreakdown
             {
-                ProjectId = project.Id, ProjectName = project.Name, Currency = currency,
+                ProjectId = project.Id, ProjectPublicId = project.PublicId, ProjectName = project.Name, Currency = currency,
                 OriginalApprovedBudget = lines.Sum(b => originalAmounts.TryGetValue(b.Id, out var amount) ? amount : b.ApprovedAmount),
                 ApprovedBudget = ceiling, AllocatedBudget = allocated, UnallocatedBudget = ceiling - allocated,
                 ActualCost = actual, CommittedCost = committed, AvailableBudget = ceiling - actual - committed,

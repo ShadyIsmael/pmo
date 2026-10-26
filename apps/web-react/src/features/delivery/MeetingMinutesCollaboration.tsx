@@ -1,6 +1,7 @@
 import * as React from "react";
 import { Check, ChevronDown, ChevronUp, Download, File, FileImage, FileText, MessageSquare, Paperclip, Pencil, Plus, Reply, Send, Trash2, Upload } from "lucide-react";
 import { Button } from "@components/ui/Button";
+import { useConfirm } from "@components/ui/ConfirmProvider";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@components/ui/Card";
 import { Skeleton } from "@components/ui/Skeleton";
 import { Textarea } from "@components/ui/Textarea";
@@ -12,6 +13,7 @@ type Translator = ReturnType<typeof useI18n>["t"];
 
 export function MeetingMinutesCollaboration({ meetingId, canManage, locale, mainContent }: { meetingId: string; canManage: boolean; locale: string; mainContent: React.ReactNode }) {
   const { t, formatNumber } = useI18n();
+  const confirm = useConfirm();
   const checklistQuery = useMeetingMinutesChecklist(meetingId);
   const attachmentsQuery = useMeetingMinutesAttachments(meetingId);
   const commentsQuery = useMeetingMinutesComments(meetingId);
@@ -60,7 +62,7 @@ export function MeetingMinutesCollaboration({ meetingId, canManage, locale, main
   }
 
   async function removeChecklistItem(item: ChecklistItemDto) {
-    if (!window.confirm(t("meetings.deleteChecklistConfirm"))) return;
+    if (!await confirm({ description: t("meetings.deleteChecklistConfirm"), destructive: true })) return;
     setError(null);
     try { await mutations.deleteChecklist.mutateAsync(item.id); }
     catch { setError(t("meetings.checklistDeleteError")); }
@@ -99,7 +101,7 @@ export function MeetingMinutesCollaboration({ meetingId, canManage, locale, main
   }
 
   async function removeAttachment(attachment: MeetingAttachmentDto) {
-    if (!window.confirm(t("meetings.deleteAttachmentConfirm"))) return;
+    if (!await confirm({ description: t("meetings.deleteAttachmentConfirm"), destructive: true })) return;
     setError(null);
     try { await mutations.deleteAttachment.mutateAsync(attachment.id); }
     catch { setError(t("meetings.attachmentRemoveError")); }

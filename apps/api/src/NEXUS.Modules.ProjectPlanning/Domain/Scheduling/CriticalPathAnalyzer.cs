@@ -22,7 +22,7 @@ public sealed class CriticalPathAnalyzer
             .ToList();
         var cycle = FindCycleNodes(taskById.Keys, links);
         if (cycle.Count > 0)
-            return new CriticalPathAnalysisResult(new Dictionary<Guid, CriticalPathTaskMetrics>(), [], cycle);
+            return new CriticalPathAnalysisResult(new Dictionary<Guid, CriticalPathTaskMetrics>(), [], cycle, []);
 
         var order = TopologicalOrder(taskById.Keys, links);
         var outgoing = links.GroupBy(link => link.PredecessorId).ToDictionary(group => group.Key, group => group.ToList());
@@ -37,7 +37,7 @@ public sealed class CriticalPathAnalyzer
         var datedTasks = tasks.Where(task => task.Start.HasValue && task.Finish.HasValue).ToList();
         var projectFinish = datedTasks.Select(task => task.Finish!.Value).DefaultIfEmpty().Max();
         if (datedTasks.Count == 0)
-            return new CriticalPathAnalysisResult(new Dictionary<Guid, CriticalPathTaskMetrics>(), [], []);
+            return new CriticalPathAnalysisResult(new Dictionary<Guid, CriticalPathTaskMetrics>(), [], [], []);
 
         var lateStart = new Dictionary<Guid, DateTime>();
         var lateFinish = new Dictionary<Guid, DateTime>();
@@ -101,18 +101,50 @@ public sealed class CriticalPathAnalyzer
         {
             if (!task.Start.HasValue || !task.Finish.HasValue || !lateStart.TryGetValue(task.Id, out var taskLateStart))
             {
-                metrics[task.Id] = new CriticalPathTaskMetrics(task.Id, null, null, false);
+                metrics[task.Id] = new CriticalPathTaskMetrics(task.Id, null, null, false, task.Start, task.Finish);
                 continue;
             }
 
             var calendar = CalendarFor(task);
             var totalSlack = ToDays(calendar, task.Start.Value, taskLateStart);
             var freeSlack = CalculateFreeSlack(task, outgoing.GetValueOrDefault(task.Id) ?? [], taskById, CalendarFor, projectFinish);
-            metrics[task.Id] = new CriticalPathTaskMetrics(task.Id, totalSlack, freeSlack, totalSlack <= Epsilon);
+            var lateTaskFinish = lateFinish.GetValueOrDefault(task.Id);
+            metrics[task.Id] = new CriticalPathTaskMetrics(task.Id, totalSlack, freeSlack, totalSlack <= Epsilon,
+                task.Start, task.Finish, taskLateStart, lateTaskFinish == default ? null : lateTaskFinish);
         }
 
         var criticalPath = order.Where(activityId => metrics.TryGetValue(activityId, out var metric) && metric.Critical).ToList();
-        return new CriticalPathAnalysisResult(metrics, criticalPath, []);
+        var criticalDependencies = links
+            .Where(link => link.Id.HasValue && metrics.TryGetValue(link.PredecessorId, out var predecessorMetrics) && predecessorMetrics.Critical &&
+                metrics.TryGetValue(link.SuccessorId, out var successorMetrics) && successorMetrics.Critical &&
+                IsDrivingDependency(link, taskById, CalendarFor))
+            .Select(link => link.Id!.Value)
+            .Distinct()
+            .ToList();
+
+        return new CriticalPathAnalysisResult(metrics, criticalPath, [], criticalDependencies, projectFinish);
+    }
+
+    private static bool IsDrivingDependency(
+        AutoScheduleDependency link,
+        IReadOnlyDictionary<Guid, AutoScheduleTask> taskById,
+        Func<AutoScheduleTask, PlanningWorkingCalendar> calendarFor)
+    {
+        var predecessor = taskById[link.PredecessorId];
+        var successor = taskById[link.SuccessorId];
+        var successorCalendar = calendarFor(successor);
+        var requiredPredecessorBoundary = link.Type switch
+        {
+            PlanDependencyType.FinishToStart when successor.Start.HasValue => InverseFinishToStart(successor.Start.Value, link.LagDays, successorCalendar),
+            PlanDependencyType.StartToStart when successor.Start.HasValue => InverseStartBoundary(successor.Start.Value, link.LagDays, successorCalendar),
+            PlanDependencyType.FinishToFinish when successor.Finish.HasValue => InverseFinishBoundary(successor.Finish.Value, link.LagDays, successorCalendar),
+            PlanDependencyType.StartToFinish when successor.Finish.HasValue => InverseFinishBoundary(successor.Finish.Value, link.LagDays, successorCalendar),
+            _ => (DateTime?)null
+        };
+        var actualPredecessorBoundary = link.Type is PlanDependencyType.FinishToStart or PlanDependencyType.FinishToFinish
+            ? predecessor.Finish
+            : predecessor.Start;
+        return requiredPredecessorBoundary.HasValue && actualPredecessorBoundary == requiredPredecessorBoundary;
     }
 
     private static decimal? CalculateFreeSlack(

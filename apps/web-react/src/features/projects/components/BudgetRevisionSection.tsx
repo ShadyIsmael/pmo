@@ -2,6 +2,7 @@ import * as React from "react";
 import { AlertTriangle, Check, Pencil, Plus, RotateCcw, Send, Trash2, X, FileText, Clock } from "lucide-react";
 import { Badge } from "@components/ui/Badge";
 import { Button } from "@components/ui/Button";
+import { useConfirm } from "@components/ui/ConfirmProvider";
 import { Card, CardContent, CardHeader } from "@components/ui/Card";
 import { Input } from "@components/ui/Input";
 import { Label } from "@components/ui/Label";
@@ -20,6 +21,7 @@ function money(value: number | null | undefined, currency: string, formatCurrenc
 
 export function BudgetRevisionSection({ projectId, currency, originalApprovedBudget, currentApprovedBudget, enabled, canManage }: { projectId: string; currency: string; originalApprovedBudget?: number | null; currentApprovedBudget?: number | null; enabled: boolean; canManage: boolean }) {
   const { t, formatCurrency } = useI18n();
+  const confirm = useConfirm();
   const tr = (key: string, values?: Record<string, string | number>) => t(`projects.budgetRevisions.${key}`, values);
   const revisionsQuery = useBudgetRevisionsByProject(projectId, { page: 1, pageSize: 5 }, enabled);
   const revisions = revisionsQuery.data?.items ?? [];
@@ -56,12 +58,12 @@ export function BudgetRevisionSection({ projectId, currency, originalApprovedBud
       setCreateOpen(false);
     } catch (err) { setActionError(err instanceof Error ? err.message : tr("revisionError")); }
   };
-  const guard = (message: string) => { if (!window.confirm(message)) return false; setActionError(null); return true; };
-  const handleSubmit = async (rev: BudgetRevisionDto) => { if (!guard(tr("confirmSubmit", { amount: money(rev.proposedApprovedAmount, rev.currency, formatCurrency) }))) return; try { await mutations.submit.mutateAsync({ id: rev.id, body: { rowVersion: rev.rowVersion } }); } catch (err) { setActionError(err instanceof Error ? err.message : tr("revisionError")); } };
-  const handleApprove = async () => { if (!reviewRevision) return; if (!guard(tr("confirmApprove", { amount: money(reviewRevision.proposedApprovedAmount, reviewRevision.currency, formatCurrency) }))) return; try { await mutations.approve.mutateAsync({ id: reviewRevision.id, body: { reviewComment: reviewComment || undefined, rowVersion: reviewRevision.rowVersion } }); setReviewRevision(null); setReviewComment(""); } catch (err) { setActionError(err instanceof Error ? err.message : tr("revisionError")); } };
-  const handleReject = async () => { if (!reviewRevision || !reviewComment) return; if (!guard(tr("confirmReject", { amount: money(reviewRevision.proposedApprovedAmount, reviewRevision.currency, formatCurrency) }))) return; try { await mutations.reject.mutateAsync({ id: reviewRevision.id, body: { reviewComment, rowVersion: reviewRevision.rowVersion } }); setReviewRevision(null); setReviewComment(""); } catch (err) { setActionError(err instanceof Error ? err.message : tr("revisionError")); } };
-  const handleCancel = async (rev: BudgetRevisionDto) => { if (!guard(tr("confirmCancel", { amount: money(rev.proposedApprovedAmount, rev.currency, formatCurrency) }))) return; try { await mutations.cancel.mutateAsync(rev.id); } catch (err) { setActionError(err instanceof Error ? err.message : tr("revisionError")); } };
-  const handleDelete = async (rev: BudgetRevisionDto) => { if (!guard(tr("confirmDelete", { amount: money(rev.proposedApprovedAmount, rev.currency, formatCurrency) }))) return; try { await mutations.delete.mutateAsync({ id: rev.id, rowVersion: rev.rowVersion }); } catch (err) { setActionError(err instanceof Error ? err.message : tr("revisionError")); } };
+  const guard = async (message: string, destructive = false) => { if (!await confirm({ description: message, destructive })) return false; setActionError(null); return true; };
+  const handleSubmit = async (rev: BudgetRevisionDto) => { if (!await guard(tr("confirmSubmit", { amount: money(rev.proposedApprovedAmount, rev.currency, formatCurrency) }))) return; try { await mutations.submit.mutateAsync({ id: rev.id, body: { rowVersion: rev.rowVersion } }); } catch (err) { setActionError(err instanceof Error ? err.message : tr("revisionError")); } };
+  const handleApprove = async () => { if (!reviewRevision) return; if (!await guard(tr("confirmApprove", { amount: money(reviewRevision.proposedApprovedAmount, reviewRevision.currency, formatCurrency) }))) return; try { await mutations.approve.mutateAsync({ id: reviewRevision.id, body: { reviewComment: reviewComment || undefined, rowVersion: reviewRevision.rowVersion } }); setReviewRevision(null); setReviewComment(""); } catch (err) { setActionError(err instanceof Error ? err.message : tr("revisionError")); } };
+  const handleReject = async () => { if (!reviewRevision || !reviewComment) return; if (!await guard(tr("confirmReject", { amount: money(reviewRevision.proposedApprovedAmount, reviewRevision.currency, formatCurrency) }), true)) return; try { await mutations.reject.mutateAsync({ id: reviewRevision.id, body: { reviewComment, rowVersion: reviewRevision.rowVersion } }); setReviewRevision(null); setReviewComment(""); } catch (err) { setActionError(err instanceof Error ? err.message : tr("revisionError")); } };
+  const handleCancel = async (rev: BudgetRevisionDto) => { if (!await guard(tr("confirmCancel", { amount: money(rev.proposedApprovedAmount, rev.currency, formatCurrency) }), true)) return; try { await mutations.cancel.mutateAsync(rev.id); } catch (err) { setActionError(err instanceof Error ? err.message : tr("revisionError")); } };
+  const handleDelete = async (rev: BudgetRevisionDto) => { if (!await guard(tr("confirmDelete", { amount: money(rev.proposedApprovedAmount, rev.currency, formatCurrency) }), true)) return; try { await mutations.delete.mutateAsync({ id: rev.id, rowVersion: rev.rowVersion }); } catch (err) { setActionError(err instanceof Error ? err.message : tr("revisionError")); } };
 
   if (!enabled) return null;
   if (revisionsQuery.isLoading) {

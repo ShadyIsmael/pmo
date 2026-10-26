@@ -69,6 +69,7 @@ public sealed class CostUtilizationResourceDto
 public sealed class CostUtilizationAttributionDto
 {
     public Guid? Id { get; init; }
+    public Guid? ProjectPublicId { get; init; }
     public string Name { get; init; } = string.Empty;
     public string? Currency { get; init; }
     public decimal PlannedHours { get; init; }

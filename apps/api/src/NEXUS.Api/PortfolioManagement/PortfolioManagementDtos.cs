@@ -100,6 +100,7 @@ public sealed class PortfolioProgramDto
 public sealed class PortfolioProjectDto
 {
     public Guid Id { get; init; }
+    public Guid PublicId { get; init; }
     public string Name { get; init; } = string.Empty;
     public string Code { get; init; } = string.Empty;
     public Guid? ProgramId { get; init; }
@@ -160,6 +161,7 @@ public sealed class PortfolioFinancialCurrencyGroupDto
 public sealed class PortfolioFinancialContributionDto
 {
     public Guid ProjectId { get; init; }
+    public Guid ProjectPublicId { get; init; }
     public string ProjectName { get; init; } = string.Empty;
     public Guid? ProgramId { get; init; }
     public string? ProgramName { get; init; }
@@ -195,6 +197,7 @@ public sealed class PortfolioRiskDto
 {
     public Guid Id { get; init; }
     public Guid ProjectId { get; init; }
+    public Guid ProjectPublicId { get; init; }
     public string ProjectName { get; init; } = string.Empty;
     public Guid? ProgramId { get; init; }
     public string? ProgramName { get; init; }
@@ -208,6 +211,7 @@ public sealed class PortfolioIssueDto
 {
     public Guid Id { get; init; }
     public Guid ProjectId { get; init; }
+    public Guid ProjectPublicId { get; init; }
     public string ProjectName { get; init; } = string.Empty;
     public Guid? ProgramId { get; init; }
     public string? ProgramName { get; init; }
@@ -242,6 +246,7 @@ public sealed class PortfolioResourcePressureDto
 public sealed class PortfolioResourceProjectDto
 {
     public Guid ProjectId { get; init; }
+    public Guid ProjectPublicId { get; init; }
     public string ProjectName { get; init; } = string.Empty;
     public Guid? ProgramId { get; init; }
     public string? ProgramName { get; init; }
@@ -264,6 +269,7 @@ public sealed class PortfolioStatusReportSummaryDto
 public sealed class PortfolioStatusReportDto
 {
     public Guid ProjectId { get; init; }
+    public Guid ProjectPublicId { get; init; }
     public string ProjectName { get; init; } = string.Empty;
     public Guid? ProgramId { get; init; }
     public string? ProgramName { get; init; }
@@ -277,6 +283,7 @@ public sealed class PortfolioMilestoneDto
 {
     public Guid Id { get; init; }
     public Guid ProjectId { get; init; }
+    public Guid ProjectPublicId { get; init; }
     public string ProjectName { get; init; } = string.Empty;
     public Guid? ProgramId { get; init; }
     public string? ProgramName { get; init; }
@@ -296,6 +303,7 @@ public sealed class PortfolioAttentionItemDto
     public string EntityName { get; init; } = string.Empty;
     public Guid? ProgramId { get; init; }
     public Guid? ProjectId { get; init; }
+    public Guid? ProjectPublicId { get; init; }
     public string Reason { get; init; } = string.Empty;
 }
 
@@ -306,6 +314,7 @@ public sealed class PortfolioMeetingDto
     public DateTime StartTime { get; init; }
     public DateTime EndTime { get; init; }
     public Guid? ProjectId { get; init; }
+    public Guid? ProjectPublicId { get; set; }
     public string? ProjectName { get; set; }
     public Guid? ProgramId { get; set; }
     public string? ProgramName { get; set; }

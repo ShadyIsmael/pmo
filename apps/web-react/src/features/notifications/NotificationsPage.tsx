@@ -50,8 +50,8 @@ export function NotificationsPage() {
                 {items.map((n) => (
                   <li key={n.id} className="flex items-start justify-between gap-3 px-4 py-3">
                     <div className="min-w-0">
-                      {resolveNotificationPath(n.referenceType, n.referenceId)
-                        ? <Link to={resolveNotificationPath(n.referenceType, n.referenceId)!} className="text-sm font-semibold hover:text-primary">{n.title}</Link>
+                      {resolveNotificationPath(n.referenceType, n.referenceId, n.referencePublicId)
+                        ? <Link to={resolveNotificationPath(n.referenceType, n.referenceId, n.referencePublicId)!} className="text-sm font-semibold hover:text-primary">{n.title}</Link>
                         : <p className="text-sm font-semibold">{n.title}</p>}
                       {n.body ? <p className="mt-0.5 truncate text-sm text-muted-foreground">{n.body}</p> : null}
                       <p className="mt-1 text-xs text-muted-foreground">{formatDate(n.sentAt)}</p>

@@ -14,6 +14,12 @@ vi.mock("@auth/AuthProvider", () => ({ useAuth: () => ({ user: { id: "user-1", p
 vi.mock("@api/management", () => ({ useManagement: () => fixtures.management }));
 vi.mock("@features/projects/api/projects", () => ({
   useCreateProjectChangeRequest: () => ({ mutateAsync: fixtures.createRequest, isPending: false }),
+  useUpdateProjectChangeRequestDraft: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useSubmitProjectChangeRequest: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useProjectChangeRequestApproverOptions: () => ({ data: {
+    approvers: [{ userId: "approver-1", fullName: "Project Sponsor", projectRole: "Project Sponsor", isSponsor: true, isMandatory: true }],
+    allowedStrategies: ["AllRequired", "Sequential"], sponsorUserId: "approver-1", policyMessage: null,
+  }, isLoading: false, isError: false }),
   useCreateProjectHandoverRequest: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useProjectHandoverManagers: () => ({ data: [], isLoading: false, isError: false }),
 }));
@@ -62,6 +68,8 @@ describe("Project change request side sheet", () => {
       justification: "Approved scope adjustment",
       impact: "No schedule delay",
       attachments: "baseline-review.pdf",
+      approvalStrategy: "AllRequired",
+      approverUserIds: ["approver-1"],
     }));
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });

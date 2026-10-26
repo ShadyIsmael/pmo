@@ -47,7 +47,6 @@ describe("Currencies source parity", () => {
     mocks.createHook.mockReturnValue({ mutateAsync: mocks.create, isPending: false });
     mocks.updateHook.mockReturnValue({ mutateAsync: mocks.update, isPending: false });
     mocks.deleteHook.mockReturnValue({ mutateAsync: mocks.remove, isPending: false });
-    vi.stubGlobal("confirm", vi.fn().mockReturnValue(true));
   });
 
   it("lists currencies with the base currency first and hides management controls without Settings.Write", () => {
@@ -93,14 +92,15 @@ describe("Currencies source parity", () => {
   it("prevents base-currency deletion and confirms and reports errors for other currencies", async () => {
     mocks.remove.mockRejectedValue(new Error("Currency is still referenced"));
     renderPage();
-    const confirmMock = vi.mocked(window.confirm);
     const baseDelete = screen.getByRole("button", { name: "Delete USD" });
     expect(baseDelete).toBeDisabled();
     fireEvent.click(baseDelete);
-    expect(confirmMock).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Delete EUR" }));
-    expect(confirmMock).toHaveBeenCalledWith("Delete currency EUR?");
+    const confirmation = screen.getByRole("alertdialog", { name: "Confirm action" });
+    expect(within(confirmation).getByText("Delete currency EUR?")).toBeInTheDocument();
+    fireEvent.click(within(confirmation).getByRole("button", { name: "Confirm" }));
     await waitFor(() => expect(mocks.remove).toHaveBeenCalledWith("eur-id"));
     expect(await screen.findByRole("alert")).toHaveTextContent("Currency is still referenced");
   });

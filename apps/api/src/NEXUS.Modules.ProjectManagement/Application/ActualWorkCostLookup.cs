@@ -37,9 +37,8 @@ public sealed class ActualWorkCostLookup : IActualWorkCostLookup, IPlannedWorkCo
         if (projectIds is { Count: > 0 }) query = query.Where(entry => projectIds.Contains(entry.ProjectId));
         if (projectRoleId.HasValue) query = query.Where(entry => entry.ProjectRoleId == projectRoleId.Value);
 
-        return await query
+        var slices = await query
             .OrderBy(entry => entry.WorkDate)
-            .ThenBy(entry => entry.StartTime)
             .ThenBy(entry => entry.Id)
             .Select(entry => new ActualWorkCostSlice(
                 entry.Id,
@@ -55,6 +54,11 @@ public sealed class ActualWorkCostLookup : IActualWorkCostLookup, IPlannedWorkCo
                 entry.ProjectRoleId,
                 entry.EntrySource))
             .ToListAsync(cancellationToken);
+
+        return slices.OrderBy(entry => entry.WorkDate)
+            .ThenBy(entry => entry.StartTime)
+            .ThenBy(entry => entry.TimeEntryId)
+            .ToList();
     }
 
     public async Task<IReadOnlyList<PlannedWorkCostSlice>> GetPlannedAsync(

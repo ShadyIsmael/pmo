@@ -31,5 +31,23 @@
   },
   "dependencies": {
     "typescript": "^7.0.2"
-  }
+  },
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "devDependencies": {},
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ShadyIsmael/pmo.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/ShadyIsmael/pmo/issues"
+  },
+  "homepage": "https://github.com/ShadyIsmael/pmo#readme"
 }

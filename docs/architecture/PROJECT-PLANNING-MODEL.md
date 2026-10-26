@@ -196,7 +196,7 @@ Plan ──(impact)── Project ChangeRequest (Project-owned; planning stores 
 | `PlanWbsNode` | ParentWbsId?, SortOrder, Code, Name, ActivityId?, DeliverableId?, TextFormat? |
 | `PlanDeliverable` | Name, Description, AcceptanceCriteria, DueDate, WbsId?, ActivityId? |
 | `PlanDependency` | ActivityId, PredecessorActivityId, Type (FS/SS/FF/SF), Lag |
-| `PlanAssignment` | ActivityId, ResourceId (RM), AllocationPct?, HoursPerWeek, StartDate, EndDate |
+| `PlanAssignment` | ActivityId, ResourceId (RM), PlannedHours (assigned task work), StartDate, EndDate; AllocationPct and HoursPerWeek are legacy compatibility fields |
 | `PlanCalendar` | TemplateId?, WorkingDays, Holidays, effective dates |
 | `CalendarTemplate` | TenantId, WorkingDays, Holidays |
 
@@ -218,6 +218,7 @@ the rest of the versioned planning model.
    frozen; writes are rejected and routed to a `Working` version.
 3. **Edit only in Working** — post-baseline edits are allowed solely in a
    `Working` version.
+4. **Project allocation vs task work** — `ProjectMember.AllocationPercentage` reserves a share of resource calendar capacity for a project. `PlanAssignment.PlannedHours` records the explicit task work consuming that share; task assignments do not set a second allocation percentage. Capacity checks aggregate overlapping active assignments for the same project and reporting periods.
 4. **One Current Approved baseline per plan** — at most one `Current`+`Approved`
    Baseline per `(TenantId, PlanId)` (filtered unique index); the next approved
    baseline demotes the prior to `Superseded`.
@@ -235,7 +236,11 @@ the rest of the versioned planning model.
     Working version, never a Baseline.
 13. **Deletion across versions** — post-baseline, a removed item becomes
     `Removed` in the newer version and remains intact in the version(s) where it
-    existed; pre-baseline deletion may physically remove the item.
+    existed; pre-baseline deletion may physically remove the item. Soft-deleting
+    an activity also soft-deletes its dependency edges (whether successor or
+    predecessor) and resource assignments in that version. Baseline snapshots
+    omit legacy relationship rows whose activity endpoints are absent from the
+    version being copied.
 14. **Deployment target** — single architecture for On-Prem (single tenant) and
     SaaS (multi-tenant); multi-tenant is the default modeling.
 15. **CR ownership** — Change Requests belong to the Project; plans are impacted,

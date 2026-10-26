@@ -13,8 +13,8 @@ public sealed class ProjectOverviewDto
     public ProjectWorkItemOverviewDto Issues { get; init; } = new();
     public IReadOnlyList<ProjectOverviewMilestoneDto> Milestones { get; init; } = [];
     public ProjectOverviewBaselineDto? CurrentBaseline { get; init; }
-    public int PendingChangeRequestCount { get; init; }
-    public int PendingHandoverCount { get; init; }
+    public int? PendingChangeRequestCount { get; init; }
+    public int? PendingHandoverCount { get; init; }
     public ProjectAllocationOverviewDto Allocations { get; init; } = new();
     public ProjectMeetingOverviewDto Meetings { get; init; } = new();
     public decimal? PlanProgress { get; init; }

@@ -24,6 +24,7 @@ interface ProjectHeaderProps {
   healthOverride?: string;
   onChangeRequest?: () => void;
   onHandover?: () => void;
+    canInitiateHandover?: boolean;
 }
 
 // Canonical 12 tabs mirroring the golden copy (Next TAB_VALUES). Alias routes
@@ -43,7 +44,7 @@ const TABS = [
   { id: "change-tracker", labelKey: "projects.tabs.changeTracker", href: (id: string) => `/projects/${id}/change-tracker`, icon: GitBranch },
 ] as const;
 
-export function ProjectHeader({ project, statusOverride, healthOverride, onChangeRequest, onHandover }: ProjectHeaderProps) {
+export function ProjectHeader({ project, statusOverride, healthOverride, onChangeRequest, onHandover, canInitiateHandover }: ProjectHeaderProps) {
   const { t, locale, formatCurrency } = useI18n();
   const { statusLabel, healthStatusLabel, priorityLabel } = useProjectEnumLabels();
   const { user } = useAuth();
@@ -57,14 +58,15 @@ export function ProjectHeader({ project, statusOverride, healthOverride, onChang
 
   const canEdit = Boolean(user && hasPermission(user.permissions, Permissions.Project.Edit) && canMutate);
   const canDelete = Boolean(user && hasPermission(user.permissions, Permissions.Project.Delete) && canMutate);
+  const canManageReporting = Boolean(user && hasPermission(user.permissions, Permissions.StatusReport.ManageConfiguration) && canMutate && !effectiveReadOnly);
   const canManageChangeRequests = Boolean(user && hasPermission(user.permissions, Permissions.ChangeRequest.Manage) && canMutate && !effectiveReadOnly);
-  const canManageHandovers = Boolean(user && hasPermission(user.permissions, Permissions.Handover.Manage) && canMutate && !effectiveReadOnly);
+    const canManageHandovers = canInitiateHandover ?? Boolean(user && hasPermission(user.permissions, Permissions.Handover.Manage) && canMutate && !effectiveReadOnly);
   const displayStatus = statusOverride || project.status;
   const displayHealth = healthOverride || project.health || project.ragStatus;
 
   async function handleArchive() {
     try {
-      await archive.mutateAsync(project.id);
+      await archive.mutateAsync(project.publicId);
       toast({ title: t("projects.archiveSuccess") });
     } catch (err) {
       toast({ title: t("common.error"), description: err instanceof Error ? err.message : undefined, variant: "destructive" });
@@ -73,7 +75,7 @@ export function ProjectHeader({ project, statusOverride, healthOverride, onChang
 
   async function handleReactivate() {
     try {
-      await reactivate.mutateAsync(project.id);
+      await reactivate.mutateAsync(project.publicId);
       toast({ title: t("projects.reactivateSuccess") });
     } catch (err) {
       toast({ title: t("common.error"), description: err instanceof Error ? err.message : undefined, variant: "destructive" });
@@ -81,7 +83,7 @@ export function ProjectHeader({ project, statusOverride, healthOverride, onChang
   }
 
   async function handleDelete() {
-    await remove.mutateAsync(project.id);
+    await remove.mutateAsync(project.publicId);
     navigate("/projects", { replace: true });
   }
 
@@ -123,46 +125,49 @@ export function ProjectHeader({ project, statusOverride, healthOverride, onChang
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
           {canEdit ? (
-            <Button variant="outline" size="sm" onClick={() => navigate(`/projects/${project.id}/workflows`)}>
-              <Settings2 className="me-1.5 h-3.5 w-3.5" />
-              {t("projects.projectSettings")}
-            </Button>
-          ) : null}
-          {canEdit ? (
-            <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
-              <Pencil className="me-1.5 h-3.5 w-3.5" />
-              {t("common.edit")}
-            </Button>
-          ) : null}
-          {canManageChangeRequests && onChangeRequest ? (
-            <Button variant="outline" size="sm" onClick={onChangeRequest}>
-              <FilePen className="me-1.5 h-3.5 w-3.5" />
-              {t("projects.changeRequest")}
-            </Button>
-          ) : null}
-          {canManageHandovers ? (
-            <Button variant="outline" size="sm" onClick={() => onHandover ? onHandover() : navigate(`/projects/${project.id}/handover`)}>
-              <ArrowRightLeft className="me-1.5 h-3.5 w-3.5" />
-              {t("projects.handover")}
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label={t("projects.projectSettings")}
+              title={t("projects.projectSettings")}
+              onClick={() => navigate(`/projects/${project.publicId}/workflows`)}
+            >
+              <Settings2 className="h-4 w-4" />
             </Button>
           ) : null}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" aria-label={t("common.actions")}>
+              <Button variant="outline" size="icon" aria-label={t("common.actions")} title={t("common.actions")}>
                 <MoreHorizontal className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={() => navigate(`/projects/${project.id}/plan`)}>
+              {canEdit ? (
+                <DropdownMenuItem onSelect={() => setEditOpen(true)}>
+                  <Pencil className="me-2 h-4 w-4" />
+                  {t("common.edit")}
+                </DropdownMenuItem>
+              ) : null}
+              {canManageChangeRequests && onChangeRequest ? (
+                <DropdownMenuItem onSelect={() => onChangeRequest()}>
+                  <FilePen className="me-2 h-4 w-4" />
+                  {t("projects.changeRequest")}
+                </DropdownMenuItem>
+              ) : null}
+              <DropdownMenuItem onSelect={() => navigate(`/projects/${project.publicId}/plan`)}>
                 <GanttChartSquare className="me-2 h-4 w-4" />
                 {t("projects.plan")}
               </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => navigate(`/projects/${project.id}/status-reports`)}>
+              <DropdownMenuItem onSelect={() => navigate(`/projects/${project.publicId}/status-reports`)}>
                 <ClipboardList className="me-2 h-4 w-4" />
                 {t("projects.statusReports")}
               </DropdownMenuItem>
+              {canManageReporting ? <DropdownMenuItem onSelect={() => navigate(`/projects/${project.publicId}/settings/reporting`)}>
+                <Settings2 className="me-2 h-4 w-4" />
+                {t("projects.reporting.configurationTitle")}
+              </DropdownMenuItem> : null}
               {canManageHandovers ? (
-                <DropdownMenuItem onSelect={() => navigate(`/projects/${project.id}/handover`)}>
+                <DropdownMenuItem onSelect={() => onHandover ? onHandover() : navigate(`/projects/${project.publicId}/handover`)}>
                   <ArrowRightLeft className="me-2 h-4 w-4" />
                   {t("projects.handover")}
                 </DropdownMenuItem>
@@ -192,7 +197,7 @@ export function ProjectHeader({ project, statusOverride, healthOverride, onChang
           {TABS.map((tab) => (
             <NavLink
               key={tab.id}
-              to={tab.href(project.id)}
+              to={tab.href(project.publicId)}
               end={tab.id !== "snapshots"}
               role="tab"
               className={({ isActive }) =>

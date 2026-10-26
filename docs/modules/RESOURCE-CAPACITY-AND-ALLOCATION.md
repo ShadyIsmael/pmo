@@ -30,6 +30,16 @@ Provides capacity planning, resource allocation CRUD, and resource finder capabi
 
 **Filter params:** periodType (week/month/quarter), startDate, endDate, departmentId, locationId, resourceType, resourceId, includeProposed
 
+Weekly capacity-matrix periods follow the application's Sunday-start reporting week. If `startDate` falls mid-week, the first cell begins on the Sunday of that reporting week; `endDate` remains exclusive and clips the final cell. The Project Overview weekly selector sends an aligned Sunday-to-Sunday range.
+
+### Project Overview team capacity (`/api/projects/{projectId}/overview/team-capacity`)
+
+The Project Overview Team, Resources & Allocation panel reads this project-scoped summary. It accepts `periodType` (`Week`, `Month`, or `Quarter`), `startDate`, and exclusive `endDate`; the backend uses active project-team memberships that overlap that range and counts each active resource once. Effective weekly resource capacity comes from the selected valid resource/project working calendar and is multiplied by the membership's `AllocationPercentage` to derive this project's capacity. `ProjectMember.HoursPerWeek` is a legacy field and is not an input to the current calculation. Calendar holidays and resource-specific exceptions are applied when configured. Membership and active-contract dates clip each period. Since `WorkingCalendar` stores `WorkingDaysPerWeek` but no weekday mask, partial-week capacity is prorated evenly over seven calendar days; holidays are prorated from the configured weekly hours and working days.
+
+The calculation includes non-cancelled task-work allocations for the selected project only. Confirmed, Proposed, and Tentative assigned work counts as utilized; available capacity is clamped at zero per resource-period, and overallocated hours are returned separately. Project dedication defines the capacity ceiling and is never counted again as task utilization. Tasks consume capacity through their total `PlanAssignment.PlannedHours` (exposed to new clients as `AssignedWorkHours`), apportioned over their scheduled working-calendar period. Active assignments across the project's working plans are checked together, including overlapping tasks; the assignment API rejects work that exceeds the remaining project capacity. A separate assignment-capacity endpoint returns the project's allocation, period capacity, existing assigned work, and remaining assignable hours for the selected resource and dates. No schema change is required because the current membership percentage and assignment planned-hours fields are reused.
+
+When an explicit project ID is supplied for Overview, resource-allocation rows are filtered to that project; the broader Resource Capacity Matrix can still show resource commitments across projects. No allocation is a valid zero-utilization state. Unknown allocation statuses make utilization and idle-resource counts unavailable instead of being silently treated as no work. If a valid calendar/dedication configuration is unavailable, capacity totals are unavailable. An empty active team returns zero-valued metrics. Tenant isolation comes from the request's tenant-scoped `DbContext`; project visibility and management scope are checked before team membership is read.
+
 ### Resource Finder (`/api/resource-finder`)
 | Method | Path | Auth Policy | Description |
 |--------|------|-------------|-------------|
@@ -169,7 +179,7 @@ When implementing i18n, the following section should be added to `src/messages/e
 ```
 
 ## Test Status
-No test framework is configured in the project. No tests exist for capacity, allocation, or resource finder modules.
+The .NET Resource Management test suite includes unit coverage for capacity calculations in `apps/api/tests/NEXUS.Modules.ResourceManagement.Tests/CapacityServiceTests.cs`. Project Overview capacity cases cover configured team hours without a calendar, dedication percentages, idle team members, cross-project commitments, calendar holidays and exceptions, unknown allocation statuses, and unavailable configuration.
 
 ## Key Behaviours
 - **Gantt view**: Resources grouped from allocation data; overlapping allocations per resource flagged with conflict icon; bars positioned by percentage within timeline; today line rendered when today falls within visible range
@@ -190,3 +200,7 @@ No test framework is configured in the project. No tests exist for capacity, all
 - i18n strings not externalised (hardcoded English throughout)
 - No unit or integration tests (test framework not set up)
 - Frontend components use embedded mock data, not wired to live API
+
+### Project membership allocation guard
+
+Cross-project Project Team allocations are compared only while their effective membership dates overlap. Membership end dates are inclusive. Separate allocations in different periods are not added together, and any concurrent total above 100% is rejected. Task work remains a separate project-scoped calculation based on scheduled `PlanAssignment.PlannedHours`.

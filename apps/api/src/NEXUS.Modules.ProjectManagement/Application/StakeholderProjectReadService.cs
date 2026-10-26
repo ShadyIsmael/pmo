@@ -141,6 +141,7 @@ public sealed class StakeholderProjectReadService : IStakeholderProjectReadServi
             return new StakeholderProjectViewDto
             {
                 Id = project.Id,
+            PublicId = project.PublicId,
                 Code = project.Code,
                 Name = project.Name,
                 Description = project.Description,

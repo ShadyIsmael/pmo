@@ -3,6 +3,7 @@ import { api } from "@api/client";
 import { projectKeys } from "@features/projects/api/projects";
 import { invalidateManagerHandoverEntity } from "@features/delivery/api/managerHandovers";
 import type { ManagerHandoverRequestDto } from "@features/delivery/api/managerHandovers";
+import { getApprovalReviewApiPath, type ApprovalReviewType } from "@lib/approval-navigation";
 export type { ManagerHandoverRequestDto } from "@features/delivery/api/managerHandovers";
 
 export interface TimeEntryDto {
@@ -98,9 +99,10 @@ export function useDeleteTimeEntry() {
 export interface HandoverRequestDto {
   id: string;
   projectId: string;
+  projectPublicId?: string | null;
   projectName: string;
   projectCode: string;
-  currentProjectManagerId: string;
+  currentProjectManagerId: string | null;
   currentProjectManagerName: string;
   newProjectManagerId: string;
   newProjectManagerName: string;
@@ -108,6 +110,7 @@ export interface HandoverRequestDto {
   reason: string;
   notes?: string;
   status: string;
+  initiationType: "ManagerInitiated" | "AdminInitiated" | "InitialAssignment";
   requestedBy: string;
   requestedByName: string;
   requestedAt: string;
@@ -117,31 +120,64 @@ export interface HandoverRequestDto {
   rejectionReason?: string;
 }
 
-export interface ProjectChangeRequestDto {
+export type { ProjectChangeRequestDto } from "@features/projects/api/projects";
+
+export interface PendingProjectChangeApprovalDto {
   id: string;
-  projectId: string;
+  status: string;
   projectName: string;
   number: number;
-  type: "Administrative" | "Baseline";
-  status: "Pending" | "Approved" | "Rejected" | "Cancelled";
+  type: "Baseline" | "Administrative";
   reason: string;
-  justification?: string | null;
-  impact?: string | null;
-  budgetBeforeChange?: number | null;
-  budgetChangeAmount?: number | null;
-  proposedProjectBudget?: number | null;
-  attachments?: string | null;
-  requestedBy: string;
   requestedByName: string;
   requestedAt: string;
-  reviewedBy?: string | null;
-  reviewedByName?: string | null;
-  reviewedAt?: string | null;
-  decisionNotes?: string | null;
-  createdAt: string;
-  createdBy: string;
-  updatedAt?: string | null;
-  updatedBy?: string | null;
+  approvalCount: number;
+  requiredApprovalCount: number;
+}
+
+export interface ProjectChangeRequestDecisionDto {
+  id: string;
+  number: number;
+  status: string;
+}
+
+export interface ApprovalReviewDto {
+  approvalId: string;
+  approvalType: string;
+  businessObjectType: string;
+  businessObjectPublicId?: string | null;
+  businessObjectName: string;
+  businessObjectCode?: string | null;
+  businessObjectStatus?: string | null;
+  title: string;
+  reason?: string | null;
+  notes?: string | null;
+  requestedByName: string;
+  requestedAt: string;
+  status: string;
+  effectiveDate?: string | null;
+  currentAssigneeName?: string | null;
+  proposedAssigneeName?: string | null;
+  changeNumber?: number | null;
+  changeType?: string | null;
+  justification?: string | null;
+  impact?: string | null;
+  currentAmount?: number | null;
+  amountChange?: number | null;
+  proposedAmount?: number | null;
+  currency?: string | null;
+  isReadOnly: boolean;
+  canDecide: boolean;
+}
+
+export function useApprovalReview(type: ApprovalReviewType, approvalId: string) {
+  return useQuery({
+    queryKey: ["approvalReview", type, approvalId],
+    queryFn: () => api.get<ApprovalReviewDto>(getApprovalReviewApiPath(type, approvalId)),
+    enabled: Boolean(approvalId),
+    retry: false,
+    staleTime: 0,
+  });
 }
 
 export function usePendingHandoverRequestsForMe(enabled = true) {
@@ -165,7 +201,7 @@ export function usePendingManagerHandovers(enabled = true) {
 export function usePendingProjectChangeRequests(enabled = true) {
   return useQuery({
     queryKey: ["projectChangeRequests", "pendingForMe"],
-    queryFn: () => api.get<ProjectChangeRequestDto[]>("/api/project-change-requests/pending-for-me"),
+    queryFn: () => api.get<PendingProjectChangeApprovalDto[]>("/api/project-change-requests/pending-for-me"),
     enabled,
     staleTime: 15_000,
   });
@@ -224,11 +260,12 @@ export function useApproveProjectChangeRequest() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ id, dto }: { id: string; dto: Record<string, unknown> }) =>
-      api.post<ProjectChangeRequestDto>(`/api/project-change-requests/${id}/approve`, dto),
-    onSuccess: (request) => Promise.all([
-      queryClient.invalidateQueries({ queryKey: ["projects", "change-requests", request.projectId] }),
-      queryClient.invalidateQueries({ queryKey: ["projects", "detail", request.projectId], exact: true }),
-      queryClient.invalidateQueries({ queryKey: ["projects", "overview", request.projectId], exact: true }),
+      api.post<ProjectChangeRequestDecisionDto>(`/api/project-change-requests/${id}/approve`, dto),
+    onSuccess: () => Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["projects", "change-requests"] }),
+      queryClient.invalidateQueries({ queryKey: ["projects", "detail"] }),
+      queryClient.invalidateQueries({ queryKey: ["projects", "overview"] }),
+      queryClient.invalidateQueries({ queryKey: ["approvalReview"] }),
     ]),
     onSettled: () => queryClient.invalidateQueries({ queryKey: ["projectChangeRequests"] }),
   });
@@ -238,11 +275,12 @@ export function useRejectProjectChangeRequest() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ id, decisionNotes }: { id: string; decisionNotes: string }) =>
-      api.post<ProjectChangeRequestDto>(`/api/project-change-requests/${id}/reject`, { decisionNotes }),
-    onSuccess: (request) => Promise.all([
-      queryClient.invalidateQueries({ queryKey: ["projects", "change-requests", request.projectId] }),
-      queryClient.invalidateQueries({ queryKey: ["projects", "detail", request.projectId], exact: true }),
-      queryClient.invalidateQueries({ queryKey: ["projects", "overview", request.projectId], exact: true }),
+      api.post<ProjectChangeRequestDecisionDto>(`/api/project-change-requests/${id}/reject`, { decisionNotes }),
+    onSuccess: () => Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["projects", "change-requests"] }),
+      queryClient.invalidateQueries({ queryKey: ["projects", "detail"] }),
+      queryClient.invalidateQueries({ queryKey: ["projects", "overview"] }),
+      queryClient.invalidateQueries({ queryKey: ["approvalReview"] }),
     ]),
     onSettled: () => queryClient.invalidateQueries({ queryKey: ["projectChangeRequests"] }),
   });

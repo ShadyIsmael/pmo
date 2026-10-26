@@ -6,6 +6,7 @@ public sealed class BudgetDto
 {
     public Guid Id { get; init; }
     public Guid? ProjectId { get; init; }
+    public Guid? ProjectPublicId { get; init; }
     public Guid? PortfolioId { get; init; }
     public string Name { get; init; } = string.Empty;
     public string? Description { get; init; }
@@ -143,9 +144,9 @@ public sealed class UpdateCommitmentDto
 
 public static class CostManagementMappings
 {
-    public static BudgetDto ToDto(this Budget value) => new()
+    public static BudgetDto ToDto(this Budget value, Guid? projectPublicId = null) => new()
     {
-        Id = value.Id, ProjectId = value.ProjectId, PortfolioId = value.PortfolioId,
+        Id = value.Id, ProjectId = value.ProjectId, ProjectPublicId = projectPublicId, PortfolioId = value.PortfolioId,
         Name = value.Name, Description = value.Description, Category = value.Category,
         PlannedAmount = value.PlannedAmount, ApprovedAmount = value.ApprovedAmount,
         ForecastAmount = value.ForecastAmount, Currency = value.Currency,

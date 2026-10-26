@@ -44,7 +44,10 @@ public sealed class ProjectResourcePlanningContextLookup : IProjectResourcePlann
             member.CalendarPolicy,
             project?.WorkingCalendarId,
             roleIds,
-            true);
+            true,
+            member.AllocationPercentage,
+            member.StartDate,
+            member.EndDate);
     }
 
     public async Task<bool> HasActiveProjectMemberRoleAsync(Guid projectId, Guid resourceId, Guid projectRoleId, CancellationToken cancellationToken = default)
@@ -103,6 +106,9 @@ public sealed class ProjectResourcePlanningContextLookup : IProjectResourcePlann
                 m.CalendarPolicy,
                 project?.WorkingCalendarId,
                 roleMap.TryGetValue(m.Id, out var roles) ? roles : new List<Guid>(),
-                true));
+                true,
+                m.AllocationPercentage,
+                m.StartDate,
+                m.EndDate));
     }
 }

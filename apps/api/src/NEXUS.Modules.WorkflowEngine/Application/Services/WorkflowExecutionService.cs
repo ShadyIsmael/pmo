@@ -67,9 +67,14 @@ public sealed class WorkflowExecutionService : IWorkflowExecutionService
             .Include(i => i.WorkflowDefinitionVersion)
                 .ThenInclude(v => v.Transitions)
                     .ThenInclude(t => t.Actions)
-            .FirstOrDefaultAsync(i => i.EntityType == request.EntityType && i.EntityId == request.EntityId && i.IsActive && !i.IsDeleted, cancellationToken);
+            .FirstOrDefaultAsync(i => i.TenantId == context.TenantId && i.EntityType == request.EntityType
+                && i.EntityId == request.EntityId && !i.IsDeleted, cancellationToken);
 
         if (instance is null)
+            return Result<WorkflowTransitionResult>.Failure(WorkflowErrors.WorkflowInstanceNotFound(request.EntityType, request.EntityId));
+
+        if (instance.WorkflowDefinition.TenantId != context.TenantId
+            || instance.WorkflowDefinitionVersion.TenantId != context.TenantId)
             return Result<WorkflowTransitionResult>.Failure(WorkflowErrors.WorkflowInstanceNotFound(request.EntityType, request.EntityId));
 
         if (instance.WorkflowDefinitionVersion.LifecycleStatus == WorkflowDefinitionVersionLifecycleStatus.Draft)
@@ -108,7 +113,12 @@ public sealed class WorkflowExecutionService : IWorkflowExecutionService
         }
 
         var transitionContext = new WorkflowTransitionContext(
-            context,
+            context with
+            {
+                Comment = request.Comment ?? context.Comment,
+                Metadata = request.Metadata ?? context.Metadata,
+                CorrelationId = request.CorrelationId ?? context.CorrelationId
+            },
             request.EntityId,
             entitySnapshot,
             instance.CurrentState,

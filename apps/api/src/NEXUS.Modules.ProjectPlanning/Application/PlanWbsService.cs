@@ -16,13 +16,15 @@ public class PlanWbsService : IPlanWbsService
     private readonly IAuditService _auditService;
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly SummaryTaskRollupService _summaryRollup;
+    private readonly IPlanGridCommandHistoryService? _commandHistory;
 
-    public PlanWbsService(DbContext context, IAuditService auditService, IHttpContextAccessor httpContextAccessor, SummaryTaskRollupService? summaryRollup = null)
+    public PlanWbsService(DbContext context, IAuditService auditService, IHttpContextAccessor httpContextAccessor, SummaryTaskRollupService? summaryRollup = null, IPlanGridCommandHistoryService? commandHistory = null)
     {
         _context = context;
         _auditService = auditService;
         _httpContextAccessor = httpContextAccessor;
         _summaryRollup = summaryRollup ?? new SummaryTaskRollupService(context);
+        _commandHistory = commandHistory;
     }
 
     public async Task<Result<PlanWbsNodeDto>> CreateAsync(Guid planId, CreatePlanWbsNodeDto dto, string userId, CancellationToken cancellationToken = default)
@@ -78,6 +80,8 @@ public class PlanWbsService : IPlanWbsService
             Timestamp = DateTime.UtcNow,
             CreatedBy = userId
         }, cancellationToken);
+        if (_commandHistory is not null)
+            await _commandHistory.RecordBarrierAsync(planId, workingVersion.Id, userId, "CreateWbs", cancellationToken);
 
         return Result<PlanWbsNodeDto>.Success(node.ToDto());
     }
@@ -129,6 +133,7 @@ public class PlanWbsService : IPlanWbsService
         }
 
         var originalValues = System.Text.Json.JsonSerializer.Serialize(node.ToDto());
+        var historyBefore = _commandHistory is null ? null : PlanGridCommandHistoryService.CaptureWbsFields(node);
         var previousSummaryIds = await _summaryRollup.RecalculateAsync(node.PlanVersionId, userId, cancellationToken: cancellationToken);
         node.Name = name;
         node.Code = code;
@@ -141,28 +146,151 @@ public class PlanWbsService : IPlanWbsService
 
         _context.Entry(node).Property(n => n.RowVersion).OriginalValue = dto.RowVersion;
 
+        await using var transaction = _commandHistory is not null && _context.Database.CurrentTransaction is null
+            ? await _context.Database.BeginTransactionAsync(cancellationToken)
+            : null;
         try
         {
             await _context.SaveChangesAsync(cancellationToken);
+            await _auditService.LogAsync(new AuditEntry
+            {
+                EntityType = "PlanWbsNode",
+                EntityId = node.Id,
+                Action = "Update",
+                UserId = TryParseGuid(userId),
+                OriginalValues = originalValues,
+                NewValues = System.Text.Json.JsonSerializer.Serialize(node.ToDto()),
+                Timestamp = DateTime.UtcNow,
+                CreatedBy = userId
+            }, cancellationToken);
+            if (historyBefore is not null && _commandHistory is not null)
+                await _commandHistory.RecordWbsUpdateAsync(planId, node.PlanVersionId, userId, historyBefore, node, cancellationToken);
+            if (transaction is not null) await transaction.CommitAsync(cancellationToken);
         }
         catch (DbUpdateConcurrencyException)
         {
+            if (transaction is not null) await transaction.RollbackAsync(cancellationToken);
             return Result<PlanWbsNodeDto>.Failure(Error.Conflict("The node was modified by another user. Reload and try again."));
         }
-
-        await _auditService.LogAsync(new AuditEntry
+        catch
         {
-            EntityType = "PlanWbsNode",
-            EntityId = node.Id,
-            Action = "Update",
-            UserId = TryParseGuid(userId),
-            OriginalValues = originalValues,
-            NewValues = System.Text.Json.JsonSerializer.Serialize(node.ToDto()),
-            Timestamp = DateTime.UtcNow,
-            CreatedBy = userId
-        }, cancellationToken);
+            if (transaction is not null) await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
 
         return Result<PlanWbsNodeDto>.Success(node.ToDto());
+    }
+
+    public async Task<Result<IReadOnlyList<PlanWbsNodeDto>>> UpdatePlacementsAsync(
+        Guid planId,
+        BulkUpdatePlanWbsPlacementsDto dto,
+        string userId,
+        CancellationToken cancellationToken = default)
+    {
+        if (dto.Items is null || dto.Items.Count is < 1 or > 500 ||
+            dto.Items.Any(item => item is null || item.NodeId == Guid.Empty || item.RowVersion is null || item.RowVersion.Length == 0) ||
+            dto.Items.Select(item => item.NodeId).Distinct().Count() != dto.Items.Count)
+            return Result<IReadOnlyList<PlanWbsNodeDto>>.Failure(Error.Validation("WBS placement updates must contain 1–500 unique nodes with row versions"));
+
+        var version = await GetActiveWorkingVersionAsync(planId, cancellationToken);
+        if (version is null)
+            return Result<IReadOnlyList<PlanWbsNodeDto>>.Failure(Error.NotFound(await GetActiveWorkingVersionNotAvailableMessageAsync(planId, cancellationToken)));
+
+        await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+        using var historyCollection = _commandHistory?.BeginCollection("BulkWbsMove");
+        try
+        {
+            var nodes = await _context.Set<PlanWbsNode>()
+                .Where(node => node.PlanVersionId == version.Id && !node.IsDeleted)
+                .ToListAsync(cancellationToken);
+            var byId = nodes.ToDictionary(node => node.Id);
+            if (dto.Items.Any(item => !byId.ContainsKey(item.NodeId)))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return Result<IReadOnlyList<PlanWbsNodeDto>>.Failure(Error.Validation("Every WBS node must belong to the active Working version"));
+            }
+
+            foreach (var item in dto.Items)
+            {
+                if (item.ParentWbsId.HasValue && !byId.ContainsKey(item.ParentWbsId.Value))
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    return Result<IReadOnlyList<PlanWbsNodeDto>>.Failure(Error.Validation("Every target parent must belong to the same plan version"));
+                }
+                if (!byId[item.NodeId].RowVersion.SequenceEqual(item.RowVersion))
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    return Result<IReadOnlyList<PlanWbsNodeDto>>.Failure(Error.Conflict("The WBS structure changed. Reload and try again."));
+                }
+            }
+
+            var parentById = nodes.ToDictionary(node => node.Id, node => node.ParentWbsId);
+            foreach (var item in dto.Items) parentById[item.NodeId] = item.ParentWbsId;
+            foreach (var node in nodes)
+            {
+                var visited = new HashSet<Guid> { node.Id };
+                var parentId = parentById[node.Id];
+                while (parentId.HasValue)
+                {
+                    if (!parentById.ContainsKey(parentId.Value) || !visited.Add(parentId.Value))
+                    {
+                        await transaction.RollbackAsync(cancellationToken);
+                        return Result<IReadOnlyList<PlanWbsNodeDto>>.Failure(Error.Validation("The WBS placement would create a cycle or reference a node outside this version"));
+                    }
+                    parentId = parentById[parentId.Value];
+                }
+            }
+
+            var previousSummaryIds = await _summaryRollup.RecalculateAsync(version.Id, userId, cancellationToken: cancellationToken);
+            var beforeById = new Dictionary<Guid, IReadOnlyDictionary<string, System.Text.Json.JsonElement>>();
+            foreach (var item in dto.Items)
+            {
+                var node = byId[item.NodeId];
+                beforeById[node.Id] = PlanGridCommandHistoryService.CaptureWbsFields(node);
+                node.ParentWbsId = item.ParentWbsId;
+                node.SortOrder = item.SortOrder;
+                node.UpdatedBy = userId;
+                _context.Entry(node).Property(entity => entity.RowVersion).OriginalValue = item.RowVersion;
+            }
+            await _summaryRollup.RecalculateAsync(version.Id, userId, previousSummaryIds, cancellationToken);
+            await _context.SaveChangesAsync(cancellationToken);
+
+            foreach (var item in dto.Items)
+            {
+                var node = byId[item.NodeId];
+                _context.Set<AuditEntry>().Add(new AuditEntry
+                {
+                    TenantId = node.TenantId,
+                    EntityType = "PlanWbsNode",
+                    EntityId = node.Id,
+                    Action = "Move",
+                    UserId = TryParseGuid(userId),
+                    OriginalValues = System.Text.Json.JsonSerializer.Serialize(beforeById[node.Id]),
+                    NewValues = System.Text.Json.JsonSerializer.Serialize(PlanGridCommandHistoryService.CaptureWbsFields(node)),
+                    Timestamp = DateTime.UtcNow,
+                    CreatedBy = userId
+                });
+                if (_commandHistory is not null)
+                    await _commandHistory.RecordWbsUpdateAsync(planId, version.Id, userId, beforeById[node.Id], node, cancellationToken);
+            }
+
+            if (_commandHistory is not null)
+                await _commandHistory.CommitCollectionAsync(planId, version.Id, userId, cancellationToken);
+            else
+                await _context.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return Result<IReadOnlyList<PlanWbsNodeDto>>.Success(dto.Items.Select(item => byId[item.NodeId].ToDto()).ToList());
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return Result<IReadOnlyList<PlanWbsNodeDto>>.Failure(Error.Conflict("The WBS structure was modified concurrently. Reload and try again."));
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
     }
 
     public async Task<Result> DeleteAsync(Guid planId, Guid nodeId, byte[] rowVersion, string userId, CancellationToken cancellationToken = default)
@@ -207,6 +335,8 @@ public class PlanWbsService : IPlanWbsService
             Timestamp = DateTime.UtcNow,
             CreatedBy = userId
         }, cancellationToken);
+        if (_commandHistory is not null)
+            await _commandHistory.RecordBarrierAsync(planId, node.PlanVersionId, userId, "DeleteWbs", cancellationToken);
 
         return Result.Success();
     }

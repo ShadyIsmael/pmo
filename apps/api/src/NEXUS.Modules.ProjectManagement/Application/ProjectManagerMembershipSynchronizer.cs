@@ -24,7 +24,7 @@ public sealed class ProjectManagerMembershipSynchronizer
         CancellationToken cancellationToken = default)
     {
         var managerResources = await _context.Set<Resource>()
-            .Where(resource => resource.UserId.HasValue &&
+            .Where(resource => resource.TenantId == project.TenantId && resource.UserId.HasValue &&
                                (resource.UserId == previousManagerId || resource.UserId == newManagerId) &&
                                !resource.IsDeleted)
             .OrderBy(resource => resource.CreatedAt)
@@ -34,7 +34,7 @@ public sealed class ProjectManagerMembershipSynchronizer
         if (previousResourceId.HasValue)
         {
             var previousMembers = await _context.Set<ProjectMember>()
-                .Where(member => member.ProjectId == project.Id && member.ResourceId == previousResourceId.Value && !member.IsDeleted)
+                .Where(member => member.TenantId == project.TenantId && member.ProjectId == project.Id && member.ResourceId == previousResourceId.Value && !member.IsDeleted)
                 .ToListAsync(cancellationToken);
 
             // End only the PM membership relation. Other active roles for the same
@@ -56,7 +56,7 @@ public sealed class ProjectManagerMembershipSynchronizer
         }
 
         var newMembers = await _context.Set<ProjectMember>()
-            .Where(member => member.ProjectId == project.Id && member.ResourceId == newResourceId.Value && !member.IsDeleted)
+            .Where(member => member.TenantId == project.TenantId && member.ProjectId == project.Id && member.ResourceId == newResourceId.Value && !member.IsDeleted)
             .OrderBy(member => member.CreatedAt)
             .ToListAsync(cancellationToken);
 
@@ -101,6 +101,37 @@ public sealed class ProjectManagerMembershipSynchronizer
             Notes = "Project Manager membership synchronized by handover",
             CreatedBy = userId
         });
+    }
+
+    public async Task RemoveManagerMembershipsAsync(
+        Project project,
+        IReadOnlyCollection<Guid> managerUserIds,
+        DateTime effectiveDate,
+        string userId,
+        CancellationToken cancellationToken = default)
+    {
+        var distinctUserIds = managerUserIds.Where(id => id != Guid.Empty).Distinct().ToArray();
+        if (distinctUserIds.Length == 0) return;
+
+        var resourceIds = await _context.Set<Resource>().AsNoTracking()
+            .Where(resource => resource.TenantId == project.TenantId
+                && resource.UserId.HasValue && distinctUserIds.Contains(resource.UserId.Value)
+                && !resource.IsDeleted)
+            .Select(resource => resource.Id)
+            .ToListAsync(cancellationToken);
+        if (resourceIds.Count == 0) return;
+
+        var memberships = await _context.Set<ProjectMember>().Where(member =>
+                member.TenantId == project.TenantId && member.ProjectId == project.Id
+                && resourceIds.Contains(member.ResourceId) && !member.IsDeleted)
+            .ToListAsync(cancellationToken);
+        foreach (var membership in memberships.Where(member =>
+                     member.Status == "Active" && IsProjectManagerRole(member.Role)))
+        {
+            membership.Status = "Inactive";
+            membership.EndDate = effectiveDate;
+            membership.UpdatedBy = userId;
+        }
     }
 
     public static bool IsProjectManagerRole(string? role) =>

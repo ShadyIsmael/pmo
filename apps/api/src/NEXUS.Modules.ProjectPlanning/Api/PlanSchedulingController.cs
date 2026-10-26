@@ -18,7 +18,7 @@ public sealed class PlanSchedulingController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> Get(Guid projectId, Guid planId, CancellationToken cancellationToken)
     {
-        var version = await _analysisService.GetActiveWorkingVersionIdAsync(planId, cancellationToken);
+        var version = await _analysisService.GetActiveWorkingVersionIdAsync(projectId, planId, cancellationToken);
         if (version.IsFailure)
             return version.Error?.StatusCode == 404 ? NotFound(new { error = version.Error.Message }) : BadRequest(new { error = version.Error?.Message });
 
@@ -30,10 +30,16 @@ public sealed class PlanSchedulingController : ControllerBase
         {
             PlanVersionId = version.Value,
             HasCycle = result.Value!.HasCycle,
+            ProjectFinishDate = result.Value.ProjectFinishDate,
             CriticalPathActivityIds = result.Value.CriticalPathActivityIds,
+            CriticalPathDependencyIds = result.Value.CriticalPathDependencyIds,
             Activities = result.Value.ActivityMetrics.Values.Select(metric => new PlanActivitySchedulingMetricsDto
             {
                 ActivityId = metric.Id,
+                EarlyStart = metric.EarlyStart,
+                EarlyFinish = metric.EarlyFinish,
+                LateStart = metric.LateStart,
+                LateFinish = metric.LateFinish,
                 TotalSlack = metric.TotalSlack,
                 FreeSlack = metric.FreeSlack,
                 Critical = metric.Critical
@@ -45,7 +51,7 @@ public sealed class PlanSchedulingController : ControllerBase
     [HttpGet("activities/{activityId:guid}/explanation")]
     public async Task<IActionResult> Explain(Guid projectId, Guid planId, Guid activityId, CancellationToken cancellationToken)
     {
-        var version = await _analysisService.GetActiveWorkingVersionIdAsync(planId, cancellationToken);
+        var version = await _analysisService.GetActiveWorkingVersionIdAsync(projectId, planId, cancellationToken);
         if (version.IsFailure)
             return version.Error?.StatusCode == 404 ? NotFound(new { error = version.Error.Message }) : BadRequest(new { error = version.Error?.Message });
 

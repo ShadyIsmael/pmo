@@ -151,15 +151,16 @@ function ForecastRow({ budget, unavailable, formatCurrency, t }: {
   const variance = forecastVariance(budget);
   const pct = forecastVariancePercent(budget);
   const projectId = budget.projectId?.trim() ?? "";
+  const projectPublicId = budget.projectPublicId?.trim() ?? "";
   const status = budget.status?.trim() ?? "";
   const statusKey = budgetStatusKeys[status.toLowerCase()];
   const statusLabel = statusKey ? t(`costs.forecasts.budgetStatuses.${statusKey}`) : status || unavailable;
-  const projectHref = `/projects/${encodeURIComponent(projectId)}?tab=financials`;
+  const projectHref = projectPublicId ? `/projects/${encodeURIComponent(projectPublicId)}?tab=financials` : undefined;
 
   return (
     <TableRow>
       <TableCell className="min-w-44"><p className="font-medium">{displayText(budget.name, unavailable)}</p>{budget.description?.trim() ? <p className="mt-1 line-clamp-2 text-[11px] text-muted-foreground">{budget.description.trim()}</p> : null}</TableCell>
-      <TableCell className="min-w-36">{projectId ? <Link to={projectHref} className="font-mono text-[11px] text-primary hover:underline" title={t("costs.forecasts.projectIdFallback")}>{projectId}</Link> : unavailable}</TableCell>
+      <TableCell className="min-w-36">{projectId ? projectHref ? <Link to={projectHref} className="font-mono text-[11px] text-primary hover:underline" title={t("costs.forecasts.projectIdFallback")}>{projectId}</Link> : <span className="font-mono text-[11px]">{projectId}</span> : unavailable}</TableCell>
       <TableCell className={`min-w-28 ${getLookupTextClass(budget.category)}`}>{displayText(budget.category, unavailable)}</TableCell>
       <TableCell className="text-end font-semibold tabular-nums text-fin-indigo">{money(budget.approvedAmount, currency, formatCurrency, unavailable)}</TableCell>
       <TableCell className="text-end tabular-nums text-fin-violet">{money(budget.forecastAmount, currency, formatCurrency, unavailable)}</TableCell>
@@ -168,7 +169,7 @@ function ForecastRow({ budget, unavailable, formatCurrency, t }: {
       <TableCell className="whitespace-nowrap">{fiscalPeriodLabel(budget, t, unavailable)}</TableCell>
       <TableCell>{status ? <Badge status={status}>{statusLabel}</Badge> : unavailable}</TableCell>
       <TableCell className={`font-medium ${getLookupTextClass(currency)}`}>{currency || unavailable}</TableCell>
-      <TableCell className="text-end">{projectId ? <Link to={projectHref} aria-label={`${t("costs.forecasts.viewFinancials")}: ${projectId}`} className="inline-flex h-8 items-center rounded-md px-2 text-sm hover:bg-muted"><ArrowUpRight className="me-1.5 h-3.5 w-3.5" aria-hidden="true" />{t("costs.forecasts.viewFinancials")}</Link> : unavailable}</TableCell>
+      <TableCell className="text-end">{projectHref ? <Link to={projectHref} aria-label={`${t("costs.forecasts.viewFinancials")}: ${projectId}`} className="inline-flex h-8 items-center rounded-md px-2 text-sm hover:bg-muted"><ArrowUpRight className="me-1.5 h-3.5 w-3.5" aria-hidden="true" />{t("costs.forecasts.viewFinancials")}</Link> : unavailable}</TableCell>
     </TableRow>
   );
 }

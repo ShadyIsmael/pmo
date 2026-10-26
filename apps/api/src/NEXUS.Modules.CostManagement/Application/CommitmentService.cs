@@ -6,6 +6,7 @@ using NEXUS.Modules.Audit.Domain;
 using NEXUS.Modules.CostManagement.Application.DTOs;
 using NEXUS.Modules.CostManagement.Domain;
 using NEXUS.SharedKernel;
+using NEXUS.SharedKernel.Management;
 
 namespace NEXUS.Modules.CostManagement.Application;
 
@@ -15,13 +16,15 @@ public sealed class CommitmentService : ICommitmentService
     private readonly IAuditService _auditService;
     private readonly IProjectReferenceLookup _projectLookup;
     private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly IManagementContextAccessor? _managementContext;
 
-    public CommitmentService(DbContext context, IAuditService auditService, IProjectReferenceLookup projectLookup, IHttpContextAccessor httpContextAccessor)
+    public CommitmentService(DbContext context, IAuditService auditService, IProjectReferenceLookup projectLookup, IHttpContextAccessor httpContextAccessor, IManagementContextAccessor? managementContext = null)
     {
         _context = context;
         _auditService = auditService;
         _projectLookup = projectLookup;
         _httpContextAccessor = httpContextAccessor;
+        _managementContext = managementContext;
     }
 
     public async Task<Result<PurchaseCommitmentDto>> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
@@ -39,7 +42,7 @@ public sealed class CommitmentService : ICommitmentService
     {
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 200);
-        var query = _context.Set<PurchaseCommitment>().AsNoTracking().Where(c => !c.IsDeleted);
+        var query = ApplyManagementScope(_context.Set<PurchaseCommitment>().AsNoTracking().Where(c => !c.IsDeleted));
         if (projectId.HasValue) query = query.Where(c => c.ProjectId == projectId);
         var total = await query.CountAsync(cancellationToken);
         var items = await query
@@ -66,6 +69,11 @@ public sealed class CommitmentService : ICommitmentService
         var projectRef = await _projectLookup.FindAsync(dto.ProjectId, cancellationToken);
         if (projectRef is null)
             return Result<PurchaseCommitmentDto>.Failure(Error.NotFound("Project not found"));
+
+        if (dto.BudgetId.HasValue && !await _context.Set<Budget>().AnyAsync(
+                budget => budget.Id == dto.BudgetId.Value && budget.ProjectId == dto.ProjectId && !budget.IsDeleted,
+                cancellationToken))
+            return Result<PurchaseCommitmentDto>.Failure(Error.NotFound("Budget not found for this project"));
 
         var currency = (projectRef.Currency ?? "GBP").Trim().ToUpperInvariant();
 
@@ -94,6 +102,16 @@ public sealed class CommitmentService : ICommitmentService
         await AuditAsync("PurchaseCommitment", commitment.Id, "Create", userId, null, dto, cancellationToken);
 
         return Result<PurchaseCommitmentDto>.Success(commitment.ToDto());
+    }
+
+    private IQueryable<PurchaseCommitment> ApplyManagementScope(IQueryable<PurchaseCommitment> query)
+    {
+        if (_managementContext is null) return query;
+        var projectIds = _managementContext.Current?.Scope.ProjectIds.ToArray();
+        if (projectIds is null) return query.Where(_ => false);
+        return query.Where(item => item.ProjectId.HasValue
+            ? projectIds.Contains(item.ProjectId.Value)
+            : !item.BudgetId.HasValue);
     }
 
     public async Task<Result<PurchaseCommitmentDto>> UpdateAsync(

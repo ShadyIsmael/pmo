@@ -63,4 +63,21 @@ public sealed class UserEffectivePermissionService : IUserEffectivePermissionSer
 
         return effective;
     }
+
+    public async Task<IReadOnlySet<string>> GetEffectiveRoleNamesAsync(Guid userId, Guid tenantId, CancellationToken cancellationToken = default)
+    {
+        if (userId == Guid.Empty || tenantId == Guid.Empty)
+            return new HashSet<string>(StringComparer.Ordinal);
+
+        var roles = await (
+                from assignment in _context.Set<UserRole>().IgnoreQueryFilters().AsNoTracking()
+                where assignment.UserId == userId && assignment.TenantId == tenantId && !assignment.IsDeleted
+                      && assignment.Role.TenantId == tenantId && !assignment.Role.IsDeleted
+                      && assignment.User.TenantId == tenantId && !assignment.User.IsDeleted && assignment.User.IsActive
+                select assignment.Role.Name)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        return new HashSet<string>(roles, StringComparer.Ordinal);
+    }
 }

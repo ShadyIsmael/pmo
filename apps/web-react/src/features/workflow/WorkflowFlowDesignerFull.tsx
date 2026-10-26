@@ -192,7 +192,7 @@ export function WorkflowFlowDesignerFull({ version, locale, editable, labels, on
           >
             <Background gap={24} size={1} />
             <Controls showInteractive={false} />
-            <MiniMap pannable zoomable nodeColor={(node) => { const data = node.data as Partial<DesignerNodeData>; return data.state?.isInitial ? "#10b981" : data.state?.isFinal ? "#f59e0b" : "#64748b"; }} />
+            <MiniMap pannable zoomable nodeColor={(node) => { const data = node.data as Partial<DesignerNodeData>; return data.state?.isInitial ? "hsl(var(--success))" : data.state?.isFinal ? "hsl(var(--warning))" : "hsl(var(--muted-foreground))"; }} />
           </ReactFlow>
         </div>
       </CardContent>

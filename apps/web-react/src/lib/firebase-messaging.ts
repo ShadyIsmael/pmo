@@ -108,16 +108,15 @@ export async function reconcileRegisteredPushDevice(): Promise<void> {
   }
 }
 
-export async function deactivateRegisteredPushDevice(): Promise<void> {
+export async function deactivateRegisteredPushDevice(capturedAccessToken: string | null = null): Promise<void> {
   if (typeof window === "undefined") return;
   const deviceId = window.localStorage.getItem(DEVICE_ID_KEY);
+  window.localStorage.removeItem(DEVICE_ID_KEY);
+  window.localStorage.removeItem(ENABLED_KEY);
   try {
-    if (deviceId) await notificationApi.unregisterDevice(deviceId);
+    if (deviceId) await notificationApi.unregisterDeviceForLogout(deviceId, capturedAccessToken);
   } catch {
     // Local session cleanup still proceeds if the API session has expired.
-  } finally {
-    window.localStorage.removeItem(DEVICE_ID_KEY);
-    window.localStorage.removeItem(ENABLED_KEY);
   }
 }
 

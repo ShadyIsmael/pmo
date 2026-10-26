@@ -32,6 +32,17 @@ export const Permissions = {
     Edit: "Project.Edit",
     Delete: "Project.Delete",
   },
+  StatusReport: {
+    View: "StatusReport.View",
+    Create: "StatusReport.Create",
+    Edit: "StatusReport.Edit",
+    Generate: "StatusReport.Generate",
+    Submit: "StatusReport.Submit",
+    Approve: "StatusReport.Approve",
+    Publish: "StatusReport.Publish",
+    Export: "StatusReport.Export",
+    ManageConfiguration: "StatusReport.ManageConfiguration",
+  },
   Team: {
     View: "Team.View",
     Create: "Team.Create",
@@ -51,6 +62,7 @@ export const Permissions = {
   Handover: {
     View: "Handover.View",
     Manage: "Handover.Manage",
+    AdminInitiate: "Handover.AdminInitiate",
     Approve: "Handover.Approve",
   },
   Risk: {
@@ -129,6 +141,11 @@ export const Permissions = {
     View: "Workflow.View",
     Manage: "Workflow.Manage",
     Publish: "Workflow.Publish",
+  },
+  AssignmentRecovery: {
+    View: "Governance.AssignmentRecovery.View",
+    Initiate: "Governance.AssignmentRecovery.Initiate",
+    Manage: "Governance.AssignmentRecovery.Manage",
   },
 } as const;
 

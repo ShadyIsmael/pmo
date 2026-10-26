@@ -22,6 +22,14 @@ public class PlanAssignmentController : ControllerBase
         return ToActionResult(result, value => Ok(value));
     }
 
+    [Authorize(Policy = "Planning.View")]
+    [HttpGet("capacity")]
+    public async Task<IActionResult> GetCapacity(Guid projectId, Guid planId, [FromQuery] Guid resourceId, [FromQuery] DateTime startDate, [FromQuery] DateTime endDate, [FromQuery] Guid? excludeAssignmentId, CancellationToken cancellationToken)
+    {
+        var result = await _assignmentService.GetCapacityAsync(projectId, planId, resourceId, startDate, endDate, excludeAssignmentId, cancellationToken);
+        return ToActionResult(result, value => Ok(value));
+    }
+
     [Authorize(Policy = "Planning.Manage")]
     [HttpPost]
     public async Task<IActionResult> Create(Guid projectId, Guid planId, [FromBody] CreatePlanAssignmentDto dto, CancellationToken cancellationToken)

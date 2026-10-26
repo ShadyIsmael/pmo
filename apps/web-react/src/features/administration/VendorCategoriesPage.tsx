@@ -8,6 +8,7 @@ import { Label } from "@components/ui/Label";
 import { SideSheet, SideSheetBody, SideSheetFooter } from "@components/ui/SideSheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@components/ui/Table";
 import { useAuth } from "@auth/AuthProvider";
+import { useConfirm } from "@components/ui/ConfirmProvider";
 import { useI18n } from "@i18n/messages";
 import { getStatusTextClass } from "@lib/status-presentation";
 import { hasPermission, Permissions } from "@lib/permissions";
@@ -21,6 +22,7 @@ function requestFor(category: VendorCategoryDto, changes: Partial<SaveVendorCate
 
 export function VendorCategoriesPage() {
   const { t, locale } = useI18n();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const canManage = Boolean(user && hasPermission(user.permissions, Permissions.Settings.Write));
   const categoriesQuery = useVendorCategories(true);
@@ -78,7 +80,7 @@ export function VendorCategoriesPage() {
   }
   async function toggleActive(category: VendorCategoryDto) {
     const name = locale === "ar" ? category.nameAr : category.nameEn;
-    if (category.isActive && !window.confirm(t("administration.vendorCategories.deactivateConfirm", { name }))) return;
+    if (category.isActive && !await confirm({ description: t("administration.vendorCategories.deactivateConfirm", { name }), destructive: true })) return;
     await updateCategory(category, { isActive: !category.isActive }, `active-${category.id}`);
   }
   async function moveOrder(category: VendorCategoryDto, direction: "up" | "down") {

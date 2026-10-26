@@ -44,9 +44,12 @@ export function RiskCreatePage({ embedded = false, onCreated, onCancel }: RiskCr
   const projectsQuery = useProjects({ page: 1, pageSize: 100 }, !initialProjectId);
   const resourcesQuery = useResources({ page: 1, pageSize: 100, isActive: true });
   const createRisk = useCreateRisk();
-  const [form, setForm] = React.useState<RiskForm>({ projectId: initialProjectId, title: "", description: "", riskLevel: "", ownerResourceId: "", impactTypes: [], impactDescription: "" });
+  const [form, setForm] = React.useState<RiskForm>({ projectId: "", title: "", description: "", riskLevel: "", ownerResourceId: "", impactTypes: [], impactDescription: "" });
   const [submitted, setSubmitted] = React.useState(false);
   const [saveError, setSaveError] = React.useState(false);
+  React.useEffect(() => {
+    if (initialProjectId && projectQuery.data) setForm((current) => ({ ...current, projectId: projectQuery.data!.id }));
+  }, [initialProjectId, projectQuery.data]);
   const selectedProject = initialProjectId ? projectQuery.data : projectsQuery.data?.items.find((project) => project.id === form.projectId);
   const projectLoading = initialProjectId ? projectQuery.isLoading : projectsQuery.isLoading;
   const projectUnavailable = initialProjectId ? projectQuery.isError || (!projectQuery.isLoading && !selectedProject) : projectsQuery.isError;
@@ -103,7 +106,7 @@ export function RiskCreatePage({ embedded = false, onCreated, onCancel }: RiskCr
               <Label htmlFor="risk-project">{t("risks.project")}</Label>
               {initialProjectId ? (
                 <div id="risk-project" className="flex min-h-10 items-center rounded-lg border bg-muted/30 px-3 text-sm">
-                  {projectLoading ? t("risks.loading") : selectedProject ? <Link to={`/projects/${encodeURIComponent(selectedProject.id)}/risks-issues`} className="inline-flex items-center gap-1.5 font-medium text-primary hover:underline"><FolderKanban className="h-3.5 w-3.5" />{selectedProject.name} ({selectedProject.code})</Link> : <span className="text-destructive">{t("risks.projectLoadError")}</span>}
+                  {projectLoading ? t("risks.loading") : selectedProject ? <Link to={`/projects/${encodeURIComponent(selectedProject.publicId)}/risks-issues`} className="inline-flex items-center gap-1.5 font-medium text-primary hover:underline"><FolderKanban className="h-3.5 w-3.5" />{selectedProject.name} ({selectedProject.code})</Link> : <span className="text-destructive">{t("risks.projectLoadError")}</span>}
                 </div>
               ) : (
                 <select id="risk-project" className="input-field" value={form.projectId} onChange={(event) => setForm((current) => ({ ...current, projectId: event.target.value }))} aria-invalid={submitted && !form.projectId}>

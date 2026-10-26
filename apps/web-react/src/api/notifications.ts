@@ -12,6 +12,7 @@ export interface NotificationListItem {
   sentAt: string;
   referenceType?: string;
   referenceId?: string;
+  referencePublicId?: string;
 }
 
 export interface DeviceTokenDto {
@@ -55,6 +56,7 @@ export const notificationKeys = { all: ["notifications"] as const };
 export const notificationApi = {
   registerDevice: (request: RegisterDeviceTokenRequest) => api.post<DeviceTokenDto>(endpoints.notifications.devices, request),
   unregisterDevice: (deviceId: string) => api.delete<void>(endpoints.notifications.device(deviceId)),
+  unregisterDeviceForLogout: (deviceId: string, capturedAccessToken: string | null) => api.unregisterPushDeviceForLogout(deviceId, capturedAccessToken),
   getPreferences: () => api.get<NotificationPreferencesResponse>(endpoints.notifications.preferences),
   updatePreferences: (items: NotificationPreference[]) => api.put<void>(endpoints.notifications.preferences, { items }),
 };

@@ -50,7 +50,7 @@ describe("project risk preview parity", () => {
     expect(screen.getByRole("link", { name: "Create Risk" })).toHaveAttribute("href", "/risks-issues/risks/new?projectId=project-1");
     expect(screen.getByRole("link", { name: "Create Risk" }).querySelector("button")).toHaveClass("bg-primary");
     expect(screen.getAllByRole("link", { name: "View all" })[0].querySelector("svg")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Delivery Project: Project risks" })).toHaveClass("text-blue-700", "dark:text-blue-300");
+    expect(screen.getByRole("heading", { name: "Delivery Project: Project risks" })).toHaveClass("flex", "items-center");
     expect(screen.getByRole("link", { name: "Supplier delay" })).toHaveAttribute("href", "/risks-issues/risks/risk-1?from=project&projectId=project-1");
   });
 

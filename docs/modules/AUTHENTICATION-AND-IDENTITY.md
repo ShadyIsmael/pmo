@@ -85,6 +85,7 @@ Response is the same shape as login.
 | `email` | ClaimTypes.Email | User email |
 | `unique_name` | ClaimTypes.Name | Display name |
 | `tenantId` | custom | Tenant id (from user's tenant) |
+| `sid` | custom | `UserSession.Id`; validated against the active persisted session on every authenticated API request |
 | `role` | ClaimTypes.Role | One per role |
 | `permission` | custom | One per `Resource.Action` permission |
 
@@ -107,6 +108,9 @@ Access token expires after `Jwt:ExpiryHours` (default 8 hours). `Jwt:RefreshToke
   3. Revokes the old session and creates a new one (rotation).
   4. Returns a fresh token pair.
 - `POST /api/auth/logout` revokes the session referenced by the supplied refresh token (and the current session).
+- Every access token is bound to its persisted `UserSession.Id` through `sid`. The API rejects an authenticated request with `401` if that exact session is absent, revoked, expired, associated with a different user/tenant, or belongs to an inactive/deleted user.
+- After validating the session, `UserPermissionClaimsMiddleware` replaces token role and permission claims with the user's current effective roles and permissions from the same tenant. Role or direct-permission revocations therefore take effect on the next API request, without waiting for access-token expiry.
+- Refresh rotates the persisted session and issues a JWT with the new session id. No schema change is needed because `UserSession.Id` is already persisted.
 
 ## Tenant Resolution
 
@@ -114,14 +118,12 @@ Access token expires after `Jwt:ExpiryHours` (default 8 hours). `Jwt:RefreshToke
 
 ## Frontend Integration
 
-- `apps/web/src/lib/api-client.ts` — single centralized client. Attaches `Authorization: Bearer <token>`, parses `ApiError`, serializes query params, and exposes `login/logout/refresh/getMe`, `setTokens/clearTokens/hasTokens/subscribeTokens`.
-- On a 401 the client refreshes once (single-flight `refreshPromise`), retries the original request once, then clears the session and redirects to `/{locale}/login`.
-- Tokens are stored in `localStorage` under `nexus_access_token` and `nexus_refresh_token`.
-- `apps/web/src/lib/auth.tsx` — `AuthProvider` + `useAuth()` with `status` (`loading | authenticated | unauthenticated`), `user`, `login`, `logout`, `refreshUser`.
-- `apps/web/src/app/[locale]/(dashboard)/layout.tsx` — protected layout; shows a loader until `authenticated`, redirects to login when `unauthenticated`.
-- `apps/web/src/app/[locale]/login/page.tsx` — login page wired to `useAuth().login`.
-- All resource hooks (`useResources`, `useSkills`, `useVendors`, `useCapacity`, `useAllocations`, `useResourceFinder`) call through the central `api` client.
-- TanStack Query retries are disabled for `ApiError` with status 401/403 (`shouldRetry` in `apps/web/src/app/providers.tsx`).
+- `apps/web-react/src/api/client.ts` — centralized React/Vite client; captures the active client-session and management-context generation for each request, fences late responses, aborts in-flight requests at session/context changes, and keys refresh single-flight work to the owning session and refresh token.
+- `apps/web-react/src/auth/AuthProvider.tsx` — verifies the active session with a fresh `/api/auth/me` before exposing authenticated UI. Logout clears local credentials, user state, and private query cache immediately, then best-effort unregisters the current push device and revokes the server session.
+- Each authenticated client session receives a fresh TanStack Query client. Account changes clear/cancel the previous cache; protected routes wait for authentication and the management-scope bootstrap to finish.
+- The client synchronizes login/logout changes across tabs via the non-secret `nexus_auth_session_id` localStorage key and revalidates `/me` when another tab changes the session. Access/refresh tokens remain in localStorage; this retains the documented XSS exposure and should be revisited for production hardening.
+- Session or management-context changes invalidate late API responses; a stale response or `401` cannot populate the next user's cache or trigger refresh/clear against the next user's credentials.
+- TanStack Query retries are disabled for authorization failures and other client errors (`shouldRetry` in `apps/web-react/src/api/queryClient.ts`).
 
 ## Demo Accounts
 

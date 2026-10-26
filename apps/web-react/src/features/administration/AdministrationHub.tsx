@@ -16,7 +16,7 @@ export function AdministrationHub() {
     { id: "reference-data", href: "/administration/reference-data", icon: ListFilter, title: t("administration.home.cards.referenceData.title"), description: t("administration.home.cards.referenceData.description"), perms: [Permissions.Settings.Read] },
     { id: "platform-settings", href: "/administration/settings", icon: Settings2, title: t("administration.home.cards.platformSettings.title"), description: t("administration.home.cards.platformSettings.description"), perms: [Permissions.Settings.Read] },
     { id: "integrations", href: "/administration/integrations", icon: Plug, title: t("administration.home.cards.integrations.title"), description: t("administration.home.cards.integrations.description"), perms: [Permissions.Settings.Read] },
-    { id: "governance", href: "/administration/governance", icon: GitBranch, title: t("administration.home.cards.governance.title"), description: t("administration.home.cards.governance.description"), perms: [Permissions.Settings.Read, Permissions.Workflow.View] },
+    { id: "governance", href: "/administration/governance", icon: GitBranch, title: t("administration.home.cards.governance.title"), description: t("administration.home.cards.governance.description"), perms: [Permissions.Settings.Read, Permissions.Workflow.View, Permissions.AssignmentRecovery.View, Permissions.AssignmentRecovery.Initiate, Permissions.AssignmentRecovery.Manage] },
   ].filter((a) => hasAnyPermission(permissions, a.perms));
 
   return (

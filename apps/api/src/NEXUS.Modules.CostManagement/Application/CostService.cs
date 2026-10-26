@@ -7,6 +7,7 @@ using NEXUS.Modules.CostManagement.Application.DTOs;
 using NEXUS.Modules.CostManagement.Domain;
 using NEXUS.SharedKernel;
 using NEXUS.SharedKernel.Helpers;
+using NEXUS.SharedKernel.Management;
 
 namespace NEXUS.Modules.CostManagement.Application;
 
@@ -16,10 +17,11 @@ public sealed class CostService : ICostService
     private readonly IAuditService _auditService;
     private readonly IProjectReferenceLookup _projectLookup;
     private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly IManagementContextAccessor? _managementContext;
 
-    public CostService(DbContext context, IAuditService auditService, IProjectReferenceLookup projectLookup, IHttpContextAccessor httpContextAccessor)
+    public CostService(DbContext context, IAuditService auditService, IProjectReferenceLookup projectLookup, IHttpContextAccessor httpContextAccessor, IManagementContextAccessor? managementContext = null)
     {
-        _context = context; _auditService = auditService; _projectLookup = projectLookup; _httpContextAccessor = httpContextAccessor;
+        _context = context; _auditService = auditService; _projectLookup = projectLookup; _httpContextAccessor = httpContextAccessor; _managementContext = managementContext;
     }
 
     public async Task<Result<CostEntryDto>> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
@@ -31,7 +33,7 @@ public sealed class CostService : ICostService
     public async Task<PagedResult<CostEntryDto>> GetPagedAsync(int page, int pageSize, Guid? projectId = null, CancellationToken cancellationToken = default)
     {
         page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 1, 200);
-        var query = _context.Set<CostEntry>().AsNoTracking();
+        var query = ApplyManagementScope(_context.Set<CostEntry>().AsNoTracking());
         if (projectId.HasValue) query = query.Where(item => item.ProjectId == projectId);
         var total = await query.CountAsync(cancellationToken);
         var items = await query.OrderByDescending(item => item.IncurredDate).ThenBy(item => item.Description)
@@ -102,6 +104,15 @@ public sealed class CostService : ICostService
     }
 
     private Guid CurrentTenant() => Guid.TryParse(_httpContextAccessor.HttpContext?.User.FindFirst("tenantId")?.Value, out var tenant) ? tenant : TenantConstants.DemoTenantId;
+    private IQueryable<CostEntry> ApplyManagementScope(IQueryable<CostEntry> query)
+    {
+        if (_managementContext is null) return query;
+        var projectIds = _managementContext.Current?.Scope.ProjectIds.ToArray();
+        if (projectIds is null) return query.Where(_ => false);
+        return query.Where(item => item.ProjectId.HasValue
+            ? projectIds.Contains(item.ProjectId.Value)
+            : !item.BudgetId.HasValue);
+    }
     private static byte[] NewVersion() => Guid.NewGuid().ToByteArray();
     private static bool MatchesVersion(byte[] current, byte[] requested) => requested.Length == 0 || current.Length == 0 || current.SequenceEqual(requested);
     private static string NormalizeCurrency(string? value) => (value ?? "GBP").Trim().ToUpperInvariant();

@@ -99,7 +99,7 @@ export function Header() {
   }
 
   return (
-    <header className="nexus-topbar sticky top-0 z-30 flex h-12 items-center gap-3 border-b bg-background/95 px-4 backdrop-blur lg:px-6">
+    <header className="nexus-topbar sticky top-0 z-30 flex h-12 items-center gap-3 border-b bg-header/95 px-4 backdrop-blur lg:px-6">
       <div className="flex flex-1 items-center gap-3">
         <button
           type="button"

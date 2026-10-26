@@ -39,7 +39,7 @@ public enum Status
 public class ProjectId
 {
     // Private parameterless constructor for EF
-    private ProjectId() { }
+    private ProjectId() => Value = string.Empty;
 
     public string Value { get; }
 

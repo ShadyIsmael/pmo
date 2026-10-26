@@ -4,6 +4,7 @@ using NEXUS.Modules.ProjectManagement.Application.DTOs;
 using NEXUS.Modules.ProjectManagement.Domain;
 using NEXUS.Modules.RiskManagement.Application;
 using NEXUS.Modules.ResourceManagement.Application;
+using NEXUS.Modules.ResourceManagement.Application.DTOs;
 using NEXUS.Modules.WorkItems.Application;
 using NEXUS.SharedKernel;
 
@@ -19,6 +20,7 @@ public sealed class ProjectOverviewService : IProjectOverviewService
     private readonly IProjectChangeRequestService _changeRequestService;
     private readonly IProjectHandoverRequestService _handoverService;
     private readonly IAllocationService _allocationService;
+    private readonly ICapacityService _capacityService;
     private readonly IMeetingService _meetingService;
     private readonly IProjectPlanProgressLookup _planProgressLookup;
     private readonly IProjectPlanMilestoneLookup _planMilestoneLookup;
@@ -42,7 +44,8 @@ public sealed class ProjectOverviewService : IProjectOverviewService
         IProjectFinancialLookup financialLookup,
         IProjectEvmPlanLookup evmPlanLookup,
         IProjectEvmLaborCostLookup evmLaborCostLookup,
-        IProjectEvmDirectCostLookup evmDirectCostLookup)
+        IProjectEvmDirectCostLookup evmDirectCostLookup,
+        ICapacityService capacityService)
     {
         _projectService = projectService;
         _programService = programService;
@@ -59,6 +62,7 @@ public sealed class ProjectOverviewService : IProjectOverviewService
         _evmPlanLookup = evmPlanLookup;
         _evmLaborCostLookup = evmLaborCostLookup;
         _evmDirectCostLookup = evmDirectCostLookup;
+        _capacityService = capacityService;
     }
 
     public async Task<Result<ProjectOverviewDto>> GetAsync(Guid projectId, CancellationToken cancellationToken = default)
@@ -77,7 +81,7 @@ public sealed class ProjectOverviewService : IProjectOverviewService
         var issues = await _workItemService.GetProjectOverviewAsync(projectId, cancellationToken: cancellationToken);
         var planMilestones = await _planMilestoneLookup.GetAsync(projectId, cancellationToken);
         var changes = await _changeRequestService.GetByProjectIdAsync(projectId, cancellationToken);
-        var handovers = await _handoverService.GetForProjectAsync(projectId, cancellationToken);
+        var handoverCount = await _handoverService.GetPendingCountForProjectAsync(projectId, cancellationToken);
         var allocations = await _allocationService.GetProjectOverviewAsync(projectId, cancellationToken);
         var meetings = await _meetingService.GetProjectOverviewAsync(projectId, cancellationToken);
         var planProgress = await _planProgressLookup.GetAsync(projectId, cancellationToken);
@@ -164,10 +168,10 @@ public sealed class ProjectOverviewService : IProjectOverviewService
             CurrentBaseline = currentBaseline,
             PendingChangeRequestCount = changes.IsSuccess && changes.Value is not null
                 ? changes.Value.Count(request => request.Status == ProjectChangeRequest.Statuses.Pending)
-                : 0,
-            PendingHandoverCount = handovers.IsSuccess && handovers.Value is not null
-                ? handovers.Value.Count(request => request.Status == ProjectHandoverRequest.Statuses.Pending)
-                : 0,
+                : null,
+            PendingHandoverCount = handoverCount.IsSuccess
+                ? handoverCount.Value
+                : null,
             Allocations = allocations,
             Meetings = meetings,
             PlanProgress = planProgress,
@@ -204,6 +208,57 @@ public sealed class ProjectOverviewService : IProjectOverviewService
             HasCostManagementData = financialSummary?.HasFinancialData == true,
             HasPendingRevision = financialSummary?.HasPendingRevision == true
         });
+    }
+
+    public async Task<Result<ProjectTeamCapacityOverviewDto>> GetTeamCapacityAsync(
+        Guid projectId,
+        DateTime startDate,
+        DateTime endDate,
+        string periodType,
+        CancellationToken cancellationToken = default)
+    {
+        var projectResult = await _projectService.GetShellAsync(projectId, cancellationToken);
+        if (projectResult.IsFailure || projectResult.Value is null)
+            return Result<ProjectTeamCapacityOverviewDto>.Failure(projectResult.Error ?? Error.NotFound("Project not found"));
+
+        var teamResult = await _projectService.GetTeamAsync(projectId, cancellationToken);
+        if (teamResult.IsFailure || teamResult.Value is null)
+            return Result<ProjectTeamCapacityOverviewDto>.Failure(teamResult.Error ?? Error.NotFound("Project team not found"));
+
+        var periodStart = startDate.Date;
+        var periodEnd = endDate.Date;
+        var members = teamResult.Value
+            .Where(member => string.Equals(member.Status, "Active", StringComparison.OrdinalIgnoreCase)
+                && member.StartDate.Date < periodEnd
+                && member.EndDate.Date >= periodStart)
+            .GroupBy(member => member.ResourceId)
+            .Select(group => group.OrderBy(member => member.StartDate).ThenBy(member => member.Id).First())
+            .Select(member => new ProjectTeamCapacityMemberInputDto
+            {
+                ResourceId = member.ResourceId,
+                ProjectId = projectId,
+                StartDate = member.StartDate,
+                EndDate = member.EndDate,
+                AllocationPercentage = member.AllocationPercentage,
+                // Resource capacity comes from the resource's working calendar.
+                // ProjectMember.HoursPerWeek is a legacy override and must not
+                // replace the resource's overall capacity.
+                HoursPerWeek = null,
+                UseProjectCalendar = string.Equals(
+                    member.CalendarPolicy,
+                    CalendarPolicyConstants.FollowProjectCalendar,
+                    StringComparison.Ordinal),
+                ProjectCalendarId = projectResult.Value.WorkingCalendarId
+            })
+            .ToArray();
+
+        return await _capacityService.GetProjectTeamOverviewAsync(members, new CapacityFilterDto
+        {
+            PeriodType = periodType,
+            StartDate = periodStart,
+            EndDate = periodEnd,
+            IncludeProposed = true
+        }, cancellationToken);
     }
 
     private static bool IsCompleted(PlanMilestoneLookupItem milestone)

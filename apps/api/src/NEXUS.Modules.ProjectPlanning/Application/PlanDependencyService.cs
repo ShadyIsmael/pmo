@@ -17,13 +17,17 @@ public class PlanDependencyService : IPlanDependencyService
     private readonly IAuditService _auditService;
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly IPlanSchedulingService _schedulingService;
+    private readonly SummaryTaskRollupService _summaryRollup;
+    private readonly IPlanGridCommandHistoryService? _commandHistory;
 
-    public PlanDependencyService(DbContext context, IAuditService auditService, IHttpContextAccessor httpContextAccessor, IPlanSchedulingService? schedulingService = null)
+    public PlanDependencyService(DbContext context, IAuditService auditService, IHttpContextAccessor httpContextAccessor, IPlanSchedulingService? schedulingService = null, SummaryTaskRollupService? summaryRollup = null, IPlanGridCommandHistoryService? commandHistory = null)
     {
         _context = context;
         _auditService = auditService;
         _httpContextAccessor = httpContextAccessor;
         _schedulingService = schedulingService ?? new PlanSchedulingService(context, new AutoSchedulingEngine());
+        _summaryRollup = summaryRollup ?? new SummaryTaskRollupService(context);
+        _commandHistory = commandHistory;
     }
 
     public async Task<Result<PlanDependencyDto>> CreateAsync(Guid planId, CreatePlanDependencyDto dto, string userId, CancellationToken cancellationToken = default)
@@ -73,6 +77,7 @@ public class PlanDependencyService : IPlanDependencyService
             userId,
             cancellationToken);
         if (createSchedule.IsFailure) return Result<PlanDependencyDto>.Failure(createSchedule.Error!);
+        await _summaryRollup.RecalculateAsync(workingVersion.Id, userId, cancellationToken: cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
 
         await _auditService.LogAsync(new AuditEntry
@@ -85,6 +90,8 @@ public class PlanDependencyService : IPlanDependencyService
             Timestamp = DateTime.UtcNow,
             CreatedBy = userId
         }, cancellationToken);
+        if (_commandHistory is not null)
+            await _commandHistory.RecordBarrierAsync(planId, workingVersion.Id, userId, "CreateDependency", cancellationToken);
 
         return Result<PlanDependencyDto>.Success(dependency.ToDto());
     }
@@ -130,6 +137,7 @@ public class PlanDependencyService : IPlanDependencyService
             userId,
             cancellationToken);
         if (updateSchedule.IsFailure) return Result<PlanDependencyDto>.Failure(updateSchedule.Error!);
+        await _summaryRollup.RecalculateAsync(dependency.PlanVersionId, userId, cancellationToken: cancellationToken);
 
         try
         {
@@ -151,6 +159,8 @@ public class PlanDependencyService : IPlanDependencyService
             Timestamp = DateTime.UtcNow,
             CreatedBy = userId
         }, cancellationToken);
+        if (_commandHistory is not null)
+            await _commandHistory.RecordBarrierAsync(planId, dependency.PlanVersionId, userId, "UpdateDependency", cancellationToken);
 
         return Result<PlanDependencyDto>.Success(dependency.ToDto());
     }
@@ -175,6 +185,7 @@ public class PlanDependencyService : IPlanDependencyService
             userId,
             cancellationToken);
         if (deleteSchedule.IsFailure) return Result.Failure(deleteSchedule.Error!);
+        await _summaryRollup.RecalculateAsync(dependency.PlanVersionId, userId, cancellationToken: cancellationToken);
 
         try
         {
@@ -194,6 +205,8 @@ public class PlanDependencyService : IPlanDependencyService
             Timestamp = DateTime.UtcNow,
             CreatedBy = userId
         }, cancellationToken);
+        if (_commandHistory is not null)
+            await _commandHistory.RecordBarrierAsync(planId, dependency.PlanVersionId, userId, "DeleteDependency", cancellationToken);
 
         return Result.Success();
     }
@@ -233,6 +246,9 @@ public class PlanDependencyService : IPlanDependencyService
                                  dependency.PlanVersionId == workingVersion.Id &&
                                  dependency.ActivityId == dto.ActivityId)
             .ToListAsync(cancellationToken);
+        var historyBefore = _commandHistory is null || _commandHistory.IsReplaying
+            ? null
+            : PlanGridCommandHistoryService.CaptureDependencyEdges(current);
         var currentByPredecessor = current
             .GroupBy(dependency => dependency.PredecessorActivityId)
             .ToDictionary(group => group.Key, group => group.OrderBy(dependency => dependency.IsDeleted).First());
@@ -291,6 +307,8 @@ public class PlanDependencyService : IPlanDependencyService
         if (schedule.IsFailure)
             return Result<ReplacePlanPredecessorsResultDto>.Failure(schedule.Error!);
 
+        await _summaryRollup.RecalculateAsync(workingVersion.Id, userId, cancellationToken: cancellationToken);
+
         _context.Set<AuditEntry>().Add(new AuditEntry
         {
             TenantId = GetCurrentTenantId(),
@@ -303,13 +321,26 @@ public class PlanDependencyService : IPlanDependencyService
             CreatedBy = userId,
         });
 
+        await using var transaction = _commandHistory is { IsReplaying: false } && _context.Database.CurrentTransaction is null
+            ? await _context.Database.BeginTransactionAsync(cancellationToken)
+            : null;
         try
         {
             await _context.SaveChangesAsync(cancellationToken);
+            if (historyBefore is not null && _commandHistory is not null)
+                await _commandHistory.RecordDependencyUpdateAsync(planId, workingVersion.Id, userId, dto.ActivityId, historyBefore,
+                    PlanGridCommandHistoryService.CaptureDependencyEdges(current), cancellationToken);
+            if (transaction is not null) await transaction.CommitAsync(cancellationToken);
         }
         catch (DbUpdateConcurrencyException)
         {
+            if (transaction is not null) await transaction.RollbackAsync(cancellationToken);
             return Result<ReplacePlanPredecessorsResultDto>.Failure(Error.Conflict("The predecessor set was modified by another user. Reload and try again."));
+        }
+        catch
+        {
+            if (transaction is not null) await transaction.RollbackAsync(cancellationToken);
+            throw;
         }
 
         return Result<ReplacePlanPredecessorsResultDto>.Success(new ReplacePlanPredecessorsResultDto
@@ -318,6 +349,45 @@ public class PlanDependencyService : IPlanDependencyService
             ScheduledActivities = schedule.Value!.ChangedActivities,
             SchedulingRecalculated = true,
         });
+    }
+
+    public async Task<Result<IReadOnlyList<ReplacePlanPredecessorsResultDto>>> ReplacePredecessorsBulkAsync(
+        Guid planId,
+        BulkReplacePlanPredecessorsDto dto,
+        string userId,
+        CancellationToken cancellationToken = default)
+    {
+        if (dto.Items is null || dto.Items.Count is < 1 or > 500 ||
+            dto.Items.Any(item => item is null || item.ActivityId == Guid.Empty) ||
+            dto.Items.Select(item => item.ActivityId).Distinct().Count() != dto.Items.Count)
+            return Result<IReadOnlyList<ReplacePlanPredecessorsResultDto>>.Failure(Error.Validation("Bulk predecessor updates must contain 1–500 unique activities"));
+
+        await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+        using var commandCollection = _commandHistory?.BeginCollection("LinkTasks");
+        var results = new List<ReplacePlanPredecessorsResultDto>(dto.Items.Count);
+        foreach (var item in dto.Items)
+        {
+            var result = await ReplacePredecessorsAsync(planId, item, userId, cancellationToken);
+            if (result.IsFailure)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return Result<IReadOnlyList<ReplacePlanPredecessorsResultDto>>.Failure(result.Error!);
+            }
+            results.Add(result.Value!);
+        }
+
+        if (_commandHistory is not null)
+        {
+            var version = await GetActiveWorkingVersionAsync(planId, cancellationToken);
+            if (version is null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return Result<IReadOnlyList<ReplacePlanPredecessorsResultDto>>.Failure(Error.NotFound(await GetActiveWorkingVersionNotAvailableMessageAsync(planId, cancellationToken)));
+            }
+            await _commandHistory.CommitCollectionAsync(planId, version.Id, userId, cancellationToken);
+        }
+        await transaction.CommitAsync(cancellationToken);
+        return Result<IReadOnlyList<ReplacePlanPredecessorsResultDto>>.Success(results);
     }
 
     public async Task<Result<IReadOnlyList<PlanDependencyDto>>> GetByPlanAsync(Guid planId, CancellationToken cancellationToken = default)

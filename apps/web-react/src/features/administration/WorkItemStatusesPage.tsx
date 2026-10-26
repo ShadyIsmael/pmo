@@ -9,6 +9,7 @@ import { Label } from "@components/ui/Label";
 import { SideSheet, SideSheetBody, SideSheetFooter } from "@components/ui/SideSheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@components/ui/Table";
 import { useAuth } from "@auth/AuthProvider";
+import { useConfirm } from "@components/ui/ConfirmProvider";
 import { useI18n } from "@i18n/messages";
 import { hasPermission, Permissions } from "@lib/permissions";
 import { getStatusTextClass } from "@lib/status-presentation";
@@ -70,6 +71,7 @@ function SummaryCard({ label, value, icon: Icon, tone }: { label: string; value:
 
 export function WorkItemStatusesPage() {
   const { t, locale } = useI18n();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const canManage = Boolean(user && hasPermission(user.permissions, Permissions.Settings.Write));
   const statusesQuery = useWorkItemStatuses(true);
@@ -161,7 +163,7 @@ export function WorkItemStatusesPage() {
   }
 
   async function toggleActive(status: WorkItemStatusDto) {
-    if (status.isActive && !window.confirm(t("administration.workItemStatuses.deactivateConfirm", { name: locale === "ar" ? status.nameAr : status.nameEn }))) return;
+    if (status.isActive && !await confirm({ description: t("administration.workItemStatuses.deactivateConfirm", { name: locale === "ar" ? status.nameAr : status.nameEn }), destructive: true })) return;
     await updateStatus(status, { isActive: !status.isActive, isDefault: status.isActive ? false : status.isDefault }, `active-${status.id}`);
   }
 

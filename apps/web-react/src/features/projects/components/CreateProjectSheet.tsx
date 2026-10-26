@@ -124,7 +124,7 @@ export function ProjectSheet({ open, onOpenChange, project }: ProjectSheetProps)
   const navigate = useNavigate();
   const isEdit = !!project;
   const createMutation = useCreateProject();
-  const updateMutation = useUpdateProject(project?.id ?? "");
+  const updateMutation = useUpdateProject(project?.publicId ?? "");
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
   const isSubmittingRef = React.useRef(false);
 
@@ -198,6 +198,7 @@ export function ProjectSheet({ open, onOpenChange, project }: ProjectSheetProps)
       if (isEdit && project) {
         const payload: UpdateProjectDto = {
           ...base,
+          clearSponsor: Boolean(project.sponsorId && !data.sponsorId),
           name: data.name,
           status: data.status,
           priority: data.priority,
@@ -213,10 +214,10 @@ export function ProjectSheet({ open, onOpenChange, project }: ProjectSheetProps)
           projectManagerId: data.projectManagerId || undefined,
         };
         const result = await createMutation.mutateAsync(payload);
-        if (result?.id) {
+        if (result?.publicId) {
           onOpenChange(false);
           form.reset();
-          navigate(`/projects/${result.id}`);
+          navigate(`/projects/${result.publicId}`);
           return;
         }
       }
@@ -340,7 +341,11 @@ export function ProjectSheet({ open, onOpenChange, project }: ProjectSheetProps)
               </div>
               <div className="space-y-1.5">
                 <Label>{t("projects.sponsor")}</Label>
-                <SearchableSelect options={userOptions} value={form.watch("sponsorId") ?? ""} onValueChange={(v) => form.setValue("sponsorId", v)} placeholder={t("projects.sponsor")} searchPlaceholder={t("projects.sponsor")} loading={usersLoading} emptyText={t("common.noResults")} />
+                <div className="flex items-center gap-2">
+                  <div className="min-w-0 flex-1"><SearchableSelect options={userOptions} value={form.watch("sponsorId") ?? ""} onValueChange={(v) => form.setValue("sponsorId", v)} placeholder={t("projects.sponsor")} searchPlaceholder={t("projects.sponsor")} loading={usersLoading} emptyText={t("common.noResults")} /></div>
+                  {isEdit && form.watch("sponsorId") ? <Button type="button" variant="outline" size="sm" onClick={() => form.setValue("sponsorId", "", { shouldDirty: true })}>{t("projects.clearSponsor")}</Button> : null}
+                </div>
+                <p className="text-xs text-muted-foreground">{t("projects.sponsorResourceRequirement")}</p>
               </div>
             </div>
 

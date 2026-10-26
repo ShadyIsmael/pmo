@@ -3,6 +3,7 @@ import { Coins, ListFilter, Tag, UsersRound, ArrowUpRight, Pencil, Plus, Trash2 
 import { PageHeader } from "@components/layout/PageHeader";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@components/ui/Card";
 import { Button } from "@components/ui/Button";
+import { useConfirm } from "@components/ui/ConfirmProvider";
 import { Input } from "@components/ui/Input";
 import { Label } from "@components/ui/Label";
 import { useI18n } from "@i18n/messages";
@@ -78,16 +79,28 @@ export function IntegrationsPage() {
 
 export function GovernancePage() {
   const { t } = useI18n();
+  const { user } = useAuth();
+  const canRecoverAssignments = Boolean(user && hasAnyPermission(user.permissions, [Permissions.AssignmentRecovery.View, Permissions.AssignmentRecovery.Initiate, Permissions.AssignmentRecovery.Manage]));
   return (
     <div className="space-y-6">
       <PageHeader title={t("administration.governance.title")} description={t("administration.governance.description")} />
-      <Card><CardContent className="p-6 text-sm text-muted-foreground">{t("administration.governance.empty")}</CardContent></Card>
+      {canRecoverAssignments ? <Link to="/administration/governance/entity-assignment-recovery" className="group block max-w-3xl">
+        <Card className="transition-colors group-hover:border-primary/40">
+          <CardHeader className="flex-row items-center gap-4 space-y-0">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary"><UsersRound className="h-5 w-5" /></div>
+            <div className="min-w-0 flex-1"><CardTitle className="text-base">{t("administration.governance.assignmentRecovery.title")}</CardTitle><CardDescription className="mt-1">{t("administration.governance.assignmentRecovery.description")}</CardDescription></div>
+            <ArrowUpRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
+          </CardHeader>
+          <CardContent><div className="border-t pt-3 text-xs font-semibold text-primary">{t("administration.governance.assignmentRecovery.open")}</div></CardContent>
+        </Card>
+      </Link> : <Card><CardContent className="p-6 text-sm text-muted-foreground">{t("administration.governance.empty")}</CardContent></Card>}
     </div>
   );
 }
 
 export function CurrenciesPage() {
   const { t } = useI18n();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const canManage = Boolean(user && hasPermission(user.permissions, Permissions.Settings.Write));
   const query = useCurrencies(true);
@@ -140,7 +153,7 @@ export function CurrenciesPage() {
     }
   }
   async function handleDelete(currency: CurrencyDto) {
-    if (currency.isBase || !canManage || !window.confirm(t("administration.currencies.deleteConfirm", { code: currency.code }))) return;
+    if (currency.isBase || !canManage || !await confirm({ description: t("administration.currencies.deleteConfirm", { code: currency.code }), destructive: true })) return;
     setActionError(null);
     try {
       await remove.mutateAsync(currency.id);

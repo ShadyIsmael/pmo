@@ -17,6 +17,7 @@ import { useProjectEnumLabels } from "@features/projects/lib/project-labels";
 interface InvitationValidation { resourceName: string; email: string; projectName: string; }
 interface StakeholderProjectView {
   id: string;
+  publicId: string;
   code: string;
   name: string;
   description?: string;
@@ -143,13 +144,13 @@ export function StakeholderProjectsPage() {
             : <Card className="shadow-none"><CardContent className="p-0"><Table>
               <TableHeader><TableRow><TableHead>{t("stakeholder.project")}</TableHead><TableHead>{t("stakeholder.status")}</TableHead><TableHead>{t("stakeholder.health")}</TableHead><TableHead>{t("stakeholder.progress")}</TableHead><TableHead>{t("stakeholder.dates")}</TableHead><TableHead>{t("stakeholder.latestUpdate")}</TableHead><TableHead className="text-end">{t("common.actions")}</TableHead></TableRow></TableHeader>
               <TableBody>{items.map((project) => <TableRow key={project.id}>
-                <TableCell><Link to={`/stakeholder/projects/${encodeURIComponent(project.id)}`} className="font-semibold text-primary hover:underline">{project.name}</Link><p className="text-xs text-muted-foreground">{project.code}</p></TableCell>
+                <TableCell><Link to={`/stakeholder/projects/${encodeURIComponent(project.publicId)}`} className="font-semibold text-primary hover:underline">{project.name}</Link><p className="text-xs text-muted-foreground">{project.code}</p></TableCell>
                 <TableCell><Badge status={project.status}>{statusLabel(project.status)}</Badge></TableCell>
                 <TableCell><Badge status={project.health}>{healthLabel(project.health)}</Badge></TableCell>
                 <TableCell className="tabular-nums">{formatLocalizedNumber(project.progress, locale)} %</TableCell>
                 <TableCell className="whitespace-nowrap text-xs">{formatStakeholderDate(project.startDate, formatDate)} – {formatStakeholderDate(project.endDate, formatDate)}</TableCell>
                 <TableCell className="whitespace-nowrap text-xs">{project.latestPublishedStatusReport ? formatStakeholderDate(project.latestPublishedStatusReport.reportDate, formatDate) : t("stakeholder.noPublishedUpdate")}</TableCell>
-                <TableCell className="text-end"><Link to={`/stakeholder/projects/${encodeURIComponent(project.id)}`} className="text-sm font-medium text-primary hover:underline">{t("common.view")}</Link></TableCell>
+                <TableCell className="text-end"><Link to={`/stakeholder/projects/${encodeURIComponent(project.publicId)}`} className="text-sm font-medium text-primary hover:underline">{t("common.view")}</Link></TableCell>
               </TableRow>)}</TableBody>
             </Table></CardContent></Card>}
     </div>

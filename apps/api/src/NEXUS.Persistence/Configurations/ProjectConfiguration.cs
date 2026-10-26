@@ -19,6 +19,8 @@ public class ProjectConfiguration : IEntityTypeConfiguration<Project>
         builder.Property(p => p.Phase).HasMaxLength(100);
         builder.Property(p => p.RiskRating).HasMaxLength(50);
         builder.HasIndex(p => p.TenantId);
+        builder.Property(p => p.PublicId).HasDefaultValueSql("NEWID()");
+        builder.HasIndex(p => p.PublicId).IsUnique();
         builder.HasIndex(p => p.Status);
         builder.HasIndex(p => p.ProjectManagerId);
         builder.Property(p => p.WorkingCalendarId).HasColumnType("uniqueidentifier");

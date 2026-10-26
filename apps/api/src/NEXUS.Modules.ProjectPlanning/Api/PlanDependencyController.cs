@@ -94,4 +94,20 @@ public class PlanDependencyController : ControllerBase
             };
         return Ok(result.Value);
     }
+
+    [Authorize(Policy = "Planning.Manage")]
+    [HttpPut("bulk-predecessors")]
+    public async Task<IActionResult> ReplacePredecessorsBulk(Guid projectId, Guid planId, [FromBody] BulkReplacePlanPredecessorsDto dto, CancellationToken cancellationToken)
+    {
+        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        var result = await _dependencyService.ReplacePredecessorsBulkAsync(planId, dto, userId, cancellationToken);
+        if (result.IsFailure)
+            return result.Error?.StatusCode switch
+            {
+                404 => NotFound(new { error = result.Error.Message }),
+                409 => Conflict(new { error = result.Error.Message }),
+                _ => BadRequest(new { error = result.Error?.Message })
+            };
+        return Ok(result.Value);
+    }
 }

@@ -48,7 +48,8 @@ public sealed class WorkflowTransitionQueryService : IWorkflowTransitionQuerySer
                 .ThenInclude(v => v.Transitions)
                     .ThenInclude(t => t.Guards)
             .AsNoTracking()
-            .FirstOrDefaultAsync(i => i.EntityType == entityType && i.EntityId == entityId && i.IsActive && !i.IsDeleted, cancellationToken);
+            .FirstOrDefaultAsync(i => i.TenantId == context.TenantId && i.EntityType == entityType
+                && i.EntityId == entityId && !i.IsDeleted, cancellationToken);
 
         if (instance is null)
             return Result<WorkflowTransitionsResponse>.Failure(WorkflowErrors.WorkflowInstanceNotFound(entityType, entityId));

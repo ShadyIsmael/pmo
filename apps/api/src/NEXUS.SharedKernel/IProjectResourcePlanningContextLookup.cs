@@ -14,4 +14,7 @@ public sealed record ProjectResourcePlanningContext(
     string CalendarPolicy,
     Guid? ProjectCalendarId,
     IReadOnlyList<Guid> RoleIds,
-    bool IsActive);
+    bool IsActive,
+    decimal AllocationPercentage,
+    DateTime StartDate,
+    DateTime EndDate);

@@ -15,7 +15,10 @@ public sealed record ProjectWorkflowConfigurationDto(
     string? EffectiveBehavior,
     DateTime ConfiguredAt,
     string ConfiguredBy,
-    byte[]? RowVersion);
+    byte[]? RowVersion,
+    bool SponsorApprovalRequired = true,
+    bool AllowAnyOneOptionalApprover = false,
+    bool AllowSequentialApprovers = true);
 
 public sealed record ProjectWorkflowSettingsDto(
     Guid ProjectId,
@@ -26,6 +29,9 @@ public sealed class SaveProjectWorkflowConfigurationRequest
     public string Mode { get; set; } = ProjectWorkflowModes.Standard;
     public Guid? WorkflowDefinitionId { get; set; }
     public byte[]? RowVersion { get; set; }
+    public bool? SponsorApprovalRequired { get; set; }
+    public bool? AllowAnyOneOptionalApprover { get; set; }
+    public bool? AllowSequentialApprovers { get; set; }
 }
 
 public sealed record ProjectWorkflowSelection(

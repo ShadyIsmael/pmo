@@ -171,6 +171,70 @@ public sealed class PlanVersionWorkflowServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task CaptureBaseline_SkipsRelationshipsWithMissingActivityEndpoints()
+    {
+        SetTenant(_tenantA);
+        var working = await SeedVersionAsync(PlanVersionType.Working, PlanVersionStatus.Active, 1, includeModel: true);
+        var activeActivity = working.Activities.Single();
+        var deletedActivityId = Guid.NewGuid();
+        _context.PlanActivities.Add(new PlanActivity
+        {
+            Id = deletedActivityId,
+            TenantId = _tenantA,
+            PlanVersionId = working.Id,
+            Code = "DELETED",
+            Name = "Deleted activity",
+            IsDeleted = true,
+            CreatedBy = _userA.ToString()
+        });
+        _context.PlanDependencies.AddRange(
+            new PlanDependency
+            {
+                TenantId = _tenantA,
+                PlanVersionId = working.Id,
+                ActivityId = activeActivity.Id,
+                PredecessorActivityId = deletedActivityId,
+                CreatedBy = _userA.ToString()
+            },
+            new PlanDependency
+            {
+                TenantId = _tenantA,
+                PlanVersionId = working.Id,
+                ActivityId = deletedActivityId,
+                PredecessorActivityId = activeActivity.Id,
+                CreatedBy = _userA.ToString()
+            });
+        _context.PlanAssignments.Add(new PlanAssignment
+        {
+            TenantId = _tenantA,
+            PlanVersionId = working.Id,
+            ActivityId = deletedActivityId,
+            ResourceId = Guid.NewGuid(),
+            CreatedBy = _userA.ToString()
+        });
+        await _context.SaveChangesAsync();
+        _context.ChangeTracker.Clear();
+
+        var result = await _service.CaptureBaselineAsync(
+            _planId,
+            await CurrentRowVersionAsync(working.Id),
+            _userA.ToString());
+
+        Assert.True(result.IsSuccess, result.Error?.Message);
+        var baseline = await LoadVersionAsync(result.Value!.Id);
+        Assert.Single(baseline.Dependencies);
+        Assert.Single(baseline.Assignments);
+        Assert.All(baseline.Dependencies, dependency =>
+        {
+            Assert.Contains(baseline.Activities, activity => activity.Id == dependency.ActivityId);
+            Assert.Contains(baseline.Activities, activity => activity.Id == dependency.PredecessorActivityId);
+        });
+        Assert.Contains(baseline.Activities, activity => activity.Id == baseline.Assignments.Single().ActivityId);
+        Assert.Equal(3, await _context.PlanDependencies.CountAsync(dependency => dependency.PlanVersionId == working.Id));
+        Assert.Equal(2, await _context.PlanAssignments.CountAsync(assignment => assignment.PlanVersionId == working.Id));
+    }
+
+    [Fact]
     public async Task PromoteWorking_CreatesNextBaselineAndNextWorkingAtomically()
     {
         SetTenant(_tenantA);
@@ -293,7 +357,21 @@ public sealed class PlanVersionWorkflowServiceTests : IDisposable
         version.Activities.Add(activity);
         version.Deliverables.Add(deliverable);
         version.Dependencies.Add(new PlanDependency { TenantId = _tenantA, PlanVersionId = version.Id, ActivityId = activity.Id, PredecessorActivityId = activity.Id, CreatedBy = _userA.ToString() });
-        version.Assignments.Add(new PlanAssignment { TenantId = _tenantA, PlanVersionId = version.Id, ActivityId = activity.Id, ResourceId = Guid.NewGuid(), AllocationPct = 50, CreatedBy = _userA.ToString() });
+        version.Assignments.Add(new PlanAssignment
+        {
+            TenantId = _tenantA,
+            PlanVersionId = version.Id,
+            ActivityId = activity.Id,
+            ResourceId = Guid.NewGuid(),
+            AllocationPct = 50,
+            HoursPerWeek = 20,
+            PlannedHours = 40,
+            StartDate = new DateTime(2026, 1, 5),
+            EndDate = new DateTime(2026, 1, 9),
+            ProjectRoleId = Guid.NewGuid(),
+            ResourceAllocationId = Guid.NewGuid(),
+            CreatedBy = _userA.ToString()
+        });
         version.Calendars.Add(calendar);
     }
 
@@ -324,6 +402,14 @@ public sealed class PlanVersionWorkflowServiceTests : IDisposable
         Assert.Equal(clone.Id, clone.Activities.Single().PlanVersionId);
         Assert.Equal(clone.Activities.Single().Id, clone.Dependencies.Single().ActivityId);
         Assert.Equal(clone.Activities.Single().Id, clone.Assignments.Single().ActivityId);
+        Assert.Equal(source.Assignments.Single().ResourceId, clone.Assignments.Single().ResourceId);
+        Assert.Equal(source.Assignments.Single().AllocationPct, clone.Assignments.Single().AllocationPct);
+        Assert.Equal(source.Assignments.Single().HoursPerWeek, clone.Assignments.Single().HoursPerWeek);
+        Assert.Equal(source.Assignments.Single().PlannedHours, clone.Assignments.Single().PlannedHours);
+        Assert.Equal(source.Assignments.Single().StartDate, clone.Assignments.Single().StartDate);
+        Assert.Equal(source.Assignments.Single().EndDate, clone.Assignments.Single().EndDate);
+        Assert.Equal(source.Assignments.Single().ProjectRoleId, clone.Assignments.Single().ProjectRoleId);
+        Assert.Equal(source.Assignments.Single().ResourceAllocationId, clone.Assignments.Single().ResourceAllocationId);
         Assert.Equal(clone.Calendars.Single().Id, clone.Calendars.Single().DayRules.Single().PlanningCalendarId);
         Assert.Equal(clone.WbsNodes.Single().Id, clone.Activities.Single().WbsId);
         Assert.Equal(source.WbsNodes.Single().TextFormat?.IsBold, clone.WbsNodes.Single().TextFormat?.IsBold);
@@ -370,6 +456,8 @@ internal sealed class PlanningWorkflowTestDbContext : DbContext
     public DbSet<PlanCalendar> PlanCalendars => Set<PlanCalendar>();
     public DbSet<CalendarDayRule> CalendarDayRules => Set<CalendarDayRule>();
     public DbSet<CalendarHoliday> CalendarHolidays => Set<CalendarHoliday>();
+    public DbSet<PlanImportSession> PlanImportSessions => Set<PlanImportSession>();
+    public DbSet<PlanImportIssue> PlanImportIssues => Set<PlanImportIssue>();
 
     private Guid TenantId => Guid.TryParse(_accessor.HttpContext?.User.FindFirst("tenantId")?.Value, out var tenantId)
         ? tenantId
@@ -387,6 +475,8 @@ internal sealed class PlanningWorkflowTestDbContext : DbContext
         ConfigureBase(modelBuilder.Entity<PlanningCalendar>());
         ConfigureBase(modelBuilder.Entity<CalendarDayRule>());
         ConfigureBase(modelBuilder.Entity<CalendarHoliday>());
+        ConfigureBase(modelBuilder.Entity<PlanImportSession>());
+        ConfigureBase(modelBuilder.Entity<PlanImportIssue>());
 
         modelBuilder.Entity<PlanWbsNode>().OwnsOne(e => e.TextFormat, format =>
         {
@@ -431,6 +521,11 @@ internal sealed class PlanningWorkflowTestDbContext : DbContext
         modelBuilder.Entity<PlanningCalendar>().HasMany(c => c.Holidays).WithOne(h => h.PlanningCalendar).HasForeignKey(h => h.PlanningCalendarId).OnDelete(DeleteBehavior.Cascade);
         modelBuilder.Entity<PlanCalendar>().Property(c => c.ProjectId).IsRequired();
         modelBuilder.Entity<PlanCalendar>().Property(c => c.PlanVersionId).IsRequired();
+        modelBuilder.Entity<PlanImportSession>()
+            .HasMany(session => session.Issues)
+            .WithOne(issue => issue.PlanImportSession)
+            .HasForeignKey(issue => issue.PlanImportSessionId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 
     private void ConfigureBase<TEntity>(EntityTypeBuilder<TEntity> entity) where TEntity : BaseEntity

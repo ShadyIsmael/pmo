@@ -31,6 +31,7 @@ public static class ResourceCostProfileMapping
         {
             ResourceId = dto.ResourceId,
             EffectiveFrom = dto.EffectiveFrom,
+            EffectiveTo = dto.EffectiveTo,
             CompensationType = dto.CompensationType,
             Amount = dto.Amount,
             Currency = dto.Currency,

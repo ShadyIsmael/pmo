@@ -14,6 +14,7 @@ import { useI18n } from "@i18n/messages";
 import { useAuth } from "@auth/AuthProvider";
 import { useManagement } from "@api/management";
 import { hasPermission, Permissions } from "@lib/permissions";
+import { getApprovalReviewPath } from "@lib/approval-navigation";
 import {
   usePendingHandoverRequestsForMe,
   useAcceptHandoverRequest,
@@ -25,12 +26,12 @@ import {
   useApproveProjectChangeRequest,
   useRejectProjectChangeRequest,
 } from "./api/myWork";
-import type { ProjectChangeRequestDto, ManagerHandoverRequestDto } from "./api/myWork";
+import type { PendingProjectChangeApprovalDto, ManagerHandoverRequestDto } from "./api/myWork";
 
 export function MyWorkApprovalsPage() {
   const { t } = useI18n();
   const { user } = useAuth();
-  const { refreshSnapshot } = useManagement();
+  const { refreshSnapshot, effectiveReadOnly } = useManagement();
   const canApproveHandovers = Boolean(user && hasPermission(user.permissions, Permissions.Handover.Approve));
   const canApproveChangeRequests = Boolean(user && hasPermission(user.permissions, Permissions.ChangeRequest.Approve));
   const { data: requests, isLoading, isError: handoverRequestsError, refetch: refetchHandovers } = usePendingHandoverRequestsForMe(canApproveHandovers);
@@ -67,6 +68,7 @@ export function MyWorkApprovalsPage() {
     setHandoverActionError(null);
     try {
       await acceptMutation.mutateAsync(id);
+      await refreshSnapshot();
     } catch (error: unknown) {
       const status = (error as { status?: number }).status;
       setHandoverActionError(status === 409 ? t("approvals.handoverDecisionConflict") : t("approvals.handoverDecisionFailed"));
@@ -181,12 +183,11 @@ export function MyWorkApprovalsPage() {
                       <Badge status="Pending">{t("approvals.statusPending")}</Badge>
                     </div>
                     <p className="mt-1 text-sm">
-                      {request.currentProjectManagerName} → <span className="font-medium">{request.newProjectManagerName}</span>
+                        {request.currentProjectManagerName || t("managerHandover.notAssigned")} → <span className="font-medium">{request.newProjectManagerName}</span>
                     </p>
+                      {request.initiationType !== "ManagerInitiated" ? <p className="mt-1 text-xs text-muted-foreground">{t(request.initiationType === "InitialAssignment" ? "managerHandover.initialAssignment" : "managerHandover.adminRequest")}</p> : null}
                     <p className="text-xs text-muted-foreground">
-                      <a href={`/projects/${request.projectId}`} className="font-medium hover:underline">
-                        {request.projectName}
-                      </a>{" "}
+                      <span className="font-medium">{request.projectName}</span>{" "}
                       · {request.projectCode}
                     </p>
                     <p className="mt-1 text-xs text-muted-foreground">{request.reason}</p>
@@ -197,15 +198,16 @@ export function MyWorkApprovalsPage() {
                       <span>·</span>
                       <span>{formatDate(request.requestedAt)}</span>
                     </div>
+                    <Link to={getApprovalReviewPath("project-handover", request.id)} className="mt-2 inline-flex text-sm font-medium text-primary underline-offset-4 hover:underline">{t("approvals.reviewRequest")}</Link>
                   </div>
-                  <div className="flex gap-2">
+                  {!effectiveReadOnly ? <div className="flex gap-2">
                     <Button size="sm" disabled={acceptMutation.isPending || rejectMutation.isPending} onClick={() => handleAccept(request.id)}>
                       <CheckCircle2 className="mr-1 h-4 w-4" />{t("approvals.approve")}
                     </Button>
                     <Button size="sm" variant="outline" onClick={() => setRejectingId(request.id)}>
                       <XCircle className="mr-1 h-4 w-4" />{t("approvals.reject")}
                     </Button>
-                  </div>
+                  </div> : null}
                 </div>
               ))}
               {managerPending.map((request) => (
@@ -214,6 +216,7 @@ export function MyWorkApprovalsPage() {
                   request={request}
                   accepting={managerAccept.isPending || managerAcceptPortfolio.isPending}
                   rejecting={managerReject.isPending || managerRejectPortfolio.isPending}
+                  canDecide={!effectiveReadOnly}
                   error={managerHandoverActionError?.requestId === request.id ? managerHandoverActionError.message : null}
                   onAccept={() => void handleManagerHandoverAccept(request)}
                   onReject={() => { setManagerRejectError(null); setManagerRejectingId(request.id); }}
@@ -225,6 +228,7 @@ export function MyWorkApprovalsPage() {
                   request={request}
                   approving={approveChange.isPending}
                   rejecting={rejectChange.isPending}
+                  canDecide={!effectiveReadOnly}
                   approvalError={changeApprovalError?.requestId === request.id ? changeApprovalError.message : null}
                   onApprove={() => handleApproveChange(request.id)}
                   onReject={() => { setChangeApprovalError(null); setChangeRejectError(null); setChangeRejectingId(request.id); }}
@@ -271,7 +275,7 @@ export function MyWorkApprovalsPage() {
             <Button variant="outline" onClick={() => { setManagerRejectingId(null); setManagerRejectionReason(""); setManagerRejectError(null); }} disabled={managerReject.isPending || managerRejectPortfolio.isPending}>{t("common.cancel")}</Button>
             <Button
               variant="destructive"
-              disabled={!managerRejectionReason.trim() || managerReject.isPending || managerRejectPortfolio.isPending}
+              disabled={!managerRejectionReason.trim() || effectiveReadOnly || managerReject.isPending || managerRejectPortfolio.isPending}
               onClick={() => void handleManagerHandoverReject()}
             >
               {(managerReject.isPending || managerRejectPortfolio.isPending) && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
@@ -290,7 +294,7 @@ export function MyWorkApprovalsPage() {
           <Textarea value={rejectionReason} onChange={(e) => setRejectionReason(e.target.value)} placeholder={t("approvals.rejectionReasonPlaceholder")} rows={3} />
           <DialogFooter>
             <Button variant="outline" onClick={() => { setRejectingId(null); setRejectionReason(""); }}>{t("common.cancel")}</Button>
-            <Button variant="destructive" disabled={!rejectionReason.trim() || rejectMutation.isPending} onClick={() => rejectingId && handleReject(rejectingId)}>
+            <Button variant="destructive" disabled={!rejectionReason.trim() || effectiveReadOnly || rejectMutation.isPending} onClick={() => rejectingId && handleReject(rejectingId)}>
               {rejectMutation.isPending && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
               {t("approvals.confirmReject")}
             </Button>
@@ -311,7 +315,7 @@ export function MyWorkApprovalsPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => { setChangeRejectingId(null); setChangeRejectionReason(""); setChangeRejectError(null); }}>{t("common.cancel")}</Button>
-            <Button variant="destructive" disabled={!changeRejectionReason.trim() || rejectChange.isPending} onClick={() => changeRejectingId && handleRejectChange(changeRejectingId)}>
+            <Button variant="destructive" disabled={!changeRejectionReason.trim() || effectiveReadOnly || rejectChange.isPending} onClick={() => changeRejectingId && handleRejectChange(changeRejectingId)}>
               {rejectChange.isPending && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
               {t("approvals.confirmReject")}
             </Button>
@@ -322,9 +326,10 @@ export function MyWorkApprovalsPage() {
   );
 }
 
-function ManagerApproval({ request, accepting, rejecting, error, onAccept, onReject }: { request: ManagerHandoverRequestDto; accepting: boolean; rejecting: boolean; error?: string | null; onAccept: () => void; onReject: () => void }) {
+function ManagerApproval({ request, accepting, rejecting, canDecide, error, onAccept, onReject }: { request: ManagerHandoverRequestDto; accepting: boolean; rejecting: boolean; canDecide: boolean; error?: string | null; onAccept: () => void; onReject: () => void }) {
   const { t } = useI18n();
   const entityType = request.entityType === "Program" ? t("managerHandover.program") : t("managerHandover.portfolio");
+  const reviewType = request.entityType === "Program" ? "program-handover" : "portfolio-handover";
   return (
     <div className="flex items-start gap-4 border-t px-4 py-4">
       <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
@@ -335,20 +340,22 @@ function ManagerApproval({ request, accepting, rejecting, error, onAccept, onRej
           <span className="text-sm font-medium">{t("managerHandover.handover")} · {entityType}</span>
           <span className={`text-xs font-semibold ${getStatusTextClass("Pending")}`}>{t("approvals.statusPending")}</span>
         </div>
-        <p className="mt-1 text-sm">{request.currentManagerName} → <span className="font-medium">{request.newManagerName}</span></p>
+          <p className="mt-1 text-sm">{request.currentManagerName || t("managerHandover.notAssigned")} → <span className="font-medium">{request.newManagerName}</span></p>
+          {request.initiationType !== "ManagerInitiated" ? <p className="mt-1 text-xs text-muted-foreground">{t(request.initiationType === "InitialAssignment" ? "managerHandover.initialAssignment" : "managerHandover.adminRequest")}</p> : null}
         <p className="text-xs text-muted-foreground">{request.entityName} · {request.reason}</p>
         <p className="mt-1 text-xs text-muted-foreground">{t("approvals.effectiveDate")}: {formatDate(request.effectiveHandoverDate)} · {t("approvals.requestedBy")}: {request.requestedByName}</p>
+        <Link to={getApprovalReviewPath(reviewType, request.id)} className="mt-2 inline-flex text-sm font-medium text-primary underline-offset-4 hover:underline">{t("approvals.reviewRequest")}</Link>
         {error ? <p role="alert" className="mt-2 text-xs text-destructive">{error}</p> : null}
       </div>
-      <div className="flex gap-2">
+      {canDecide ? <div className="flex gap-2">
         <Button size="sm" disabled={accepting || rejecting} onClick={onAccept}><CheckCircle2 className="mr-1 h-4 w-4" />{t("approvals.approve")}</Button>
         <Button size="sm" variant="outline" disabled={accepting || rejecting} onClick={onReject}><XCircle className="mr-1 h-4 w-4" />{t("approvals.reject")}</Button>
-      </div>
+      </div> : null}
     </div>
   );
 }
 
-function ChangeRequestApproval({ request, approving, rejecting, approvalError, onApprove, onReject }: { request: ProjectChangeRequestDto; approving: boolean; rejecting: boolean; approvalError?: string | null; onApprove: () => void; onReject: () => void }) {
+function ChangeRequestApproval({ request, approving, rejecting, canDecide, approvalError, onApprove, onReject }: { request: PendingProjectChangeApprovalDto; approving: boolean; rejecting: boolean; canDecide: boolean; approvalError?: string | null; onApprove: () => void; onReject: () => void }) {
   const { t } = useI18n();
   return (
     <div className="flex items-start gap-4 border-t px-4 py-4">
@@ -361,21 +368,20 @@ function ChangeRequestApproval({ request, approving, rejecting, approvalError, o
           <span className={`text-xs font-semibold ${getStatusTextClass(request.status)}`}>{t(`projects.changeStatus.${request.status}`)}</span>
         </div>
         <p className="mt-1 text-xs text-muted-foreground">
-          <Link to={`/projects/${request.projectId}`} className="font-medium hover:underline">
-            {request.projectName}
-          </Link>
+          <span className="font-medium">{request.projectName}</span>
           <span> · </span>
           {t("approvals.changeType")}: {t(request.type === "Baseline" ? "projects.changeTypeBaseline" : "projects.changeTypeAdministrative")}
         </p>
         <p className="mt-1 text-sm">{t("approvals.changeNumber")} #{request.number} · {request.reason}</p>
-        {request.justification && <p className="mt-1 text-xs text-muted-foreground">{t("approvals.justification")}: {request.justification}</p>}
         <p className="mt-1 text-xs text-muted-foreground">{t("approvals.requestedBy")}: {request.requestedByName} · {formatDate(request.requestedAt)}</p>
+        <p className="mt-1 text-xs text-muted-foreground">{t("projects.approvalProgress")}: <span className="font-medium tabular-nums">{request.approvalCount}/{request.requiredApprovalCount}</span></p>
+        <Link to={getApprovalReviewPath("change-request", request.id)} className="mt-2 inline-flex text-sm font-medium text-primary underline-offset-4 hover:underline">{t("approvals.reviewRequest")}</Link>
         {approvalError ? <p role="alert" className="mt-2 text-xs text-destructive">{approvalError}</p> : null}
       </div>
-      <div className="flex gap-2">
+      {canDecide ? <div className="flex gap-2">
         <Button size="sm" disabled={approving || rejecting} onClick={onApprove}><CheckCircle2 className="mr-1 h-4 w-4" />{t("approvals.approve")}</Button>
         <Button size="sm" variant="outline" onClick={onReject}><XCircle className="mr-1 h-4 w-4" />{t("approvals.reject")}</Button>
-      </div>
+      </div> : null}
     </div>
   );
 }
