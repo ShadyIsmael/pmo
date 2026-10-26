@@ -1,0 +1,163 @@
+- generic [ref=e41]:
+  - complementary [ref=e42]:
+    - generic [ref=e43]:
+      - generic [ref=e44]:
+        - generic [ref=e45]: "N"
+        - generic [ref=e47]:
+          - generic [ref=e48]: NEXUS PMO
+          - generic [ref=e49]: Enterprise PMO
+      - button "Collapse navigation" [ref=e50] [cursor=pointer]
+    - button "Search NEXUS" [ref=e55] [cursor=pointer]:
+      - generic [ref=e59]: Search projects, programs, people...
+      - generic [ref=e60]: Ctrl K
+    - navigation "Global navigation" [ref=e62]:
+      - group [ref=e63]:
+        - generic "Home" [ref=e64] [cursor=pointer]
+        - generic [ref=e72]:
+          - link "Home" [ref=e73] [cursor=pointer]:
+            - /url: /home
+          - link "My Work" [ref=e79] [cursor=pointer]:
+            - /url: /my-work
+          - link "Approvals" [ref=e85] [cursor=pointer]:
+            - /url: /my-work/approvals
+      - group [ref=e90]:
+        - generic "Delivery Management" [ref=e91] [cursor=pointer]
+      - group [ref=e99]:
+        - generic "Work Management" [ref=e100] [cursor=pointer]
+      - group [ref=e107]:
+        - generic "Resources" [ref=e108] [cursor=pointer]
+      - group [ref=e116]:
+        - generic "Financial Management" [ref=e117] [cursor=pointer]
+      - group [ref=e126]:
+        - generic "Governance" [ref=e127] [cursor=pointer]
+      - group [ref=e134]:
+        - generic "Account" [ref=e135] [cursor=pointer]
+      - group [ref=e142]:
+        - generic "Administration" [ref=e143] [cursor=pointer]
+    - generic [ref=e151]:
+      - generic [ref=e152]: AA
+      - generic [ref=e154]:
+        - generic [ref=e155]: Alex Admin
+        - generic [ref=e156]: admin
+  - generic [ref=e157]:
+    - banner [ref=e158]:
+      - generic [ref=e159]:
+        - button "Search projects, programs, people... ⌘K" [ref=e160] [cursor=pointer]:
+          - generic [ref=e164]: Search projects, programs, people...
+          - generic [ref=e165]: ⌘K
+        - button "Track time" [ref=e167] [cursor=pointer]
+      - generic [ref=e172]:
+        - button "+ Create" [ref=e174] [cursor=pointer]:
+          - generic [ref=e175]: +
+          - generic [ref=e176]: Create
+        - 'generic "Current Organization: · 11111111" [ref=e180]': · 11111111
+        - button "Language" [ref=e187] [cursor=pointer]
+        - button "Dark theme" [ref=e192] [cursor=pointer]
+        - link "0 Notifications" [ref=e195] [cursor=pointer]:
+          - /url: /notifications
+        - button "AA Alex Admin admin" [ref=e200] [cursor=pointer]:
+          - generic [ref=e201]: AA
+          - generic [ref=e202]:
+            - generic [ref=e203]: Alex Admin
+            - generic [ref=e204]: admin
+    - main [ref=e207]:
+      - generic [ref=e208]:
+        - generic [ref=e209]:
+          - generic [ref=e210]:
+            - generic [ref=e211]:
+              - heading "My Dashboard" [level=1] [ref=e217]
+              - generic [ref=e218]: Personal
+            - paragraph [ref=e222]: A configurable view of the authoritative NEXUS delivery signals.
+            - paragraph [ref=e223]: Portfolio Manager
+          - generic [ref=e224]:
+            - combobox "Point of view" [ref=e225]:
+              - option "Point of view" [disabled]
+              - option "Project Manager"
+              - option "Program Manager"
+              - option "Portfolio Manager" [selected]
+            - combobox "Dashboard views" [ref=e226]:
+              - option "Dashboard views" [disabled]
+              - option "My Dashboard" [selected]
+              - option "Portfolio Manager Standard"
+            - button "Refresh all" [ref=e227] [cursor=pointer]
+            - button "Filters" [ref=e233] [cursor=pointer]
+            - button "Manage views" [ref=e236] [cursor=pointer]
+            - button "Edit" [ref=e241] [cursor=pointer]
+        - generic [ref=e245]:
+          - generic [ref=e250]:
+            - generic [ref=e252]:
+              - heading "Active Projects" [level=3] [ref=e253]
+              - paragraph [ref=e254]: Active Projects
+            - generic [ref=e255]:
+              - button "Retry" [disabled]
+              - button "Collapse" [ref=e256] [cursor=pointer]
+          - generic [ref=e265]:
+            - generic [ref=e267]:
+              - heading "Projects at Risk" [level=3] [ref=e268]
+              - paragraph [ref=e269]: Projects at Risk
+            - generic [ref=e270]:
+              - button "Retry" [disabled]
+              - button "Collapse" [ref=e271] [cursor=pointer]
+          - generic [ref=e280]:
+            - generic [ref=e282]:
+              - heading "Open Risks" [level=3] [ref=e283]
+              - paragraph [ref=e284]: Open Risks
+            - generic [ref=e285]:
+              - button "Retry" [disabled]
+              - button "Collapse" [ref=e286] [cursor=pointer]
+          - generic [ref=e295]:
+            - generic [ref=e297]:
+              - heading "Total Budget" [level=3] [ref=e298]
+              - paragraph [ref=e299]: Grouped by currency
+            - generic [ref=e300]:
+              - button "Retry" [disabled]
+              - button "Collapse" [ref=e301] [cursor=pointer]
+          - generic [ref=e310]:
+            - generic [ref=e312]:
+              - heading "Projects by Health" [level=3] [ref=e313]
+              - paragraph [ref=e314]: Active project health distribution.
+            - generic [ref=e315]:
+              - button "Retry" [disabled]
+              - button "Collapse" [ref=e316] [cursor=pointer]
+          - generic [ref=e325]:
+            - generic [ref=e327]:
+              - heading "Budget vs Actual" [level=3] [ref=e328]
+              - paragraph [ref=e329]: Project cost comparison grouped by currency.
+            - generic [ref=e330]:
+              - button "Retry" [disabled]
+              - button "Collapse" [ref=e331] [cursor=pointer]
+          - generic [ref=e340]:
+            - generic [ref=e342]:
+              - heading "Projects Requiring Attention" [level=3] [ref=e343]
+              - paragraph [ref=e344]: Active projects with an amber or red health signal.
+            - generic [ref=e345]:
+              - button "Retry" [disabled]
+              - button "Collapse" [ref=e346] [cursor=pointer]
+          - generic [ref=e355]:
+            - generic [ref=e357]:
+              - heading "Top Risks" [level=3] [ref=e358]
+              - paragraph [ref=e359]: Highest-level open risks from projects.
+            - generic [ref=e360]:
+              - button "Retry" [disabled]
+              - button "Collapse" [ref=e361] [cursor=pointer]
+          - generic [ref=e370]:
+            - generic [ref=e372]:
+              - heading "Status Report Freshness" [level=3] [ref=e373]
+              - paragraph [ref=e374]: The authoritative source returned no records for this scope.
+            - generic [ref=e375]:
+              - button "Retry" [disabled]
+              - button "Collapse" [ref=e376] [cursor=pointer]
+          - generic [ref=e385]:
+            - generic [ref=e387]:
+              - heading "Resource Utilization" [level=3] [ref=e388]
+              - paragraph [ref=e389]: Resource Utilization
+            - generic [ref=e390]:
+              - button "Retry" [disabled]
+              - button "Collapse" [ref=e391] [cursor=pointer]
+          - generic [ref=e400]:
+            - generic [ref=e402]:
+              - heading "Upcoming Meetings" [level=3] [ref=e403]
+              - paragraph [ref=e404]: No upcoming meetings.
+            - generic [ref=e405]:
+              - button "Retry" [disabled]
+              - button "Collapse" [ref=e406] [cursor=pointer]

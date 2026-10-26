@@ -46,20 +46,24 @@ export interface ProjectOverviewDto {
   risks: {
     openCount: number;
     highCriticalOpenCount: number;
+    statusCounts: Array<{ status: string; count: number }>;
+    levelCounts: Array<{ riskLevel: string; count: number; displayOrder?: number }>;
     topRisks: Array<{ id: string; title: string; riskLevel: string; status: string }>;
   };
   issues: {
     openIssueCount: number;
     overdueOpenIssueCount: number;
+    statusCounts: Array<{ status: string; count: number; nameEn?: string; nameAr?: string; displayOrder?: number }>;
     topIssues: Array<{ id: string; title: string; status: string; priority: string; dueDate?: string }>;
   };
   milestones: Array<{ id: string; name: string; dueDate?: string; completedDate?: string; status?: string; progress?: number }>;
   currentBaseline?: { id: string; name: string; version: number; baselineDate?: string; isCurrent: boolean };
-  pendingChangeRequestCount: number;
-  pendingHandoverCount: number;
-  allocations: { activeAllocationCount: number; activeResourceCount: number; allocatedHoursPerWeek: number };
+  pendingChangeRequestCount: number | null;
+  pendingHandoverCount: number | null;
+  allocations: { activeAllocationCount: number; activeResourceCount: number; allocatedHoursPerWeek: number | null };
   meetings: { meetingCount: number; finalMinutesCount: number };
   planProgress?: number | null;
+  statusDate?: string;
   plannedValue?: number | null;
   earnedValue?: number | null;
   actualCost?: number | null;

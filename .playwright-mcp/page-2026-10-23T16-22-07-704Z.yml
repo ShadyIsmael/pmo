@@ -1,0 +1,22 @@
+- generic [ref=e9]:
+  - generic [ref=e10]:
+    - generic [ref=e11]:
+      - generic [ref=e12]: "N"
+      - heading "NEXUS PMO" [level=3] [ref=e13]
+      - paragraph [ref=e14]: Sign in to your workspace
+    - generic [ref=e15]:
+      - generic [ref=e16]:
+        - generic [ref=e17]:
+          - text: Email
+          - textbox "Email" [ref=e19]:
+            - /placeholder: you@company.com
+        - generic [ref=e24]:
+          - text: Password
+          - generic [ref=e25]:
+            - textbox "Password" [ref=e26]:
+              - /placeholder: ••••••••
+            - button "Show password" [ref=e29] [cursor=pointer]
+      - generic [ref=e33]:
+        - button "Sign in" [ref=e34] [cursor=pointer]
+        - paragraph [ref=e38]: "Demo: admin@nexus.com · password Demo123!"
+  - paragraph [ref=e40]: Enterprise Project Portfolio Management Platform

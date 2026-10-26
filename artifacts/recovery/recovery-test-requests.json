@@ -1,0 +1,46 @@
+{
+    "uiProject":  {
+                      "requestId":  "ebba70cd-a885-4879-b8c1-8c1b66785a5a",
+                      "entityType":  "Project",
+                      "entityPublicId":  "d47b4d77-68f9-4158-9678-54543d9af164",
+                      "entityName":  "Recovery UI Accept Test Project",
+                      "status":  "Pending",
+                      "initiationType":  "InitialAssignment",
+                      "proposedManagerName":  "Shady Ismael",
+                      "initiatedByName":  "Alex Admin",
+                      "requestedAt":  "2026-10-21T12:26:23.6068953Z"
+                  },
+    "portfolio":  {
+                      "requestId":  "81f6a784-20f8-4dae-b5b8-c9202c434f58",
+                      "entityType":  "Portfolio",
+                      "entityPublicId":  "7a999a9c-5dd3-4fa5-9b21-9c13baa9555c",
+                      "entityName":  "Recovery Portfolio Test",
+                      "status":  "Pending",
+                      "initiationType":  "InitialAssignment",
+                      "proposedManagerName":  "Shady Ismael",
+                      "initiatedByName":  "Alex Admin",
+                      "requestedAt":  "2026-10-21T12:26:23.9469321Z"
+                  },
+    "rejectProject":  {
+                          "requestId":  "a2a5725d-5232-4e42-991d-c634ec53ad0f",
+                          "entityType":  "Project",
+                          "entityPublicId":  "3de126fd-00a6-482a-ad9e-fe247d9f78c1",
+                          "entityName":  "Recovery Reject Test Project",
+                          "status":  "Pending",
+                          "initiationType":  "InitialAssignment",
+                          "proposedManagerName":  "Shady Ismael",
+                          "initiatedByName":  "Alex Admin",
+                          "requestedAt":  "2026-10-21T12:26:23.467777Z"
+                      },
+    "program":  {
+                    "requestId":  "61e85f69-6386-48fc-97a5-4ec28c21e2e9",
+                    "entityType":  "Program",
+                    "entityPublicId":  "419f77ec-b739-4a3a-bd86-234378dc79a3",
+                    "entityName":  "Recovery Program Test",
+                    "status":  "Pending",
+                    "initiationType":  "InitialAssignment",
+                    "proposedManagerName":  "Shady Ismael",
+                    "initiatedByName":  "Alex Admin",
+                    "requestedAt":  "2026-10-21T12:26:23.7708543Z"
+                }
+}

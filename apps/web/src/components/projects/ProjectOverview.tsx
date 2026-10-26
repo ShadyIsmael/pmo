@@ -23,8 +23,11 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
   LabelList,
   Legend,
+  Pie,
+  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -93,17 +96,30 @@ function percent(value: number | null | undefined, locale: string) {
   return isFiniteNumber(value) ? `${englishNumber(value, locale)}%` : "—";
 }
 
+function humanizeCode(value: string) {
+  return value.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_-]+/g, " ").trim();
+}
+
 type MilestoneState = "completed" | "inProgress" | "overdue" | "upcoming";
 
-function getMilestoneState(milestone: ProjectOverviewDto["milestones"][number]): MilestoneState {
+const PROJECT_OVERVIEW_CHART_COLORS = [
+  "hsl(var(--chart-1))",
+  "hsl(var(--chart-2))",
+  "hsl(var(--chart-3))",
+  "hsl(var(--chart-4))",
+  "hsl(var(--chart-5))",
+];
+
+function getMilestoneState(milestone: ProjectOverviewDto["milestones"][number], statusDate?: string): MilestoneState {
   const normalizedStatus = (milestone.status ?? "").replace(/[\s_-]+/g, "").toLowerCase();
   const isComplete = Boolean(milestone.completedDate)
     || (isFiniteNumber(milestone.progress) && milestone.progress >= 100)
     || ["complete", "completed", "closed", "done"].includes(normalizedStatus);
   if (isComplete) return "completed";
 
+  const comparisonDate = (statusDate ?? new Date().toISOString()).slice(0, 10);
   const isOverdue = ["delayed", "late", "overdue"].includes(normalizedStatus)
-    || Boolean(milestone.dueDate && new Date(milestone.dueDate).getTime() < Date.now());
+    || Boolean(milestone.dueDate && milestone.dueDate.slice(0, 10) < comparisonDate);
   if (isOverdue) return "overdue";
 
   const isInProgress = (isFiniteNumber(milestone.progress) && milestone.progress > 0)
@@ -145,7 +161,7 @@ function DetailItem({ label, children, className = "" }: { label: string; childr
   );
 }
 
-function ProgressGauge({ label, value, comparison, comparisonLabel, tone, large, locale }: { label: string; value: number | null | undefined; comparison: number | null; comparisonLabel: string; tone: "green" | "amber" | "red"; large?: boolean; locale: string }) {
+function ProgressGauge({ label, value, comparison, comparisonLabel, tone, large, locale }: { label: string; value: number | null | undefined; comparison: number | null; tone: "green" | "amber" | "red" | "neutral"; large?: boolean; locale: string }) {
   const normalizedValue = isFiniteNumber(value) ? Math.min(100, Math.max(0, value)) : null;
   const progressFraction = normalizedValue === null ? 0 : normalizedValue / 100;
   const markerAngle = Math.PI - progressFraction * Math.PI;
@@ -153,7 +169,7 @@ function ProgressGauge({ label, value, comparison, comparisonLabel, tone, large,
   const markerY = 52 - 42 * Math.sin(markerAngle);
   const displayValue = normalizedValue === null ? "—" : `${englishNumber(normalizedValue, locale)}%`;
   const comparisonValue = isFiniteNumber(comparison) ? `${comparison >= 0 ? "+" : ""}${englishNumber(comparison, locale)}%` : null;
-  const progressColorClass = tone === "red" ? "text-destructive" : tone === "amber" ? "text-warning" : "text-success";
+  const progressColorClass = tone === "red" ? "text-destructive" : tone === "amber" ? "text-warning" : tone === "neutral" ? "text-muted-foreground" : "text-success";
 
   return (
     <div className={`min-w-0 rounded-lg border bg-card shadow-none ${large ? "px-4 py-3" : "px-3 py-2.5"}`}>
@@ -219,17 +235,15 @@ export function ProjectOverview({
   const progress = overview?.planProgress ?? project.progress;
   const progressDelta = isFiniteNumber(progress) && isFiniteNumber(latestReport?.overallProgressPercent) ? progress - latestReport.overallProgressPercent : null;
   const projectHealthTone = getStatusTone(projectHealth);
-  const progressTone = projectHealthTone === "red" ? "red" : projectHealthTone === "amber" ? "amber" : "green";
-  const highCriticalRisks = overview?.risks.highCriticalOpenCount ?? null;
+  const progressTone = projectHealthTone === "red" ? "red" : projectHealthTone === "amber" ? "amber" : projectHealthTone === "green" ? "green" : "neutral";
   const overdueIssues = overview?.issues.overdueOpenIssueCount ?? null;
-  const criticalAttention = highCriticalRisks !== null && overdueIssues !== null ? highCriticalRisks + overdueIssues : null;
   const milestones = planMilestones ?? overview?.milestones ?? [];
-  const nextMilestone = milestones.find((m) => getMilestoneState(m) !== "completed");
+  const nextMilestone = milestones.find((m) => getMilestoneState(m, overview?.statusDate) !== "completed");
   const evmCurrency = overview?.currency ?? project.currency;
-  const pv = overview?.plannedValue ?? project.plannedValue;
-  const ev = overview?.earnedValue ?? project.earnedValue;
-  const ac = overview?.hasCostEntryData ? overview.actualCost : (overview?.actualCost ?? project.actualCost);
-  const approvedBudget = overview?.hasBudgetData ? overview.approvedBudget : (overview?.approvedBudget ?? project.budget);
+  const pv = overview?.plannedValue ?? null;
+  const ev = overview?.earnedValue ?? null;
+  const ac = overview?.actualCost ?? null;
+  const approvedBudget = overview?.approvedBudget ?? null;
   const committedCost = overview?.committedCost;
   const forecastAtCompletion = overview?.forecastAtCompletion;
   const remainingBudget = overview?.remainingBudget;
@@ -253,6 +267,24 @@ export function ProjectOverview({
     const key = RiskStatusHelper.getLabelKey(value);
     return key ? enums(key) : "—";
   };
+  const statusDate = (overview?.statusDate ?? new Date().toISOString()).slice(0, 10);
+  const activeProjectMembers = (project.members ?? []).filter((member) => member.status.toLowerCase() === "active"
+    && member.startDate.slice(0, 10) <= statusDate
+    && member.endDate.slice(0, 10) >= statusDate);
+  const roleCounts = activeProjectMembers.reduce<Record<string, number>>((counts, member) => {
+    const role = member.role?.trim() || t("unspecifiedRole");
+    counts[role] = (counts[role] ?? 0) + 1;
+    return counts;
+  }, {});
+  const roleData = Object.entries(roleCounts)
+    .map(([name, value]) => ({ name: humanizeCode(name), value }))
+    .sort((first, second) => second.value - first.value || first.name.localeCompare(second.name, locale));
+  const activeTeamMemberCount = roleData.reduce((total, item) => total + item.value, 0);
+  const teamSummaryData = [
+    { name: t("activeAllocatedResources"), value: overview?.allocations.activeResourceCount ?? null, fractionDigits: 0, color: "hsl(var(--chart-1))" },
+    { name: t("activeAllocations"), value: overview?.allocations.activeAllocationCount ?? null, fractionDigits: 0, color: "hsl(var(--chart-2))" },
+    { name: t("hoursPerWeek"), value: overview?.allocations.allocatedHoursPerWeek ?? null, fractionDigits: 1, color: "hsl(var(--chart-3))" },
+  ];
 
   return (
     <div className="space-y-3 pt-1">
@@ -342,8 +374,7 @@ export function ProjectOverview({
             <Kpi label={t("costVariance")} value={formatNullablePercentage(cv, 1, true)} detail={evmCurrency} icon={CircleDollarSign} tone={isFiniteNumber(cv) && cv < 0 ? "text-status-red" : "text-status-green"} />
             <Kpi label={t("schedulePerformanceIndex")} value={isFiniteNumber(spi) ? englishNumber(spi, locale, 2) : "—"} detail={isFiniteNumber(spi) ? (spi! > 1 ? t("aheadOfSchedule") : spi! < 1 ? t("behindSchedule") : t("onSchedule")) : undefined} icon={CalendarDays} tone={isFiniteNumber(spi) && spi! < 1 ? "text-status-red" : "text-status-green"} />
             <Kpi label={t("costPerformanceIndex")} value={isFiniteNumber(cpi) ? englishNumber(cpi, locale, 2) : "—"} detail={isFiniteNumber(cpi) ? (cpi! > 1 ? t("underBudget") : cpi! < 1 ? t("overBudget") : t("onBudget")) : undefined} icon={CircleDollarSign} tone={isFiniteNumber(cpi) && cpi! < 1 ? "text-status-red" : "text-status-green"} />
-            <Kpi label={t("criticalAttention")} value={englishNumber(criticalAttention, locale)} detail={criticalAttention === null ? t("overviewDataUnavailable") : `${englishNumber(highCriticalRisks, locale)} ${t("highCriticalRisks")} · ${englishNumber(overdueIssues, locale)} ${t("overdueOpenIssues")}`} icon={ShieldAlert} tone={criticalAttention ? "text-status-red" : "text-status-green"} />
-            <Kpi label={t("teamSignal")} value={englishNumber(overview?.allocations.activeResourceCount ?? project.members.length, locale)} detail={overview ? `${englishNumber(overview.allocations.allocatedHoursPerWeek, locale, 1)} ${t("hoursPerWeek")}` : t("overviewDataUnavailable")} icon={Users} />
+            <Kpi label={t("overdueOpenIssues")} value={englishNumber(overdueIssues, locale)} detail={overdueIssues === null ? t("overviewDataUnavailable") : undefined} icon={CalendarDays} tone={overdueIssues === null ? "text-muted-foreground" : overdueIssues > 0 ? "text-status-red" : "text-status-green"} />
             <div className="min-w-0 sm:col-span-2 xl:col-span-2"><Kpi label={t("nextMilestone")} value={nextMilestone?.name || "—"} detail={nextMilestone ? displayDate(nextMilestone.dueDate, locale) : t("noMilestonesYet")} icon={CalendarDays} /></div>
           </div>
         </div>
@@ -405,8 +436,8 @@ export function ProjectOverview({
             <CardContent className="!py-3 !pt-1"><div className="grid gap-3">
               <div className="rounded-xl border bg-destructive/5 p-3"><div className="flex items-center justify-between"><h3 className="text-xs font-semibold flex items-center gap-1.5"><ShieldAlert className="h-3.5 w-3.5 text-destructive" />{t("topRisks")}</h3><span className="text-xs font-semibold text-destructive">{englishNumber(overview?.risks.openCount, locale)}</span></div><div className="mt-2 divide-y rounded-lg border">{overview?.risks.topRisks.length ? overview.risks.topRisks.map((risk) => <Link key={risk.id} href={getTabHref("risks-issues")} scroll={false} className="flex items-center justify-between gap-3 px-3 py-2.5 hover:bg-muted/30"><span className="min-w-0 truncate text-xs font-medium">{risk.title}</span><Badge variant={riskLevelLabel(risk.riskLevel).toLowerCase().includes("high") ? "destructive" : riskLevelLabel(risk.riskLevel).toLowerCase().includes("medium") ? "secondary" : "outline"} className="shrink-0 text-[10px] font-semibold" title={riskStatusLabel(risk.status)}>{riskLevelLabel(risk.riskLevel)}</Badge></Link>) : <p className="px-3 py-4 text-xs text-muted-foreground">{t("noRisksYet")}</p>}</div></div>
               <div className="rounded-xl border bg-amber/5 p-3"><div className="flex items-center justify-between"><h3 className="text-xs font-semibold flex items-center gap-1.5"><CircleDollarSign className="h-3.5 w-3.5 text-warning" />{t("issues")}</h3><span className="text-xs font-semibold text-warning">{englishNumber(overview?.issues.openIssueCount, locale)}</span></div><div className="mt-2 divide-y rounded-lg border">{overview?.issues.topIssues.length ? overview.issues.topIssues.map((issue) => <Link key={issue.id} href={`/${locale}/work-items/${encodeURIComponent(issue.id)}`} className="flex items-center justify-between gap-3 px-3 py-2.5 hover:bg-muted/30"><span className="min-w-0 truncate text-xs font-medium">{issue.title}</span><span className="shrink-0 text-[10px] text-muted-foreground">{issue.dueDate ? displayDate(issue.dueDate, locale) : "—"}</span></Link>) : <p className="px-3 py-4 text-xs text-muted-foreground">{t("noIssuesYet")}</p>}</div></div>
-              <div className="rounded-xl border bg-blue/5 p-3"><div className="flex items-center justify-between"><h3 className="text-xs font-semibold flex items-center gap-1.5"><FilePen className="h-3.5 w-3.5 text-info" />{t("changeRequests")}</h3><span className="text-xs font-semibold text-info">{englishNumber(overview?.pendingChangeRequestCount, locale)}</span></div><div className="mt-2 divide-y rounded-lg border">{overview?.pendingChangeRequestCount && overview.pendingChangeRequestCount > 0 ? <p className="px-3 py-4 text-xs text-muted-foreground">{t("openChangeRequests")}</p> : <p className="px-3 py-4 text-xs text-muted-foreground">{t("noChangeRequestsYet")}</p>}</div></div>
-              <div className="rounded-xl border bg-purple/5 p-3"><div className="flex items-center justify-between"><h3 className="text-xs font-semibold flex items-center gap-1.5"><ArrowRightLeft className="h-3.5 w-3.5 text-purple-500" />{t("handover")}</h3><span className="text-xs font-semibold text-purple-500">{englishNumber(overview?.pendingHandoverCount, locale)}</span></div><div className="mt-2 divide-y rounded-lg border">{overview?.pendingHandoverCount && overview.pendingHandoverCount > 0 ? <p className="px-3 py-4 text-xs text-muted-foreground">{t("pendingHandovers")}</p> : <p className="px-3 py-4 text-xs text-muted-foreground">{t("noHandoversYet")}</p>}</div></div>
+              <div className="rounded-xl border bg-blue/5 p-3"><div className="flex items-center justify-between"><h3 className="text-xs font-semibold flex items-center gap-1.5"><FilePen className="h-3.5 w-3.5 text-info" />{t("changeRequests")}</h3><span className="text-xs font-semibold text-info">{englishNumber(overview?.pendingChangeRequestCount, locale)}</span></div><div className="mt-2 divide-y rounded-lg border">{overview?.pendingChangeRequestCount === null || overview?.pendingChangeRequestCount === undefined ? <p className="px-3 py-4 text-xs text-muted-foreground">{t("overviewDataUnavailable")}</p> : overview.pendingChangeRequestCount > 0 ? <p className="px-3 py-4 text-xs text-muted-foreground">{t("openChangeRequests")}</p> : <p className="px-3 py-4 text-xs text-muted-foreground">{t("noChangeRequestsYet")}</p>}</div></div>
+              <div className="rounded-xl border bg-purple/5 p-3"><div className="flex items-center justify-between"><h3 className="text-xs font-semibold flex items-center gap-1.5"><ArrowRightLeft className="h-3.5 w-3.5 text-purple-500" />{t("handover")}</h3><span className="text-xs font-semibold text-purple-500">{englishNumber(overview?.pendingHandoverCount, locale)}</span></div><div className="mt-2 divide-y rounded-lg border">{overview?.pendingHandoverCount === null || overview?.pendingHandoverCount === undefined ? <p className="px-3 py-4 text-xs text-muted-foreground">{t("overviewDataUnavailable")}</p> : overview.pendingHandoverCount > 0 ? <p className="px-3 py-4 text-xs text-muted-foreground">{t("pendingHandovers")}</p> : <p className="px-3 py-4 text-xs text-muted-foreground">{t("noHandoversYet")}</p>}</div></div>
             </div></CardContent>
           </Card>
         </div>
@@ -427,7 +458,7 @@ export function ProjectOverview({
               <div className="absolute start-[15px] top-3 bottom-3 w-px bg-border" aria-hidden="true" />
               <div className="space-y-1">
                 {milestones.map((milestone) => {
-                  const state = getMilestoneState(milestone);
+                  const state = getMilestoneState(milestone, overview?.statusDate);
                   const statusLabel = state === "completed" ? t("milestoneCompleted") : state === "inProgress" ? t("milestoneInProgress") : state === "overdue" ? t("milestoneOverdue") : t("milestoneUpcoming");
                   const statusVariant = state === "completed" ? "status-green" : state === "inProgress" ? "status-amber" : state === "overdue" ? "status-red" : "status-blue";
                   const dotClass = state === "completed" ? "bg-success ring-success/20" : state === "inProgress" ? "bg-warning ring-warning/20" : state === "overdue" ? "bg-destructive ring-destructive/20" : "bg-info ring-info/20";
@@ -456,7 +487,7 @@ export function ProjectOverview({
             <CardContent className="!py-3 !pt-1">
               {latestReport ? <div className="space-y-3">
                 <div className="flex items-start justify-between gap-3"><div><p className="text-sm font-semibold">{displayDate(latestReport.periodFrom, locale)} – {displayDate(latestReport.periodTo, locale)}</p><p className="mt-1 text-xs text-muted-foreground">{t("publishedAt")}: {displayDate(latestReport.publishedAt, locale)}</p></div><Badge variant={getRagVariant(latestReport.overallHealth)} className="text-[10px]">{healthStatusLabel(latestReport.overallHealth)}</Badge></div>
-                <div className="rounded-xl border bg-muted/20 p-3"><div className="flex items-center justify-between text-xs"><span className="text-muted-foreground">{t("overallProgress")}</span><span className="font-semibold">{percent(latestReport.overallProgressPercent, locale)}</span></div><Progress value={latestReport.overallProgressPercent ?? 0} className="mt-1.5 h-1.5" /></div>
+                <div className="rounded-xl border bg-muted/20 p-3"><div className="flex items-center justify-between text-xs"><span className="text-muted-foreground">{t("overallProgress")}</span><span className="font-semibold">{percent(latestReport.overallProgressPercent, locale)}</span></div>{isFiniteNumber(latestReport.overallProgressPercent) ? <Progress value={latestReport.overallProgressPercent} className="mt-1.5 h-1.5" /> : <p className="mt-1.5 text-[10px] text-muted-foreground">{t("overviewDataUnavailable")}</p>}</div>
                 <div className="rounded-lg border bg-muted/20 p-3"><p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{t("executiveSummary")}</p><p className="mt-1 line-clamp-5 text-sm leading-6">{displayText(latestReport.executiveSummary)}</p></div>
                 <Link href={getTabHref("status-reports")} scroll={false}><Button size="sm" variant="outline" className="w-full">{t("statusReportDetails")}<ArrowRight className="ms-1.5 h-3.5 w-3.5" /></Button></Link>
               </div> : <EmptyPanel title={t("noStatusReports")} description={t("noStatusReportsDescription")} action={<Link href={getTabHref("status-reports")} scroll={false}><Button size="sm" variant="outline">{t("statusReports")}</Button></Link>} />}
@@ -466,7 +497,37 @@ export function ProjectOverview({
       </div>
 
       <div className="grid gap-3 lg:grid-cols-2">
-        <Card className="shadow-none"><CardHeader className="!py-3 !pb-2"><SectionTitle title={t("resourceAllocationSummary")} action={<LinkAction href={getTabHref("team")}>{common("viewAll")}</LinkAction>} /></CardHeader><CardContent className="!py-3 !pt-1"><div className="grid grid-cols-3 gap-2 text-center"><div className="rounded-lg bg-muted/30 p-3"><p className="text-lg font-semibold">{englishNumber(overview?.allocations.activeResourceCount ?? project.members.length, locale)}</p><p className="mt-1 text-[10px] text-muted-foreground">{t("teamResources")}</p></div><div className="rounded-lg bg-muted/30 p-3"><p className="text-lg font-semibold">{englishNumber(overview?.allocations.activeAllocationCount, locale)}</p><p className="mt-1 text-[10px] text-muted-foreground">{common("allocation")}</p></div><div className="rounded-lg bg-muted/30 p-3"><p className="text-lg font-semibold">{englishNumber(overview?.allocations.allocatedHoursPerWeek, locale, 1)}</p><p className="mt-1 text-[10px] text-muted-foreground">{t("hoursPerWeek")}</p></div></div><p className="mt-2 text-[10px] text-muted-foreground">{t("utilizationUnavailable")}</p></CardContent></Card>
+        <Card className="shadow-none">
+          <CardHeader className="!py-3 !pb-2"><SectionTitle title={t("teamAndAllocation")} description={t("teamAndAllocationDescription")} action={<LinkAction href={getTabHref("team")}>{common("viewAll")}</LinkAction>} /></CardHeader>
+          <CardContent className="!py-3 !pt-1">
+            <div className="relative mx-auto h-[300px] w-full max-w-[440px]">
+              {roleData.length ? <>
+                <div className="absolute inset-0" role="img" aria-label={`${t("activeProjectMemberRoles")}: ${englishNumber(activeTeamMemberCount, locale)}`}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={roleData} dataKey="value" nameKey="name" cx="50%" cy="43%" innerRadius={62} outerRadius={96} paddingAngle={2}>
+                        {roleData.map((item, index) => <Cell key={`${item.name}-${index}`} fill={PROJECT_OVERVIEW_CHART_COLORS[index % PROJECT_OVERVIEW_CHART_COLORS.length]} />)}
+                      </Pie>
+                      <Tooltip formatter={(value) => englishNumber(typeof value === "number" ? value : undefined, locale)} contentStyle={{ fontSize: 12 }} />
+                      <Legend verticalAlign="bottom" height={64} wrapperStyle={{ fontSize: 12, lineHeight: "20px", direction: locale === "ar" ? "rtl" : "ltr" }} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <div aria-hidden="true" className="pointer-events-none absolute left-1/2 top-[43%] flex -translate-x-1/2 -translate-y-1/2 flex-col items-center text-center">
+                  <span className="text-2xl font-semibold leading-none tabular-nums">{englishNumber(activeTeamMemberCount, locale)}</span>
+                  <span className="mt-1 text-xs leading-4 text-muted-foreground">{t("teamMembersTotal")}</span>
+                </div>
+              </> : <div className="flex h-full items-center justify-center text-sm text-muted-foreground">{t("noTeamMembers")}</div>}
+            </div>
+            <div className="mt-2 grid grid-cols-3 gap-2">
+              {teamSummaryData.map((item) => <div key={item.name} className="min-w-0 rounded-md border border-t-2 px-2 py-2 text-center" style={{ borderTopColor: item.color }}>
+                <p className="text-base font-semibold leading-5 tabular-nums">{englishNumber(item.value, locale, item.fractionDigits)}</p>
+                <p className="mt-1 text-xs leading-4 text-muted-foreground">{item.name}</p>
+              </div>)}
+            </div>
+            <p className="mt-2 text-xs leading-5 text-muted-foreground">{t("teamChartUnitNote")}</p>
+          </CardContent>
+        </Card>
         <Card className="shadow-none"><CardHeader className="!py-3 !pb-2"><SectionTitle title={t("governanceReporting")} action={<LinkAction href={getTabHref("status-reports")}>{common("viewAll")}</LinkAction>} /></CardHeader><CardContent className="!py-3 !pt-1"><dl className="grid gap-x-6 gap-y-2 text-xs sm:grid-cols-2"><div className="flex items-center justify-between gap-3"><dt className="text-muted-foreground">{t("statusReports")}</dt><dd className="font-semibold">{englishNumber(overview?.statusReports.totalCount, locale)}</dd></div><div className="flex items-center justify-between gap-3"><dt className="text-muted-foreground">{t("publishedReports")}</dt><dd className="font-semibold">{englishNumber(overview?.statusReports.publishedCount, locale)}</dd></div><div className="flex items-center justify-between gap-3"><dt className="text-muted-foreground">{common("meetings")}</dt><dd className="font-semibold">{englishNumber(overview?.meetings.meetingCount, locale)}</dd></div><div className="flex items-center justify-between gap-3"><dt className="text-muted-foreground">{t("finalMinutes")}</dt><dd className="font-semibold">{englishNumber(overview?.meetings.finalMinutesCount, locale)}</dd></div></dl></CardContent></Card>
       </div>
 

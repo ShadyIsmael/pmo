@@ -1,0 +1,11 @@
+{
+    "requestId":  "b040d28e-3668-4211-af85-abaecdc8bd10",
+    "entityType":  "Portfolio",
+    "entityPublicId":  "7a999a9c-5dd3-4fa5-9b21-9c13baa9555c",
+    "entityName":  "Recovery Portfolio Test",
+    "status":  "Pending",
+    "initiationType":  "AdminInitiated",
+    "proposedManagerName":  "Gus Rohan",
+    "initiatedByName":  "Alex Admin",
+    "requestedAt":  "2026-10-21T12:34:54.2161566Z"
+}
