@@ -916,6 +916,211 @@ namespace NEXUS.Persistence.Migrations
                     b.ToTable("Invoices");
                 });
 
+            modelBuilder.Entity("NEXUS.Modules.CostManagement.Domain.PaymentNotificationDispatch", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime>("NotificationDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("NotificationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("NotificationType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<Guid>("PaymentObligationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsRequired()
+                        .HasColumnType("varbinary(max)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PaymentObligationId");
+
+                    b.HasIndex("TenantId", "PaymentObligationId");
+
+                    b.HasIndex("TenantId", "PaymentObligationId", "UserId", "NotificationType", "NotificationDate")
+                        .IsUnique();
+
+                    b.ToTable("PaymentNotificationDispatches", (string)null);
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.CostManagement.Domain.PaymentObligation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("nvarchar(3)");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<DateTime>("DueDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid?>("MilestoneId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("PaymentReference")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ProjectName")
+                        .IsRequired()
+                        .HasMaxLength(250)
+                        .HasColumnType("nvarchar(250)");
+
+                    b.Property<string>("Purpose")
+                        .IsRequired()
+                        .HasMaxLength(250)
+                        .HasColumnType("nvarchar(250)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .HasColumnType("varbinary(max)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "MilestoneId");
+
+                    b.HasIndex("TenantId", "ProjectId", "DueDate");
+
+                    b.HasIndex("TenantId", "ProjectId", "PaymentReference");
+
+                    b.ToTable("PaymentObligations", (string)null);
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.CostManagement.Domain.PaymentSettlement", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("IdempotencyKey")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<Guid>("PaymentObligationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("PaymentReference")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .HasColumnType("varbinary(max)");
+
+                    b.Property<DateTime>("SettlementDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PaymentObligationId");
+
+                    b.HasIndex("TenantId", "IdempotencyKey")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "PaymentObligationId", "SettlementDate");
+
+                    b.ToTable("PaymentSettlements", (string)null);
+                });
+
             modelBuilder.Entity("NEXUS.Modules.CostManagement.Domain.PurchaseCommitment", b =>
                 {
                     b.Property<Guid>("Id")
@@ -8874,8 +9079,8 @@ namespace NEXUS.Persistence.Migrations
 
                     b.HasIndex("TenantId", "PlanVersionId", "ActivityId", "ResourceId")
                         .IsUnique()
-                        .HasFilter("[IsDeleted] = 0")
-                        .HasDatabaseName("IX_PlanAssignments_Tenant_Version_Activity_Resource");
+                        .HasDatabaseName("IX_PlanAssignments_Tenant_Version_Activity_Resource")
+                        .HasFilter("[IsDeleted] = 0");
 
                     b.ToTable("PlanAssignments", (string)null);
                 });
@@ -12016,6 +12221,26 @@ namespace NEXUS.Persistence.Migrations
                     b.Navigation("Budget");
                 });
 
+            modelBuilder.Entity("NEXUS.Modules.CostManagement.Domain.PaymentNotificationDispatch", b =>
+                {
+                    b.HasOne("NEXUS.Modules.CostManagement.Domain.PaymentObligation", null)
+                        .WithMany()
+                        .HasForeignKey("PaymentObligationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.CostManagement.Domain.PaymentSettlement", b =>
+                {
+                    b.HasOne("NEXUS.Modules.CostManagement.Domain.PaymentObligation", "PaymentObligation")
+                        .WithMany("Settlements")
+                        .HasForeignKey("PaymentObligationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("PaymentObligation");
+                });
+
             modelBuilder.Entity("NEXUS.Modules.Documents.Domain.DocumentReview", b =>
                 {
                     b.HasOne("NEXUS.Modules.Documents.Domain.Document", "Document")
@@ -13444,6 +13669,11 @@ namespace NEXUS.Persistence.Migrations
             modelBuilder.Entity("NEXUS.Modules.Audit.Domain.AuditEntry", b =>
                 {
                     b.Navigation("Activities");
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.CostManagement.Domain.PaymentObligation", b =>
+                {
+                    b.Navigation("Settlements");
                 });
 
             modelBuilder.Entity("NEXUS.Modules.Documents.Domain.Document", b =>

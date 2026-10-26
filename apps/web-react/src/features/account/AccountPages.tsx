@@ -165,6 +165,8 @@ export function AccountNotificationsPage() {
     ProjectHandover: t("account.notifications.projectHandover"),
     ProgramHandover: t("account.notifications.programHandover"),
     PortfolioHandover: t("account.notifications.portfolioHandover"),
+    PaymentDue: t("account.notifications.paymentDue"),
+    PaymentOverdue: t("account.notifications.paymentOverdue"),
   };
   const pushUnavailable = !preferences.data?.pushAvailable || !isFirebaseMessagingConfigured();
   const messageIsError = messageKey === "account.notifications.pushUnavailable"

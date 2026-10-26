@@ -91,6 +91,7 @@ export const endpoints = {
   budgets: { root: "/api/budgets", detail: (v: string) => id("/api/budgets", v) },
   costs: { root: "/api/costs", detail: (v: string) => id("/api/costs", v), summary: "/api/costs/summary" },
   commitments: { root: "/api/commitments", detail: (v: string) => id("/api/commitments", v), close: (v: string) => `${id("/api/commitments", v)}/close`, cancel: (v: string) => `${id("/api/commitments", v)}/cancel` },
+  paymentObligations: { root: "/api/payment-obligations", detail: (v: string) => id("/api/payment-obligations", v), settlements: (v: string) => `${id("/api/payment-obligations", v)}/settlements` },
   stakeholderProjects: { root: "/api/stakeholder/projects", detail: (v: string) => id("/api/stakeholder/projects", v) },
   stakeholderInvitations: {
     manage: (projectId: string, stakeholderId: string) => `${id("/api/projects", projectId)}/stakeholders/${encodeURIComponent(stakeholderId)}/invitation`,

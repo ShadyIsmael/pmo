@@ -120,8 +120,14 @@ public class NotificationService : INotificationService
         NotificationPreference? preference = null;
         if (notification.UserId.HasValue)
         {
-            preference = await _context.Set<NotificationPreference>().SingleOrDefaultAsync(item =>
-                item.TenantId == notification.TenantId && item.UserId == notification.UserId.Value && item.Type == notification.Type, cancellationToken);
+            preference = await _context.Set<NotificationPreference>()
+                .IgnoreQueryFilters()
+                .SingleOrDefaultAsync(item =>
+                    item.TenantId == notification.TenantId
+                    && item.UserId == notification.UserId.Value
+                    && item.Type == notification.Type
+                    && !item.IsDeleted,
+                    cancellationToken);
         }
 
         notification.IsInAppVisible = !notification.UserId.HasValue

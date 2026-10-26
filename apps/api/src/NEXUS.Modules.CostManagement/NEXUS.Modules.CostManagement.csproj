@@ -14,6 +14,7 @@
     <ProjectReference Include="..\NEXUS.SharedKernel\NEXUS.SharedKernel.csproj" />
     <ProjectReference Include="..\NEXUS.Modules.Audit\NEXUS.Modules.Audit.csproj" />
     <ProjectReference Include="..\NEXUS.Modules.Identity\NEXUS.Modules.Identity.csproj" />
+    <ProjectReference Include="..\NEXUS.Modules.Notifications\NEXUS.Modules.Notifications.csproj" />
     <ProjectReference Include="..\NEXUS.Modules.WorkflowEngine\NEXUS.Modules.WorkflowEngine.csproj" />
   </ItemGroup>
 </Project>

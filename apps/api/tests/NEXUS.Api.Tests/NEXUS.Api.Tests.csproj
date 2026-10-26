@@ -49,6 +49,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\NEXUS.Api\NEXUS.Api.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.CostManagement\NEXUS.Modules.CostManagement.csproj" />
     <ProjectReference Include="..\..\src\NEXUS.Modules.Identity\NEXUS.Modules.Identity.csproj" />
     <ProjectReference Include="..\..\src\NEXUS.Modules.RiskManagement\NEXUS.Modules.RiskManagement.csproj" />
     <ProjectReference Include="..\..\src\NEXUS.Modules.ProjectManagement\NEXUS.Modules.ProjectManagement.csproj" />

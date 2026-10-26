@@ -12,6 +12,9 @@ public static class CostManagementModuleRegistration
         services.AddScoped<IBudgetService, BudgetService>();
         services.AddScoped<ICostService, CostService>();
         services.AddScoped<ICommitmentService, CommitmentService>();
+        services.AddScoped<IPaymentObligationService, PaymentObligationService>();
+        services.AddScoped<PaymentDueNotificationService>();
+        services.AddHostedService<PaymentDueNotificationScheduler>();
         services.AddScoped<IProjectFinancialLookup, ProjectFinancialLookup>();
         services.AddScoped<IProjectEvmDirectCostLookup, ProjectEvmDirectCostLookup>();
         services.AddScoped<IGlobalFinancialSummaryService, GlobalFinancialSummaryService>();
