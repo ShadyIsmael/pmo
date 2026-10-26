@@ -180,6 +180,8 @@ public sealed class PaymentObligationDto
     public string? Notes { get; init; }
     public decimal SettledAmount { get; init; }
     public decimal OutstandingAmount { get; init; }
+    public string SettlementProgressStatus { get; init; } = string.Empty;
+    public string DueDateStatus { get; init; } = string.Empty;
     public string LifecycleStatus { get; init; } = string.Empty;
     public bool IsDue { get; init; }
     public bool IsOverdue { get; init; }
@@ -269,6 +271,8 @@ public static class CostManagementMappings
         Notes = value.Notes,
         SettledAmount = value.SettledAmount,
         OutstandingAmount = value.OutstandingAmount,
+        SettlementProgressStatus = value.SettlementProgressStatus,
+        DueDateStatus = value.GetDueDateStatus(DateTime.UtcNow),
         LifecycleStatus = value.GetLifecycleStatus(DateTime.UtcNow),
         IsDue = value.IsDue(DateTime.UtcNow),
         IsOverdue = value.IsOverdue(DateTime.UtcNow),

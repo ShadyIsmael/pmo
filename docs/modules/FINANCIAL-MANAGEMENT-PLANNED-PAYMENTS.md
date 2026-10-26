@@ -9,9 +9,11 @@ Planned payments represent expected outgoing obligations associated with a proje
 - An authorized finance user can create, edit, list, view, and soft-delete a planned payment. Payments with settlements cannot be deleted.
 - Each payment records its project, reference, purpose, optional description, amount, project currency, due date, optional milestone, and notes.
 - Payments use the project's currency and monetary precision of four fractional digits. Amounts with additional precision are rejected rather than silently rounded.
-- A payment may have multiple settlement records. Settlement amounts must be positive and cannot exceed the outstanding balance. Idempotency keys prevent retry submissions from recording the same settlement twice; a reused key with a different payload is a conflict.
-- Outstanding balance is the planned amount less non-deleted settlements. Due and overdue status is based on the UTC calendar date and only applies while an outstanding balance remains.
-- Settlements do not create `CostEntry` records, reduce budget, or otherwise count as actual expenditure. Record actual expenditure separately through the existing CostEntry workflow.
+- A planned payment has zero or more actual settlements; every settlement must reference exactly one payment through a required database foreign key scoped by tenant. A settlement is actual payment made against that planned obligation, not an independent obligation.
+- Settlement amounts must be positive and cannot exceed the outstanding balance. Idempotency keys prevent retry submissions from recording the same settlement twice; a reused key with a different payload is a conflict. Concurrent writes use an obligation concurrency token so competing settlements cannot consume the same outstanding balance.
+- Total paid is the sum of valid, non-deleted settlements. Outstanding balance is the planned amount less total paid. A planned amount cannot be reduced below total paid, and a payment with settlements cannot be deleted.
+- Settlement progress (`Not Paid`, `Partially Paid`, `Fully Paid`) is separate from due-date status (`Upcoming`, `Due`, `Overdue`, `Settled`). Due and overdue status only applies while an outstanding balance remains.
+- Actual settlements do not create `CostEntry` records or reduce budget. Their accounting relationship to budget consumption remains unapproved; record budget expenditures separately through the existing CostEntry workflow.
 - The planned payment lifecycle does not change or replace existing budget, cost, commitment, report, or approval functionality.
 
 ## Authorization and notifications
@@ -22,7 +24,7 @@ The hourly notification worker checks that the payment creator is still an activ
 
 ## Persistence and API
 
-The isolated implementation adds `PaymentObligations`, `PaymentSettlements`, and `PaymentNotificationDispatches` through migration `20261026160000_AddPlannedPaymentLifecycle`. The migration has not been applied to a Development database. Its model snapshot must be reconciled with concurrent Project Planning/Working Calendar changes before integration or migration execution.
+The isolated implementation adds `PaymentObligations`, `PaymentSettlements`, and `PaymentNotificationDispatches` through migration `20261026160000_AddPlannedPaymentLifecycle`. Follow-up migration `20261026170000_AddPaymentTenantScopedRelationships` adds tenant-scoped required foreign keys from settlements and notification dispatches to their parent payment. Neither migration has been applied to a Development database. The model snapshot must be reconciled with concurrent Project Planning/Working Calendar changes before integration or migration execution.
 
 Endpoints are under `/api/payment-obligations`:
 
@@ -34,13 +36,13 @@ The React/Vite Financial Management page provides project and due filters, payme
 
 ## Verification status and open items
 
-The focused lifecycle tests cover creation and outstanding balance, partial/multiple settlements, overpayment rejection, idempotent replay, concurrent settlement protection, tenant-filtered listing, active Working-plan milestone validation, CRUD, and due-notification deduplication including the milestone name. These tests do not constitute authenticated live UAT or Development database verification.
+The focused lifecycle tests cover creation and outstanding balance, partial/multiple settlements, overpayment rejection, idempotent replay, concurrent settlement protection, tenant-filtered listing, database rejection of missing and cross-tenant parents, active Working-plan milestone validation, CRUD, and due-notification deduplication including the milestone name. These tests do not constitute authenticated live UAT or Development database verification.
 
 Before integration/UAT:
 
 1. Reconcile the migration and model snapshot with the concurrent Working Calendar migration and current shared `AppDbContext`.
 2. Confirm the authorized notification-recipient policy.
-3. Run persistence, authorization/project-scope, concurrent-settlement, migration, and browser/API integration checks against an isolated test database and authenticated environment.
+3. Run authorization/project-scope, migration, and browser/API integration checks against an isolated test database and authenticated environment.
 4. Coordinate any Development migration only after schema review, verified database identity, backup, and the established validation procedure.
 
-Planned payments and settlements are not mapped to actual expenditure because the accounting rule for that relationship remains unconfirmed.
+Planned payments and settlements are not automatically mapped to budget drawdown or actual expenditure because the budget-accounting rule remains unapproved.

@@ -135,6 +135,8 @@ export interface PaymentObligationDto {
   notes?: string;
   settledAmount: number;
   outstandingAmount: number;
+  settlementProgressStatus: "Not Paid" | "Partially Paid" | "Fully Paid";
+  dueDateStatus: "Upcoming" | "Due" | "Overdue" | "Settled";
   lifecycleStatus: string;
   isDue: boolean;
   isOverdue: boolean;

@@ -964,8 +964,6 @@ namespace NEXUS.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("PaymentObligationId");
-
                     b.HasIndex("TenantId", "PaymentObligationId");
 
                     b.HasIndex("TenantId", "PaymentObligationId", "UserId", "NotificationType", "NotificationDate")
@@ -1110,8 +1108,6 @@ namespace NEXUS.Persistence.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("PaymentObligationId");
 
                     b.HasIndex("TenantId", "IdempotencyKey")
                         .IsUnique();
@@ -12225,7 +12221,8 @@ namespace NEXUS.Persistence.Migrations
                 {
                     b.HasOne("NEXUS.Modules.CostManagement.Domain.PaymentObligation", null)
                         .WithMany()
-                        .HasForeignKey("PaymentObligationId")
+                        .HasForeignKey("TenantId", "PaymentObligationId")
+                        .HasPrincipalKey("TenantId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
@@ -12234,7 +12231,8 @@ namespace NEXUS.Persistence.Migrations
                 {
                     b.HasOne("NEXUS.Modules.CostManagement.Domain.PaymentObligation", "PaymentObligation")
                         .WithMany("Settlements")
-                        .HasForeignKey("PaymentObligationId")
+                        .HasForeignKey("TenantId", "PaymentObligationId")
+                        .HasPrincipalKey("TenantId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 

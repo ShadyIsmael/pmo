@@ -250,7 +250,8 @@ export function PlannedPaymentsPage() {
                     <TableHeader><TableRow>
                       <TableHead>{t("payments.project")}</TableHead><TableHead>{t("payments.reference")}</TableHead>
                       <TableHead>{t("payments.purpose")}</TableHead><TableHead>{t("payments.plannedAmount")}</TableHead>
-                      <TableHead>{t("payments.outstandingBalance")}</TableHead><TableHead>{t("payments.dueDate")}</TableHead>
+                      <TableHead>{t("payments.actualPaid")}</TableHead><TableHead>{t("payments.outstandingBalance")}</TableHead><TableHead>{t("payments.dueDate")}</TableHead>
+                      <TableHead>{t("payments.settlementProgress")}</TableHead>
                       <TableHead>{t("payments.status")}</TableHead><TableHead>{t("common.actions")}</TableHead>
                     </TableRow></TableHeader>
                     <TableBody>
@@ -260,9 +261,11 @@ export function PlannedPaymentsPage() {
                           <TableCell>{payment.paymentReference}</TableCell>
                           <TableCell>{payment.purpose}</TableCell>
                           <TableCell className="tabular-nums">{formatCurrency(payment.amount, payment.currency)}</TableCell>
+                          <TableCell className="tabular-nums">{formatCurrency(payment.settledAmount, payment.currency)}</TableCell>
                           <TableCell className="tabular-nums">{formatCurrency(payment.outstandingAmount, payment.currency)}</TableCell>
                           <TableCell>{payment.dueDate.slice(0, 10)}</TableCell>
-                          <TableCell><span className={payment.isOverdue ? "text-destructive" : "text-muted-foreground"}>{t(`payments.statuses.${payment.lifecycleStatus}`)}</span></TableCell>
+                          <TableCell>{t(`payments.progress.${payment.settlementProgressStatus}`)}</TableCell>
+                          <TableCell><span className={payment.isOverdue ? "text-destructive" : "text-muted-foreground"}>{t(`payments.dueStatuses.${payment.dueDateStatus}`)}</span></TableCell>
                           <TableCell>
                             <Button size="sm" variant="ghost" onClick={() => { setSelectedPayment(payment); setDetailsOpen(true); }}>
                               <ArrowUpRight className="me-1 h-4 w-4" />{t("payments.viewDetails")}
@@ -330,9 +333,11 @@ export function PlannedPaymentsPage() {
               <div><p className="text-xs text-muted-foreground">{t("payments.project")}</p><p className="font-medium">{activePayment.projectName}</p></div>
               <div><p className="text-xs text-muted-foreground">{t("payments.reference")}</p><p className="font-medium">{activePayment.paymentReference}</p></div>
               <div><p className="text-xs text-muted-foreground">{t("payments.plannedAmount")}</p><p className="font-medium tabular-nums">{formatCurrency(activePayment.amount, activePayment.currency)}</p></div>
+              <div><p className="text-xs text-muted-foreground">{t("payments.actualPaid")}</p><p className="font-medium tabular-nums">{formatCurrency(activePayment.settledAmount, activePayment.currency)}</p></div>
               <div><p className="text-xs text-muted-foreground">{t("payments.outstandingBalance")}</p><p className="font-medium tabular-nums">{formatCurrency(activePayment.outstandingAmount, activePayment.currency)}</p></div>
+              <div><p className="text-xs text-muted-foreground">{t("payments.settlementProgress")}</p><p>{t(`payments.progress.${activePayment.settlementProgressStatus}`)}</p></div>
               <div><p className="text-xs text-muted-foreground">{t("payments.dueDate")}</p><p>{activePayment.dueDate.slice(0, 10)}</p></div>
-              <div><p className="text-xs text-muted-foreground">{t("payments.status")}</p><p>{t(`payments.statuses.${activePayment.lifecycleStatus}`)}</p></div>
+              <div><p className="text-xs text-muted-foreground">{t("payments.status")}</p><p>{t(`payments.dueStatuses.${activePayment.dueDateStatus}`)}</p></div>
             </div>
             {activePayment.milestoneId ? <div><p className="text-xs text-muted-foreground">{t("payments.milestone")}</p><p>{activeMilestone?.name ?? activePayment.milestoneId}</p></div> : null}
             {activePayment.description ? <p className="text-sm text-muted-foreground">{activePayment.description}</p> : null}
@@ -364,6 +369,8 @@ export function PlannedPaymentsPage() {
             {actionError ? <p role="alert" className="text-sm text-destructive">{actionError}</p> : null}
             {activePayment ? <div className="rounded-md border p-3 text-sm">
               <p className="font-medium">{activePayment.paymentReference} · {activePayment.projectName}</p>
+              <p>{t("payments.plannedAmount")}: {formatCurrency(activePayment.amount, activePayment.currency)}</p>
+              <p>{t("payments.actualPaid")}: {formatCurrency(activePayment.settledAmount, activePayment.currency)}</p>
               <p className="text-muted-foreground">{t("payments.outstandingBalance")}: {formatCurrency(activePayment.outstandingAmount, activePayment.currency)}</p>
             </div> : null}
             <div className="space-y-1.5"><Label>{t("payments.settlementAmount")} *</Label><Input type="number" min="0.0001" max={activePayment?.outstandingAmount} step="0.0001" value={settlementForm.amount} onChange={(event) => setSettlementForm({ ...settlementForm, amount: event.target.value })} required /></div>

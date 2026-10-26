@@ -18,13 +18,10 @@ public sealed class PaymentObligationConfiguration : IEntityTypeConfiguration<Pa
         builder.Property(item => item.Notes).HasMaxLength(2000);
         builder.Property(item => item.Amount).HasPrecision(19, 4);
         builder.Property(item => item.RowVersion).IsConcurrencyToken();
+        builder.HasAlternateKey(item => new { item.TenantId, item.Id });
         builder.HasIndex(item => new { item.TenantId, item.ProjectId, item.DueDate });
         builder.HasIndex(item => new { item.TenantId, item.ProjectId, item.PaymentReference });
         builder.HasIndex(item => new { item.TenantId, item.MilestoneId });
 
-        builder.HasMany(item => item.Settlements)
-            .WithOne(item => item.PaymentObligation)
-            .HasForeignKey(item => item.PaymentObligationId)
-            .OnDelete(DeleteBehavior.Restrict);
     }
 }
