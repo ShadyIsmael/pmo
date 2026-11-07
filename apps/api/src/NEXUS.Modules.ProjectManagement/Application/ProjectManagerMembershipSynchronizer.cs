@@ -17,21 +17,26 @@ public sealed class ProjectManagerMembershipSynchronizer
 
     public async Task SynchronizeAsync(
         Project project,
-        Guid previousManagerId,
+        Guid? previousManagerId,
         Guid newManagerId,
         DateTime handoverDate,
         string userId,
         CancellationToken cancellationToken = default)
     {
+        var managerUserIds = previousManagerId.HasValue
+            ? new[] { previousManagerId.Value, newManagerId }.Distinct().ToArray()
+            : new[] { newManagerId };
         var managerResources = await _context.Set<Resource>()
             .Where(resource => resource.TenantId == project.TenantId && resource.UserId.HasValue &&
-                               (resource.UserId == previousManagerId || resource.UserId == newManagerId) &&
+                               managerUserIds.Contains(resource.UserId.Value) &&
                                !resource.IsDeleted)
             .OrderBy(resource => resource.CreatedAt)
             .ToListAsync(cancellationToken);
 
-        var previousResourceId = managerResources.FirstOrDefault(resource => resource.UserId == previousManagerId)?.Id;
-        if (previousResourceId.HasValue)
+        var previousResourceId = previousManagerId.HasValue
+            ? managerResources.FirstOrDefault(resource => resource.UserId == previousManagerId.Value)?.Id
+            : null;
+        if (previousManagerId.HasValue && previousResourceId.HasValue)
         {
             var previousMembers = await _context.Set<ProjectMember>()
                 .Where(member => member.TenantId == project.TenantId && member.ProjectId == project.Id && member.ResourceId == previousResourceId.Value && !member.IsDeleted)
@@ -123,7 +128,7 @@ public sealed class ProjectManagerMembershipSynchronizer
 
         var memberships = await _context.Set<ProjectMember>().Where(member =>
                 member.TenantId == project.TenantId && member.ProjectId == project.Id
-                && resourceIds.Contains(member.ResourceId) && !member.IsDeleted)
+                && member.ResourceId.HasValue && resourceIds.Contains(member.ResourceId.Value) && !member.IsDeleted)
             .ToListAsync(cancellationToken);
         foreach (var membership in memberships.Where(member =>
                      member.Status == "Active" && IsProjectManagerRole(member.Role)))

@@ -9,9 +9,6 @@ public class CurrentUserDto
     public string FirstName { get; set; } = string.Empty;
     public string LastName { get; set; } = string.Empty;
     public string FullName => $"{FirstName} {LastName}";
-    public string? JobTitle { get; set; }
-    public string? Phone { get; set; }
-    public string? AvatarUrl { get; set; }
     public string? TenantId { get; set; }
     public AuthenticationSource AuthenticationSource { get; set; }
     public bool MustChangePassword { get; set; }

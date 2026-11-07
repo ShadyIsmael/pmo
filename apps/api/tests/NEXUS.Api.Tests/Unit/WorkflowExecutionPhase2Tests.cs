@@ -49,14 +49,14 @@ public sealed class WorkflowExecutionPhase2Tests : IDisposable
             new RequireCommentGuardHandler(),
             new RequireFactGuardHandler()
         };
+        var auditService = new AuditService(_db);
         var actions = new List<IWorkflowActionHandler>
         {
             new DomainProjectionActionHandler(),
-            new AuditProjectionActionHandler()
+            new AuditProjectionActionHandler(auditService)
         };
 
         var configRegistry = new WorkflowConfigurationRegistry(guards, actions);
-        var auditService = new AuditService(_db);
 
         _executionService = new WorkflowExecutionService(_db, adapterRegistry, configRegistry, configRegistry, auditService);
         _instanceService = new WorkflowInstanceService(_db, adapterRegistry);
@@ -277,12 +277,37 @@ public sealed class WorkflowExecutionPhase2Tests : IDisposable
     [Fact]
     public async Task ExecuteTransition_AuditAppendedOnce()
     {
-        SeedWorkflow();
+        var definition = SeedWorkflow();
+        var version = _db.Set<WorkflowDefinitionVersion>()
+            .Single(item => item.WorkflowDefinitionId == definition.Id);
+        var transition = _db.Set<WorkflowTransition>()
+            .Single(item => item.WorkflowDefinitionVersionId == version.Id);
+        _db.Set<WorkflowTransitionAction>().Add(new WorkflowTransitionAction
+        {
+            TenantId = TenantId,
+            WorkflowTransitionId = transition.Id,
+            ActionType = "AuditProjection",
+            ConfigurationJson = "{}",
+            ExecutionOrder = 1,
+            IsActive = true,
+            CreatedBy = DefaultCtx.UserId
+        });
+        _db.SaveChanges();
+
         var instance = await ProvisionAndGetInstance();
         var request = new WorkflowTransitionRequest("TestEntity", instance.EntityId, "Close");
-        await _executionService.ExecuteTransitionAsync(request, DefaultCtx);
+        var result = await _executionService.ExecuteTransitionAsync(request, DefaultCtx);
+        Assert.True(result.IsSuccess, result.Error?.Message);
         var auditCount = await _db.Set<AuditEntry>().CountAsync(a => a.Action == "Transition");
         Assert.Equal(1, auditCount);
+
+        var projectedEntry = await _db.Set<AuditEntry>().SingleAsync(a => a.Action == "Transitioned");
+        Assert.Equal("TestEntity", projectedEntry.EntityType);
+        Assert.Equal(instance.EntityId, projectedEntry.EntityId);
+        Assert.Null(projectedEntry.UserId);
+
+        using var changes = JsonDocument.Parse(projectedEntry.Changes!);
+        Assert.Equal("TestEntity", changes.RootElement.GetProperty("entityType").GetString());
     }
 
     #endregion
@@ -846,6 +871,17 @@ public sealed class WorkflowExecutionPhase2Tests : IDisposable
 
             if (context.TenantId != TenantId && context.TenantId != Guid.Empty)
                 return Task.FromResult(Result.Failure(WorkflowErrors.CrossTenantAccess));
+
+            return Task.FromResult(Result.Success());
+        }
+
+        public Task<Result> AuthorizeTransitionAsync(
+            WorkflowTransitionContext context,
+            CancellationToken cancellationToken = default)
+        {
+            if (!_entities.ContainsKey(context.EntityId))
+                return Task.FromResult(Result.Failure(
+                    WorkflowErrors.EntityNotAccessible("TestEntity", context.EntityId)));
 
             return Task.FromResult(Result.Success());
         }

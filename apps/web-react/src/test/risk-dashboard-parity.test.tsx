@@ -7,7 +7,7 @@ import { RiskDashboardPage } from "../features/risks/RiskDashboardPage";
 
 const fixtures = vi.hoisted(() => ({ get: vi.fn() }));
 
-vi.mock("@api/client", () => ({ api: { get: fixtures.get } }));
+vi.mock("@api/client", () => ({ api: { get: fixtures.get }, setApiErrorLocale: () => undefined }));
 
 function risk(overrides: Record<string, unknown> = {}) {
   return {

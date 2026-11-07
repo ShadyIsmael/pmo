@@ -55,6 +55,11 @@ public sealed class RiskController(IRiskService riskService) : ControllerBase
     [HttpGet("{riskId:guid}/actions")]
     public async Task<IActionResult> GetActions(Guid riskId, CancellationToken cancellationToken) => ToActionResult(await riskService.GetActionsAsync(riskId, cancellationToken));
 
+    [Authorize(Policy = "Risk.View")]
+    [HttpGet("/api/risk-action-follow-ups/{actionPublicId:guid}/target")]
+    public async Task<IActionResult> GetActionFollowUpTarget(Guid actionPublicId, CancellationToken cancellationToken) =>
+        ToActionResult(await riskService.GetActionFollowUpTargetAsync(actionPublicId, cancellationToken));
+
     [Authorize(Policy = "Risk.Edit")]
     [HttpPost("{riskId:guid}/actions")]
     public async Task<IActionResult> CreateAction(Guid riskId, [FromBody] CreateRiskActionDto dto, CancellationToken cancellationToken) => ToActionResult(await riskService.CreateActionAsync(riskId, dto, UserId(), cancellationToken));

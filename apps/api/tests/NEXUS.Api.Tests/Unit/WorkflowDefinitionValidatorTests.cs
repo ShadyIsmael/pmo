@@ -1,3 +1,4 @@
+using Moq;
 using NEXUS.Modules.WorkflowEngine.Application;
 using NEXUS.Modules.WorkflowEngine.Application.Contracts;
 using NEXUS.Modules.WorkflowEngine.Application.Guards;
@@ -23,7 +24,7 @@ public sealed class WorkflowDefinitionValidatorTests
         var actions = new List<IWorkflowActionHandler>
         {
             new DomainProjectionActionHandler(),
-            new AuditProjectionActionHandler()
+            new AuditProjectionActionHandler(Mock.Of<NEXUS.Modules.Audit.Application.IAuditService>())
         };
         return new WorkflowConfigurationRegistry(guards, actions);
     }

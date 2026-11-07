@@ -66,7 +66,8 @@ public sealed class ProjectReportingPersistenceTests : IDisposable
             new Claim(ClaimTypes.NameIdentifier, _userId.ToString()),
             new Claim(ClaimTypes.Name, "Reporting Test User"),
             new Claim("permission", "StatusReport.View"),
-            new Claim("permission", "StatusReport.Generate")
+            new Claim("permission", "StatusReport.Edit"),
+            new Claim("permission", "StatusReport.Publish")
         ], "reporting-test"));
         _http.Setup(item => item.HttpContext).Returns(httpContext);
         AppDbContext.ConfigureTenantResolution(_http.Object);
@@ -151,7 +152,9 @@ public sealed class ProjectReportingPersistenceTests : IDisposable
             PeriodFrom = StatusDate.AddDays(-6),
             PeriodTo = StatusDate,
             StatusDate = StatusDate,
+            ProjectLifecycleStatusAtReport = "Planning",
             OverallHealth = "Green",
+            OverallProgressPercent = 36.5m,
             ScheduleHealth = "Amber",
             CostHealth = "Green",
             ScopeHealth = "Green",
@@ -162,15 +165,98 @@ public sealed class ProjectReportingPersistenceTests : IDisposable
         Assert.True(created.IsSuccess, created.Error?.Message);
         Assert.Null(created.Value!.PerformanceSnapshot);
         Assert.Equal(ProjectStatusReportState.Draft, created.Value.ReportState);
+        Assert.Equal("Planning", created.Value.ProjectLifecycleStatusAtReport);
+        Assert.Equal("Green", created.Value.OverallHealth);
+        Assert.Equal(36.5m, created.Value.OverallProgressPercent);
 
-        var generated = await statusReportService.GenerateAsync(_projectId, created.Value.Id, _userId.ToString());
-        Assert.True(generated.IsSuccess, generated.Error?.Message);
-        Assert.Equal(ProjectStatusReportState.Generated, generated.Value!.ReportState);
-        Assert.Equal(1, generated.Value.ReportingConfigurationVersionSnapshot);
-        Assert.Equal("Persisted reporting snapshot fixture.", generated.Value.ExecutiveSummary);
-        Assert.Equal(Sections, generated.Value.IncludedSectionsSnapshot);
-        Assert.Equal(Sections, generated.Value.IncludedSectionsSnapshot);
-        AssertPerformance(generated.Value.PerformanceSnapshot!, bac: 1_750_000m, pv: 1_000_000m, ev: 780_000m, ac: 900_000m);
+        var editedDraft = await statusReportService.UpdateAsync(_projectId, created.Value.Id, new UpdateProjectStatusReportDto
+        {
+            ReportDate = StatusDate,
+            PeriodFrom = StatusDate.AddDays(-6),
+            PeriodTo = StatusDate,
+            StatusDate = StatusDate,
+            ProjectLifecycleStatusAtReport = null,
+            OverallHealth = "Amber",
+            OverallProgressPercent = 41.25m,
+            ScheduleHealth = "Amber",
+            CostHealth = "Green",
+            ScopeHealth = "Green",
+            QualityHealth = "Green",
+            ResourceHealth = "Amber",
+            ExecutiveSummary = "User-edited reporting snapshot."
+        }, _userId.ToString());
+        Assert.True(editedDraft.IsSuccess, editedDraft.Error?.Message);
+        Assert.Null(editedDraft.Value!.ProjectLifecycleStatusAtReport);
+        Assert.Equal("Amber", editedDraft.Value.OverallHealth);
+        Assert.Equal(41.25m, editedDraft.Value.OverallProgressPercent);
+
+        var finalDraftContent = new UpdateProjectStatusReportDto
+        {
+            ReportDate = StatusDate,
+            PeriodFrom = StatusDate.AddDays(-6),
+            PeriodTo = StatusDate,
+            StatusDate = StatusDate,
+            ProjectLifecycleStatusAtReport = null,
+            OverallHealth = "Amber",
+            OverallProgressPercent = 41.25m,
+            ScheduleHealth = "Amber",
+            CostHealth = "Green",
+            ScopeHealth = "Green",
+            QualityHealth = "Green",
+            ResourceHealth = "Amber",
+            ExecutiveSummary = "User-edited reporting snapshot.",
+            RowVersion = editedDraft.Value!.RowVersion
+        };
+
+        var authenticatedUser = _http.Object.HttpContext!.User;
+        _http.Object.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim("tenantId", _tenantId.ToString()),
+            new Claim(ClaimTypes.NameIdentifier, _userId.ToString()),
+            new Claim(ClaimTypes.Name, "Reporting Test User"),
+            new Claim("permission", "StatusReport.View"),
+            new Claim("permission", "StatusReport.Publish")
+        ], "reporting-test"));
+        var unauthorizedEditAtPublish = await statusReportService.PublishAsync(_projectId, created.Value.Id, new UpdateProjectStatusReportDto
+        {
+            ReportDate = finalDraftContent.ReportDate,
+            PeriodFrom = finalDraftContent.PeriodFrom,
+            PeriodTo = finalDraftContent.PeriodTo,
+            StatusDate = finalDraftContent.StatusDate,
+            ProjectLifecycleStatusAtReport = finalDraftContent.ProjectLifecycleStatusAtReport,
+            OverallHealth = finalDraftContent.OverallHealth,
+            OverallProgressPercent = finalDraftContent.OverallProgressPercent,
+            ScheduleHealth = finalDraftContent.ScheduleHealth,
+            CostHealth = finalDraftContent.CostHealth,
+            ScopeHealth = finalDraftContent.ScopeHealth,
+            QualityHealth = finalDraftContent.QualityHealth,
+            ResourceHealth = finalDraftContent.ResourceHealth,
+            ExecutiveSummary = "Unauthorized change",
+            RowVersion = finalDraftContent.RowVersion
+        }, _userId.ToString());
+        Assert.True(unauthorizedEditAtPublish.IsFailure);
+        Assert.Equal(403, unauthorizedEditAtPublish.Error!.StatusCode);
+        var unchangedDraft = await _context.Set<ProjectStatusReport>().SingleAsync(item => item.Id == created.Value.Id);
+        Assert.Equal(ProjectStatusReportState.Draft, unchangedDraft.ReportState);
+        Assert.Null(unchangedDraft.PerformanceSnapshotJson);
+        Assert.Null(unchangedDraft.SourceDataCapturedAt);
+        _http.Object.HttpContext.User = authenticatedUser;
+
+        var published = await statusReportService.PublishAsync(_projectId, created.Value.Id, finalDraftContent, _userId.ToString());
+        Assert.True(published.IsSuccess, published.Error?.Message);
+        Assert.Equal(ProjectStatusReportState.Published, published.Value!.ReportState);
+        Assert.Equal(1, published.Value.ReportingConfigurationVersionSnapshot);
+        Assert.Equal("User-edited reporting snapshot.", published.Value.ExecutiveSummary);
+        Assert.Null(published.Value.ProjectLifecycleStatusAtReport);
+        Assert.Equal("Amber", published.Value.OverallHealth);
+        Assert.Equal(41.25m, published.Value.OverallProgressPercent);
+        Assert.Equal(Sections, published.Value.IncludedSectionsSnapshot);
+        Assert.Equal(StatusDate, published.Value.StatusDate);
+        Assert.NotNull(published.Value.SourceDataCapturedAt);
+        Assert.Equal(published.Value.SourceDataCapturedAt, published.Value.PublishedAt);
+        Assert.Equal(_userId, published.Value.PublishedByUserId);
+        Assert.Equal("Reporting Test User", published.Value.PublishedByNameSnapshot);
+        AssertPerformance(published.Value.PerformanceSnapshot!, bac: 1_750_000m, pv: 1_000_000m, ev: 780_000m, ac: 900_000m);
 
         var sourceActivity = await _context.Set<PlanActivity>().SingleAsync(item => item.Id == _coreEarnedWorkingActivityId);
         sourceActivity.Progress = 80m;
@@ -215,13 +301,12 @@ public sealed class ProjectReportingPersistenceTests : IDisposable
         Assert.True(nextPeriodPerformance.IsSuccess);
         Assert.Equal(2, nextPeriodPerformance.Value!.ReportingConfigurationVersion);
         Assert.Equal(2, nextPeriodPerformance.Value.Plans.Count);
-        AssertPerformance(nextPeriodPerformance.Value, bac: 1_500_000m, pv: 909_375m, ev: 600_000m, ac: 850_000m);
+        // Legacy calendars spread their weekly capacity across all seven
+        // dates, so one day of each included future activity enters PV here.
+        AssertPerformance(nextPeriodPerformance.Value, bac: 1_500_000m, pv: 906_666.67m, ev: 600_000m, ac: 850_000m);
         Assert.Equal(50_000m, nextPeriodPerformance.Value.UnallocatedProjectActualCost);
 
         var publishedEntity = await _context.Set<ProjectStatusReport>().SingleAsync(item => item.Id == created.Value.Id);
-        publishedEntity.ReportState = ProjectStatusReportState.Published;
-        publishedEntity.PublishedAt = StatusDate.AddDays(1);
-        await _context.SaveChangesAsync();
         var update = await statusReportService.UpdateAsync(_projectId, publishedEntity.Id, new UpdateProjectStatusReportDto
         {
             ReportDate = StatusDate.AddDays(1), PeriodFrom = StatusDate, PeriodTo = StatusDate.AddDays(1),
@@ -234,7 +319,7 @@ public sealed class ProjectReportingPersistenceTests : IDisposable
         Assert.Equal(409, delete.Error!.StatusCode);
         var stillFrozen = await statusReportService.GetByIdAsync(_projectId, publishedEntity.Id);
         Assert.True(stillFrozen.IsSuccess);
-        Assert.Equal("Persisted reporting snapshot fixture.", stillFrozen.Value!.ExecutiveSummary);
+        Assert.Equal("User-edited reporting snapshot.", stillFrozen.Value!.ExecutiveSummary);
         AssertPerformance(stillFrozen.Value.PerformanceSnapshot!, bac: 1_750_000m, pv: 1_000_000m, ev: 780_000m, ac: 900_000m);
     }
 
@@ -419,34 +504,49 @@ public sealed class ProjectReportingPersistenceTests : IDisposable
 
     private ProjectStatusReportService CreateStatusReportService(ProjectReportingService reporting)
     {
+        var definitionId = Guid.NewGuid();
+        var versionId = Guid.NewGuid();
+        var provisioning = new Mock<IProjectStatusReportWorkflowProvisioningService>();
+        provisioning.Setup(mock => mock.EnsureAsync(_tenantId, It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<ProjectStatusReportWorkflowDefinition>.Success(new(definitionId, versionId)));
+
         var workflowInstances = new Mock<IWorkflowInstanceService>();
         workflowInstances.Setup(mock => mock.GetInstanceAsync(
                 ProjectStatusReportWorkflow.EntityType, It.IsAny<Guid>(), It.IsAny<WorkflowExecutionContext>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((string entityType, Guid entityId, WorkflowExecutionContext _, CancellationToken _) =>
-                Result<WorkflowInstanceSummary?>.Success(new WorkflowInstanceSummary(
-                    Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), ProjectStatusReportWorkflow.DefinitionCode, 1,
-                    entityType, entityId, "Draft", "Draft", "مسودة", false, StatusDate, _userId.ToString(), null, true)));
+            .ReturnsAsync(Result<WorkflowInstanceSummary?>.Success(null));
+        workflowInstances.Setup(mock => mock.ProvisionAsync(
+                ProjectStatusReportWorkflow.EntityType, It.IsAny<Guid>(), definitionId, versionId,
+                It.IsAny<WorkflowExecutionContext>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string entityType, Guid entityId, Guid workflowDefinitionId, Guid workflowVersionId,
+                WorkflowExecutionContext _, CancellationToken _) => Result<WorkflowInstanceSummary>.Success(new WorkflowInstanceSummary(
+                Guid.NewGuid(), workflowDefinitionId, workflowVersionId, ProjectStatusReportWorkflow.DefinitionCode, 2,
+                entityType, entityId, "Draft", "Draft", "مسودة", false, DateTime.UtcNow, _userId.ToString(), null, true)));
 
         var workflowExecution = new Mock<IWorkflowExecutionService>();
         workflowExecution.Setup(mock => mock.ExecuteTransitionAsync(
                 It.IsAny<WorkflowTransitionRequest>(), It.IsAny<WorkflowExecutionContext>(), It.IsAny<CancellationToken>()))
             .Returns(async (WorkflowTransitionRequest request, WorkflowExecutionContext _, CancellationToken cancellationToken) =>
             {
-                if (request.TransitionCode == ProjectStatusReportWorkflow.Generate)
+                if (request.TransitionCode == ProjectStatusReportWorkflow.Publish)
                 {
                     var report = await _context.Set<ProjectStatusReport>().SingleAsync(item => item.Id == request.EntityId, cancellationToken);
-                    report.ReportState = ProjectStatusReportState.Generated;
+                    report.ReportState = ProjectStatusReportState.Published;
+                    report.PublishedAt = report.SourceDataCapturedAt;
+                    report.PublishedByUserId = _userId;
+                    report.PublishedByNameSnapshot = "Reporting Test User";
                     await _context.SaveChangesAsync(cancellationToken);
                 }
                 return Result<WorkflowTransitionResult>.Success(new WorkflowTransitionResult(
-                    true, Guid.NewGuid(), "Draft", "Draft", "مسودة", "Generated", "Generated", "تم الإنشاء",
+                    true, Guid.NewGuid(), "Draft", "Draft", "مسودة", "Published", "Published", "منشور",
                     null, null, Guid.NewGuid().ToByteArray()));
             });
 
         return new ProjectStatusReportService(
             _context, _audit.Object, _http.Object, reporting,
-            Mock.Of<IProjectStatusReportWorkflowProvisioningService>(), workflowInstances.Object,
-            workflowExecution.Object, Mock.Of<IManagementContextAccessor>());
+            new ProjectPlanProgressLookup(_context), new CapacityService(_context),
+            provisioning.Object, workflowInstances.Object,
+            workflowExecution.Object, Mock.Of<IManagementContextAccessor>(),
+            new FrozenTimeProvider(new DateTimeOffset(StatusDate, TimeSpan.Zero)));
     }
 
     private SaveProjectReportingConfigurationDto Configuration(
@@ -496,4 +596,9 @@ public sealed class ProjectReportingPersistenceTests : IDisposable
         Guid SupersededBaselineVersionId, int WorkingVersionNumber, int BaselineVersionNumber, string BaselineName);
     private sealed record PlannedLine(string Name, decimal PlannedHours, DateTime StartDate, DateTime EndDate, decimal Progress);
     private sealed record ActivityFixture(Guid BaselineActivityId, Guid WorkingActivityId);
+
+    private sealed class FrozenTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => utcNow;
+    }
 }

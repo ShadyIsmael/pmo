@@ -8,5 +8,6 @@ public class Holiday : BaseEntity
     public WorkingCalendar WorkingCalendar { get; set; } = null!;
     public string Name { get; set; } = string.Empty;
     public DateTime Date { get; set; }
+    public DateTime? EndDate { get; set; }
     public bool IsRecurring { get; set; }
 }

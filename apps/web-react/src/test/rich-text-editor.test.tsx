@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { RichTextContent, RichTextEditor, sanitizeRichText, type RichTextCopy } from "@components/ui/rich-text-editor";
 
 const editorCopy: RichTextCopy = {
@@ -27,6 +27,26 @@ describe("meeting rich text", () => {
     const { container } = render(<RichTextContent value={'<p>Safe note</p><img src=x onerror="run()">'} />);
     expect(screen.getByText("Safe note")).toBeInTheDocument();
     expect(container.querySelector("img")).toBeNull();
+  });
+
+  it("removes parser-created active namespaces and every unsafe attribute", () => {
+    const clean = sanitizeRichText('<svg><g onload="run()"></g></svg><math><mi>math</mi></math><p style="background:url(javascript:run())" onclick="run()">Safe text</p>');
+    const parsed = new DOMParser().parseFromString(clean, "text/html");
+
+    expect(parsed.body.querySelector("svg, math, img, script, iframe, object")).toBeNull();
+    expect(parsed.body.querySelector("[onload], [onclick], [onerror], [style]")).toBeNull();
+    expect(parsed.body.textContent).toContain("Safe text");
+  });
+
+  it("keeps the DOMParser fallback output inert", () => {
+    vi.stubGlobal("DOMParser", undefined);
+    try {
+      const clean = sanitizeRichText('<script>alert(1)</script><img src=x onerror="run()">Safe text');
+      expect(clean).toBe("Safe text");
+      expect(clean).not.toMatch(/<[^>]+>/);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("renders the emoji picker outside the editor's clipped frame", () => {

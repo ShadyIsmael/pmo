@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@i18n/messages";
 import { ManagementProvider } from "@api/management";
 import { MyWorkApprovalsPage } from "@features/my-work/MyWorkApprovalsPage";
-import { useAcceptManagerHandover, useApproveProjectChangeRequest } from "@features/my-work/api/myWork";
+import { useAcceptHandoverRequest, useAcceptManagerHandover, useApproveProjectChangeRequest } from "@features/my-work/api/myWork";
 
 const approvalsAuth = vi.hoisted(() => ({ permissions: ["ChangeRequest.Approve", "Handover.Approve"] as string[] }));
 
@@ -27,6 +27,51 @@ function renderApprovalsPage(client: QueryClient) {
 }
 
 describe("project handover approvals", () => {
+  it("invalidates project read models by PublicId after accepting a handover", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 60_000 }, mutations: { retry: false } } });
+    const projectRouteId = "project-public-1";
+    const projectKeys = [
+      ["projects", "detail", projectRouteId],
+      ["projects", "shell", projectRouteId],
+      ["projects", "overview", projectRouteId],
+      ["projects", "list", { page: 1, pageSize: 25 }],
+      ["projects", "people", projectRouteId],
+      ["projects", "team", projectRouteId],
+    ] as const;
+    for (const queryKey of projectKeys) client.setQueryData(queryKey, { projectId: projectRouteId });
+
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      id: "handover-1",
+      projectId: "project-internal-1",
+      projectPublicId: projectRouteId,
+      projectName: "Core Modernization",
+      projectCode: "PRJ-104",
+      currentProjectManagerId: "manager-1",
+      currentProjectManagerName: "Current Manager",
+      newProjectManagerId: "manager-2",
+      newProjectManagerName: "Incoming Manager",
+      effectiveHandoverDate: "2026-11-04",
+      reason: "Ownership change",
+      status: "Accepted",
+      requestedBy: "requester-1",
+      requestedByName: "Alex Admin",
+      requestedAt: "2026-11-04T10:00:00Z",
+    }), { status: 200 })));
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={client}>
+        <ManagementProvider user={null}>{children}</ManagementProvider>
+      </QueryClientProvider>
+    );
+    const { result } = renderHook(() => useAcceptHandoverRequest(), { wrapper });
+
+    await act(async () => { await result.current.mutateAsync("handover-1"); });
+
+    for (const queryKey of projectKeys) {
+      expect(client.getQueryState(queryKey)?.isInvalidated).toBe(true);
+    }
+    client.clear();
+  });
+
   it("does not query project or manager handovers without Handover.Approve", async () => {
     approvalsAuth.permissions = ["ChangeRequest.Approve"];
     const fetchMock = vi.fn().mockImplementation((input: string) => {

@@ -10,7 +10,8 @@ This script performs the following steps:
   4. Seeds only identity tables (Users, Roles, Permissions, UserRoles, UserSessions).
 
 .PARAMETER UseDockerSqlAuth
-Set this switch if you want to connect to a Docker-hosted SQL Server using SQL authentication (sa / Nexus_Dev_2024!).
+Set this switch if you want to connect to a Docker-hosted SQL Server using SQL authentication (sa).
+The password is read from the NEXUS_DB_PASSWORD environment variable; no credential is stored in this script.
 By default, Windows Authentication (Trusted_Connection) is used for local SQL Server instances.
 
 .EXAMPLE
@@ -47,7 +48,11 @@ $createSql = "CREATE DATABASE [$DatabaseName];"
 
 if ($UseDockerSqlAuth) {
     $SqlUser = "sa"
-    $SqlPassword = "Nexus_Dev_2024!"
+    $SqlPassword = $env:NEXUS_DB_PASSWORD
+
+    if ([string]::IsNullOrWhiteSpace($SqlPassword)) {
+        throw "NEXUS_DB_PASSWORD must be set to use SQL authentication. Set it in the environment or the repository .env file."
+    }
     
     Write-Host "=== Dropping database '$DatabaseName' if it exists ===" -ForegroundColor Cyan
     sqlcmd -S $Server -U $SqlUser -P $SqlPassword -b -Q $dropSql

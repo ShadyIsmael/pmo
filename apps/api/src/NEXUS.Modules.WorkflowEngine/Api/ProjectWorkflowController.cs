@@ -7,14 +7,14 @@ namespace NEXUS.Modules.WorkflowEngine.Api;
 
 [ApiController]
 [Route("api/projects/{projectId:guid}/workflows")]
-[Authorize(Policy = "Project.View")]
+[Authorize(Policy = "ProjectSettings.View")]
 public sealed class ProjectWorkflowController(IProjectWorkflowConfigurationService service) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> Get(Guid projectId, CancellationToken cancellationToken) => Handle(await service.GetAsync(projectId, cancellationToken));
 
     [HttpPut("{domain}")]
-    [Authorize(Policy = "Project.Edit")]
+    [Authorize(Policy = "ProjectSettings.Edit")]
     public async Task<IActionResult> Save(Guid projectId, string domain, [FromBody] SaveProjectWorkflowConfigurationRequest request, CancellationToken cancellationToken)
     {
         var actor = User.FindFirst("sub")?.Value ?? User.FindFirst("userId")?.Value ?? User.Identity?.Name ?? "System";

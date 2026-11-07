@@ -1,20 +1,33 @@
 import * as React from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, ArrowRight, CheckCircle2, KeyRound, ShieldCheck } from "lucide-react";
+import { ArrowLeft, CheckCircle2, ShieldCheck } from "lucide-react";
 import { Button } from "@components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@components/ui/Card";
-import { Input } from "@components/ui/Input";
+import { Checkbox } from "@components/ui/Checkbox";
 import { Label } from "@components/ui/Label";
 import { Badge } from "@components/ui/Badge";
 import { Skeleton } from "@components/ui/Skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@components/ui/Table";
 import { useI18n } from "@i18n/messages";
+import { formatNumberValue } from "@lib/formatting/number";
 import { api, ApiError } from "@api/client";
 import { PageHeader } from "@components/layout/PageHeader";
 import { useProjectEnumLabels } from "@features/projects/lib/project-labels";
 
-interface InvitationValidation { resourceName: string; email: string; projectName: string; }
+interface InvitationValidation {
+  resourceName: string;
+  email: string;
+  projectName: string;
+  status?: string;
+  reportsConsent?: boolean;
+  notificationsConsent?: boolean;
+}
+interface InvitationAcceptance {
+  status: string;
+  reportsConsent: boolean;
+  notificationsConsent: boolean;
+}
 interface StakeholderProjectView {
   id: string;
   publicId: string;
@@ -52,33 +65,40 @@ interface StakeholderProjectView {
   milestones: { id: string; name: string; dueDate?: string; completedDate?: string; status?: string; progress?: number }[];
 }
 
-// Public route (no auth): /stakeholder/accept-invitation?token=...
+// Public route (no auth): /stakeholder/accept-invitation#token=...; query tokens remain accepted for older links.
 export function AcceptInvitationPage() {
   const { t } = useI18n();
   const [params] = useSearchParams();
-  const token = params.get("token") ?? "";
-  const [password, setPassword] = React.useState("");
-  const [confirmPassword, setConfirmPassword] = React.useState("");
+  const { hash } = useLocation();
+  const token = params.get("token") ?? new URLSearchParams(hash.replace(/^#/, "")).get("token") ?? "";
+  const [acceptParticipation, setAcceptParticipation] = React.useState(false);
+  const [receiveReports, setReceiveReports] = React.useState(false);
+  const [receiveNotifications, setReceiveNotifications] = React.useState(false);
   const validation = useQuery({
     queryKey: ["stakeholder-invitation", "validate", token],
-    queryFn: () => api.get<InvitationValidation>(`/api/stakeholder-invitations/validate?token=${encodeURIComponent(token)}`),
+    queryFn: () => api.post<InvitationValidation>("/api/stakeholder-invitations/validate", { token }),
     enabled: token.length > 0,
     retry: false,
   });
-  const accept = useMutation({ mutationFn: () => api.post<void>("/api/stakeholder-invitations/accept", { token, password, confirmPassword }) });
+  const accept = useMutation({ mutationFn: () => api.post<InvitationAcceptance>("/api/stakeholder-invitations/accept", {
+    token, acceptParticipation, receiveProjectReports: receiveReports, receiveProjectNotifications: receiveNotifications,
+  }) });
+  const decline = useMutation({ mutationFn: () => api.post<void>("/api/stakeholder-invitations/decline", { token }) });
+  const withdrawConsent = useMutation({ mutationFn: (preferences: { withdrawReportsConsent: boolean; withdrawNotificationsConsent: boolean }) =>
+    api.post<InvitationAcceptance>("/api/stakeholder-invitations/withdraw-consent", { token, ...preferences }) });
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     await accept.mutateAsync();
   }
 
-  if (accept.isSuccess) {
+  if (decline.isSuccess) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-muted/30 p-4">
         <Card className="w-full max-w-lg"><CardContent className="space-y-5 p-6 text-center">
           <CheckCircle2 className="mx-auto h-12 w-12 text-emerald-600" />
-          <h1 className="text-xl font-semibold">{t("stakeholder.invitationAccepted")}</h1>
-          <Button asChild><Link to="/login">{t("stakeholder.goToLogin")}<ArrowRight className="ms-2 h-4 w-4" /></Link></Button>
+          <h1 className="text-xl font-semibold">{t("stakeholder.invitationDeclined")}</h1>
+          <p className="text-sm text-muted-foreground">{t("stakeholder.externalInvitationNoAccount")}</p>
         </CardContent></Card>
       </main>
     );
@@ -100,6 +120,35 @@ export function AcceptInvitationPage() {
     );
   }
   if (validation.isLoading || !validation.data) return <main className="flex min-h-screen items-center justify-center bg-muted/30 p-4"><Card className="w-full max-w-lg"><CardContent className="space-y-4 p-6" role="status" aria-label={t("common.loading")}><Skeleton className="mx-auto h-5 w-28" /><Skeleton className="mx-auto h-8 w-3/4" /><Skeleton className="h-4 w-full" /><Skeleton className="h-24 w-full" /></CardContent></Card></main>;
+  const currentConsent = withdrawConsent.data ?? accept.data ?? validation.data;
+  if (currentConsent.status === "Accepted") {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-muted/30 p-4">
+        <Card className="w-full max-w-lg">
+          <CardHeader>
+            <div className="mb-2 flex items-center gap-2"><Badge variant="outline">{t("stakeholder.stakeholder")}</Badge><ShieldCheck className="h-4 w-4 text-emerald-600" /></div>
+            <CardTitle>{t("stakeholder.invitationAccepted")}</CardTitle>
+            <p className="text-sm text-muted-foreground">{t("stakeholder.manageConsentDescription")}</p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">{t("stakeholder.externalInvitationNoAccount")}</p>
+            <section className="space-y-3 rounded-lg border bg-muted/20 p-4" aria-label={t("stakeholder.manageConsentTitle")}>
+              <h2 className="text-sm font-semibold">{t("stakeholder.manageConsentTitle")}</h2>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2"><span>{t("stakeholder.receiveProjectReports")}</span><Badge variant="outline">{t(currentConsent.reportsConsent ? "stakeholder.emailPreferenceOn" : "stakeholder.emailPreferenceOff")}</Badge></div>
+                {currentConsent.reportsConsent ? <Button type="button" size="sm" variant="outline" disabled={withdrawConsent.isPending} onClick={() => void withdrawConsent.mutateAsync({ withdrawReportsConsent: true, withdrawNotificationsConsent: false })}>{t("stakeholder.withdrawReportsConsent")}</Button> : null}
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2"><span>{t("stakeholder.receiveProjectNotifications")}</span><Badge variant="outline">{t(currentConsent.notificationsConsent ? "stakeholder.emailPreferenceOn" : "stakeholder.emailPreferenceOff")}</Badge></div>
+                {currentConsent.notificationsConsent ? <Button type="button" size="sm" variant="outline" disabled={withdrawConsent.isPending} onClick={() => void withdrawConsent.mutateAsync({ withdrawReportsConsent: false, withdrawNotificationsConsent: true })}>{t("stakeholder.withdrawNotificationsConsent")}</Button> : null}
+              </div>
+            </section>
+            {withdrawConsent.error ? <p className="text-sm text-destructive" role="alert">{t("stakeholder.consentWithdrawalError")}</p> : null}
+          </CardContent>
+        </Card>
+      </main>
+    );
+  }
   return (
     <main className="flex min-h-screen items-center justify-center bg-muted/30 p-4">
       <Card className="w-full max-w-lg">
@@ -115,10 +164,15 @@ export function AcceptInvitationPage() {
               <div><p className="text-xs text-muted-foreground">{t("stakeholder.acceptInvitationEmail")}</p><p className="font-medium">{validation.data.email}</p></div>
               <div><p className="text-xs text-muted-foreground">{t("stakeholder.acceptInvitationProject")}</p><p className="font-medium">{validation.data.projectName}</p></div>
             </section>
-            <div className="space-y-2"><Label htmlFor="stakeholder-password">{t("stakeholder.setPassword")}</Label><div className="relative"><KeyRound className="pointer-events-none absolute start-3 top-2.5 h-4 w-4 text-muted-foreground" /><Input id="stakeholder-password" type="password" className="ps-9" minLength={6} required value={password} onChange={(e) => setPassword(e.target.value)} /></div></div>
-            <div className="space-y-2"><Label htmlFor="stakeholder-confirm-password">{t("stakeholder.confirmPassword")}</Label><Input id="stakeholder-confirm-password" type="password" minLength={6} required value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} /></div>
-            {accept.error ? <p className="text-sm text-destructive" role="alert">{accept.error instanceof Error ? accept.error.message : t("stakeholder.invitationAcceptError")}</p> : null}
-            <Button className="w-full" type="submit" disabled={accept.isPending}>{accept.isPending ? t("stakeholder.submitting") : t("stakeholder.activateAccount")}</Button>
+            <p className="text-sm text-muted-foreground">{t("stakeholder.externalInvitationNoAccount")}</p>
+            <div className="flex items-start gap-2"><Checkbox id="stakeholder-participation" checked={acceptParticipation} onCheckedChange={() => setAcceptParticipation((value) => !value)} required /><Label htmlFor="stakeholder-participation">{t("stakeholder.acceptParticipationConsent")}</Label></div>
+            <div className="flex items-start gap-2"><Checkbox id="stakeholder-report-consent" checked={receiveReports} onCheckedChange={() => setReceiveReports((value) => !value)} /><Label htmlFor="stakeholder-report-consent">{t("stakeholder.receiveProjectReports")}</Label></div>
+            <div className="flex items-start gap-2"><Checkbox id="stakeholder-notification-consent" checked={receiveNotifications} onCheckedChange={() => setReceiveNotifications((value) => !value)} /><Label htmlFor="stakeholder-notification-consent">{t("stakeholder.receiveProjectNotifications")}</Label></div>
+            {accept.error || decline.error ? <p className="text-sm text-destructive" role="alert">{(accept.error ?? decline.error) instanceof Error ? (accept.error ?? decline.error)?.message : t("stakeholder.invitationAcceptError")}</p> : null}
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Button className="flex-1" type="submit" disabled={accept.isPending || decline.isPending || !acceptParticipation}>{accept.isPending ? t("stakeholder.submitting") : t("stakeholder.acceptInvitation")}</Button>
+              <Button className="flex-1" type="button" variant="outline" disabled={accept.isPending || decline.isPending} onClick={() => void decline.mutateAsync()}>{decline.isPending ? t("stakeholder.submitting") : t("stakeholder.declineInvitation")}</Button>
+            </div>
           </form>
         </CardContent>
       </Card>
@@ -179,7 +233,7 @@ export function StakeholderProjectDetailPage() {
     <div className="grid gap-4 md:grid-cols-4"><Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">{t("stakeholder.status")}</p><Badge className="mt-2" status={project.status}>{statusLabel(project.status)}</Badge></CardContent></Card><Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">{t("stakeholder.health")}</p><Badge className="mt-2" status={project.health}>{healthLabel(project.health)}</Badge></CardContent></Card><Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">{t("stakeholder.progress")}</p><p className="mt-2 text-lg font-semibold">{formatLocalizedNumber(project.progress, locale)}%</p></CardContent></Card><Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">{t("stakeholder.dates")}</p><p className="mt-2 text-sm">{formatStakeholderDate(project.startDate, formatDate)} – {formatStakeholderDate(project.endDate, formatDate)}</p></CardContent></Card></div>
     <Card><CardHeader><CardTitle>{t("stakeholder.peopleTitle")}</CardTitle></CardHeader><CardContent className="grid gap-3 text-sm sm:grid-cols-2"><p>{t("stakeholder.projectManager")}: {project.projectManagerName ?? "—"}</p><p>{t("stakeholder.sponsor")}: {project.sponsorName ?? "—"}</p><p className="text-xs text-muted-foreground sm:col-span-2">{t("stakeholder.publishedOnlyHint")}</p></CardContent></Card>
     <Card><CardHeader><CardTitle>{t("stakeholder.latestUpdate")}</CardTitle><p className="text-xs text-muted-foreground">{t("stakeholder.publishedOnlyHint")}</p></CardHeader><CardContent className="space-y-4">{report ? <><div className="flex flex-wrap gap-2"><Badge status={report.projectLifecycleStatus ?? project.status}>{statusLabel(report.projectLifecycleStatus || project.status)}</Badge>{report.overallHealth ? <Badge status={report.overallHealth}>{healthLabel(report.overallHealth)}</Badge> : null}<span className="text-sm text-muted-foreground">{formatStakeholderDate(report.reportDate, formatDate)} · {formatStakeholderDate(report.periodFrom, formatDate)} – {formatStakeholderDate(report.periodTo, formatDate)}</span></div><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{([["stakeholder.scheduleHealth", report.scheduleHealth], ["stakeholder.costHealth", report.costHealth], ["stakeholder.scopeHealth", report.scopeHealth], ["stakeholder.qualityHealth", report.qualityHealth], ["stakeholder.resourceHealth", report.resourceHealth]] as const).filter(([, value]) => Boolean(value)).map(([label, value]) => <div key={label} className="flex items-center justify-between rounded-lg border bg-muted/20 p-3"><span className="text-xs text-muted-foreground">{t(label)}</span><Badge status={value}>{healthLabel(value)}</Badge></div>)}</div>{([["stakeholder.executiveSummary", report.executiveSummary], ["stakeholder.keyAchievements", report.keyAchievements], ["stakeholder.challengesConcerns", report.challengesConcerns], ["stakeholder.nextPeriodPriorities", report.nextPeriodPriorities]] as const).map(([label, value]) => value ? <div key={label}><p className="text-sm font-semibold">{t(label)}</p><p className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">{value}</p></div> : null)}</> : <div><p className="text-sm font-medium">{t("stakeholder.noPublishedUpdate")}</p><p className="mt-1 text-sm text-muted-foreground">{t("stakeholder.noPublishedUpdateDescription")}</p></div>}</CardContent></Card>
-    <Card><CardHeader><CardTitle>{t("stakeholder.milestones")}</CardTitle><p className="text-xs text-muted-foreground">{t("stakeholder.milestonesHint")}</p></CardHeader><CardContent>{milestones.length ? <Table><TableHeader><TableRow><TableHead>{t("stakeholder.milestone")}</TableHead><TableHead>{t("stakeholder.dueDate")}</TableHead><TableHead>{t("stakeholder.status")}</TableHead><TableHead>{t("stakeholder.progress")}</TableHead></TableRow></TableHeader><TableBody>{milestones.map((milestone) => <TableRow key={milestone.id}><TableCell className="font-medium">{milestone.name}</TableCell><TableCell>{formatStakeholderDate(milestone.dueDate, formatDate)}</TableCell><TableCell><Badge status={milestone.status}>{milestone.status || t("stakeholder.notStarted")}</Badge></TableCell><TableCell className="tabular-nums">{milestone.progress == null ? "—" : `${formatLocalizedNumber(milestone.progress, locale)} %`}</TableCell></TableRow>)}</TableBody></Table> : <div><p className="text-sm font-medium">{t("stakeholder.noMilestones")}</p><p className="mt-1 text-sm text-muted-foreground">{t("stakeholder.noMilestonesDescription")}</p></div>}</CardContent></Card>
+    <Card><CardHeader><CardTitle>{t("stakeholder.milestones")}</CardTitle><p className="text-xs text-muted-foreground">{t("stakeholder.milestonesHint")}</p></CardHeader><CardContent>{milestones.length ? <Table><TableHeader><TableRow><TableHead>{t("stakeholder.milestone")}</TableHead><TableHead>{t("stakeholder.dueDate")}</TableHead><TableHead>{t("stakeholder.status")}</TableHead><TableHead>{t("stakeholder.progress")}</TableHead></TableRow></TableHeader><TableBody>{milestones.map((milestone) => <TableRow key={milestone.id}><TableCell className="font-medium">{milestone.name}</TableCell><TableCell>{formatStakeholderDate(milestone.dueDate, formatDate)}</TableCell><TableCell><Badge status={milestone.status}>{milestone.status ? statusLabel(milestone.status) : t("stakeholder.notStarted")}</Badge></TableCell><TableCell className="tabular-nums">{milestone.progress == null ? "—" : `${formatLocalizedNumber(milestone.progress, locale)} %`}</TableCell></TableRow>)}</TableBody></Table> : <div><p className="text-sm font-medium">{t("stakeholder.noMilestones")}</p><p className="mt-1 text-sm text-muted-foreground">{t("stakeholder.noMilestonesDescription")}</p></div>}</CardContent></Card>
     <Card><CardHeader><CardTitle>{t("stakeholder.statusHistory")}</CardTitle><p className="text-xs text-muted-foreground">{t("stakeholder.publishedOnlyHint")}</p></CardHeader><CardContent>{history.length ? <Table><TableHeader><TableRow><TableHead>{t("stakeholder.reportDate")}</TableHead><TableHead>{t("stakeholder.reportingPeriod")}</TableHead><TableHead>{t("stakeholder.status")}</TableHead><TableHead>{t("stakeholder.health")}</TableHead><TableHead>{t("stakeholder.progress")}</TableHead></TableRow></TableHeader><TableBody>{history.map((entry) => <TableRow key={entry.id}><TableCell>{formatStakeholderDate(entry.reportDate, formatDate)}</TableCell><TableCell>{formatStakeholderDate(entry.periodFrom, formatDate)} – {formatStakeholderDate(entry.periodTo, formatDate)}</TableCell><TableCell><Badge status={entry.projectLifecycleStatus}>{statusLabel(entry.projectLifecycleStatus || project.status)}</Badge></TableCell><TableCell><Badge status={entry.overallHealth}>{entry.overallHealth ? healthLabel(entry.overallHealth) : "—"}</Badge></TableCell><TableCell className="tabular-nums">{entry.overallProgressPercent == null ? "—" : `${formatLocalizedNumber(entry.overallProgressPercent, locale)} %`}</TableCell></TableRow>)}</TableBody></Table> : <div><p className="text-sm font-medium">{t("stakeholder.noPublishedHistory")}</p><p className="mt-1 text-sm text-muted-foreground">{t("stakeholder.noPublishedHistoryDescription")}</p></div>}</CardContent></Card>
   </div>;
 }
@@ -189,7 +243,7 @@ function formatStakeholderDate(value: string | null | undefined, formatDate: (da
 }
 
 function formatLocalizedNumber(value: number, locale: string): string {
-  return new Intl.NumberFormat(locale === "ar" ? "ar-EG-u-nu-latn" : "en-GB", { useGrouping: true }).format(value);
+  return formatNumberValue(value, locale);
 }
 
 export function useInvalidateStakeholder() {

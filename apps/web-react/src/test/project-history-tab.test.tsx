@@ -4,37 +4,24 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "../i18n/messages";
 import { ProjectHistoryTab } from "../features/projects/ProjectGovernanceTabs";
 
+// The history tab is the audit workspace. Manager handover history is rendered by the
+// delivery/handover surface, so this test only guards the audit entry point and its
+// permission gate.
 const fixtures = vi.hoisted(() => ({
-  managerHistory: [
-    {
-      id: "handover-1",
-      projectId: "project-1",
-      projectManagerId: "manager-1",
-      projectManagerName: "Jane Manager",
-      projectManagerEmail: "jane@example.com",
-      startDate: "2026-01-01T00:00:00Z",
-      endDate: null,
-      isCurrent: true,
-      handoverFromProjectManagerId: null,
-      handoverFromProjectManagerName: null,
-      handoverDate: null,
-      handoverReason: null,
-      handoverNotes: null,
-      createdAt: "2026-01-01T00:00:00Z",
-      createdBy: "System",
-    },
-  ],
-  managerHistoryQuery: vi.fn(),
+  auditTrailQuery: vi.fn(),
 }));
 
 vi.mock("@features/projects/api/projects", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../features/projects/api/projects")>();
   return {
     ...actual,
-    useProjectManagerHistory: () => {
-      fixtures.managerHistoryQuery();
-      return { data: fixtures.managerHistory, isLoading: false, isError: false, refetch: vi.fn() } as unknown as ReturnType<typeof actual.useProjectManagerHistory>;
+    // The audit workspace is covered by its own backend contract; here it only needs to
+    // resolve to an empty, permission-denied state without touching the network.
+    useProjectAuditTrail: () => {
+      fixtures.auditTrailQuery();
+      return { data: undefined, isLoading: false, isError: false, isFetching: false, refetch: vi.fn() };
     },
+    useProjectAuditFacets: () => ({ data: undefined, isLoading: false, isError: false, refetch: vi.fn() }),
   };
 });
 
@@ -67,23 +54,27 @@ function renderTab() {
 describe("project history tab source parity", () => {
   beforeEach(() => {
     window.localStorage.setItem("nexus-locale", "en");
-    fixtures.managerHistoryQuery.mockReset();
+    fixtures.auditTrailQuery.mockReset();
   });
 
-  it("queries and renders manager handover history", () => {
+  it("renders the audit workspace without the legacy manager history card", () => {
     renderTab();
-    expect(fixtures.managerHistoryQuery).toHaveBeenCalledTimes(1);
+    expect(fixtures.auditTrailQuery).toHaveBeenCalledTimes(1);
 
-    expect(screen.getByText("Project Manager History")).toBeInTheDocument();
-    expect(screen.getByText("Jane Manager")).toBeInTheDocument();
+    expect(screen.getByText("Audit Trail")).toBeInTheDocument();
+    // Callers without Audit.View see an explicit no-access state instead of an
+    // unfiltered log.
+    expect(screen.getByText("Audit trail access required")).toBeInTheDocument();
+    expect(screen.queryByText("Project Manager History")).not.toBeInTheDocument();
     expect(screen.queryByText("Change log")).not.toBeInTheDocument();
   });
 
-  it("renders Arabic manager history labels", () => {
+  it("renders Arabic audit workspace labels", () => {
     window.localStorage.setItem("nexus-locale", "ar");
     renderTab();
 
-    expect(screen.getByText("سجل مديري المشروع")).toBeInTheDocument();
-    expect(screen.getByText("Jane Manager")).toBeInTheDocument();
+    expect(screen.getByText("سجل التدقيق")).toBeInTheDocument();
+    expect(screen.getByText("يلزم إذن عرض سجل التدقيق")).toBeInTheDocument();
+    expect(screen.queryByText("سجل مديري المشروع")).not.toBeInTheDocument();
   });
 });

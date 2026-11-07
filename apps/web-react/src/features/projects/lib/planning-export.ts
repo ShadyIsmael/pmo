@@ -6,6 +6,7 @@ import type {
 import { buildPlanWorkspaceRows } from "./plan-workspace-rows";
 import { formatPredecessor } from "./predecessor-syntax";
 import { roundPlanProgress } from "./plan-progress";
+import { brand } from "@lib/brand";
 
 export interface PlanningExportLabels {
   planInfoSheet: string;
@@ -123,7 +124,7 @@ export function buildPlanningExportRows(input: PlanningExportInput): PlanningExp
 export async function downloadPlanningWorkbook(input: PlanningExportInput): Promise<void> {
   const { default: ExcelJS } = await import("exceljs");
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = "NEXUS PMO";
+  workbook.creator = brand.product.fullName;
   workbook.subject = `${input.plan.name} plan export`;
 
   const info = workbook.addWorksheet(input.labels.planInfoSheet);
@@ -198,7 +199,7 @@ export async function downloadPlanningWorkbook(input: PlanningExportInput): Prom
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = `NEXUS_${filePart}_Plan.xlsx`;
+  anchor.download = `FOPX_PM_${filePart}_Plan.xlsx`;
   document.body.appendChild(anchor);
   anchor.click();
   document.body.removeChild(anchor);

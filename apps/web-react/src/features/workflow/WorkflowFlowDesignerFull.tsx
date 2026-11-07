@@ -173,7 +173,7 @@ export function WorkflowFlowDesignerFull({ version, locale, editable, labels, on
         {connectError ? <p role="alert" className="mt-2 text-xs text-destructive">{connectError}</p> : null}
       </CardHeader>
       <CardContent className="p-0">
-        <div className="h-[560px] w-full bg-background [&_.react-flow__attribution]:hidden">
+        <div className="h-[560px] w-full bg-background">
           <ReactFlow<DesignerNode, Edge>
             nodes={nodes}
             edges={edges}
@@ -188,7 +188,8 @@ export function WorkflowFlowDesignerFull({ version, locale, editable, labels, on
             nodesDraggable
             nodesConnectable={editable && connectMode}
             elementsSelectable
-            proOptions={{ hideAttribution: true }}
+            proOptions={{ hideAttribution: false }}
+            className="[&_.react-flow__attribution]:block"
           >
             <Background gap={24} size={1} />
             <Controls showInteractive={false} />

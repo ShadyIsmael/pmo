@@ -1,4 +1,5 @@
 import * as React from "react";
+import { Button } from "@components/ui/Button";
 import { Input } from "@components/ui/Input";
 import { Label } from "@components/ui/Label";
 import { SearchableSelect } from "@components/ui/SearchableSelect";
@@ -17,12 +18,16 @@ const issueSeverities = [
   { value: "Minor", labelKey: "workItems.severityMinor" },
 ] as const;
 
-export function WorkItemForm({ draft, onChange, t, assignees = [], assigneesLoading = false, projects = [], allowTypeChange = true, projectLocked = false, extraContent, richTextDescription = false, layout = "default" }: {
+export function WorkItemForm({ draft, onChange, t, assignees = [], assigneesLoading = false, assigneesError = false, onRetryAssignees, currentAssignee, currentProject, projects = [], allowTypeChange = true, projectLocked = false, extraContent, richTextDescription = false, layout = "default" }: {
   draft: SaveWorkItemDto;
   onChange: (patch: Partial<SaveWorkItemDto>) => void;
   t: (key: string, params?: Record<string, string | number>) => string;
   assignees?: readonly WorkItemAssigneeDto[];
   assigneesLoading?: boolean;
+  assigneesError?: boolean;
+  onRetryAssignees?: () => void;
+  currentAssignee?: WorkItemAssigneeDto;
+  currentProject?: { id: string; name: string };
   projects?: readonly ProjectSummaryDto[];
   allowTypeChange?: boolean;
   projectLocked?: boolean;
@@ -33,7 +38,13 @@ export function WorkItemForm({ draft, onChange, t, assignees = [], assigneesLoad
   const formId = React.useId();
   const target = draft.assignedResourceId ? `resource:${draft.assignedResourceId}` : draft.assignedTeamId ? `team:${draft.assignedTeamId}` : "";
   const isIssue = draft.type === "Issue";
-  const assigneeOptions = assignees.map((candidate) => ({ value: `${candidate.targetType === "Resource" ? "resource" : "team"}:${candidate.targetId}`, label: `${candidate.name} · ${candidate.targetType === "Resource" ? t("workItems.resourceTarget") : t("workItems.teamTarget")}` }));
+  const assignedTargetExists = assignees.some((candidate) => `${candidate.targetType === "Resource" ? "resource" : "team"}:${candidate.targetId}` === target);
+  const preservedCurrentAssignee = currentAssignee && target && !assignedTargetExists
+    && `${currentAssignee.targetType === "Resource" ? "resource" : "team"}:${currentAssignee.targetId}` === target
+    ? currentAssignee
+    : undefined;
+  const visibleAssignees = preservedCurrentAssignee ? [...assignees, preservedCurrentAssignee] : assignees;
+  const assigneeOptions = visibleAssignees.map((candidate) => ({ value: `${candidate.targetType === "Resource" ? "resource" : "team"}:${candidate.targetId}`, label: `${candidate.name} · ${candidate.targetType === "Resource" ? t("workItems.resourceTarget") : t("workItems.teamTarget")}` }));
   const richTextLabels = {
     formatting: t("meetings.formatting"), bold: t("meetings.bold"), italic: t("meetings.italic"), underline: t("meetings.underline"),
     bulletedList: t("meetings.bulletedList"), numberedList: t("meetings.numberedList"), emoji: t("meetings.emoji"),
@@ -86,6 +97,7 @@ export function WorkItemForm({ draft, onChange, t, assignees = [], assigneesLoad
     <Label htmlFor={`${formId}-project`}>{t("workItems.project")}</Label>
     <select id={`${formId}-project`} className="input-field w-full" value={draft.projectId ?? ""} disabled={projectLocked} onChange={(event) => onChange({ projectId: event.target.value || undefined, assignedResourceId: undefined, assignedTeamId: undefined })}>
       {projectLocked ? null : <option value="">{t("workItems.noProject")}</option>}
+      {currentProject && draft.projectId === currentProject.id && !projects.some((project) => project.id === currentProject.id) ? <option value={currentProject.id}>{currentProject.name}</option> : null}
       {projects.map((project) => <option key={project.id} value={project.id}>{project.code ? `${project.code} · ${project.name}` : project.name}</option>)}
     </select>
   </div>;
@@ -101,12 +113,13 @@ export function WorkItemForm({ draft, onChange, t, assignees = [], assigneesLoad
       }}
       placeholder={draft.projectId ? t("workItems.unassigned") : t("workItems.selectProjectFirst")}
       searchPlaceholder={t("workItems.searchAssignees")}
-      emptyText={t("workItems.noEligibleProjectPeople")}
+      emptyText={t(assigneesError ? "workItems.assigneesLoadError" : "workItems.noEligibleProjectPeople")}
       loadingText={t("common.loading")}
       loading={assigneesLoading}
       disabled={!draft.projectId}
     />
-    {draft.projectId && !assigneesLoading && assignees.length === 0 ? <p className="text-xs text-muted-foreground">{t("workItems.noEligibleProjectPeople")}</p> : null}
+    {assigneesError ? <div className="flex flex-wrap items-center justify-between gap-2" role="alert"><p className="text-xs text-destructive">{t("workItems.assigneesLoadError")}</p>{onRetryAssignees ? <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={onRetryAssignees}>{t("common.retry")}</Button> : null}</div> : null}
+    {draft.projectId && !assigneesLoading && !assigneesError && assignees.length === 0 && !preservedCurrentAssignee ? <p className="text-xs text-muted-foreground">{t("workItems.noEligibleProjectPeople")}</p> : null}
   </div>;
   const descriptionField = richTextDescription
     ? <RichTextEditor id={`${formId}-description`} value={draft.description ?? ""} onChange={(value) => onChange({ description: value })} placeholder={t("workItems.description")} ariaLabel={t("workItems.description")} t={richTextLabels} fillAvailable={layout === "structured"} />

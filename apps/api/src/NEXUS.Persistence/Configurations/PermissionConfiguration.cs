@@ -14,7 +14,9 @@ public class PermissionConfiguration : IEntityTypeConfiguration<Permission>
         builder.Property(p => p.Resource).HasMaxLength(100).IsRequired();
         builder.Property(p => p.Action).HasMaxLength(50).IsRequired();
         builder.Property(p => p.Description).HasMaxLength(500);
-        builder.HasIndex(p => new { p.Resource, p.Action }).IsUnique();
+        builder.HasIndex(p => new { p.TenantId, p.Resource, p.Action })
+            .IsUnique()
+            .HasDatabaseName("UX_Permissions_Tenant_Resource_Action");
         builder.Property(p => p.RowVersion).IsRowVersion();
 
         builder.HasMany(p => p.Roles)

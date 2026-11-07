@@ -76,6 +76,7 @@ public sealed class DocumentController : ControllerBase
     {
         var result = await _documents.GetDownloadAsync(id, version, cancellationToken);
         if (result.IsFailure) return StatusCode(result.Error?.StatusCode ?? 404, result.Error);
+        Response.Headers["X-Content-Type-Options"] = "nosniff";
         return File(result.Value!.Content, result.Value.ContentType, result.Value.FileName, enableRangeProcessing: true);
     }
 
@@ -85,8 +86,12 @@ public sealed class DocumentController : ControllerBase
     {
         var result = await _documents.GetDownloadAsync(id, version, cancellationToken);
         if (result.IsFailure) return StatusCode(result.Error?.StatusCode ?? 404, result.Error);
-        Response.Headers.ContentDisposition = $"inline; filename=\"{Uri.EscapeDataString(result.Value!.FileName)}\"";
-        return File(result.Value.Content, result.Value.ContentType);
+        var download = result.Value!;
+        // Only non-executable types are served inline; everything else is forced to download.
+        var disposition = DocumentContentTypes.CanPreviewInline(download.ContentType) ? "inline" : "attachment";
+        Response.Headers["X-Content-Type-Options"] = "nosniff";
+        Response.Headers.ContentDisposition = $"{disposition}; filename=\"{Uri.EscapeDataString(download.FileName)}\"";
+        return File(download.Content, download.ContentType);
     }
 
     private Guid CurrentUserId()

@@ -57,7 +57,8 @@ public sealed class TimeEntryController : ControllerBase
     public async Task<IActionResult> List([FromQuery] TimeEntryFilterDto filter, CancellationToken cancellationToken)
     {
         if (!TryGetContext(out var actorId, out var tenantId)) return Unauthorized();
-        return Ok(await _service.ListAsync(filter, actorId, tenantId, cancellationToken));
+        var result = await _service.ListAsync(filter, actorId, tenantId, cancellationToken);
+        return ToActionResult(result, () => Ok(result.Value));
     }
 
     [HttpGet("summary")]

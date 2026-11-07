@@ -3,54 +3,81 @@ import { Button } from "@components/ui/Button";
 import { Input } from "@components/ui/Input";
 import { Label } from "@components/ui/Label";
 import { SideSheet, SideSheetBody, SideSheetFooter } from "@components/ui/SideSheet";
+import { ApiFieldError } from "@components/ui/ApiFieldError";
+import { ApiError, getApiFieldError } from "@api/client";
 import { SearchableSelect } from "@components/ui/SearchableSelect";
 import { Textarea } from "@components/ui/Textarea";
-import { useCurrencies } from "@features/administration/api/admin";
-import { useUserLookup, toUserSelectOptions } from "@features/projects/lib/project-lookups";
+import { toUserSelectOptions, usePortfolioWorkflowManagerLookup, useWorkflowCurrencyLookup } from "@features/projects/lib/project-lookups";
 import { useI18n } from "@i18n/messages";
 import { useCreatePortfolio, useUpdatePortfolio, type PortfolioDto, type SavePortfolioDto } from "./api/delivery";
 
-const blankForm = (): SavePortfolioDto => ({ name: "", description: "", ownerId: "", status: "Active", currency: "USD", startDate: "", endDate: "", strategicObjective: "", priority: "" });
+const blankForm = (): SavePortfolioDto => ({ name: "", description: "", ownerId: "", status: "Active", currency: "", strategicObjective: "", priority: "" });
 
-export function PortfolioSheet({ open, onOpenChange, portfolio, canManage }: {
+export function PortfolioSheet({ open, onOpenChange, portfolio, canSave, canAssignInitialManager }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   portfolio?: PortfolioDto;
-  canManage: boolean;
+  canSave: boolean;
+  canAssignInitialManager: boolean;
 }) {
   const { t } = useI18n();
   const [form, setForm] = React.useState<SavePortfolioDto>(blankForm);
   const [error, setError] = React.useState("");
+  const [apiError, setApiError] = React.useState<unknown>(null);
   const hasAssignedOwner = Boolean(portfolio?.ownerId && portfolio.ownerId !== "00000000-0000-0000-0000-000000000000");
-  const usersQuery = useUserLookup("portfolio.manager", open && (!portfolio || !hasAssignedOwner));
-  const currenciesQuery = useCurrencies(open);
+  const usersQuery = usePortfolioWorkflowManagerLookup(open && canAssignInitialManager && (!portfolio || !hasAssignedOwner));
+  const currenciesQuery = useWorkflowCurrencyLookup(open && canSave);
   const create = useCreatePortfolio();
   const update = useUpdatePortfolio();
   const isPending = create.isPending || update.isPending;
 
   React.useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setForm(blankForm());
+      setError("");
+      setApiError(null);
+      return;
+    }
     setForm(portfolio ? {
       name: portfolio.name,
       description: portfolio.description ?? "",
       ownerId: portfolio.ownerId && portfolio.ownerId !== "00000000-0000-0000-0000-000000000000" ? portfolio.ownerId : "",
       status: portfolio.status === "Archived" ? "Archived" : "Active",
-      currency: portfolio.currency || "USD",
-      startDate: portfolio.startDate?.slice(0, 10) ?? "",
-      endDate: portfolio.endDate?.slice(0, 10) ?? "",
+      currency: portfolio.currency ?? "",
       strategicObjective: portfolio.strategicObjective ?? "",
       priority: portfolio.priority ?? "",
     } : blankForm());
     setError("");
+    setApiError(null);
   }, [open, portfolio]);
 
   const userOptions = toUserSelectOptions(usersQuery.data);
-  const currencyOptions = currenciesQuery.data ?? [];
+  const currencyOptions = React.useMemo(() => currenciesQuery.data ?? [], [currenciesQuery.data]);
+  const selectedCurrency = form.currency?.trim().toUpperCase() ?? "";
+  const selectedCurrencyIsConfigured = currencyOptions.some((currency) => currency.code.toUpperCase() === selectedCurrency);
+  const keepsExistingCurrency = Boolean(portfolio?.currency && portfolio.currency.trim().toUpperCase() === selectedCurrency);
+  const canSaveCurrency = (selectedCurrencyIsConfigured && !currenciesQuery.isError) || keepsExistingCurrency;
+
+  React.useEffect(() => {
+    if (!open || portfolio || form.currency || currenciesQuery.isError) return;
+    const baseCurrency = currencyOptions.find((currency) => currency.isBase)?.code;
+    if (baseCurrency) setForm((current) => current.currency ? current : { ...current, currency: baseCurrency });
+  }, [open, portfolio, form.currency, currencyOptions, currenciesQuery.isError]);
+
+  function handleOpenChange(nextOpen: boolean) {
+    if (!nextOpen) {
+      setForm(blankForm());
+      setError("");
+      setApiError(null);
+    }
+    onOpenChange(nextOpen);
+  }
 
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError("");
-    if (!canManage) return;
+    setApiError(null);
+    if (!canSave) return;
     if (!form.name.trim()) {
       setError(t("portfolioManager.portfolioNameRequired"));
       return;
@@ -59,56 +86,69 @@ export function PortfolioSheet({ open, onOpenChange, portfolio, canManage }: {
       setError(t("portfolioManager.endDateAfterStartDate"));
       return;
     }
+    const currency = form.currency?.trim().toUpperCase() ?? "";
+    const currencyIsConfigured = currencyOptions.some((item) => item.code.toUpperCase() === currency);
+    const currencyIsUnchanged = Boolean(portfolio?.currency && portfolio.currency.trim().toUpperCase() === currency);
+    if ((!currencyIsConfigured || currenciesQuery.isError) && !currencyIsUnchanged) {
+      setError(t("portfolioManager.currencyRequired"));
+      return;
+    }
     const payload: SavePortfolioDto = {
       ...form,
       ownerId: hasAssignedOwner ? portfolio?.ownerId : form.ownerId || undefined,
       name: form.name.trim(),
       description: form.description ?? "",
-      currency: form.currency || "USD",
-      startDate: form.startDate || undefined,
-      endDate: form.endDate || undefined,
+      currency,
       strategicObjective: form.strategicObjective?.trim() ? form.strategicObjective.trim() : undefined,
       priority: form.priority?.trim() ? form.priority.trim() : undefined,
     };
     try {
       if (portfolio) await update.mutateAsync({ id: portfolio.id, dto: payload });
       else await create.mutateAsync(payload);
-      onOpenChange(false);
+      handleOpenChange(false);
     } catch (reason) {
+      setApiError(reason);
       setError(reason instanceof Error ? reason.message : t("portfolioManager.portfolioSaveFailed"));
     }
   };
 
-  return <SideSheet open={open} onOpenChange={onOpenChange} title={portfolio ? t("portfolioManager.editPortfolio") : t("portfolioManager.createPortfolio")} description={t("portfolioManager.portfolioSheetDescription")} size="md">
+  return <SideSheet open={open} onOpenChange={handleOpenChange} title={portfolio ? t("portfolioManager.editPortfolio") : t("portfolioManager.createPortfolio")} description={t("portfolioManager.portfolioSheetDescription")} size="md">
     <form onSubmit={(event) => void submit(event)} className="flex min-h-0 flex-1 flex-col">
       <SideSheetBody className="space-y-4">
         {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
-        <div><Label htmlFor="portfolio-name">{t("portfolioManager.portfolioName")} *</Label><Input id="portfolio-name" className="mt-2" value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} required /></div>
+        <div><Label htmlFor="portfolio-name">{t("portfolioManager.portfolioName")} *</Label><Input id="portfolio-name" className="mt-2" value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} required aria-invalid={Boolean(getApiFieldError(apiError, "name"))} aria-describedby={getApiFieldError(apiError, "name") ? "portfolio-name-error" : undefined} /><ApiFieldError id="portfolio-name-error" error={apiError} fieldName="name" /></div>
         <div><Label>{t("portfolioManager.code")}</Label><p className="mt-2 rounded-md border bg-muted px-3 py-2 text-sm text-muted-foreground">{portfolio?.code || t("portfolioManager.generatedPortfolioCode")}</p></div>
         <div><Label htmlFor="portfolio-description">{t("portfolioManager.description")}</Label><Textarea id="portfolio-description" className="mt-2" value={form.description ?? ""} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} /></div>
         <div>
           <Label>{t("portfolioManager.owner")}</Label>
           {hasAssignedOwner
             ? <><Input className="mt-2" value={portfolio?.ownerName || "—"} readOnly /><p className="mt-1 text-xs text-muted-foreground">{t("managerHandover.managerChangeViaHandover")}</p></>
-            : <><div className="mt-2"><SearchableSelect options={userOptions} value={form.ownerId} onValueChange={(ownerId) => setForm((current) => ({ ...current, ownerId }))} placeholder={t("portfolioManager.selectPortfolioManager")} searchPlaceholder={t("portfolioManager.searchPortfolioManagers")} loading={usersQuery.isLoading} emptyText={t("portfolioManager.noPortfolioManagers")} /></div>{portfolio ? <p className="mt-1 text-xs text-muted-foreground">{t("managerHandover.setInitialManager")}</p> : null}</>}
+            : <><div className="mt-2"><SearchableSelect aria-label={t("portfolioManager.owner")} aria-invalid={Boolean(getApiFieldError(apiError, "ownerId"))} aria-describedby={getApiFieldError(apiError, "ownerId") ? "portfolio-owner-error" : undefined} options={userOptions} value={form.ownerId} disabled={!canAssignInitialManager || usersQuery.isError} onValueChange={(ownerId) => setForm((current) => ({ ...current, ownerId }))} placeholder={t("portfolioManager.selectPortfolioManager")} searchPlaceholder={t("portfolioManager.searchPortfolioManagers")} loading={usersQuery.isLoading} emptyText={t("portfolioManager.noPortfolioManagers")} /></div><ApiFieldError id="portfolio-owner-error" error={apiError} fieldName="ownerId" />{usersQuery.isError ? <div role="alert" className="mt-1 flex flex-wrap items-center justify-between gap-2 text-xs text-destructive"><span>{usersQuery.error instanceof ApiError && usersQuery.error.status === 403 ? t("portfolioManager.managerLookupAccessDenied") : t("common.errorLoading")}</span><Button type="button" size="sm" variant="outline" onClick={() => void usersQuery.refetch()}>{t("common.retry")}</Button></div> : null}{portfolio ? <p className="mt-1 text-xs text-muted-foreground">{t(canAssignInitialManager ? "managerHandover.setInitialManager" : "managerHandover.adminInitiateRequired")}</p> : !canAssignInitialManager ? <p className="mt-1 text-xs text-muted-foreground">{t("managerHandover.adminInitiateRequired")}</p> : null}</>}
         </div>
-        <div className="grid grid-cols-2 gap-4">
-          <div><Label htmlFor="portfolio-start-date">{t("portfolioManager.startDate")}</Label><Input id="portfolio-start-date" className="mt-2" type="date" value={form.startDate ?? ""} onChange={(event) => setForm((current) => ({ ...current, startDate: event.target.value }))} /></div>
-          <div><Label htmlFor="portfolio-end-date">{t("portfolioManager.endDate")}</Label><Input id="portfolio-end-date" className="mt-2" type="date" value={form.endDate ?? ""} onChange={(event) => setForm((current) => ({ ...current, endDate: event.target.value }))} /></div>
+        <div>
+          <Label htmlFor="portfolio-strategic-objective">{t("portfolioManager.strategicObjective")}</Label>
+          <Textarea id="portfolio-strategic-objective" className="mt-2" value={form.strategicObjective ?? ""} onChange={(event) => setForm((current) => ({ ...current, strategicObjective: event.target.value }))} />
         </div>
-        <div><Label htmlFor="portfolio-strategic-objective">{t("portfolioManager.strategicObjective")}</Label><Textarea id="portfolio-strategic-objective" className="mt-2" value={form.strategicObjective ?? ""} onChange={(event) => setForm((current) => ({ ...current, strategicObjective: event.target.value }))} /></div>
         <div><Label htmlFor="portfolio-priority">{t("portfolioManager.priority")}</Label><Input id="portfolio-priority" className="mt-2" value={form.priority ?? ""} onChange={(event) => setForm((current) => ({ ...current, priority: event.target.value }))} /></div>
         <div>
           <Label htmlFor="portfolio-currency">{t("portfolioManager.currency")}</Label>
-          {currencyOptions.length > 0
-            ? <select id="portfolio-currency" className="input-field mt-2" value={form.currency || "USD"} onChange={(event) => setForm((current) => ({ ...current, currency: event.target.value }))}>{currencyOptions.map((currency) => <option key={currency.code} value={currency.code}>{currency.code} - {currency.name} {currency.symbol ? `(${currency.symbol})` : ""}</option>)}</select>
-            : <Input id="portfolio-currency" className="mt-2" value={form.currency || "USD"} onChange={(event) => setForm((current) => ({ ...current, currency: event.target.value.toUpperCase() }))} />}
+          <select id="portfolio-currency" className="input-field mt-2" value={form.currency ?? ""} required disabled={isPending || currenciesQuery.isLoading || currenciesQuery.isError || currencyOptions.length === 0} aria-invalid={Boolean(getApiFieldError(apiError, "currency"))} aria-describedby={getApiFieldError(apiError, "currency") ? "portfolio-currency-error" : undefined} onChange={(event) => setForm((current) => ({ ...current, currency: event.target.value }))}>
+            <option value="">{t("common.select")}</option>
+            {portfolio?.currency && !currencyOptions.some((currency) => currency.code.toUpperCase() === portfolio.currency?.trim().toUpperCase())
+              ? <option value={portfolio.currency} disabled>{portfolio.currency} ({t("administration.settingsWorkspace.currencyInactive")})</option>
+              : null}
+            {currencyOptions.map((currency) => <option key={currency.code} value={currency.code}>{currency.code} - {currency.name} {currency.symbol ? `(${currency.symbol})` : ""}</option>)}
+          </select>
+          <ApiFieldError id="portfolio-currency-error" error={apiError} fieldName="currency" />
+          {currenciesQuery.isLoading ? <p role="status" className="mt-1 text-xs text-muted-foreground">{t("common.loading")}</p> : null}
+          {currenciesQuery.isError ? <div role="alert" className="mt-1 flex flex-wrap items-center justify-between gap-2 text-xs text-destructive"><span>{t("common.errorLoading")}</span><Button type="button" size="sm" variant="outline" onClick={() => void currenciesQuery.refetch()}>{t("common.retry")}</Button></div> : null}
+          {!currenciesQuery.isLoading && !currenciesQuery.isError && currencyOptions.length === 0 ? <p role="status" className="mt-1 text-xs text-muted-foreground">{t("administration.currencies.empty")}</p> : null}
         </div>
         <div><Label htmlFor="portfolio-status">{t("portfolioManager.status")}</Label><select id="portfolio-status" className="input-field mt-2" value={form.status} onChange={(event) => setForm((current) => ({ ...current, status: event.target.value as SavePortfolioDto["status"] }))}><option value="Active">{t("portfolioManager.statuses.active")}</option><option value="Archived">{t("portfolioManager.statuses.archived")}</option></select></div>
       </SideSheetBody>
       <SideSheetFooter>
-        <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isPending}>{t("common.cancel")}</Button>
-        <Button type="submit" disabled={isPending || !canManage}>{isPending ? t("portfolioManager.saving") : t("portfolioManager.savePortfolio")}</Button>
+        <Button type="button" variant="outline" onClick={() => handleOpenChange(false)} disabled={isPending}>{t("common.cancel")}</Button>
+        <Button type="submit" disabled={isPending || !canSave || !canSaveCurrency}>{isPending ? t("portfolioManager.saving") : t("portfolioManager.savePortfolio")}</Button>
       </SideSheetFooter>
     </form>
   </SideSheet>;

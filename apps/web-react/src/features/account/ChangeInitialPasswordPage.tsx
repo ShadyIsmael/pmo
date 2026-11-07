@@ -8,9 +8,10 @@ import { Input } from "@components/ui/Input";
 import { Label } from "@components/ui/Label";
 import { useAuth } from "@auth/AuthProvider";
 import { useI18n } from "@i18n/messages";
+import { formatDateTime } from "@lib/utils";
 
 export function ChangeInitialPasswordPage() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const [policy, setPolicy] = React.useState<{ minimumLength: number; maximumLength: number } | null>(null);
@@ -29,9 +30,11 @@ export function ChangeInitialPasswordPage() {
     return () => { cancelled = true; };
   }, []);
 
-  const expired = user?.temporaryPasswordExpiresAt
-    ? new Date(user.temporaryPasswordExpiresAt).getTime() <= Date.now()
-    : true;
+  const expiryDate = user?.temporaryPasswordExpiresAt ? new Date(user.temporaryPasswordExpiresAt) : null;
+  const expiryTimestamp = expiryDate?.getTime();
+  const expiryIsValid = expiryTimestamp !== undefined && Number.isFinite(expiryTimestamp);
+  const expired = !expiryIsValid || expiryTimestamp <= Date.now();
+  const expiryText = expiryIsValid && expiryDate ? formatDateTime(expiryDate, locale) : null;
 
   async function handleLogout() {
     await logout();
@@ -87,7 +90,7 @@ export function ChangeInitialPasswordPage() {
             <p role="alert" className="text-sm text-destructive">{t("account.initialPassword.policyLoadError")}</p>
             <Button type="button" variant="outline" onClick={() => { setPolicyError(false); void api.getInitialPasswordPolicy().then(setPolicy).catch(() => setPolicyError(true)); }}>{t("common.retry")}</Button>
           </div> : !policy ? <p className="text-sm text-muted-foreground" role="status">{t("common.loading")}</p> : <form className="space-y-5" onSubmit={(event) => void handleSubmit(event)}>
-            <p className="text-sm text-warning">{t("account.initialPassword.expiryNotice", { expiresAt: user?.temporaryPasswordExpiresAt ? new Date(user.temporaryPasswordExpiresAt).toLocaleString() : "" })}</p>
+            {expiryText ? <p className="text-sm text-warning">{t("account.initialPassword.expiryNotice", { expiresAt: expiryText })}</p> : null}
             <div className="space-y-2"><Label htmlFor="initial-current-password">{t("account.initialPassword.currentPassword")}</Label><Input id="initial-current-password" type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} disabled={saving} required /></div>
             <div className="space-y-2"><Label htmlFor="initial-new-password">{t("account.initialPassword.newPassword")}</Label><Input id="initial-new-password" type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} disabled={saving} required minLength={policy.minimumLength} maxLength={policy.maximumLength} aria-describedby="initial-password-policy" /><p id="initial-password-policy" className="text-xs text-muted-foreground">{t("account.initialPassword.lengthError", { minimum: policy.minimumLength, maximum: policy.maximumLength })}</p></div>
             <div className="space-y-2"><Label htmlFor="initial-confirm-password">{t("account.initialPassword.confirmPassword")}</Label><Input id="initial-confirm-password" type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} disabled={saving} required minLength={policy.minimumLength} maxLength={policy.maximumLength} /></div>

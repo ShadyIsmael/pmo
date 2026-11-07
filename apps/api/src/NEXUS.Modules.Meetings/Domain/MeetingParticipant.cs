@@ -10,6 +10,7 @@ public class MeetingParticipant : BaseEntity
     public string? Name { get; set; }
     public string Email { get; set; } = string.Empty;
     public string? AttendanceStatus { get; set; }
+    public string? InvitationResponseStatus { get; set; }
     public string? Role { get; set; }
     public DateTime? RespondedAt { get; set; }
 }

@@ -11,7 +11,7 @@ import { SearchableSelect } from "@components/ui/SearchableSelect";
 import { useI18n } from "@i18n/messages";
 import { useProjectEnumLabels } from "../lib/project-labels";
 import { ProjectHealthHelper, ProjectStatusHelper } from "@lib/enums";
-import { shouldLoadProjectLookup, toUserSelectOptions, useUserLookup } from "../lib/project-lookups";
+import { shouldLoadProjectLookup, toUserSelectOptions, useProjectManagerCandidateLookup } from "../lib/project-lookups";
 
 interface ProjectAdvancedSearchProps {
   filterName: string;
@@ -71,7 +71,7 @@ export function ProjectAdvancedSearch({
   const { t } = useI18n();
   const { statusLabel, healthLabel } = useProjectEnumLabels();
   const [open, setOpen] = React.useState(false);
-  const { data: projectManagers, isLoading: projectManagersLoading } = useUserLookup("project.manager", shouldLoadProjectLookup(open));
+  const { data: projectManagers, isLoading: projectManagersLoading } = useProjectManagerCandidateLookup(shouldLoadProjectLookup(open));
   const projectManagerOptions = toUserSelectOptions(projectManagers);
 
   const healthOptions = ProjectHealthHelper.allValues().map((value) => ({
@@ -150,15 +150,15 @@ export function ProjectAdvancedSearch({
                 <div className="space-y-2">
                   <Label className="text-xs font-medium">{t("projects.progressSourceWorkingPlan")} (%)</Label>
                   <div className="flex gap-2">
-                    <Input placeholder="Min" type="number" min="0" max="100" value={filterProgressMin} onChange={(e) => setFilterProgressMin(e.target.value)} />
-                    <Input placeholder="Max" type="number" min="0" max="100" value={filterProgressMax} onChange={(e) => setFilterProgressMax(e.target.value)} />
+                    <Input placeholder={t("common.min")} type="number" min="0" max="100" value={filterProgressMin} onChange={(e) => setFilterProgressMin(e.target.value)} />
+                    <Input placeholder={t("common.max")} type="number" min="0" max="100" value={filterProgressMax} onChange={(e) => setFilterProgressMax(e.target.value)} />
                   </div>
                 </div>
                 <div className="space-y-2">
                   <Label className="text-xs font-medium">{t("common.budget")}</Label>
                   <div className="flex gap-2">
-                    <Input placeholder="Min" type="number" value={filterBudgetMin} onChange={(e) => setFilterBudgetMin(e.target.value)} />
-                    <Input placeholder="Max" type="number" value={filterBudgetMax} onChange={(e) => setFilterBudgetMax(e.target.value)} />
+                    <Input placeholder={t("common.min")} type="number" value={filterBudgetMin} onChange={(e) => setFilterBudgetMin(e.target.value)} />
+                    <Input placeholder={t("common.max")} type="number" value={filterBudgetMax} onChange={(e) => setFilterBudgetMax(e.target.value)} />
                   </div>
                 </div>
               </div>

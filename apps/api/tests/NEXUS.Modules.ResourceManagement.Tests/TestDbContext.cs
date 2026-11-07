@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using NEXUS.Modules.Identity.Domain;
 using NEXUS.Modules.Organization.Domain;
 using NEXUS.Modules.ResourceManagement.Domain;
 
@@ -8,6 +9,7 @@ public class TestDbContext : DbContext
 {
     public TestDbContext(DbContextOptions<TestDbContext> options) : base(options) { }
 
+    public DbSet<User> Users => Set<User>();
     public DbSet<Resource> Resources => Set<Resource>();
     public DbSet<ResourceAllocation> ResourceAllocations => Set<ResourceAllocation>();
     public DbSet<ResourceSkill> ResourceSkills => Set<ResourceSkill>();
@@ -16,6 +18,8 @@ public class TestDbContext : DbContext
     public DbSet<Holiday> Holidays => Set<Holiday>();
     public DbSet<Contract> Contracts => Set<Contract>();
     public DbSet<Department> Departments => Set<Department>();
+    public DbSet<Team> Teams => Set<Team>();
+    public DbSet<TeamMember> TeamMembers => Set<TeamMember>();
     public DbSet<Currency> Currencies => Set<Currency>();
     public DbSet<OrganizationalUnit> OrganizationalUnits => Set<OrganizationalUnit>();
     public DbSet<ResourceOrganizationalUnit> ResourceOrganizationalUnits => Set<ResourceOrganizationalUnit>();
@@ -24,4 +28,12 @@ public class TestDbContext : DbContext
     public DbSet<Vendor> Vendors => Set<Vendor>();
     public DbSet<ResourceCostProfile> ResourceCostProfiles => Set<ResourceCostProfile>();
     public DbSet<Lookup> Lookups => Set<Lookup>();
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<User>()
+            .Ignore(user => user.UserRoles)
+            .Ignore(user => user.Sessions)
+            .Ignore(user => user.PermissionOverrides);
+    }
 }

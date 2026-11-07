@@ -16,8 +16,9 @@ public interface IProjectService
     Task<Result> ReactivateAsync(Guid id, string userId, CancellationToken cancellationToken = default);
 
     Task<Result<IReadOnlyList<ProjectMemberDto>>> GetTeamAsync(Guid projectId, CancellationToken cancellationToken = default);
+    Task<bool> IsTeamGroupAssignmentAsync(Guid projectId, Guid memberId, CancellationToken cancellationToken = default);
     Task<Result<ProjectMemberDto>> AddTeamMemberAsync(Guid projectId, CreateProjectMemberDto dto, string userId, CancellationToken cancellationToken = default);
     Task<Result<ProjectMemberDto>> UpdateTeamMemberAsync(Guid projectId, Guid memberId, UpdateProjectMemberDto dto, string userId, CancellationToken cancellationToken = default);
     Task<Result> RemoveTeamMemberAsync(Guid projectId, Guid memberId, string userId, CancellationToken cancellationToken = default);
-    Task<Result<List<ProjectTeamMemberAllocationDto>>> CheckResourceConflictsAsync(Guid resourceId, DateTime startDate, DateTime endDate, decimal allocationPercentage, Guid? excludeMemberId, CancellationToken cancellationToken = default);
+    Task<Result<List<ProjectTeamMemberAllocationDto>>> CheckResourceConflictsAsync(Guid resourceId, DateTime startDate, DateTime endDate, decimal allocationPercentage, Guid? excludeMemberId, CancellationToken cancellationToken = default, Guid? projectId = null);
 }

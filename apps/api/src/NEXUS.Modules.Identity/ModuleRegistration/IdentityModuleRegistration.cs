@@ -11,6 +11,16 @@ public static class IdentityModuleRegistration
 {
     public static IServiceCollection AddIdentityModule(this IServiceCollection services)
     {
+        services.AddAntiforgery(options =>
+        {
+            options.HeaderName = "X-Nexus-CSRF";
+            options.Cookie.Name = "__Host-nexus-csrf";
+            options.Cookie.HttpOnly = true;
+            options.Cookie.SecurePolicy = Microsoft.AspNetCore.Http.CookieSecurePolicy.Always;
+            options.Cookie.SameSite = Microsoft.AspNetCore.Http.SameSiteMode.Strict;
+            options.Cookie.Path = "/";
+            options.Cookie.IsEssential = true;
+        });
         services.AddOptions<LocalPasswordPolicyOptions>()
             .BindConfiguration(LocalPasswordPolicyOptions.SectionName)
             .Validate(options => options.TemporaryPasswordExpiryHours is >= 1 and <= 168
@@ -24,6 +34,7 @@ public static class IdentityModuleRegistration
         services.AddScoped<IUserAdministrationService, UserAdministrationService>();
         services.AddScoped<IRoleAdministrationService, RoleAdministrationService>();
         services.AddScoped<IUserEffectivePermissionService, UserEffectivePermissionService>();
+        services.AddScoped<IApprovalDelegationEligibilityLookup, ApprovalDelegationEligibilityLookup>();
         services.AddScoped<IUserSessionValidator, UserSessionValidator>();
         services.AddScoped<IPasswordHasher<User>, PasswordHasher<User>>();
         return services;

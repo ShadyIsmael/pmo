@@ -37,6 +37,7 @@ const meetingDetail = (): MeetingDetailDto => ({
   status: "Scheduled",
   attendeeCount: 2,
   reminderOffsetMinutes: 30,
+  isRecurring: false,
   minutesState: "Draft",
   rowVersion: "version-1",
   attendees: [
@@ -63,6 +64,12 @@ describe("project meeting form", () => {
     expect(isValidMeetingEmail("not-an-email")).toBe(false);
     expect(validateMeetingDraft({ ...validDraft(), attendees: [{ email: "nope" }] })).toBe("emailInvalid");
     expect(validateMeetingDraft({ ...validDraft(), attendees: [{ email: "guest@example.test" }, { email: " GUEST@example.test " }] })).toBe("duplicateAttendees");
+  });
+
+  it("allows internal attendees to be submitted by user ID without exposing email", () => {
+    const draft = { ...validDraft(), attendees: [{ userId: "user-1", email: "", displayName: "User One" }] };
+    expect(validateMeetingDraft(draft)).toBeNull();
+    expect(toMeetingInput(draft).attendees).toEqual([{ userId: "user-1" }]);
   });
 
   it("builds the API payload with optional fields, attendees, and reminder", () => {

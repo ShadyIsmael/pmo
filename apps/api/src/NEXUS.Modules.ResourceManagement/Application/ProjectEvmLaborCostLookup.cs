@@ -119,10 +119,11 @@ public sealed class ProjectEvmLaborCostLookup : IProjectEvmLaborCostLookup
                 .ToListAsync(cancellationToken);
         var profilesByResource = profiles.GroupBy(item => item.ResourceId).ToDictionary(group => group.Key, group => group.ToList());
 
-        var calendars = await _context.Set<WorkingCalendar>().AsNoTracking().Include(item => item.Holidays)
+        var calendars = await _context.Set<WorkingCalendar>().AsNoTracking()
+            .Include(item => item.Holidays)
+            .Include(item => item.DayRules)
             .Where(item => item.TenantId == tenantId && !item.IsDeleted).ToListAsync(cancellationToken);
-        var defaultCalendar = calendars.FirstOrDefault(item => item.IsDefault) ?? calendars.FirstOrDefault()
-            ?? new WorkingCalendar();
+        var defaultCalendar = calendars.FirstOrDefault(item => item.IsDefault && item.HasValidSchedule);
         var calendarById = calendars.ToDictionary(item => item.Id);
         List<ResourceCalendar> resourceCalendars = resourceIds.Count == 0
             ? new List<ResourceCalendar>()
@@ -304,28 +305,25 @@ public sealed class ProjectEvmLaborCostLookup : IProjectEvmLaborCostLookup
         Guid resourceId,
         DateTime date,
         IReadOnlyDictionary<Guid, Resource> resources,
-        WorkingCalendar defaultCalendar,
+        WorkingCalendar? defaultCalendar,
         IReadOnlyDictionary<Guid, WorkingCalendar> calendars,
         IReadOnlyDictionary<(Guid ResourceId, DateTime Date), List<ResourceCalendar>> exceptions,
         IReadOnlyDictionary<Guid, List<Contract>> contracts)
     {
         if (!resources.TryGetValue(resourceId, out var resource)) return 0m;
-        var calendar = resource.BaseCalendarId.HasValue && calendars.TryGetValue(resource.BaseCalendarId.Value, out var configured)
-            ? configured : defaultCalendar;
+        var calendar = resource.BaseCalendarId.HasValue
+            && calendars.TryGetValue(resource.BaseCalendarId.Value, out var configured)
+            && configured.HasValidSchedule
+                ? configured
+                : defaultCalendar;
+        if (calendar?.HasValidSchedule != true) return 0m;
         var resourceContracts = contracts.GetValueOrDefault(resourceId);
         if (resourceContracts is { Count: > 0 } && !resourceContracts.Any(item =>
                 item.StartDate.Date <= date.Date && (!item.EndDate.HasValue || item.EndDate.Value.Date >= date.Date))) return 0m;
-        if (IsWeekend(date, calendar.WorkingDaysPerWeek)) return 0m;
-        if (calendar.Holidays.Any(item => item.Date.Date == date.Date
-                || (item.IsRecurring && item.Date.Month == date.Month && item.Date.Day == date.Day))) return 0m;
-        var productive = Math.Max(0m, calendar.ProductiveHoursPerDay);
-        if (exceptions.TryGetValue((resourceId, date.Date), out var dayExceptions))
-        {
-            productive = Math.Max(0m, productive - dayExceptions
-                .Where(item => item.DayType is "Leave" or "NonWorking")
-                .Sum(item => item.AvailableHours ?? productive));
-        }
-        return productive;
+        ResourceCalendar? exception = exceptions.TryGetValue((resourceId, date.Date), out var dayExceptions)
+            ? dayExceptions.OrderByDescending(item => item.UpdatedAt ?? item.CreatedAt).First()
+            : null;
+        return ResourceWorkingCapacityCalculator.GetAvailableDailyCapacity(resource, calendar, calendar, date, exception);
     }
 
     private static decimal CompensationCapacity(
@@ -333,7 +331,7 @@ public sealed class ProjectEvmLaborCostLookup : IProjectEvmLaborCostLookup
         DateTime date,
         ResourceCostProfile profile,
         IReadOnlyDictionary<Guid, Resource> resources,
-        WorkingCalendar defaultCalendar,
+        WorkingCalendar? defaultCalendar,
         IReadOnlyDictionary<Guid, WorkingCalendar> calendars,
         IReadOnlyDictionary<(Guid ResourceId, DateTime Date), List<ResourceCalendar>> exceptions,
         IReadOnlyDictionary<Guid, List<Contract>> contracts)

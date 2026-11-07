@@ -28,6 +28,15 @@ export interface ResourceBaseCalendarDto {
   id: string;
   name: string;
   isDefault: boolean;
+  isConfigured: boolean;
+  workingDaysPerWeek: number;
+}
+
+export interface ResourceVendorLookupDto {
+  id: string;
+  name: string;
+  code?: string;
+  isActive: boolean;
 }
 
 export interface ResourceDto {
@@ -57,6 +66,8 @@ export interface ResourceDto {
   vendorName?: string;
   baseCalendarId?: string;
   baseCalendarName?: string;
+  hoursPerDay?: number | null;
+  hoursPerWeek?: number | null;
   primaryOrganizationalUnitId?: string;
   primaryOrganizationalUnitName?: string;
   primaryOrganizationalUnitCode?: string;
@@ -179,6 +190,7 @@ export interface ResourceFinderItem {
   email?: string;
   matchScore: number;
   availableCapacityHours: number;
+  hasCapacityData: boolean;
   currentLoadPercent: number;
   earliestAvailableDate?: string;
   conflictingAllocations: Array<{ allocationId: string; projectName: string; role: string; allocationPercentage: number; startDate: string; endDate: string }>;
@@ -235,6 +247,18 @@ export function useBaseCalendars(enabled = true) {
     queryFn: () => api.get<ResourceBaseCalendarDto[]>(endpoints.resources.baseCalendars),
     staleTime: 60_000,
     enabled,
+  });
+}
+
+export function useResourceVendorLookup(enabled = true, resourceId?: string) {
+  return useQuery({
+    queryKey: [...resourceKeys.all, "vendor-options", resourceId],
+    queryFn: async () => ({
+      items: await api.get<ResourceVendorLookupDto[]>(endpoints.vendors.resourceLookup, resourceId ? { resourceId } : undefined),
+    }),
+    enabled,
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 }
 

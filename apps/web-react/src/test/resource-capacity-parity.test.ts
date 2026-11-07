@@ -7,6 +7,7 @@ import { CapacityPage } from "../features/resources/CapacityPage";
 import { AllocationDialog } from "../features/resources/AllocationDialog";
 import { ResourceGanttView } from "../features/resources/ResourceGanttView";
 import { allocationKeys } from "../features/resources/api/allocations";
+import { hasDashboardResourceReadAccess } from "../features/home/dashboard-widget-utils";
 
 describe("resource capacity parity", () => {
   it("exposes the canonical allocation endpoints and capacity views", () => {
@@ -20,8 +21,11 @@ describe("resource capacity parity", () => {
   });
 
   it("keeps allocation mutations permission-aware", () => {
-    expect(hasAnyPermission([], [Permissions.Resources.Assign, Permissions.Resources.Allocate, Permissions.Resources.Manage])).toBe(false);
-    expect(hasAnyPermission([Permissions.Resources.Assign], [Permissions.Resources.Assign, Permissions.Resources.Allocate, Permissions.Resources.Manage])).toBe(true);
+    expect(hasAnyPermission([], [Permissions.Resources.Assign])).toBe(false);
+    expect(hasAnyPermission([Permissions.Resources.Assign], [Permissions.Resources.Assign])).toBe(true);
+    expect(hasAnyPermission(["Resource.Allocate"], [Permissions.Resources.Assign])).toBe(false);
+    expect(hasDashboardResourceReadAccess([Permissions.Resources.View])).toBe(true);
+    expect(hasDashboardResourceReadAccess(["Resource.Allocate"])).toBe(false);
   });
 
   it("keeps Capacity allocation copy in EN and AR", () => {

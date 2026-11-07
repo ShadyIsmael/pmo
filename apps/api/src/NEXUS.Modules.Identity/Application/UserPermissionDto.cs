@@ -9,9 +9,16 @@ public sealed class UserPermissionAssignmentDto
     public string Resource { get; init; } = string.Empty;
     public string Action { get; init; } = string.Empty;
     public string? Description { get; init; }
+    public string? ScreenNameEn { get; init; }
+    public string? ScreenNameAr { get; init; }
+    public string? LabelEn { get; init; }
+    public string? LabelAr { get; init; }
+    public bool IsActive { get; init; }
+    public bool IsAssignable { get; init; }
     public bool IsRoleGranted { get; init; }
     public PermissionOverrideEffect? OverrideEffect { get; init; }
     public bool IsEffective { get; init; }
+    public bool IsProtectedAdminBaseline { get; init; }
 }
 
 public sealed class UpdateUserPermissionsDto

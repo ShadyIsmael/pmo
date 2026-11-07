@@ -4,8 +4,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { AuthProvider, useAuth } from "./auth/AuthProvider";
 import { ManagementProvider } from "./api/management";
 import { notificationKeys } from "./api/notifications";
-import { I18nProvider } from "./i18n/messages";
+import { useTenantRuntimeSettings } from "./features/administration/api/settings";
+import { I18nProvider, useI18n } from "./i18n/messages";
 import { subscribeToForegroundMessages } from "./lib/firebase-messaging";
+import { brand } from "./lib/brand";
 import { ThemeProvider } from "./theme/ThemeProvider";
 import { AppRoutes } from "./routes/AppRoutes";
 import { Toaster } from "./components/ui/Toaster";
@@ -17,18 +19,49 @@ export function App() {
   return (
     <ThemeProvider>
       <I18nProvider>
-        <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <BrowserRouter>
           <AuthProvider>
+            <TenantRuntimeSettingsBridge />
             <FirebaseMessagingBridge />
             <ManagementBridge>
               <AppRoutes />
             </ManagementBridge>
           </AuthProvider>
         </BrowserRouter>
+        <Toaster />
       </I18nProvider>
-      <Toaster />
     </ThemeProvider>
   );
+}
+
+function TenantRuntimeSettingsBridge() {
+  const { user } = useAuth();
+  const runtimeSettings = useTenantRuntimeSettings(Boolean(user?.tenantId));
+  const { setRuntimeRegionalSettings } = useI18n();
+
+  React.useEffect(() => {
+    if (!user?.tenantId || !runtimeSettings.data) {
+      setRuntimeRegionalSettings(null);
+      return;
+    }
+
+    const values = new Map(runtimeSettings.data.settings.map(setting => [setting.key, setting.value]));
+    const stringValue = (key: string): string | null => {
+      const value = values.get(key);
+      return typeof value === "string" ? value : null;
+    };
+    const defaultLanguage = stringValue("regional.defaultLanguage");
+    setRuntimeRegionalSettings({
+      defaultLanguage: defaultLanguage === "ar" || defaultLanguage === "en" ? defaultLanguage : null,
+      timeZone: stringValue("regional.defaultTimeZone"),
+      currency: stringValue("regional.defaultCurrency"),
+      dateFormat: stringValue("regional.defaultDateFormat"),
+      timeFormat: stringValue("regional.defaultTimeFormat"),
+      firstDayOfWeek: stringValue("regional.firstDayOfWeek"),
+    });
+  }, [runtimeSettings.data, user?.tenantId, setRuntimeRegionalSettings]);
+
+  return null;
 }
 
 function FirebaseMessagingBridge() {
@@ -39,7 +72,7 @@ function FirebaseMessagingBridge() {
     if (!user) return undefined;
     return subscribeToForegroundMessages((payload) => {
       toast({
-        title: payload.notification?.title ?? payload.data?.title ?? "NEXUS notification",
+        title: payload.notification?.title ?? payload.data?.title ?? `${brand.product.name} notification`,
         description: payload.notification?.body ?? payload.data?.body,
       });
       void queryClient.invalidateQueries({ queryKey: notificationKeys.all });

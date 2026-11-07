@@ -33,14 +33,16 @@ public class ProjectSnapshotService : IProjectSnapshotService
     private readonly DbContext _context;
     private readonly IAuditService _auditService;
     private readonly IHttpContextAccessor _httpContextAccessor;
-    private readonly ProjectManagerMembershipSynchronizer? _membershipSynchronizer;
+    private readonly ProjectManagerMembershipSynchronizer _membershipSynchronizer;
+    private readonly TimeProvider _timeProvider;
 
-    public ProjectSnapshotService(DbContext context, IAuditService auditService, IHttpContextAccessor httpContextAccessor, ProjectManagerMembershipSynchronizer? membershipSynchronizer = null)
+    public ProjectSnapshotService(DbContext context, IAuditService auditService, IHttpContextAccessor httpContextAccessor, ProjectManagerMembershipSynchronizer membershipSynchronizer, TimeProvider? timeProvider = null)
     {
         _context = context;
         _auditService = auditService;
         _httpContextAccessor = httpContextAccessor;
         _membershipSynchronizer = membershipSynchronizer;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     private string? CurrentUserName => _httpContextAccessor.HttpContext?.User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value
@@ -48,10 +50,12 @@ public class ProjectSnapshotService : IProjectSnapshotService
 
     public async Task<Result<ProjectSnapshotDto?>> CompleteHandoverAsync(Guid projectId, ProjectHandoverRequest request, string userId, CancellationToken cancellationToken = default)
     {
+        var capturedAt = _timeProvider.GetUtcNow().UtcDateTime;
         await using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
         var pendingRequest = await _context.Set<ProjectHandoverRequest>()
             .FirstOrDefaultAsync(item => item.Id == request.Id && item.ProjectId == projectId
-                && item.TenantId == request.TenantId && item.Status == ProjectHandoverRequest.Statuses.Pending
+                && item.TenantId == request.TenantId
+                && (item.Status == ProjectHandoverRequest.Statuses.Pending || item.Status == ProjectHandoverRequest.Statuses.ApprovedScheduled)
                 && !item.IsDeleted, cancellationToken);
         if (pendingRequest is null)
         {
@@ -141,7 +145,7 @@ public class ProjectSnapshotService : IProjectSnapshotService
                 SnapshotNumber = snapshotNumber,
                 SnapshotName = $"Handover Snapshot #{snapshotNumber}",
                 SnapshotType = "ManagerHandover",
-                SnapshotDate = DateTime.UtcNow,
+                SnapshotDate = capturedAt,
                 EffectiveEndDate = handoverDate,
                 PreviousProjectManagerId = previousManagerId,
                 NewProjectManagerId = request.NewProjectManagerId,
@@ -178,17 +182,15 @@ public class ProjectSnapshotService : IProjectSnapshotService
             CreatedBy = userId
         });
 
-        if (previousManagerId.HasValue)
-        {
-            if (_membershipSynchronizer is not null)
-            {
-                await _membershipSynchronizer.SynchronizeAsync(project, previousManagerId.Value, request.NewProjectManagerId, handoverDate, userId, cancellationToken);
-            }
-        }
+        await _membershipSynchronizer.SynchronizeAsync(project, previousManagerId, request.NewProjectManagerId, handoverDate, userId, cancellationToken);
 
+        var wasApprovedForFutureDate = request.Status == ProjectHandoverRequest.Statuses.ApprovedScheduled;
         request.Status = ProjectHandoverRequest.Statuses.Accepted;
-        request.RespondedBy = TryParseGuid(userId);
-        request.RespondedAt = DateTime.UtcNow;
+        if (!wasApprovedForFutureDate)
+        {
+            request.RespondedBy = TryParseGuid(userId);
+            request.RespondedAt = capturedAt;
+        }
         request.SnapshotId = snapshot?.Id;
         request.UpdatedBy = userId;
 
@@ -221,7 +223,7 @@ public class ProjectSnapshotService : IProjectSnapshotService
                 SnapshotNumber = snapshotNumber,
                 HandoverRequestId = request.Id
             }, DataJsonOptions),
-            Timestamp = DateTime.UtcNow,
+            Timestamp = capturedAt,
             CreatedBy = userId
             }, cancellationToken);
         }
@@ -252,7 +254,7 @@ public class ProjectSnapshotService : IProjectSnapshotService
                 ProjectManagerId = request.NewProjectManagerId,
                 ProjectManagerName = newManager.FullName
             }, DataJsonOptions),
-            Timestamp = DateTime.UtcNow,
+            Timestamp = capturedAt,
             CreatedBy = userId
         }, cancellationToken);
 
@@ -264,8 +266,12 @@ public class ProjectSnapshotService : IProjectSnapshotService
 
     public async Task<Result<ProjectSnapshotSummaryDto>> CreateBaselineSnapshotAsync(Guid projectId, string snapshotType, string snapshotName, string userId, CancellationToken cancellationToken = default)
     {
+        var tenantId = GetCurrentTenantId();
+        if (tenantId == Guid.Empty)
+            return Result<ProjectSnapshotSummaryDto>.Failure(Error.Unauthorized("A valid tenant context is required."));
+
         var project = await _context.Set<Project>()
-            .FirstOrDefaultAsync(p => p.Id == projectId && !p.IsDeleted, cancellationToken);
+            .FirstOrDefaultAsync(p => p.Id == projectId && p.TenantId == tenantId && !p.IsDeleted, cancellationToken);
         if (project is null) return Result<ProjectSnapshotSummaryDto>.Failure(Error.NotFound("Project not found"));
 
         var snapshotNumber = (await _context.Set<ProjectSnapshot>()
@@ -275,7 +281,7 @@ public class ProjectSnapshotService : IProjectSnapshotService
 
         var snapshot = new ProjectSnapshot
         {
-            TenantId = GetCurrentTenantId(),
+            TenantId = tenantId,
             ProjectId = projectId,
             SnapshotNumber = snapshotNumber,
             SnapshotName = snapshotName,
@@ -319,9 +325,14 @@ public class ProjectSnapshotService : IProjectSnapshotService
             .ToListAsync(cancellationToken);
 
         var userIds = snapshots
-            .SelectMany(s => new[] { s.PreviousProjectManagerId, s.NewProjectManagerId })
+            .SelectMany(s => new Guid?[]
+            {
+                s.PreviousProjectManagerId,
+                s.NewProjectManagerId,
+                Guid.TryParse(s.CreatedBy, out var createdById) ? createdById : null
+            })
             .Where(id => id.HasValue)
-            .Select(id => id!.Value)
+            .Select(id => id.GetValueOrDefault())
             .Distinct()
             .ToList();
 
@@ -340,6 +351,8 @@ public class ProjectSnapshotService : IProjectSnapshotService
                 dto.PreviousProjectManagerName = previous.FullName;
             if (s.NewProjectManagerId.HasValue && users.TryGetValue(s.NewProjectManagerId.Value, out var current))
                 dto.NewProjectManagerName = current.FullName;
+            if (Guid.TryParse(s.CreatedBy, out var createdById) && users.TryGetValue(createdById, out var creator))
+                dto.CreatedByName = creator.FullName;
             return dto;
         }).ToList();
 
@@ -446,6 +459,7 @@ public class ProjectSnapshotService : IProjectSnapshotService
         if (dto.PreviousProjectManagerId.HasValue) userIds.Add(dto.PreviousProjectManagerId.Value);
         if (dto.NewProjectManagerId.HasValue) userIds.Add(dto.NewProjectManagerId.Value);
         if (dto.SponsorId.HasValue) userIds.Add(dto.SponsorId.Value);
+        if (Guid.TryParse(dto.CreatedBy, out var creatorId)) userIds.Add(creatorId);
         userIds = userIds.Distinct().ToList();
 
         var users = new Dictionary<Guid, User>();
@@ -462,6 +476,8 @@ public class ProjectSnapshotService : IProjectSnapshotService
             dto.NewProjectManagerName = current.FullName;
         if (dto.SponsorId.HasValue && users.TryGetValue(dto.SponsorId.Value, out var sponsor))
             dto.SponsorName = sponsor.FullName;
+        if (Guid.TryParse(dto.CreatedBy, out creatorId) && users.TryGetValue(creatorId, out var creator))
+            dto.CreatedByName = creator.FullName;
 
         if (dto.PortfolioId.HasValue)
         {
@@ -513,7 +529,8 @@ public class ProjectSnapshotService : IProjectSnapshotService
             .OrderBy(m => m.Role)
             .ToListAsync(cancellationToken);
 
-        var resourceIds = members.Select(m => m.ResourceId).Distinct().ToList();
+        var resourceIds = members.Where(member => member.ResourceId.HasValue).Select(member => member.ResourceId!.Value).Distinct().ToList();
+        var teamIds = members.Where(member => member.TeamId.HasValue).Select(member => member.TeamId!.Value).Distinct().ToList();
         var resources = new Dictionary<Guid, Resource>();
         if (resourceIds.Count > 0)
         {
@@ -521,13 +538,21 @@ public class ProjectSnapshotService : IProjectSnapshotService
                 .Where(r => resourceIds.Contains(r.Id))
                 .ToDictionaryAsync(r => r.Id, cancellationToken);
         }
+        var teams = teamIds.Count == 0 ? new Dictionary<Guid, Team>() : await _context.Set<Team>()
+            .Where(team => teamIds.Contains(team.Id) && !team.IsDeleted)
+            .ToDictionaryAsync(team => team.Id, cancellationToken);
 
         return members.Select(m => new SnapshotMemberDto
         {
             OriginalId = m.Id,
             ResourceId = m.ResourceId,
-            ResourceName = resources.TryGetValue(m.ResourceId, out var resource) ? resource.Name : null,
-            ResourceJobTitle = resources.TryGetValue(m.ResourceId, out var r2) ? r2.JobTitle : null,
+            TeamId = m.TeamId,
+            TeamName = m.TeamId.HasValue && teams.TryGetValue(m.TeamId.Value, out var team) ? team.Name : null,
+            MemberType = m.TeamId.HasValue ? "Team" : "Resource",
+            ResourceName = m.ResourceId.HasValue && resources.TryGetValue(m.ResourceId.Value, out var resource)
+                ? resource.Name
+                : m.TeamId.HasValue && teams.TryGetValue(m.TeamId.Value, out var group) ? group.Name : null,
+            ResourceJobTitle = m.ResourceId.HasValue && resources.TryGetValue(m.ResourceId.Value, out var r2) ? r2.JobTitle : null,
             Role = m.Role,
             AllocationPercentage = m.AllocationPercentage,
             HoursPerWeek = m.HoursPerWeek,
@@ -1010,13 +1035,15 @@ public class ProjectSnapshotService : IProjectSnapshotService
 
     private Guid GetCurrentTenantId()
     {
-        var tenantId = _httpContextAccessor.HttpContext?.User.FindFirst("tenantId")?.Value;
-        if (!string.IsNullOrWhiteSpace(tenantId) && Guid.TryParse(tenantId, out var parsed))
+        var httpContext = _httpContextAccessor.HttpContext;
+        if (httpContext is not null)
         {
-            return parsed;
+            if (httpContext.User.Identity?.IsAuthenticated != true) return Guid.Empty;
+            var tenantId = httpContext.User.FindFirst("tenantId")?.Value;
+            return Guid.TryParse(tenantId, out var parsed) && parsed != Guid.Empty ? parsed : Guid.Empty;
         }
 
-        return TenantConstants.DemoTenantId;
+        return TrustedTenantExecutionContext.CurrentTenantId ?? Guid.Empty;
     }
 
     private static Guid? TryParseGuid(string value)

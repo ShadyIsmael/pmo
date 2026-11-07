@@ -1,6 +1,7 @@
 using System.Data;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using NEXUS.Modules.Identity.Application;
 using NEXUS.Modules.Identity.Domain;
 using NEXUS.Modules.Portfolio.Domain;
 using NEXUS.SharedKernel;
@@ -11,12 +12,18 @@ namespace NEXUS.Modules.Portfolio.Application;
 
 public sealed class PortfolioService : IPortfolioService
 {
-    private static readonly Guid DemoTenant = Guid.Parse("11111111-1111-1111-1111-111111111111");
     private readonly DbContext _db;
     private readonly IHttpContextAccessor _http;
     private readonly IManagementContextAccessor? _managementContext;
+    private readonly IUserEffectivePermissionService? _effectivePermissions;
 
-    public PortfolioService(DbContext db, IHttpContextAccessor http, IManagementContextAccessor? managementContext = null) { _db = db; _http = http; _managementContext = managementContext; }
+    public PortfolioService(DbContext db, IHttpContextAccessor http, IManagementContextAccessor? managementContext = null, IUserEffectivePermissionService? effectivePermissions = null)
+    {
+        _db = db;
+        _http = http;
+        _managementContext = managementContext;
+        _effectivePermissions = effectivePermissions;
+    }
 
     public async Task<Result<PortfolioDto>> GetByIdAsync(Guid id, CancellationToken ct = default)
     {
@@ -38,27 +45,81 @@ public sealed class PortfolioService : IPortfolioService
         return new PagedResult<PortfolioDto>(items, page, pageSize, total);
     }
 
+    public async Task<PagedResult<PortfolioLookupDto>> GetProjectLookupAsync(int page, int pageSize, string? search, string? status, CancellationToken ct = default)
+    {
+        page = Math.Max(page, 1);
+        pageSize = Math.Clamp(pageSize, 1, 200);
+        var tenantId = TenantId();
+        var context = _managementContext?.Current;
+        if (context is not null && context.TenantId != tenantId)
+            return new PagedResult<PortfolioLookupDto>(Array.Empty<PortfolioLookupDto>(), page, pageSize, 0);
+
+        var query = InScope(_db.Set<Entity>().AsNoTracking().Where(item => item.TenantId == tenantId));
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim();
+            query = query.Where(item => item.Name.Contains(term) || (item.Code != null && item.Code.Contains(term)));
+        }
+        if (!string.IsNullOrWhiteSpace(status)) query = query.Where(item => item.Status == status);
+
+        var total = await query.CountAsync(ct);
+        var items = await query
+            .OrderByDescending(item => item.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(item => new PortfolioLookupDto
+            {
+                Id = item.Id,
+                Name = item.Name,
+                Currency = item.Currency
+            })
+            .ToListAsync(ct);
+        return new PagedResult<PortfolioLookupDto>(items, page, pageSize, total);
+    }
+
     public async Task<Result<PortfolioDto>> CreateAsync(SavePortfolioDto dto, string userId, CancellationToken ct = default)
     {
+        var tenantId = TenantId();
+        if (tenantId == Guid.Empty || !HasManagementScope(tenantId))
+            return Result<PortfolioDto>.Failure(Error.Forbidden("A valid tenant management context is required."));
         var validation = Validate(dto); if (validation is not null) return Result<PortfolioDto>.Failure(validation);
         var ownerId = NormalizeOwnerId(dto.OwnerId);
-        if (ownerId.HasValue && !await IsActiveUserAsync(ownerId.Value, ct)) return Result<PortfolioDto>.Failure(Error.Validation("Portfolio Manager must be an active user in this tenant"));
-        await using var transaction = _db.Database.BeginTransaction(IsolationLevel.Serializable);
-        var next = await NextCodeAsync(ct);
-        var entity = new Entity { TenantId = TenantId(), Code = next, Name = dto.Name.Trim(), Description = dto.Description?.Trim(), OwnerId = ownerId, Status = dto.Status, Currency = string.IsNullOrWhiteSpace(dto.Currency) ? "USD" : dto.Currency.Trim().ToUpperInvariant(), StartDate = dto.StartDate, EndDate = dto.EndDate, StrategicObjective = dto.StrategicObjective?.Trim(), Priority = dto.Priority?.Trim(), Health = dto.Health?.Trim(), ConfidenceLevel = dto.ConfidenceLevel?.Trim(), CreatedBy = userId };
-        _db.Set<Entity>().Add(entity); await _db.SaveChangesAsync(ct);
-        if (ownerId.HasValue)
+        if (ownerId.HasValue && !CanAssignPortfolioManager())
+            return Result<PortfolioDto>.Failure(Error.Forbidden("Handover.AdminInitiate is required to assign an initial Portfolio Manager."));
+        if (ownerId.HasValue && !await IsEligiblePortfolioManagerAsync(ownerId.Value, ct)) return Result<PortfolioDto>.Failure(Error.Validation("Select an eligible active Portfolio Manager in this tenant."));
+        for (var attempt = 0; attempt < 3; attempt++)
         {
-            _db.Set<PortfolioManagerAssignment>().Add(new PortfolioManagerAssignment { TenantId = entity.TenantId, PortfolioId = entity.Id, PortfolioManagerId = ownerId.Value, StartDate = DateTime.UtcNow, IsCurrent = true, CreatedBy = userId });
-            await _db.SaveChangesAsync(ct);
+            await using var transaction = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+            try
+            {
+                var next = await NextCodeAsync(ct);
+                var requestedCurrency = NormalizeCurrency(dto.Currency);
+                if (!IsValidCurrency(requestedCurrency)) return Result<PortfolioDto>.Failure(Error.Validation("Currency must be an active configured 3-letter currency code"));
+                var entity = new Entity { TenantId = tenantId, Code = next, Name = dto.Name.Trim(), Description = dto.Description?.Trim(), OwnerId = ownerId, Status = dto.Status, Currency = requestedCurrency, StrategicObjective = dto.StrategicObjective?.Trim(), Priority = dto.Priority?.Trim(), Health = dto.Health?.Trim(), ConfidenceLevel = dto.ConfidenceLevel?.Trim(), CreatedBy = userId };
+                _db.Set<Entity>().Add(entity); await _db.SaveChangesAsync(ct);
+                if (ownerId.HasValue)
+                {
+                    _db.Set<PortfolioManagerAssignment>().Add(new PortfolioManagerAssignment { TenantId = entity.TenantId, PortfolioId = entity.Id, PortfolioManagerId = ownerId.Value, StartDate = DateTime.UtcNow, IsCurrent = true, CreatedBy = userId });
+                    await _db.SaveChangesAsync(ct);
+                }
+                await transaction.CommitAsync(ct);
+                return Result<PortfolioDto>.Success(await MapAsync(entity, true, ct));
+            }
+            catch (DbUpdateException)
+            {
+                await transaction.RollbackAsync(ct);
+                _db.ChangeTracker.Clear();
+                if (attempt == 2) throw;
+            }
         }
-        await transaction.CommitAsync(ct);
-        return Result<PortfolioDto>.Success(await MapAsync(entity, true, ct));
+        return Result<PortfolioDto>.Failure(Error.Conflict("Portfolio creation conflicted; retry exhausted"));
     }
 
     public async Task<Result<PortfolioDto>> UpdateAsync(Guid id, SavePortfolioDto dto, string userId, CancellationToken ct = default)
     {
         var validation = Validate(dto); if (validation is not null) return Result<PortfolioDto>.Failure(validation);
+        var requestedCurrency = NormalizeCurrency(dto.Currency);
+        if (!IsValidCurrency(requestedCurrency)) return Result<PortfolioDto>.Failure(Error.Validation("Currency must be an active configured 3-letter currency code"));
         var entity = await InScope(_db.Set<Entity>()).FirstOrDefaultAsync(x => x.Id == id, ct);
         if (entity is null) return Result<PortfolioDto>.Failure(Error.NotFound("Portfolio not found"));
         var dtoOwnerId = NormalizeOwnerId(dto.OwnerId);
@@ -68,11 +129,13 @@ public sealed class PortfolioService : IPortfolioService
         }
         else if (dtoOwnerId.HasValue)
         {
-            if (!await IsActiveUserAsync(dtoOwnerId.Value, ct)) return Result<PortfolioDto>.Failure(Error.Validation("Portfolio Manager must be an active user in this tenant"));
+            if (!CanAssignPortfolioManager())
+                return Result<PortfolioDto>.Failure(Error.Forbidden("Handover.AdminInitiate is required to assign an initial Portfolio Manager."));
+            if (!await IsEligiblePortfolioManagerAsync(dtoOwnerId.Value, ct)) return Result<PortfolioDto>.Failure(Error.Validation("Select an eligible active Portfolio Manager in this tenant."));
             entity.OwnerId = dtoOwnerId.Value;
             _db.Set<PortfolioManagerAssignment>().Add(new PortfolioManagerAssignment { TenantId = entity.TenantId, PortfolioId = entity.Id, PortfolioManagerId = dtoOwnerId.Value, StartDate = DateTime.UtcNow, IsCurrent = true, CreatedBy = userId });
         }
-        entity.Name = dto.Name.Trim(); entity.Description = dto.Description?.Trim(); entity.Status = dto.Status; if (!string.IsNullOrWhiteSpace(dto.Currency)) entity.Currency = dto.Currency.Trim().ToUpperInvariant(); entity.StartDate = dto.StartDate; entity.EndDate = dto.EndDate; entity.StrategicObjective = dto.StrategicObjective?.Trim(); entity.Priority = dto.Priority?.Trim(); entity.Health = dto.Health?.Trim(); entity.ConfidenceLevel = dto.ConfidenceLevel?.Trim(); entity.UpdatedBy = userId;
+        entity.Name = dto.Name.Trim(); entity.Description = dto.Description?.Trim(); entity.Status = dto.Status; entity.Currency = requestedCurrency; entity.StrategicObjective = dto.StrategicObjective?.Trim(); entity.Priority = dto.Priority?.Trim(); entity.Health = dto.Health?.Trim(); entity.ConfidenceLevel = dto.ConfidenceLevel?.Trim(); entity.UpdatedBy = userId;
         await _db.SaveChangesAsync(ct); return Result<PortfolioDto>.Success(await MapAsync(entity, true, ct));
     }
 
@@ -81,7 +144,7 @@ public sealed class PortfolioService : IPortfolioService
 
     private async Task<Result> SetStatusAsync(Guid id, string status, string userId, bool requireArchived, CancellationToken ct)
     {
-        var entity = await _db.Set<Entity>().FirstOrDefaultAsync(x => x.Id == id, ct);
+        var entity = await InScope(_db.Set<Entity>()).FirstOrDefaultAsync(x => x.Id == id, ct);
         if (entity is null) return Result.Failure(Error.NotFound("Portfolio not found"));
         if (requireArchived && entity.Status != "Archived") return Result.Failure(Error.Validation("Only archived portfolios can be reactivated"));
         entity.Status = status; entity.UpdatedBy = userId; await _db.SaveChangesAsync(ct); return Result.Success();
@@ -89,62 +152,94 @@ public sealed class PortfolioService : IPortfolioService
 
     private async Task<string> NextCodeAsync(CancellationToken ct)
     {
-        var codes = await _db.Set<Entity>().Where(x => x.Code != null).Select(x => x.Code!).ToListAsync(ct);
+        var tenantId = TenantId();
+        if (tenantId == Guid.Empty) return "PF-0001";
+        var codes = await _db.Set<Entity>().Where(x => x.TenantId == tenantId && x.Code != null).Select(x => x.Code!).ToListAsync(ct);
         var next = codes.Select(x => x.StartsWith("PF-", StringComparison.OrdinalIgnoreCase) && int.TryParse(x[3..], out var n) ? n : 0).DefaultIfEmpty(0).Max() + 1;
         return $"PF-{next:0000}";
     }
 
-    private async Task<bool> IsActiveUserAsync(Guid id, CancellationToken ct) => id != Guid.Empty && await _db.Set<User>().AnyAsync(x => x.Id == id && x.IsActive, ct);
+    private async Task<bool> IsEligiblePortfolioManagerAsync(Guid id, CancellationToken ct)
+    {
+        var tenantId = TenantId();
+        if (tenantId == Guid.Empty || id == Guid.Empty || _effectivePermissions is null) return false;
+
+        var hasApprovedRole = await _db.Set<User>().AnyAsync(user =>
+            user.Id == id && user.TenantId == tenantId && user.IsActive && !user.IsDeleted
+            && user.UserRoles.Any(userRole => userRole.TenantId == tenantId && !userRole.IsDeleted
+                && userRole.Role.TenantId == tenantId && !userRole.Role.IsDeleted
+                && userRole.Role.Category == "Management"), ct);
+        if (!hasApprovedRole) return false;
+
+        var permissions = await _effectivePermissions.GetEffectivePermissionsAsync(id, tenantId, ct);
+        return permissions.Contains("Handover.Approve") && permissions.Contains("Portfolio.View");
+    }
 
     private async Task<PortfolioDto> MapAsync(Entity entity, bool includeProjects, CancellationToken ct)
     {
-        var owner = await _db.Set<User>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == entity.OwnerId, ct);
+        var owner = await _db.Set<User>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == entity.OwnerId && x.TenantId == entity.TenantId, ct);
         var projects = await LoadProjectsAsync(entity.Id, ct);
-        var metrics = BuildMetrics(projects, entity.Currency);
+        var metrics = BuildMetrics(projects);
         return new PortfolioDto { Id = entity.Id, Name = entity.Name, Code = entity.Code ?? "", Description = entity.Description, Status = entity.Status ?? "Active", OwnerId = entity.OwnerId ?? Guid.Empty, OwnerName = owner?.FullName, OwnerEmail = owner?.Email, Currency = entity.Currency, StartDate = entity.StartDate, EndDate = entity.EndDate, StrategicObjective = entity.StrategicObjective, Priority = entity.Priority, Health = entity.Health, ConfidenceLevel = entity.ConfidenceLevel, Metrics = metrics, Projects = includeProjects ? projects : Array.Empty<PortfolioProjectDto>(), CreatedAt = entity.CreatedAt, UpdatedAt = entity.UpdatedAt, CreatedBy = entity.CreatedBy, UpdatedBy = entity.UpdatedBy };
     }
 
     private async Task<List<PortfolioProjectDto>> LoadProjectsAsync(Guid portfolioId, CancellationToken ct)
     {
         var tenant = TenantId();
-        const string sql = "SELECT p.Id, p.Name, p.Code, p.Status, p.Health, p.RagStatus, p.Progress, p.StartDate, p.EndDate, p.Budget, p.ActualCost, p.Currency, p.ProgramId, COALESCE((SELECT SUM(b.ForecastAmount) FROM Budgets b WHERE b.ProjectId = p.Id AND b.TenantId = {0} AND b.IsDeleted = 0), 0) AS Forecast FROM Projects p LEFT JOIN Programs g ON p.ProgramId = g.Id WHERE p.TenantId = {0} AND p.IsDeleted = 0 AND ((p.ProgramId IS NULL AND p.PortfolioId = {1}) OR (p.ProgramId IS NOT NULL AND g.PortfolioId = {1} AND g.IsDeleted = 0))";
-        return await _db.Database.SqlQueryRaw<PortfolioProjectRow>(sql, tenant, portfolioId).Select(x => new PortfolioProjectDto { Id=x.Id, Name=x.Name, Code=x.Code, Status=x.Status, Health=x.Health, RagStatus=x.RagStatus, Progress=x.Progress, StartDate=x.StartDate, EndDate=x.EndDate, Budget=x.Budget, Forecast=x.Forecast, ActualCost=x.ActualCost, Currency=x.Currency, ProgramId=x.ProgramId, IsDirectProject=!x.ProgramId.HasValue }).ToListAsync(ct);
+        const string sql = "SELECT p.Id, p.Name, p.Code, p.Status, p.Health, p.RagStatus, p.Progress, p.StartDate, p.EndDate, p.Currency, p.ProgramId FROM Projects p LEFT JOIN Programs g ON p.ProgramId = g.Id AND g.TenantId = p.TenantId WHERE p.TenantId = {0} AND p.IsDeleted = 0 AND ((p.ProgramId IS NULL AND p.PortfolioId = {1}) OR (p.ProgramId IS NOT NULL AND g.PortfolioId = {1} AND g.IsDeleted = 0))";
+        return await _db.Database.SqlQueryRaw<PortfolioProjectRow>(sql, tenant, portfolioId).Select(x => new PortfolioProjectDto { Id=x.Id, Name=x.Name, Code=x.Code, Status=x.Status, Health=x.Health, RagStatus=x.RagStatus, Progress=x.Progress, StartDate=x.StartDate, EndDate=x.EndDate, Currency=x.Currency, ProgramId=x.ProgramId, IsDirectProject=!x.ProgramId.HasValue }).ToListAsync(ct);
     }
 
-    private static PortfolioMetricsDto BuildMetrics(List<PortfolioProjectDto> projects, string baseCurrency)
+    private static PortfolioMetricsDto BuildMetrics(List<PortfolioProjectDto> projects)
     {
         var active = projects.Count(x => !new[] { "Completed", "Cancelled", "Closed" }.Contains(x.Status, StringComparer.OrdinalIgnoreCase));
         var completed = projects.Count(x => string.Equals(x.Status, "Completed", StringComparison.OrdinalIgnoreCase));
         var delayed = projects.Count(x => x.EndDate.HasValue && x.EndDate.Value.Date < DateTime.UtcNow.Date && !new[] { "Completed", "Cancelled", "Closed" }.Contains(x.Status, StringComparer.OrdinalIgnoreCase));
-        var byCurrency = projects
-            .GroupBy(x => x.Currency)
-            .ToDictionary(
-                g => g.Key,
-                g => new CurrencyFinancialSummary
-                {
-                    Currency = g.Key,
-                    ProjectCount = g.Count(),
-                    Budget = g.Sum(x => x.Budget ?? 0),
-                    Forecast = g.Sum(x => x.Forecast ?? 0),
-                    ActualCost = g.Sum(x => x.ActualCost ?? 0)
-                });
-        foreach (var summary in byCurrency.Values) summary.IsBaseCurrency = string.Equals(summary.Currency, baseCurrency, StringComparison.OrdinalIgnoreCase);
-        var baseSummary = byCurrency.Values.FirstOrDefault(x => x.IsBaseCurrency);
-        return new PortfolioMetricsDto { ProjectCount=projects.Count, ActiveProjects=active, CompletedProjects=completed, DelayedProjects=delayed, TotalBudget=baseSummary?.Budget, TotalForecast=baseSummary?.Forecast, TotalActualCost=baseSummary?.ActualCost, AverageProgress=projects.Count == 0 ? 0 : projects.Average(x=>x.Progress), EarliestStartDate=projects.Where(x=>x.StartDate.HasValue).Select(x=>x.StartDate).Min(), LatestEndDate=projects.Where(x=>x.EndDate.HasValue).Select(x=>x.EndDate).Max(), ProjectsByStatus=projects.GroupBy(x=>x.Status).ToDictionary(x=>x.Key,x=>x.Count()), ProjectsByHealth=projects.GroupBy(x=>string.IsNullOrWhiteSpace(x.RagStatus)?x.Health:x.RagStatus).ToDictionary(x=>x.Key,x=>x.Count()), ByCurrency=byCurrency };
+        return new PortfolioMetricsDto { ProjectCount=projects.Count, ActiveProjects=active, CompletedProjects=completed, DelayedProjects=delayed, AverageProgress=projects.Count == 0 ? 0 : projects.Average(x=>x.Progress), EarliestStartDate=projects.Where(x=>x.StartDate.HasValue).Select(x=>x.StartDate).Min(), LatestEndDate=projects.Where(x=>x.EndDate.HasValue).Select(x=>x.EndDate).Max(), ProjectsByStatus=projects.GroupBy(x=>x.Status).ToDictionary(x=>x.Key,x=>x.Count()), ProjectsByHealth=projects.GroupBy(x=>string.IsNullOrWhiteSpace(x.RagStatus)?x.Health:x.RagStatus).ToDictionary(x=>x.Key,x=>x.Count()) };
     }
 
-    private static Error? Validate(SavePortfolioDto dto) => string.IsNullOrWhiteSpace(dto.Name) || dto.Name.Trim().Length > 300 ? Error.Validation("Name is required and limited to 300 characters") : dto.Status is not ("Active" or "Archived") ? Error.Validation("Status must be Active or Archived") : dto.StartDate.HasValue && dto.EndDate.HasValue && dto.EndDate.Value < dto.StartDate.Value ? Error.Validation("End Date must not be before Start Date") : !string.IsNullOrWhiteSpace(dto.Currency) && dto.Currency.Trim().Length > 10 ? Error.Validation("Currency code is limited to 10 characters") : null;
+    private static Error? Validate(SavePortfolioDto dto) => string.IsNullOrWhiteSpace(dto.Name) || dto.Name.Trim().Length > 300 ? Error.Validation("Name is required and limited to 300 characters")         : dto.Status is not ("Active" or "Archived") ? Error.Validation("Status must be Active or Archived") : !IsValidCurrency(NormalizeCurrency(dto.Currency)) ? Error.Validation("Currency must be a valid 3-letter ISO code") : null;
     private static Guid? NormalizeOwnerId(Guid? ownerId) => ownerId.HasValue && ownerId.Value != Guid.Empty ? ownerId.Value : null;
-    private Guid TenantId() { var value = _http.HttpContext?.User.FindFirst("tenantId")?.Value; return Guid.TryParse(value, out var id) ? id : DemoTenant; }
+    private static string NormalizeCurrency(string? value) => (value ?? string.Empty).Trim().ToUpperInvariant();
+    private static bool IsValidCurrency(string? value) => !string.IsNullOrWhiteSpace(value) && value.Length == 3 && value.All(character => character is >= 'A' and <= 'Z');
+    private bool CanAssignPortfolioManager() =>
+        _http.HttpContext?.User.HasClaim("permission", "Handover.AdminInitiate") == true;
+    private Guid TenantId()
+    {
+        var httpContext = _http.HttpContext;
+        if (httpContext is not null)
+        {
+            if (httpContext.User.Identity?.IsAuthenticated != true) return Guid.Empty;
+            var claim = httpContext.User.FindFirst("tenantId")?.Value;
+            return Guid.TryParse(claim, out var id) && id != Guid.Empty ? id : Guid.Empty;
+        }
+
+        return TrustedTenantExecutionContext.CurrentTenantId ?? Guid.Empty;
+    }
+
+    private bool HasManagementScope(Guid tenantId)
+    {
+        if (_http.HttpContext is null) return TrustedTenantExecutionContext.CurrentTenantId == tenantId;
+        var context = _managementContext?.Current;
+        return context is not null && context.TenantId == tenantId;
+    }
+
     private IQueryable<Entity> InScope(IQueryable<Entity> query)
     {
+        var tenantId = TenantId();
+        if (tenantId == Guid.Empty) return query.Where(_ => false);
+
+        query = query.Where(x => x.TenantId == tenantId);
+        if (_http.HttpContext is null)
+            return TrustedTenantExecutionContext.CurrentTenantId == tenantId ? query : query.Where(_ => false);
+
         var context = _managementContext?.Current;
-        if (context is null) return query;
+        if (context is null || context.TenantId != tenantId) return query.Where(_ => false);
 
         if (context.CanReadAllTenantPortfolioProgramData || context.HasTenantAdministratorPortfolioWriteScope)
-            return query.Where(x => x.TenantId == context.TenantId);
+            return query;
 
         return query.Where(x => context.Scope.PortfolioIds.Contains(x.Id));
     }
-    private sealed class PortfolioProjectRow { public Guid Id { get; set; } public string Name { get; set; } = ""; public string Code { get; set; } = ""; public string Status { get; set; } = ""; public string Health { get; set; } = ""; public string RagStatus { get; set; } = ""; public decimal Progress { get; set; } public DateTime? StartDate { get; set; } public DateTime? EndDate { get; set; } public decimal? Budget { get; set; } public decimal? Forecast { get; set; } public decimal? ActualCost { get; set; } public string Currency { get; set; } = "GBP"; public Guid? ProgramId { get; set; } }
+    private sealed class PortfolioProjectRow { public Guid Id { get; set; } public string Name { get; set; } = ""; public string Code { get; set; } = ""; public string Status { get; set; } = ""; public string Health { get; set; } = ""; public string RagStatus { get; set; } = ""; public decimal Progress { get; set; } public DateTime? StartDate { get; set; } public DateTime? EndDate { get; set; } public string Currency { get; set; } = ""; public Guid? ProgramId { get; set; } }
 }

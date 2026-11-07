@@ -9,11 +9,12 @@ import { useNotifications, useMarkNotificationRead, useMarkAllNotificationsRead 
 import { isFirebaseMessagingConfigured } from "@lib/firebase-messaging";
 import { Link } from "react-router-dom";
 import { resolveNotificationPath } from "@lib/notification-navigation";
+import { getLocalizedNotificationContent } from "@lib/notification-content";
 
 const PAGE_SIZE = 20;
 
 export function NotificationsPage() {
-  const { t, formatDate } = useI18n();
+  const { t, formatDate, locale } = useI18n();
   const [page, setPage] = React.useState(1);
   const [unreadOnly, setUnreadOnly] = React.useState(false);
   // Full Notification Center data loads only when opened (visible-first).
@@ -47,18 +48,19 @@ export function NotificationsPage() {
             : items.length === 0 ? <p className="p-6 text-center text-sm text-muted-foreground">{t("notifications.empty")}</p>
             : (
               <ul className="divide-y">
-                {items.map((n) => (
-                  <li key={n.id} className="flex items-start justify-between gap-3 px-4 py-3">
+                {items.map((n) => {
+                  const content = getLocalizedNotificationContent(n, locale);
+                  return <li key={n.id} className="flex items-start justify-between gap-3 px-4 py-3">
                     <div className="min-w-0">
-                      {resolveNotificationPath(n.referenceType, n.referenceId, n.referencePublicId)
-                        ? <Link to={resolveNotificationPath(n.referenceType, n.referenceId, n.referencePublicId)!} className="text-sm font-semibold hover:text-primary">{n.title}</Link>
-                        : <p className="text-sm font-semibold">{n.title}</p>}
-                      {n.body ? <p className="mt-0.5 truncate text-sm text-muted-foreground">{n.body}</p> : null}
+                      {resolveNotificationPath(n.referenceType, n.referenceId, n.referencePublicId, n.type)
+                        ? <Link to={resolveNotificationPath(n.referenceType, n.referenceId, n.referencePublicId, n.type)!} className="text-sm font-semibold hover:text-primary">{content.title}</Link>
+                        : <p className="text-sm font-semibold">{content.title}</p>}
+                      {content.body ? <p className="mt-0.5 truncate text-sm text-muted-foreground">{content.body}</p> : null}
                       <p className="mt-1 text-xs text-muted-foreground">{formatDate(n.sentAt)}</p>
                     </div>
                     {!n.isRead ? <Button size="sm" variant="ghost" disabled={markRead.isPending} onClick={() => markRead.mutate(n.id)}>{t("notifications.markRead")}</Button> : null}
-                  </li>
-                ))}
+                  </li>;
+                })}
               </ul>
             )}
         </CardContent>

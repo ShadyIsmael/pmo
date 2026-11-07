@@ -10,6 +10,8 @@ import { SideSheet, SideSheetBody, SideSheetFooter } from "@components/ui/SideSh
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@components/ui/Table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@components/ui/Tabs";
 import { useToast } from "@hooks/use-toast";
+import { useI18n } from "@i18n/messages";
+import { formatFileSize } from "@lib/formatting/file-size";
 import { planningApiFull, type PlanImportSessionDto, type PlanSummaryDto, type PlanType } from "../api/planningFull";
 import { planningImportErrorMessage, planningImportNoticeMessage } from "../lib/planning-import-messages";
 import { roundPlanProgress } from "../lib/plan-progress";
@@ -42,6 +44,7 @@ export function PlanningImportSheet({
   onImported: (planId: string) => void | Promise<void>;
 }) {
   const { toast } = useToast();
+  const { locale } = useI18n();
   const [mode, setMode] = React.useState<ImportMode>(plans.length ? "existing" : "new");
   const [targetPlanId, setTargetPlanId] = React.useState(selectedPlanId || plans[0]?.id || "");
   const [newPlanName, setNewPlanName] = React.useState("");
@@ -187,7 +190,7 @@ export function PlanningImportSheet({
               setFile(selected);
               setError(selected && !selected.name.toLowerCase().endsWith(".mpp") ? t("planning.import.mppOnly") : undefined);
             }} />
-            <p className="text-[11px] text-muted-foreground">{file ? t("planning.import.selectedFile", { name: file.name, size: formatBytes(file.size) }) : t("planning.import.fileHint")}</p>
+            <p className="text-[11px] text-muted-foreground">{file ? t("planning.import.selectedFile", { name: file.name, size: formatFileSize(file.size, locale) }) : t("planning.import.fileHint")}</p>
           </div>
           <div className="space-y-3 rounded-md border p-3">
             <div className="flex gap-1 rounded-md bg-muted/40 p-1">
@@ -299,4 +302,4 @@ function reviewTabForIssue(notice: { category?: string; entityType?: string; cod
 
 function reviewRowKey(tab: string, sourceId: string) { return `${tab}:${sourceId}`; }
 function dateOnly(value?: string) { return value ? value.slice(0, 10) : "—"; }
-function formatBytes(bytes: number) { return bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`; }
+

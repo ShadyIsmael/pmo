@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using NEXUS.Modules.Meetings.Application;
 using NEXUS.Modules.Meetings.Application.DTOs;
+using NEXUS.Modules.Meetings.Domain;
 using NEXUS.SharedKernel;
 
 namespace NEXUS.Modules.Meetings.Api;
@@ -14,19 +15,70 @@ namespace NEXUS.Modules.Meetings.Api;
 public sealed class MeetingController : ControllerBase
 {
     private readonly IMeetingService _meetingService;
+    private readonly IMeetingWorkspaceService _meetingWorkspaceService;
 
-    public MeetingController(IMeetingService meetingService) => _meetingService = meetingService;
+    public MeetingController(IMeetingService meetingService, IMeetingWorkspaceService meetingWorkspaceService)
+    {
+        _meetingService = meetingService;
+        _meetingWorkspaceService = meetingWorkspaceService;
+    }
 
     [HttpGet]
     [Authorize(Policy = MeetingPermissions.View)]
-    public async Task<IActionResult> GetPaged([FromQuery] int page = 1, [FromQuery] int pageSize = 20, [FromQuery] string? search = null, [FromQuery] string? status = null, [FromQuery] Guid? projectId = null, [FromQuery] DateTime? dateFrom = null, [FromQuery] DateTime? dateTo = null, CancellationToken cancellationToken = default)
-        => Ok(await _meetingService.GetPagedAsync(page, pageSize, search, status, projectId, dateFrom, dateTo, cancellationToken));
-
-    [HttpGet("{id:guid}")]
-    [Authorize(Policy = MeetingPermissions.View)]
-    public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
+    public async Task<IActionResult> GetPaged([FromQuery] int page = 1, [FromQuery] int pageSize = 20, [FromQuery] string? search = null, [FromQuery] string? status = null, [FromQuery] Guid? projectId = null, [FromQuery] DateTime? dateFrom = null, [FromQuery] DateTime? dateTo = null, [FromQuery] string? projectIds = null, CancellationToken cancellationToken = default)
     {
-        var result = await _meetingService.GetByIdAsync(id, cancellationToken);
+        var parsedProjectIds = ParseProjectIds(projectIds);
+        if (parsedProjectIds.Error is not null) return BadRequest(new { error = parsedProjectIds.Error });
+        return Ok(await _meetingService.GetPagedAsync(page, pageSize, search, status, projectId, dateFrom, dateTo, parsedProjectIds.Value, cancellationToken));
+    }
+
+    [HttpGet("calendar")]
+    [Authorize(Policy = MeetingPermissions.View)]
+    public async Task<IActionResult> GetCalendar([FromQuery] DateTime? from = null, [FromQuery] DateTime? to = null, [FromQuery] string? projectIds = null, [FromQuery] string? status = null, [FromQuery] string? search = null, CancellationToken cancellationToken = default)
+    {
+        if (!from.HasValue || !to.HasValue) return BadRequest(new { error = "A calendar range with both from and to is required." });
+        var parsedProjectIds = ParseProjectIds(projectIds);
+        if (parsedProjectIds.Error is not null) return BadRequest(new { error = parsedProjectIds.Error });
+        var result = await _meetingService.GetCalendarAsync(from.Value, to.Value, parsedProjectIds.Value, status, search, cancellationToken);
+        return result.IsSuccess ? Ok(result.Value) : ToActionResult(result.Error);
+    }
+
+    [HttpGet("projects")]
+    [Authorize(Policy = "WorkflowLookup.Meeting.Projects")]
+    public async Task<IActionResult> GetProjects([FromQuery] string? search = null, CancellationToken cancellationToken = default)
+        => Ok(await _meetingService.GetAccessibleProjectsAsync(search, cancellationToken));
+
+    [HttpPost("series/preview")]
+    [Authorize(Policy = MeetingPermissions.Create)]
+    public IActionResult PreviewSeries([FromBody] MeetingRecurrenceRule rule)
+    {
+        var result = MeetingRecurrenceSchedule.Build(rule);
+        return result.IsSuccess ? Ok(new MeetingRecurrencePreviewDto(
+            result.Value!.Occurrences.Take(MeetingRecurrenceSchedule.PreviewOccurrences).ToArray(),
+            result.Value.TotalOccurrenceCount, result.Value.SkippedDaylightSavingCount, result.Value.TimeZoneId)) : ToActionResult(result.Error);
+    }
+
+    [HttpPost("series")]
+    [Authorize(Policy = MeetingPermissions.Create)]
+    public async Task<IActionResult> CreateSeries([FromBody] CreateMeetingSeriesRequest request, CancellationToken cancellationToken)
+    {
+        var result = await _meetingService.CreateSeriesAsync(request, CurrentUserId(), cancellationToken);
+        return result.IsSuccess ? CreatedAtAction(nameof(GetByPublicId), new { publicId = result.Value!.PublicId }, result.Value) : ToActionResult(result.Error);
+    }
+
+    [HttpGet("{publicId:guid}")]
+    [Authorize(Policy = MeetingPermissions.View)]
+    public async Task<IActionResult> GetByPublicId(Guid publicId, CancellationToken cancellationToken)
+    {
+        var result = await _meetingService.GetByPublicIdAsync(publicId, cancellationToken);
+        return result.IsSuccess ? Ok(result.Value) : ToActionResult(result.Error);
+    }
+
+    [HttpGet("{id:guid}/series")]
+    [Authorize(Policy = MeetingPermissions.View)]
+    public async Task<IActionResult> GetSeries(Guid id, CancellationToken cancellationToken)
+    {
+        var result = await _meetingService.GetSeriesAsync(id, cancellationToken);
         return result.IsSuccess ? Ok(result.Value) : ToActionResult(result.Error);
     }
 
@@ -35,7 +87,7 @@ public sealed class MeetingController : ControllerBase
     public async Task<IActionResult> Create([FromBody] CreateMeetingRequest request, CancellationToken cancellationToken)
     {
         var result = await _meetingService.CreateAsync(request, CurrentUserId(), cancellationToken);
-        return result.IsSuccess ? CreatedAtAction(nameof(GetById), new { id = result.Value!.Id }, result.Value) : ToActionResult(result.Error);
+        return result.IsSuccess ? CreatedAtAction(nameof(GetByPublicId), new { publicId = result.Value!.PublicId }, result.Value) : ToActionResult(result.Error);
     }
 
     [HttpPut("{id:guid}")]
@@ -43,6 +95,22 @@ public sealed class MeetingController : ControllerBase
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateMeetingRequest request, CancellationToken cancellationToken)
     {
         var result = await _meetingService.UpdateAsync(id, request, CurrentUserId(), cancellationToken);
+        return result.IsSuccess ? Ok(result.Value) : ToActionResult(result.Error);
+    }
+
+    [HttpPost("{id:guid}/start")]
+    [Authorize(Policy = MeetingPermissions.Edit)]
+    public async Task<IActionResult> Start(Guid id, [FromBody] MeetingLifecycleRequest request, CancellationToken cancellationToken)
+    {
+        var result = await _meetingService.StartAsync(id, request, CurrentUserId(), cancellationToken);
+        return result.IsSuccess ? Ok(result.Value) : ToActionResult(result.Error);
+    }
+
+    [HttpPost("{id:guid}/end")]
+    [Authorize(Policy = MeetingPermissions.Edit)]
+    public async Task<IActionResult> End(Guid id, [FromBody] MeetingLifecycleRequest request, CancellationToken cancellationToken)
+    {
+        var result = await _meetingService.EndAsync(id, request, CurrentUserId(), cancellationToken);
         return result.IsSuccess ? Ok(result.Value) : ToActionResult(result.Error);
     }
 
@@ -69,6 +137,98 @@ public sealed class MeetingController : ControllerBase
         var result = await _meetingService.RemoveAttendeeAsync(id, participantId, CurrentUserId(), cancellationToken);
         return result.IsSuccess ? NoContent() : ToActionResult(result.Error);
     }
+
+    [HttpGet("{id:guid}/participants")]
+    [Authorize(Policy = MeetingPermissions.View)]
+    public async Task<IActionResult> GetParticipants(Guid id, CancellationToken cancellationToken) => ToActionResult(await _meetingWorkspaceService.GetParticipantsAsync(id, cancellationToken));
+
+    [HttpPut("{id:guid}/attendance")]
+    [Authorize(Policy = MeetingPermissions.View)]
+    public async Task<IActionResult> UpdateMyAttendance(Guid id, [FromBody] UpdateMeetingAttendanceRequest request, CancellationToken cancellationToken) =>
+        ToActionResult(await _meetingWorkspaceService.UpdateMyAttendanceAsync(id, request, CurrentUserId(), cancellationToken));
+
+    [HttpPut("{id:guid}/participants/{participantId:guid}/attendance")]
+    [Authorize(Policy = MeetingPermissions.Edit)]
+    public async Task<IActionResult> UpdateAttendance(Guid id, Guid participantId, [FromBody] UpdateMeetingAttendanceRequest request, CancellationToken cancellationToken) =>
+        ToActionResult(await _meetingWorkspaceService.UpdateAttendanceAsync(id, participantId, request, CurrentUserId(), cancellationToken));
+
+    [HttpPut("{id:guid}/participants/{participantId:guid}/attendance/organizer")]
+    [Authorize(Policy = MeetingPermissions.View)]
+    public async Task<IActionResult> UpdateOrganizerAttendance(Guid id, Guid participantId, [FromBody] UpdateMeetingAttendanceRequest request, CancellationToken cancellationToken) =>
+        ToActionResult(await _meetingWorkspaceService.UpdateOrganizerAttendanceAsync(id, participantId, request, CurrentUserId(), cancellationToken));
+
+    [HttpGet("{id:guid}/agenda")]
+    [Authorize(Policy = MeetingPermissions.View)]
+    public async Task<IActionResult> GetAgenda(Guid id, CancellationToken cancellationToken) => ToActionResult(await _meetingWorkspaceService.GetAgendaAsync(id, cancellationToken));
+
+    [HttpPost("{id:guid}/agenda")]
+    [Authorize(Policy = MeetingPermissions.Edit)]
+    public async Task<IActionResult> CreateAgendaItem(Guid id, [FromBody] CreateMeetingAgendaItemRequest request, CancellationToken cancellationToken) =>
+        ToActionResult(await _meetingWorkspaceService.CreateAgendaItemAsync(id, request, CurrentUserId(), cancellationToken));
+
+    [HttpPut("{id:guid}/agenda/reorder")]
+    [Authorize(Policy = MeetingPermissions.Edit)]
+    public async Task<IActionResult> ReorderAgenda(Guid id, [FromBody] ReorderMeetingAgendaRequest request, CancellationToken cancellationToken) =>
+        ToActionResult(await _meetingWorkspaceService.ReorderAgendaAsync(id, request, CurrentUserId(), cancellationToken));
+
+    [HttpPut("{id:guid}/agenda/{itemId:guid}")]
+    [Authorize(Policy = MeetingPermissions.Edit)]
+    public async Task<IActionResult> UpdateAgendaItem(Guid id, Guid itemId, [FromBody] UpdateMeetingAgendaItemRequest request, CancellationToken cancellationToken) =>
+        ToActionResult(await _meetingWorkspaceService.UpdateAgendaItemAsync(id, itemId, request, CurrentUserId(), cancellationToken));
+
+    [HttpDelete("{id:guid}/agenda/{itemId:guid}")]
+    [Authorize(Policy = MeetingPermissions.Edit)]
+    public async Task<IActionResult> DeleteAgendaItem(Guid id, Guid itemId, CancellationToken cancellationToken)
+    {
+        var result = await _meetingWorkspaceService.DeleteAgendaItemAsync(id, itemId, CurrentUserId(), cancellationToken);
+        return result.IsSuccess ? NoContent() : ToActionResult(result.Error);
+    }
+
+    [HttpGet("{id:guid}/actions")]
+    [Authorize(Policy = MeetingPermissions.View)]
+    public async Task<IActionResult> GetActionItems(Guid id, CancellationToken cancellationToken) => ToActionResult(await _meetingWorkspaceService.GetActionItemsAsync(id, cancellationToken));
+
+    [HttpPost("{id:guid}/actions")]
+    [Authorize(Policy = MeetingPermissions.Manage)]
+    public async Task<IActionResult> CreateActionItem(Guid id, [FromBody] CreateMeetingActionItemRequest request, CancellationToken cancellationToken) =>
+        ToActionResult(await _meetingWorkspaceService.CreateActionItemAsync(id, request, CurrentUserId(), cancellationToken));
+
+    [HttpPut("{id:guid}/actions/{itemId:guid}")]
+    [Authorize(Policy = MeetingPermissions.Manage)]
+    public async Task<IActionResult> UpdateActionItem(Guid id, Guid itemId, [FromBody] UpdateMeetingActionItemRequest request, CancellationToken cancellationToken) =>
+        ToActionResult(await _meetingWorkspaceService.UpdateActionItemAsync(id, itemId, request, CurrentUserId(), cancellationToken));
+
+    [HttpPost("{id:guid}/actions/{itemId:guid}/work-item")]
+    [Authorize(Policy = MeetingPermissions.Manage)]
+    [Authorize(Policy = "WorkItem.View")]
+    public async Task<IActionResult> LinkActionWorkItem(Guid id, Guid itemId, [FromBody] LinkMeetingActionWorkItemRequest request, CancellationToken cancellationToken) =>
+        ToActionResult(await _meetingWorkspaceService.LinkActionWorkItemAsync(id, itemId, request, CurrentUserId(), cancellationToken));
+
+    [HttpDelete("{id:guid}/actions/{itemId:guid}/work-item")]
+    [Authorize(Policy = MeetingPermissions.Manage)]
+    public async Task<IActionResult> UnlinkActionWorkItem(Guid id, Guid itemId, CancellationToken cancellationToken)
+    {
+        var result = await _meetingWorkspaceService.UnlinkActionWorkItemAsync(id, itemId, CurrentUserId(), cancellationToken);
+        return result.IsSuccess ? NoContent() : ToActionResult(result.Error);
+    }
+
+    [HttpDelete("{id:guid}/actions/{itemId:guid}")]
+    [Authorize(Policy = MeetingPermissions.Manage)]
+    public async Task<IActionResult> DeleteActionItem(Guid id, Guid itemId, CancellationToken cancellationToken)
+    {
+        var result = await _meetingWorkspaceService.DeleteActionItemAsync(id, itemId, CurrentUserId(), cancellationToken);
+        return result.IsSuccess ? NoContent() : ToActionResult(result.Error);
+    }
+
+    [HttpGet("{id:guid}/decisions")]
+    [Authorize(Policy = MeetingPermissions.View)]
+    public async Task<IActionResult> GetDecisions(Guid id, CancellationToken cancellationToken) =>
+        ToActionResult(await _meetingWorkspaceService.GetDecisionsAsync(id, cancellationToken));
+
+    [HttpPut("{id:guid}/decisions")]
+    [Authorize(Policy = MeetingPermissions.Manage)]
+    public async Task<IActionResult> SaveDecisions(Guid id, [FromBody] UpdateMeetingDecisionsRequest request, CancellationToken cancellationToken) =>
+        ToActionResult(await _meetingWorkspaceService.SaveDecisionsAsync(id, request, CurrentUserId(), cancellationToken));
 
     [HttpGet("{id:guid}/minutes")]
     [Authorize(Policy = MeetingPermissions.View)]
@@ -160,6 +320,20 @@ public sealed class MeetingController : ControllerBase
     }
 
     private string CurrentUserId() => User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "System";
+
+    private static (IReadOnlyList<Guid>? Value, string? Error) ParseProjectIds(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return (null, null);
+        var parts = value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length == 0) return (null, null);
+        var ids = new List<Guid>(parts.Length);
+        foreach (var part in parts)
+        {
+            if (!Guid.TryParse(part, out var id) || id == Guid.Empty) return (null, "projectIds must contain valid project identifiers.");
+            if (!ids.Contains(id)) ids.Add(id);
+        }
+        return (ids, null);
+    }
 
     private IActionResult ToActionResult(Error? error) => error?.StatusCode switch
     {

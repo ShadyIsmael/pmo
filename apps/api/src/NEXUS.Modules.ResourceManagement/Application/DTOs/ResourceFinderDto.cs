@@ -29,6 +29,7 @@ public class ResourceFinderResultDto
     public string? Phone { get; set; }
     public decimal MatchScore { get; set; }
     public decimal AvailableCapacityHours { get; set; }
+    public bool HasCapacityData { get; set; }
     public decimal CurrentLoadPercent { get; set; }
     public DateTime? EarliestAvailableDate { get; set; }
     public List<ResourceFinderConflictDto> ConflictingAllocations { get; set; } = new();

@@ -1,4 +1,5 @@
 import { Permissions } from "@lib/permissions";
+import { formatCurrencyValue } from "@lib/formatting/currency";
 
 export function dashboardMeetingsQueryParams(projectId?: string, now: Date = new Date()) {
   const dateFrom = now.toISOString().slice(0, 10);
@@ -18,6 +19,10 @@ export function getDashboardApprovalAccess(permissions: readonly string[]) {
   const handovers = permissions.includes(Permissions.Handover.Approve);
   const projectChanges = permissions.includes(Permissions.ChangeRequest.Approve);
   return { handovers, projectChanges, any: handovers || projectChanges };
+}
+
+export function hasDashboardResourceReadAccess(permissions: readonly string[]): boolean {
+  return permissions.includes(Permissions.Resources.View);
 }
 
 export function dashboardWidgetNeedsWorkItems(type: string): boolean {
@@ -65,11 +70,5 @@ export function shouldLoadDashboardManagementOverview(widgetType: string, perspe
 }
 
 export function formatDashboardMoney(value: number, currency: string | null | undefined, locale: string): string {
-  const formatterLocale = locale === "ar" ? "ar-EG-u-nu-latn" : "en-US";
-  return new Intl.NumberFormat(formatterLocale, {
-    style: "currency",
-    currency: currency || "USD",
-    notation: "compact",
-    maximumFractionDigits: 1,
-  }).format(value);
+  return formatCurrencyValue(value, currency, locale, { notation: "compact", maximumFractionDigits: 1 });
 }

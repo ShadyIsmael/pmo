@@ -1,5 +1,6 @@
 import * as React from "react";
-import { ArrowDown, ArrowUp, Loader2, Pencil, Plus, Power } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, Loader2, Pencil, Plus, Power } from "lucide-react";
+import { Link } from "react-router-dom";
 import { PageHeader } from "@components/layout/PageHeader";
 import { Button } from "@components/ui/Button";
 import { Card, CardContent } from "@components/ui/Card";
@@ -36,7 +37,9 @@ export function ProjectRolesPage() {
   const { t } = useI18n();
   const confirm = useConfirm();
   const { user } = useAuth();
-  const canManage = Boolean(user && hasPermission(user.permissions, Permissions.Resources.Manage));
+  const canCreate = Boolean(user && hasPermission(user.permissions, Permissions.ReferenceData.Create));
+  const canEdit = Boolean(user && hasPermission(user.permissions, Permissions.ReferenceData.Edit));
+  const canDelete = Boolean(user && hasPermission(user.permissions, Permissions.ReferenceData.Delete));
   const rolesQuery = useProjectRoles(false, true);
   const createMutation = useCreateProjectRole();
   const updateMutation = useUpdateProjectRole();
@@ -98,6 +101,7 @@ export function ProjectRolesPage() {
 
   async function save(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (editing ? !canEdit : !canCreate) return;
     if (!editing && codeTouched && !form.code.trim()) return setFormError(t("administration.projectRoles.codeRequired"));
     if (!form.nameEn.trim()) return setFormError(t("administration.projectRoles.nameEnRequired"));
 
@@ -123,7 +127,8 @@ export function ProjectRolesPage() {
   }
 
   async function toggleActive(role: ProjectRoleDto) {
-    if (role.isActive && !await confirm({ description: t("administration.projectRoles.deactivateConfirm"), destructive: true })) return;
+    if (role.isActive && (!canDelete || !await confirm({ description: t("administration.projectRoles.deactivateConfirm"), destructive: true }))) return;
+    if (!role.isActive && !canEdit) return;
     const actionId = `active-${role.id}`;
     setActionError(null);
     setPendingAction(actionId);
@@ -138,6 +143,7 @@ export function ProjectRolesPage() {
   }
 
   async function moveOrder(role: ProjectRoleDto, direction: "up" | "down") {
+    if (!canEdit) return;
     const index = roles.findIndex((candidate) => candidate.id === role.id);
     const neighbor = direction === "up" ? roles[index - 1] : roles[index + 1];
     if (!neighbor) return;
@@ -160,7 +166,14 @@ export function ProjectRolesPage() {
       <PageHeader
         title={t("administration.projectRoles.title")}
         description={t("administration.projectRoles.description")}
-        actions={canManage ? <Button size="sm" onClick={openCreate}><Plus className="me-1.5 h-4 w-4" />{t("administration.projectRoles.addRole")}</Button> : undefined}
+        actions={
+          <div className="flex items-center gap-2">
+            <Button asChild size="sm" variant="outline" className="whitespace-nowrap text-xs inline-flex items-center gap-1.5">
+              <Link to="/administration/reference-data"><ArrowLeft className="me-2 h-4 w-4 rtl:rotate-180" />{t("administration.areas.referenceData.back")}</Link>
+            </Button>
+            {canCreate ? <Button size="sm" onClick={openCreate}><Plus className="me-1.5 h-4 w-4" />{t("administration.projectRoles.addRole")}</Button> : null}
+          </div>
+        }
       />
       {rolesQuery.isError ? (
         <div role="alert" className="space-y-2 text-sm text-destructive">
@@ -176,7 +189,7 @@ export function ProjectRolesPage() {
               <TableHead>{t("administration.projectRoles.nameEn")}</TableHead>
               <TableHead>{t("administration.projectRoles.nameAr")}</TableHead>
               <TableHead>{t("administration.projectRoles.status")}</TableHead>
-              {canManage ? <TableHead className="text-end">{t("administration.projectRoles.actions")}</TableHead> : null}
+              {canEdit || canDelete ? <TableHead className="text-end">{t("administration.projectRoles.actions")}</TableHead> : null}
             </TableRow></TableHeader>
             <TableBody>
               {roles.map((role, index) => <TableRow key={role.id} className={!role.isActive ? "opacity-60" : undefined}>
@@ -185,14 +198,14 @@ export function ProjectRolesPage() {
                 <TableCell>{role.nameEn}</TableCell>
                 <TableCell dir="rtl">{role.nameAr}</TableCell>
                 <TableCell><span className={`text-xs font-medium ${getStatusTextClass(role.isActive ? "Active" : "Inactive")}`}>{role.isActive ? t("administration.projectRoles.active") : t("administration.projectRoles.inactive")}</span></TableCell>
-                {canManage ? <TableCell><div className="flex justify-end gap-1">
-                  <Button type="button" size="icon" variant="ghost" onClick={() => openEdit(role)} aria-label={t("administration.projectRoles.edit")} disabled={Boolean(pendingAction)}><Pencil className="h-3.5 w-3.5" /></Button>
-                  <Button type="button" size="icon" variant="ghost" onClick={() => void toggleActive(role)} aria-label={role.isActive ? t("administration.projectRoles.deactivate") : t("administration.projectRoles.activate")} disabled={Boolean(pendingAction)}><Power className="h-3.5 w-3.5" /></Button>
+                {canEdit || canDelete ? <TableCell><div className="flex justify-end gap-1">
+                  {canEdit ? <><Button type="button" size="icon" variant="ghost" onClick={() => openEdit(role)} aria-label={t("administration.projectRoles.edit")} disabled={Boolean(pendingAction)}><Pencil className="h-3.5 w-3.5" /></Button>
                   <Button type="button" size="icon" variant="ghost" onClick={() => void moveOrder(role, "up")} disabled={index === 0 || Boolean(pendingAction)} aria-label={t("administration.projectRoles.moveUp")}><ArrowUp className="h-3.5 w-3.5" /></Button>
-                  <Button type="button" size="icon" variant="ghost" onClick={() => void moveOrder(role, "down")} disabled={index === roles.length - 1 || Boolean(pendingAction)} aria-label={t("administration.projectRoles.moveDown")}><ArrowDown className="h-3.5 w-3.5" /></Button>
+                  <Button type="button" size="icon" variant="ghost" onClick={() => void moveOrder(role, "down")} disabled={index === roles.length - 1 || Boolean(pendingAction)} aria-label={t("administration.projectRoles.moveDown")}><ArrowDown className="h-3.5 w-3.5" /></Button></> : null}
+                  {(role.isActive ? canDelete : canEdit) ? <Button type="button" size="icon" variant="ghost" onClick={() => void toggleActive(role)} aria-label={role.isActive ? t("administration.projectRoles.deactivate") : t("administration.projectRoles.activate")} disabled={Boolean(pendingAction)}><Power className="h-3.5 w-3.5" /></Button> : null}
                 </div></TableCell> : null}
               </TableRow>)}
-              {roles.length === 0 ? <TableRow><TableCell colSpan={canManage ? 6 : 5} className="py-8 text-center text-sm text-muted-foreground">{t("administration.projectRoles.empty")}</TableCell></TableRow> : null}
+              {roles.length === 0 ? <TableRow><TableCell colSpan={canEdit || canDelete ? 6 : 5} className="py-8 text-center text-sm text-muted-foreground">{t("administration.projectRoles.empty")}</TableCell></TableRow> : null}
             </TableBody>
           </Table>
           {actionError ? <p role="alert" className="border-t border-destructive/20 bg-destructive/5 px-5 py-3 text-sm text-destructive">{actionError}</p> : null}
@@ -215,7 +228,7 @@ export function ProjectRolesPage() {
           </SideSheetBody>
           <SideSheetFooter>
             <Button type="button" variant="outline" onClick={() => closeSheet(false)} disabled={isSaving}>{t("administration.projectRoles.cancel")}</Button>
-            <Button type="submit" disabled={isSaving}>{isSaving ? <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" /> : null}{t("administration.projectRoles.save")}</Button>
+            <Button type="submit" disabled={isSaving || (editing ? !canEdit : !canCreate)}>{isSaving ? <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" /> : null}{t("administration.projectRoles.save")}</Button>
           </SideSheetFooter>
         </form>
       </SideSheet>

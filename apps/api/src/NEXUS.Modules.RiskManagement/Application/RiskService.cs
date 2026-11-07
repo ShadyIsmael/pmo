@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using NEXUS.Modules.Audit.Application;
 using NEXUS.Modules.Audit.Domain;
+using NEXUS.Modules.Identity.Domain;
 using NEXUS.Modules.RiskManagement.Application.DTOs;
 using NEXUS.Modules.RiskManagement.Domain;
 using NEXUS.Modules.WorkflowEngine.Application.Contracts;
@@ -48,7 +49,7 @@ public sealed class RiskService : IRiskService
         if (impactAssessment is not null && !ValidateImpact(impactAssessment.ImpactTypes, impactAssessment.Description)) return Failure<RiskDto>("Impact types must be valid, unique, and include a shared impact description");
         var project = await _projectLookup.FindAsync(dto.ProjectId, cancellationToken);
         if (project is null) return Result<RiskDto>.Failure(Error.NotFound("Project not found"));
-        if (!await IsValidResourceAsync(dto.OwnerResourceId, cancellationToken)) return Failure<RiskDto>("Risk owner not found");
+        if (!await IsValidOwnerAsync(dto.OwnerResourceId, dto.OwnerUserId, cancellationToken)) return Failure<RiskDto>("Specify either a valid Resource owner or an active same-tenant System User owner, not both.");
         var workflowSelection = _projectWorkflowConfiguration is null
             ? Result<ProjectWorkflowSelection?>.Success(null)
             : await _projectWorkflowConfiguration.ResolveForNewRecordAsync(dto.ProjectId, WorkflowDomains.Risk, RiskWorkflow.EntityType, BuildWorkflowContext(userId), cancellationToken);
@@ -60,7 +61,7 @@ public sealed class RiskService : IRiskService
         var risk = new Risk
         {
             TenantId = GetCurrentTenantId(), ProjectId = dto.ProjectId, Title = title, Description = description,
-            RiskLevel = dto.RiskLevel, Impact = dto.Impact?.Trim() ?? string.Empty, Likelihood = dto.Likelihood?.Trim() ?? string.Empty, Status = initialStatus, OwnerResourceId = dto.OwnerResourceId,
+            RiskLevel = dto.RiskLevel, Impact = dto.Impact?.Trim() ?? string.Empty, Likelihood = dto.Likelihood?.Trim() ?? string.Empty, Status = initialStatus, OwnerResourceId = dto.OwnerResourceId, OwnerUserId = dto.OwnerUserId,
             IdentifiedDate = DateTime.UtcNow, CreatedBy = userId
         };
         if (impactAssessment is not null)
@@ -95,9 +96,9 @@ public sealed class RiskService : IRiskService
         if (risk is null) return Result<RiskDto>.Failure(Error.NotFound("Risk not found"));
         if (string.IsNullOrWhiteSpace(dto.Title) || string.IsNullOrWhiteSpace(dto.Description)) return Failure<RiskDto>("Title and description are required");
         if (!IsDefined(dto.RiskLevel)) return Failure<RiskDto>("Risk level is invalid");
-        if (!await IsValidResourceAsync(dto.OwnerResourceId, cancellationToken)) return Failure<RiskDto>("Risk owner not found");
+        if (!await IsValidOwnerAsync(dto.OwnerResourceId, dto.OwnerUserId, cancellationToken)) return Failure<RiskDto>("Specify either a valid Resource owner or an active same-tenant System User owner, not both.");
         if (dto.RowVersion.Length > 0) _context.Entry(risk).Property(r => r.RowVersion).OriginalValue = dto.RowVersion;
-        risk.Title = dto.Title.Trim(); risk.Description = dto.Description.Trim(); risk.RiskLevel = dto.RiskLevel; risk.Impact = dto.Impact?.Trim() ?? string.Empty; risk.Likelihood = dto.Likelihood?.Trim() ?? string.Empty; risk.OwnerResourceId = dto.OwnerResourceId; risk.UpdatedBy = userId;
+        risk.Title = dto.Title.Trim(); risk.Description = dto.Description.Trim(); risk.RiskLevel = dto.RiskLevel; risk.Impact = dto.Impact?.Trim() ?? string.Empty; risk.Likelihood = dto.Likelihood?.Trim() ?? string.Empty; risk.OwnerResourceId = dto.OwnerResourceId; risk.OwnerUserId = dto.OwnerUserId; risk.UpdatedBy = userId;
         try { await _context.SaveChangesAsync(cancellationToken); }
         catch (DbUpdateConcurrencyException) { return Result<RiskDto>.Failure(Error.Conflict("Risk was changed by another user")); }
         var project = await _projectLookup.FindAsync(risk.ProjectId, cancellationToken);
@@ -269,14 +270,34 @@ public sealed class RiskService : IRiskService
         return Result<IReadOnlyList<RiskActionDto>>.Success(actions.Select(a => ToActionDto(a, names)).ToList());
     }
 
+    public async Task<Result<RiskActionFollowUpTargetDto>> GetActionFollowUpTargetAsync(Guid actionPublicId, CancellationToken cancellationToken = default)
+    {
+        if (actionPublicId == Guid.Empty)
+            return Result<RiskActionFollowUpTargetDto>.Failure(Error.NotFound("Risk Action not found"));
+
+        var action = await _context.Set<RiskAction>()
+            .Include(item => item.Risk)
+            .AsNoTracking()
+            .FirstOrDefaultAsync(item => item.PublicId == actionPublicId, cancellationToken);
+        if (action is null || !await IsRiskInScopeAsync(action.RiskId, cancellationToken))
+            return Result<RiskActionFollowUpTargetDto>.Failure(Error.NotFound("Risk Action not found"));
+
+        var project = await _projectLookup.FindAsync(action.Risk.ProjectId, cancellationToken);
+        if (project is null)
+            return Result<RiskActionFollowUpTargetDto>.Failure(Error.NotFound("Risk Action not found"));
+
+        return Result<RiskActionFollowUpTargetDto>.Success(
+            new RiskActionFollowUpTargetDto(project.PublicId, action.RiskId, action.Id));
+    }
+
     public async Task<Result<RiskActionDto>> CreateActionAsync(Guid riskId, CreateRiskActionDto dto, string userId, CancellationToken cancellationToken = default)
     {
         var risk = await ScopedRisks().FirstOrDefaultAsync(r => r.Id == riskId, cancellationToken);
         if (risk is null) return Result<RiskActionDto>.Failure(Error.NotFound("Risk not found"));
         if (string.IsNullOrWhiteSpace(dto.Title)) return Failure<RiskActionDto>("Action title is required");
         if (dto.Status.HasValue && !IsDefined(dto.Status.Value)) return Failure<RiskActionDto>("Action status is invalid");
-        if (!await IsValidResourceAsync(dto.OwnerResourceId, cancellationToken)) return Failure<RiskActionDto>("Action owner not found");
-        var action = new RiskAction { TenantId = risk.TenantId, RiskId = risk.Id, Title = dto.Title.Trim(), Description = dto.Description.Trim(), OwnerResourceId = dto.OwnerResourceId, TargetDate = dto.TargetDate, NextFollowUpDate = dto.NextFollowUpDate, Status = dto.Status ?? RiskActionStatus.Planned, SortOrder = dto.SortOrder, CreatedBy = userId };
+        if (!await IsValidOwnerAsync(dto.OwnerResourceId, dto.OwnerUserId, cancellationToken)) return Failure<RiskActionDto>("Specify either a valid Resource owner or an active same-tenant System User owner, not both.");
+        var action = new RiskAction { TenantId = risk.TenantId, RiskId = risk.Id, Title = dto.Title.Trim(), Description = dto.Description.Trim(), OwnerResourceId = dto.OwnerResourceId, OwnerUserId = dto.OwnerUserId, TargetDate = dto.TargetDate, NextFollowUpDate = ToPersistenceDate(dto.NextFollowUpDate), Status = dto.Status ?? RiskActionStatus.Planned, SortOrder = dto.SortOrder, CreatedBy = userId };
         _context.Set<RiskAction>().Add(action);
         if (risk.Status == RiskStatus.Identified) risk.Status = RiskStatus.ActionRequired;
         await _context.SaveChangesAsync(cancellationToken);
@@ -292,7 +313,7 @@ public sealed class RiskService : IRiskService
         if (action is null) return Result<RiskActionDto>.Failure(Error.NotFound("Action not found"));
         if (string.IsNullOrWhiteSpace(dto.Title)) return Failure<RiskActionDto>("Action title is required");
         if (!IsDefined(dto.Status)) return Failure<RiskActionDto>("Action status is invalid");
-        if (!await IsValidResourceAsync(dto.OwnerResourceId, cancellationToken)) return Failure<RiskActionDto>("Action owner not found");
+        if (!await IsValidOwnerAsync(dto.OwnerResourceId, dto.OwnerUserId, cancellationToken)) return Failure<RiskActionDto>("Specify either a valid Resource owner or an active same-tenant System User owner, not both.");
         if (dto.RowVersion.Length > 0 && !dto.RowVersion.SequenceEqual(action.RowVersion)) return Result<RiskActionDto>.Failure(Error.Conflict("Action was changed by another user"));
 
         var title = dto.Title.Trim();
@@ -300,19 +321,25 @@ public sealed class RiskService : IRiskService
         var changes = new List<RiskActionChangeDto>();
         AddChange(changes, "Title", action.Title, title);
         AddChange(changes, "Description", action.Description, description);
-        if (action.OwnerResourceId != dto.OwnerResourceId)
+        if (action.OwnerResourceId != dto.OwnerResourceId || action.OwnerUserId != dto.OwnerUserId)
         {
             var ownerIds = new[] { action.OwnerResourceId, dto.OwnerResourceId }.Where(id => id.HasValue).Select(id => id!.Value).Distinct();
             var ownerNames = await _resourceLookup.GetNamesAsync(ownerIds, cancellationToken);
+            var oldOwnerName = action.OwnerUserId.HasValue
+                ? await GetActiveUserNameAsync(action.OwnerUserId.Value, action.TenantId, cancellationToken)
+                : action.OwnerResourceId.HasValue ? ownerNames.GetValueOrDefault(action.OwnerResourceId.Value, "Unknown owner") : null;
+            var newOwnerName = dto.OwnerUserId.HasValue
+                ? await GetActiveUserNameAsync(dto.OwnerUserId.Value, action.TenantId, cancellationToken)
+                : dto.OwnerResourceId.HasValue ? ownerNames.GetValueOrDefault(dto.OwnerResourceId.Value, "Unknown owner") : null;
             changes.Add(new RiskActionChangeDto
             {
                 Field = "Owner",
-                OldValue = action.OwnerResourceId.HasValue ? ownerNames.GetValueOrDefault(action.OwnerResourceId.Value, "Unknown owner") : null,
-                NewValue = dto.OwnerResourceId.HasValue ? ownerNames.GetValueOrDefault(dto.OwnerResourceId.Value, "Unknown owner") : null
+                OldValue = oldOwnerName,
+                NewValue = newOwnerName
             });
         }
         AddChange(changes, "TargetDate", FormatDate(action.TargetDate), FormatDate(dto.TargetDate));
-        AddChange(changes, "NextFollowUpDate", FormatDate(action.NextFollowUpDate), FormatDate(dto.NextFollowUpDate));
+        AddChange(changes, "NextFollowUpDate", FormatDateOnly(action.NextFollowUpDate), FormatDate(dto.NextFollowUpDate));
         AddChange(changes, "Status", action.Status.ToString(), dto.Status.ToString());
         AddChange(changes, "SortOrder", action.SortOrder.ToString(System.Globalization.CultureInfo.InvariantCulture), dto.SortOrder.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
@@ -320,7 +347,7 @@ public sealed class RiskService : IRiskService
         if (changes.Count == 0) return Result<RiskActionDto>.Success(ToActionDto(action, names));
 
         if (dto.RowVersion.Length > 0) _context.Entry(action).Property(a => a.RowVersion).OriginalValue = dto.RowVersion;
-        action.Title = title; action.Description = description; action.OwnerResourceId = dto.OwnerResourceId; action.TargetDate = dto.TargetDate; action.NextFollowUpDate = dto.NextFollowUpDate; action.Status = dto.Status; action.SortOrder = dto.SortOrder; action.UpdatedBy = userId;
+        action.Title = title; action.Description = description; action.OwnerResourceId = dto.OwnerResourceId; action.OwnerUserId = dto.OwnerUserId; action.TargetDate = dto.TargetDate; action.NextFollowUpDate = ToPersistenceDate(dto.NextFollowUpDate); action.Status = dto.Status; action.SortOrder = dto.SortOrder; action.UpdatedBy = userId;
         var timelineEntry = new RiskActionUpdate
         {
             TenantId = action.TenantId,
@@ -387,14 +414,36 @@ public sealed class RiskService : IRiskService
     {
         var query = _context.Set<Risk>();
         var projectIds = _managementContext?.Current?.Scope.ProjectIds;
-        return projectIds is null ? query : query.Where(risk => projectIds.Contains(risk.ProjectId));
+        return projectIds is null
+            ? query.Where(_ => false)
+            : query.Where(risk => projectIds.Contains(risk.ProjectId));
     }
     private Task<bool> IsRiskInScopeAsync(Guid riskId, CancellationToken cancellationToken) =>
         ScopedRisks().AnyAsync(risk => risk.Id == riskId, cancellationToken);
     private async Task<bool> IsValidResourceAsync(Guid? id, CancellationToken cancellationToken) => !id.HasValue || await _resourceLookup.ExistsAsync(id.Value, cancellationToken);
+    private async Task<bool> IsValidOwnerAsync(Guid? resourceId, Guid? userId, CancellationToken cancellationToken)
+    {
+        if (resourceId.HasValue && userId.HasValue) return false;
+        if (!await IsValidResourceAsync(resourceId, cancellationToken)) return false;
+        if (!userId.HasValue) return true;
+        var tenantId = GetCurrentTenantId();
+        return await _context.Set<User>().AnyAsync(user => user.Id == userId.Value
+            && user.TenantId == tenantId
+            && user.IsActive
+            && !user.IsDeleted,
+            cancellationToken);
+    }
+
+    private async Task<string?> GetActiveUserNameAsync(Guid userId, Guid tenantId, CancellationToken cancellationToken) =>
+        await _context.Set<User>()
+            .Where(user => user.Id == userId && user.TenantId == tenantId && user.IsActive && !user.IsDeleted)
+            .Select(user => (user.FirstName + " " + user.LastName).Trim())
+            .FirstOrDefaultAsync(cancellationToken);
     private static bool IsDefined<T>(T value) where T : struct, Enum => Enum.IsDefined(value);
     private static bool ValidateImpact(IReadOnlyList<RiskImpactType>? types, string? description) => types is not null && types.Count > 0 && types.Distinct().Count() == types.Count && types.All(IsDefined) && !string.IsNullOrWhiteSpace(description);
-    private Guid GetCurrentTenantId() => Guid.TryParse(_httpContextAccessor.HttpContext?.User.FindFirst("tenantId")?.Value, out var parsed) ? parsed : TenantConstants.DemoTenantId;
+    private Guid GetCurrentTenantId() => Guid.TryParse(_httpContextAccessor.HttpContext?.User.FindFirst("tenantId")?.Value, out var parsed) && parsed != Guid.Empty
+        ? parsed
+        : throw new InvalidOperationException("A trusted tenant context is required.");
     private WorkflowExecutionContext BuildWorkflowContext(string userId) => new(GetCurrentTenantId(), userId, _httpContextAccessor.HttpContext?.User.FindFirst("name")?.Value, _httpContextAccessor.HttpContext?.User.FindFirst("readOnly")?.Value == "true");
     private static Result<T> Failure<T>(string message) => Result<T>.Failure(Error.Validation(message));
 
@@ -403,10 +452,10 @@ public sealed class RiskService : IRiskService
         var names = await _resourceLookup.GetNamesAsync(risk.OwnerResourceId.HasValue ? new[] { risk.OwnerResourceId.Value } : Array.Empty<Guid>(), cancellationToken);
         return ToRiskDto(risk, project.Name, project.PublicId, names);
     }
-    private static RiskDto ToRiskDto(Risk risk, string projectName, Guid projectPublicId, IReadOnlyDictionary<Guid, string> names, IReadOnlyList<RiskImpactType>? impactTypes = null, LatestActionUpdate? latestActionUpdate = null) => new() { Id = risk.Id, ProjectId = risk.ProjectId, ProjectPublicId = projectPublicId, ProjectName = projectName, Title = risk.Title, Description = risk.Description, RiskLevel = risk.RiskLevel, Impact = risk.Impact, Likelihood = risk.Likelihood, Status = risk.Status, ImpactTypes = impactTypes ?? Array.Empty<RiskImpactType>(), LastActionUpdateText = latestActionUpdate?.UpdateText, LastActionUpdateAt = latestActionUpdate?.CreatedAt, LastActionUpdateCreatedBy = latestActionUpdate?.CreatedBy, OwnerResourceId = risk.OwnerResourceId, OwnerResourceName = risk.OwnerResourceId.HasValue ? names.GetValueOrDefault(risk.OwnerResourceId.Value) : null, CreatedAt = risk.CreatedAt, UpdatedAt = risk.UpdatedAt, CreatedBy = risk.CreatedBy, UpdatedBy = risk.UpdatedBy, RowVersion = risk.RowVersion };
+    private static RiskDto ToRiskDto(Risk risk, string projectName, Guid projectPublicId, IReadOnlyDictionary<Guid, string> names, IReadOnlyList<RiskImpactType>? impactTypes = null, LatestActionUpdate? latestActionUpdate = null) => new() { Id = risk.Id, ProjectId = risk.ProjectId, ProjectPublicId = projectPublicId, ProjectName = projectName, Title = risk.Title, Description = risk.Description, RiskLevel = risk.RiskLevel, Impact = risk.Impact, Likelihood = risk.Likelihood, Status = risk.Status, ImpactTypes = impactTypes ?? Array.Empty<RiskImpactType>(), LastActionUpdateText = latestActionUpdate?.UpdateText, LastActionUpdateAt = latestActionUpdate?.CreatedAt, LastActionUpdateCreatedBy = latestActionUpdate?.CreatedBy, OwnerResourceId = risk.OwnerResourceId, OwnerUserId = risk.OwnerUserId, OwnerResourceName = risk.OwnerResourceId.HasValue ? names.GetValueOrDefault(risk.OwnerResourceId.Value) : null, CreatedAt = risk.CreatedAt, UpdatedAt = risk.UpdatedAt, CreatedBy = risk.CreatedBy, UpdatedBy = risk.UpdatedBy, RowVersion = risk.RowVersion };
     private sealed record LatestActionUpdate(Guid RiskId, string UpdateText, DateTime CreatedAt, string CreatedBy);
     private static RiskImpactAssessmentDto ToImpactDto(RiskImpactAssessment assessment) => new() { Id = assessment.Id, RiskId = assessment.RiskId, ImpactTypes = assessment.ImpactTypes.OrderBy(type => type.ImpactType).Select(type => type.ImpactType).ToList(), Description = assessment.Description, CreatedAt = assessment.CreatedAt, UpdatedAt = assessment.UpdatedAt, CreatedBy = assessment.CreatedBy, RowVersion = assessment.RowVersion };
-    private static RiskActionDto ToActionDto(RiskAction action, IReadOnlyDictionary<Guid, string> names) => new() { Id = action.Id, RiskId = action.RiskId, Title = action.Title, Description = action.Description, OwnerResourceId = action.OwnerResourceId, OwnerResourceName = action.OwnerResourceId.HasValue ? names.GetValueOrDefault(action.OwnerResourceId.Value) : null, TargetDate = action.TargetDate, NextFollowUpDate = action.NextFollowUpDate, Status = action.Status, SortOrder = action.SortOrder, CreatedAt = action.CreatedAt, UpdatedAt = action.UpdatedAt, RowVersion = action.RowVersion, UpdateCount = action.Updates.Count };
+    private static RiskActionDto ToActionDto(RiskAction action, IReadOnlyDictionary<Guid, string> names) => new() { Id = action.Id, PublicId = action.PublicId, RiskId = action.RiskId, Title = action.Title, Description = action.Description, OwnerResourceId = action.OwnerResourceId, OwnerUserId = action.OwnerUserId, OwnerResourceName = action.OwnerResourceId.HasValue ? names.GetValueOrDefault(action.OwnerResourceId.Value) : null, TargetDate = action.TargetDate, NextFollowUpDate = ToDateOnly(action.NextFollowUpDate), Status = action.Status, SortOrder = action.SortOrder, CreatedAt = action.CreatedAt, UpdatedAt = action.UpdatedAt, RowVersion = action.RowVersion, UpdateCount = action.Updates.Count };
     private static RiskActionUpdateDto ToActionUpdateDto(RiskActionUpdate update) => new() { Id = update.Id, RiskActionId = update.RiskActionId, UpdateText = update.UpdateText, CreatedBy = update.CreatedBy, CreatedAt = update.CreatedAt, EntryType = update.EntryType, Changes = DeserializeChanges(update.ChangeDetailsJson) };
     private static IReadOnlyList<RiskActionChangeDto> DeserializeChanges(string? json)
     {
@@ -419,5 +468,11 @@ public sealed class RiskService : IRiskService
         if (!string.Equals(oldValue, newValue, StringComparison.Ordinal)) changes.Add(new RiskActionChangeDto { Field = field, OldValue = oldValue, NewValue = newValue });
     }
     private static string? FormatDate(DateTime? value) => value?.ToUniversalTime().ToString("O", System.Globalization.CultureInfo.InvariantCulture);
+    private static string? FormatDate(DateOnly? value) => value?.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+    private static string? FormatDateOnly(DateTime? value) => value.HasValue
+        ? DateOnly.FromDateTime(value.Value).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)
+        : null;
+    private static DateTime? ToPersistenceDate(DateOnly? value) => value?.ToDateTime(TimeOnly.MinValue, DateTimeKind.Unspecified);
+    private static DateOnly? ToDateOnly(DateTime? value) => value.HasValue ? DateOnly.FromDateTime(value.Value) : null;
     private async Task AuditAsync(string type, Guid id, string action, string userId, object? values, CancellationToken cancellationToken) => await _auditService.LogAsync(new AuditEntry { EntityType = type, EntityId = id, Action = action, UserId = Guid.TryParse(userId, out var parsed) ? parsed : null, Timestamp = DateTime.UtcNow, NewValues = values is null ? null : System.Text.Json.JsonSerializer.Serialize(values), CreatedBy = userId }, cancellationToken);
 }

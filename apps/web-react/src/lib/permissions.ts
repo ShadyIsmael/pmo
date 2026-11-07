@@ -3,26 +3,12 @@
 // returned verbatim by the backend. Keep these in sync with NEXUS.Persistence seed data.
 
 export const Permissions = {
-  Projects: {
-    Read: "projects.read",
-    Write: "projects.write",
-    Delete: "projects.delete",
-  },
-  Portfolios: {
-    Read: "portfolios.read",
-    Write: "portfolios.write",
-  },
   Resources: {
-    Read: "resources.read",
-    Write: "resources.write",
     View: "Resource.View",
     Assign: "Resource.Assign",
-    Allocate: "Resource.Allocate",
     Create: "Resource.Create",
     Edit: "Resource.Edit",
     Delete: "Resource.Delete",
-    Manage: "Resource.Manage",
-    ManageRates: "Resource.ManageRates",
     ViewCostRate: "Resource.ViewCostRate",
     EditCostRate: "Resource.EditCostRate",
   },
@@ -32,13 +18,20 @@ export const Permissions = {
     Edit: "Project.Edit",
     Delete: "Project.Delete",
   },
+  ProjectSettings: {
+    View: "ProjectSettings.View",
+    Edit: "ProjectSettings.Edit",
+  },
+  Issue: {
+    View: "Issue.View",
+  },
+  Plugin: {
+    View: "Plugin.View",
+  },
   StatusReport: {
     View: "StatusReport.View",
     Create: "StatusReport.Create",
     Edit: "StatusReport.Edit",
-    Generate: "StatusReport.Generate",
-    Submit: "StatusReport.Submit",
-    Approve: "StatusReport.Approve",
     Publish: "StatusReport.Publish",
     Export: "StatusReport.Export",
     ManageConfiguration: "StatusReport.ManageConfiguration",
@@ -48,7 +41,6 @@ export const Permissions = {
     Create: "Team.Create",
     Edit: "Team.Edit",
     Delete: "Team.Delete",
-    Manage: "Team.Manage",
   },
   Stakeholders: {
     Read: "Stakeholders.Read",
@@ -74,16 +66,23 @@ export const Permissions = {
   },
   Planning: {
     View: "Planning.View",
-    Manage: "Planning.Manage",
+    Edit: "Planning.Edit",
     Lifecycle: "Planning.Lifecycle",
   },
   Portfolio: {
     View: "Portfolio.View",
-    Manage: "Portfolio.Manage",
+    Create: "Portfolio.Create",
+    Edit: "Portfolio.Edit",
+    Archive: "Portfolio.Archive",
+    Reactivate: "Portfolio.Reactivate",
   },
   Program: {
     View: "Program.View",
-    Manage: "Program.Manage",
+    Create: "Program.Create",
+    CreateAcrossPortfolios: "Program.CreateAcrossPortfolios",
+    Edit: "Program.Edit",
+    Archive: "Program.Archive",
+    Reactivate: "Program.Reactivate",
   },
   WorkItem: {
     View: "WorkItem.View",
@@ -112,30 +111,148 @@ export const Permissions = {
     TemplateManage: "Document.TemplateManage",
   },
   Users: {
-    Read: "users.read",
-    Write: "users.write",
-    ResetPassword: "users.reset-password",
+    View: "Users.View",
+    ResetPassword: "Users.ResetPassword",
+    ManageAccounts: "Users.ManageAccounts",
+    SetStatus: "Users.SetStatus",
+    AssignRoles: "Users.AssignRoles",
+    ManageOverrides: "UserPermissions.Manage",
   },
-  Finances: {
-    Read: "finances.read",
-    Write: "finances.write",
+  Roles: {
+    View: "Roles.View",
+    Create: "Roles.Create",
+    EditDetails: "Roles.EditDetails",
+    ConfigurePermissions: "Roles.ConfigurePermissions",
+    Delete: "Roles.Delete",
   },
-  Reports: {
-    Read: "reports.read",
-    Export: "reports.export",
+  TenantAdministration: {
+    ManageScope: "TenantAdministration.ManageScope",
+  },
+  ProjectFinance: {
+    View: "ProjectFinance.View",
+  },
+  ProjectFinancialFoundation: {
+    View: "ProjectFinancialFoundation.View",
+  },
+  ProgramFinancialRollup: {
+    View: "ProgramFinancialRollup.View",
+  },
+  PortfolioFinancialRollup: {
+    View: "PortfolioFinancialRollup.View",
+  },
+  CostUtilization: {
+    Export: "CostUtilization.Export",
+  },
+  Budget: {
+    View: "Budget.View",
+    Create: "Budget.Create",
+    Edit: "Budget.Edit",
+    Delete: "Budget.Delete",
+  },
+  Cost: {
+    View: "Cost.View",
+    Create: "Cost.Create",
+    Edit: "Cost.Edit",
+    Delete: "Cost.Delete",
+  },
+  Commitment: {
+    View: "Commitment.View",
+    Create: "Commitment.Create",
+    Edit: "Commitment.Edit",
+    Close: "Commitment.Close",
+    Cancel: "Commitment.Cancel",
+    Delete: "Commitment.Delete",
+  },
+  PaymentObligation: {
+    View: "PaymentObligation.View",
+    Create: "PaymentObligation.Create",
+    Edit: "PaymentObligation.Edit",
+    Delete: "PaymentObligation.Delete",
+  },
+  PaymentObligationSettlement: {
+    Record: "PaymentObligationSettlement.Record",
+  },
+  ProjectAnnualBudget: {
+    View: "ProjectAnnualBudget.View",
+    Create: "ProjectAnnualBudget.Create",
+    EditDraft: "ProjectAnnualBudget.EditDraft",
+    SubmitForReview: "ProjectAnnualBudget.SubmitForReview",
+    Approve: "ProjectAnnualBudget.Approve",
+    ReviseApproved: "ProjectAnnualBudget.ReviseApproved",
+    ManageApprovalConfiguration: "ProjectAnnualBudget.ManageApprovalConfiguration",
+    Close: "ProjectAnnualBudget.Close",
+    CloseApprove: "ProjectAnnualBudget.CloseApprove",
+    CarryForward: "ProjectAnnualBudget.CarryForward",
+  },
+  ProjectPaymentRequest: {
+    View: "ProjectPaymentRequest.View",
+    Create: "ProjectPaymentRequest.Create",
+    EditDraft: "ProjectPaymentRequest.EditDraft",
+    Submit: "ProjectPaymentRequest.Submit",
+    Cancel: "ProjectPaymentRequest.Cancel",
+    Approve: "ProjectPaymentRequest.Approve",
+  },
+  ProjectApproval: {
+    Override: "ProjectApproval.Override",
+  },
+  BudgetRevision: {
+    View: "BudgetRevision.View",
+    Create: "BudgetRevision.Create",
+    EditDraft: "BudgetRevision.EditDraft",
+    SubmitForReview: "BudgetRevision.SubmitForReview",
+    Approve: "BudgetRevision.Approve",
+    Cancel: "BudgetRevision.Cancel",
+    Delete: "BudgetRevision.Delete",
+  },
+  ProjectFinancialCeiling: {
+    ApproveChange: "ProjectFinancialCeiling.ApproveChange",
+  },
+  ProjectSettlement: {
+    View: "ProjectSettlement.View",
+  },
+  ProjectAnnualBudgetClosing: {
+    View: "ProjectAnnualBudgetClosing.View",
+  },
+  ProjectFinancialAuditTrail: {
+    View: "ProjectFinancialAuditTrail.View",
+  },
+  PaymentSettlement: {
+    Record: "PaymentSettlement.Record",
+  },
+  ProjectPaymentReversal: {
+    Create: "ProjectPaymentReversal.Create",
+    Approve: "ProjectPaymentReversal.Approve",
+  },
+  Report: {
+    View: "Report.View",
+  },
+  Dashboard: {
+    View: "Dashboard.View",
   },
   Settings: {
-    Read: "settings.read",
-    Write: "settings.write",
+    View: "Settings.View",
+    ManageTenantConfiguration: "Settings.ManageTenantConfiguration",
+  },
+  EmailNotifications: {
+    View: "EmailNotifications.View",
+    Manage: "EmailNotifications.Manage",
+    Test: "EmailNotifications.Test",
+    Logs: "EmailNotifications.Logs",
+  },
+  ReferenceData: {
+    View: "ReferenceData.View",
+    Create: "ReferenceData.Create",
+    Edit: "ReferenceData.Edit",
+    Delete: "ReferenceData.Delete",
   },
   Directory: {
     View: "Directory.View",
-    Manage: "Directory.Manage",
     TestConnection: "Directory.TestConnection",
     PreviewSync: "Directory.PreviewSync",
     ExecuteSync: "Directory.ExecuteSync",
     ManageMappings: "Directory.ManageMappings",
     ManageProvisioningPolicy: "Directory.ManageProvisioningPolicy",
+    ManageConnection: "Directory.ManageConnection",
   },
   Workflow: {
     View: "Workflow.View",
@@ -147,9 +264,13 @@ export const Permissions = {
     Initiate: "Governance.AssignmentRecovery.Initiate",
     Manage: "Governance.AssignmentRecovery.Manage",
   },
+  Audit: {
+    View: "Audit.View",
+  },
 } as const;
 
-export const DirectoryAccessPermissions = Object.values(Permissions.Directory);
+export const DirectoryAccessPermissions = [Permissions.Directory.View];
+export const ReferenceDataAccessPermissions = [Permissions.ReferenceData.View];
 
 export type Permission = (typeof Permissions)[keyof typeof Permissions][keyof typeof Permissions[keyof typeof Permissions]];
 

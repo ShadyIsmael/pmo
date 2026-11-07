@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { I18nProvider } from "../i18n/messages";
@@ -6,10 +6,9 @@ import { ManagedPortfolioDetailPage, ManagedProgramDetailPage } from "../feature
 
 const fixtures = vi.hoisted(() => ({
   overview: {
-    program: { id: "program-1", name: "Core Renewal", code: "PGM-001", status: "Active", health: "Amber", programManagerName: "Alex Manager", portfolioName: "Technology", currency: "USD", startDate: "2026-01-01", endDate: "2026-12-31", budget: 125000 },
+    program: { id: "program-1", name: "Core Renewal", code: "PGM-001", status: "Active", health: "Amber", programManagerName: "Alex Manager", portfolioName: "Technology", currency: "USD" },
     summary: { totalProjects: 8, activeProjects: 5, completedProjects: 2, projectsAtRisk: 3, criticalProjects: 1, averageProjectProgress: 42, projectHealthDistribution: { Green: 4, Amber: 3, Red: 1 } },
     delivery: { projectsBehindSchedule: 2, projectsWithScheduleData: 7, totalMilestones: 12, overdueMilestones: 1, dueSoonMilestones: 2, onTrackMilestones: 7, completedMilestones: 2 },
-    financials: { baseCurrency: "USD", hasMixedCurrencies: false, groups: [{ currency: "USD", isBaseCurrency: true, budget: 125000, actual: 42000, committed: 10000, forecast: 130000, remaining: 73000, projects: [{ projectId: "finance-sample", projectName: "Finance sample", budget: 100, actual: -20, committed: 10, forecast: -5 }] }] },
     risks: { openCount: 4, overdueCount: 1, bySeverity: { High: 2, Medium: 2 } },
     issues: { openCount: 2, overdueCount: 1, bySeverity: { High: 1, Low: 1 } },
     resources: { activeAllocationCount: 9, activeResourceCount: 6, sharedResourceCount: 1, overAllocatedResourceCount: 1, allocatedHoursPerWeek: 210, pressure: [] },
@@ -21,10 +20,9 @@ const fixtures = vi.hoisted(() => ({
     upcomingMeetings: [{ id: "meeting-1", title: "Weekly review", startTime: "2026-03-12T10:00:00Z", projectId: "project-1", publicId: "project-1", projectName: "Core Project" }],
   },
   portfolioOverview: {
-    portfolio: { id: "portfolio-1", name: "Technology", code: "PF-001", status: "Active", health: "Green", currency: "USD", ownerName: "Alex Manager", strategicObjective: "Modernize platforms", priority: "High", startDate: "2026-01-01", endDate: "2026-12-31" },
+    portfolio: { id: "portfolio-1", name: "Technology", code: "PF-001", status: "Active", health: "Green", currency: "USD", ownerName: "Alex Manager", strategicObjective: "Modernize platforms", priority: "High" },
     summary: { totalPrograms: 1, totalProjects: 2, programContainedProjects: 1, directPortfolioProjects: 1, activeProjects: 1, completedProjects: 0, atRiskProjects: 1, criticalProjects: 0, averageProjectProgress: 50, programHealthDistribution: { Green: 1 }, projectHealthDistribution: { Amber: 1 } },
     delivery: { programDeliveryConditions: { OnTrack: 1 }, projectScheduleConditions: { Delayed: 1 }, delayedProjects: 1, delayedPrograms: 0, projectsWithScheduleData: 2, totalMilestones: 1, overdueMilestones: 1, dueSoonMilestones: 0, onTrackMilestones: 0, completedMilestones: 0, projectProgressDistribution: {} },
-    financials: { baseCurrency: "USD", hasMixedCurrencies: false, groups: [{ currency: "USD", isBaseCurrency: true, projectCount: 2, budget: 50000, allocated: 25000, actual: 12000, committed: 3000, forecast: 52000, remaining: 10000, variance: -2000, contributions: [] }] },
     risks: { sourceScope: "Project", openCount: 1, criticalCount: 0, highCount: 1, overdueCount: 0, byProgram: {}, byProject: {} },
     issues: { openCount: 1, criticalCount: 0, overdueCount: 0, byProgram: {}, byProject: {} },
     resources: { activeAllocationCount: 2, activeResourceCount: 2, sharedResourceCount: 0, crossProgramResourceCount: 0, overAllocatedResourceCount: 0, allocatedHoursPerWeek: 40, pressure: [] },
@@ -71,7 +69,9 @@ vi.mock("../features/delivery/api/delivery", async (importOriginal) => {
   };
 });
 
-vi.mock("@auth/AuthProvider", () => ({ useAuth: () => ({ user: { id: fixtures.userId, permissions: fixtures.permissions } }) }));
+vi.mock("../features/delivery/FinancialRollupView", () => ({
+  FinancialRollupView: ({ kind }: { kind: "Program" | "Portfolio" }) => <div>{kind} calculated financial rollup</div>,
+}));vi.mock("@auth/AuthProvider", () => ({ useAuth: () => ({ user: { id: fixtures.userId, permissions: fixtures.permissions } }) }));
 vi.mock("@components/ui/ConfirmProvider", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@components/ui/ConfirmProvider")>()),
   useConfirm: () => vi.fn().mockResolvedValue(true),
@@ -105,6 +105,9 @@ vi.mock("../features/delivery/api/managerHandovers", () => {
     useRejectManagerHandover: () => ({ mutateAsync: vi.fn(), isPending: false }),
   };
 });
+vi.mock("../features/delivery/FinancialRollupView", () => ({
+  FinancialRollupView: ({ kind }: { kind: "Program" | "Portfolio" }) => <div>{kind} calculated financial rollup</div>,
+}));
 vi.mock("@api/management", () => ({
   managementCacheScopeKey: (userId?: string) => userId ?? "anonymous",
   useManagement: () => ({ context: null, effectiveReadOnly: fixtures.effectiveReadOnly, loading: false, canMutate: fixtures.canMutate }),
@@ -126,7 +129,6 @@ describe("program management overview source parity", () => {
   beforeEach(() => {
     window.localStorage.setItem("nexus-locale", "en");
     fixtures.overview.program.status = "Active";
-    fixtures.overview.financials.groups[0].projects = [];
     fixtures.archive.mockReset().mockResolvedValue(undefined);
     fixtures.reactivate.mockReset().mockResolvedValue(undefined);
     fixtures.permissions = [];
@@ -145,7 +147,7 @@ describe("program management overview source parity", () => {
     expect(screen.getByText("Completed Projects")).toBeInTheDocument();
     expect(screen.getByText("Schedule baseline needs recovery")).toHaveAttribute("href", "/projects/project-1");
     const dashboard = screen.getByRole("region", { name: "Dashboard" });
-    expect(dashboard.querySelectorAll("[data-widget-id]")).toHaveLength(7);
+    expect(dashboard.querySelectorAll("[data-widget-id]")).toHaveLength(6);
     expect(dashboard.querySelector('[data-widget-id="program.health-overview"]')).toBeInTheDocument();
     expect(dashboard.querySelector('[data-widget-id="program.delivery-milestones"]')).toBeInTheDocument();
     expect(dashboard.querySelector('[data-widget-id="program.risk-issues"]')).toBeInTheDocument();
@@ -156,18 +158,23 @@ describe("program management overview source parity", () => {
     expect(screen.getAllByText("Status Reports").length).toBeGreaterThanOrEqual(2);
   });
 
-  it("uses dark blue for aggregated financial totals and sign colors for project amounts", () => {
-    fixtures.overview.financials.groups[0].projects = [{ projectId: "finance-sample", projectName: "Finance sample", budget: 100, actual: -20, committed: 10, forecast: -5 }];
+  it("uses the authorized calculated financial rollup instead of overview totals", () => {
+    fixtures.permissions = [
+      "Program.View",
+      "ProgramFinancialRollup.View",
+    ];
     renderProgram();
 
     fireEvent.click(screen.getByRole("tab", { name: "Financials" }));
+    expect(screen.getByText("Program calculated financial rollup")).toBeInTheDocument();
+    expect(screen.queryByText("125000")).not.toBeInTheDocument();
+  });
 
-    const budgetLabel = screen.getAllByText("Budget", { exact: true })[0];
-    expect(budgetLabel.parentElement?.querySelector("p.mt-1")).toHaveClass("text-financial-total");
-    const row = screen.getByRole("row", { name: /Finance sample/ });
-    const cells = within(row).getAllByRole("cell");
-    expect(cells[1]).toHaveClass("text-success");
-    expect(cells[2]).toHaveClass("text-destructive");
+  it("does not let ProjectFinance.View shell access expose Program rollups", () => {
+    fixtures.permissions = ["Program.View", "ProjectFinance.View"];
+    renderProgram();
+
+    expect(screen.queryByRole("tab", { name: "Financials" })).not.toBeInTheDocument();
   });
 
   it("localizes the grouped overview card titles in Arabic", () => {
@@ -183,7 +190,7 @@ describe("program management overview source parity", () => {
     renderPortfolio();
 
     const dashboard = screen.getByRole("region", { name: "Overview" });
-    expect(dashboard.querySelectorAll("[data-widget-id]")).toHaveLength(7);
+    expect(dashboard.querySelectorAll("[data-widget-id]")).toHaveLength(6);
     expect(dashboard.querySelector('[data-widget-id="portfolio.health-overview"]')).toBeInTheDocument();
     expect(dashboard.querySelector('[data-widget-id="portfolio.delivery-milestones"]')).toBeInTheDocument();
     expect(dashboard.querySelector('[data-widget-id="portfolio.risk-issues"]')).toBeInTheDocument();
@@ -251,8 +258,8 @@ describe("program management overview source parity", () => {
     expect(screen.getByRole("columnheader", { name: "Project" })).toBeInTheDocument();
   });
 
-  it("supports edit and reversible archive with Program.Manage in mutable context", async () => {
-    fixtures.permissions = ["Program.Manage"];
+  it("supports edit and reversible archive with explicit Program actions in mutable context", async () => {
+    fixtures.permissions = ["Program.Edit", "Program.Archive", "Program.Reactivate"];
     fixtures.canMutate = true;
     renderProgram();
 
@@ -265,14 +272,14 @@ describe("program management overview source parity", () => {
 
   it("reactivates archived programs and hides mutations in read-only or unauthorized contexts", async () => {
     fixtures.overview.program.status = "Archived";
-    fixtures.permissions = ["Program.Manage"];
+    fixtures.permissions = ["Program.Edit", "Program.Archive", "Program.Reactivate"];
     fixtures.canMutate = true;
     const { unmount } = renderProgram();
     fireEvent.click(screen.getByRole("button", { name: "Reactivate" }));
     await waitFor(() => expect(fixtures.reactivate).toHaveBeenCalledWith("program-1"));
 
     unmount();
-    fixtures.permissions = ["Program.Manage"];
+    fixtures.permissions = ["Program.Edit", "Program.Archive", "Program.Reactivate"];
     fixtures.canMutate = true;
     fixtures.effectiveReadOnly = true;
     renderProgram();

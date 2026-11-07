@@ -253,6 +253,27 @@ public sealed class ProjectChangeRequestWorkflowAdapter(
             : Result.Failure(Error.Forbidden("Change Request access is required."));
     }
 
+    /// <summary>
+    /// Transition-level gate: reading a change request (<c>ChangeRequest.View</c>) does not
+    /// authorize submitting, cancelling, approving or rejecting it. The granular, assignment
+    /// aware rules still run in <see cref="ValidateTransitionAsync"/>.
+    /// </summary>
+    public async Task<Result> AuthorizeTransitionAsync(WorkflowTransitionContext transition, CancellationToken cancellationToken = default)
+    {
+        if (transition.Execution.ReadOnly || managementContext.Current?.EffectiveReadOnly == true)
+            return Result.Failure(WorkflowErrors.ReadOnlyViewAs);
+        var request = await FindAccessibleAsync(transition.EntityId, transition.Execution, cancellationToken)
+            ?? await FindAssignedApprovalAsync(transition.EntityId, transition.Execution, cancellationToken);
+        if (request is null) return Result.Failure(WorkflowErrors.EntityNotAccessible(EntityType, transition.EntityId));
+        var actor = ParseUserId(transition.Execution.UserId);
+        if (httpContextAccessor.HttpContext?.User.Identity?.IsAuthenticated != true || actor == Guid.Empty)
+            return Result.Failure(Error.Unauthorized("An authenticated user is required."));
+        var permissions = await effectivePermissions.GetEffectivePermissionsAsync(actor, transition.Execution.TenantId, cancellationToken);
+        return permissions.Overlaps(new[] { "ChangeRequest.Manage", "ChangeRequest.Approve" })
+            ? Result.Success()
+            : Result.Failure(Error.Forbidden("Change Request management or approval permission is required for workflow transitions."));
+    }
+
     public async Task<Result> ValidateTransitionAsync(WorkflowTransitionContext transition, CancellationToken cancellationToken = default)
     {
         var code = transition.Transition.Code;
@@ -435,8 +456,9 @@ public sealed class ProjectChangeRequestWorkflowAdapter(
         var request = await query.FirstOrDefaultAsync(item => item.Id == id && item.TenantId == execution.TenantId && !item.IsDeleted
             && item.Project != null && item.Project.TenantId == execution.TenantId && !item.Project.IsDeleted, cancellationToken);
         if (request is null || execution.TenantId == Guid.Empty) return null;
+        // An empty project scope means "no project assignments", never "all projects".
         var scope = managementContext.Current?.Scope.ProjectIds;
-        return scope is not null && scope.Count > 0 && !scope.Contains(request.ProjectId) ? null : request;
+        return scope is not null && scope.Contains(request.ProjectId) ? request : null;
     }
 
     private async Task<ProjectChangeRequest?> FindAssignedApprovalAsync(Guid id, WorkflowExecutionContext execution, CancellationToken cancellationToken, bool tracked = false)

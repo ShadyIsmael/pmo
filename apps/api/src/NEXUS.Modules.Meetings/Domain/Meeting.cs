@@ -4,6 +4,7 @@ namespace NEXUS.Modules.Meetings.Domain;
 
 public class Meeting : BaseEntity
 {
+    public Guid PublicId { get; set; } = Guid.NewGuid();
     public string Title { get; set; } = string.Empty;
     public string? Description { get; set; }
     public Guid? ProjectId { get; set; }
@@ -12,6 +13,8 @@ public class Meeting : BaseEntity
     public string? MeetingLink { get; set; }
     public DateTime StartTime { get; set; }
     public DateTime EndTime { get; set; }
+    public DateTime? ActualStartTime { get; set; }
+    public DateTime? ActualEndTime { get; set; }
     public string? Status { get; set; }
     public int? ReminderOffsetMinutes { get; set; }
     public string? Notes { get; set; }

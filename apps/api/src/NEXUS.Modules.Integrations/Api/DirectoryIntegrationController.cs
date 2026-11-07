@@ -31,12 +31,12 @@ public sealed class DirectoryIntegrationController(IDirectoryIntegrationService 
         await RunAsync(() => service.GetConnectionsAsync(TenantId(), cancellationToken));
 
     [HttpPost("connections")]
-    [Authorize(Policy = "Directory.Manage")]
+    [Authorize(Policy = "Directory.ManageConnection")]
     public async Task<IActionResult> CreateConnection([FromBody] SaveDirectoryConnectionRequest request, CancellationToken cancellationToken) =>
         await RunAsync(() => service.SaveConnectionAsync(TenantId(), ActorId(), null, request, cancellationToken), StatusCodes.Status201Created);
 
     [HttpPut("connections/{connectionId:guid}")]
-    [Authorize(Policy = "Directory.Manage")]
+    [Authorize(Policy = "Directory.ManageConnection")]
     public async Task<IActionResult> UpdateConnection(Guid connectionId, [FromBody] SaveDirectoryConnectionRequest request, CancellationToken cancellationToken) =>
         await RunAsync(() => service.SaveConnectionAsync(TenantId(), ActorId(), connectionId, request, cancellationToken));
 
@@ -51,7 +51,7 @@ public sealed class DirectoryIntegrationController(IDirectoryIntegrationService 
         await RunAsync(() => service.GetScopeAsync(TenantId(), connectionId, cancellationToken));
 
     [HttpPut("connections/{connectionId:guid}/scope")]
-    [Authorize(Policy = "Directory.Manage")]
+    [Authorize(Policy = "Directory.ManageConnection")]
     public async Task<IActionResult> SaveScope(Guid connectionId, [FromBody] SaveDirectorySyncScopeRequest request, CancellationToken cancellationToken) =>
         await RunAsync(() => service.SaveScopeAsync(TenantId(), ActorId(), connectionId, request, cancellationToken));
 
@@ -66,7 +66,7 @@ public sealed class DirectoryIntegrationController(IDirectoryIntegrationService 
         await RunAsync(() => service.SaveFieldMappingsAsync(TenantId(), ActorId(), connectionId, request, cancellationToken));
 
     [HttpGet("connections/{connectionId:guid}/groups")]
-    [Authorize(Policy = "Directory.GroupCatalog")]
+    [Authorize(Policy = "Directory.View")]
     public async Task<IActionResult> GetGroups(Guid connectionId, [FromQuery] int page = 1, [FromQuery] int pageSize = 50, [FromQuery] string? search = null, CancellationToken cancellationToken = default) =>
         await RunAsync(() => service.GetDirectoryGroupsAsync(TenantId(), connectionId, new DirectoryProviderQuery(page, pageSize, search), cancellationToken));
 

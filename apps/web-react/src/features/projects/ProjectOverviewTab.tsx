@@ -10,7 +10,6 @@ import {
   CheckCircle2,
   CircleDollarSign,
   Clock3,
-  FilePen,
   FileText,
   GitBranch,
   Info,
@@ -29,13 +28,16 @@ import {
   Legend,
   Pie,
   PieChart,
-  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
 import { useI18n } from "@i18n/messages";
+import { formatCurrencyValue } from "@lib/formatting/currency";
+import { formatNumberValue } from "@lib/formatting/number";
+import { useAuth } from "@auth/AuthProvider";
+import { hasPermission, Permissions } from "@lib/permissions";
 import { formatDate, cn } from "@lib/utils";
 import { getRiskLevelTextClass, getStatusTextClass, getStatusTone } from "@lib/status-presentation";
 import { Card, CardContent, CardHeader } from "@components/ui/Card";
@@ -70,18 +72,12 @@ function displayDate(value?: string | null, locale = "en") {
 
 function englishNumber(value: number | null | undefined, locale: string, fractionDigits = 0) {
   return isFiniteNumber(value)
-    ? new Intl.NumberFormat(locale === "ar" ? "ar-EG-u-nu-latn" : locale, { minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits }).format(value)
+    ? formatNumberValue(value, locale, { minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits })
     : "—";
 }
 
-function nullableCurrency(value: number | null | undefined, currency: string, locale: string) {
-  if (!isFiniteNumber(value)) return "—";
-  const code = currency?.trim() || "USD";
-  try {
-    return new Intl.NumberFormat(locale === "ar" ? "ar-EG-u-nu-latn" : "en-US", { style: "currency", currency: code, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
-  } catch {
-    return `${value.toFixed(2)} ${code}`;
-  }
+function nullableCurrency(value: number | null | undefined, currency: string | undefined, locale: string) {
+  return formatCurrencyValue(value, currency, locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function percent(value: number | null | undefined, locale: string) {
@@ -94,12 +90,13 @@ function toLocalDateString(date: Date) {
   return `${date.getFullYear()}-${month}-${day}`;
 }
 
-function getCapacityReportingPeriod(periodType: ProjectCapacityPeriodType, now = new Date()) {
+function getCapacityReportingPeriod(periodType: ProjectCapacityPeriodType, now = new Date(), firstDayOfWeek = 1) {
   let start: Date;
   let end: Date;
 
   if (periodType === "Week") {
-    start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay());
+    const startOffset = (now.getDay() - firstDayOfWeek + 7) % 7;
+    start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - startOffset);
     end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 7);
   } else if (periodType === "Quarter") {
     const quarterStartMonth = Math.floor(now.getMonth() / 3) * 3;
@@ -142,41 +139,6 @@ function SectionTitle({ title, description, action, icon: Icon, accent = "bg-pri
       {action}
     </div>
   );
-}
-
-const EVM_REASON_KEYS: Record<string, string> = {
-  NO_APPROVED_BASELINE: "projects.evmReasons.noApprovedBaseline",
-  NO_BASELINE_ASSIGNMENTS: "projects.evmReasons.noBaselineAssignments",
-  PLANNED_HOURS_MISSING: "projects.evmReasons.plannedHoursMissing",
-  PLANNED_HOURS_INVALID: "projects.evmReasons.plannedHoursInvalid",
-  BASELINE_DATES_INVALID: "projects.evmReasons.baselineDatesInvalid",
-  ACTIVITY_PROGRESS_MISSING: "projects.evmReasons.activityProgressMissing",
-  RESOURCE_NOT_FOUND: "projects.evmReasons.resourceNotFound",
-  RESOURCE_ASSIGNMENT_MISSING: "projects.evmReasons.resourceAssignmentMissing",
-  RESOURCE_CAPACITY_MISSING: "projects.evmReasons.resourceCapacityMissing",
-  RESOURCE_COST_PROFILE_MISSING: "projects.evmReasons.resourceCostProfileMissing",
-  RESOURCE_COST_PROFILE_AMBIGUOUS: "projects.evmReasons.resourceCostProfileAmbiguous",
-  CURRENCY_MISMATCH: "projects.evmReasons.currencyMismatch",
-  NO_ACTUAL_COST_DATA: "projects.evmReasons.noActualCostData",
-  NON_LABOR_COSTS_NOT_BASELINED: "projects.evmReasons.nonLaborCostsNotBaselined",
-  ZERO_PLANNED_VALUE: "projects.evmReasons.zeroPlannedValue",
-  ZERO_ACTUAL_COST: "projects.evmReasons.zeroActualCost",
-  EVM_DATA_INCOMPLETE: "projects.evmReasons.dataIncomplete",
-  NO_REPORTING_CONFIGURATION: "projects.evmReasons.NO_REPORTING_CONFIGURATION",
-  NO_ELIGIBLE_EXECUTION_PLANS: "projects.evmReasons.NO_ELIGIBLE_EXECUTION_PLANS",
-  INCOMPATIBLE_CURRENCY: "projects.evmReasons.INCOMPATIBLE_CURRENCY",
-  REPORTING_CONFIGURATION_INVALID: "projects.evmReasons.REPORTING_CONFIGURATION_INVALID",
-  OVERLAPPING_SCOPE: "projects.evmReasons.OVERLAPPING_SCOPE",
-  PROGRESS_HISTORY_UNAVAILABLE: "projects.evmReasons.PROGRESS_HISTORY_UNAVAILABLE",
-  NO_PLANNED_VALUE: "projects.evmReasons.NO_PLANNED_VALUE",
-  NO_EARNED_VALUE: "projects.evmReasons.NO_EARNED_VALUE",
-  NO_ACTUAL_COST: "projects.evmReasons.NO_ACTUAL_COST",
-  INCOMPLETE_COST_ATTRIBUTION: "projects.evmReasons.INCOMPLETE_COST_ATTRIBUTION",
-  UNIFIED_CROSS_PLAN_NETWORK_UNAVAILABLE: "projects.evmReasons.UNIFIED_CROSS_PLAN_NETWORK_UNAVAILABLE",
-};
-
-function evmReasonText(reason: string | null | undefined, t: (key: string) => string) {
-  return reason ? t(EVM_REASON_KEYS[reason] ?? EVM_REASON_KEYS.EVM_DATA_INCOMPLETE) : t("projects.evmUnavailable");
 }
 
 function DetailItem({ label, children, icon: Icon, accent = "text-muted-foreground/60", className = "" }: { label: string; children: React.ReactNode; icon?: LucideIcon; accent?: string; className?: string }) {
@@ -337,29 +299,16 @@ function ProjectKpiSummary({ project, overview, locale }: { project: ProjectDto;
   const progressLabel = isFiniteNumber(overview?.planProgress)
     ? t("projects.progressSourceWorkingPlan")
     : t("projects.progressSourceProjectRecord");
-  const progressDelta = isFiniteNumber(progress) && isFiniteNumber(latestReport?.overallProgressPercent) ? progress - latestReport.overallProgressPercent : null;
+  const progressDelta = isFiniteNumber(progress) && isFiniteNumber(latestReport?.overallProgressPercent)
+    ? progress - latestReport.overallProgressPercent
+    : null;
   const progressComparisonLabel = isFiniteNumber(latestReport?.overallProgressPercent)
     ? t("projects.progressComparedToPublished", { value: percent(latestReport.overallProgressPercent, locale) })
     : "";
   const projectHealthTone = getStatusTone(projectHealth);
   const progressTone = projectHealthTone === "red" ? "red" : projectHealthTone === "amber" ? "amber" : projectHealthTone === "green" ? "green" : "neutral";
-  const overdueIssues = overview?.issues.overdueOpenIssueCount ?? null;
-  const evmCurrency = overview?.currency ?? project.currency;
-  const sv = overview?.scheduleVariance ?? null;
-  const cv = overview?.costVariance ?? null;
-  const scheduleVarianceUnavailableReason = overview?.schedulePerformanceIndexUnavailableReason
-    ?? overview?.earnedValueUnavailableReason
-    ?? overview?.plannedValueUnavailableReason;
-  const varianceData = [
-    { name: t("projects.scheduleVariance"), value: sv },
-    { name: t("projects.costVariance"), value: cv },
-  ].filter((item): item is { name: string; value: number } => isFiniteNumber(item.value));
-  const varianceLimit = Math.max(1, ...varianceData.map((item) => Math.abs(item.value)));
-  const attentionData = overdueIssues !== null
-    ? [{ name: t("projects.overdueOpenIssues"), value: overdueIssues }]
-    : [];
 
-  return <section aria-labelledby="project-kpi-heading" className="min-w-0">
+  return <section aria-labelledby="project-kpi-heading" className="min-w-0 h-full">
     <Card className={cn(PREMIUM_CARD, "h-full")}>
       <CardHeader className={PREMIUM_CARD_HEADER}>
         <div className="flex flex-col gap-1.5 border-b border-border/60 pb-3 sm:flex-row sm:items-start sm:justify-between">
@@ -367,61 +316,18 @@ function ProjectKpiSummary({ project, overview, locale }: { project: ProjectDto;
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><BarChart3 className="h-4 w-4" /></span>
             <div className="min-w-0">
               <h2 id="project-kpi-heading" className="text-sm font-semibold tracking-tight">{t("projects.kpiSummary")}</h2>
-              <p className="mt-0.5 text-[11px] text-muted-foreground">{latestReport ? `${t("projects.publishedAt")}: ${displayDate(latestReport.publishedAt, locale)}` : t("projects.noStatusReports")}</p>
             </div>
           </div>
         </div>
       </CardHeader>
-      <CardContent className={PREMIUM_CARD_CONTENT}>
-        <div className="grid min-w-0 items-center gap-4 sm:grid-cols-[minmax(150px,0.8fr)_minmax(0,1.2fr)]">
+      <CardContent className={cn(PREMIUM_CARD_CONTENT, "flex h-full items-center justify-center")}>
+        <div className="mx-auto w-full max-w-sm">
           <ProgressGauge label={progressLabel} value={progress} comparison={progressDelta} comparisonLabel={progressComparisonLabel} comparisonUnit={t("projects.percentagePointsAbbreviation")} tone={progressTone} large locale={locale} />
-          <div className="grid min-w-0 grid-cols-2 gap-2.5">
-            <section className="col-span-2 min-w-0 rounded-lg border border-border/50 p-2">
-              <h3 className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{t("projects.varianceComparison")}</h3>
-              {varianceData.length ? <div className="h-28">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={varianceData} layout="vertical" margin={{ top: 3, right: locale === "ar" ? 8 : 48, left: locale === "ar" ? 48 : 8, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" horizontal={false} className="stroke-border" />
-                    <XAxis type="number" domain={[-varianceLimit, varianceLimit]} tickLine={false} axisLine={false} tick={{ fontSize: 9 }} tickFormatter={(value) => englishNumber(Number(value), locale)} />
-                    <YAxis type="category" dataKey="name" width={locale === "ar" ? 118 : 108} orientation={locale === "ar" ? "right" : "left"} tickLine={false} axisLine={false} tick={{ fontSize: 9 }} />
-                    <ReferenceLine x={0} stroke="hsl(var(--border))" />
-                    <Tooltip formatter={(value: unknown) => nullableCurrency(typeof value === "number" ? value : undefined, evmCurrency, locale)} />
-                    <Bar dataKey="value" name={t("projects.varianceComparison")} radius={[3, 3, 3, 3]} maxBarSize={18}>
-                      {varianceData.map((item) => <Cell key={item.name} fill={item.value < 0 ? "hsl(var(--destructive))" : "hsl(var(--chart-2))"} />)}
-                      <LabelList dataKey="value" position="right" formatter={(value: unknown) => nullableCurrency(typeof value === "number" ? value : undefined, evmCurrency, locale)} style={{ fontSize: 9, fill: "hsl(var(--foreground))" }} />
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div> : <div className="space-y-1 py-2 text-[10px] text-muted-foreground">
-                <p>{t("projects.scheduleVariance")}: {evmReasonText(scheduleVarianceUnavailableReason, t)}</p>
-                <p>{t("projects.costVariance")}: {evmReasonText(overview?.costVarianceUnavailableReason, t)}</p>
-              </div>}
-            </section>
-            <section className="min-w-0 border-b border-border/40 pb-2.5">
-              <div className="flex items-center justify-between gap-1">
-                <dt className="text-[10px] font-medium text-muted-foreground">{t("projects.overdueOpenIssues")}</dt>
-                <p className={cn("text-lg font-semibold tabular-nums", overdueIssues === null ? "text-muted-foreground" : overdueIssues > 0 ? "text-destructive" : "text-success")}>{englishNumber(overdueIssues, locale)}</p>
-              </div>
-              {attentionData.length ? <div className="mt-1 h-16">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={attentionData} layout="vertical" margin={{ top: 0, right: locale === "ar" ? 22 : 22, left: locale === "ar" ? 4 : 0, bottom: 0 }}>
-                    <XAxis type="number" allowDecimals={false} hide />
-                    <YAxis type="category" dataKey="name" width={100} orientation={locale === "ar" ? "right" : "left"} tickLine={false} axisLine={false} tick={{ fontSize: 8 }} />
-                    <Tooltip formatter={(value) => englishNumber(typeof value === "number" ? value : undefined, locale)} />
-                    <Bar dataKey="value" fill="hsl(var(--destructive))" radius={[0, 3, 3, 0]} maxBarSize={12}>
-                      <LabelList dataKey="value" position="right" style={{ fontSize: 9, fill: "hsl(var(--foreground))" }} />
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div> : <p className="mt-2 text-[10px] text-muted-foreground">{t("projects.overviewDataUnavailable")}</p>}
-            </section>
-          </div>
         </div>
       </CardContent>
     </Card>
   </section>;
 }
-
 const OVERVIEW_CHART_COLORS = ["hsl(var(--chart-1))", "hsl(var(--chart-2))", "hsl(var(--chart-3))", "hsl(var(--chart-4))", "hsl(var(--chart-5))"];
 
 function getRiskStatusChartColor(status: string, index: number) {
@@ -873,11 +779,13 @@ export function ProjectOverviewTab() {
     projectId: string;
     project: ProjectDto;
   }>();
-  const { t, locale } = useI18n();
+  const { t, locale, firstDayOfWeek } = useI18n();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const canViewPlanning = Boolean(user && hasPermission(user.permissions, Permissions.Planning.View));
   const query = useProjectOverview(projectId, Boolean(projectId));
   const [capacityPeriodType, setCapacityPeriodType] = React.useState<ProjectCapacityPeriodType>("Month");
-  const capacityPeriod = React.useMemo(() => getCapacityReportingPeriod(capacityPeriodType), [capacityPeriodType]);
+  const capacityPeriod = React.useMemo(() => getCapacityReportingPeriod(capacityPeriodType, new Date(), firstDayOfWeek), [capacityPeriodType, firstDayOfWeek]);
   const teamCapacityQuery = useProjectTeamCapacity(
     projectId,
     capacityPeriodType,
@@ -933,7 +841,7 @@ export function ProjectOverviewTab() {
     );
   }
 
-  const milestones = overview.milestones ?? [];
+  const milestones = (overview.milestones ?? []).slice(0, 5);
   const milestoneProgressData = milestones
     .filter((milestone) => isFiniteNumber(milestone.progress) && milestone.progress >= 0 && milestone.progress <= 100)
     .map((milestone) => ({ id: milestone.id, name: milestone.name, progress: milestone.progress }));
@@ -959,14 +867,13 @@ export function ProjectOverviewTab() {
         capacityPeriodType={capacityPeriodType}
         onCapacityPeriodTypeChange={setCapacityPeriodType}
       />
-      <div data-testid="project-overview-kpi-performance-row" className="grid items-stretch gap-3">
-        <ProjectKpiSummary project={project} overview={overview} locale={locale} />
-      </div>
-
-      <div data-testid="project-overview-milestones-layout" className="grid gap-4">
+      <div data-testid="project-overview-core-panels" className="grid items-stretch gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div data-testid="project-overview-kpi-performance-row" className="min-w-0 h-full">
+          <ProjectKpiSummary project={project} overview={overview} locale={locale} />
+        </div>
         <Card className={PREMIUM_CARD}>
           <CardHeader className={PREMIUM_CARD_HEADER}>
-            <SectionTitle icon={CalendarDays} title={t("projects.milestones")} description={t("projects.milestoneTimelineDescription")} action={<Link to={`/projects/${projectId}/plan`} className="inline-flex h-7 items-center px-2 text-xs font-medium text-primary hover:underline">{t("common.viewAll")}<ArrowUpRight className="ms-1 h-3.5 w-3.5" /></Link>} />
+            <SectionTitle icon={CalendarDays} title={t("projects.milestones")} description={t("projects.milestoneTimelineDescription")} action={canViewPlanning ? <Link to={`/projects/${projectId}/plan`} className="inline-flex h-7 items-center px-2 text-xs font-medium text-primary hover:underline">{t("common.viewAll")}<ArrowUpRight className="ms-1 h-3.5 w-3.5" /></Link> : undefined} />
           </CardHeader>
           <CardContent className={PREMIUM_CARD_CONTENT}>
             {milestones.length ? (
@@ -998,8 +905,8 @@ export function ProjectOverviewTab() {
                       const state = getMilestoneState(milestone, overview.statusDate);
                       const stateLabel = state === "completed" ? t("projects.milestoneCompleted") : state === "inProgress" ? t("projects.milestoneInProgress") : state === "overdue" ? t("projects.milestoneOverdue") : t("projects.milestoneUpcoming");
                       const dotClass = state === "completed" ? "bg-success ring-success/20" : state === "inProgress" ? "bg-warning ring-warning/20" : state === "overdue" ? "bg-destructive ring-destructive/20" : "bg-info ring-info/20";
-                      return (
-                        <Link key={milestone.id} to={`/projects/${projectId}/plan`} className="group flex items-start gap-3 border-b border-border/40 px-1.5 py-2.5 transition-colors hover:bg-muted/20">
+                      const milestoneRow = (
+                        <>
                           <span className={cn("mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-4 border-card ring-2", dotClass)} aria-hidden="true" />
                           <div className="min-w-0 flex-1">
                             <div className="flex flex-wrap items-start justify-between gap-2">
@@ -1011,42 +918,16 @@ export function ProjectOverviewTab() {
                               {isFiniteNumber(milestone.progress) ? <><span aria-hidden="true">·</span><span>{percent(milestone.progress, locale)}</span></> : null}
                             </div>
                           </div>
-                        </Link>
+                        </>
                       );
+                      const rowClassName = "flex items-start gap-3 border-b border-border/40 px-1.5 py-2.5";
+                      return canViewPlanning
+                        ? <Link key={milestone.id} to={`/projects/${projectId}/plan`} className={cn("group", rowClassName, "transition-colors hover:bg-muted/20")}>{milestoneRow}</Link>
+                        : <div key={milestone.id} className={rowClassName}>{milestoneRow}</div>;
                     })}
                 </div>
               </>
-            ) : <EmptyPanel title={t("projects.noMilestonesYet")} description={t("projects.milestoneTimelineDescription")} action={<Button size="sm" variant="outline" onClick={() => navigate(`/projects/${projectId}/plan`)}>{t("projects.plan")}</Button>} />}
-          </CardContent>
-        </Card>
-      </div>
-
-      <div data-testid="project-overview-secondary-panels" className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        <Card className={cn(PREMIUM_CARD, "flex h-full flex-col")}>
-          <CardHeader className={PREMIUM_CARD_HEADER}>
-            <SectionTitle icon={FilePen} accent="bg-info/10 text-info" title={t("projects.changeRequests")} description={t("projects.openChangeRequests")} action={<Link to={`/projects/${projectId}/change-tracker`} className="inline-flex h-7 items-center px-2 text-xs font-medium text-primary hover:underline">{t("common.viewAll")}<ArrowUpRight className="ms-1 h-3.5 w-3.5" /></Link>} />
-          </CardHeader>
-          <CardContent className={cn(PREMIUM_CARD_CONTENT, "flex flex-1 items-center")}>
-            {overview.pendingChangeRequestCount === null
-              ? <EmptyPanel title={t("projects.overviewDataUnavailable")} description={t("projects.openChangeRequests")} className="w-full" />
-              : <div className="w-full">
-                <div className="mb-1 flex items-center justify-between gap-2">
-                  <span className="flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground"><FilePen className="h-4 w-4 shrink-0 text-info" aria-hidden="true" />{overview.pendingChangeRequestCount > 0 ? t("projects.openChangeRequests") : t("projects.noChangeRequestsYet")}</span>
-                  <span className="text-2xl font-semibold leading-none tabular-nums text-info">{englishNumber(overview.pendingChangeRequestCount, locale)}</span>
-                </div>
-                <div className="h-20">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={[{ name: t("projects.openChangeRequests"), value: overview.pendingChangeRequestCount }]} layout="vertical" margin={{ top: 1, right: locale === "ar" ? 4 : 16, left: locale === "ar" ? 16 : 4, bottom: 0 }}>
-                      <XAxis type="number" allowDecimals={false} hide />
-                      <YAxis type="category" dataKey="name" width={142} orientation={locale === "ar" ? "right" : "left"} tickLine={false} axisLine={false} tick={{ fontSize: 9 }} />
-                      <Tooltip formatter={(value) => englishNumber(typeof value === "number" ? value : undefined, locale)} />
-                      <Bar dataKey="value" fill="hsl(var(--chart-3))" radius={[0, 3, 3, 0]} maxBarSize={16}>
-                        <LabelList dataKey="value" position="right" style={{ fontSize: 9, fill: "hsl(var(--foreground))" }} />
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>}
+            ) : <EmptyPanel title={t("projects.noMilestonesYet")} description={t("projects.milestoneTimelineDescription")} action={canViewPlanning ? <Button size="sm" variant="outline" onClick={() => navigate(`/projects/${projectId}/plan`)}>{t("projects.plan")}</Button> : undefined} />}
           </CardContent>
         </Card>
 
@@ -1092,6 +973,7 @@ export function ProjectOverviewTab() {
             </div>
           </CardContent>
         </Card>
+
       </div>
     </div>
   );

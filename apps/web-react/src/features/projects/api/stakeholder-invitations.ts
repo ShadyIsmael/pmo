@@ -8,10 +8,15 @@ export interface StakeholderInvitationDto {
   projectStakeholderId: string;
   resourceId: string;
   email: string;
-  status: "Pending" | "Accepted" | "Revoked" | "Expired" | string;
+  status: "Pending" | "Accepted" | "Declined" | "Revoked" | "Expired" | string;
   expiresAt: string;
   acceptedAt?: string | null;
+  declinedAt?: string | null;
   revokedAt?: string | null;
+  reportsConsent: boolean;
+  notificationsConsent: boolean;
+  emailDeliveryStatus: string;
+  emailSentAt?: string | null;
   invitationUrl?: string | null;
   emailDeliveryDeferred: boolean;
 }

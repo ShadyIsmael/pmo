@@ -7,10 +7,17 @@ namespace NEXUS.Modules.Meetings.Application;
 public interface IMeetingService
 {
     Task<Result<MeetingDetailDto>> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
-    Task<PagedResult<MeetingListDto>> GetPagedAsync(int page, int pageSize, string? search = null, string? status = null, Guid? projectId = null, DateTime? dateFrom = null, DateTime? dateTo = null, CancellationToken cancellationToken = default);
+    Task<Result<MeetingDetailDto>> GetByPublicIdAsync(Guid publicId, CancellationToken cancellationToken = default);
+    Task<PagedResult<MeetingListDto>> GetPagedAsync(int page, int pageSize, string? search = null, string? status = null, Guid? projectId = null, DateTime? dateFrom = null, DateTime? dateTo = null, IReadOnlyList<Guid>? projectIds = null, CancellationToken cancellationToken = default);
+    Task<Result<MeetingCalendarDto>> GetCalendarAsync(DateTime from, DateTime to, IReadOnlyList<Guid>? projectIds = null, string? status = null, string? search = null, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<MeetingProjectOptionDto>> GetAccessibleProjectsAsync(string? search = null, CancellationToken cancellationToken = default);
     Task<ProjectMeetingOverviewDto> GetProjectOverviewAsync(Guid projectId, CancellationToken cancellationToken = default);
     Task<Result<MeetingDetailDto>> CreateAsync(CreateMeetingRequest request, string userId, CancellationToken cancellationToken = default);
+    Task<Result<MeetingDetailDto>> CreateSeriesAsync(CreateMeetingSeriesRequest request, string userId, CancellationToken cancellationToken = default);
+    Task<Result<MeetingSeriesDto>> GetSeriesAsync(Guid meetingId, CancellationToken cancellationToken = default);
     Task<Result<MeetingDetailDto>> UpdateAsync(Guid id, UpdateMeetingRequest request, string userId, CancellationToken cancellationToken = default);
+    Task<Result<MeetingDetailDto>> StartAsync(Guid id, MeetingLifecycleRequest request, string userId, CancellationToken cancellationToken = default);
+    Task<Result<MeetingDetailDto>> EndAsync(Guid id, MeetingLifecycleRequest request, string userId, CancellationToken cancellationToken = default);
     Task<Result> DeleteAsync(Guid id, string userId, CancellationToken cancellationToken = default);
     Task<Result<IReadOnlyList<MeetingAttendeeDto>>> GetAttendeesAsync(Guid meetingId, CancellationToken cancellationToken = default);
     Task<Result<MeetingAttendeeDto>> AddAttendeeAsync(Guid meetingId, MeetingAttendeeInput request, string userId, CancellationToken cancellationToken = default);

@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- Keep IKVM's Maven reference import in the active MSBuild process. The .NET SDK task host
+         is unavailable in this build environment; the task itself is compatible with MSBuild Core. -->
+    <IkvmMavenSdkTaskFactory Condition=" '$(MSBuildRuntimeType)' == 'Core' "></IkvmMavenSdkTaskFactory>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="MPXJ.Net" Version="16.10.0" />
+    <PackageReference Include="System.Drawing.Common" Version="10.0.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\NEXUS.Modules.ProjectPlanning\NEXUS.Modules.ProjectPlanning.csproj" />
+  </ItemGroup>
+</Project>

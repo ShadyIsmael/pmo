@@ -11,6 +11,7 @@ public sealed class CreateRiskDto
     public string? Impact { get; set; }
     public string? Likelihood { get; set; }
     public Guid? OwnerResourceId { get; set; }
+    public Guid? OwnerUserId { get; set; }
     public CreateRiskImpactAssessmentDto? ImpactAssessment { get; set; }
 }
 
@@ -22,6 +23,7 @@ public sealed class UpdateRiskDto
     public string? Impact { get; set; }
     public string? Likelihood { get; set; }
     public Guid? OwnerResourceId { get; set; }
+    public Guid? OwnerUserId { get; set; }
     public byte[] RowVersion { get; set; } = Array.Empty<byte>();
 }
 
@@ -73,6 +75,7 @@ public sealed class RiskDto
     public DateTime? LastActionUpdateAt { get; set; }
     public string? LastActionUpdateCreatedBy { get; set; }
     public Guid? OwnerResourceId { get; set; }
+    public Guid? OwnerUserId { get; set; }
     public string? OwnerResourceName { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
@@ -86,8 +89,9 @@ public sealed class CreateRiskActionDto
     public string Title { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public Guid? OwnerResourceId { get; set; }
+    public Guid? OwnerUserId { get; set; }
     public DateTime? TargetDate { get; set; }
-    public DateTime? NextFollowUpDate { get; set; }
+    public DateOnly? NextFollowUpDate { get; set; }
     public RiskActionStatus? Status { get; set; }
     public int SortOrder { get; set; }
 }
@@ -97,8 +101,9 @@ public sealed class UpdateRiskActionDto
     public string Title { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public Guid? OwnerResourceId { get; set; }
+    public Guid? OwnerUserId { get; set; }
     public DateTime? TargetDate { get; set; }
-    public DateTime? NextFollowUpDate { get; set; }
+    public DateOnly? NextFollowUpDate { get; set; }
     public RiskActionStatus Status { get; set; }
     public int SortOrder { get; set; }
     public byte[] RowVersion { get; set; } = Array.Empty<byte>();
@@ -107,13 +112,15 @@ public sealed class UpdateRiskActionDto
 public sealed class RiskActionDto
 {
     public Guid Id { get; set; }
+    public Guid PublicId { get; set; }
     public Guid RiskId { get; set; }
     public string Title { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public Guid? OwnerResourceId { get; set; }
+    public Guid? OwnerUserId { get; set; }
     public string? OwnerResourceName { get; set; }
     public DateTime? TargetDate { get; set; }
-    public DateTime? NextFollowUpDate { get; set; }
+    public DateOnly? NextFollowUpDate { get; set; }
     public RiskActionStatus Status { get; set; }
     public int SortOrder { get; set; }
     public DateTime CreatedAt { get; set; }
@@ -121,6 +128,9 @@ public sealed class RiskActionDto
     public byte[] RowVersion { get; set; } = Array.Empty<byte>();
     public int UpdateCount { get; set; }
 }
+
+/// <summary>Internal target resolved only after the recipient's Risk.View and management scope checks.</summary>
+public sealed record RiskActionFollowUpTargetDto(Guid ProjectPublicId, Guid RiskId, Guid ActionId);
 
 public sealed class CreateRiskActionUpdateDto
 {

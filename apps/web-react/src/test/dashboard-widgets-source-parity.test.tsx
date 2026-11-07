@@ -51,12 +51,14 @@ const overdueWorkItems = [
 
 const meeting: MeetingListDto = {
   id: "meeting-1",
+  publicId: "f5d9d74f-15aa-4c2c-9df3-a8141bb37b5d",
   title: "Quarterly review",
   projectId: "project-1",
   projectName: "ERP Modernization",
   startTime: "2026-04-01T10:30:00Z",
   endTime: "2026-04-01T11:00:00Z",
   attendeeCount: 0,
+  isRecurring: false,
 };
 
 describe("dashboard widgets source parity", () => {
@@ -153,7 +155,7 @@ describe("dashboard widgets source parity", () => {
 
     expect(screen.getByText(formatDashboardMeetingDateTime(meeting.startTime, locale))).toBeInTheDocument();
     expect(screen.getByText("ERP Modernization")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Quarterly review/ })).toHaveAttribute("href", "/meetings/meeting-1");
+    expect(screen.getByRole("link", { name: /Quarterly review/ })).toHaveAttribute("href", "/meetings/f5d9d74f-15aa-4c2c-9df3-a8141bb37b5d");
 
     const otherLocale = locale === "en" ? "ar" : "en";
     window.localStorage.setItem("nexus-locale", otherLocale);

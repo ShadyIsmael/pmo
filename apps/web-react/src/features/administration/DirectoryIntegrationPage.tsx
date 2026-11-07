@@ -41,12 +41,12 @@ export function DirectoryIntegrationPage() {
   const { user } = useAuth();
   const userPermissions = user?.permissions ?? [];
   const canView = hasAnyPermission(userPermissions, DirectoryAccessPermissions);
-  const canManage = hasPermission(userPermissions, Permissions.Directory.Manage);
-  const canTest = hasAnyPermission(userPermissions, [Permissions.Directory.TestConnection, Permissions.Directory.Manage]);
-  const canPreview = hasAnyPermission(userPermissions, [Permissions.Directory.PreviewSync, Permissions.Directory.Manage]);
-  const canExecute = hasAnyPermission(userPermissions, [Permissions.Directory.ExecuteSync, Permissions.Directory.Manage]);
-  const canMap = hasAnyPermission(userPermissions, [Permissions.Directory.ManageMappings, Permissions.Directory.Manage]);
-  const canManagePolicy = hasAnyPermission(userPermissions, [Permissions.Directory.ManageProvisioningPolicy, Permissions.Directory.Manage]);
+  const canManage = hasPermission(userPermissions, Permissions.Directory.ManageConnection);
+  const canTest = hasAnyPermission(userPermissions, [Permissions.Directory.TestConnection]);
+  const canPreview = hasAnyPermission(userPermissions, [Permissions.Directory.PreviewSync]);
+  const canExecute = hasAnyPermission(userPermissions, [Permissions.Directory.ExecuteSync]);
+  const canMap = hasAnyPermission(userPermissions, [Permissions.Directory.ManageMappings]);
+  const canManagePolicy = hasAnyPermission(userPermissions, [Permissions.Directory.ManageProvisioningPolicy]);
 
   const connections = useDirectoryConnections(canView);
   const saveConnection = useSaveDirectoryConnection();
@@ -461,7 +461,7 @@ function MappingsPanel({ t, messages, locale, provider, canManage, fieldDraft, s
         <Field label={m("targetField")}><Input disabled value={fieldLabel(item.targetField)} /></Field>
         <Field label={m("sourceAttribute")}><select disabled={!canManage} className={textControl} value={item.sourceAttribute} onChange={(event) => updateField(index, { sourceAttribute: event.target.value })}>{attrs.map((attr) => <option key={attr} value={attr}>{attr}</option>)}</select></Field>
         <Field label={m("updatePolicy")}><select disabled={!canManage} className={textControl} value={item.updatePolicy} onChange={(event) => updateField(index, { updatePolicy: event.target.value as DirectoryFieldMappingDto["updatePolicy"] })}><option value="Ignore">{m("ignore")}</option><option value="Review">{m("review")}</option><option value="AutoUpdate">{m("autoUpdate")}</option></select></Field>
-        <Field label={m("transform")}><select disabled={!canManage} className={textControl} value={item.transform ?? ""} onChange={(event) => updateField(index, { transform: event.target.value || null })}><option value="">{m("noTransform")}</option><option value="Trim">Trim</option><option value="Lowercase">Lowercase</option><option value="Uppercase">Uppercase</option></select></Field>
+        <Field label={m("transform")}><select disabled={!canManage} className={textControl} value={item.transform ?? ""} onChange={(event) => updateField(index, { transform: event.target.value || null })}><option value="">{m("noTransform")}</option><option value="Trim">{m("transformTrim")}</option><option value="Lowercase">{m("transformLowercase")}</option><option value="Uppercase">{m("transformUppercase")}</option></select></Field>
       </div>)}</div>
       {canManage ? <Button type="button" size="sm" onClick={onSaveFields} disabled={savingFields}>{savingFields ? t("common.saving") : m("saveFieldMappings")}</Button> : null}
     </CardContent></Card>

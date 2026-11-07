@@ -147,6 +147,7 @@ NEXUS PMO uses **shadcn/ui** -- a collection of re-usable components built on Ra
 
 - Use `useConfirm` from `@components/ui/ConfirmProvider` for confirmations requested by event handlers; it returns a promise that resolves to `true` only after confirmation and `false` when dismissed.
 - Keep operation-specific, localized context in the caller's description, and pass `destructive: true` only for destructive actions. The shared provider owns the title, button labels, keyboard behavior, focus handling, and dialog presentation.
+- Confirmation dialogs render in `document.body` at the top modal layer so they stay above side sheets and their dismiss actions cannot reach the sheet backdrop.
 - For a confirmation that must run an asynchronous action while the dialog remains open, use the shared `ConfirmDialog` component and keep the action's existing loading/error handling.
 - Do not use `window.confirm` in the React application.
 
@@ -225,7 +226,7 @@ NEXUS PMO supports Arabic (ar) alongside English (en):
 - **Number formatting** -- locale-aware number, currency, and percentage formatting
 
 Implementation:
-- `next-intl` handles message resolution and locale detection
+- `React message catalogs` handles message resolution and locale detection
 - Tailwind config uses `rtl:` variants for layout adjustments
 - `html` tag `dir` attribute set dynamically based on locale
 
@@ -240,3 +241,11 @@ Dark mode is implemented via the `next-themes` library with CSS custom propertie
 - **No flicker** -- inline script prevents flash of wrong theme
 - **All components** support both themes via Tailwind's `dark:` variant
 - **Persistent** -- preference stored in localStorage
+
+### Project Finance workspace navigation
+
+Project Finance is a project-scoped workspace inside Project Details. On large screens, use a fixed 15rem vertical section navigation beside a min-width-safe workspace; keep the sidebar sticky only within the page viewport. At tablet and mobile widths, replace the sidebar with a labeled section selector so tables and forms retain usable width.
+
+Use neutral bordered surfaces, existing typography and spacing tokens, consistent Lucide icons, and one restrained active indicator on the logical inline-start edge. Navigation controls need a visible keyboard focus ring, adequate hit area, localized labels, and a semantic current-section state. Use logical CSS properties/classes (`border-s`, `text-start`, inline spacing) so Arabic RTL places the sidebar and active indicator on the right without separate hard-coded layout rules.
+
+Render one primary financial workspace at a time. Keep the selected fiscal year in the Project Finance header; only apply it to year-scoped budget and closing data. Do not use decorative status colors or invented currency/value fallbacks. Financial tables may scroll horizontally inside their own content surface on narrow screens.

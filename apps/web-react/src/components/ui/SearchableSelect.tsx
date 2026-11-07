@@ -21,6 +21,8 @@ interface SearchableSelectProps {
   loading?: boolean;
   onSearchChange?: (query: string) => void;
   "aria-label"?: string;
+  "aria-invalid"?: boolean;
+  "aria-describedby"?: string;
   className?: string;
   disabled?: boolean;
 }
@@ -36,6 +38,8 @@ export function SearchableSelect({
   loading = false,
   onSearchChange,
   "aria-label": ariaLabel,
+  "aria-invalid": ariaInvalid,
+  "aria-describedby": ariaDescribedBy,
   className,
   disabled,
 }: SearchableSelectProps) {
@@ -84,6 +88,8 @@ export function SearchableSelect({
         type="button"
         role="combobox"
         aria-label={ariaLabel}
+        aria-invalid={ariaInvalid}
+        aria-describedby={ariaDescribedBy}
         aria-expanded={open}
         disabled={disabled}
         onClick={() => setOpen(!open)}

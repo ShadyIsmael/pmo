@@ -12,5 +12,6 @@
   <ItemGroup>
     <ProjectReference Include="..\NEXUS.SharedKernel\NEXUS.SharedKernel.csproj" />
     <ProjectReference Include="..\NEXUS.Modules.Audit\NEXUS.Modules.Audit.csproj" />
+    <ProjectReference Include="..\NEXUS.Modules.Notifications\NEXUS.Modules.Notifications.csproj" />
   </ItemGroup>
 </Project>

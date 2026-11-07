@@ -3,8 +3,11 @@ using System.Security.Claims;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using NEXUS.Modules.Approvals.Domain;
 using NEXUS.Modules.Audit.Application;
 using NEXUS.Modules.Audit.Domain;
+using NEXUS.Modules.CostManagement.Application.DTOs;
+using NEXUS.Modules.CostManagement.Domain;
 using NEXUS.Modules.Identity.Application;
 using NEXUS.Modules.Identity.Domain;
 using NEXUS.Modules.Notifications.Application;
@@ -25,6 +28,7 @@ public sealed class ProjectChangeRequestWorkflowService : IProjectChangeRequestS
 {
     private const string ManagePermission = "ChangeRequest.Manage";
     private const string ApprovePermission = "ChangeRequest.Approve";
+    private const string ApproveFinancialCeilingChangePermission = "ProjectFinancialCeiling.ApproveChange";
     private readonly DbContext _db;
     private readonly IAuditService _audit;
     private readonly IHttpContextAccessor _http;
@@ -35,6 +39,8 @@ public sealed class ProjectChangeRequestWorkflowService : IProjectChangeRequestS
     private readonly IUserEffectivePermissionService _permissions;
     private readonly IManagementContextAccessor _management;
     private readonly INotificationService _notifications;
+    private readonly IProjectFinancialLookup? _financialLookup;
+    private readonly IProjectOrganizationLookup? _projectOrganizationLookup;
 
     public ProjectChangeRequestWorkflowService(
         DbContext db,
@@ -46,7 +52,9 @@ public sealed class ProjectChangeRequestWorkflowService : IProjectChangeRequestS
         IWorkflowExecutionService workflow,
         IUserEffectivePermissionService permissions,
         IManagementContextAccessor management,
-        INotificationService notifications)
+        INotificationService notifications,
+        IProjectFinancialLookup? financialLookup = null,
+        IProjectOrganizationLookup? projectOrganizationLookup = null)
     {
         _db = db;
         _audit = audit;
@@ -58,6 +66,8 @@ public sealed class ProjectChangeRequestWorkflowService : IProjectChangeRequestS
         _permissions = permissions;
         _management = management;
         _notifications = notifications;
+        _financialLookup = financialLookup;
+        _projectOrganizationLookup = projectOrganizationLookup;
     }
 
     public async Task<Result<ProjectChangeRequestApprovalOptionsDto>> GetApprovalOptionsAsync(Guid projectId, CancellationToken cancellationToken = default)
@@ -493,6 +503,38 @@ public sealed class ProjectChangeRequestWorkflowService : IProjectChangeRequestS
         if (!await CanActAsync(request, actor, cancellationToken, allowOutOfScope: true)) return Result<ProjectChangeRequestDto>.Failure(Error.Forbidden("You are not the active assigned approver for this request."));
         await using var transaction = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
         var completes = approve && await WouldCompleteAsync(request, actor, cancellationToken);
+        decimal? proposedLifetimeCeiling = null;
+        if (completes && request.BudgetChangeAmount.HasValue)
+        {
+            if (!await HasPermissionAsync(actor, request.TenantId, ApproveFinancialCeilingChangePermission, cancellationToken))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return Result<ProjectChangeRequestDto>.Failure(Error.Forbidden(
+                    $"{ApproveFinancialCeilingChangePermission} is required for the final approval of a Change Request that changes the Project lifetime ceiling."));
+            }
+
+            var currentProject = context.Project!;
+            await _db.Entry(currentProject).ReloadAsync(cancellationToken);
+            if (currentProject.IsDeleted || currentProject.TenantId != request.TenantId)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return Result<ProjectChangeRequestDto>.Failure(Error.NotFound("The Project is no longer available in this Tenant."));
+            }
+            if (!request.BudgetBeforeChange.HasValue || currentProject.Budget != request.BudgetBeforeChange)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return Result<ProjectChangeRequestDto>.Failure(Error.Conflict(
+                    "The approved Project lifetime ceiling changed after this request was submitted. Cancel and resubmit the Change Request against the current ceiling."));
+            }
+
+            proposedLifetimeCeiling = request.BudgetBeforeChange.Value + request.BudgetChangeAmount.Value;
+            var ceilingError = await ValidateLifetimeCeilingRevisionAsync(currentProject, proposedLifetimeCeiling.Value, cancellationToken);
+            if (ceilingError is not null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return Result<ProjectChangeRequestDto>.Failure(ceilingError);
+            }
+        }
         var transitionCode = !approve ? ProjectChangeRequestWorkflow.Reject
             : completes ? ProjectChangeRequestWorkflow.Complete : ProjectChangeRequestWorkflow.ApproveStep;
         var transition = await ExecuteTransitionAsync(request, transitionCode, decisionComment, actor, cancellationToken);
@@ -501,11 +543,99 @@ public sealed class ProjectChangeRequestWorkflowService : IProjectChangeRequestS
             await transaction.RollbackAsync(cancellationToken);
             return Result<ProjectChangeRequestDto>.Failure(transition.Error!);
         }
+        if (proposedLifetimeCeiling.HasValue)
+        {
+            var project = context.Project!;
+            var previousCeiling = project.Budget;
+            project.Budget = proposedLifetimeCeiling.Value;
+            project.UpdatedAt = DateTime.UtcNow;
+            project.UpdatedBy = actor.ToString("D");
+            _db.Set<AuditEntry>().Add(new AuditEntry
+            {
+                TenantId = project.TenantId,
+                ProjectId = project.Id,
+                EntityType = "ProjectBudget",
+                EntityId = project.Id,
+                Action = "ApprovedLifetimeCeilingChanged",
+                UserId = actor,
+                UserName = _http.HttpContext?.User.FindFirst(ClaimTypes.Name)?.Value
+                    ?? _http.HttpContext?.User.FindFirst("name")?.Value,
+                Timestamp = DateTime.UtcNow,
+                Description = $"Project lifetime ceiling changed through approved Change Request CR-{request.Number}.",
+                ChangedFields = "Budget",
+                Changes = JsonSerializer.Serialize(new { budget = new { from = previousCeiling, to = proposedLifetimeCeiling.Value } }),
+                OriginalValues = JsonSerializer.Serialize(new { projectLifetimeCeiling = previousCeiling, currency = project.Currency }),
+                NewValues = JsonSerializer.Serialize(new { projectLifetimeCeiling = proposedLifetimeCeiling.Value, currency = project.Currency }),
+                CreatedBy = actor.ToString("D")
+            });
+            await _db.SaveChangesAsync(cancellationToken);
+        }
         await transaction.CommitAsync(cancellationToken);
         await LogAuditAsync(request, approve ? "ApproveStep" : "Reject", actor, decisionComment, cancellationToken);
         if (approve && request.Status == ProjectChangeRequest.Statuses.Pending)
             await NotifySequentialNextAsync(request, context.Project!, cancellationToken);
         return await BuildDtoAsync(request, cancellationToken);
+    }
+
+    private async Task<Error?> ValidateLifetimeCeilingRevisionAsync(Project project, decimal proposed, CancellationToken cancellationToken)
+    {
+        if (proposed < 0)
+            return Error.Validation("The resulting Project lifetime ceiling cannot be negative.");
+
+        var currency = project.Currency?.Trim().ToUpperInvariant();
+        if (string.IsNullOrWhiteSpace(currency) || currency.Length != 3 || currency.Any(character => character is < 'A' or > 'Z'))
+            return Error.Validation("The Project must have a valid configured currency before its approved lifetime ceiling can change.");
+
+        var annualBudgets = await _db.Set<ProjectAnnualBudget>().IgnoreQueryFilters().AsNoTracking()
+            .Where(item => item.TenantId == project.TenantId && item.ProjectId == project.Id && !item.IsDeleted)
+            .ToListAsync(cancellationToken);
+        if (annualBudgets.Any(item => !string.Equals(item.Currency.Trim(), currency, StringComparison.OrdinalIgnoreCase)))
+            return Error.Conflict("Annual budget records use a different currency from the Project. Reconcile the historical currency records before revising the lifetime ceiling.");
+
+        var approvedAnnualAllocations = annualBudgets
+            .Where(item => item.Status == ProjectAnnualBudgetStatuses.Approved)
+            .Sum(item => item.NewApprovedFunding + item.ApprovedAdjustments);
+        var budgetIds = annualBudgets.Select(item => item.Id).ToArray();
+        var pendingAnnualReviews = budgetIds.Length == 0
+            ? new List<ApprovalRequest>()
+            : await _db.Set<ApprovalRequest>().IgnoreQueryFilters().AsNoTracking()
+                .Where(item => item.TenantId == project.TenantId && !item.IsDeleted
+                    && item.EntityType == "ProjectAnnualBudget" && budgetIds.Contains(item.EntityId)
+                    && (item.Type == "ProjectAnnualBudgetReview" || item.Type == "ProjectAnnualBudgetRevision")
+                    && item.Status == PaymentRequestStatuses.Pending)
+                .ToListAsync(cancellationToken);
+
+        if (pendingAnnualReviews.Any(approval => !approval.Amount.HasValue || approval.Amount.Value < 0m
+            || !string.Equals(approval.Currency?.Trim(), currency, StringComparison.OrdinalIgnoreCase)))
+            return Error.Conflict("A pending annual budget review has an invalid amount or currency. Resolve the review before revising the lifetime ceiling.");
+
+        var annualBudgetById = annualBudgets.ToDictionary(item => item.Id);
+        var pendingIncreaseReservation = pendingAnnualReviews.Sum(approval =>
+        {
+            if (!approval.Amount.HasValue || !annualBudgetById.TryGetValue(approval.EntityId, out var budget)) return 0m;
+            if (approval.Type == "ProjectAnnualBudgetReview" && budget.Status == ProjectAnnualBudgetStatuses.Draft)
+                return approval.Amount.Value;
+            if (approval.Type == "ProjectAnnualBudgetRevision" && budget.Status == ProjectAnnualBudgetStatuses.Approved)
+                return Math.Max(0m, approval.Amount.Value - budget.NewApprovedFunding - budget.ApprovedAdjustments);
+            return 0m;
+        });
+
+        var requiredForAnnualAllocations = approvedAnnualAllocations + pendingIncreaseReservation;
+        if (proposed < requiredForAnnualAllocations)
+            return Error.Validation($"The proposed Project lifetime ceiling of {currency} {proposed:N2} is below approved annual allocations and pending submitted increases ({currency} {requiredForAnnualAllocations:N2}). Revise those annual budgets or submit a higher ceiling revision.");
+
+        var financials = _financialLookup is null
+            ? null
+            : await _financialLookup.GetAsync(project.Id, currency, cancellationToken);
+        if (financials is not null && !string.Equals(financials.Currency.Trim(), currency, StringComparison.OrdinalIgnoreCase))
+            return Error.Conflict("The financial summary currency does not match the Project currency. Reconcile the financial records before revising the lifetime ceiling.");
+        if (proposed < (financials?.AllocatedBudget ?? 0m))
+            return Error.Validation($"The proposed Project lifetime ceiling of {currency} {proposed:N2} is below existing Budget Line allocations ({currency} {financials!.AllocatedBudget:N2}). Revise those allocations before approving this Change Request.");
+        var actualAndCommitted = (financials?.ActualCost ?? 0m) + (financials?.CommittedCost ?? 0m);
+        if (proposed < actualAndCommitted)
+            return Error.Validation($"The proposed Project lifetime ceiling of {currency} {proposed:N2} is below actual costs and outstanding commitments ({currency} {actualAndCommitted:N2}). The ceiling cannot be reduced below current financial obligations.");
+
+        return null;
     }
 
     private async Task<Result<WorkflowTransitionResult>> ExecuteTransitionAsync(ProjectChangeRequest request, string transitionCode,
@@ -925,13 +1055,16 @@ public sealed class ProjectChangeRequestWorkflowService : IProjectChangeRequestS
 
     private async Task NotifyUsersAsync(ProjectChangeRequest request, Project project, IEnumerable<Guid> userIds, CancellationToken cancellationToken)
     {
+        var organizationId = _projectOrganizationLookup is null
+            ? null
+            : await _projectOrganizationLookup.ResolveOrganizationIdAsync(request.TenantId, project.Id, cancellationToken);
         foreach (var userId in userIds.Distinct())
         {
             try
             {
                 await _notifications.SendAsync(new Notification
                 {
-                    TenantId = request.TenantId, UserId = userId,
+                    TenantId = request.TenantId, OrganizationId = organizationId, UserId = userId,
                     Title = $"Change Request #{request.Number} requires your approval",
                     Body = $"Project: {project.Name}. {request.Reason}",
                     Type = NotificationTypes.ProjectChangeRequest,

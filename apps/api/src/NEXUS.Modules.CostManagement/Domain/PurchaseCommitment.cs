@@ -9,7 +9,7 @@ public class PurchaseCommitment : BaseEntity
     public string? VendorName { get; set; }
     public decimal Amount { get; set; }
     public decimal? InvoicedAmount { get; set; }
-    public string Currency { get; set; } = "GBP";
+    public string Currency { get; set; } = string.Empty;
     public DateTime CommitmentDate { get; set; }
     public DateTime? ExpectedDeliveryDate { get; set; }
     public string Status { get; set; } = string.Empty;

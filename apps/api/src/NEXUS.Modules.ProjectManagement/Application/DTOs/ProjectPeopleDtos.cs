@@ -7,6 +7,8 @@ public sealed class ProjectPersonDto
     public Guid Id { get; set; }
     public Guid ProjectId { get; set; }
     public Guid? ResourceId { get; set; }
+    public Guid? TeamId { get; set; }
+    public string? TeamName { get; set; }
     public string Source { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public string? Email { get; set; }
@@ -44,7 +46,8 @@ public sealed class ProjectRoleRefDto
 
 public sealed class CreateProjectPersonDto
 {
-    public Guid ResourceId { get; set; }
+    public Guid? ResourceId { get; set; }
+    public Guid? TeamId { get; set; }
     public string RelationshipType { get; set; } = ProjectRelationshipType.TeamMember;
     public string? Role { get; set; }
     public decimal? AllocationPercentage { get; set; }
@@ -61,6 +64,7 @@ public sealed class CreateProjectPersonDto
 public sealed class UpdateProjectPersonDto
 {
     public string Source { get; set; } = string.Empty;
+    public Guid? TeamId { get; set; }
     public string? RelationshipType { get; set; }
     public string? Role { get; set; }
     public decimal? AllocationPercentage { get; set; }

@@ -18,11 +18,14 @@ public enum RiskActionTimelineEntryType
 
 public sealed class RiskAction : BaseEntity
 {
+    /// <summary>Stable identifier safe to include in user-facing navigation.</summary>
+    public Guid PublicId { get; set; } = Guid.NewGuid();
     public Guid RiskId { get; set; }
     public Risk Risk { get; set; } = null!;
     public string Title { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public Guid? OwnerResourceId { get; set; }
+    public Guid? OwnerUserId { get; set; }
     public DateTime? TargetDate { get; set; }
     public DateTime? NextFollowUpDate { get; set; }
     public RiskActionStatus Status { get; set; } = RiskActionStatus.Planned;

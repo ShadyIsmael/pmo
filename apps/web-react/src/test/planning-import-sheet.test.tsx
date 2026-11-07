@@ -5,6 +5,7 @@ import { planningApiFull, type PlanImportSessionDto, type PlanSummaryDto } from 
 import { planningImportNoticeMessage } from "../features/projects/lib/planning-import-messages";
 import enMessages from "../i18n/messages/en.json";
 import arMessages from "../i18n/messages/ar.json";
+import { I18nProvider } from "../i18n/messages";
 
 const t = (key: string, params?: Record<string, string | number>) => key.replace(/\{(\w+)\}/g, (_match, name: string) => String(params?.[name] ?? ""));
 function localizedT(locale: "en" | "ar") {
@@ -40,7 +41,7 @@ function renderSheet(commit = vi.fn().mockResolvedValue({ planId: "plan-imported
   const onOpenChange = vi.fn();
   const onImported = vi.fn();
   const commitMutation = { mutateAsync: commit, isPending: false };
-  render(<PlanningImportSheet projectId="project-1" plans={plans} selectedPlanId="plan-existing" commitMutation={commitMutation} t={translator} onOpenChange={onOpenChange} onImported={onImported} />);
+  render(<I18nProvider><PlanningImportSheet projectId="project-1" plans={plans} selectedPlanId="plan-existing" commitMutation={commitMutation} t={translator} onOpenChange={onOpenChange} onImported={onImported} /></I18nProvider>);
   return { commit, onOpenChange, onImported };
 }
 

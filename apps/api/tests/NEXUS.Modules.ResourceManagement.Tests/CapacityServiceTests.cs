@@ -35,18 +35,11 @@ public class CapacityServiceTests : TestBase
     {
         using var context = CreateContext();
         var projectId = Guid.Parse("F3000000-0000-0000-0000-000000000001");
-        var calendar = new WorkingCalendar
-        {
-            Id = Guid.NewGuid(),
-            TenantId = TenantConstants.DemoTenantId,
-            Name = "48-hour week",
-            WorkingDaysPerWeek = 6,
-            HoursPerDay = 8,
-            IsDefault = false
-        };
-        context.WorkingCalendars.Add(calendar);
+        var calendar = await context.WorkingCalendars.SingleAsync(item => item.Id == DefaultCalendarId);
         var resource = await context.Resources.SingleAsync(item => item.Id == ResourceAliceId);
         resource.BaseCalendarId = calendar.Id;
+        resource.HoursPerDay = 12m;
+        resource.HoursPerWeek = 60m;
         context.ResourceAllocations.RemoveRange(context.ResourceAllocations.Where(item => item.ResourceId == ResourceAliceId));
         context.ResourceAllocations.AddRange(
             new ResourceAllocation
@@ -95,9 +88,9 @@ public class CapacityServiceTests : TestBase
             TeamCapacityFilter());
 
         result.IsSuccess.Should().BeTrue();
-        result.Value.TotalCapacityHours.Should().Be(24m);
+        result.Value.TotalCapacityHours.Should().Be(30m);
         result.Value.UtilizedHours.Should().Be(16m);
-        result.Value.AvailableHours.Should().Be(8m);
+        result.Value.AvailableHours.Should().Be(14m);
         result.Value.OverallocatedHours.Should().Be(0m);
     }
 
@@ -254,12 +247,14 @@ public class CapacityServiceTests : TestBase
     }
 
     [Fact]
-    public async Task GetProjectTeamOverviewAsync_UsesConfiguredMemberHoursWithoutAWorkingCalendar()
+    public async Task GetProjectTeamOverviewAsync_RequiresWorkingCalendarEvenWithExplicitResourceHours()
     {
         using var context = CreateContext();
         context.ResourceAllocations.RemoveRange(context.ResourceAllocations.Where(allocation => allocation.ResourceId == ResourceAliceId));
         context.ResourceCalendars.RemoveRange(context.ResourceCalendars.Where(entry => entry.ResourceId == ResourceAliceId));
         context.WorkingCalendars.RemoveRange(context.WorkingCalendars);
+        var resource = await context.Resources.SingleAsync(item => item.Id == ResourceAliceId);
+        resource.HoursPerWeek = 48m;
         await context.SaveChangesAsync();
 
         var result = await CreateService(context).GetProjectTeamOverviewAsync(
@@ -267,15 +262,11 @@ public class CapacityServiceTests : TestBase
             TeamCapacityFilter());
 
         result.IsSuccess.Should().BeTrue();
-        result.Value.IsCapacityDataAvailable.Should().BeTrue();
+        result.Value.IsCapacityDataAvailable.Should().BeFalse();
         result.Value.IsAllocationDataAvailable.Should().BeTrue();
         result.Value.ActiveResourceCount.Should().Be(1);
-        result.Value.IdleResourceCount.Should().Be(1);
-        result.Value.TotalCapacityHours.Should().Be(48m);
-        result.Value.UtilizedHours.Should().Be(0m);
-        result.Value.AvailableHours.Should().Be(48m);
-        result.Value.UtilizedPercent.Should().Be(0m);
-        result.Value.AvailablePercent.Should().Be(100m);
+        result.Value.TotalCapacityHours.Should().BeNull();
+        result.Value.AvailableHours.Should().BeNull();
     }
 
     [Fact]
@@ -283,7 +274,8 @@ public class CapacityServiceTests : TestBase
     {
         using var context = CreateContext();
         context.ResourceAllocations.RemoveRange(context.ResourceAllocations.Where(allocation => allocation.ResourceId == ResourceAliceId));
-        context.WorkingCalendars.RemoveRange(context.WorkingCalendars);
+        var resource = await context.Resources.SingleAsync(item => item.Id == ResourceAliceId);
+        resource.HoursPerWeek = 48m;
         context.ResourceAllocations.AddRange(
             new ResourceAllocation
             {
@@ -347,7 +339,10 @@ public class CapacityServiceTests : TestBase
     {
         using var context = CreateContext();
         context.ResourceAllocations.RemoveRange(context.ResourceAllocations.Where(allocation => allocation.ResourceId == ResourceAliceId || allocation.ResourceId == ResourceCharlieId));
-        context.WorkingCalendars.RemoveRange(context.WorkingCalendars);
+        var alice = await context.Resources.SingleAsync(item => item.Id == ResourceAliceId);
+        var charlie = await context.Resources.SingleAsync(item => item.Id == ResourceCharlieId);
+        alice.HoursPerWeek = 48m;
+        charlie.HoursPerWeek = 24m;
         await context.SaveChangesAsync();
 
         var result = await CreateService(context).GetProjectTeamOverviewAsync(
@@ -421,8 +416,8 @@ public class CapacityServiceTests : TestBase
 
         result.IsSuccess.Should().BeTrue();
         result.Value.IsCapacityDataAvailable.Should().BeTrue();
-        result.Value.TotalCapacityHours.Should().Be(34.3m);
-        result.Value.AvailableHours.Should().Be(34.3m);
+        result.Value.TotalCapacityHours.Should().Be(32m);
+        result.Value.AvailableHours.Should().Be(32m);
     }
 
     [Fact]
@@ -800,6 +795,8 @@ public class CapacityServiceTests : TestBase
 
         var defaultCalendar = await context.WorkingCalendars.FindAsync(DefaultCalendarId);
         defaultCalendar!.HoursPerDay = 10;
+        foreach (var rule in defaultCalendar.DayRules.Where(rule => rule.IsWorkingDay))
+            rule.EndTime = TimeSpan.FromHours(18);
         await context.SaveChangesAsync();
 
         var filter = new CapacityFilterDto

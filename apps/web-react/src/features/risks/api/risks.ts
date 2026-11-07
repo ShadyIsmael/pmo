@@ -6,13 +6,14 @@ export type RiskLevel = "Low" | "Medium" | "High" | "Critical";
 export type RiskStatus = "Identified" | "ActionRequired" | "FollowUp" | "Mitigated" | "Closed";
 export type RiskActionStatus = "Planned" | "InProgress" | "Completed" | "Cancelled";
 export type RiskImpactType = "Schedule" | "Budget" | "Scope" | "Quality" | "Resources" | "Procurement" | "Compliance" | "Reputation" | "Operations" | "Other";
-export interface RiskDto { id: string; projectId: string; projectPublicId: string; projectName: string; title: string; description: string; riskLevel: RiskLevel; impact?: string; likelihood?: string; status: RiskStatus; ownerResourceId?: string; ownerResourceName?: string; createdAt: string; updatedAt?: string; lastActionUpdateAt?: string; lastActionUpdateText?: string; impactTypes?: string[]; rowVersion: number[]; }
-export interface CreateRiskDto { projectId: string; title: string; description: string; riskLevel: RiskLevel; impact?: string; likelihood?: string; ownerResourceId?: string; impactAssessment?: { impactTypes: RiskImpactType[]; description: string }; }
-export interface UpdateRiskDto { title: string; description: string; riskLevel: RiskLevel; ownerResourceId?: string; rowVersion?: number[]; }
+export interface RiskDto { id: string; projectId: string; projectPublicId: string; projectName: string; title: string; description: string; riskLevel: RiskLevel; impact?: string; likelihood?: string; status: RiskStatus; ownerUserId?: string; ownerResourceId?: string; ownerResourceName?: string; createdAt: string; updatedAt?: string; lastActionUpdateAt?: string; lastActionUpdateText?: string; impactTypes?: string[]; rowVersion: number[]; }
+export interface CreateRiskDto { projectId: string; title: string; description: string; riskLevel: RiskLevel; impact?: string; likelihood?: string; ownerUserId?: string; ownerResourceId?: string; impactAssessment?: { impactTypes: RiskImpactType[]; description: string }; }
+export interface UpdateRiskDto { title: string; description: string; riskLevel: RiskLevel; ownerUserId?: string; ownerResourceId?: string; rowVersion?: number[]; }
 export interface RiskImpactAssessmentDto { id: string; riskId: string; impactTypes: RiskImpactType[]; description: string; createdAt: string; rowVersion: number[]; }
-export interface RiskActionDto { id: string; riskId: string; title: string; description: string; ownerResourceId?: string; ownerResourceName?: string; targetDate?: string; nextFollowUpDate?: string; status: RiskActionStatus; sortOrder: number; createdAt: string; updatedAt?: string; rowVersion: number[]; updateCount: number; }
-export interface RiskActionWriteDto { title: string; description: string; ownerResourceId?: string; targetDate?: string; nextFollowUpDate?: string; status: RiskActionStatus; sortOrder?: number; rowVersion?: number[]; }
+export interface RiskActionDto { id: string; publicId: string; riskId: string; title: string; description: string; ownerUserId?: string; ownerResourceId?: string; ownerResourceName?: string; targetDate?: string; nextFollowUpDate?: string; status: RiskActionStatus; sortOrder: number; createdAt: string; updatedAt?: string; rowVersion: number[]; updateCount: number; }
+export interface RiskActionWriteDto { title: string; description: string; ownerUserId?: string; ownerResourceId?: string; targetDate?: string; nextFollowUpDate?: string; status: RiskActionStatus; sortOrder?: number; rowVersion?: number[]; }
 export interface RiskActionUpdateDto { id: string; riskActionId: string; updateText: string; createdBy: string; createdAt: string; entryType: "Comment" | "SystemChange"; changes?: Array<{ field: string; oldValue?: string | null; newValue?: string | null }>; }
+export interface RiskActionFollowUpTargetDto { projectPublicId: string; riskId: string; actionId: string; }
 
 export const riskKeys = {
   all: ["risks"] as const,
@@ -20,6 +21,7 @@ export const riskKeys = {
   detail: (id: string) => ["risks", "detail", id] as const,
   impacts: (id: string) => ["risks", "impacts", id] as const,
   actions: (id: string) => ["risks", "actions", id] as const,
+  actionFollowUpTarget: (actionPublicId: string) => ["risks", "action-follow-up-target", actionPublicId] as const,
   updates: (riskId: string, actionId: string) => ["risks", "updates", riskId, actionId] as const,
 };
 
@@ -109,6 +111,14 @@ export function useRiskImpacts(id: string, enabled = true) {
 }
 export function useRiskActions(id: string, enabled = true) {
   return useQuery({ queryKey: riskKeys.actions(id), queryFn: () => api.get<RiskActionDto[]>(endpoints.risks.actions(id)), enabled: Boolean(id) && enabled, staleTime: 30_000 });
+}
+export function useRiskActionFollowUpTarget(actionPublicId: string, enabled = true) {
+  return useQuery({
+    queryKey: riskKeys.actionFollowUpTarget(actionPublicId),
+    queryFn: () => api.get<RiskActionFollowUpTargetDto>(endpoints.riskActionFollowUps.target(actionPublicId)),
+    enabled: Boolean(actionPublicId) && enabled,
+    staleTime: 30_000,
+  });
 }
 export function useRiskActionUpdates(riskId: string, actionId: string, enabled = true) {
   return useQuery({ queryKey: riskKeys.updates(riskId, actionId), queryFn: () => api.get<RiskActionUpdateDto[]>(endpoints.risks.updates(riskId, actionId)), enabled: Boolean(riskId && actionId) && enabled, staleTime: 30_000 });

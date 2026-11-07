@@ -5,7 +5,7 @@ Scope: `POST /api/auth/login` only
 Environment: Release-built ASP.NET API, Production-style settings, SQL Server database `NexusPmo`  
 Load tool: k6 2.2.0  
 Data: approximately 93 active seeded demo users; the prior captured database had approximately 919 `UserSessions` rows.  
-Password: existing seeded `Demo123!` credentials; no password policy or hash setting was changed.
+Password: existing seeded development credentials supplied via `K6_PASSWORD`; no password policy or hash setting was changed.
 
 ## Status
 

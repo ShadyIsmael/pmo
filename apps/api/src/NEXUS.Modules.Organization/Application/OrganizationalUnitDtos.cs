@@ -20,6 +20,12 @@ public sealed class OrganizationalUnitDto
     public DateTime? UpdatedAt { get; set; }
 }
 
+public sealed class OrganizationalUnitLookupDto
+{
+    public Guid Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+}
+
 public sealed class OrganizationalUnitTypeDto
 {
     public Guid Id { get; set; }

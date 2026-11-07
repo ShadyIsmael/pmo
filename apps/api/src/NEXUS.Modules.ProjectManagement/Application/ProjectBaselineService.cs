@@ -108,6 +108,7 @@ public class ProjectBaselineService : IProjectBaselineService
             {
                 EntityType = "ProjectBaselineVersion",
                 EntityId = baseline.Id,
+                ProjectId = projectId,
                 Action = "InitialBaselineCreated",
                 TenantId = tenantId,
                 UserId = actorId,

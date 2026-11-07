@@ -55,21 +55,20 @@ public sealed class WorkflowTransitionQueryService : IWorkflowTransitionQuerySer
             return Result<WorkflowTransitionsResponse>.Failure(WorkflowErrors.WorkflowInstanceNotFound(entityType, entityId));
 
         var currentState = instance.CurrentState;
-        if (currentState.IsFinal)
-        {
-            return Result<WorkflowTransitionsResponse>.Success(new WorkflowTransitionsResponse(
-                currentState.Code,
-                currentState.NameEn,
-                currentState.NameAr,
-                true,
-                Array.Empty<AvailableTransitionOption>(),
-                instance.RowVersion));
-        }
-
         var transitions = instance.WorkflowDefinitionVersion.Transitions
             .Where(t => t.IsActive && t.FromStateId == currentState.Id && t.FromState.IsActive && t.ToState.IsActive)
             .OrderBy(t => t.DisplayOrder)
             .ToList();
+
+        if (currentState.IsFinal)
+        {
+            // A final state offers only its reopen transitions (guards are
+            // still evaluated below); the response keeps IsFinalState = true
+            // for the current state.
+            transitions = transitions
+                .Where(t => t.Code.StartsWith(WorkflowTransitionCodes.ReopenPrefix, StringComparison.Ordinal))
+                .ToList();
+        }
 
         var snapshotResult = await adapter.GetSnapshotAsync(entityId, context, cancellationToken);
         if (snapshotResult.IsFailure)

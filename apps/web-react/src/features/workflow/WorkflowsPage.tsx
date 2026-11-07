@@ -65,7 +65,7 @@ export function WorkflowsPage() {
             <div className="space-y-1.5">
               <Label>{t("workflows.domain")}</Label>
               <select className="input-field" value={form.domain} onChange={(e) => setForm({ ...form, domain: e.target.value })}>
-                <option value="Task">Task</option><option value="Risk">Risk</option><option value="Finance">Finance</option>
+                <option value="Task">{t("workflows.domainTask")}</option><option value="Risk">{t("workflows.domainRisk")}</option><option value="Finance">{t("workflows.domainFinance")}</option>
               </select>
             </div>
           </SideSheetBody>

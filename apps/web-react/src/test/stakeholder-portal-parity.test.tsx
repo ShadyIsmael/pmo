@@ -7,7 +7,7 @@ import { AcceptInvitationPage, StakeholderProjectDetailPage, StakeholderProjects
 
 const stakeholderMocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), ApiError: class ApiError extends Error {} }));
 
-vi.mock("@api/client", () => ({ api: { get: stakeholderMocks.get, post: stakeholderMocks.post }, ApiError: stakeholderMocks.ApiError }));
+vi.mock("@api/client", () => ({ api: { get: stakeholderMocks.get, post: stakeholderMocks.post }, ApiError: stakeholderMocks.ApiError, setApiErrorLocale: () => undefined }));
 vi.mock("@features/projects/lib/project-labels", () => ({
   useProjectEnumLabels: () => ({
     statusLabel: (value?: string | null) => value ? `status:${value}` : "—",
@@ -92,11 +92,11 @@ describe("stakeholder portal parity", () => {
   });
 
   it("renders the source-shaped public invitation loading state", () => {
-    stakeholderMocks.get.mockReturnValue(new Promise(() => undefined));
-    renderRoute("/stakeholder/accept-invitation?token=invite-token");
+    stakeholderMocks.post.mockReturnValue(new Promise(() => undefined));
+    renderRoute("/stakeholder/accept-invitation#token=invite-token");
 
     expect(screen.getByRole("status", { name: "Loading..." })).toBeInTheDocument();
-    expect(stakeholderMocks.get).toHaveBeenCalledWith("/api/stakeholder-invitations/validate?token=invite-token");
+    expect(stakeholderMocks.post).toHaveBeenCalledWith("/api/stakeholder-invitations/validate", { token: "invite-token" });
   });
 
   it("shows localized explanatory text when an invitation token is missing", () => {
@@ -104,12 +104,12 @@ describe("stakeholder portal parity", () => {
 
     expect(screen.getByRole("heading", { name: "This invitation is invalid or no longer available." })).toBeInTheDocument();
     expect(screen.getByText("The invitation could not be accepted.")).toBeInTheDocument();
-    expect(stakeholderMocks.get).not.toHaveBeenCalled();
+    expect(stakeholderMocks.post).not.toHaveBeenCalled();
   });
 
   it("localizes expired invitation tokens", async () => {
     window.localStorage.setItem("nexus-locale", "ar");
-    stakeholderMocks.get.mockRejectedValueOnce(new stakeholderMocks.ApiError("Invitation expired"));
+    stakeholderMocks.post.mockRejectedValueOnce(new stakeholderMocks.ApiError("Invitation expired"));
     renderRoute("/stakeholder/accept-invitation?token=expired-token");
     expect(await screen.findByRole("heading", { name: "انتهت صلاحية هذه الدعوة." })).toBeInTheDocument();
   });
@@ -121,28 +121,66 @@ describe("stakeholder portal parity", () => {
     expect(screen.getByText("تعذر قبول الدعوة.")).toBeInTheDocument();
   });
 
-  it("accepts a validated invitation through the public API and mirrors the source form cues", async () => {
-    stakeholderMocks.get.mockResolvedValue({ resourceName: "Morgan Resource", email: "morgan@example.com", projectName: "Core Platform" });
-    stakeholderMocks.post.mockResolvedValue(undefined);
+  it("accepts a validated invitation with project-specific consent and no account credentials", async () => {
+    stakeholderMocks.post
+      .mockResolvedValueOnce({ resourceName: "Morgan Resource", email: "morgan@example.com", projectName: "Core Platform" })
+      .mockResolvedValueOnce({ status: "Accepted", reportsConsent: true, notificationsConsent: false });
     renderRoute("/stakeholder/accept-invitation?token=invite-token");
 
-    const heading = await screen.findByRole("heading", { name: "Activate your stakeholder access" });
+    const heading = await screen.findByRole("heading", { name: "Join as an external project stakeholder" });
     expect(heading).toBeInTheDocument();
     expect(screen.getByText("Stakeholder")).toHaveClass("border-input", "bg-background");
-    expect(screen.getByLabelText("Set password").parentElement?.querySelector("svg")).toBeInTheDocument();
     expect(screen.getByText("Morgan Resource")).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("Set password"), { target: { value: "secure-pass-1" } });
-    fireEvent.change(screen.getByLabelText("Confirm password"), { target: { value: "secure-pass-1" } });
+    expect(screen.getByText(/does not create a login or grant access to project APIs/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/password/i)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox", { name: "I accept participation as an external stakeholder for this project." }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Email me published status reports for this project." }));
     fireEvent.submit(heading.closest("main")!.querySelector("form")!);
 
-    expect(await screen.findByRole("heading", { name: "Account activated. You can now sign in." })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Your acceptance was recorded for this project." })).toBeInTheDocument();
     expect(stakeholderMocks.post).toHaveBeenCalledWith("/api/stakeholder-invitations/accept", {
       token: "invite-token",
-      password: "secure-pass-1",
-      confirmPassword: "secure-pass-1",
+      acceptParticipation: true,
+      receiveProjectReports: true,
+      receiveProjectNotifications: false,
     });
-    expect(screen.getByRole("link", { name: /Go to sign in/ })).toHaveAttribute("href", "/login");
+    expect(stakeholderMocks.post.mock.calls[0]?.[1]).not.toHaveProperty("password");
+    expect(screen.queryByRole("link", { name: /sign in/i })).not.toBeInTheDocument();
+  });
+
+  it("lets an accepted external stakeholder withdraw report consent without project access", async () => {
+    stakeholderMocks.post
+      .mockResolvedValueOnce({
+        resourceName: "Morgan Resource", email: "morgan@example.com", projectName: "Core Platform",
+        status: "Accepted", reportsConsent: true, notificationsConsent: true,
+      })
+      .mockResolvedValueOnce({ status: "Accepted", reportsConsent: false, notificationsConsent: true });
+    renderRoute("/stakeholder/accept-invitation?token=invite-token");
+
+    expect(await screen.findByRole("heading", { name: "Your acceptance was recorded for this project." })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Stop project report emails" }));
+
+    await waitFor(() => expect(stakeholderMocks.post).toHaveBeenCalledWith(
+      "/api/stakeholder-invitations/withdraw-consent",
+      { token: "invite-token", withdrawReportsConsent: true, withdrawNotificationsConsent: false },
+    ));
+    expect(await screen.findByText("Off")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Stop project notification emails" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /sign in/i })).not.toBeInTheDocument();
+  });
+
+  it("declines a validated invitation without creating an account", async () => {
+    stakeholderMocks.post
+      .mockResolvedValueOnce({ resourceName: "Morgan Resource", email: "morgan@example.com", projectName: "Core Platform" })
+      .mockResolvedValueOnce(undefined);
+    renderRoute("/stakeholder/accept-invitation?token=decline-token");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Decline invitation" }));
+
+    expect(await screen.findByRole("heading", { name: "You declined this project invitation." })).toBeInTheDocument();
+    expect(stakeholderMocks.post).toHaveBeenCalledWith("/api/stakeholder-invitations/decline", { token: "decline-token" });
+    expect(screen.getByText(/does not create a login/i)).toBeInTheDocument();
   });
 
   it("renders published details, milestone progress, and full status history", async () => {

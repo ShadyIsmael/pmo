@@ -48,11 +48,33 @@ public sealed class FinanceWorkflowAdapter : IWorkflowEntityAdapter
 
     public async Task<Result> AuthorizeAsync(WorkflowExecutionContext context, Guid entityId, CancellationToken cancellationToken = default)
     {
-        var principal = _httpContextAccessor.HttpContext?.User;
-        if (principal?.Identity?.IsAuthenticated != true || !principal.Claims.Any(claim => claim.Type == "permission" && (claim.Value is "Finances.Read" or "Finances.Write")) && !principal.IsInRole("SystemAdministrator"))
-            return Result.Failure(Error.Forbidden("Finance access is required."));
+        var accessError = FinancePermissionGuard.Require(_httpContextAccessor, "BudgetRevision.View");
+        if (accessError is not null) return Result.Failure(accessError);
         return await FindAccessibleAsync(entityId, context, cancellationToken) is null
             ? Result.Failure(WorkflowErrors.EntityNotAccessible(EntityType, entityId))
+            : Result.Success();
+    }
+
+    /// <summary>
+    /// Every Finance workflow state transition requires its canonical action permission.
+    /// Scope checks are applied independently below.
+    /// </summary>
+    public async Task<Result> AuthorizeTransitionAsync(WorkflowTransitionContext context, CancellationToken cancellationToken = default)
+    {
+        var requiredPermission = context.ToState.Code.ToLowerInvariant() switch
+        {
+            "submitted" => "BudgetRevision.SubmitForReview",
+            "approved" or "rejected" => "BudgetRevision.Approve",
+            "cancelled" => "BudgetRevision.Cancel",
+            "draft" => "BudgetRevision.EditDraft",
+            _ => string.Empty
+        };
+        if (string.IsNullOrEmpty(requiredPermission))
+            return Result.Failure(Error.Forbidden("The Finance workflow target has no canonical permission mapping."));
+        var accessError = FinancePermissionGuard.Require(_httpContextAccessor, requiredPermission);
+        if (accessError is not null) return Result.Failure(accessError);
+        return await FindAccessibleAsync(context.EntityId, context.Execution, cancellationToken) is null
+            ? Result.Failure(WorkflowErrors.EntityNotAccessible(EntityType, context.EntityId))
             : Result.Success();
     }
 
@@ -99,8 +121,9 @@ public sealed class FinanceWorkflowAdapter : IWorkflowEntityAdapter
         if (!tracked) query = query.AsNoTracking();
         var revision = await query.FirstOrDefaultAsync(item => item.Id == id && !item.IsDeleted, cancellationToken);
         if (revision is null || (context.TenantId != Guid.Empty && revision.TenantId != context.TenantId)) return null;
+        // An empty project scope means "no project assignments", never "all projects".
         var projectIds = _managementContext.Current?.Scope.ProjectIds;
-        return projectIds is not null && projectIds.Count > 0 && !projectIds.Contains(revision.ProjectId) ? null : revision;
+        return projectIds is not null && projectIds.Contains(revision.ProjectId) ? revision : null;
     }
 
     private static Guid ParseUserId(string value) => Guid.TryParse(value, out var id) ? id : Guid.Empty;

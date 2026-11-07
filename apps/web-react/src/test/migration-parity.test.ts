@@ -7,6 +7,7 @@ import { RiskMatrixPage } from "../features/risks/RiskMatrixPage";
 import { PortfolioOptimizationPage } from "../features/delivery/PortfolioOptimizationPage";
 import { OrganizationPage } from "../features/organization/OrganizationPage";
 import { navigationConfig, findActiveItem } from "../lib/navigation";
+import { Permissions } from "../lib/permissions";
 
 describe("React migration parity inventory", () => {
   it("keeps the original project workspace tabs available in both locales", () => {
@@ -68,6 +69,11 @@ describe("React migration parity inventory", () => {
     expect(homeItems.some((item) => item.id === "approvals")).toBe(true);
     expect(homeItems.some((item) => item.id === "notifications")).toBe(false);
     expect(findActiveItem(homeItems, "/my-work/approvals")?.id).toBe("approvals");
+  });
+
+  it("gates the Issues navigation item with the same canonical permission as the Issues route", () => {
+    const workItems = navigationConfig.find((section) => section.id === "work-management")?.items ?? [];
+    expect(workItems.find((item) => item.id === "issues")?.requiredPermission).toBe(Permissions.Issue.View);
   });
 
   it("exposes real project workspace view components for the migrated deep links", () => {

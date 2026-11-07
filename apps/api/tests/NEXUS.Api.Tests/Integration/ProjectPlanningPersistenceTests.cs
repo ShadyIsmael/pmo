@@ -9,6 +9,7 @@ using NEXUS.Modules.ProjectManagement.Application;
 using NEXUS.Modules.ProjectManagement.Domain;
 using NEXUS.Modules.ResourceManagement.Domain;
 using NEXUS.Modules.Audit.Application;
+using NEXUS.Api.Tests.Testing;
 using NEXUS.Persistence;
 using System.Security.Claims;
 using Xunit;
@@ -17,8 +18,8 @@ namespace NEXUS.Api.Tests.Integration;
 
 /// <summary>
 /// Focused EF/persistence tests for the Project Planning module skeleton
-/// (Phase 1). Uses the same in-memory SQLite setup and shared tenant resolution
-/// as the other API integration tests.
+/// (Phase 1). Uses the provider-adapted in-memory SQLite setup and shared tenant
+/// resolution used by the tenant-isolation integration tests.
 /// </summary>
 public class ProjectPlanningPersistenceTests : IDisposable
 {
@@ -38,7 +39,7 @@ public class ProjectPlanningPersistenceTests : IDisposable
         var options = new DbContextOptionsBuilder<AppDbContext>()
             .UseSqlite(_connection)
             .Options;
-        _context = new AppDbContext(options);
+        _context = new SqliteTestAppDbContext(options);
         _context.Database.EnsureCreatedAsync().GetAwaiter().GetResult();
         _accessor = new Mock<IHttpContextAccessor>();
     }
@@ -692,6 +693,47 @@ public class ProjectPlanningPersistenceTests : IDisposable
         Assert.Empty(await _context.PlanDependencies.ToListAsync());
         if (nestedSummary is not null) Assert.Contains(nestedSummary.Id, ids);
     }
+    /// <summary>
+    /// D-01 regression: a Project Team membership created through the API path must
+    /// carry the owning project's tenant, otherwise the global tenant filter hides it
+    /// from team reads, scope resolution, and allocation-conflict checks.
+    /// </summary>
+    [Fact]
+    public async Task AddTeamMemberAsync_PersistsProjectTenantIdAndIsVisibleToTeamReads()
+    {
+        SetTenant(_tenantA, _userA);
+        var project = new Project { Id = Guid.NewGuid(), TenantId = _tenantA, CreatedBy = _userA.ToString(), Name = "Team project", Code = "PRJ-TEAM" };
+        var resource = new Resource
+        {
+            Id = Guid.NewGuid(), TenantId = _tenantA, CreatedBy = _userA.ToString(),
+            Name = "New team member", Type = "Internal", Status = "Active", IsActive = true
+        };
+        _context.Projects.Add(project);
+        _context.Resources.Add(resource);
+        await _context.SaveChangesAsync();
+
+        var service = new ProjectService(
+            _context, new Mock<IAuditService>().Object, _accessor.Object, new ProjectManagerMembershipSynchronizer(_context));
+        var result = await service.AddTeamMemberAsync(project.Id, new NEXUS.Modules.ProjectManagement.Application.DTOs.CreateProjectMemberDto
+        {
+            ProjectId = project.Id,
+            ResourceId = resource.Id,
+            Role = "Team Member",
+            AllocationPercentage = 50m,
+            StartDate = new DateTime(2026, 1, 1),
+            EndDate = new DateTime(2026, 1, 31),
+            Status = "Active"
+        }, _userA.ToString());
+
+        Assert.True(result.IsSuccess);
+        var stored = await _context.Set<ProjectMember>().AsNoTracking().SingleAsync(m => m.Id == result.Value!.Id);
+        Assert.Equal(_tenantA, stored.TenantId);
+
+        var team = await service.GetTeamAsync(project.Id);
+        Assert.True(team.IsSuccess);
+        Assert.Single(team.Value!);
+    }
+
     public void Dispose()
     {
         _context?.Dispose();

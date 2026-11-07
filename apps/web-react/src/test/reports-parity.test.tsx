@@ -9,15 +9,17 @@ const mocks = vi.hoisted(() => ({
   get: vi.fn(),
   useManagedPortfolios: vi.fn(),
   usePortfolioManagementOverview: vi.fn(),
+  usePortfolioFinancialRollup: vi.fn(),
   permissions: ["Portfolio.View"],
   managementContext: { perspective: "PortfolioManager" } as { perspective: string } | null,
   managementLoading: false,
 }));
 
-vi.mock("@api/client", () => ({ api: { get: mocks.get } }));
+vi.mock("@api/client", () => ({ api: { get: mocks.get }, setApiErrorLocale: () => undefined }));
 vi.mock("@features/delivery/api/delivery", () => ({
   useManagedPortfolios: mocks.useManagedPortfolios,
   usePortfolioManagementOverview: mocks.usePortfolioManagementOverview,
+  usePortfolioFinancialRollup: mocks.usePortfolioFinancialRollup,
 }));
 vi.mock("@auth/AuthProvider", () => ({ useAuth: () => ({ user: { id: "user-1", permissions: mocks.permissions } }) }));
 vi.mock("@api/management", () => ({ useManagement: () => ({ context: mocks.managementContext, loading: mocks.managementLoading }) }));
@@ -50,6 +52,7 @@ describe("reports source parity", () => {
     mocks.managementLoading = false;
     mocks.useManagedPortfolios.mockReset().mockReturnValue({ data: { items: [] }, isLoading: false, isError: false, refetch: vi.fn() });
     mocks.usePortfolioManagementOverview.mockReset().mockReturnValue({ data: undefined, isLoading: false, isError: false, refetch: vi.fn() });
+    mocks.usePortfolioFinancialRollup.mockReset().mockReturnValue({ data: undefined, isLoading: false, isError: false, refetch: vi.fn() });
   });
 
   it("uses live report definitions for categories, search, and templates", async () => {
@@ -84,21 +87,31 @@ describe("reports source parity", () => {
 
   it("shows scoped live portfolio summaries without fetching generic report definitions", async () => {
     const portfolio = { id: "portfolio-live", name: "Digital Transformation", health: "OnTrack", totalProjectCount: 2 };
+    mocks.permissions = ["Portfolio.View", "PortfolioFinancialRollup.View"];
     mocks.useManagedPortfolios.mockReturnValue({ data: { items: [portfolio] }, isLoading: false, isError: false, refetch: vi.fn() });
     mocks.usePortfolioManagementOverview.mockReturnValue({
       data: {
         summary: { totalProjects: 2, averageProjectProgress: 63 },
-        financials: {
-          groups: [
-            { currency: "USD", budget: 1000, actual: 400 },
-            { currency: "EGP", budget: 2000, actual: 900 },
-          ],
-          hasMixedCurrencies: true,
-        },
       },
       isLoading: false,
       isError: false,
       refetch: vi.fn(),
+    });
+    mocks.usePortfolioFinancialRollup.mockReturnValue({
+      data: {
+        entityType: "Portfolio", entityId: "portfolio-live", fiscalYear: 2026, fiscalYearLabel: "FY 2026",
+        fiscalYearStartDate: "2026-01-01", fiscalYearEndDate: "2026-12-31", tenantTimeZone: "UTC",
+        hierarchyBasis: "Portfolio", coverage: "Complete", includedProjectCount: 2,
+        projectsMissingApprovedAnnualBudget: 0, projectsWithFinancialDataGaps: 0, unresolvedLegacyPaymentRequests: 0,
+        hasMixedCurrencies: true, reconciliationStatus: "Reconciled",
+        closingCoverage: { projectFinancialYears: 2, open: 0, underReview: 0, pendingApproval: 0, closed: 2, projectsWithUnresolvedFinancialData: 0, status: "Closed" },
+        currencyGroups: [
+          { currency: "USD", approvedAnnualBudget: 1000, actualSettlementsInFiscalYear: 400 },
+          { currency: "EGP", approvedAnnualBudget: 2000, actualSettlementsInFiscalYear: 900 },
+        ],
+        programBreakdowns: [], projects: [], projectsPage: 1, projectsPageSize: 25, projectsTotalCount: 2,
+      },
+      isLoading: false, isError: false, refetch: vi.fn(),
     });
 
     renderReports("/reports/portfolio");
@@ -114,7 +127,25 @@ describe("reports source parity", () => {
     expect(within(card as HTMLElement).getByRole("link", { name: "Open" })).toHaveAttribute("href", "/portfolios/portfolio-live");
     expect(mocks.useManagedPortfolios).toHaveBeenCalledWith("", true);
     expect(mocks.usePortfolioManagementOverview).toHaveBeenCalledWith("portfolio-live", { programsPage: 1, projectsPage: 1, pageSize: 1 }, true);
+    expect(mocks.usePortfolioFinancialRollup).toHaveBeenCalledWith("portfolio-live", {}, true);
     expect(mocks.get).not.toHaveBeenCalled();
+  });
+
+  it("does not request or display portfolio financials without PortfolioFinancialRollup.View", async () => {
+    const portfolio = { id: "portfolio-live", name: "Digital Transformation", health: "OnTrack", totalProjectCount: 2 };
+    mocks.useManagedPortfolios.mockReturnValue({ data: { items: [portfolio] }, isLoading: false, isError: false, refetch: vi.fn() });
+    mocks.usePortfolioManagementOverview.mockReturnValue({
+      data: { summary: { totalProjects: 2, averageProjectProgress: 63 } }, isLoading: false, isError: false, refetch: vi.fn(),
+    });
+
+    renderReports("/reports/portfolio");
+
+    const card = (await screen.findByText("Digital Transformation")).parentElement?.parentElement?.parentElement;
+    expect(card).not.toBeNull();
+    expect(within(card as HTMLElement).getByText("63%")).toBeInTheDocument();
+    expect(within(card as HTMLElement).queryByText("Budget")).not.toBeInTheDocument();
+    expect(within(card as HTMLElement).queryByText("USD")).not.toBeInTheDocument();
+    expect(mocks.usePortfolioFinancialRollup).toHaveBeenCalledWith("portfolio-live", {}, false);
   });
 
   it("does not query portfolio data without the Portfolio Manager scope", async () => {

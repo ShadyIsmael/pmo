@@ -96,22 +96,28 @@ Successful responses return data directly:
 
 ## Error Response Format (Problem Details)
 
-Errors follow RFC 7807 Problem Details format:
+Errors follow RFC 9457 Problem Details format with a stable application `code`. Validation failures can also include field-keyed `errors` and safe business context in `details`:
 
 ```json
 {
-  "type": "https://errors.nexuspmo.local/validation-error",
-  "title": "Validation Error",
+  "type": "https://errors.nexuspmo.local/handover-date-after-project-end",
+  "title": "Validation failed",
   "status": 400,
-  "detail": "One or more validation errors occurred.",
-  "instance": "/api/v1/projects",
+  "detail": "The handover date must be on or before the project end date.",
+  "instance": "/api/v1/projects/123/handover-requests",
+  "code": "HANDOVER_DATE_AFTER_PROJECT_END",
   "errors": {
-    "name": ["The Name field is required."],
-    "startDate": ["Start Date must be before End Date."]
+    "effectiveHandoverDate": ["The handover date must be on or before the project end date."]
+  },
+  "details": {
+    "handoverDate": "2026-11-05",
+    "projectEndDate": "2026-11-04"
   },
   "traceId": "00-abc123..."
 }
 ```
+
+`code` is the stable machine-readable identifier. `errors` keys use request field names and values are arrays so clients can render field-level feedback. `details` contains only non-sensitive values needed to explain a business conflict. Unexpected server errors always use a generic `detail`; stack traces, SQL messages, and implementation diagnostics must not be sent to clients. See [Validation Error Convention](./validation-errors.md) for the full backend and React guidance.
 
 | HTTP Status | Description |
 |-------------|-------------|

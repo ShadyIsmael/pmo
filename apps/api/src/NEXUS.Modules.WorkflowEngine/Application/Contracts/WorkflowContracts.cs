@@ -32,6 +32,14 @@ public interface IWorkflowEntityAdapter
     string EntityType { get; }
     Task<Result<WorkflowEntitySnapshot>> GetSnapshotAsync(Guid entityId, WorkflowExecutionContext context, CancellationToken cancellationToken = default);
     Task<Result> AuthorizeAsync(WorkflowExecutionContext context, Guid entityId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Write-path authorization for a specific transition. Read access to an entity does not
+    /// imply the right to move it through its workflow, so adapters must check the permission
+    /// that actually governs the target state here.
+    /// </summary>
+    Task<Result> AuthorizeTransitionAsync(WorkflowTransitionContext context, CancellationToken cancellationToken = default);
+
     Task<Result> ValidateTransitionAsync(WorkflowTransitionContext context, CancellationToken cancellationToken = default);
     Task<Result> ApplyTransitionAsync(WorkflowTransitionContext context, CancellationToken cancellationToken = default);
 }

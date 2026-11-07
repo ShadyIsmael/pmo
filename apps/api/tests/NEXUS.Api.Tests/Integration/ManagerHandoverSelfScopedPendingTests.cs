@@ -25,6 +25,7 @@ public sealed class ManagerHandoverSelfScopedPendingTests : IDisposable
     private static readonly Guid NoPortfolioViewId = Guid.Parse("30000000-0000-0000-0000-000000000017");
     private static readonly Guid OtherTenantId = Guid.Parse("40000000-0000-0000-0000-000000000015");
     private static readonly Guid AdminId = Guid.Parse("30000000-0000-0000-0000-000000000016");
+    private static readonly Guid NoManagementId = Guid.Parse("30000000-0000-0000-0000-000000000018");
     private static readonly Guid PortfolioId = Guid.Parse("30000000-0000-0000-0000-000000000021");
     private static readonly Guid ProgramId = Guid.Parse("30000000-0000-0000-0000-000000000022");
 
@@ -44,12 +45,13 @@ public sealed class ManagerHandoverSelfScopedPendingTests : IDisposable
         _permissionMap = new Dictionary<Guid, IReadOnlySet<string>>
         {
             [OwnerId] = new HashSet<string> { "Handover.Manage", "Handover.View" },
-            [IncomingId] = new HashSet<string> { "Handover.Approve", "Portfolio.View" },
-            [UnrelatedId] = new HashSet<string> { "Handover.Approve", "Portfolio.View" },
+            [IncomingId] = new HashSet<string> { "Handover.Approve", "Portfolio.View", "Program.View" },
+            [UnrelatedId] = new HashSet<string> { "Handover.Approve", "Portfolio.View", "Program.View" },
             [NoPermId] = new HashSet<string>(),
             [NoPortfolioViewId] = new HashSet<string> { "Handover.Approve" },
             [OtherTenantId] = new HashSet<string> { "Handover.Approve" },
             [AdminId] = new HashSet<string> { "Handover.AdminInitiate" },
+            [NoManagementId] = new HashSet<string> { "Handover.Approve", "Portfolio.View", "Program.View" },
         };
         _permissions.Setup(x => x.GetEffectivePermissionsAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((Guid user, Guid tenant, CancellationToken ct) =>
@@ -164,6 +166,7 @@ public sealed class ManagerHandoverSelfScopedPendingTests : IDisposable
         Assert.True(eligible.IsSuccess);
         Assert.Contains(eligible.Value!, manager => manager.Id == IncomingId);
         Assert.DoesNotContain(eligible.Value!, manager => manager.Id == NoPortfolioViewId);
+        Assert.DoesNotContain(eligible.Value!, manager => manager.Id == NoManagementId);
     }
 
     [Fact]
@@ -178,6 +181,21 @@ public sealed class ManagerHandoverSelfScopedPendingTests : IDisposable
 
         Assert.True(result.IsFailure);
         Assert.Equal(400, result.Error?.StatusCode);
+    }
+
+    [Fact]
+    public async Task AdminPortfolioHandover_RejectsCandidateWithoutManagementCategoryRole()
+    {
+        var result = await _service.CreateAdminPortfolioAsync(PortfolioId, new CreateManagerHandoverRequestDto
+        {
+            NewManagerId = NoManagementId,
+            EffectiveHandoverDate = DateTime.UtcNow.AddDays(7),
+            Reason = "Administrative owner assignment"
+        }, AdminId);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(400, result.Error?.StatusCode);
+        Assert.Empty(await _context.PortfolioHandoverRequests.ToListAsync());
     }
 
     [Fact]
@@ -224,6 +242,26 @@ public sealed class ManagerHandoverSelfScopedPendingTests : IDisposable
         var snapshot = await _context.ProgramSnapshots.AsNoTracking().SingleAsync(x => x.Id == accept.Value.SnapshotId!.Value);
         Assert.Equal(OwnerId, snapshot.PreviousProgramManagerId);
         Assert.Equal(IncomingId, snapshot.NewProgramManagerId);
+    }
+
+    [Fact]
+    public async Task AcceptPortfolioAndProgram_RequireIncomingManagerToRetainManagementCategoryRole()
+    {
+        var portfolioRequest = await CreatePortfolioRequestAsync();
+        var programRequest = await CreateProgramRequestAsync();
+        var role = await _context.Roles.SingleAsync(item => item.Name == "delivery.lead");
+        role.Category = "Operation";
+        await _context.SaveChangesAsync();
+
+        var portfolioAccepted = await _service.AcceptPortfolioAsync(portfolioRequest.Id, IncomingId);
+        var programAccepted = await _service.AcceptProgramAsync(programRequest.Id, IncomingId);
+
+        Assert.True(portfolioAccepted.IsFailure);
+        Assert.Equal(403, portfolioAccepted.Error?.StatusCode);
+        Assert.True(programAccepted.IsFailure);
+        Assert.Equal(403, programAccepted.Error?.StatusCode);
+        Assert.Equal(OwnerId, (await _context.Portfolios.SingleAsync(item => item.Id == PortfolioId)).OwnerId);
+        Assert.Equal(OwnerId, (await _context.Programs.SingleAsync(item => item.Id == ProgramId)).ProgramManagerId);
     }
 
     [Fact]
@@ -445,26 +483,29 @@ public sealed class ManagerHandoverSelfScopedPendingTests : IDisposable
             NewUser(UnrelatedId, TenantA, "Unrelated", "Manager"),
             NewUser(NoPermId, TenantA, "NoPerm", "User"),
             NewUser(NoPortfolioViewId, TenantA, "Project", "Manager"),
+            NewUser(NoManagementId, TenantA, "Operations", "Lead"),
             NewUser(OtherTenantId, TenantB, "Other", "Tenant"),
             NewUser(AdminId, TenantA, "Tenant", "Administrator"),
         };
         var approvePermission = new Permission { Id = Guid.NewGuid(), TenantId = TenantA, Name = "Handover.Approve", Resource = "Handover", Action = "Approve", RowVersion = new byte[8] };
-        var managerRole = new Role { Id = Guid.NewGuid(), TenantId = TenantA, Name = "portfolio.manager", RowVersion = new byte[8] };
+        var managerRole = new Role { Id = Guid.NewGuid(), TenantId = TenantA, Name = "delivery.lead", Category = "Management", RowVersion = new byte[8] };
         managerRole.Permissions.Add(approvePermission);
-        var projectManagerRole = new Role { Id = Guid.NewGuid(), TenantId = TenantA, Name = "project.manager", RowVersion = new byte[8] };
+        var projectManagerRole = new Role { Id = Guid.NewGuid(), TenantId = TenantA, Name = "service.owner", Category = "Management", RowVersion = new byte[8] };
         projectManagerRole.Permissions.Add(approvePermission);
+        var operationsRole = new Role { Id = Guid.NewGuid(), TenantId = TenantA, Name = "operations.lead", Category = "Operation", RowVersion = new byte[8] };
         var assignments = new[]
         {
             NewUserRole(IncomingId, TenantA, managerRole.Id),
             NewUserRole(UnrelatedId, TenantA, managerRole.Id),
             NewUserRole(NoPortfolioViewId, TenantA, projectManagerRole.Id),
+            NewUserRole(NoManagementId, TenantA, operationsRole.Id),
         };
         var portfolio = new Portfolio { Id = PortfolioId, TenantId = TenantA, Name = "Portfolio A", Currency = "USD", OwnerId = OwnerId, RowVersion = new byte[8] };
         var program = new PortfolioProgram { Id = ProgramId, TenantId = TenantA, Name = "Program A", PortfolioId = PortfolioId, ProgramManagerId = OwnerId, RowVersion = new byte[8] };
 
         _context.Users.AddRange(users);
         _context.Permissions.Add(approvePermission);
-        _context.Roles.AddRange(managerRole, projectManagerRole);
+        _context.Roles.AddRange(managerRole, projectManagerRole, operationsRole);
         _context.UserRoles.AddRange(assignments);
         _context.Portfolios.Add(portfolio);
         _context.Programs.Add(program);

@@ -4,8 +4,8 @@ namespace NEXUS.Modules.Organization.Domain;
 
 /// <summary>
 /// A Team is an independent organizational master used to group Resources and to own
-/// work. It is deliberately NOT a Resource type: <c>Resource.Type</c> only ever holds
-/// <c>Staff</c> or <c>VendorResource</c>.
+/// work. It is deliberately NOT a Resource type: <c>Resource.Type</c> holds one of
+/// <c>Staff</c>, <c>Outsourced</c>, or <c>VendorResource</c>.
 ///
 /// Membership is modelled by <see cref="TeamMember"/> rather than by a single
 /// <c>Resource.TeamId</c> pointer, so a Resource can belong to several Teams later

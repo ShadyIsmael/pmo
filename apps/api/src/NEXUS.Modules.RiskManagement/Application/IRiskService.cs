@@ -17,6 +17,7 @@ public interface IRiskService
     Task<Result<RiskImpactAssessmentDto>> UpdateImpactAsync(Guid riskId, Guid impactId, UpdateRiskImpactAssessmentDto dto, string userId, CancellationToken cancellationToken = default);
     Task<Result> DeleteImpactAsync(Guid riskId, Guid impactId, string userId, CancellationToken cancellationToken = default);
     Task<Result<IReadOnlyList<RiskActionDto>>> GetActionsAsync(Guid riskId, CancellationToken cancellationToken = default);
+    Task<Result<RiskActionFollowUpTargetDto>> GetActionFollowUpTargetAsync(Guid actionPublicId, CancellationToken cancellationToken = default);
     Task<Result<RiskActionDto>> CreateActionAsync(Guid riskId, CreateRiskActionDto dto, string userId, CancellationToken cancellationToken = default);
     Task<Result<RiskActionDto>> UpdateActionAsync(Guid riskId, Guid actionId, UpdateRiskActionDto dto, string userId, CancellationToken cancellationToken = default);
     Task<Result> DeleteActionAsync(Guid riskId, Guid actionId, string userId, CancellationToken cancellationToken = default);

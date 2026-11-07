@@ -11,7 +11,7 @@ const fixtures = vi.hoisted(() => ({
   performance: { isLoading: false, isError: false, data: undefined as unknown },
   teamCapacity: { isLoading: false, isError: false, data: undefined as unknown, refetch: vi.fn() },
   capacityHook: vi.fn(),
-  permissions: [] as string[],
+  permissions: ["Planning.View"] as string[],
 }));
 
 vi.mock("../features/projects/api/projects", () => ({
@@ -134,7 +134,7 @@ describe("project overview source parity", () => {
   beforeEach(() => {
     window.localStorage.setItem("nexus-locale", "en");
     fixtures.query = { isLoading: false, isError: false, data: overview, refetch: vi.fn() };
-    fixtures.permissions = [];
+    fixtures.permissions = ["Planning.View"];
     fixtures.reportingConfiguration = { isLoading: false, isError: false, data: undefined, refetch: vi.fn() };
     fixtures.performance = { isLoading: false, isError: false, data: undefined };
     fixtures.teamCapacity = { isLoading: false, isError: false, data: teamCapacityOverview, refetch: vi.fn() };
@@ -215,7 +215,7 @@ describe("project overview source parity", () => {
 
     const renderedText = document.body.textContent?.toLocaleLowerCase() ?? "";
     for (const heading of [
-      "Project Information", "KPI Summary", "Change Requests", "Milestones",
+      "Project Information", "KPI Summary", "Milestones",
       "Team, resources & allocation", "Governance & Reporting", "Risks overview",
     ]) {
       expect(renderedText).toContain(heading.toLocaleLowerCase());
@@ -362,17 +362,17 @@ describe("project overview source parity", () => {
     );
   });
 
-  it("keeps issue KPIs and removes risk KPIs from the KPI summary", () => {
+  it("keeps KPI Performance limited to the existing progress chart and published-state comparison", () => {
     renderOverview();
 
     const row = screen.getByTestId("project-overview-kpi-performance-row");
     const summary = within(row).getByRole("region", { name: "KPI Summary" });
 
-    expect(row.children).toHaveLength(1);
     expect(within(summary).getByRole("img", { name: "Project record progress: 35%" })).toBeInTheDocument();
-    expect(within(summary).getByText("Schedule Variance")).toBeInTheDocument();
-    expect(within(summary).getByText("Cost Variance")).toBeInTheDocument();
-    expect(within(summary).getByText("Overdue open issues", { selector: "dt" })).toBeInTheDocument();
+    expect(within(summary).getByText("+0 pp")).toBeInTheDocument();
+    expect(within(summary).queryByText("Schedule Variance")).not.toBeInTheDocument();
+    expect(within(summary).queryByText("Cost Variance")).not.toBeInTheDocument();
+    expect(within(summary).queryByText("Overdue open issues")).not.toBeInTheDocument();
     expect(within(summary).queryByText("Critical attention")).not.toBeInTheDocument();
     expect(within(summary).queryByText("high/critical risks")).not.toBeInTheDocument();
   });
@@ -488,31 +488,73 @@ describe("project overview source parity", () => {
     expect(screen.queryByRole("img", { name: /Risks by status/ })).not.toBeInTheDocument();
   });
 
-  it("places Milestones above the Change Requests and Governance row", () => {
-    renderOverview();
-
-    const overviewLayout = screen.getByTestId("project-overview-milestones-layout");
-    const secondaryPanels = screen.getByTestId("project-overview-secondary-panels");
-
-    expect(within(overviewLayout).getByRole("heading", { name: /^Milestones$/i })).toBeInTheDocument();
-    expect(secondaryPanels).toHaveClass("grid");
-    expect(secondaryPanels).toHaveClass("xl:grid-cols-3");
-    expect(secondaryPanels.children).toHaveLength(2);
-    expect(within(secondaryPanels.children[0] as HTMLElement).getByRole("heading", { name: /^Change Requests$/i })).toBeInTheDocument();
-    expect(within(secondaryPanels.children[1] as HTMLElement).getByRole("heading", { name: /^Governance & Reporting$/i })).toBeInTheDocument();
-  });
-
-
-  it("shows the specific baseline-data reason when Schedule Variance is unavailable", () => {
+  it("hides Project Plan links when the viewer lacks Planning.View", () => {
+    fixtures.permissions = [];
     fixtures.query = {
       isLoading: false,
       isError: false,
       data: {
         ...overview,
+        milestones: [{ id: "milestone-1", name: "Upcoming milestone", dueDate: "2026-12-01", progress: 0 }],
+      },
+      refetch: vi.fn(),
+    };
+    renderOverview();
+
+    expect(document.querySelector(`a[href="/projects/${project.id}/plan"]`)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Plan" })).not.toBeInTheDocument();
+    expect(screen.queryAllByText("Upcoming milestone").length).toBeGreaterThan(0);
+    expect(screen.queryByRole("link", { name: /Upcoming milestone/ })).not.toBeInTheDocument();
+  });
+  it("shows only the first five project-plan milestones and links each item to that plan", () => {
+    const items = Array.from({ length: 6 }, (_, index) => ({
+      id: `milestone-${index + 1}`,
+      name: `Upcoming milestone ${index + 1}`,
+      dueDate: `2026-12-${String(index + 1).padStart(2, "0")}`,
+      progress: index === 0 ? 0 : 25,
+    }));
+    fixtures.query = {
+      isLoading: false,
+      isError: false,
+      data: { ...overview, statusDate: "2026-10-26", milestones: items },
+      refetch: vi.fn(),
+    };
+    renderOverview();
+
+    for (const item of items.slice(0, 5)) {
+      const milestoneLink = screen.getByRole("link", { name: new RegExp(item.name) });
+      expect(milestoneLink).toHaveAttribute("href", "/projects/project-1/plan");
+    }
+    expect(screen.queryByText("Upcoming milestone 6")).not.toBeInTheDocument();
+  });
+  it("places KPI Performance, Milestones, and Governance in one three-column row without Change Requests", () => {
+    renderOverview();
+
+    const panels = screen.getByTestId("project-overview-core-panels");
+
+    expect(panels).toHaveClass("grid");
+    expect(panels).toHaveClass("md:grid-cols-2");
+    expect(panels).toHaveClass("xl:grid-cols-3");
+    expect(panels.children).toHaveLength(3);
+    expect(within(panels).getByRole("heading", { name: "KPI Summary" })).toBeInTheDocument();
+    expect(within(panels).getByRole("heading", { name: "Milestones" })).toBeInTheDocument();
+    expect(within(panels).getByRole("heading", { name: /^Governance & Reporting$/i })).toBeInTheDocument();
+    expect(within(panels).queryByRole("heading", { name: "Change Requests" })).not.toBeInTheDocument();
+    expect(within(panels).getAllByRole("link", { name: "View all" }).some((link) => link.getAttribute("href") === "/projects/project-1/plan")).toBe(true);
+  });
+
+
+  it("keeps EVM and issue details out of KPI Performance when comparison data is unavailable", () => {
+    fixtures.query = {
+      isLoading: false,
+      isError: false,
+      data: {
+        ...overview,
+        planProgress: 0,
         plannedValue: null,
         earnedValue: null,
         scheduleVariance: null,
-        schedulePerformanceIndex: null,
+        costVariance: null,
         plannedValueUnavailableReason: "NO_BASELINE_ASSIGNMENTS",
         earnedValueUnavailableReason: "NO_BASELINE_ASSIGNMENTS",
         schedulePerformanceIndexUnavailableReason: "NO_BASELINE_ASSIGNMENTS",
@@ -522,22 +564,21 @@ describe("project overview source parity", () => {
     renderOverview();
 
     const summary = screen.getByRole("region", { name: "KPI Summary" });
-    expect(within(summary).getByText("The approved baseline has no resource assignments.")).toBeInTheDocument();
+    expect(within(summary).getByRole("img", { name: "Active Working plan progress: 0%" })).toBeInTheDocument();
+    expect(within(summary).queryByText("Schedule Variance")).not.toBeInTheDocument();
+    expect(within(summary).queryByText("The approved baseline has no resource assignments.")).not.toBeInTheDocument();
   });
 
-  it("localizes the specific Schedule Variance reason in Arabic", () => {
+  it("preserves the chart-only KPI card in Arabic and RTL", () => {
     window.localStorage.setItem("nexus-locale", "ar");
     fixtures.query = {
       isLoading: false,
       isError: false,
       data: {
         ...overview,
+        planProgress: 0,
         plannedValue: null,
-        earnedValue: null,
         scheduleVariance: null,
-        schedulePerformanceIndex: null,
-        plannedValueUnavailableReason: "NO_BASELINE_ASSIGNMENTS",
-        earnedValueUnavailableReason: "NO_BASELINE_ASSIGNMENTS",
         schedulePerformanceIndexUnavailableReason: "NO_BASELINE_ASSIGNMENTS",
       },
       refetch: vi.fn(),
@@ -545,16 +586,16 @@ describe("project overview source parity", () => {
     renderOverview();
 
     const summary = screen.getByRole("region", { name: "ملخص مؤشرات الأداء" });
-    expect(within(summary).getByText("لا يحتوي خط الأساس المعتمد على موارد مخصصة.")).toBeInTheDocument();
+    expect(within(summary).getByRole("img", { name: "التقدم حسب خطة العمل النشطة: 0%" })).toBeInTheDocument();
+    expect(within(summary).queryByText("الانحراف عن الجدول")).not.toBeInTheDocument();
   });
-
-
   it("does not fall back to manually stored project EVM values when canonical overview values are absent", () => {
     fixtures.query = {
       isLoading: false,
       isError: false,
       data: {
         ...overview,
+        approvedBudget: 2000,
         plannedValue: null,
         earnedValue: null,
         actualCost: null,

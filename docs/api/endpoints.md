@@ -13,11 +13,41 @@ All endpoints require JWT Bearer authentication unless noted.
 | POST | `/auth/login` | Authenticate user, receive JWT | No |
 | GET | `/auth/me` | Get current user profile, roles, permissions | Yes |
 | POST | `/auth/logout` | Invalidate current session | Yes |
-| POST | `/auth/switch-role` | Switch active role context | Yes |
+| POST | `/auth/switch-role` | Compatibility endpoint; returns the current user and does not switch roles | Yes |
+
+## My Account
+
+The account endpoints are scoped exclusively from the authenticated `NameIdentifier`, `tenantId`, and `sid` claims. They accept no caller-selected user or tenant IDs. Responses use explicit projections and never return password hashes, access tokens, or refresh-token hashes.
+
+| Method | Endpoint | Description | Auth |
+|--------|----------|-------------|------|
+| GET | `/api/account` | Read personal and linked professional profile, tenant, explicit organization-settings grants, current organizational-unit/team/project memberships, security summary, and active-session metadata | Authenticated self |
+| PUT | `/api/account/profile` | Update only the authenticated user's first and last name (each max 100 characters) | Authenticated self |
+| POST | `/api/account/change-password` | Verify the current local password, apply the configured length policy, hash the new password, revoke all sessions, and require reauthentication | Authenticated self; rate limited |
+| GET | `/api/account/sessions` | List active sessions belonging to the authenticated user and mark the current `sid` | Authenticated self |
+| DELETE | `/api/account/sessions/{sessionId}` | Revoke only a session owned by the authenticated user and tenant | Authenticated self |
+| POST | `/api/account/sessions/revoke-others` | Revoke all other active sessions while preserving the current `sid` | Authenticated self |
+
+Profile and security mutations write audit records without passwords or tokens. Session revocation takes effect on the next API request because `UserPermissionClaimsMiddleware` validates the persisted `UserSession` for every authenticated request. The Account API adds no schema/migration; runtime use depends on the database already containing the mapped Resource/Team/Project relationship objects. Theme and language continue to use their existing browser preference providers; notification settings continue to use `/api/notifications/preferences`. Compact layout is currently unsupported.
 
 ---
 
 ## Projects
+
+### Project Settings authorization
+
+The Header Side Sheet and Project workflow settings use the canonical Project-scoped `ProjectSettings.View` and `ProjectSettings.Edit` keys. Financial sections keep their own View permissions and the existing sensitive `ProjectAnnualBudget.ManageApprovalConfiguration` action; edit access does not replace those checks.
+
+| Method | Endpoint | Authorization |
+|--------|----------|---------------|
+| GET | `/api/projects/{projectId}/workflows` | `ProjectSettings.View` plus Tenant and management Project scope |
+| PUT | `/api/projects/{projectId}/workflows/{domain}` | `ProjectSettings.View` + `ProjectSettings.Edit`, mutable management context, and Tenant/Project scope |
+| GET | `/api/projects/{projectId}/annual-budgets/approval-configuration` | `ProjectSettings.View` + `ProjectAnnualBudget.View`, Tenant/Project scope |
+| PUT | `/api/projects/{projectId}/annual-budgets/approval-configuration` | `ProjectSettings.View` + `ProjectSettings.Edit` + `ProjectAnnualBudget.ManageApprovalConfiguration` (which also requires `ProjectAnnualBudget.View`), mutable context and scope |
+| GET | `/api/projects/{projectId}/financial-foundation` | `ProjectSettings.View` + `ProjectFinancialFoundation.View`, Tenant/Project scope |
+| PUT | `/api/projects/{projectId}/financial-foundation/approval-configuration` | `ProjectSettings.View` + `ProjectSettings.Edit` + `ProjectFinancialFoundation.View` + `ProjectAnnualBudget.ManageApprovalConfiguration`, mutable context and scope |
+
+Explicit user Deny overrides remain effective for these Project-scoped settings keys. Admin role identity does not bypass endpoint policies or management scope.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -39,16 +69,11 @@ All endpoints require JWT Bearer authentication unless noted.
 | POST | `/projects/{id}/deliverables` | Create deliverable |
 | GET | `/projects/{id}/status-reports` | List status reports |
 | POST | `/projects/{id}/status-reports` | Create status report |
-| GET | `/projects/{id}/status-reports/current-progress?statusDate={date}` | Read backend-calculated reporting progress at a status date |
+| GET | `/projects/{id}/status-reports/current-progress?statusDate={date}&periodFrom={date}&periodTo={date}` | Read progress from the active Working plan (falling back to stored project progress) and capacity-service resource utilization for the selected reporting period (requires `StatusReport.Create` or `StatusReport.View`; project tenant/scope checks still apply) |
 | GET | `/projects/{id}/status-reports/{reportId}` | Read a status report and its frozen performance snapshot |
 | GET | `/projects/{id}/status-reports/compare?firstReportId={id}&secondReportId={id}` | Compare two Published reports for the same project using their frozen snapshots |
 | PUT | `/projects/{id}/status-reports/{reportId}` | Update a Draft status report |
-| POST | `/projects/{id}/status-reports/{reportId}/generate` | Capture the immutable performance/configuration snapshot and enter Generated (`StatusReport.Generate`) |
-| POST | `/projects/{id}/status-reports/{reportId}/submit` | Submit a generated report for review (`StatusReport.Submit`) |
-| POST | `/projects/{id}/status-reports/{reportId}/approve` | Approve a submitted report; the author cannot approve their own report (`StatusReport.Approve`) |
-| POST | `/projects/{id}/status-reports/{reportId}/return` | Return a submitted report for revision (`StatusReport.Approve`) |
-| POST | `/projects/{id}/status-reports/{reportId}/reopen` | Reopen a returned report as a draft and clear its generated snapshot (`StatusReport.Edit`) |
-| POST | `/projects/{id}/status-reports/{reportId}/publish` | Publish an approved report; the frozen snapshot is immutable (`StatusReport.Publish`) |
+| POST | `/projects/{id}/status-reports/{reportId}/publish` | Publish a Draft directly (`StatusReport.Publish`); request carries final editable content and `rowVersion`, and publication captures the immutable project snapshot atomically |
 | GET | `/projects/{id}/reporting/options` | List eligible project plans and versions for reporting configuration |
 | GET | `/projects/{id}/reporting/configuration?effectiveAt={date}` | Read the effective reporting configuration |
 | PUT | `/projects/{id}/reporting/configuration` | Create a versioned, effective-dated reporting configuration |
@@ -62,6 +87,27 @@ All endpoints require JWT Bearer authentication unless noted.
 | GET | `/projects/{id}/change-requests` | List persisted project change requests (`ChangeRequest.View`) |
 | GET | `/projects/{id}/change-requests/approvers` | List active same-tenant project participants and external business approvers with effective `ChangeRequest.Approve`, plus project approval policy (`ChangeRequest.Manage`) |
 | POST | `/projects/{id}/change-requests` | Create and persist a workflow-backed Draft (`ChangeRequest.Manage`) |
+
+### Project workflow lookups
+
+These purpose-specific routes supply minimal, tenant-scoped reference data to Project forms. Their workflow policies allow the existing `Project.Create` or `Project.Edit` operation permission, or the source entity's View permission. The policies are not catalog permissions and do not change role grants. The list endpoints retain their own View policies.
+
+| Method | Endpoint | Authorization | Response scope |
+|--------|----------|---------------|----------------|
+| GET | `/api/portfolios/project-lookup?page=1&pageSize=200` | `WorkflowLookup.Project.Portfolios` (`Project.Create` / `Project.Edit` or `Portfolio.View`) | Portfolio ID, name, currency; tenant and management scope |
+| GET | `/api/programs/project-lookup?page=1&pageSize=200` | `WorkflowLookup.Project.Programs` (`Project.Create` / `Project.Edit` or `Program.View`) | Program ID, name, Portfolio ID, currency; tenant and management scope |
+| GET | `/api/organization/units/project-lookup` | `WorkflowLookup.Project.OrganizationalUnits` (`Project.Create` / `Project.Edit` or `Settings.View`) | Active same-tenant unit ID and name |
+| GET | `/api/currencies/project-lookup` | `WorkflowLookup.Project.Currencies` (`Project.Create` / `Project.Edit` or `ReferenceData.View`) | Same-tenant currency ID, code, name, symbol, and base flag; no exchange rate |
+
+`UserPermissionClaimsMiddleware` validates the session and rebuilds effective permissions before endpoint authorization; current Deny overrides therefore remove the corresponding operation claim before these policies run. The workflow routes remain authenticated and do not bypass Tenant or management-scope filtering.
+
+### Route freshness and handover review 404s (verified 2026-11-03)
+
+React calls the four lookup paths above and builds Project handover review URLs as `/api/handover-requests/{id}/review`; the controller templates match. A local Development API output check found that `NEXUS.Api/bin/Debug/net10.0/NEXUS.Modules.Portfolio.dll` and `NEXUS.Modules.Organization.dll` predated their current lookup controller source and contained no `project-lookup` route literals. The current source-built host exposes all four lookup routes in OpenAPI. Rebuild and restart the API after changing module controllers; a host launched from stale module assemblies can return 404 even when the current source is correct.
+
+The handover review route is present in both checked outputs. Its `id` is the internal `ProjectHandoverRequest.Id`, not a Project ID or `Project.PublicId`. The endpoint returns 200 only for a pending request assigned to the authenticated active same-tenant incoming manager with `Handover.Approve`. A nonexistent/deleted request, closed request, wrong tenant, wrong assignee, or unavailable owning Project can legitimately return 404. `ApiExceptionHandler` maps unhandled exceptions to 500 and is not the source of these 404s.
+
+Runtime route verification used a source-built Development host on `127.0.0.1:5000` with database initialization skipped: OpenAPI listed all five paths, and unauthenticated GETs returned 401 instead of 404. The configured Development connection target is `tcp:localhost,1433` / database `NexusPmo`; no database-backed request or account lookup was performed. Authorized live lookup responses and an assigned handover review were not exercised because no valid Development session was available in this run; see the Project workflow lookup cases in the [Master UAT Checklist](../quality/MASTER-UAT-CHECKLIST.md).
 
 ### Project Change Requests
 
@@ -86,7 +132,7 @@ Nested plan, plan-version, plan-content, and plan-import identifiers are checked
 
 ### Project manager handovers
 
-All handover resources and candidate users are scoped to the authenticated tenant. The selected incoming manager must be active and have effective `Handover.Approve`. Manager-initiated requests require the current manager plus `Handover.Manage`; administrative handover and first assignment require `Handover.AdminInitiate`. The current manager changes only after the selected incoming manager accepts.
+All handover resources and candidate users are scoped to the authenticated tenant. The selected incoming manager must be active and have effective `Handover.Approve`. Manager-initiated requests require the current manager plus `Handover.Manage`; administrative handover and first assignment require `Handover.AdminInitiate`. For a handover effective today, acceptance applies the manager change and captures its snapshot transactionally. For a future date, acceptance records an approved scheduled request; the current manager and permissions remain unchanged until the effective date, when the scheduler applies the transition and captures one snapshot. Backdated requests are rejected because historical project state cannot be reconstructed. Only one pending or approved scheduled handover may exist for a project; completed history is retained and does not prevent the next sequential handover.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -98,7 +144,7 @@ All handover resources and candidate users are scoped to the authenticated tenan
 | POST | `/projects/{id}/handover-requests/initial-assignment` | Administrator requests the first manager for an unassigned Project (`Handover.AdminInitiate`) |
 | GET | `/handover-requests/pending-for-me` | List pending requests addressed to the current manager (`Handover.Approve`) |
 | GET | `/handover-requests/{requestId}/review` | Read the bounded projection for the assigned incoming Project manager (`Handover.Approve`) |
-| POST | `/handover-requests/{requestId}/accept` | Accept the request and apply the manager assignment (`Handover.Approve`) |
+| POST | `/handover-requests/{requestId}/accept` | Accept a due request or approve a future-dated request for scheduled application (`Handover.Approve`) |
 | POST | `/handover-requests/{requestId}/reject` | Reject the request with a reason (`Handover.Approve`) |
 | POST | `/handover-requests/{requestId}/cancel` | Requester cancels their pending request; requires the permission matching its initiation type |
 
@@ -130,6 +176,7 @@ The remaining supported review routes are `GET /api/manager-handovers/programs/r
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/programs` | List programs |
+| GET | `/programs/eligible-portfolios` | List active same-tenant Portfolios the caller can assign to a Program (`Program.Manage`, `Portfolio.View`) |
 | POST | `/programs` | Create program |
 | GET | `/programs/{id}` | Get program details |
 | PUT | `/programs/{id}` | Update program |
@@ -165,12 +212,19 @@ Every accepted Portfolio or Program handover, including an initial manager assig
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/work-items` | List work items (paginated, filterable by project/status/type) |
+| GET | `/work-items/{projectId}/assignees` | List all current active Project Team member Resources, including those without a linked system User, and active tenant Teams assignable to a Work Item (`WorkItem.View`; `projectId` is the project PublicId in the URL) |
 | POST | `/work-items` | Create work item |
 | GET | `/work-items/{id}` | Get work item details |
 | PUT | `/work-items/{id}` | Update work item |
 | DELETE | `/work-items/{id}` | Delete work item |
 | POST | `/work-items/{id}/assign` | Assign work item |
 | POST | `/work-items/{id}/status` | Update work item status |
+
+Work Item assignee targets are identified by `ResourceId` or `TeamId` (`targetType`/`targetId` in the lookup response); they are not system `UserId` values. The lookup includes every current active Project Team membership under the caller's tenant and management scope; a linked system account must also be active, while a team Resource without a linked account remains assignable. Internal project IDs remain the request-body relationship key when creating or updating Work Items.
+
+The Work Item Details status track preserves the status reference order returned by the API (`DisplayOrder`, then `Code`). The current status is highlighted in place; another status is enabled only when the workflow API returns an executable transition to it. Inactive statuses are omitted unless one is the item's current status.
+
+The Administration Work Item Statuses screen manages shared status reference data through `GET`, `POST`, and `PUT /api/reference-data/work-item-statuses`; writes require the `settings.write` permission. On create, the screen suggests a unique code from the English name using uppercase letters and underscores, adding a numeric suffix when an existing tenant code conflicts. The code can be adjusted before saving; the API validates the saved code and rejects duplicates.
 
 ---
 
@@ -257,19 +311,52 @@ Resource create/update JSON represents `Type` as the `Staff` or `Vendor` enum na
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/meetings` | List meetings |
-| POST | `/meetings` | Create meeting |
+| GET | `/meetings?page=&pageSize=&search=&status=&projectId=&projectIds=&dateFrom=&dateTo=` | List meetings with project, status, date, and title/objective filters |
+| GET | `/meetings/calendar?from=&to=&search=&status=&projectId=&projectIds=` | Bounded calendar feed for a visible date range; overlaps the range, ordered by start time |
+| GET | `/meetings/projects` | Lightweight accessible-project options for the project filter (public ID, name, code) |
+| POST | `/meetings` | Create a scheduled meeting with organizer, participants, and optional ordered initial agenda |
 | GET | `/meetings/{id}` | Get meeting details |
-| PUT | `/meetings/{id}` | Update meeting |
-| DELETE | `/meetings/{id}` | Delete meeting |
-| GET | `/meetings/{id}/agenda` | Get meeting agenda |
-| POST | `/meetings/{id}/agenda` | Add agenda item |
-| GET | `/meetings/{id}/participants` | List participants |
-| POST | `/meetings/{id}/participants` | Add participant |
-| GET | `/meetings/{id}/minutes` | Get meeting minutes |
-| POST | `/meetings/{id}/minutes` | Add minutes |
-| GET | `/meetings/{id}/actions` | Get action items |
-| POST | `/meetings/{id}/actions` | Create action item |
+| PUT | `/meetings/{id}` | Edit scheduled meeting details or cancel a scheduled meeting |
+| POST | `/meetings/{id}/start` | Start a scheduled meeting; records server UTC start time and actor audit (`Meeting.Edit`) |
+| POST | `/meetings/{id}/end` | End an in-progress meeting; records server UTC end time and actor audit (`Meeting.Edit`) |
+| DELETE | `/meetings/{id}` | Soft-delete meeting |
+| GET/POST | `/meetings/{id}/attendees` | List or add participants |
+| DELETE | `/meetings/{id}/attendees/{participantId}` | Remove participant |
+| GET | `/meetings/{id}/participants` | List participant responses and attendance |
+| PUT | `/meetings/{id}/attendance` | Compatibility endpoint for a signed-in participant's invitation response while Scheduled; this does not record actual attendance |
+| PUT | `/meetings/{id}/participants/{participantId}/attendance` | Record actual participant attendance while In Progress (`Meeting.Edit`) |
+| PUT | `/meetings/{id}/participants/{participantId}/attendance/organizer` | Record actual attendance while In Progress; requires `Meeting.View` and server-verified meeting organizer identity |
+| GET/POST | `/meetings/{id}/agenda` | List or add agenda topics; agenda writes are limited to scheduled meetings |
+| PUT | `/meetings/{id}/agenda/{itemId}` | Update agenda topic |
+| PUT | `/meetings/{id}/agenda/reorder` | Reorder agenda topics |
+| DELETE | `/meetings/{id}/agenda/{itemId}` | Delete agenda topic |
+| GET/POST/PUT | `/meetings/{id}/minutes` | Read, create, or update meeting minutes draft; available only after completion |
+| POST | `/meetings/{id}/minutes/finalize` | Finalize minutes; available only after completion |
+| GET/POST | `/meetings/{id}/minutes/comments` | Read or add a comment |
+| GET/POST | `/meetings/{id}/minutes/checklist` | List or add follow-up checklist items |
+| PUT | `/meetings/{id}/minutes/checklist/{itemId}` | Update checklist item |
+| PUT | `/meetings/{id}/minutes/checklist/reorder` | Reorder checklist items |
+| DELETE | `/meetings/{id}/minutes/checklist/{itemId}` | Delete checklist item |
+| GET/POST | `/meetings/{id}/minutes/attachments` | List or add attachments |
+| GET | `/meetings/{id}/minutes/attachments/{attachmentId}/content` | Download attachment |
+| DELETE | `/meetings/{id}/minutes/attachments/{attachmentId}` | Delete attachment |
+| GET/POST | `/meetings/{id}/minutes/work-items` | List or link Work Items to the minutes |
+| DELETE | `/meetings/{id}/minutes/work-items/{workItemId}` | Remove minutes Work Item link |
+| GET/POST | `/meetings/{id}/actions` | List or create meeting action items |
+| PUT | `/meetings/{id}/actions/{itemId}` | Update meeting action item |
+| POST | `/meetings/{id}/actions/{itemId}/work-item` | Link a same-project Task or Issue (`Meeting.Manage` and `WorkItem.View`) |
+| DELETE | `/meetings/{id}/actions/{itemId}/work-item` | Remove the action-item Work Item link (`Meeting.Manage`) |
+| DELETE | `/meetings/{id}/actions/{itemId}` | Delete meeting action item |
+| GET | `/meetings/{id}/decisions` | Read live decision notes while In Progress (`Meeting.View`) |
+| PUT | `/meetings/{id}/decisions` | Record live decisions while In Progress in the existing minutes draft storage (`Meeting.Manage`) |
+| GET | `/meetings/{id}/sharing/recipients?search=` | Search up to 50 active internal users in the current tenant, with attendee and channel eligibility context (`Meeting.Manage`) |
+| GET | `/meetings/{id}/sharing/history` | Read grouped sharing operations with selected recipients and per-channel delivery results (`Meeting.Manage`) |
+| POST | `/meetings/{id}/sharing/minutes-email` | Queue the current published Minutes version for explicitly selected internal recipients (`Meeting.Manage`) |
+| POST | `/meetings/{id}/sharing/completion` | Create a completion notification for explicitly selected active users in the current tenant (`Meeting.Manage`) |
+
+The global list's `projectId` filter accepts the tenant-scoped public project ID. To filter several authorized projects, send `projectIds` as a comma-separated or repeated query parameter; `projectId` and `projectIds` are mutually exclusive. `ProjectPublicIdRoutingMiddleware` resolves every public ID against the caller's tenant, rejects malformed or unknown IDs, and rewrites the filter to internal IDs before the controller runs; unknown IDs never silently widen the result. The list and calendar read paths both apply tenant query filters and the caller's management scope, so unauthorized meetings are never returned. Calendar queries use overlap semantics (`StartTime < to` and `EndTime > from`) so multi-day and in-progress meetings are included, require `from`/`to`, reject ranges longer than 366 days, and cap the response at 2000 events with `isTruncated: true` when more exist. `startTime`/`endTime` in list, detail, and calendar responses are UTC instants; clients send UTC instants in `dateFrom`/`dateTo` and the calendar `from`/`to`. Meeting creation accepts `agendaItems` as an ordered array and saves them with the meeting. Its request-body `projectId` remains the internal project ID returned by the resolved project DTO. The participant response uses `invitationResponseStatus` for Pending/Accepted/Declined/Tentative and `actualAttendanceStatus` for Present/Late/Excused/Absent; `attendanceStatus` is a compatibility projection. Scheduled meetings expose invitee details but not actual attendance. The participants/attendance workspace is available after start. Agenda writes are limited to Scheduled meetings; action item listing and writes are available In Progress and Completed; action-to-Work-Item linking is available only after completion. An action accepts optional `agendaItemId`, which must identify an agenda item belonging to that same meeting. A meeting action can link to a same-tenant Task or Issue in the meeting's project after completion. Creating a linked Task uses the existing Work Items API and requires `WorkItem.Create`. The action list returns a linked Work Item title only to callers with `WorkItem.View` and matching tenant/project scope. Meeting-action and Work Item statuses remain independently owned. Decision notes use a dedicated In Progress endpoint and the existing `MeetingMinutes.Decisions` field. Minutes, their comments, checklist, attachments, and minutes Work Item links are available only after completion. The reminder scheduler uses the shared Notifications service; opted-in internal users can receive Email when the SMTP provider is configured.
+
+The sharing recipient API accepts a search term and returns at most 50 active internal users from the authenticated meeting tenant, regardless of project association. The attendee shortcut remains restricted to actual Present/Late participants; the all-users group supports searching the full tenant directory. Responses include whether the recipient's Minutes email preference and shared email provider are available, plus attendance context when applicable. The server revalidates every selected recipient as active and same-tenant; `Meeting.Manage`, completed meeting state, explicit selection, channel preferences, and email-provider availability remain enforced. The side sheet's three steps cover recipient selection, message preview, then a final recipient/message/channel review and confirmation. Step navigation remains available for preview and review when final-send requirements are unmet; the final send action stays disabled until requirements are satisfied. Nothing is selected by default; ineligible recipients are explained and cannot be sent to. Sharing history groups each audited operation and shows recipient-level and channel-level delivery status. These response additions reuse existing identity, audit, notification, and delivery data and require no migration.
 
 ---
 
@@ -319,7 +406,7 @@ Resource create/update JSON represents `Type` as the `Staff` or `Vendor` enum na
 | POST | `/api/notifications/devices` | Register/update an FCM device token for the authenticated user |
 | DELETE | `/api/notifications/devices/{deviceId}` | Deactivate a device owned by the authenticated user |
 
-All routes require JWT authentication. User and tenant identity come from claims; preference and device requests cannot select another user. Push delivery is asynchronous. Email delivery is not implemented.
+All routes require JWT authentication. User and tenant identity come from claims; preference and device requests cannot select another user. Push and configured email delivery are asynchronous through the shared Notifications worker. Meeting sharing actions remain manual and require `Meeting.Manage`.
 
 ---
 
@@ -438,13 +525,20 @@ Every route also requires JWT authentication. Secrets are resolved only by the A
 
 ## Audit
 
+Audit records are append-only. There is no API to create, update or delete an audit
+event; entries are produced by the owning module inside its own unit of work.
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/audit-log` | List audit entries (paginated, filterable) |
-| GET | `/audit-log/{id}` | Get audit entry details |
-| GET | `/audit-log/entity/{entityType}/{entityId}` | Get audit trail for specific entity |
-| GET | `/audit-log/user/{userId}` | Get audit trail for specific user |
-| GET | `/audit-log/activities` | List activity types |
+| GET | `/projects/{projectId}/audit` | Project audit trail: server-side paging, filters (`from`, `to`, `module`, `action`, `actorId`, `entityType`, `search`, `sort=newest\|oldest`), deterministic `timestampUtc` + `id` ordering. Requires `Audit.View` plus management scope on the project |
+| GET | `/projects/{projectId}/audit/facets` | Available modules, actions, actors, record types and the first captured event for the project. Requires `Audit.View` |
+| GET | `/audit` | Tenant-wide audit entries (paginated, filterable). Requires `Audit.View` |
+
+`{projectId}` is the project **public** identifier. The response reports the caller's
+detail entitlements: `includeFinancialDetail` (from `ProjectFinancialAuditTrail.View`) and
+`includeGovernanceDetail` (change requests, status reports, stakeholders). Masked
+values are returned as `[restricted]`; secret material is removed before persistence
+and never returned.
 
 ---
 
@@ -452,18 +546,18 @@ Every route also requires JWT authentication. Secrets are resolved only by the A
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/users` | List tenant users and their assigned roles (`users.read` or `users.write`) |
-| POST | `/api/users` | Create user and assign tenant roles (`users.write`) |
-| PUT | `/api/users/{id}` | Update user profile and role assignments (`users.write`) |
-| GET | `/api/users/{id}/permissions` | Read role access and direct overrides (`users.write`) |
-| PUT | `/api/users/{id}/permissions` | Save direct `Allow`/`Deny` overrides (`users.write`) |
-| GET | `/api/roles` | List role options for user assignment (authenticated) |
-| GET | `/api/roles/manage` | List roles manageable by the actor (`users.write`) |
-| GET | `/api/roles/permissions` | List permissions the actor may assign (`users.write`) |
-| GET | `/api/roles/{id}` | Get a manageable role and its permissions (`users.write`) |
-| POST | `/api/roles` | Create a tenant role (`users.write`) |
-| PUT | `/api/roles/{id}` | Update role metadata and permission set (`users.write`) |
-| DELETE | `/api/roles/{id}` | Soft-delete an unassigned custom role (`users.write`) |
+| GET | `/api/users` | List tenant users and their assigned roles (`Users.View`) |
+| POST | `/api/users` | Create a user (`Users.ManageAccounts`); assigning roles or creating an inactive account also requires `Users.AssignRoles` or `Users.SetStatus` |
+| PUT | `/api/users/{id}` | Update profile, role assignments, and status with the matching `Users.ManageAccounts`, `Users.AssignRoles`, and `Users.SetStatus` permissions |
+| GET | `/api/users/{id}/permissions` | Read direct overrides (`UserPermissions.Manage`) |
+| PUT | `/api/users/{id}/permissions` | Save direct `Allow`/`Deny` overrides (`UserPermissions.Manage`) |
+| GET | `/api/roles` | List roles (`Roles.View`) |
+| GET | `/api/roles/manage` | List roles manageable by the actor (`Roles.View`) |
+| GET | `/api/roles/permissions` | List assignable permissions (`Roles.ConfigurePermissions`) |
+| GET | `/api/roles/{id}` | Read a role and its permissions (`Roles.View`) |
+| POST | `/api/roles` | Create a tenant role (`Roles.Create`; `Roles.ConfigurePermissions` when assigning permissions) |
+| PUT | `/api/roles/{id}` | Update role metadata (`Roles.EditDetails`) and permission set (`Roles.ConfigurePermissions`) |
+| DELETE | `/api/roles/{id}` | Soft-delete an unassigned custom role (`Roles.Delete`) |
 | GET | `/admin/settings` | Get system settings |
 | PUT | `/admin/settings` | Update system settings |
 | GET | `/admin/license` | Get license information |
@@ -475,6 +569,7 @@ These administrative discovery routes accept `Project`, `Program`, or `Portfolio
 | Method | Endpoint | Description | Authorization |
 |--------|----------|-------------|---------------|
 | GET | `/api/governance/assignment-recovery/{entityType}` | Tenant-scoped, paginated recovery list, summary, search, and state filter | Any recovery permission |
+| GET | `/api/governance/assignment-recovery/projects/{publicId}/summary` | Minimal read-only Project context for the initial-manager assignment sheet: name, code, description, dates, and Sponsor name | Initiate + `Handover.AdminInitiate` |
 | GET | `/api/governance/assignment-recovery/{entityType}/{publicId}/manager-candidates` | Eligible incoming managers for the entity | Initiate or Manage |
 | GET | `/api/governance/assignment-recovery/projects/{publicId}/sponsor-candidates` | Active same-tenant Sponsor candidates | Manage |
 | GET | `/api/governance/assignment-recovery/{entityType}/{publicId}/history` | Assignment and handover history for that entity | Any recovery permission |
@@ -484,6 +579,8 @@ These administrative discovery routes accept `Project`, `Program`, or `Portfolio
 | POST | `/api/governance/assignment-recovery/{entityType}/{publicId}/reconcile` | Reconcile legacy direct manager, current assignment, and Project PM team projection | Manage |
 
 Incoming-manager decisions remain on the existing canonical My Approvals/handover routes. Recovery does not directly set the manager on first assignment or bypass the acceptance step.
+
+The Project summary is queried only for a selected Project in the initial-assignment flow. It returns the bounded fields above, resolves the Project by authenticated Tenant and `PublicId`, and rechecks both effective permissions so an Active Deny is honored. A foreign-Tenant or unavailable Project is non-disclosing. This read remains inside the existing Native-mode, tenant-wide Assignment Recovery exception; it does not grant access to ordinary Project routes or Project editing.
 
 ---
 

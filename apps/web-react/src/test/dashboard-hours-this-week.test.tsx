@@ -39,7 +39,7 @@ describe("Hours This Week dashboard widget", () => {
   it("does not query the API without a time-tracking permission", () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    renderWidget(["projects.read"]);
+    renderWidget(["Project.View"]);
 
     expect(screen.getByText("Time-tracking access is required to view this widget.")).toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();

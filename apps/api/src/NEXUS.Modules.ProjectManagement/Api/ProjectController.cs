@@ -17,8 +17,9 @@ public class ProjectController : ControllerBase
     private readonly IProjectStatusReportService _projectStatusReportService;
     private readonly IProjectOverviewService _projectOverviewService;
     private readonly IProjectReportingService _projectReportingService;
+    private readonly IAuthorizationService? _authorization;
 
-    public ProjectController(IProjectService projectService, IProjectSnapshotService projectSnapshotService, IProjectHandoverRequestService projectHandoverRequestService, IProjectStatusReportService projectStatusReportService, IProjectOverviewService projectOverviewService, IProjectReportingService projectReportingService)
+    public ProjectController(IProjectService projectService, IProjectSnapshotService projectSnapshotService, IProjectHandoverRequestService projectHandoverRequestService, IProjectStatusReportService projectStatusReportService, IProjectOverviewService projectOverviewService, IProjectReportingService projectReportingService, IAuthorizationService? authorization = null)
     {
         _projectService = projectService;
         _projectSnapshotService = projectSnapshotService;
@@ -26,6 +27,7 @@ public class ProjectController : ControllerBase
         _projectStatusReportService = projectStatusReportService;
         _projectOverviewService = projectOverviewService;
         _projectReportingService = projectReportingService;
+        _authorization = authorization;
     }
 
     [Authorize(Policy = "Project.View")]
@@ -103,9 +105,9 @@ public class ProjectController : ControllerBase
 
     [Authorize(Policy = "StatusReport.View")]
     [HttpGet("{projectId:guid}/status-reports/current-progress")]
-    public async Task<IActionResult> GetCurrentStatusReportProgress(Guid projectId, [FromQuery] DateTime? statusDate, CancellationToken cancellationToken)
+    public async Task<IActionResult> GetCurrentStatusReportProgress(Guid projectId, [FromQuery] DateTime? statusDate, [FromQuery] DateTime? periodFrom, [FromQuery] DateTime? periodTo, CancellationToken cancellationToken)
     {
-        var result = await _projectStatusReportService.GetCurrentProgressAsync(projectId, statusDate, cancellationToken);
+        var result = await _projectStatusReportService.GetCurrentProgressAsync(projectId, statusDate, periodFrom, periodTo, cancellationToken);
         if (result.IsFailure) return NotFound(new { error = result.Error?.Message });
         return Ok(result.Value);
     }
@@ -116,6 +118,30 @@ public class ProjectController : ControllerBase
     {
         var result = await _projectStatusReportService.GetByIdAsync(projectId, reportId, cancellationToken);
         if (result.IsFailure) return NotFound(new { error = result.Error?.Message });
+        return Ok(result.Value);
+    }
+
+    [Authorize(Policy = "StatusReport.Export")]
+    [HttpGet("{projectId:guid}/status-reports/{reportId:guid}/export")]
+    public async Task<IActionResult> GetStatusReportForExport(Guid projectId, Guid reportId, CancellationToken cancellationToken)
+    {
+        var result = await _projectStatusReportService.GetByIdAsync(projectId, reportId, cancellationToken);
+        if (result.IsFailure) return NotFound(new { error = result.Error?.Message });
+        if (!string.Equals(result.Value!.ReportState.ToString(), "Published", StringComparison.Ordinal))
+            return Conflict(new { error = "Only published status reports can be exported." });
+        return Ok(result.Value);
+    }
+
+    [Authorize(Policy = "StatusReport.View")]
+    [HttpGet("{projectId:guid}/status-reports/financial-summary")]
+    public async Task<IActionResult> GetFinancialSummary(
+        Guid projectId,
+        [FromQuery] DateTime periodFrom,
+        [FromQuery] DateTime periodTo,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _projectReportingService.GetFinancialSummaryAsync(projectId, periodFrom, periodTo, cancellationToken);
+        if (result.IsFailure) return StatusReportError(result.Error!);
         return Ok(result.Value);
     }
 
@@ -154,52 +180,13 @@ public class ProjectController : ControllerBase
         return Ok(result.Value);
     }
 
-    [Authorize(Policy = "StatusReport.Generate")]
-    [HttpPost("{projectId:guid}/status-reports/{reportId:guid}/generate")]
-    public Task<IActionResult> GenerateStatusReport(Guid projectId, Guid reportId, CancellationToken cancellationToken) =>
-        RunStatusReportTransition(projectId, reportId, "Generate", cancellationToken);
-
-    [Authorize(Policy = "StatusReport.Submit")]
-    [HttpPost("{projectId:guid}/status-reports/{reportId:guid}/submit")]
-    public Task<IActionResult> SubmitStatusReport(Guid projectId, Guid reportId, CancellationToken cancellationToken) =>
-        RunStatusReportTransition(projectId, reportId, "Submit", cancellationToken);
-
-    [Authorize(Policy = "StatusReport.Approve")]
-    [HttpPost("{projectId:guid}/status-reports/{reportId:guid}/approve")]
-    public Task<IActionResult> ApproveStatusReport(Guid projectId, Guid reportId, CancellationToken cancellationToken) =>
-        RunStatusReportTransition(projectId, reportId, "Approve", cancellationToken);
-
-    [Authorize(Policy = "StatusReport.Approve")]
-    [HttpPost("{projectId:guid}/status-reports/{reportId:guid}/return")]
-    public Task<IActionResult> ReturnStatusReport(Guid projectId, Guid reportId, CancellationToken cancellationToken) =>
-        RunStatusReportTransition(projectId, reportId, "Return", cancellationToken);
-
-    [Authorize(Policy = "StatusReport.Edit")]
-    [HttpPost("{projectId:guid}/status-reports/{reportId:guid}/reopen")]
-    public Task<IActionResult> ReopenStatusReport(Guid projectId, Guid reportId, CancellationToken cancellationToken) =>
-        RunStatusReportTransition(projectId, reportId, "Reopen", cancellationToken);
-
     [Authorize(Policy = "StatusReport.Publish")]
     [HttpPost("{projectId:guid}/status-reports/{reportId:guid}/publish")]
-    public async Task<IActionResult> PublishStatusReport(Guid projectId, Guid reportId, CancellationToken cancellationToken)
-    {
-        return await RunStatusReportTransition(projectId, reportId, "Publish", cancellationToken);
-    }
-
-    private async Task<IActionResult> RunStatusReportTransition(Guid projectId, Guid reportId, string transition, CancellationToken cancellationToken)
+    public async Task<IActionResult> PublishStatusReport(Guid projectId, Guid reportId, [FromBody] UpdateProjectStatusReportDto dto, CancellationToken cancellationToken)
     {
         var userId = GetStatusReportActorId();
         if (userId is null) return Unauthorized();
-        var result = transition switch
-        {
-            "Generate" => await _projectStatusReportService.GenerateAsync(projectId, reportId, userId, cancellationToken),
-            "Submit" => await _projectStatusReportService.SubmitAsync(projectId, reportId, userId, cancellationToken),
-            "Approve" => await _projectStatusReportService.ApproveAsync(projectId, reportId, userId, cancellationToken),
-            "Return" => await _projectStatusReportService.ReturnAsync(projectId, reportId, userId, cancellationToken),
-            "Reopen" => await _projectStatusReportService.ReopenAsync(projectId, reportId, userId, cancellationToken),
-            "Publish" => await _projectStatusReportService.PublishAsync(projectId, reportId, userId, cancellationToken),
-            _ => throw new InvalidOperationException("Unknown status report transition.")
-        };
+        var result = await _projectStatusReportService.PublishAsync(projectId, reportId, dto, userId, cancellationToken);
         if (result.IsFailure) return StatusReportError(result.Error!);
         return Ok(result.Value);
     }
@@ -301,6 +288,7 @@ public class ProjectController : ControllerBase
             return result.Error?.StatusCode switch
             {
                 404 => NotFound(new { error = result.Error.Message }),
+                409 => Conflict(new { error = result.Error.Message }),
                 _ => BadRequest(new { error = result.Error?.Message })
             };
         return Ok(result.Value);
@@ -364,7 +352,7 @@ public class ProjectController : ControllerBase
         return Ok(result.Value);
     }
 
-    [Authorize(Policy = "Handover.Initiate")]
+    [Authorize(Policy = "Handover.View")]
     [HttpGet("{id:guid}/handover-managers")]
     public async Task<IActionResult> GetEligibleHandoverManagers(Guid id, CancellationToken cancellationToken)
     {
@@ -374,12 +362,13 @@ public class ProjectController : ControllerBase
             {
                 404 => NotFound(new { error = result.Error.Message }),
                 401 => Unauthorized(new { error = result.Error.Message }),
+                403 => Forbid(),
                 _ => BadRequest(new { error = result.Error?.Message })
             };
         return Ok(result.Value);
     }
 
-    [Authorize(Policy = "Handover.Capabilities")]
+    [Authorize(Policy = "Handover.View")]
     [HttpGet("{id:guid}/handover-capabilities")]
     public async Task<IActionResult> GetHandoverCapabilities(Guid id, CancellationToken cancellationToken)
     {
@@ -397,11 +386,7 @@ public class ProjectController : ControllerBase
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
         var result = await _projectHandoverRequestService.CreateAsync(id, dto, userId, cancellationToken);
         if (result.IsFailure)
-            return result.Error?.StatusCode switch
-            {
-                404 => NotFound(new { error = result.Error.Message }),
-                _ => BadRequest(new { error = result.Error?.Message })
-            };
+            return new ObjectResult(result.Error) { StatusCode = result.Error!.StatusCode };
         return Ok(result.Value);
     }
 
@@ -412,13 +397,7 @@ public class ProjectController : ControllerBase
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? string.Empty;
         var result = await _projectHandoverRequestService.CreateAdminInitiatedAsync(id, dto, userId, cancellationToken);
         if (result.IsFailure)
-            return result.Error?.StatusCode switch
-            {
-                404 => NotFound(new { error = result.Error.Message }),
-                403 => Forbid(),
-                409 => Conflict(new { error = result.Error.Message }),
-                _ => BadRequest(new { error = result.Error?.Message })
-            };
+            return new ObjectResult(result.Error) { StatusCode = result.Error!.StatusCode };
         return Ok(result.Value);
     }
 
@@ -429,17 +408,11 @@ public class ProjectController : ControllerBase
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? string.Empty;
         var result = await _projectHandoverRequestService.CreateInitialAssignmentAsync(id, dto, userId, cancellationToken);
         if (result.IsFailure)
-            return result.Error?.StatusCode switch
-            {
-                404 => NotFound(new { error = result.Error.Message }),
-                403 => Forbid(),
-                409 => Conflict(new { error = result.Error.Message }),
-                _ => BadRequest(new { error = result.Error?.Message })
-            };
+            return new ObjectResult(result.Error) { StatusCode = result.Error!.StatusCode };
         return Ok(result.Value);
     }
 
-    [Authorize(Policy = "Handover.Access")]
+    [Authorize(Policy = "Handover.View")]
     [HttpGet("{id:guid}/handover-requests")]
     public async Task<IActionResult> GetHandoverRequests(Guid id, CancellationToken cancellationToken)
     {
@@ -476,6 +449,7 @@ public class ProjectController : ControllerBase
     [HttpPost("{id:guid}/team")]
     public async Task<IActionResult> AddTeamMember(Guid id, [FromBody] CreateProjectMemberDto dto, CancellationToken cancellationToken)
     {
+        if (dto.TeamId.HasValue && !await HasTeamViewPermissionAsync()) return Forbid();
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
         dto.ProjectId = id;
         var result = await _projectService.AddTeamMemberAsync(id, dto, userId, cancellationToken);
@@ -492,6 +466,7 @@ public class ProjectController : ControllerBase
     [HttpPut("{id:guid}/team/{memberId:guid}")]
     public async Task<IActionResult> UpdateTeamMember(Guid id, Guid memberId, [FromBody] UpdateProjectMemberDto dto, CancellationToken cancellationToken)
     {
+        if (await _projectService.IsTeamGroupAssignmentAsync(id, memberId, cancellationToken) && !await HasTeamViewPermissionAsync()) return Forbid();
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
         var result = await _projectService.UpdateTeamMemberAsync(id, memberId, dto, userId, cancellationToken);
         if (result.IsFailure)
@@ -507,6 +482,7 @@ public class ProjectController : ControllerBase
     [HttpDelete("{id:guid}/team/{memberId:guid}")]
     public async Task<IActionResult> RemoveTeamMember(Guid id, Guid memberId, CancellationToken cancellationToken)
     {
+        if (await _projectService.IsTeamGroupAssignmentAsync(id, memberId, cancellationToken) && !await HasTeamViewPermissionAsync()) return Forbid();
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
         var result = await _projectService.RemoveTeamMemberAsync(id, memberId, userId, cancellationToken);
         if (result.IsFailure) return NotFound(new { error = result.Error?.Message });
@@ -524,8 +500,11 @@ public class ProjectController : ControllerBase
         [FromQuery] Guid? excludeMemberId = null,
         CancellationToken cancellationToken = default)
     {
-        var result = await _projectService.CheckResourceConflictsAsync(resourceId, startDate, endDate, allocationPercentage, excludeMemberId, cancellationToken);
+        var result = await _projectService.CheckResourceConflictsAsync(resourceId, startDate, endDate, allocationPercentage, excludeMemberId, cancellationToken, id);
         if (result.IsFailure) return BadRequest(new { error = result.Error?.Message });
         return Ok(result.Value);
     }
+
+    private async Task<bool> HasTeamViewPermissionAsync() => _authorization is not null
+        && (await _authorization.AuthorizeAsync(User, "Team.View")).Succeeded;
 }

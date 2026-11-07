@@ -2,7 +2,7 @@ import * as React from "react";
 import { cn } from "@lib/utils";
 import { Button } from "@components/ui/Button";
 
-export type PlanningRibbonTab = "file" | "task" | "resource" | "project" | "view" | "format" | "report";
+export type PlanningRibbonTab = "file" | "task" | "resource" | "project" | "view" | "report";
 
 export function PlanningRibbonGroup({ label, children, className }: { label: string; children: React.ReactNode; className?: string }) {
   return (

@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using System.Text.Json;
 using NEXUS.Modules.Audit.Domain;
 using NEXUS.Modules.Identity.Application;
@@ -10,6 +12,7 @@ using NEXUS.Modules.Portfolio.Domain;
 using NEXUS.Modules.Portfolio.Application;
 using NEXUS.Modules.ProjectManagement.Application.DTOs;
 using NEXUS.Modules.ProjectManagement.Domain;
+using NEXUS.Modules.ResourceManagement.Domain;
 using NEXUS.SharedKernel;
 using NEXUS.SharedKernel.Helpers;
 
@@ -22,19 +25,28 @@ public class ProjectHandoverRequestService : IProjectHandoverRequestService
     private readonly INotificationService _notificationService;
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly IUserEffectivePermissionService _effectivePermissions;
+    private readonly ILogger<ProjectHandoverRequestService> _logger;
+    private readonly TimeProvider _timeProvider;
+    private readonly IProjectOrganizationLookup? _projectOrganizationLookup;
 
     public ProjectHandoverRequestService(
         DbContext context,
         IProjectSnapshotService snapshotService,
         INotificationService notificationService,
         IHttpContextAccessor httpContextAccessor,
-        IUserEffectivePermissionService effectivePermissions)
+        IUserEffectivePermissionService effectivePermissions,
+        ILogger<ProjectHandoverRequestService>? logger = null,
+        TimeProvider? timeProvider = null,
+        IProjectOrganizationLookup? projectOrganizationLookup = null)
     {
         _context = context;
         _snapshotService = snapshotService;
         _notificationService = notificationService;
         _httpContextAccessor = httpContextAccessor;
         _effectivePermissions = effectivePermissions;
+        _logger = logger ?? NullLogger<ProjectHandoverRequestService>.Instance;
+        _timeProvider = timeProvider ?? TimeProvider.System;
+        _projectOrganizationLookup = projectOrganizationLookup;
     }
 
     public async Task<Result<IReadOnlyList<ProjectHandoverManagerDto>>> GetEligibleManagersAsync(Guid projectId, CancellationToken cancellationToken = default)
@@ -57,49 +69,13 @@ public class ProjectHandoverRequestService : IProjectHandoverRequestService
             || !await HasAnyPermissionAsync(actorId.Value, tenantId, cancellationToken, "Handover.Manage", "Handover.AdminInitiate"))
             return Result<IReadOnlyList<ProjectHandoverManagerDto>>.Failure(Error.Forbidden("You do not have permission to initiate handovers"));
 
-        var roleAssignments = await (
-            from userRole in _context.Set<UserRole>().AsNoTracking()
-            join role in _context.Set<Role>().AsNoTracking() on userRole.RoleId equals role.Id
-            where userRole.TenantId == tenantId && !userRole.IsDeleted
-                && role.TenantId == tenantId && !role.IsDeleted
-                && (role.Name == "project.manager" || role.Name == "portfolio.manager")
-            select new { userRole.UserId, role.Name }
-        ).ToListAsync(cancellationToken);
-
-        var projectManagerIds = roleAssignments
-            .Where(item => item.Name == "project.manager")
-            .Select(item => item.UserId)
-            .ToHashSet();
-        var portfolioManagerIds = roleAssignments
-            .Where(item => item.Name == "portfolio.manager")
-            .Select(item => item.UserId)
-            .ToHashSet();
-
-        var assignedProgramManagerIds = await _context.Set<ProgramManagerAssignment>().AsNoTracking()
-            .Where(assignment => assignment.TenantId == tenantId && !assignment.IsDeleted && assignment.IsCurrent
-                && _context.Set<Program>().Any(program => program.Id == assignment.ProgramId
-                    && program.TenantId == tenantId && !program.IsDeleted))
-            .Select(assignment => assignment.ProgramManagerId)
-            .Distinct()
-            .ToListAsync(cancellationToken);
-        var directProgramManagerIds = await _context.Set<Program>().AsNoTracking()
-            .Where(program => program.TenantId == tenantId && !program.IsDeleted && program.ProgramManagerId.HasValue)
-            .Select(program => program.ProgramManagerId!.Value)
-            .Distinct()
-            .ToListAsync(cancellationToken);
-        var programManagerIds = assignedProgramManagerIds.Concat(directProgramManagerIds).ToHashSet();
-
-        var candidateIds = projectManagerIds.Concat(portfolioManagerIds).Concat(programManagerIds)
-            .Where(id => id != project.ProjectManagerId)
-            .Distinct()
-            .ToArray();
-        if (candidateIds.Length == 0)
-        {
-            return Result<IReadOnlyList<ProjectHandoverManagerDto>>.Success(Array.Empty<ProjectHandoverManagerDto>());
-        }
-
         var users = await _context.Set<User>().AsNoTracking()
-            .Where(user => candidateIds.Contains(user.Id) && user.TenantId == tenantId && user.IsActive && !user.IsDeleted)
+            .Where(user => user.TenantId == tenantId && user.IsActive && !user.IsDeleted
+                && (!project.ProjectManagerId.HasValue || user.Id != project.ProjectManagerId.Value)
+                && _context.Set<UserRole>().Any(userRole => userRole.UserId == user.Id
+                    && userRole.TenantId == tenantId && !userRole.IsDeleted
+                    && _context.Set<Role>().Any(role => role.Id == userRole.RoleId
+                        && role.TenantId == tenantId && !role.IsDeleted && role.Category == "Management")))
             .OrderBy(user => user.FirstName)
             .ThenBy(user => user.LastName)
             .ToListAsync(cancellationToken);
@@ -111,17 +87,19 @@ public class ProjectHandoverRequestService : IProjectHandoverRequestService
             if (permissions.Contains("Handover.Approve")) approvers.Add(user);
         }
 
+        var eligibleIds = approvers.Select(user => user.Id).ToArray();
+        var resourceTitles = eligibleIds.Length == 0 ? new Dictionary<Guid, string?>() : await _context.Set<Resource>().AsNoTracking()
+            .Where(resource => resource.TenantId == tenantId && resource.UserId.HasValue && eligibleIds.Contains(resource.UserId.Value)
+                && resource.IsActive && !resource.IsDeleted)
+            .ToDictionaryAsync(resource => resource.UserId!.Value, resource => resource.JobTitle, cancellationToken);
+
         IReadOnlyList<ProjectHandoverManagerDto> managers = approvers.Select(user => new ProjectHandoverManagerDto
         {
             Id = user.Id,
             FullName = $"{user.FirstName} {user.LastName}".Trim(),
             Email = user.Email,
-            JobTitle = user.JobTitle,
-            ManagerTypes = Array.Empty<string>()
-                .Concat(projectManagerIds.Contains(user.Id) ? new[] { "ProjectManager" } : Array.Empty<string>())
-                .Concat(portfolioManagerIds.Contains(user.Id) ? new[] { "PortfolioManager" } : Array.Empty<string>())
-                .Concat(programManagerIds.Contains(user.Id) ? new[] { "ProgramManager" } : Array.Empty<string>())
-                .ToArray()
+            JobTitle = resourceTitles.GetValueOrDefault(user.Id),
+            ManagerTypes = new[] { "ProjectManager" }
         }).ToArray();
 
         return Result<IReadOnlyList<ProjectHandoverManagerDto>>.Success(managers);
@@ -201,14 +179,41 @@ public class ProjectHandoverRequestService : IProjectHandoverRequestService
         }
         if (project.EndDate.HasValue && effectiveDate > project.EndDate.Value.Date)
         {
-            return Result<ProjectHandoverRequestDto>.Failure(Error.Validation("Handover date cannot be after the project end date"));
+            return Result<ProjectHandoverRequestDto>.Failure(Error.BusinessValidation(
+                "HANDOVER_DATE_AFTER_PROJECT_END",
+                "The handover date must be on or before the project end date.",
+                nameof(dto.EffectiveHandoverDate),
+                new Dictionary<string, object?>
+                {
+                    ["handoverDate"] = effectiveDate,
+                    ["projectEndDate"] = project.EndDate.Value.Date
+                }));
+        }
+        if (effectiveDate < _timeProvider.GetUtcNow().UtcDateTime.Date)
+        {
+            return Result<ProjectHandoverRequestDto>.Failure(Error.Validation("Backdated handovers cannot be requested because historical project state cannot be reconstructed"));
         }
 
-        var pendingExists = await _context.Set<ProjectHandoverRequest>()
-            .AnyAsync(r => r.ProjectId == projectId && r.TenantId == tenantId && r.Status == ProjectHandoverRequest.Statuses.Pending && !r.IsDeleted, cancellationToken);
-        if (pendingExists)
+        var activeRequest = await _context.Set<ProjectHandoverRequest>()
+            .Where(r => r.ProjectId == projectId && r.TenantId == tenantId
+                && (r.Status == ProjectHandoverRequest.Statuses.Pending || r.Status == ProjectHandoverRequest.Statuses.ApprovedScheduled)
+                && !r.IsDeleted)
+            .OrderByDescending(r => r.RequestedAt)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (activeRequest is not null)
         {
-            return Result<ProjectHandoverRequestDto>.Failure(Error.Conflict("A pending handover request already exists for this project"));
+            var isScheduled = activeRequest.Status == ProjectHandoverRequest.Statuses.ApprovedScheduled;
+            var statusText = isScheduled ? "approved and scheduled" : "pending";
+            var code = isScheduled ? "HANDOVER_REQUEST_ALREADY_SCHEDULED" : "HANDOVER_REQUEST_ALREADY_PENDING";
+            return Result<ProjectHandoverRequestDto>.Failure(new Error(
+                code,
+                $"A {statusText} handover request already exists for this project. View the existing request before starting another.",
+                StatusCodes.Status409Conflict,
+                details: new Dictionary<string, object?>
+                {
+                    ["existingRequestId"] = activeRequest.Id,
+                    ["existingRequestStatus"] = activeRequest.Status
+                }));
         }
 
         var request = new ProjectHandoverRequest
@@ -258,8 +263,11 @@ public class ProjectHandoverRequestService : IProjectHandoverRequestService
         if (project is null) return Result<ManagerHandoverCapabilitiesDto>.Failure(Error.NotFound("Project not found"));
         if (!await IsActiveTenantUserAsync(actorId.Value, tenantId, cancellationToken)) return Result<ManagerHandoverCapabilitiesDto>.Failure(Error.Forbidden("The authenticated user is not active in this tenant"));
         var permissions = await _effectivePermissions.GetEffectivePermissionsAsync(actorId.Value, tenantId, cancellationToken);
-        var pending = await _context.Set<ProjectHandoverRequest>().AsNoTracking()
-            .FirstOrDefaultAsync(x => x.ProjectId == projectId && x.TenantId == tenantId && x.Status == ProjectHandoverRequest.Statuses.Pending && !x.IsDeleted, cancellationToken);
+        var activeRequest = await _context.Set<ProjectHandoverRequest>().AsNoTracking()
+            .FirstOrDefaultAsync(x => x.ProjectId == projectId && x.TenantId == tenantId
+                && (x.Status == ProjectHandoverRequest.Statuses.Pending || x.Status == ProjectHandoverRequest.Statuses.ApprovedScheduled)
+                && !x.IsDeleted, cancellationToken);
+        var pending = activeRequest?.Status == ProjectHandoverRequest.Statuses.Pending ? activeRequest : null;
         var previousManagerName = project.ProjectManagerId.HasValue
             ? await _context.Set<User>().AsNoTracking().Where(x => x.Id == project.ProjectManagerId.Value && x.TenantId == tenantId).Select(x => x.FullName).FirstOrDefaultAsync(cancellationToken)
             : null;
@@ -268,13 +276,14 @@ public class ProjectHandoverRequestService : IProjectHandoverRequestService
         {
             CurrentManagerId = project.ProjectManagerId,
             CurrentManagerName = previousManagerName,
-            CanViewRequests = HasAny(permissions, "Handover.View", "Handover.Manage", "Handover.AdminInitiate"),
-            CanInitiate = pending is null && project.ProjectManagerId == actorId && permissions.Contains("Handover.Manage"),
-            CanAdminInitiate = pending is null && project.ProjectManagerId.HasValue && permissions.Contains("Handover.AdminInitiate"),
-            CanAssignInitial = pending is null && !project.ProjectManagerId.HasValue && permissions.Contains("Handover.AdminInitiate"),
-            CanApproveIncoming = pending?.NewProjectManagerId == actorId && permissions.Contains("Handover.Approve"),
+            CanViewRequests = permissions.Contains("Handover.View"),
+            CanInitiate = activeRequest is null && project.ProjectManagerId == actorId && permissions.Contains("Handover.Manage"),
+            CanAdminInitiate = activeRequest is null && project.ProjectManagerId.HasValue && permissions.Contains("Handover.AdminInitiate"),
+            CanAssignInitial = activeRequest is null && !project.ProjectManagerId.HasValue && permissions.Contains("Handover.AdminInitiate"),
+            CanApproveIncoming = pending?.NewProjectManagerId == actorId && permissions.Contains("Handover.Approve")
+                && await IsActiveTenantManagementUserAsync(actorId.Value, tenantId, cancellationToken),
             CanCancelOwnPending = pending?.RequestedBy == actorId && permissions.Contains(requesterPermission),
-            HasPendingRequest = pending is not null
+            HasPendingRequest = activeRequest is not null
         });
     }
 
@@ -286,7 +295,7 @@ public class ProjectHandoverRequestService : IProjectHandoverRequestService
         if (!actorId.HasValue) return Result<IReadOnlyList<ProjectHandoverRequestDto>>.Failure(Error.Unauthorized("Authenticated user ID is missing or invalid."));
         if (!await IsActiveTenantUserAsync(actorId.Value, tenantResult.Value, cancellationToken)) return Result<IReadOnlyList<ProjectHandoverRequestDto>>.Failure(Error.Forbidden("The authenticated user is not active in this tenant"));
         var permissions = await _effectivePermissions.GetEffectivePermissionsAsync(actorId.Value, tenantResult.Value, cancellationToken);
-        if (!HasAny(permissions, "Handover.View", "Handover.Manage", "Handover.AdminInitiate")) return Result<IReadOnlyList<ProjectHandoverRequestDto>>.Failure(Error.Forbidden("You do not have permission to view handovers"));
+        if (!permissions.Contains("Handover.View")) return Result<IReadOnlyList<ProjectHandoverRequestDto>>.Failure(Error.Forbidden("You do not have permission to view handovers"));
         if (!await _context.Set<Project>().AnyAsync(p => p.Id == projectId && p.TenantId == tenantResult.Value && !p.IsDeleted, cancellationToken))
             return Result<IReadOnlyList<ProjectHandoverRequestDto>>.Failure(Error.NotFound("Project not found"));
         var requests = await _context.Set<ProjectHandoverRequest>()
@@ -310,7 +319,7 @@ public class ProjectHandoverRequestService : IProjectHandoverRequestService
         if (!actorId.HasValue || !await IsActiveTenantUserAsync(actorId.Value, tenantResult.Value, cancellationToken))
             return Result<int>.Failure(Error.Forbidden("The authenticated user is not active in this tenant"));
         var permissions = await _effectivePermissions.GetEffectivePermissionsAsync(actorId.Value, tenantResult.Value, cancellationToken);
-        if (!HasAny(permissions, "Handover.View", "Handover.Manage", "Handover.AdminInitiate"))
+        if (!permissions.Contains("Handover.View"))
             return Result<int>.Failure(Error.Forbidden("You do not have permission to view handovers"));
         if (!await _context.Set<Project>().AnyAsync(project => project.Id == projectId && project.TenantId == tenantResult.Value && !project.IsDeleted, cancellationToken))
             return Result<int>.Failure(Error.NotFound("Project not found"));
@@ -329,7 +338,7 @@ public class ProjectHandoverRequestService : IProjectHandoverRequestService
         var id = TryParseGuid(userId)!.Value;
         var tenantResult = GetRequiredCurrentTenantId();
         if (tenantResult.IsFailure) return Result<IReadOnlyList<ProjectHandoverRequestDto>>.Failure(tenantResult.Error!);
-        if (!await IsActiveTenantUserAsync(id, tenantResult.Value, cancellationToken)) return Result<IReadOnlyList<ProjectHandoverRequestDto>>.Failure(Error.Forbidden("The authenticated user is not active in this tenant"));
+        if (!await IsActiveTenantManagementUserAsync(id, tenantResult.Value, cancellationToken)) return Result<IReadOnlyList<ProjectHandoverRequestDto>>.Failure(Error.Forbidden("The authenticated user must have an active Management-category role in this tenant"));
         if (!await HasPermissionAsync(id, tenantResult.Value, "Handover.Approve", cancellationToken)) return Result<IReadOnlyList<ProjectHandoverRequestDto>>.Failure(Error.Forbidden("You do not have permission to approve handovers"));
         var requests = await _context.Set<ProjectHandoverRequest>()
             .Where(r => r.TenantId == tenantResult.Value && r.NewProjectManagerId == id && r.Status == ProjectHandoverRequest.Statuses.Pending && !r.IsDeleted)
@@ -344,13 +353,39 @@ public class ProjectHandoverRequestService : IProjectHandoverRequestService
         return Result<IReadOnlyList<ProjectHandoverRequestDto>>.Success(dtos);
     }
 
+    public async Task<Result<ProjectHandoverRequestDto>> GetExistingRequestDetailsAsync(Guid requestId, string userId, CancellationToken cancellationToken = default)
+    {
+        var tenantResult = GetRequiredCurrentTenantId();
+        if (tenantResult.IsFailure) return Result<ProjectHandoverRequestDto>.Failure(tenantResult.Error!);
+        var actorId = TryParseGuid(userId);
+        if (!actorId.HasValue)
+            return Result<ProjectHandoverRequestDto>.Failure(Error.Unauthorized("Authenticated user ID is missing or invalid."));
+        var tenantId = tenantResult.Value;
+        if (!await IsActiveTenantUserAsync(actorId.Value, tenantId, cancellationToken))
+            return Result<ProjectHandoverRequestDto>.Failure(Error.NotFound("This handover request is not available to the current user."));
+        if (!await HasPermissionAsync(actorId.Value, tenantId, "Handover.View", cancellationToken))
+            return Result<ProjectHandoverRequestDto>.Failure(Error.Forbidden("You do not have permission to view handover requests."));
+
+        var request = await _context.Set<ProjectHandoverRequest>().AsNoTracking()
+            .FirstOrDefaultAsync(item => item.Id == requestId && item.TenantId == tenantId && !item.IsDeleted, cancellationToken);
+        if (request is null || (request.RequestedBy != actorId.Value && request.NewProjectManagerId != actorId.Value))
+            return Result<ProjectHandoverRequestDto>.Failure(Error.NotFound("This handover request is not available to the current user."));
+
+        var projectExists = await _context.Set<Project>().AsNoTracking()
+            .AnyAsync(project => project.Id == request.ProjectId && project.TenantId == tenantId && !project.IsDeleted, cancellationToken);
+        if (!projectExists)
+            return Result<ProjectHandoverRequestDto>.Failure(Error.NotFound("This handover request is not available to the current user."));
+
+        return Result<ProjectHandoverRequestDto>.Success(await ToDtoAsync(request, cancellationToken));
+    }
+
     public async Task<Result<ApprovalReviewDto>> GetApprovalReviewAsync(Guid requestId, string userId, CancellationToken cancellationToken = default)
     {
         var tenant = GetRequiredCurrentTenantId();
         var actorId = TryParseGuid(userId);
         if (tenant.IsFailure) return Result<ApprovalReviewDto>.Failure(tenant.Error!);
         if (!actorId.HasValue) return Result<ApprovalReviewDto>.Failure(Error.Unauthorized("Authenticated user ID is missing or invalid."));
-        if (!await IsActiveTenantUserAsync(actorId.Value, tenant.Value, cancellationToken)
+        if (!await IsActiveTenantManagementUserAsync(actorId.Value, tenant.Value, cancellationToken)
             || !await HasPermissionAsync(actorId.Value, tenant.Value, "Handover.Approve", cancellationToken))
             return Result<ApprovalReviewDto>.Failure(Error.NotFound("This approval is not available to the current user."));
 
@@ -392,6 +427,61 @@ public class ProjectHandoverRequestService : IProjectHandoverRequestService
         });
     }
 
+    /// <summary>
+    /// Applies future-dated handovers that have already been accepted, once their effective
+    /// date arrives. This is called only by the hosted scheduler; project ownership and the
+    /// snapshot are changed together by ProjectSnapshotService in a serializable transaction.
+    /// </summary>
+    public async Task<int> ProcessDueApprovedHandoversAsync(CancellationToken cancellationToken = default)
+    {
+        var today = _timeProvider.GetUtcNow().UtcDateTime.Date;
+        var dueRequests = await _context.Set<ProjectHandoverRequest>().IgnoreQueryFilters()
+            .Where(request => !request.IsDeleted
+                && request.Status == ProjectHandoverRequest.Statuses.ApprovedScheduled
+                && request.EffectiveHandoverDate <= today)
+            .OrderBy(request => request.EffectiveHandoverDate)
+            .ThenBy(request => request.RequestedAt)
+            .ToListAsync(cancellationToken);
+
+        var processed = 0;
+        foreach (var request in dueRequests)
+        {
+            var previousHttpContext = _httpContextAccessor.HttpContext;
+            var schedulerContext = new DefaultHttpContext();
+            schedulerContext.User = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity(
+                new[] { new System.Security.Claims.Claim("tenantId", request.TenantId.ToString()) },
+                authenticationType: "ProjectHandoverScheduler"));
+            _httpContextAccessor.HttpContext = schedulerContext;
+            try
+            {
+                var result = await _snapshotService.CompleteHandoverAsync(request.ProjectId, request, "System", cancellationToken);
+                if (result.IsSuccess)
+                {
+                    processed++;
+                }
+                else
+                {
+                    _logger.LogWarning("Scheduled handover {HandoverRequestId} was not applied: {Reason}", request.Id, result.Error?.Message);
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                _logger.LogError(exception, "Scheduled handover {HandoverRequestId} failed and will be retried", request.Id);
+            }
+            finally
+            {
+                _httpContextAccessor.HttpContext = previousHttpContext;
+                _context.ChangeTracker.Clear();
+            }
+        }
+
+        return processed;
+    }
+
     public async Task<Result<ProjectHandoverRequestDto>> AcceptAsync(Guid requestId, string userId, CancellationToken cancellationToken = default)
     {
         var tenantResult = GetRequiredCurrentTenantId();
@@ -410,13 +500,63 @@ public class ProjectHandoverRequestService : IProjectHandoverRequestService
         }
         if (!await HasPermissionAsync(TryParseGuid(userId)!.Value, request.TenantId, "Handover.Approve", cancellationToken))
             return Result<ProjectHandoverRequestDto>.Failure(Error.Forbidden("You do not have permission to approve handovers"));
-        if (!await IsActiveTenantUserAsync(TryParseGuid(userId)!.Value, request.TenantId, cancellationToken))
-            return Result<ProjectHandoverRequestDto>.Failure(Error.Forbidden("The selected manager is no longer an active user in this tenant"));
+        if (!await IsActiveTenantManagementUserAsync(TryParseGuid(userId)!.Value, request.TenantId, cancellationToken))
+            return Result<ProjectHandoverRequestDto>.Failure(Error.Forbidden("The selected manager must have an active Management-category role in this tenant"));
 
-        var handoverResult = await _snapshotService.CompleteHandoverAsync(request.ProjectId, request, userId, cancellationToken);
-        if (handoverResult.IsFailure)
+        var effectiveDate = request.EffectiveHandoverDate.Date;
+        var today = _timeProvider.GetUtcNow().UtcDateTime.Date;
+        if (effectiveDate < today)
         {
-            return Result<ProjectHandoverRequestDto>.Failure(handoverResult.Error!);
+            return Result<ProjectHandoverRequestDto>.Failure(Error.Conflict("This handover is backdated and cannot be approved because historical project state cannot be reconstructed"));
+        }
+
+        if (effectiveDate > today)
+        {
+            await using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
+            var pendingRequest = await _context.Set<ProjectHandoverRequest>()
+                .FirstOrDefaultAsync(item => item.Id == requestId && item.TenantId == request.TenantId
+                    && item.Status == ProjectHandoverRequest.Statuses.Pending && !item.IsDeleted, cancellationToken);
+            if (pendingRequest is null)
+                return Result<ProjectHandoverRequestDto>.Failure(Error.Conflict("The handover request is no longer pending"));
+
+            var approvedAt = _timeProvider.GetUtcNow().UtcDateTime;
+            pendingRequest.Status = ProjectHandoverRequest.Statuses.ApprovedScheduled;
+            pendingRequest.RespondedBy = TryParseGuid(userId);
+            pendingRequest.RespondedAt = approvedAt;
+            pendingRequest.UpdatedBy = userId;
+            _context.Set<AuditEntry>().Add(new AuditEntry
+            {
+                TenantId = pendingRequest.TenantId,
+                EntityType = "Project",
+                EntityId = pendingRequest.ProjectId,
+                Action = "ManagerHandoverApprovedScheduled",
+                UserId = TryParseGuid(userId),
+                Timestamp = approvedAt,
+                OriginalValues = JsonSerializer.Serialize(new
+                {
+                    pendingRequest.Id,
+                    pendingRequest.RequestedBy,
+                    pendingRequest.CurrentProjectManagerId,
+                    pendingRequest.InitiationType
+                }),
+                NewValues = JsonSerializer.Serialize(new
+                {
+                    pendingRequest.Status,
+                    pendingRequest.EffectiveHandoverDate
+                }),
+                CreatedBy = userId
+            });
+            await _context.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            request = pendingRequest;
+        }
+        else
+        {
+            var handoverResult = await _snapshotService.CompleteHandoverAsync(request.ProjectId, request, userId, cancellationToken);
+            if (handoverResult.IsFailure)
+            {
+                return Result<ProjectHandoverRequestDto>.Failure(handoverResult.Error!);
+            }
         }
 
         await SendAcceptedNotificationsAsync(request, cancellationToken);
@@ -444,7 +584,7 @@ public class ProjectHandoverRequestService : IProjectHandoverRequestService
         }
         if (!await HasPermissionAsync(TryParseGuid(userId)!.Value, request.TenantId, "Handover.Approve", cancellationToken))
             return Result<ProjectHandoverRequestDto>.Failure(Error.Forbidden("You do not have permission to approve handovers"));
-        if (!await IsActiveTenantUserAsync(TryParseGuid(userId)!.Value, request.TenantId, cancellationToken)) return Result<ProjectHandoverRequestDto>.Failure(Error.Forbidden("The selected manager is no longer an active user in this tenant"));
+        if (!await IsActiveTenantManagementUserAsync(TryParseGuid(userId)!.Value, request.TenantId, cancellationToken)) return Result<ProjectHandoverRequestDto>.Failure(Error.Forbidden("The selected manager must have an active Management-category role in this tenant"));
 
         var rejectionReason = dto.RejectionReason?.Trim();
         if (string.IsNullOrWhiteSpace(rejectionReason))
@@ -589,9 +729,13 @@ public class ProjectHandoverRequestService : IProjectHandoverRequestService
 
     private async Task SendRequestCreatedNotificationsAsync(ProjectHandoverRequest request, Project project, CancellationToken cancellationToken)
     {
+        var organizationId = _projectOrganizationLookup is null
+            ? null
+            : await _projectOrganizationLookup.ResolveOrganizationIdAsync(project.TenantId, project.Id, cancellationToken);
         await _notificationService.SendAsync(new Notification
         {
             TenantId = project.TenantId,
+            OrganizationId = organizationId,
             UserId = request.NewProjectManagerId,
             Title = "Project handover request",
             Body = $"You have received a project handover request requiring your approval. Project: {project.Name}",
@@ -606,6 +750,7 @@ public class ProjectHandoverRequestService : IProjectHandoverRequestService
             await _notificationService.SendAsync(new Notification
             {
                 TenantId = project.TenantId,
+                OrganizationId = organizationId,
                 UserId = stakeholder.UserId!.Value,
                 Title = "Project manager handover",
                 Body = $"A Project Manager handover request has been submitted. Project: {project.Name}",
@@ -620,6 +765,9 @@ public class ProjectHandoverRequestService : IProjectHandoverRequestService
     private async Task SendAcceptedNotificationsAsync(ProjectHandoverRequest request, CancellationToken cancellationToken)
     {
         var project = await _context.Set<Project>().FirstOrDefaultAsync(p => p.Id == request.ProjectId && p.TenantId == request.TenantId, cancellationToken);
+        var organizationId = project is null || _projectOrganizationLookup is null
+            ? null
+            : await _projectOrganizationLookup.ResolveOrganizationIdAsync(request.TenantId, project.Id, cancellationToken);
         var projectName = project?.Name ?? string.Empty;
         var currentManagerExists = request.CurrentProjectManagerId.HasValue && await _context.Set<User>()
             .AnyAsync(user => user.Id == request.CurrentProjectManagerId.Value && user.TenantId == request.TenantId && !user.IsDeleted, cancellationToken);
@@ -629,6 +777,7 @@ public class ProjectHandoverRequestService : IProjectHandoverRequestService
             await _notificationService.SendAsync(new Notification
             {
                 TenantId = request.TenantId,
+                OrganizationId = organizationId,
                 UserId = request.CurrentProjectManagerId!.Value,
                 Title = "Handover accepted",
                 Body = $"Your project manager handover for {projectName} has been accepted by the new project manager.",
@@ -644,6 +793,7 @@ public class ProjectHandoverRequestService : IProjectHandoverRequestService
             await _notificationService.SendAsync(new Notification
             {
                 TenantId = request.TenantId,
+                OrganizationId = organizationId,
                 UserId = stakeholder.UserId!.Value,
                 Title = "Project manager handover completed",
                 Body = $"The project manager handover for {projectName} has been completed.",
@@ -658,6 +808,9 @@ public class ProjectHandoverRequestService : IProjectHandoverRequestService
     private async Task SendRejectedNotificationsAsync(ProjectHandoverRequest request, CancellationToken cancellationToken)
     {
         var project = await _context.Set<Project>().FirstOrDefaultAsync(p => p.Id == request.ProjectId && p.TenantId == request.TenantId, cancellationToken);
+        var organizationId = project is null || _projectOrganizationLookup is null
+            ? null
+            : await _projectOrganizationLookup.ResolveOrganizationIdAsync(request.TenantId, project.Id, cancellationToken);
         var projectName = project?.Name ?? string.Empty;
         var currentManagerExists = request.CurrentProjectManagerId.HasValue && await _context.Set<User>()
             .AnyAsync(user => user.Id == request.CurrentProjectManagerId.Value && user.TenantId == request.TenantId && !user.IsDeleted, cancellationToken);
@@ -665,6 +818,7 @@ public class ProjectHandoverRequestService : IProjectHandoverRequestService
         await _notificationService.SendAsync(new Notification
         {
             TenantId = request.TenantId,
+            OrganizationId = organizationId,
             UserId = request.RequestedBy,
             Title = "Handover rejected",
             Body = $"Your project manager handover request for {projectName} was rejected. Reason: {request.RejectionReason}",
@@ -679,6 +833,7 @@ public class ProjectHandoverRequestService : IProjectHandoverRequestService
             await _notificationService.SendAsync(new Notification
             {
                 TenantId = request.TenantId,
+                OrganizationId = organizationId,
                 UserId = request.CurrentProjectManagerId!.Value,
                 Title = "Handover rejected",
                 Body = $"The project manager handover request for {projectName} was rejected by the proposed new project manager.",
@@ -708,19 +863,16 @@ public class ProjectHandoverRequestService : IProjectHandoverRequestService
     private async Task<bool> IsActiveTenantUserAsync(Guid userId, Guid tenantId, CancellationToken ct) =>
         await _context.Set<User>().AnyAsync(x => x.Id == userId && x.TenantId == tenantId && x.IsActive && !x.IsDeleted, ct);
 
+    private async Task<bool> IsActiveTenantManagementUserAsync(Guid userId, Guid tenantId, CancellationToken ct) =>
+        await _context.Set<User>().AnyAsync(user => user.Id == userId && user.TenantId == tenantId
+            && user.IsActive && !user.IsDeleted
+            && _context.Set<UserRole>().Any(userRole => userRole.UserId == user.Id
+                && userRole.TenantId == tenantId && !userRole.IsDeleted
+                && _context.Set<Role>().Any(role => role.Id == userRole.RoleId
+                    && role.TenantId == tenantId && !role.IsDeleted && role.Category == "Management")), ct);
+
     private static bool HasAny(IReadOnlySet<string> effectivePermissions, params string[] permissions) =>
         permissions.Any(effectivePermissions.Contains);
-
-    private Guid GetCurrentTenantId()
-    {
-        var tenantId = _httpContextAccessor.HttpContext?.User.FindFirst("tenantId")?.Value;
-        if (!string.IsNullOrWhiteSpace(tenantId) && Guid.TryParse(tenantId, out var parsed))
-        {
-            return parsed;
-        }
-
-        return TenantConstants.DemoTenantId;
-    }
 
     private Result<Guid> GetRequiredCurrentTenantId()
     {

@@ -2,16 +2,16 @@ version: '3.8'
 services:
   api:
     environment:
+      # Local development explicitly opts into Development. The base file defaults to
+      # Production so a deployment that omits this override never exposes dev affordances.
       ASPNETCORE_ENVIRONMENT: Development
       DemoAuth__Enabled: true
       DemoAuth__DemoMode: true
+      ConnectionStrings__DefaultConnection: Server=sqlserver;Database=NexusPmo;User Id=sa;Password=${NEXUS_DB_PASSWORD:?NEXUS_DB_PASSWORD must be set};Encrypt=False;TrustServerCertificate=True;MultipleActiveResultSets=true
     volumes:
       - ./apps/api:/src
 
-  web:
+  worker:
     environment:
-      NODE_ENV: development
-    volumes:
-      - ./apps/web:/app
-      - /app/node_modules
-      - /app/.next
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__DefaultConnection: Server=sqlserver;Database=NexusPmo;User Id=sa;Password=${NEXUS_DB_PASSWORD:?NEXUS_DB_PASSWORD must be set};Encrypt=False;TrustServerCertificate=True;MultipleActiveResultSets=true

@@ -1,0 +1,217 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="dc67cd15-4467-4b08-be2f-9448a47eb281" name="shady@SHADY 2026-11-05 19:45:10" runUser="SHADY\shady" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-11-05T19:45:10.8252275+02:00" queuing="2026-11-05T19:45:10.8252281+02:00" start="2026-11-05T19:45:07.5638951+02:00" finish="2026-11-05T19:45:11.5184182+02:00" />
+  <TestSettings name="default" id="8cd34719-7400-4814-9f4e-39a071e3f7d5">
+    <Deployment runDeploymentRoot="shady_SHADY_2026-11-05_19_45_10" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="6f8a66bd-036f-42e5-a6e2-98340762acd8" testId="f819e372-3dac-05f8-7956-2b5360a3961f" testName="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.ExecuteTransition_Successful" computerName="SHADY" duration="00:00:00.0230574" startTime="2026-11-05T19:45:10.8305571+02:00" endTime="2026-11-05T19:45:10.8533715+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="6f8a66bd-036f-42e5-a6e2-98340762acd8" />
+    <UnitTestResult executionId="7338220f-a06d-4799-9e6f-b238e693cddd" testId="49e3f87e-2bfe-0d54-85d3-4c61c36e94f4" testName="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.Guard_RejectsRequireRole_WhenNotGranted" computerName="SHADY" duration="00:00:00.0504551" startTime="2026-11-05T19:45:10.9660193+02:00" endTime="2026-11-05T19:45:11.0155483+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="7338220f-a06d-4799-9e6f-b238e693cddd" />
+    <UnitTestResult executionId="d3f0fd46-8cac-4e08-a5b7-1e89a0819388" testId="1b02ed5d-2400-ff0e-e000-85903d57c1ca" testName="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.Provision_FromPublishedVersion_Succeeds" computerName="SHADY" duration="00:00:00.0266475" startTime="2026-11-05T19:45:10.5645726+02:00" endTime="2026-11-05T19:45:10.5803058+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="d3f0fd46-8cac-4e08-a5b7-1e89a0819388" />
+    <UnitTestResult executionId="1cc78616-79c2-4af7-9b5b-9703744a7e92" testId="302a6fcf-92ec-a2c7-d7ca-98519d493693" testName="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.Provision_DuplicateInstance_Rejected" computerName="SHADY" duration="00:00:00.0310780" startTime="2026-11-05T19:45:11.2462234+02:00" endTime="2026-11-05T19:45:11.2771717+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="1cc78616-79c2-4af7-9b5b-9703744a7e92" />
+    <UnitTestResult executionId="37e9dbcd-0a0d-424b-85c2-8d958bb06798" testId="9d6e8cf2-5d70-282e-8e1e-5d9665647c44" testName="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.ExpectedStateMismatch_Rejected" computerName="SHADY" duration="00:00:00.0310118" startTime="2026-11-05T19:45:11.0886303+02:00" endTime="2026-11-05T19:45:11.1174341+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="37e9dbcd-0a0d-424b-85c2-8d958bb06798" />
+    <UnitTestResult executionId="c7e10b29-9771-476b-9037-c9bf2978b160" testId="cd9b45b5-5224-47eb-0cd3-4d389166ada0" testName="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.Action_UnknownActionType_Rejected" computerName="SHADY" duration="00:00:00.0647516" startTime="2026-11-05T19:45:11.1455695+02:00" endTime="2026-11-05T19:45:11.2103930+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="c7e10b29-9771-476b-9037-c9bf2978b160" />
+    <UnitTestResult executionId="cea20ec7-8569-469c-af1d-31982a4837c2" testId="428030f2-94aa-8b5d-9574-53a52dc90e16" testName="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.FailedTransition_CreatesNoHistory" computerName="SHADY" duration="00:00:00.0409093" startTime="2026-11-05T19:45:11.3133144+02:00" endTime="2026-11-05T19:45:11.3539901+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="cea20ec7-8569-469c-af1d-31982a4837c2" />
+    <UnitTestResult executionId="196bf9a8-8c1d-4d27-a31b-cb87df62ce68" testId="49af9850-4cbb-01da-3939-9760c3ed7844" testName="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.VersionRemainsFixed_DuringInstanceLifetime" computerName="SHADY" duration="00:00:00.0356327" startTime="2026-11-05T19:45:11.0509790+02:00" endTime="2026-11-05T19:45:11.0864178+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="196bf9a8-8c1d-4d27-a31b-cb87df62ce68" />
+    <UnitTestResult executionId="6f9aca0f-41b6-4821-808a-22e72a3362a9" testId="bb581f51-4a44-249d-7476-77625c181ead" testName="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.Guard_RejectsRequireFact_WhenFactMissing" computerName="SHADY" duration="00:00:00.0247111" startTime="2026-11-05T19:45:10.7775040+02:00" endTime="2026-11-05T19:45:10.8024414+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="6f9aca0f-41b6-4821-808a-22e72a3362a9" />
+    <UnitTestResult executionId="65cf6e88-761e-4caf-aa4f-d14cd5bf30ac" testId="6915bad8-330c-9c2e-2432-fc1e98f79a29" testName="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.Guard_RejectsTransition_WhenCommentRequired" computerName="SHADY" duration="00:00:00.0633726" startTime="2026-11-05T19:45:10.6624972+02:00" endTime="2026-11-05T19:45:10.7258147+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="65cf6e88-761e-4caf-aa4f-d14cd5bf30ac" />
+    <UnitTestResult executionId="7cf4190a-2920-4866-a289-8e48cccd0eb5" testId="e378a858-c913-ba14-b8d4-5e0b7590c18b" testName="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.ReadOnly_Rejected" computerName="SHADY" duration="00:00:00.0269537" startTime="2026-11-05T19:45:10.9383255+02:00" endTime="2026-11-05T19:45:10.9649669+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="7cf4190a-2920-4866-a289-8e48cccd0eb5" />
+    <UnitTestResult executionId="eea67cc9-67da-44ad-bddf-7a4727a5f850" testId="d55fe455-1e55-2db0-5db6-e960b82cb1b6" testName="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.Provision_InitialState_IsOpen" computerName="SHADY" duration="00:00:00.0346626" startTime="2026-11-05T19:45:11.0158002+02:00" endTime="2026-11-05T19:45:11.0505027+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="eea67cc9-67da-44ad-bddf-7a4727a5f850" />
+    <UnitTestResult executionId="fb5bd05c-f4c8-4a3a-9b80-9db10510ef8e" testId="0435a17b-a8b7-6c70-6579-a66e047cce50" testName="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.InvalidTransitionCode_Rejected" computerName="SHADY" duration="00:00:00.0296655" startTime="2026-11-05T19:45:11.3830536+02:00" endTime="2026-11-05T19:45:11.4126217+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="fb5bd05c-f4c8-4a3a-9b80-9db10510ef8e" />
+    <UnitTestResult executionId="84f9fbe2-9482-48e5-a03a-61c45d1496ff" testId="f445d723-04a8-82c4-86a5-ffa8ffc0b25e" testName="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.Provision_RetiredVersion_Rejected" computerName="SHADY" duration="00:00:01.5657650" startTime="2026-11-05T19:45:08.3686000+02:00" endTime="2026-11-05T19:45:09.9426141+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="84f9fbe2-9482-48e5-a03a-61c45d1496ff" />
+    <UnitTestResult executionId="1b65bef5-95da-406c-adc7-f6769708cdde" testId="9ec9b4ad-a2bc-2cf9-5f12-3753ad949d6b" testName="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.Guard_RejectsRequirePermission_WhenNotGranted" computerName="SHADY" duration="00:00:00.0280406" startTime="2026-11-05T19:45:10.7491396+02:00" endTime="2026-11-05T19:45:10.7773594+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="1b65bef5-95da-406c-adc7-f6769708cdde" />
+    <UnitTestResult executionId="636e011a-c851-4d3f-9525-c91e4f337406" testId="b6f50d35-b4ad-ef0e-dfea-6fb8fa3c7620" testName="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.Guard_PassesRequireComment_WhenCommentProvided" computerName="SHADY" duration="00:00:00.0324171" startTime="2026-11-05T19:45:10.9057438+02:00" endTime="2026-11-05T19:45:10.9380689+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="636e011a-c851-4d3f-9525-c91e4f337406" />
+    <UnitTestResult executionId="5af940fd-207b-40ca-a573-42e7a1c51526" testId="836a332c-99bd-00bb-adf6-7092d60a5e30" testName="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.RowVersion_ConcurrencyConflict" computerName="SHADY" duration="00:00:00.0246169" startTime="2026-11-05T19:45:10.8808200+02:00" endTime="2026-11-05T19:45:10.9054871+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="5af940fd-207b-40ca-a573-42e7a1c51526" />
+    <UnitTestResult executionId="ec69085a-f537-430e-ad01-4d3ced4cf333" testId="8aebb71f-ac7e-52b2-0e60-ab62710659d2" testName="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.Guard_ExecutionOrderRespected" computerName="SHADY" duration="00:00:00.0278811" startTime="2026-11-05T19:45:10.8090876+02:00" endTime="2026-11-05T19:45:10.8303301+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="ec69085a-f537-430e-ad01-4d3ced4cf333" />
+    <UnitTestResult executionId="9af7b934-0d59-4468-a589-5ac17855e35d" testId="40ff67b9-ec9f-e075-5255-5a9974c68f3a" testName="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.TransitionToFinal_CompletesInstance" computerName="SHADY" duration="00:00:00.4598789" startTime="2026-11-05T19:45:09.9537010+02:00" endTime="2026-11-05T19:45:10.4029630+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="9af7b934-0d59-4468-a589-5ac17855e35d" />
+    <UnitTestResult executionId="36f2b1c5-6ede-4fcd-b12a-4db3d7031487" testId="43af82c0-d2c5-c648-edee-299e96313813" testName="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.Guard_UnknownGuardType_Rejected" computerName="SHADY" duration="00:00:00.0352861" startTime="2026-11-05T19:45:11.2105804+02:00" endTime="2026-11-05T19:45:11.2459041+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="36f2b1c5-6ede-4fcd-b12a-4db3d7031487" />
+    <UnitTestResult executionId="da9250c5-1f3a-4ffa-aea2-50706c664ef3" testId="4b0bf4e5-9265-c585-d5f8-4b0da6b8bfac" testName="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.FinalState_CannotTransition" computerName="SHADY" duration="00:00:00.0270735" startTime="2026-11-05T19:45:10.8535282+02:00" endTime="2026-11-05T19:45:10.8806516+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="da9250c5-1f3a-4ffa-aea2-50706c664ef3" />
+    <UnitTestResult executionId="37f29663-6615-44ec-861a-42db7458ed36" testId="858c7734-3ea8-6c99-bf9f-9e581fa18c28" testName="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.ExecuteTransition_AuditAppendedOnce" computerName="SHADY" duration="00:00:00.1389218" startTime="2026-11-05T19:45:10.4070445+02:00" endTime="2026-11-05T19:45:10.5549137+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="37f29663-6615-44ec-861a-42db7458ed36">
+      <Output>
+        <ErrorInfo>
+          <Message>System.InvalidOperationException : Sequence contains no elements.</Message>
+          <StackTrace>   at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)&#xD;
+   at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)&#xD;
+   at NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.ExecuteTransition_AuditAppendedOnce() in C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Unit\WorkflowExecutionPhase2Tests.cs:line 289&#xD;
+--- End of stack trace from previous location ---</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="5738d8ca-b25b-463e-9897-13a59874328e" testId="29610452-3a73-072f-0a7b-0ac313becee9" testName="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.AvailableTransitions_OnlyFromCurrentState" computerName="SHADY" duration="00:00:00.0305869" startTime="2026-11-05T19:45:11.4139641+02:00" endTime="2026-11-05T19:45:11.4433124+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="5738d8ca-b25b-463e-9897-13a59874328e" />
+    <UnitTestResult executionId="1fce4e9e-e7fd-42b6-9bb9-e3ee93e6672c" testId="e5791c70-1237-89b4-068b-a3d9f21f117b" testName="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.ExecuteTransition_HistoryWrittenOnce" computerName="SHADY" duration="00:00:00.0356004" startTime="2026-11-05T19:45:11.2773712+02:00" endTime="2026-11-05T19:45:11.3129662+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="1fce4e9e-e7fd-42b6-9bb9-e3ee93e6672c" />
+    <UnitTestResult executionId="51009354-70a1-46aa-b975-fbd79dcf7fa4" testId="494de915-5d72-e84e-6cbc-02f68effc93b" testName="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.AvailableTransitions_FinalState_Empty" computerName="SHADY" duration="00:00:00.0817623" startTime="2026-11-05T19:45:10.5804455+02:00" endTime="2026-11-05T19:45:10.6622413+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="51009354-70a1-46aa-b975-fbd79dcf7fa4" />
+    <UnitTestResult executionId="b58cbc2c-d24f-45ed-b418-9e0a00b59a74" testId="7f5526f5-6248-7d45-61a3-043a219166eb" testName="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.Provision_DraftVersion_Rejected" computerName="SHADY" duration="00:00:00.0277634" startTime="2026-11-05T19:45:11.1176297+02:00" endTime="2026-11-05T19:45:11.1453903+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="b58cbc2c-d24f-45ed-b418-9e0a00b59a74" />
+    <UnitTestResult executionId="35a522ca-5338-43a8-bc1c-750449633fb5" testId="67890023-608b-15cb-7f82-d45f7d2bdede" testName="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.Adapter_AuthorizationFailure_PreventsTransition" computerName="SHADY" duration="00:00:00.0285266" startTime="2026-11-05T19:45:11.3542753+02:00" endTime="2026-11-05T19:45:11.3827980+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="35a522ca-5338-43a8-bc1c-750449633fb5" />
+    <UnitTestResult executionId="44df694b-4ce1-4ccf-afff-fbf86c101f45" testId="d869cdf7-dba8-3b90-9cf0-f4909f6876dd" testName="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.UnknownEntityType_Rejected" computerName="SHADY" duration="00:00:00.0231254" startTime="2026-11-05T19:45:10.7262273+02:00" endTime="2026-11-05T19:45:10.7489969+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="44df694b-4ce1-4ccf-afff-fbf86c101f45" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.FinalState_CannotTransition" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="4b0bf4e5-9265-c585-d5f8-4b0da6b8bfac">
+      <Execution id="da9250c5-1f3a-4ffa-aea2-50706c664ef3" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests" name="FinalState_CannotTransition" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.Guard_ExecutionOrderRespected" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="8aebb71f-ac7e-52b2-0e60-ab62710659d2">
+      <Execution id="ec69085a-f537-430e-ad01-4d3ced4cf333" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests" name="Guard_ExecutionOrderRespected" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.ReadOnly_Rejected" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="e378a858-c913-ba14-b8d4-5e0b7590c18b">
+      <Execution id="7cf4190a-2920-4866-a289-8e48cccd0eb5" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests" name="ReadOnly_Rejected" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.RowVersion_ConcurrencyConflict" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="836a332c-99bd-00bb-adf6-7092d60a5e30">
+      <Execution id="5af940fd-207b-40ca-a573-42e7a1c51526" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests" name="RowVersion_ConcurrencyConflict" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.Provision_DuplicateInstance_Rejected" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="302a6fcf-92ec-a2c7-d7ca-98519d493693">
+      <Execution id="1cc78616-79c2-4af7-9b5b-9703744a7e92" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests" name="Provision_DuplicateInstance_Rejected" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.TransitionToFinal_CompletesInstance" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="40ff67b9-ec9f-e075-5255-5a9974c68f3a">
+      <Execution id="9af7b934-0d59-4468-a589-5ac17855e35d" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests" name="TransitionToFinal_CompletesInstance" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.Guard_RejectsRequirePermission_WhenNotGranted" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="9ec9b4ad-a2bc-2cf9-5f12-3753ad949d6b">
+      <Execution id="1b65bef5-95da-406c-adc7-f6769708cdde" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests" name="Guard_RejectsRequirePermission_WhenNotGranted" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.Provision_RetiredVersion_Rejected" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="f445d723-04a8-82c4-86a5-ffa8ffc0b25e">
+      <Execution id="84f9fbe2-9482-48e5-a03a-61c45d1496ff" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests" name="Provision_RetiredVersion_Rejected" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.Provision_FromPublishedVersion_Succeeds" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="1b02ed5d-2400-ff0e-e000-85903d57c1ca">
+      <Execution id="d3f0fd46-8cac-4e08-a5b7-1e89a0819388" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests" name="Provision_FromPublishedVersion_Succeeds" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.Guard_PassesRequireComment_WhenCommentProvided" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="b6f50d35-b4ad-ef0e-dfea-6fb8fa3c7620">
+      <Execution id="636e011a-c851-4d3f-9525-c91e4f337406" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests" name="Guard_PassesRequireComment_WhenCommentProvided" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.ExecuteTransition_AuditAppendedOnce" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="858c7734-3ea8-6c99-bf9f-9e581fa18c28">
+      <Execution id="37f29663-6615-44ec-861a-42db7458ed36" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests" name="ExecuteTransition_AuditAppendedOnce" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.AvailableTransitions_OnlyFromCurrentState" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="29610452-3a73-072f-0a7b-0ac313becee9">
+      <Execution id="5738d8ca-b25b-463e-9897-13a59874328e" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests" name="AvailableTransitions_OnlyFromCurrentState" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.VersionRemainsFixed_DuringInstanceLifetime" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="49af9850-4cbb-01da-3939-9760c3ed7844">
+      <Execution id="196bf9a8-8c1d-4d27-a31b-cb87df62ce68" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests" name="VersionRemainsFixed_DuringInstanceLifetime" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.InvalidTransitionCode_Rejected" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="0435a17b-a8b7-6c70-6579-a66e047cce50">
+      <Execution id="fb5bd05c-f4c8-4a3a-9b80-9db10510ef8e" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests" name="InvalidTransitionCode_Rejected" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.UnknownEntityType_Rejected" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="d869cdf7-dba8-3b90-9cf0-f4909f6876dd">
+      <Execution id="44df694b-4ce1-4ccf-afff-fbf86c101f45" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests" name="UnknownEntityType_Rejected" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.Guard_UnknownGuardType_Rejected" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="43af82c0-d2c5-c648-edee-299e96313813">
+      <Execution id="36f2b1c5-6ede-4fcd-b12a-4db3d7031487" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests" name="Guard_UnknownGuardType_Rejected" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.ExpectedStateMismatch_Rejected" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="9d6e8cf2-5d70-282e-8e1e-5d9665647c44">
+      <Execution id="37e9dbcd-0a0d-424b-85c2-8d958bb06798" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests" name="ExpectedStateMismatch_Rejected" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.Provision_InitialState_IsOpen" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="d55fe455-1e55-2db0-5db6-e960b82cb1b6">
+      <Execution id="eea67cc9-67da-44ad-bddf-7a4727a5f850" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests" name="Provision_InitialState_IsOpen" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.Action_UnknownActionType_Rejected" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="cd9b45b5-5224-47eb-0cd3-4d389166ada0">
+      <Execution id="c7e10b29-9771-476b-9037-c9bf2978b160" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests" name="Action_UnknownActionType_Rejected" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.Provision_DraftVersion_Rejected" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="7f5526f5-6248-7d45-61a3-043a219166eb">
+      <Execution id="b58cbc2c-d24f-45ed-b418-9e0a00b59a74" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests" name="Provision_DraftVersion_Rejected" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.AvailableTransitions_FinalState_Empty" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="494de915-5d72-e84e-6cbc-02f68effc93b">
+      <Execution id="51009354-70a1-46aa-b975-fbd79dcf7fa4" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests" name="AvailableTransitions_FinalState_Empty" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.Guard_RejectsRequireFact_WhenFactMissing" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="bb581f51-4a44-249d-7476-77625c181ead">
+      <Execution id="6f9aca0f-41b6-4821-808a-22e72a3362a9" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests" name="Guard_RejectsRequireFact_WhenFactMissing" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.Adapter_AuthorizationFailure_PreventsTransition" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="67890023-608b-15cb-7f82-d45f7d2bdede">
+      <Execution id="35a522ca-5338-43a8-bc1c-750449633fb5" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests" name="Adapter_AuthorizationFailure_PreventsTransition" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.ExecuteTransition_HistoryWrittenOnce" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="e5791c70-1237-89b4-068b-a3d9f21f117b">
+      <Execution id="1fce4e9e-e7fd-42b6-9bb9-e3ee93e6672c" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests" name="ExecuteTransition_HistoryWrittenOnce" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.FailedTransition_CreatesNoHistory" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="428030f2-94aa-8b5d-9574-53a52dc90e16">
+      <Execution id="cea20ec7-8569-469c-af1d-31982a4837c2" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests" name="FailedTransition_CreatesNoHistory" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.Guard_RejectsRequireRole_WhenNotGranted" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="49e3f87e-2bfe-0d54-85d3-4c61c36e94f4">
+      <Execution id="7338220f-a06d-4799-9e6f-b238e693cddd" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests" name="Guard_RejectsRequireRole_WhenNotGranted" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.Guard_RejectsTransition_WhenCommentRequired" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="6915bad8-330c-9c2e-2432-fc1e98f79a29">
+      <Execution id="65cf6e88-761e-4caf-aa4f-d14cd5bf30ac" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests" name="Guard_RejectsTransition_WhenCommentRequired" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.ExecuteTransition_Successful" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="f819e372-3dac-05f8-7956-2b5360a3961f">
+      <Execution id="6f8a66bd-036f-42e5-a6e2-98340762acd8" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests" name="ExecuteTransition_Successful" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="f819e372-3dac-05f8-7956-2b5360a3961f" executionId="6f8a66bd-036f-42e5-a6e2-98340762acd8" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="49e3f87e-2bfe-0d54-85d3-4c61c36e94f4" executionId="7338220f-a06d-4799-9e6f-b238e693cddd" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1b02ed5d-2400-ff0e-e000-85903d57c1ca" executionId="d3f0fd46-8cac-4e08-a5b7-1e89a0819388" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="302a6fcf-92ec-a2c7-d7ca-98519d493693" executionId="1cc78616-79c2-4af7-9b5b-9703744a7e92" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="9d6e8cf2-5d70-282e-8e1e-5d9665647c44" executionId="37e9dbcd-0a0d-424b-85c2-8d958bb06798" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="cd9b45b5-5224-47eb-0cd3-4d389166ada0" executionId="c7e10b29-9771-476b-9037-c9bf2978b160" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="428030f2-94aa-8b5d-9574-53a52dc90e16" executionId="cea20ec7-8569-469c-af1d-31982a4837c2" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="49af9850-4cbb-01da-3939-9760c3ed7844" executionId="196bf9a8-8c1d-4d27-a31b-cb87df62ce68" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="bb581f51-4a44-249d-7476-77625c181ead" executionId="6f9aca0f-41b6-4821-808a-22e72a3362a9" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="6915bad8-330c-9c2e-2432-fc1e98f79a29" executionId="65cf6e88-761e-4caf-aa4f-d14cd5bf30ac" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="e378a858-c913-ba14-b8d4-5e0b7590c18b" executionId="7cf4190a-2920-4866-a289-8e48cccd0eb5" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="d55fe455-1e55-2db0-5db6-e960b82cb1b6" executionId="eea67cc9-67da-44ad-bddf-7a4727a5f850" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="0435a17b-a8b7-6c70-6579-a66e047cce50" executionId="fb5bd05c-f4c8-4a3a-9b80-9db10510ef8e" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="f445d723-04a8-82c4-86a5-ffa8ffc0b25e" executionId="84f9fbe2-9482-48e5-a03a-61c45d1496ff" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="9ec9b4ad-a2bc-2cf9-5f12-3753ad949d6b" executionId="1b65bef5-95da-406c-adc7-f6769708cdde" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="b6f50d35-b4ad-ef0e-dfea-6fb8fa3c7620" executionId="636e011a-c851-4d3f-9525-c91e4f337406" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="836a332c-99bd-00bb-adf6-7092d60a5e30" executionId="5af940fd-207b-40ca-a573-42e7a1c51526" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="8aebb71f-ac7e-52b2-0e60-ab62710659d2" executionId="ec69085a-f537-430e-ad01-4d3ced4cf333" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="40ff67b9-ec9f-e075-5255-5a9974c68f3a" executionId="9af7b934-0d59-4468-a589-5ac17855e35d" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="43af82c0-d2c5-c648-edee-299e96313813" executionId="36f2b1c5-6ede-4fcd-b12a-4db3d7031487" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="4b0bf4e5-9265-c585-d5f8-4b0da6b8bfac" executionId="da9250c5-1f3a-4ffa-aea2-50706c664ef3" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="858c7734-3ea8-6c99-bf9f-9e581fa18c28" executionId="37f29663-6615-44ec-861a-42db7458ed36" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="29610452-3a73-072f-0a7b-0ac313becee9" executionId="5738d8ca-b25b-463e-9897-13a59874328e" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="e5791c70-1237-89b4-068b-a3d9f21f117b" executionId="1fce4e9e-e7fd-42b6-9bb9-e3ee93e6672c" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="494de915-5d72-e84e-6cbc-02f68effc93b" executionId="51009354-70a1-46aa-b975-fbd79dcf7fa4" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="7f5526f5-6248-7d45-61a3-043a219166eb" executionId="b58cbc2c-d24f-45ed-b418-9e0a00b59a74" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="67890023-608b-15cb-7f82-d45f7d2bdede" executionId="35a522ca-5338-43a8-bc1c-750449633fb5" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="d869cdf7-dba8-3b90-9cf0-f4909f6876dd" executionId="44df694b-4ce1-4ccf-afff-fbf86c101f45" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Failed">
+    <Counters total="28" executed="28" passed="27" failed="1" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.0.0+e341b939fe (64-bit .NET 10.0.10)&#xD;
+[xUnit.net 00:00:00.11]   Discovering: NEXUS.Api.Tests&#xD;
+[xUnit.net 00:00:00.22]   Discovered:  NEXUS.Api.Tests&#xD;
+[xUnit.net 00:00:00.25]   Starting:    NEXUS.Api.Tests&#xD;
+[xUnit.net 00:00:02.47]       System.InvalidOperationException : Sequence contains no elements.&#xD;
+[xUnit.net 00:00:02.47]       Stack Trace:&#xD;
+[xUnit.net 00:00:02.47]            at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)&#xD;
+[xUnit.net 00:00:02.47]            at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)&#xD;
+[xUnit.net 00:00:02.47]         C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Unit\WorkflowExecutionPhase2Tests.cs(289,0): at NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.ExecuteTransition_AuditAppendedOnce()&#xD;
+[xUnit.net 00:00:02.47]         --- End of stack trace from previous location ---&#xD;
+[xUnit.net 00:00:03.36]   Finished:    NEXUS.Api.Tests&#xD;
+</StdOut>
+    </Output>
+    <RunInfos>
+      <RunInfo computerName="SHADY" outcome="Error" timestamp="2026-11-05T19:45:10.5601974+02:00">
+        <Text>[xUnit.net 00:00:02.47]     NEXUS.Api.Tests.Unit.WorkflowExecutionPhase2Tests.ExecuteTransition_AuditAppendedOnce [FAIL]</Text>
+      </RunInfo>
+    </RunInfos>
+  </ResultSummary>
+</TestRun>

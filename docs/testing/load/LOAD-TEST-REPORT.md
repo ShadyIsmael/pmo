@@ -41,7 +41,7 @@ Think time was randomized between 1 and 3 seconds between user actions. Every en
 | Database | SQL Server, database `NexusPmo`, configured via the local trusted-connection string |
 | Redis | Local Redis configuration present; no Redis-specific pressure metric was available |
 | Approximate data volume | 10 projects, 3 risks, 3 plans, 36 planning activities, 1 WBS node, 25 plan dependencies; 0 risk actions on the sampled risk |
-| Credentials | Seeded demo accounts, password `Demo123!`; credentials are not stored in result files |
+| Credentials | Seeded demo accounts with the development password supplied via `K6_PASSWORD`; credentials are not stored in result files |
 
 The API and database were reachable at preflight. The web endpoint also returned 200, but it was not included in the load test.
 

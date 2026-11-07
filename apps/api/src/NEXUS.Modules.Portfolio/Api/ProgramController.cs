@@ -33,7 +33,31 @@ public class ProgramController : ControllerBase
         return Ok(result);
     }
 
-    [Authorize(Policy = "Program.Manage")]
+    [Authorize(Policy = "WorkflowLookup.Project.Programs")]
+    [HttpGet("project-lookup")]
+    public async Task<IActionResult> GetProjectLookup([FromQuery] int page = 1, [FromQuery] int pageSize = 20, [FromQuery] string? search = null, [FromQuery] string? status = null, [FromQuery] Guid? portfolioId = null, CancellationToken cancellationToken = default)
+        => Ok(await _programService.GetProjectLookupAsync(page, pageSize, search, status, portfolioId, cancellationToken));
+
+    [Authorize(Policy = "WorkflowLookup.ProgramCreate.Portfolios")]
+    [HttpGet("eligible-portfolios")]
+    public async Task<IActionResult> GetEligiblePortfolios(CancellationToken cancellationToken)
+    {
+        var result = await _programService.GetEligiblePortfoliosForCreationAsync(cancellationToken);
+        if (result.IsFailure) return Problem(result.Error?.Message, statusCode: result.Error?.StatusCode ?? 400);
+        return Ok(new { items = result.Value });
+    }
+
+    /// <summary>Returns scoped Portfolio options for editing Programs.</summary>
+    [Authorize(Policy = "WorkflowLookup.ProgramEdit.Portfolios")]
+    [HttpGet("editable-portfolios")]
+    public async Task<IActionResult> GetEditablePortfolios(CancellationToken cancellationToken)
+    {
+        var result = await _programService.GetEligiblePortfoliosForEditingAsync(cancellationToken);
+        if (result.IsFailure) return Problem(result.Error?.Message, statusCode: result.Error?.StatusCode ?? 400);
+        return Ok(new { items = result.Value });
+    }
+
+    [Authorize(Policy = "Program.Create")]
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] SaveProgramDto dto, CancellationToken cancellationToken)
     {
@@ -42,7 +66,7 @@ public class ProgramController : ControllerBase
         return CreatedAtAction(nameof(GetById), new { id = result.Value!.Id }, result.Value);
     }
 
-    [Authorize(Policy = "Program.Manage")]
+    [Authorize(Policy = "Program.Edit")]
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] SaveProgramDto dto, CancellationToken cancellationToken)
     {
@@ -51,7 +75,7 @@ public class ProgramController : ControllerBase
         return Ok(result.Value);
     }
 
-    [Authorize(Policy = "Program.Manage")]
+    [Authorize(Policy = "Program.Archive")]
     [HttpPost("{id:guid}/archive")]
     public async Task<IActionResult> Archive(Guid id, CancellationToken cancellationToken)
     {
@@ -60,7 +84,7 @@ public class ProgramController : ControllerBase
         return Ok();
     }
 
-    [Authorize(Policy = "Program.Manage")]
+    [Authorize(Policy = "Program.Reactivate")]
     [HttpPost("{id:guid}/reactivate")]
     public async Task<IActionResult> Reactivate(Guid id, CancellationToken cancellationToken)
     {

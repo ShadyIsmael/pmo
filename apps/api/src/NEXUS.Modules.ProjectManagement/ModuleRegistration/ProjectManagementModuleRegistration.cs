@@ -16,10 +16,12 @@ public static class ProjectManagementModuleRegistration
         services.AddScoped<IProjectService>(sp => sp.GetRequiredService<ProjectService>());
         services.AddScoped<IProjectReferenceLookup>(sp => sp.GetRequiredService<ProjectService>());
         services.AddScoped<IProjectPublicIdLookup>(sp => sp.GetRequiredService<ProjectService>());
+        services.AddScoped<IPaymentObligationProjectLookupService, PaymentObligationProjectLookupService>();
         services.AddScoped<IMilestoneService, MilestoneService>();
         services.AddScoped<IBaselineService, BaselineService>();
         services.AddScoped<IProjectSnapshotService, ProjectSnapshotService>();
         services.AddScoped<IProjectHandoverRequestService, ProjectHandoverRequestService>();
+        services.AddHostedService<ProjectManagerHandoverScheduler>();
         services.AddScoped<IProjectChangeRequestService, ProjectChangeRequestWorkflowService>();
         services.AddScoped<IProjectChangeRequestWorkflowProvisioningService, ProjectChangeRequestWorkflowProvisioningService>();
         services.AddScoped<IWorkflowEntityAdapter, ProjectChangeRequestWorkflowAdapter>();
@@ -43,6 +45,7 @@ public static class ProjectManagementModuleRegistration
         services.AddScoped<ActualWorkCostLookup>();
         services.AddScoped<IActualWorkCostLookup>(sp => sp.GetRequiredService<ActualWorkCostLookup>());
         services.AddScoped<IPlannedWorkCostLookup>(sp => sp.GetRequiredService<ActualWorkCostLookup>());
+        services.AddScoped<ICostUtilizationActivityLookup, CostUtilizationActivityLookup>();
         
         services.AddScoped<IProjectResourcePlanningContextLookup, ProjectResourcePlanningContextLookup>();
         services.AddScoped<CreateProjectValidator>();

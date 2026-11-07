@@ -1,19 +1,46 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, type AuthenticationSource } from "@api/client";
+import { api, type AuthenticationSource, type CurrentUser } from "@api/client";
 import { endpoints } from "@api/endpoints";
 
-export interface AdminUserDto { id: string; email: string; firstName: string; lastName: string; fullName: string; jobTitle?: string | null; phone?: string | null; isActive: boolean; authenticationSource: AuthenticationSource; mustChangePassword: boolean; temporaryPasswordExpiresAt?: string | null; roles: string[]; }
-export interface UpdateAdminUserInput { email: string; firstName: string; lastName: string; jobTitle?: string | null; phone?: string | null; isActive: boolean; roles: string[]; }
+export interface AdminUserDto { id: string; email: string; firstName: string; lastName: string; fullName: string; isActive: boolean; authenticationSource: AuthenticationSource; mustChangePassword: boolean; temporaryPasswordExpiresAt?: string | null; roles: string[]; }
+export interface UpdateAdminUserInput { email: string; firstName: string; lastName: string; isActive: boolean; roles: string[]; }
 export interface CreateAdminUserInput extends UpdateAdminUserInput { authenticationSource: AuthenticationSource; }
 export interface CreateAdminUserResponse { user: AdminUserDto; temporaryPassword?: string | null; }
 export interface TemporaryPasswordResetDto { userId: string; temporaryPassword: string; expiresAt: string; }
 export interface RoleDto { id: string; name: string; description?: string; category?: string; }
 export interface ManagedRoleSummaryDto extends RoleDto {
   isSystem: boolean;
+  isProtectedSystemAdmin: boolean;
   permissionCount: number;
   assignedUserCount: number;
 }
-export interface PermissionCatalogItemDto { id: string; name: string; resource: string; action: string; description?: string; }
+export interface PermissionCatalogItemDto {
+  id: string;
+  name: string;
+  resource: string;
+  action: string;
+  description?: string;
+  moduleId: string;
+  moduleNameEn: string;
+  moduleNameAr: string;
+  screenId: string;
+  screenNameEn: string;
+  screenNameAr: string;
+  level: "View" | "Action";
+  labelEn: string;
+  labelAr: string;
+  descriptionEn: string;
+  descriptionAr: string;
+  scope: string;
+  canDelegate?: boolean | null;
+  sensitivity: "Low" | "Medium" | "High" | "Critical";
+  isSensitive: boolean;
+  requiredPermissionKeys: string[];
+  isActive: boolean;
+  isAssignable: boolean;
+  isMandatoryForSystemAdmin: boolean;
+  allowedCategories: string[];
+}
 export interface ManagedRoleDto extends ManagedRoleSummaryDto { permissions: PermissionCatalogItemDto[]; }
 export interface SaveRoleInput { name: string; description: string; category: string; permissionIds: string[]; }
 export type PermissionOverrideEffect = "Inherit" | "Allow" | "Deny";
@@ -23,9 +50,16 @@ export interface UserPermissionAssignmentDto {
   resource: string;
   action: string;
   description?: string;
+  screenNameEn?: string;
+  screenNameAr?: string;
+  labelEn?: string;
+  labelAr?: string;
+  isActive: boolean;
+  isAssignable: boolean;
   isRoleGranted: boolean;
   overrideEffect: Exclude<PermissionOverrideEffect, "Inherit"> | null;
   isEffective: boolean;
+  isProtectedAdminBaseline: boolean;
 }
 export interface CurrencyDto { id: string; code: string; name: string; symbol: string; exchangeRate: number; isBase: boolean; }
 export interface SaveCurrencyInput { code: string; name: string; symbol: string; isBase: boolean; }
@@ -63,6 +97,7 @@ export function useUpdateAdminUser() {
       void client.invalidateQueries({ queryKey: ["admin", "users"] });
       void client.invalidateQueries({ queryKey: ["admin", "user-permissions", variables.userId] });
       void client.invalidateQueries({ queryKey: ["admin", "roles", "manage"] });
+      void client.invalidateQueries({ queryKey: ["admin", "roles", "permission-catalog"] });
     },
   });
 }
@@ -83,8 +118,15 @@ export function useManagedRole(roleId: string | null, enabled = true) {
     staleTime: 0,
   });
 }
-export function useAssignablePermissions(enabled = true) {
-  return useQuery({ queryKey: ["admin", "roles", "permission-catalog"], queryFn: () => api.get<PermissionCatalogItemDto[]>(endpoints.roleManagement.permissionCatalog), enabled, staleTime: 60_000 });
+export function usePermissionCatalog(enabled = true, actor?: Pick<CurrentUser, "id" | "tenantId" | "permissions"> | null) {
+  const permissionFingerprint = JSON.stringify([...new Set(actor?.permissions ?? [])].sort());
+  return useQuery({
+    queryKey: ["admin", "roles", "permission-catalog", actor?.id ?? null, actor?.tenantId ?? null, permissionFingerprint],
+    queryFn: () => api.get<PermissionCatalogItemDto[]>(endpoints.roleManagement.permissionCatalog),
+    enabled: enabled && Boolean(actor?.id),
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+  });
 }
 export function useSaveManagedRole() {
   const client = useQueryClient();
@@ -96,6 +138,7 @@ export function useSaveManagedRole() {
       client.setQueryData(["admin", "roles", "detail", role.id], role);
       void client.invalidateQueries({ queryKey: ["admin", "roles", "manage"] });
       void client.invalidateQueries({ queryKey: ["admin", "roles"] });
+      void client.invalidateQueries({ queryKey: ["admin", "roles", "permission-catalog"] });
       if (variables.roleId) void client.invalidateQueries({ queryKey: ["admin", "roles", "detail", variables.roleId] });
     },
   });
@@ -127,6 +170,7 @@ export function useSaveUserPermissions() {
     onSuccess: (permissions, variables) => {
       client.setQueryData(["admin", "user-permissions", variables.userId], permissions);
       void client.invalidateQueries({ queryKey: ["admin", "users"] });
+      void client.invalidateQueries({ queryKey: ["admin", "roles", "permission-catalog"] });
     },
   });
 }
@@ -161,6 +205,10 @@ export function useUpdateVendorCategory() {
   const client = useQueryClient();
   return useMutation({ mutationFn: ({ id, input }: { id: string; input: SaveVendorCategoryInput }) => api.put<VendorCategoryDto>(`${endpoints.referenceData.vendorCategories}/${encodeURIComponent(id)}`, input), onSuccess: () => { void client.invalidateQueries({ queryKey: ["reference", "vendor-categories"] }); } });
 }
+export function useDeactivateVendorCategory() {
+  const client = useQueryClient();
+  return useMutation({ mutationFn: (id: string) => api.put<void>(`${endpoints.referenceData.vendorCategories}/${encodeURIComponent(id)}/deactivate`), onSuccess: () => { void client.invalidateQueries({ queryKey: ["reference", "vendor-categories"] }); } });
+}
 export function useWorkItemStatuses(enabled = true) {
   return useQuery({ queryKey: ["reference", "work-item-statuses"], queryFn: () => api.get<WorkItemStatusDto[]>(endpoints.referenceData.workItemStatuses, { includeInactive: true }), enabled, staleTime: 300_000 });
 }
@@ -184,13 +232,16 @@ export function useUpdateWorkItemStatus() {
     },
   });
 }
+export function useDeactivateWorkItemStatus() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.put<void>(`${endpoints.referenceData.workItemStatuses}/${encodeURIComponent(id)}/deactivate`),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ["reference", "work-item-statuses"] });
+      void client.invalidateQueries({ queryKey: ["workItems", "statuses"] });
+    },
+  });
+}
 export function useProjectRoles(enabled = true) {
   return useQuery({ queryKey: ["reference", "project-roles"], queryFn: () => api.get<ReferenceItem[]>(endpoints.referenceData.projectRoles), enabled, staleTime: 300_000 });
-}
-export function usePlatformSettings(enabled = true) {
-  return useQuery({ queryKey: ["admin", "settings"], queryFn: () => api.get<Record<string, string>>("/api/settings"), enabled, staleTime: 60_000 });
-}
-export function useSavePlatformSettings() {
-  const client = useQueryClient();
-  return useMutation({ mutationFn: (body: Record<string, string>) => api.put<Record<string, string>>("/api/settings", body), onSuccess: () => { void client.invalidateQueries({ queryKey: ["admin", "settings"] }); } });
 }

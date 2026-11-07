@@ -64,6 +64,14 @@ export interface ProjectSummaryDto {
   projectManagerName?: string;
 }
 
+export interface PaymentProjectLookupDto {
+  id: string;
+  publicId: string;
+  name: string;
+  code?: string | null;
+  currency?: string | null;
+}
+
 export interface ProjectMemberDto {
   id: string;
   projectId: string;
@@ -86,6 +94,8 @@ export interface ProjectPersonDto {
   id: string;
   projectId: string;
   resourceId?: string | null;
+  teamId?: string | null;
+  teamName?: string | null;
   name: string;
   email?: string | null;
   jobTitle?: string | null;
@@ -136,7 +146,8 @@ export interface ProjectTeamMemberAllocationDto {
 }
 
 export interface CreateProjectPersonDto {
-  resourceId: string;
+  resourceId?: string;
+  teamId?: string;
   relationshipType: string;
   role?: string;
   allocationPercentage?: number;
@@ -152,6 +163,7 @@ export interface CreateProjectPersonDto {
 
 export interface UpdateProjectPersonDto {
   source: string;
+  teamId?: string;
   relationshipType?: string;
   role?: string;
   allocationPercentage?: number;
@@ -181,6 +193,7 @@ export interface CreateProjectDto {
   startDate?: string;
   endDate?: string;
   budget?: number;
+  initialAnnualBudgetAmount?: number;
   currency?: string;
   businessCase?: string;
   notes?: string;
@@ -195,14 +208,12 @@ export interface UpdateProjectDto {
   status?: string;
   priority?: string;
   category?: string;
-  projectManagerId?: string;
   sponsorId?: string;
   clearSponsor?: boolean;
   portfolioId?: string;
   departmentId?: string;
   startDate?: string;
   endDate?: string;
-  budget?: number;
   currency?: string;
   plannedValue?: number;
   earnedValue?: number;
@@ -334,6 +345,8 @@ export const projectKeys = {
   team: (projectId: string) => [...projectKeys.all, "team", projectId] as const,
   people: (projectId: string) => [...projectKeys.all, "people", projectId] as const,
   history: (projectId: string) => [...projectKeys.all, "history", projectId] as const,
+  audit: (projectId: string, filters: ProjectAuditFilters) => [...projectKeys.all, "audit", projectId, filters] as const,
+  auditFacets: (projectId: string) => [...projectKeys.all, "audit-facets", projectId] as const,
   snapshots: (projectId: string) => [...projectKeys.all, "snapshots", projectId] as const,
   snapshot: (projectId: string, snapshotId: string) => [...projectKeys.all, "snapshot", projectId, snapshotId] as const,
   handovers: (projectId: string) => [...projectKeys.all, "handovers", projectId] as const,
@@ -344,6 +357,7 @@ export const projectKeys = {
   reportingConfiguration: (projectId: string, effectiveAt?: string) => [...projectKeys.all, "reporting-configuration", projectId, effectiveAt] as const,
   reportingOptions: (projectId: string) => [...projectKeys.all, "reporting-options", projectId] as const,
   performance: (projectId: string, params: ProjectPerformanceParams) => [...projectKeys.all, "performance", projectId, params] as const,
+  financialSummary: (projectId: string, periodFrom: string, periodTo: string) => [...projectKeys.all, "financial-summary", projectId, periodFrom, periodTo] as const,
   conflicts: (projectId: string, resourceId: string, startDate: string, endDate: string, allocationPercentage: number, excludeMemberId?: string) =>
     [...projectKeys.all, "conflicts", projectId, resourceId, startDate, endDate, allocationPercentage, excludeMemberId] as const,
 };
@@ -377,27 +391,101 @@ export interface ProjectSnapshotSummaryDto {
   handoverReason?: string;
   handoverNotes?: string;
   createdAt: string;
+  createdByName?: string;
 }
 
 export interface ProjectSnapshotCollectionItem {
   originalId: string;
-  name?: string;
-  title?: string;
-  description?: string;
-  status?: string;
-  role?: string;
-  resourceName?: string;
-  assigneeName?: string;
-  ownerName?: string;
-  category?: string;
-  amount?: number;
-  approvedAmount?: number;
-  currency?: string;
-  startDate?: string;
-  endDate?: string;
-  dueDate?: string;
-  reportedAt?: string;
-  [key: string]: string | number | boolean | undefined;
+  name?: string | null;
+  title?: string | null;
+  summary?: string | null;
+  accomplishments?: string | null;
+  nextSteps?: string | null;
+  blockers?: string | null;
+  description?: string | null;
+  status?: string | null;
+  role?: string | null;
+  resourceName?: string | null;
+  resourceJobTitle?: string | null;
+  assigneeName?: string | null;
+  assignedResourceName?: string | null;
+  assignedTeamName?: string | null;
+  ownerName?: string | null;
+  reportedByName?: string | null;
+  organizerName?: string | null;
+  category?: string | null;
+  subCategory?: string | null;
+  type?: string | null;
+  priority?: string | null;
+  severity?: string | null;
+  riskLevel?: string | null;
+  interest?: string | null;
+  influence?: string | null;
+  email?: string | null;
+  notes?: string | null;
+  deliverable?: string | null;
+  qualityCriteria?: string | null;
+  riskResponse?: string | null;
+  resolution?: string | null;
+  fileName?: string | null;
+  fileType?: string | null;
+  tags?: string | null;
+  vendorName?: string | null;
+  reference?: string | null;
+  currency?: string | null;
+  meetingType?: string | null;
+  recurrence?: string | null;
+  code?: string | null;
+  amount?: number | null;
+  approvedAmount?: number | null;
+  plannedAmount?: number | null;
+  actualAmount?: number | null;
+  committedAmount?: number | null;
+  forecastAmount?: number | null;
+  potentialCost?: number | null;
+  potentialDelay?: number | null;
+  scheduleVariance?: number | null;
+  costVariance?: number | null;
+  allocationPercentage?: number | null;
+  hoursPerWeek?: number | null;
+  plannedHours?: number | null;
+  actualHours?: number | null;
+  estimatedHours?: number | null;
+  storyPoints?: number | null;
+  progress?: number | null;
+  version?: number | null;
+  fiscalYear?: number | null;
+  fiscalQuarter?: number | null;
+  totalDays?: number | null;
+  remainingDays?: number | null;
+  fileSize?: number | null;
+  sortOrder?: number | null;
+  startDate?: string | null;
+  endDate?: string | null;
+  dueDate?: string | null;
+  completedDate?: string | null;
+  deliveredDate?: string | null;
+  reportedAt?: string | null;
+  periodStart?: string | null;
+  periodEnd?: string | null;
+  identifiedDate?: string | null;
+  targetResolutionDate?: string | null;
+  resolvedDate?: string | null;
+  closedDate?: string | null;
+  incurredDate?: string | null;
+  startTime?: string | null;
+  endTime?: string | null;
+  baselineDate?: string | null;
+  baselineStartDate?: string | null;
+  baselineEndDate?: string | null;
+  forecastStartDate?: string | null;
+  forecastEndDate?: string | null;
+  actualStartDate?: string | null;
+  actualEndDate?: string | null;
+  completedAt?: string | null;
+  isCurrent?: boolean | null;
+  isBillable?: boolean | null;
+  [key: string]: string | number | boolean | null | undefined;
 }
 
 export interface ProjectSnapshotDataDto {
@@ -424,6 +512,7 @@ export interface ProjectSnapshotDto extends ProjectSnapshotSummaryDto {
   name: string;
   code: string;
   description?: string;
+  category?: string;
   programName?: string;
   portfolioName?: string;
   departmentName?: string;
@@ -436,12 +525,19 @@ export interface ProjectSnapshotDto extends ProjectSnapshotSummaryDto {
   riskRating?: string;
   startDate?: string;
   endDate?: string;
+  actualStartDate?: string;
+  actualEndDate?: string;
   budget?: number;
   currency: string;
   actualCost?: number;
+  plannedValue?: number;
+  earnedValue?: number;
+  costVariance?: number;
+  scheduleVariance?: number;
   progress: number;
   businessCase?: string;
   notes?: string;
+  ragStatus?: string;
   data?: ProjectSnapshotDataDto;
 }
 
@@ -499,6 +595,8 @@ export interface ProjectStatusReportDto extends ProjectStatusReportListDto {
   keyAchievements?: string;
   challengesConcerns?: string;
   nextPeriodPriorities?: string;
+  actionsNeeded?: string;
+  supportNeeded?: string;
   sourceDataCapturedAt?: string;
   reportingConfigurationVersionSnapshot?: number;
   includedSectionsSnapshot?: string[];
@@ -518,6 +616,10 @@ export interface ProjectStatusReportDto extends ProjectStatusReportListDto {
   baselineIdAtReport?: string;
   baselineNameSnapshot?: string;
   baselineVersionSnapshot?: number;
+  actualPaidSnapshot?: number;
+  outstandingPlannedPaymentsSnapshot?: number;
+  paymentsDueWithinPeriodSnapshot?: number;
+  remainingUnpaidAtPeriodEndSnapshot?: number;
   risks: ProjectStatusReportRiskSnapshotDto[];
   issues: ProjectStatusReportIssueSnapshotDto[];
   changeRequests: ProjectStatusReportChangeRequestSnapshotDto[];
@@ -559,6 +661,8 @@ export interface ProjectStatusReportInput {
   keyAchievements?: string;
   challengesConcerns?: string;
   nextPeriodPriorities?: string;
+  actionsNeeded?: string;
+  supportNeeded?: string;
   rowVersion?: string;
 }
 
@@ -645,6 +749,19 @@ export interface ProjectPerformanceDto {
   milestones: ProjectPerformanceMilestoneDto[];
   criticalPathMode: string;
   criticalPathUnavailableReason?: string;
+}
+
+export interface ProjectFinancialSummaryDto {
+  projectId: string;
+  periodFrom: string;
+  periodTo: string;
+  currencyCode: string;
+  approvedBudget?: number | null;
+  budgetStatus: string;
+  actualPaid: number;
+  outstandingPlannedPayments: number;
+  paymentsDueWithinPeriod: number;
+  remainingUnpaidAtPeriodEnd: number;
 }
 
 export interface ProjectPlanPerformanceDto {
@@ -781,6 +898,15 @@ export function useProjects(params: PaginationParams & { status?: string; priori
   });
 }
 
+export function usePaymentProjectLookup(enabled = true) {
+  return useQuery({
+    queryKey: ["workflow-lookups", "payment-obligations", "projects"],
+    queryFn: () => api.get<PaymentProjectLookupDto[]>(endpoints.projects.paymentObligationLookup),
+    staleTime: 60_000,
+    enabled,
+  });
+}
+
 export function useProject(id: string) {
   return useQuery({
     queryKey: projectKeys.detail(id),
@@ -872,6 +998,109 @@ export function useProjectManagerHistory(projectId: string, enabled = true) {
     queryFn: () => api.get<ProjectManagerHistoryDto[]>(`/api/projects/${projectId}/manager-history`),
     enabled: Boolean(projectId) && enabled,
     staleTime: 30_000,
+  });
+}
+
+/** Audit actor source. System-generated changes must stay distinguishable from human ones. */
+export type ProjectAuditSource = "User" | "System" | "Integration" | "BackgroundJob" | "Unknown";
+
+export interface ProjectAuditFieldChangeDto {
+  from?: string | null;
+  to?: string | null;
+}
+
+export interface ProjectAuditEventDto {
+  id: string;
+  projectId?: string | null;
+  entityType: string;
+  module: string;
+  entityId: string;
+  action: string;
+  actorId?: string | null;
+  actorName?: string | null;
+  source: ProjectAuditSource;
+  timestampUtc: string;
+  description?: string | null;
+  correlationId?: string | null;
+  changedFields: string[];
+  changes: Record<string, ProjectAuditFieldChangeDto>;
+  before?: string | null;
+  after?: string | null;
+  detailsRestricted: boolean;
+}
+
+export interface ProjectAuditTrailDto {
+  items: ProjectAuditEventDto[];
+  page: number;
+  pageSize: number;
+  total: number;
+  hasMore: boolean;
+  includeFinancialDetail: boolean;
+  includeGovernanceDetail: boolean;
+  projectPublicId: string;
+  projectName: string;
+}
+
+export interface ProjectAuditActorDto {
+  id: string;
+  name: string;
+}
+
+export interface ProjectAuditFacetsDto {
+  modules: string[];
+  actions: string[];
+  actors: ProjectAuditActorDto[];
+  entityTypes: string[];
+  coverageStartUtc?: string | null;
+  includeFinancialDetail: boolean;
+  includeGovernanceDetail: boolean;
+  projectPublicId: string;
+  projectName: string;
+}
+
+export interface ProjectAuditFilters {
+  page: number;
+  pageSize: number;
+  from?: string;
+  to?: string;
+  module?: string;
+  action?: string;
+  actorId?: string;
+  entityType?: string;
+  search?: string;
+  sort?: "newest" | "oldest";
+}
+
+function auditQueryParams(filters: ProjectAuditFilters): Record<string, string | number | boolean | undefined> {
+  return {
+    page: filters.page,
+    pageSize: filters.pageSize,
+    from: filters.from || undefined,
+    to: filters.to || undefined,
+    module: filters.module || undefined,
+    action: filters.action || undefined,
+    actorId: filters.actorId || undefined,
+    entityType: filters.entityType || undefined,
+    search: filters.search?.trim() || undefined,
+    sort: filters.sort,
+  };
+}
+
+export function useProjectAuditTrail(projectId: string, filters: ProjectAuditFilters, enabled = true) {
+  return useQuery({
+    queryKey: projectKeys.audit(projectId, filters),
+    queryFn: () => api.get<ProjectAuditTrailDto>(endpoints.projects.audit(projectId), auditQueryParams(filters)),
+    enabled: Boolean(projectId) && enabled,
+    staleTime: 15_000,
+  });
+}
+
+export function useProjectAuditFacets(projectId: string, enabled = true) {
+  return useQuery({
+    queryKey: projectKeys.auditFacets(projectId),
+    queryFn: () => api.get<ProjectAuditFacetsDto>(endpoints.projects.auditFacets(projectId)),
+    enabled: Boolean(projectId) && enabled,
+    staleTime: 60_000,
   });
 }
 
@@ -1017,14 +1246,54 @@ export function useProjectPerformance(projectId: string, params: ProjectPerforma
   });
 }
 
-export interface ProjectStatusReportCurrentProgressDto { projectPlanProgressPercent?: number; }
-
-export function useProjectStatusReportCurrentProgress(projectId: string, statusDate?: string, enabled = true) {
+export function useProjectFinancialSummary(projectId: string, periodFrom: string, periodTo: string, enabled = true) {
   return useQuery({
-    queryKey: [...projectKeys.statusReports(projectId), "current-progress", statusDate],
-    queryFn: () => api.get<ProjectStatusReportCurrentProgressDto>(`/api/projects/${projectId}/status-reports/current-progress`, statusDate ? { statusDate } : undefined),
+    queryKey: projectKeys.financialSummary(projectId, periodFrom, periodTo),
+    queryFn: () => api.get<ProjectFinancialSummaryDto>(`/api/projects/${projectId}/status-reports/financial-summary`, { periodFrom, periodTo }),
+    enabled: Boolean(projectId && periodFrom && periodTo) && enabled,
+    staleTime: 60_000,
+  });
+}
+
+export interface IssueSummaryDto {
+  id: string;
+  title: string;
+  status: string;
+  severity?: string;
+  priority?: string;
+}
+
+export function useProjectIssues(projectId: string, enabled = true) {
+  return useQuery({
+    queryKey: [...projectKeys.statusReports(projectId), "issues"],
+    queryFn: async () => {
+      const result = await api.get<{ items: IssueSummaryDto[]; totalCount: number }>("/api/issues", { projectId, pageSize: 100 });
+      return result.items;
+    },
     enabled: Boolean(projectId) && enabled,
-    staleTime: 30_000,
+    staleTime: 60_000,
+  });
+}
+
+export interface ProjectStatusReportCurrentProgressDto {
+  projectPlanProgressPercent?: number | null;
+  resourceUtilizationStatus?: "Overallocated" | "WithinCapacity" | "NoAssignedWork" | "Unavailable" | string;
+  resourceUtilizationPercent?: number | null;
+}
+
+export function useProjectStatusReportCurrentProgress(
+  projectId: string,
+  statusDate?: string,
+  enabled = true,
+  periodFrom?: string,
+  periodTo?: string,
+) {
+  const params = { statusDate, periodFrom, periodTo };
+  return useQuery({
+    queryKey: [...projectKeys.statusReports(projectId), "current-progress", params],
+    queryFn: () => api.get<ProjectStatusReportCurrentProgressDto>(`/api/projects/${projectId}/status-reports/current-progress`, params),
+    enabled: Boolean(projectId) && enabled,
+    staleTime: 0,
   });
 }
 
@@ -1043,6 +1312,10 @@ export function useProjectStatusReport(projectId: string, reportId: string, enab
     enabled: Boolean(projectId && reportId) && enabled,
     staleTime: 30_000,
   });
+}
+
+export function requestProjectStatusReportExport(projectId: string, reportId: string) {
+  return api.get<ProjectStatusReportDto>(`/api/projects/${projectId}/status-reports/${encodeURIComponent(reportId)}/export`);
 }
 
 export function useProjectStatusReportComparison(projectId: string, firstReportId: string, secondReportId: string, enabled = true) {
@@ -1065,25 +1338,17 @@ export function useUpdateProjectStatusReport(projectId: string, reportId: string
   });
 }
 
-export type ProjectStatusReportWorkflowAction = "generate" | "submit" | "approve" | "return" | "reopen" | "publish";
-
-function useProjectStatusReportWorkflowAction(projectId: string, action: ProjectStatusReportWorkflowAction) {
+export function usePublishProjectStatusReport(projectId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (reportId: string) => api.post<ProjectStatusReportDto>(`/api/projects/${projectId}/status-reports/${encodeURIComponent(reportId)}/${action}`),
-    onSuccess: (_data, reportId) => Promise.all([
+    mutationFn: ({ reportId, content }: { reportId: string; content: ProjectStatusReportInput }) =>
+      api.post<ProjectStatusReportDto>(`/api/projects/${projectId}/status-reports/${encodeURIComponent(reportId)}/publish`, content),
+    onSuccess: (_data, { reportId }) => Promise.all([
       queryClient.invalidateQueries({ queryKey: projectKeys.statusReports(projectId) }),
       queryClient.invalidateQueries({ queryKey: projectKeys.statusReport(projectId, reportId) }),
     ]),
   });
 }
-
-export function useGenerateProjectStatusReport(projectId: string) { return useProjectStatusReportWorkflowAction(projectId, "generate"); }
-export function useSubmitProjectStatusReport(projectId: string) { return useProjectStatusReportWorkflowAction(projectId, "submit"); }
-export function useApproveProjectStatusReport(projectId: string) { return useProjectStatusReportWorkflowAction(projectId, "approve"); }
-export function useReturnProjectStatusReport(projectId: string) { return useProjectStatusReportWorkflowAction(projectId, "return"); }
-export function useReopenProjectStatusReport(projectId: string) { return useProjectStatusReportWorkflowAction(projectId, "reopen"); }
-export function usePublishProjectStatusReport(projectId: string) { return useProjectStatusReportWorkflowAction(projectId, "publish"); }
 
 export function useDeleteProjectStatusReport(projectId: string) {
   const queryClient = useQueryClient();
@@ -1196,8 +1461,8 @@ export function useUpdateProjectPerson(projectId: string, personId: string) {
 export function useRemoveProjectPerson(projectId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ personId, source, rowVersion }: { personId: string; source: string; rowVersion?: string }) =>
-      api.post<ProjectPersonDto>(`/api/projects/${projectId}/people/${encodeURIComponent(personId)}/remove`, { source, rowVersion }),
+    mutationFn: ({ personId, source, teamId, rowVersion }: { personId: string; source: string; teamId?: string | null; rowVersion?: string }) =>
+      api.post<ProjectPersonDto>(`/api/projects/${projectId}/people/${encodeURIComponent(personId)}/remove`, { source, teamId: teamId ?? undefined, rowVersion }),
     onSuccess: () => invalidateProjectPeople(queryClient, projectId),
   });
 }

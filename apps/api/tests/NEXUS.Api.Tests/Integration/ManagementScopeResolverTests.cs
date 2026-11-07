@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using NEXUS.Api.Tests.Testing;
 using NEXUS.Modules.Identity.Domain;
 using NEXUS.Modules.Portfolio.Domain;
 using NEXUS.Modules.ProjectManagement.Domain;
@@ -36,7 +37,7 @@ public sealed class ManagementScopeResolverTests : IDisposable
         httpContext.User = new ClaimsPrincipal(new ClaimsIdentity(
             new[] { new Claim("tenantId", TenantId.ToString()) }, "tests"));
         AppDbContext.ConfigureTenantResolution(new HttpContextAccessor { HttpContext = httpContext });
-        _db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options);
+        _db = new SqliteTestAppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options);
         _db.Database.EnsureCreated();
 
         _db.Users.Add(new User
@@ -65,7 +66,7 @@ public sealed class ManagementScopeResolverTests : IDisposable
             Project(DirectProjectId, "Direct Project", "DIR-PRJ", null, null));
         _db.SaveChanges();
 
-        _resolver = new ManagementScopeResolver(_db);
+        _resolver = new ManagementScopeResolver(_db, new NEXUS.Modules.Identity.Infrastructure.UserEffectivePermissionService(_db));
     }
 
     [Fact]

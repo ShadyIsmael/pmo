@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using NEXUS.Modules.Meetings.Domain;
+using NEXUS.Modules.WorkItems.Domain;
 
 namespace NEXUS.Persistence.Configurations;
 
@@ -10,6 +11,8 @@ public sealed class MeetingConfiguration : IEntityTypeConfiguration<Meeting>
     {
         builder.ToTable("Meetings");
         builder.HasKey(meeting => meeting.Id);
+        builder.Property(meeting => meeting.PublicId).HasDefaultValueSql("NEWID()");
+        builder.HasIndex(meeting => meeting.PublicId).IsUnique();
         builder.Property(meeting => meeting.RowVersion).IsRowVersion();
 
         builder.HasMany(meeting => meeting.AgendaItems)
@@ -61,6 +64,8 @@ public sealed class MeetingParticipantConfiguration : IEntityTypeConfiguration<M
         builder.Property(participant => participant.Email)
             .HasMaxLength(256)
             .IsRequired();
+        builder.Property(participant => participant.InvitationResponseStatus)
+            .HasMaxLength(20);
         builder.HasIndex(participant => new { participant.MeetingId, participant.Email })
             .HasDatabaseName("IX_MeetingParticipants_MeetingId_Email")
             .IsUnique()
@@ -96,6 +101,16 @@ public sealed class MeetingActionConfiguration : IEntityTypeConfiguration<Meetin
         builder.HasKey(action => action.Id);
         builder.Property(action => action.RowVersion).IsRowVersion();
         builder.HasIndex(action => action.MeetingId);
+        builder.HasIndex(action => action.WorkItemId);
+        builder.HasIndex(action => action.AgendaItemId);
+        builder.HasOne<WorkItem>()
+            .WithMany()
+            .HasForeignKey(action => action.WorkItemId)
+            .OnDelete(DeleteBehavior.SetNull);
+        builder.HasOne(action => action.AgendaItem)
+            .WithMany()
+            .HasForeignKey(action => action.AgendaItemId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }
 
@@ -105,6 +120,8 @@ public sealed class MeetingMinutesCommentConfiguration : IEntityTypeConfiguratio
     {
         builder.ToTable("MeetingMinutesComments");
         builder.HasKey(comment => comment.Id);
+        builder.Property(comment => comment.PublicId).HasDefaultValueSql("NEWID()");
+        builder.HasIndex(comment => comment.PublicId).IsUnique();
         builder.Property(comment => comment.CommentText).HasMaxLength(4000).IsRequired();
         builder.Property(comment => comment.CreatedBy).HasMaxLength(200).IsRequired();
         builder.Property(comment => comment.RowVersion).IsRowVersion();

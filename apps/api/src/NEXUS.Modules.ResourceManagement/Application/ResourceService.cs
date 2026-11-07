@@ -4,6 +4,7 @@ using FluentValidation;
 using System.Security.Claims;
 using NEXUS.Modules.Audit.Application;
 using NEXUS.Modules.Audit.Domain;
+using NEXUS.Modules.Identity.Domain;
 using NEXUS.Modules.Organization.Domain;
 using NEXUS.Modules.ResourceManagement.Application.DTOs;
 using NEXUS.Modules.ResourceManagement.Application.Mapping;
@@ -18,7 +19,6 @@ public class ResourceService : IResourceService, IResourceReferenceLookup, IReso
 {
     private readonly DbContext _context;
     private readonly IAuditService _auditService;
-    private readonly IUserReferenceLookup _userLookup;
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly IValidator<CreateResourceDto> _createValidator;
     private readonly IValidator<UpdateResourceDto> _updateValidator;
@@ -33,7 +33,6 @@ public class ResourceService : IResourceService, IResourceReferenceLookup, IReso
     {
         _context = context;
         _auditService = auditService;
-        _userLookup = userLookup;
         _httpContextAccessor = httpContextAccessor;
         _createValidator = createValidator;
         _updateValidator = updateValidator;
@@ -79,11 +78,20 @@ public class ResourceService : IResourceService, IResourceReferenceLookup, IReso
         if (resource.UserId.HasValue && resource.UserId.Value != userId)
             return Result<ResourceReference>.Failure(Error.Conflict("The Resource is already linked to another system user"));
 
+        var user = await _context.Set<User>().AsNoTracking().FirstOrDefaultAsync(item => item.Id == userId
+            && item.TenantId == resource.TenantId && item.IsActive && !item.IsDeleted, cancellationToken);
+        if (user is null) return Result<ResourceReference>.Failure(Error.Validation("The system user must be active in the Resource tenant"));
+
         var existing = await _context.Set<Resource>()
-            .AnyAsync(item => item.Id != resourceId && item.UserId == userId && item.IsActive && !item.IsDeleted, cancellationToken);
-        if (existing) return Result<ResourceReference>.Failure(Error.Conflict("This system user is already linked to an active Resource"));
+            .AnyAsync(item => item.Id != resourceId && item.UserId == userId && !item.IsDeleted, cancellationToken);
+        if (existing) return Result<ResourceReference>.Failure(Error.Conflict("This system user is already linked to a Resource"));
+
+        if (IsStaffResourceType(resource.Type) && !HasValidStaffIdentity(user))
+            return Result<ResourceReference>.Failure(Error.Validation(
+                "The linked system user's name and email must fit the Resource identity fields.", nameof(userId)));
 
         resource.UserId = userId;
+        if (IsStaffResourceType(resource.Type)) ApplyStaffIdentity(resource, user);
         resource.UpdatedBy = actorId;
         await _context.SaveChangesAsync(cancellationToken);
         return Result<ResourceReference>.Success(new ResourceReference(resource.Id, resource.UserId, resource.Name, resource.Email, resource.JobTitle, resource.Type, resource.Status, resource.IsActive));
@@ -122,6 +130,7 @@ public class ResourceService : IResourceService, IResourceReferenceLookup, IReso
             return Result<ResourceDto>.Failure(Error.NotFound("Resource not found"));
 
         var detailDto = resource.ToDto();
+        await EnrichStaffIdentityAsync(new[] { detailDto }, resource.TenantId, cancellationToken);
         await EnrichOrganizationAsync(new[] { detailDto }, cancellationToken);
         return Result<ResourceDto>.Success(detailDto);
     }
@@ -184,23 +193,79 @@ public class ResourceService : IResourceService, IResourceReferenceLookup, IReso
             .ToListAsync(cancellationToken);
 
         var resultItems = items.Select(r => r.ToDto()).ToList();
+        if (items.Count != 0)
+            await EnrichStaffIdentityAsync(resultItems, items[0].TenantId, cancellationToken);
         await EnrichOrganizationAsync(resultItems, cancellationToken);
         return new PagedResult<ResourceDto>(resultItems, filter.Page, filter.PageSize, total);
     }
 
+    private sealed record WorkingCalendarResolution(WorkingCalendar? Calendar, Error? Error);
+
+    private async Task<WorkingCalendarResolution> ResolveWorkingCapacityCalendarAsync(
+        Guid? baseCalendarId,
+        CancellationToken cancellationToken)
+    {
+        var calendars = _context.Set<WorkingCalendar>()
+            .AsNoTracking()
+            .Include(calendar => calendar.DayRules)
+            .Where(calendar => calendar.TenantId == CurrentTenant() && !calendar.IsDeleted);
+
+        if (baseCalendarId.HasValue)
+        {
+            var selected = await calendars.FirstOrDefaultAsync(
+                calendar => calendar.Id == baseCalendarId.Value,
+                cancellationToken);
+            if (selected is null)
+                return new WorkingCalendarResolution(null, Error.BusinessValidation(
+                    "RESOURCE_WORKING_CALENDAR_UNAVAILABLE",
+                    "The selected working calendar is unavailable in this tenant. Choose an available calendar or leave the field empty to use the tenant default.",
+                    nameof(CreateResourceDto.BaseCalendarId)));
+            if (!selected.HasValidSchedule)
+                return new WorkingCalendarResolution(null, Error.BusinessValidation(
+                    "RESOURCE_WORKING_CALENDAR_INVALID",
+                    "The selected working calendar has no valid schedule. Ask an administrator to correct it or choose another calendar.",
+                    nameof(CreateResourceDto.BaseCalendarId)));
+            return new WorkingCalendarResolution(selected, null);
+        }
+
+        var defaults = await calendars
+            .Where(calendar => calendar.IsDefault)
+            .ToListAsync(cancellationToken);
+        if (defaults.Count == 0)
+            return new WorkingCalendarResolution(null, Error.BusinessValidation(
+                "RESOURCE_WORKING_CALENDAR_DEFAULT_MISSING",
+                "No valid tenant Standard working calendar is configured. Ask a tenant administrator to configure one, then try again.",
+                nameof(CreateResourceDto.BaseCalendarId)));
+        if (defaults.Count != 1 || !defaults[0].HasValidSchedule)
+            return new WorkingCalendarResolution(null, Error.BusinessValidation(
+                "RESOURCE_WORKING_CALENDAR_DEFAULT_INVALID",
+                "The tenant Standard working calendar is incomplete or ambiguous. Ask a tenant administrator to repair it or select another calendar.",
+                nameof(CreateResourceDto.BaseCalendarId)));
+
+        return new WorkingCalendarResolution(defaults[0], null);
+    }
+
     public async Task<IReadOnlyList<ResourceBaseCalendarDto>> GetBaseCalendarsAsync(CancellationToken cancellationToken = default)
     {
-        return await _context.Set<NEXUS.Modules.Organization.Domain.WorkingCalendar>()
-            .Where(calendar => !calendar.IsDeleted)
+        var calendars = await _context.Set<NEXUS.Modules.Organization.Domain.WorkingCalendar>()
+            .AsNoTracking()
+            .Include(calendar => calendar.DayRules)
+            .Include(calendar => calendar.Holidays)
+            .Where(calendar => calendar.TenantId == CurrentTenant() && !calendar.IsDeleted)
             .OrderByDescending(calendar => calendar.IsDefault)
             .ThenBy(calendar => calendar.Name)
+            .ToListAsync(cancellationToken);
+
+        return calendars
             .Select(calendar => new ResourceBaseCalendarDto
             {
                 Id = calendar.Id,
                 Name = calendar.Name,
                 IsDefault = calendar.IsDefault,
+                IsConfigured = calendar.HasValidSchedule,
+                WorkingDaysPerWeek = ResourceWorkingCapacityCalculator.GetWorkingDaysPerWeek(calendar)
             })
-            .ToListAsync(cancellationToken);
+            .ToList();
     }
 
     public Task<ResourceReferenceDataDto> GetReferenceDataAsync(CancellationToken cancellationToken = default)
@@ -214,6 +279,7 @@ public class ResourceService : IResourceService, IResourceReferenceLookup, IReso
                 {
                     ResourceType.Staff => "موظف",
                     ResourceType.Vendor => "مورد",
+                    ResourceType.Outsourced => "متعاقد خارجي",
                     _ => type.ToString()
                 },
                 (int)type + 1,
@@ -253,7 +319,24 @@ public class ResourceService : IResourceService, IResourceReferenceLookup, IReso
                 string.Join("; ", inputValidation.Errors.Select(error => $"{error.PropertyName}: {error.ErrorMessage}")),
                 inputValidation.Errors.FirstOrDefault()?.PropertyName));
 
-        var identityValidation = await ValidateIdentityAsync(dto.UserId, null, dto.Email, null, cancellationToken);
+        User? staffUser = null;
+        if (dto.Type == ResourceType.Staff)
+        {
+            if (!dto.UserId.HasValue)
+                return Result<ResourceDto>.Failure(Error.Validation(
+                    "Select an active system user for Staff resources.", nameof(dto.UserId)));
+
+            staffUser = await FindActiveTenantUserAsync(dto.UserId.Value, CurrentTenant(), cancellationToken);
+            if (staffUser is null)
+                return Result<ResourceDto>.Failure(Error.Validation(
+                    "The selected system user must be active in the Resource tenant.", nameof(dto.UserId)));
+            if (!HasValidStaffIdentity(staffUser))
+                return Result<ResourceDto>.Failure(Error.Validation(
+                    "The linked system user's name and email must fit the Resource identity fields.", nameof(dto.UserId)));
+        }
+
+        var identityValidation = await ValidateIdentityAsync(
+            dto.UserId, null, staffUser?.Email ?? dto.Email, null, cancellationToken);
         if (identityValidation.IsFailure) return Result<ResourceDto>.Failure(identityValidation.Error!);
 
         if (!Enum.IsDefined(dto.Type))
@@ -274,18 +357,24 @@ public class ResourceService : IResourceService, IResourceReferenceLookup, IReso
                 return Result<ResourceDto>.Failure(Error.Validation("The specified Vendor is inactive and cannot be selected for new resources"));
         }
 
-        if (dto.BaseCalendarId.HasValue)
-        {
-            var calendarExists = await _context.Set<NEXUS.Modules.Organization.Domain.WorkingCalendar>().AnyAsync(c => c.Id == dto.BaseCalendarId.Value && !c.IsDeleted, cancellationToken);
-            if (!calendarExists)
-                return Result<ResourceDto>.Failure(Error.Validation("The specified Base Calendar does not exist"));
-        }
+        var calendarResolution = await ResolveWorkingCapacityCalendarAsync(dto.BaseCalendarId, cancellationToken);
+        if (dto.BaseCalendarId.HasValue && calendarResolution.Error is not null)
+            return Result<ResourceDto>.Failure(calendarResolution.Error);
+        var capacityCalendar = calendarResolution.Calendar;
+        var capacityError = ResourceWorkingCapacityCalculator.ValidateConfiguration(
+            dto.HoursPerDay,
+            dto.HoursPerWeek,
+            capacityCalendar);
+        if (capacityError is not null)
+            return Result<ResourceDto>.Failure(MapCapacityValidationError(capacityError, calendarResolution.Error));
 
         var organizationValidation = await ValidateOrganizationalUnitAsync(dto.PrimaryOrganizationalUnitId, cancellationToken);
         if (organizationValidation.IsFailure)
             return Result<ResourceDto>.Failure(organizationValidation.Error!);
 
         var resource = dto.ToEntity();
+        resource.BaseCalendarId = dto.BaseCalendarId;
+        if (staffUser is not null) ApplyStaffIdentity(resource, staffUser);
         resource.TenantId = CurrentTenant();
         resource.CreatedBy = userId;
 
@@ -333,6 +422,7 @@ public class ResourceService : IResourceService, IResourceReferenceLookup, IReso
             .FirstAsync(r => r.Id == resource.Id, cancellationToken);
 
         var createdDto = created.ToDto();
+        await EnrichStaffIdentityAsync(new[] { createdDto }, created.TenantId, cancellationToken);
         await EnrichOrganizationAsync(new[] { createdDto }, cancellationToken);
         return Result<ResourceDto>.Success(createdDto);
     }
@@ -352,16 +442,45 @@ public class ResourceService : IResourceService, IResourceReferenceLookup, IReso
         if (resource is null)
             return Result<ResourceDto>.Failure(Error.NotFound("Resource not found"));
 
-        var associationChanged = dto.RemoveUserAssociation == true || dto.UserId.HasValue;
-        var requestedUserId = dto.RemoveUserAssociation == true ? null : dto.UserId;
-        var userToValidate = associationChanged ? requestedUserId : dto.IsActive == true ? resource.UserId : null;
-        var identityValidation = await ValidateIdentityAsync(userToValidate, resource.Id, dto.Email, resource.Email, cancellationToken);
+        var willBeStaff = dto.Type == ResourceType.Staff
+            || (!dto.Type.HasValue && IsStaffResourceType(resource.Type));
+        User? staffUser = null;
+        Guid? userToValidate;
+        if (willBeStaff)
+        {
+            if (dto.RemoveUserAssociation == true)
+                return Result<ResourceDto>.Failure(Error.Validation(
+                    "Staff resources must remain linked to an active system user.", nameof(dto.UserId)));
+
+            var staffUserId = dto.UserId ?? resource.UserId;
+            if (!staffUserId.HasValue)
+                return Result<ResourceDto>.Failure(Error.Validation(
+                    "Select an active system user for Staff resources.", nameof(dto.UserId)));
+
+            staffUser = await FindActiveTenantUserAsync(staffUserId.Value, resource.TenantId, cancellationToken);
+            if (staffUser is null)
+                return Result<ResourceDto>.Failure(Error.Validation(
+                    "The selected system user must be active in the Resource tenant.", nameof(dto.UserId)));
+            if (!HasValidStaffIdentity(staffUser))
+                return Result<ResourceDto>.Failure(Error.Validation(
+                    "The linked system user's name and email must fit the Resource identity fields.", nameof(dto.UserId)));
+            userToValidate = staffUserId;
+        }
+        else
+        {
+            var associationChanged = dto.RemoveUserAssociation == true || dto.UserId.HasValue;
+            var requestedUserId = dto.RemoveUserAssociation == true ? null : dto.UserId;
+            userToValidate = associationChanged ? requestedUserId : dto.IsActive == true ? resource.UserId : null;
+        }
+
+        var identityValidation = await ValidateIdentityAsync(
+            userToValidate, resource.Id, staffUser?.Email ?? dto.Email, resource.Email, cancellationToken);
         if (identityValidation.IsFailure) return Result<ResourceDto>.Failure(identityValidation.Error!);
 
         var originalValues = System.Text.Json.JsonSerializer.Serialize(new
         {
             resource.Name, resource.JobTitle, resource.Email, resource.Type, resource.Status,
-            resource.DepartmentId, resource.LocationId
+            resource.DepartmentId, resource.LocationId, resource.HoursPerDay, resource.HoursPerWeek
         });
 
         if (dto.Type.HasValue && !Enum.IsDefined(dto.Type.Value))
@@ -385,18 +504,32 @@ public class ResourceService : IResourceService, IResourceReferenceLookup, IReso
                 return Result<ResourceDto>.Failure(Error.Validation("The specified Vendor is inactive and cannot be selected"));
         }
 
-        if (dto.BaseCalendarId.HasValue)
-        {
-            var calendarExists = await _context.Set<NEXUS.Modules.Organization.Domain.WorkingCalendar>().AnyAsync(c => c.Id == dto.BaseCalendarId.Value && !c.IsDeleted, cancellationToken);
-            if (!calendarExists)
-                return Result<ResourceDto>.Failure(Error.Validation("The specified Base Calendar does not exist"));
-        }
+        var resultingHoursPerDay = dto.ClearHoursPerDay ? null : dto.HoursPerDay ?? resource.HoursPerDay;
+        var resultingHoursPerWeek = dto.ClearHoursPerWeek ? null : dto.HoursPerWeek ?? resource.HoursPerWeek;
+        var requestedCalendarId = dto.BaseCalendarId ?? resource.BaseCalendarId;
+        var calendarResolution = await ResolveWorkingCapacityCalendarAsync(requestedCalendarId, cancellationToken);
+        if (requestedCalendarId.HasValue && calendarResolution.Error is not null)
+            return Result<ResourceDto>.Failure(calendarResolution.Error);
+        var capacityCalendar = calendarResolution.Calendar;
+        var capacityError = ResourceWorkingCapacityCalculator.ValidateConfiguration(
+            resultingHoursPerDay,
+            resultingHoursPerWeek,
+            capacityCalendar);
+        if (capacityError is not null)
+            return Result<ResourceDto>.Failure(MapCapacityValidationError(capacityError, calendarResolution.Error));
 
         var organizationValidation = await ValidateOrganizationalUnitAsync(dto.PrimaryOrganizationalUnitId, cancellationToken);
         if (organizationValidation.IsFailure)
             return Result<ResourceDto>.Failure(organizationValidation.Error!);
 
         resource.ApplyUpdate(dto);
+        if (requestedCalendarId.HasValue && capacityCalendar is not null)
+            resource.BaseCalendarId = capacityCalendar.Id;
+        if (staffUser is not null)
+        {
+            resource.UserId = staffUser.Id;
+            ApplyStaffIdentity(resource, staffUser);
+        }
         resource.UpdatedBy = userId;
 
         if (dto.Skills != null)
@@ -438,6 +571,7 @@ public class ResourceService : IResourceService, IResourceReferenceLookup, IReso
         }, cancellationToken);
 
         var updatedDto = resource.ToDto();
+        await EnrichStaffIdentityAsync(new[] { updatedDto }, resource.TenantId, cancellationToken);
         await EnrichOrganizationAsync(new[] { updatedDto }, cancellationToken);
         return Result<ResourceDto>.Success(updatedDto);
     }
@@ -468,19 +602,74 @@ public class ResourceService : IResourceService, IResourceReferenceLookup, IReso
         return Result.Success();
     }
 
+    private async Task<User?> FindActiveTenantUserAsync(Guid userId, Guid tenantId, CancellationToken cancellationToken)
+    {
+        if (userId == Guid.Empty || tenantId == Guid.Empty) return null;
+        return await _context.Set<User>().AsNoTracking()
+            .FirstOrDefaultAsync(user => user.Id == userId && user.TenantId == tenantId
+                && user.IsActive && !user.IsDeleted, cancellationToken);
+    }
+
+    private static bool IsStaffResourceType(string type) =>
+        string.Equals(ResourceTypeConstants.ToApiCode(type), nameof(ResourceType.Staff), StringComparison.OrdinalIgnoreCase);
+
+    private static bool HasValidStaffIdentity(User user)
+    {
+        var name = user.FullName.Trim();
+        var email = user.Email.Trim();
+        return !string.IsNullOrWhiteSpace(name)
+            && name.Length <= ResourceFieldLengths.Name
+            && !string.IsNullOrWhiteSpace(email)
+            && email.Length <= ResourceFieldLengths.Email;
+    }
+
+    private static void ApplyStaffIdentity(Resource resource, User user)
+    {
+        resource.Name = user.FullName.Trim();
+        resource.Email = user.Email.Trim();
+    }
+
+    private async Task EnrichStaffIdentityAsync(
+        IReadOnlyCollection<ResourceDto> resources,
+        Guid tenantId,
+        CancellationToken cancellationToken)
+    {
+        var staffResources = resources
+            .Where(resource => resource.UserId.HasValue && IsStaffResourceType(resource.Type))
+            .ToArray();
+        var userIds = staffResources.Select(resource => resource.UserId!.Value).Distinct().ToArray();
+        if (userIds.Length == 0 || tenantId == Guid.Empty) return;
+
+        var users = await _context.Set<User>().AsNoTracking()
+            .Where(user => userIds.Contains(user.Id) && user.TenantId == tenantId && !user.IsDeleted)
+            .Select(user => new { user.Id, user.FirstName, user.LastName, user.Email })
+            .ToDictionaryAsync(user => user.Id, cancellationToken);
+
+        foreach (var resource in staffResources)
+        {
+            if (!users.TryGetValue(resource.UserId!.Value, out var user)) continue;
+            var name = (user.FirstName + " " + user.LastName).Trim();
+            if (!string.IsNullOrWhiteSpace(name)) resource.Name = name;
+            if (!string.IsNullOrWhiteSpace(user.Email)) resource.Email = user.Email;
+        }
+    }
+
     private async Task<Result> ValidateIdentityAsync(Guid? userId, Guid? excludeResourceId, string? email, string? existingEmail, CancellationToken cancellationToken)
     {
         if (userId.HasValue)
         {
             if (userId.Value == Guid.Empty) return Result.Failure(Error.Validation("User association must reference a valid system user"));
-            if (await _userLookup.FindAsync(userId.Value, cancellationToken) is null)
-                return Result.Failure(Error.Validation("The selected system user does not exist or is inactive"));
+            var tenantId = CurrentTenant();
+            var userExists = await _context.Set<User>().AsNoTracking().AnyAsync(user => user.Id == userId.Value
+                && user.TenantId == tenantId && user.IsActive && !user.IsDeleted, cancellationToken);
+            if (!userExists)
+                return Result.Failure(Error.Validation("The selected system user must be active in the Resource tenant"));
 
             var linked = await _context.Set<Resource>().AnyAsync(resource =>
                 resource.Id != (excludeResourceId ?? Guid.Empty) &&
-                resource.UserId == userId.Value && resource.IsActive && !resource.IsDeleted,
+                resource.UserId == userId.Value && !resource.IsDeleted,
                 cancellationToken);
-            if (linked) return Result.Failure(Error.Conflict("This system user is already linked to an active Resource"));
+            if (linked) return Result.Failure(Error.Conflict("This system user is already linked to a Resource"));
         }
 
         var normalizedEmail = NormalizeEmail(email);
@@ -556,8 +745,22 @@ public class ResourceService : IResourceService, IResourceReferenceLookup, IReso
         }
     }
 
+    private static Error MapCapacityValidationError(
+        ResourceCapacityValidationError validationError,
+        Error? calendarResolutionError)
+    {
+        if (validationError.Code == ResourceWorkingCapacityCalculator.WorkingCalendarRequiredCode
+            && calendarResolutionError is not null)
+            return calendarResolutionError;
+
+        return Error.BusinessValidation(
+            validationError.Code,
+            validationError.Message,
+            validationError.FieldName);
+    }
+
     private Guid CurrentTenant() =>
-        Guid.TryParse(_httpContextAccessor.HttpContext?.User.FindFirstValue("tenantId"), out var tenantId)
+        Guid.TryParse(_httpContextAccessor.HttpContext?.User.FindFirstValue("tenantId"), out var tenantId) && tenantId != Guid.Empty
             ? tenantId
-            : TenantConstants.DemoTenantId;
+            : throw new InvalidOperationException("A trusted tenant context is required.");
 }

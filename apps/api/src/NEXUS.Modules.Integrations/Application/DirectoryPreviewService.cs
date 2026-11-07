@@ -287,7 +287,9 @@ public sealed partial class DirectoryIntegrationService
                 "lastName" => user?.LastName,
                 "email" => user?.Email,
                 "username" => link?.Username ?? link?.UserPrincipalName,
-                "jobTitle" => user?.JobTitle,
+                // Job title is a Resource profile field; the directory link keeps only
+                // its last mapped value for preview comparison.
+                "jobTitle" => link?.JobTitle,
                 "employeeId" => link?.EmployeeId,
                 "organizationalUnit" => link?.Department,
                 "manager" => link?.ManagerExternalId,

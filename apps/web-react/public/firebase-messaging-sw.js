@@ -1,4 +1,4 @@
-/* NEXUS PMO — Firebase Cloud Messaging service worker (Vite SPA, no Next.js dependency).
+/* FOPX PM — Firebase Cloud Messaging service worker (Vite SPA).
  * Served from /firebase-messaging-sw.js. Forwards background messages to open
  * clients via postMessage({ type: 'FCM_MESSAGE', payload }) so the React
  * foreground bridge (lib/firebase-messaging.ts) can toast + invalidate queries.
@@ -15,7 +15,7 @@ self.addEventListener("push", (event) => {
   const title =
     (payload.notification && payload.notification.title) ||
     (payload.data && payload.data.title) ||
-    "NEXUS notification";
+    "FOPX PM";
   const options = {
     body:
       (payload.notification && payload.notification.body) ||

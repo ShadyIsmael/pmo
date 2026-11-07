@@ -10,6 +10,17 @@ public sealed class AssignmentRecoveryPageDto
     public AssignmentRecoverySummaryDto Summary { get; init; } = new();
 }
 
+public sealed class InitialProjectManagerSummaryDto
+{
+    public Guid PublicId { get; init; }
+    public string Name { get; init; } = string.Empty;
+    public string Code { get; init; } = string.Empty;
+    public string? Description { get; init; }
+    public DateTime? StartDate { get; init; }
+    public DateTime? EndDate { get; init; }
+    public string? SponsorName { get; init; }
+}
+
 public sealed class AssignmentRecoveryItemDto
 {
     public string EntityType { get; init; } = string.Empty;
@@ -29,6 +40,11 @@ public sealed class AssignmentRecoveryItemDto
     public bool MissingParentHierarchy { get; init; }
     public string? AssignmentRequestStatus { get; init; }
     public string? AssignmentInitiationType { get; init; }
+    public Guid? RequestId { get; init; }
+    public bool CanViewExistingRequest { get; init; }
+    public bool CanReviewExistingRequest { get; init; }
+    public bool IsInitiatedByCurrentUser { get; init; }
+    public bool IsAssignedToCurrentUser { get; init; }
     public Guid? ProposedManagerId { get; init; }
     public string? ProposedManagerName { get; init; }
     public string? InitiatedByName { get; init; }

@@ -25,7 +25,16 @@ public sealed class ProjectFinancialLookup : IProjectFinancialLookup
         string projectCurrency,
         CancellationToken cancellationToken = default)
     {
-        var currency = (projectCurrency ?? "GBP").Trim().ToUpperInvariant();
+        // Resolve the authoritative project currency from the project reference.
+        // A missing or mismatched currency must never silently fall back to GBP.
+        var project = await _projects.FindAsync(projectId, cancellationToken);
+        if (project is null) return null;
+
+        var currency = NormalizeCurrency(project.Currency);
+        if (string.IsNullOrEmpty(currency))
+            currency = NormalizeCurrency(projectCurrency);
+        if (string.IsNullOrEmpty(currency))
+            return new ProjectFinancialSummary { Currency = string.Empty, HasFinancialData = false };
 
         var budgets = await _context.Set<Budget>()
             .AsNoTracking()
@@ -46,11 +55,7 @@ public sealed class ProjectFinancialLookup : IProjectFinancialLookup
         var matchingCostEntries = costEntries.Where(c => NormalizeCurrency(c.Currency) == currency).ToList();
         var matchingCommitments = commitments.Where(p => NormalizeCurrency(p.Currency) == currency).ToList();
 
-        var hasAnyFinancialData = budgets.Count > 0 || costEntries.Count > 0 || commitments.Count > 0;
         var hasMatchingCurrencyData = matchingBudgets.Count > 0 || matchingCostEntries.Count > 0 || matchingCommitments.Count > 0;
-
-        var project = await _projects.FindAsync(projectId, cancellationToken);
-        if (project is null) return null;
 
         var matchingBudgetIds = matchingBudgets.Select(b => b.Id).Distinct().ToList();
 
@@ -128,6 +133,6 @@ public sealed class ProjectFinancialLookup : IProjectFinancialLookup
 
     private static string NormalizeCurrency(string? currency)
     {
-        return (currency ?? "GBP").Trim().ToUpperInvariant();
+        return (currency ?? string.Empty).Trim().ToUpperInvariant();
     }
 }

@@ -1,0 +1,4 @@
+name: PMO active application sources
+paths:
+  - apps/api/src/**
+  - apps/web-react/src/**

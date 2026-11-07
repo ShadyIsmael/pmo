@@ -150,7 +150,7 @@ public static class ProjectManagementModuleRegistration
 | **API routes** | kebab-case plural | `/api/projects`, `/api/work-items` |
 | **URL parameters** | camelCase | `?pageSize=20&sortBy=name` |
 | **JSON properties** | camelCase | `{ "projectName": "..." }` |
-| **Environment variables** | UPPER_SNAKE_CASE | `NEXT_PUBLIC_API_URL` |
+| **Environment variables** | UPPER_SNAKE_CASE | `VITE_API_URL` |
 
 ---
 

@@ -34,7 +34,7 @@ function getPriorityTextClass(priority: WorkItemPriority): string {
 }
 
 export function IssuesPage() {
-  const { t, formatDate, locale } = useI18n();
+  const { t, formatDate, formatNumber, locale } = useI18n();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { user } = useAuth();
@@ -75,7 +75,7 @@ export function IssuesPage() {
   const doneCount = items.filter((item) => item.status === doneCode).length;
   const criticalCount = items.filter((item) => item.priority === "Critical").length;
   const hasFilters = Boolean(search.trim()) || priority !== "all" || status !== "all";
-  const formatCount = (value: number) => new Intl.NumberFormat("en-US").format(value);
+  const formatCount = (value: number) => formatNumber(value);
 
   function openCreate() {
     setDraft(emptyIssueDraft());
@@ -224,7 +224,7 @@ export function IssuesPage() {
           <div className="flex items-center gap-2"><Paperclip className="h-4 w-4 text-muted-foreground" /><span className="text-sm font-medium">{t("workItems.pendingAttachments")}</span><span className="text-xs text-muted-foreground">{formatCount(pendingFiles.length)}</span></div>
           {pendingFiles.map((file, index) => <div key={`${file.name}-${file.size}-${index}`} className="flex items-center gap-2 rounded-md border p-2"><Paperclip className="h-4 w-4 shrink-0 text-muted-foreground" /><span className="min-w-0 flex-1 truncate text-sm" title={file.name}>{file.name}</span><Button type="button" size="icon-sm" variant="ghost" aria-label={`${t("workItems.remove")}: ${file.name}`} disabled={savingIssue} onClick={() => setPendingFiles((current) => current.filter((_, fileIndex) => fileIndex !== index))}><Trash2 className="h-4 w-4" /></Button></div>)}
           <Button type="button" variant="outline" size="sm" onClick={() => attachmentInputRef.current?.click()} disabled={savingIssue}><Paperclip className="me-2 h-4 w-4" />{t("workItems.chooseFiles")}</Button>
-        </div> : <WorkItemForm draft={draft} onChange={updateDraft} t={t} assignees={assigneesQuery.data ?? []} assigneesLoading={assigneesQuery.isLoading} projects={projectsQuery.data?.items ?? []} allowTypeChange={false} richTextDescription extraContent={<div className="space-y-2"><div className="flex items-center gap-2"><Paperclip className="h-4 w-4 text-muted-foreground" /><span className="text-sm font-medium">{t("workItems.attachments")}</span></div><Button type="button" variant="outline" size="sm" onClick={() => attachmentInputRef.current?.click()}><Paperclip className="me-2 h-4 w-4" />{t("workItems.chooseFiles")}</Button>{pendingFiles.map((file, index) => <div key={`${file.name}-${file.size}-${index}`} className="flex items-center gap-2 rounded-md border p-2"><Paperclip className="h-4 w-4 shrink-0 text-muted-foreground" /><span className="min-w-0 flex-1 truncate text-sm" title={file.name}>{file.name}</span><Button type="button" size="icon-sm" variant="ghost" aria-label={`${t("workItems.remove")}: ${file.name}`} disabled={savingIssue} onClick={() => setPendingFiles((current) => current.filter((_, fileIndex) => fileIndex !== index))}><Trash2 className="h-4 w-4" /></Button></div>)}</div>} />}
+        </div> : <WorkItemForm draft={draft} onChange={updateDraft} t={t} assignees={assigneesQuery.data ?? []} assigneesLoading={assigneesQuery.isLoading} assigneesError={assigneesQuery.isError} onRetryAssignees={() => { void assigneesQuery.refetch(); }} projects={projectsQuery.data?.items ?? []} allowTypeChange={false} richTextDescription extraContent={<div className="space-y-2"><div className="flex items-center gap-2"><Paperclip className="h-4 w-4 text-muted-foreground" /><span className="text-sm font-medium">{t("workItems.attachments")}</span></div><Button type="button" variant="outline" size="sm" onClick={() => attachmentInputRef.current?.click()}><Paperclip className="me-2 h-4 w-4" />{t("workItems.chooseFiles")}</Button>{pendingFiles.map((file, index) => <div key={`${file.name}-${file.size}-${index}`} className="flex items-center gap-2 rounded-md border p-2"><Paperclip className="h-4 w-4 shrink-0 text-muted-foreground" /><span className="min-w-0 flex-1 truncate text-sm" title={file.name}>{file.name}</span><Button type="button" size="icon-sm" variant="ghost" aria-label={`${t("workItems.remove")}: ${file.name}`} disabled={savingIssue} onClick={() => setPendingFiles((current) => current.filter((_, fileIndex) => fileIndex !== index))}><Trash2 className="h-4 w-4" /></Button></div>)}</div>} />}
       </SideSheetBody>
       <SideSheetFooter>
         <Button type="button" variant="outline" onClick={() => closeCreate(false)} disabled={savingIssue}>{t("common.cancel")}</Button>

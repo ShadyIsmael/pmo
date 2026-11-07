@@ -748,7 +748,14 @@ public sealed class PlanGridCommandHistoryService : IPlanGridCommandHistoryServi
     private Guid GetCurrentTenantId()
     {
         var tenant = _httpContextAccessor.HttpContext?.User.FindFirst("tenantId")?.Value;
-        return Guid.TryParse(tenant, out var tenantId) ? tenantId : TenantConstants.DemoTenantId;
+        if (_httpContextAccessor.HttpContext?.User.Identity?.IsAuthenticated == true
+            && Guid.TryParse(tenant, out var tenantId)
+            && tenantId != Guid.Empty)
+        {
+            return tenantId;
+        }
+
+        throw new InvalidOperationException("A trusted tenant context is required for project planning operations.");
     }
 
     private sealed class CollectionState(string operation)

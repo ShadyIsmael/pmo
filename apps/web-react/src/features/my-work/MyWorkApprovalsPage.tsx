@@ -14,7 +14,7 @@ import { useI18n } from "@i18n/messages";
 import { useAuth } from "@auth/AuthProvider";
 import { useManagement } from "@api/management";
 import { hasPermission, Permissions } from "@lib/permissions";
-import { getApprovalReviewPath } from "@lib/approval-navigation";
+import { getApprovalReviewPath, getManagerHandoverApprovalReviewType } from "@lib/approval-navigation";
 import {
   usePendingHandoverRequestsForMe,
   useAcceptHandoverRequest,
@@ -27,6 +27,7 @@ import {
   useRejectProjectChangeRequest,
 } from "./api/myWork";
 import type { PendingProjectChangeApprovalDto, ManagerHandoverRequestDto } from "./api/myWork";
+import { MyWorkTabs } from "./MyWorkTabs";
 
 export function MyWorkApprovalsPage() {
   const { t } = useI18n();
@@ -77,7 +78,12 @@ export function MyWorkApprovalsPage() {
 
   const handleManagerHandoverAccept = async (request: ManagerHandoverRequestDto) => {
     setManagerHandoverActionError(null);
-    const mutation = request.entityType === "Program" ? managerAccept : managerAcceptPortfolio;
+    const reviewType = getManagerHandoverApprovalReviewType(request.entityType);
+    if (!reviewType) {
+      setManagerHandoverActionError({ requestId: request.id, message: t("approvals.reviewUnavailable") });
+      return;
+    }
+    const mutation = reviewType === "program-handover" ? managerAccept : managerAcceptPortfolio;
     try {
       await mutation.mutateAsync(request.id);
       await refreshSnapshot();
@@ -95,7 +101,12 @@ export function MyWorkApprovalsPage() {
       setManagerRejectError(t("approvals.handoverDecisionConflict"));
       return;
     }
-    const mutation = request.entityType === "Program" ? managerReject : managerRejectPortfolio;
+    const reviewType = getManagerHandoverApprovalReviewType(request.entityType);
+    if (!reviewType) {
+      setManagerRejectError(t("approvals.reviewUnavailable"));
+      return;
+    }
+    const mutation = reviewType === "program-handover" ? managerReject : managerRejectPortfolio;
     try {
       await mutation.mutateAsync({ requestId: managerRejectingId, rejectionReason: managerRejectionReason.trim() });
       setManagerRejectingId(null);
@@ -139,6 +150,7 @@ export function MyWorkApprovalsPage() {
   return (
     <div className="space-y-6">
       <PageHeader title={t("approvals.title")} description={t("approvals.description")} />
+      <MyWorkTabs />
 
       <Tabs defaultValue="pending">
         <TabsList>
@@ -328,8 +340,8 @@ export function MyWorkApprovalsPage() {
 
 function ManagerApproval({ request, accepting, rejecting, canDecide, error, onAccept, onReject }: { request: ManagerHandoverRequestDto; accepting: boolean; rejecting: boolean; canDecide: boolean; error?: string | null; onAccept: () => void; onReject: () => void }) {
   const { t } = useI18n();
-  const entityType = request.entityType === "Program" ? t("managerHandover.program") : t("managerHandover.portfolio");
-  const reviewType = request.entityType === "Program" ? "program-handover" : "portfolio-handover";
+  const entityType = request.entityType === "Program" ? t("managerHandover.program") : request.entityType === "Portfolio" ? t("managerHandover.portfolio") : t("approvals.reviewUnavailable");
+  const reviewType = getManagerHandoverApprovalReviewType(request.entityType);
   return (
     <div className="flex items-start gap-4 border-t px-4 py-4">
       <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
@@ -344,7 +356,7 @@ function ManagerApproval({ request, accepting, rejecting, canDecide, error, onAc
           {request.initiationType !== "ManagerInitiated" ? <p className="mt-1 text-xs text-muted-foreground">{t(request.initiationType === "InitialAssignment" ? "managerHandover.initialAssignment" : "managerHandover.adminRequest")}</p> : null}
         <p className="text-xs text-muted-foreground">{request.entityName} · {request.reason}</p>
         <p className="mt-1 text-xs text-muted-foreground">{t("approvals.effectiveDate")}: {formatDate(request.effectiveHandoverDate)} · {t("approvals.requestedBy")}: {request.requestedByName}</p>
-        <Link to={getApprovalReviewPath(reviewType, request.id)} className="mt-2 inline-flex text-sm font-medium text-primary underline-offset-4 hover:underline">{t("approvals.reviewRequest")}</Link>
+        {reviewType ? <Link to={getApprovalReviewPath(reviewType, request.id)} className="mt-2 inline-flex text-sm font-medium text-primary underline-offset-4 hover:underline">{t("approvals.reviewRequest")}</Link> : null}
         {error ? <p role="alert" className="mt-2 text-xs text-destructive">{error}</p> : null}
       </div>
       {canDecide ? <div className="flex gap-2">

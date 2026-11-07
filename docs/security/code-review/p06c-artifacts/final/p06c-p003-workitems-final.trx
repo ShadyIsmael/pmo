@@ -1,0 +1,41 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="c6d976d2-cf64-4dd8-b322-ff0e0e3db8b1" name="shady@SHADY 2026-11-06 17:50:59" runUser="SHADY\shady" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-11-06T17:50:59.9387990+02:00" queuing="2026-11-06T17:50:59.9387997+02:00" start="2026-11-06T17:50:55.5015096+02:00" finish="2026-11-06T17:50:59.9542691+02:00" />
+  <TestSettings name="default" id="692f2ef6-49d2-427f-a248-2565d1b2e70e">
+    <Deployment runDeploymentRoot="shady_SHADY_2026-11-06_17_50_59" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="2eeb0b64-1040-4636-8e01-09817798cd9a" testId="9f3aef0f-c2c7-b9b8-ea0f-8e8c0f87d245" testName="NEXUS.Modules.WorkItems.Tests.WorkItemTerminalStateTests.LegacyFallbackTerminalStatusCodes_IncludesDoneAndCancelled" computerName="SHADY" duration="00:00:00.7326356" startTime="2026-11-06T17:50:58.9635594+02:00" endTime="2026-11-06T17:50:59.7142720+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="2eeb0b64-1040-4636-8e01-09817798cd9a" />
+    <UnitTestResult executionId="bf3f27ee-09b7-4c63-b512-e629b1ad3534" testId="08e9a4df-90ef-c076-79cf-cbeb75eff3fe" testName="NEXUS.Modules.WorkItems.Tests.WorkItemTerminalStateTests.LegacyFallbackTerminalStatusCodes_ContainsExpectedCompatibilityStatuses" computerName="SHADY" duration="00:00:00.0196885" startTime="2026-11-06T17:50:59.7371135+02:00" endTime="2026-11-06T17:50:59.7373826+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="bf3f27ee-09b7-4c63-b512-e629b1ad3534" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="NEXUS.Modules.WorkItems.Tests.WorkItemTerminalStateTests.LegacyFallbackTerminalStatusCodes_ContainsExpectedCompatibilityStatuses" storage="c:\projects\pmo\apps\api\tests\nexus.modules.workitems.tests\bin\debug\net10.0\nexus.modules.workitems.tests.dll" id="08e9a4df-90ef-c076-79cf-cbeb75eff3fe">
+      <Execution id="bf3f27ee-09b7-4c63-b512-e629b1ad3534" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Modules.WorkItems.Tests\bin\Debug\net10.0\NEXUS.Modules.WorkItems.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Modules.WorkItems.Tests.WorkItemTerminalStateTests" name="LegacyFallbackTerminalStatusCodes_ContainsExpectedCompatibilityStatuses" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Modules.WorkItems.Tests.WorkItemTerminalStateTests.LegacyFallbackTerminalStatusCodes_IncludesDoneAndCancelled" storage="c:\projects\pmo\apps\api\tests\nexus.modules.workitems.tests\bin\debug\net10.0\nexus.modules.workitems.tests.dll" id="9f3aef0f-c2c7-b9b8-ea0f-8e8c0f87d245">
+      <Execution id="2eeb0b64-1040-4636-8e01-09817798cd9a" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Modules.WorkItems.Tests\bin\Debug\net10.0\NEXUS.Modules.WorkItems.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Modules.WorkItems.Tests.WorkItemTerminalStateTests" name="LegacyFallbackTerminalStatusCodes_IncludesDoneAndCancelled" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="9f3aef0f-c2c7-b9b8-ea0f-8e8c0f87d245" executionId="2eeb0b64-1040-4636-8e01-09817798cd9a" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="08e9a4df-90ef-c076-79cf-cbeb75eff3fe" executionId="bf3f27ee-09b7-4c63-b512-e629b1ad3534" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Completed">
+    <Counters total="2" executed="2" passed="2" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>Logging TestHost Diagnostics in file: C:\Projects\pmo\docs\security\code-review\p06c-artifacts\final\p06c-p003-workitems-final.diag.host.26-11-06_17-50-55_60607_5.log&#xD;
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.0.0+e341b939fe (64-bit .NET 10.0.10)&#xD;
+[xUnit.net 00:00:01.04]   Discovering: NEXUS.Modules.WorkItems.Tests&#xD;
+[xUnit.net 00:00:01.15]   Discovered:  NEXUS.Modules.WorkItems.Tests&#xD;
+[xUnit.net 00:00:01.22]   Starting:    NEXUS.Modules.WorkItems.Tests&#xD;
+[xUnit.net 00:00:02.07]   Finished:    NEXUS.Modules.WorkItems.Tests&#xD;
+</StdOut>
+    </Output>
+  </ResultSummary>
+</TestRun>

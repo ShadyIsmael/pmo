@@ -20,6 +20,7 @@
     <ProjectReference Include="..\NEXUS.Modules.RiskManagement\NEXUS.Modules.RiskManagement.csproj" />
     <ProjectReference Include="..\NEXUS.Modules.IssueManagement\NEXUS.Modules.IssueManagement.csproj" />
     <ProjectReference Include="..\NEXUS.Modules.CostManagement\NEXUS.Modules.CostManagement.csproj" />
+    <ProjectReference Include="..\NEXUS.Modules.Approvals\NEXUS.Modules.Approvals.csproj" />
     <ProjectReference Include="..\NEXUS.Modules.Meetings\NEXUS.Modules.Meetings.csproj" />
     <ProjectReference Include="..\NEXUS.Modules.Documents\NEXUS.Modules.Documents.csproj" />
     <ProjectReference Include="..\NEXUS.Modules.Notifications\NEXUS.Modules.Notifications.csproj" />

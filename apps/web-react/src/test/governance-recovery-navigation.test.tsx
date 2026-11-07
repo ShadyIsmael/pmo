@@ -23,7 +23,7 @@ function renderGovernance(initialPath = "/administration/governance") {
         <Routes>
           <Route path="/administration/governance" element={
             <RequireFreshPermission permissions={[
-              Permissions.Settings.Read,
+              Permissions.Settings.View,
               Permissions.Workflow.View,
               Permissions.AssignmentRecovery.View,
               Permissions.AssignmentRecovery.Initiate,
@@ -56,12 +56,12 @@ describe("Governance entity-recovery navigation", () => {
   it("refreshes effective permissions and reveals the existing recovery entry", async () => {
     const refreshUser = vi.fn(async () => {
       if (auth.current) {
-        auth.current.user.permissions = [Permissions.Settings.Read, Permissions.AssignmentRecovery.View];
+        auth.current.user.permissions = [Permissions.Settings.View, Permissions.AssignmentRecovery.View];
       }
     });
     auth.current = {
       status: "authenticated",
-      user: { id: "admin", permissions: [Permissions.Settings.Read] },
+      user: { id: "admin", permissions: [Permissions.Settings.View] },
       refreshUser,
     };
 
@@ -75,7 +75,7 @@ describe("Governance entity-recovery navigation", () => {
   it("allows direct recovery navigation after refreshing an authorized user's grants", async () => {
     auth.current = {
       status: "authenticated",
-      user: { id: "admin", permissions: [Permissions.Settings.Read] },
+      user: { id: "admin", permissions: [Permissions.Settings.View] },
       refreshUser: vi.fn(async () => {
         if (auth.current) auth.current.user.permissions = [Permissions.AssignmentRecovery.Initiate];
       }),
@@ -89,7 +89,7 @@ describe("Governance entity-recovery navigation", () => {
   it("denies direct access when the refreshed user has no recovery permission", async () => {
     auth.current = {
       status: "authenticated",
-      user: { id: "viewer", permissions: [Permissions.Settings.Read] },
+      user: { id: "viewer", permissions: [Permissions.Settings.View] },
       refreshUser: vi.fn().mockResolvedValue(undefined),
     };
 
@@ -107,7 +107,7 @@ describe("Governance entity-recovery navigation", () => {
       });
     auth.current = {
       status: "authenticated",
-      user: { id: "admin", permissions: [Permissions.Settings.Read] },
+      user: { id: "admin", permissions: [Permissions.Settings.View] },
       refreshUser,
     };
 

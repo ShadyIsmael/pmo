@@ -7,6 +7,33 @@ export const APPROVAL_REVIEW_TYPES = [
 
 export type ApprovalReviewType = (typeof APPROVAL_REVIEW_TYPES)[number];
 
+export const APPROVAL_REVIEW_CONTRACTS = {
+  "project-handover": {
+    endpoint: "/api/handover-requests",
+    approvalType: "ProjectHandover",
+    businessObjectType: "Project",
+  },
+  "program-handover": {
+    endpoint: "/api/manager-handovers/programs/requests",
+    approvalType: "ProgramHandover",
+    businessObjectType: "Program",
+  },
+  "portfolio-handover": {
+    endpoint: "/api/manager-handovers/portfolios/requests",
+    approvalType: "PortfolioHandover",
+    businessObjectType: "Portfolio",
+  },
+  "change-request": {
+    endpoint: "/api/project-change-requests",
+    approvalType: "ChangeRequest",
+    businessObjectType: "Project",
+  },
+} as const satisfies Record<ApprovalReviewType, {
+  endpoint: string;
+  approvalType: string;
+  businessObjectType: string;
+}>;
+
 export function isApprovalReviewType(value?: string | null): value is ApprovalReviewType {
   return APPROVAL_REVIEW_TYPES.some((type) => type === value);
 }
@@ -17,11 +44,14 @@ export function getApprovalReviewPath(type: ApprovalReviewType, approvalId: stri
 
 export function getApprovalReviewApiPath(type: ApprovalReviewType, approvalId: string): string {
   const id = encodeURIComponent(approvalId);
-  switch (type) {
-    case "project-handover": return `/api/handover-requests/${id}/review`;
-    case "program-handover": return `/api/manager-handovers/programs/requests/${id}/review`;
-    case "portfolio-handover": return `/api/manager-handovers/portfolios/requests/${id}/review`;
-    case "change-request": return `/api/project-change-requests/${id}/review`;
+  return `${APPROVAL_REVIEW_CONTRACTS[type].endpoint}/${id}/review`;
+}
+
+export function getManagerHandoverApprovalReviewType(entityType: unknown): ApprovalReviewType | null {
+  switch (entityType) {
+    case "Program": return "program-handover";
+    case "Portfolio": return "portfolio-handover";
+    default: return null;
   }
 }
 

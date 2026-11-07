@@ -308,7 +308,7 @@ public sealed class RiskServiceTests : IDisposable
         var afterAction = await _service.GetByIdAsync(created.Value.Id);
         Assert.Equal(RiskStatus.ActionRequired, afterAction.Value!.Status);
 
-        var edited = await _service.UpdateActionAsync(created.Value.Id, action.Value.Id, new UpdateRiskActionDto { Title = "Contact supplier", Description = "Confirm the revised delivery date.", Status = RiskActionStatus.Planned, NextFollowUpDate = DateTime.UtcNow.AddDays(7), RowVersion = action.Value.RowVersion }, _user.ToString());
+        var edited = await _service.UpdateActionAsync(created.Value.Id, action.Value.Id, new UpdateRiskActionDto { Title = "Contact supplier", Description = "Confirm the revised delivery date.", Status = RiskActionStatus.Planned, NextFollowUpDate = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(7)), RowVersion = action.Value.RowVersion }, _user.ToString());
         Assert.True(edited.IsSuccess, edited.Error?.Message);
         var firstUpdate = await _service.AddActionUpdateAsync(created.Value.Id, action.Value.Id, new CreateRiskActionUpdateDto
         {

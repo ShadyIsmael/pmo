@@ -7,14 +7,17 @@ import { Button } from "@components/ui/Button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@components/ui/Card";
 import { Input } from "@components/ui/Input";
 import { Label } from "@components/ui/Label";
+import { ApiFieldError } from "@components/ui/ApiFieldError";
+import { ApiError, getApiFieldError } from "@api/client";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@components/ui/Table";
 import { useAuth } from "@auth/AuthProvider";
 import { useI18n } from "@i18n/messages";
 import { useManagement } from "@api/management";
-import { hasPermission, Permissions } from "@lib/permissions";
+import { hasAnyPermission, hasPermission, Permissions } from "@lib/permissions";
 import { SideSheet, SideSheetBody, SideSheetFooter } from "@components/ui/SideSheet";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@components/ui/Dialog";
 import { getStatusTextClass } from "@lib/status-presentation";
+import { formatDateTime } from "@lib/utils";
 import { useAdminUsers, useAssignableRoles, useCreateAdminUser, useResetAdminUserPassword, useSaveUserPermissions, useUpdateAdminUser, useUserPermissions, toUserPermissionOverrides, type AdminUserDto, type PermissionOverrideEffect, type UserPermissionAssignmentDto } from "./api/admin";
 import { getPermissionDisplayName, getPermissionResourceLabel } from "./permission-labels";
 
@@ -26,11 +29,11 @@ export function AccessPage() {
   const { t } = useI18n();
   const { user } = useAuth();
   const permissions = user?.permissions ?? [];
-  const hasUsersRead = hasPermission(permissions, Permissions.Users.Read);
-  const hasUsersWrite = hasPermission(permissions, Permissions.Users.Write);
+  const hasUsersRead = hasAnyPermission(permissions, [Permissions.Users.View, Permissions.Users.ManageAccounts]);
+  const hasRoleAdministration = hasAnyPermission(permissions, [Permissions.Roles.View, Permissions.Roles.Create, Permissions.Roles.EditDetails, Permissions.Roles.ConfigurePermissions, Permissions.Roles.Delete]);
   const components = [
     ...(hasUsersRead ? [{ id: "users", href: "/administration/access/users", icon: UsersRound, title: t("administration.areas.access.users.title"), description: t("administration.areas.access.users.description") }] : []),
-    ...(hasUsersWrite ? [{ id: "roles", href: "/administration/access/roles", icon: ShieldCheck, title: t("administration.areas.access.roles.title"), description: t("administration.areas.access.roles.description") }] : []),
+    ...(hasRoleAdministration ? [{ id: "roles", href: "/administration/access/roles", icon: ShieldCheck, title: t("administration.areas.access.roles.title"), description: t("administration.areas.access.roles.description") }] : []),
   ];
 
   return (
@@ -62,19 +65,24 @@ export function AccessUsersPage() {
   const [page, setPage] = React.useState(1);
   const { user } = useAuth();
   const { effectiveReadOnly } = useManagement();
-  const canManageUsers = Boolean(user && hasPermission(user.permissions, Permissions.Users.Write) && !effectiveReadOnly);
+  const canManageUsers = Boolean(user && hasAnyPermission(user.permissions, [Permissions.Users.ManageAccounts]) && !effectiveReadOnly);
+  const canManageUserStatus = Boolean(user && hasPermission(user.permissions, Permissions.Users.SetStatus) && !effectiveReadOnly);
+  const canAssignRoles = Boolean(user && hasPermission(user.permissions, Permissions.Users.AssignRoles) && !effectiveReadOnly);
+  const canEditUser = canManageUsers || canAssignRoles || canManageUserStatus;
+  const canManageOverrides = Boolean(user && hasPermission(user.permissions, Permissions.Users.ManageOverrides) && !effectiveReadOnly);
   const canResetPasswords = Boolean(user && hasPermission(user.permissions, Permissions.Users.ResetPassword) && !effectiveReadOnly);
   const users = useAdminUsers(true, { page, pageSize: 25, search: search.trim() });
-  const roles = useAssignableRoles(canManageUsers);
+  const roles = useAssignableRoles(canAssignRoles);
   const createUser = useCreateAdminUser();
   const updateUser = useUpdateAdminUser();
   const resetPassword = useResetAdminUserPassword();
   const [editingUser, setEditingUser] = React.useState<AdminUserDto | null>(null);
   const [isCreatingUser, setIsCreatingUser] = React.useState(false);
-  const [draft, setDraft] = React.useState<{ firstName: string; lastName: string; email: string; authenticationSource: AdminUserDto["authenticationSource"]; jobTitle: string; phone: string; isActive: boolean; roles: string[] }>({ firstName: "", lastName: "", email: "", authenticationSource: "Local", jobTitle: "", phone: "", isActive: true, roles: [] });
+  const [draft, setDraft] = React.useState<{ firstName: string; lastName: string; email: string; authenticationSource: AdminUserDto["authenticationSource"]; isActive: boolean; roles: string[] }>({ firstName: "", lastName: "", email: "", authenticationSource: "Local", isActive: true, roles: [] });
   const [roleSearch, setRoleSearch] = React.useState("");
   const [formError, setFormError] = React.useState<string | null>(null);
-  const [credential, setCredential] = React.useState<{ userName: string; password: string; expiresAt: string } | null>(null);
+  const [apiError, setApiError] = React.useState<unknown>(null);
+  const [credential, setCredential] = React.useState<{ userName: string; password: string; expiresAt?: string } | null>(null);
   const [credentialError, setCredentialError] = React.useState<string | null>(null);
   const isSavingUser = createUser.isPending || updateUser.isPending;
   const isSelfEdit = Boolean(editingUser && editingUser.id === user?.id);
@@ -89,17 +97,19 @@ export function AccessUsersPage() {
   function beginCreateUser() {
     setEditingUser(null);
     setIsCreatingUser(true);
-    setDraft({ firstName: "", lastName: "", email: "", authenticationSource: "Local", jobTitle: "", phone: "", isActive: true, roles: [] });
+    setDraft({ firstName: "", lastName: "", email: "", authenticationSource: "Local", isActive: true, roles: [] });
     setRoleSearch("");
     setFormError(null);
+    setApiError(null);
   }
 
   function beginEditUser(item: AdminUserDto) {
     setEditingUser(item);
     setIsCreatingUser(false);
-    setDraft({ firstName: item.firstName, lastName: item.lastName, email: item.email, authenticationSource: item.authenticationSource ?? "Local", jobTitle: item.jobTitle ?? "", phone: item.phone ?? "", isActive: item.isActive, roles: [...item.roles] });
+    setDraft({ firstName: item.firstName, lastName: item.lastName, email: item.email, authenticationSource: item.authenticationSource ?? "Local", isActive: item.isActive, roles: [...item.roles] });
     setRoleSearch("");
     setFormError(null);
+    setApiError(null);
   }
 
   function closeUserForm() {
@@ -107,18 +117,18 @@ export function AccessUsersPage() {
     setEditingUser(null);
     setIsCreatingUser(false);
     setFormError(null);
+    setApiError(null);
   }
 
   async function handleSaveUser(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if ((!editingUser && !isCreatingUser) || isSavingUser || roles.isLoading || roles.isError) return;
+    if ((!editingUser && !isCreatingUser) || isSavingUser || (canAssignRoles && (roles.isLoading || roles.isError))) return;
     setFormError(null);
+    setApiError(null);
     const input = {
       email: draft.email.trim(),
       firstName: draft.firstName.trim(),
       lastName: draft.lastName.trim(),
-      jobTitle: draft.jobTitle.trim() || null,
-      phone: draft.phone.trim() || null,
       isActive: draft.isActive,
       roles: draft.roles,
     };
@@ -128,13 +138,14 @@ export function AccessUsersPage() {
       } else {
         const created = await createUser.mutateAsync({ ...input, authenticationSource: draft.authenticationSource });
         if (created.temporaryPassword) {
-          setCredential({ userName: created.user.fullName, password: created.temporaryPassword, expiresAt: created.user.temporaryPasswordExpiresAt ?? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() });
+          setCredential({ userName: created.user.fullName, password: created.temporaryPassword, expiresAt: created.user.temporaryPasswordExpiresAt ?? undefined });
         }
       }
       setEditingUser(null);
       setIsCreatingUser(false);
     } catch (error) {
-      setFormError(error instanceof Error ? error.message : t("administration.users.error"));
+      setApiError(error);
+      setFormError(error instanceof ApiError ? error.message : t("administration.users.error"));
     }
   }
 
@@ -143,8 +154,8 @@ export function AccessUsersPage() {
     try {
       const result = await resetPassword.mutateAsync(item.id);
       setCredential({ userName: item.fullName, password: result.temporaryPassword, expiresAt: result.expiresAt });
-    } catch {
-      setCredentialError(t("administration.users.resetPasswordError"));
+    } catch (error) {
+      setCredentialError(error instanceof ApiError ? error.message : t("administration.users.resetPasswordError"));
     }
   }
 
@@ -154,7 +165,7 @@ export function AccessUsersPage() {
 
   const userSheetOpen = Boolean(editingUser || isCreatingUser);
   const userSheetTitle = editingUser
-    ? t("administration.users.editUser")
+    ? canAssignRoles && !canManageUsers ? t("nav.roles") : canManageUserStatus && !canManageUsers ? t("administration.users.status") : t("administration.users.editUser")
     : t("administration.users.addUser");
 
   return (
@@ -175,17 +186,17 @@ export function AccessUsersPage() {
             : users.isError ? <p role="alert" className="p-4 text-center text-sm text-destructive">{t("administration.areas.access.usersLoadError")}</p>
               : items.length === 0 ? <p className="p-6 text-center text-sm text-muted-foreground">{t("common.noResults")}</p>
                 : <div className="overflow-x-auto"><Table>
-                  <TableHeader><TableRow><TableHead>{t("common.name")}</TableHead><TableHead>{t("common.email")}</TableHead><TableHead>{t("administration.users.authenticationSource")}</TableHead><TableHead>{t("nav.roles")}</TableHead><TableHead>{t("administration.users.status")}</TableHead>{canManageUsers || canResetPasswords ? <TableHead>{t("common.actions")}</TableHead> : null}</TableRow></TableHeader>
+                  <TableHeader><TableRow><TableHead>{t("common.name")}</TableHead><TableHead>{t("common.email")}</TableHead><TableHead>{t("administration.users.authenticationSource")}</TableHead><TableHead>{t("nav.roles")}</TableHead><TableHead>{t("administration.users.status")}</TableHead>{canEditUser || canResetPasswords || canManageOverrides ? <TableHead>{t("common.actions")}</TableHead> : null}</TableRow></TableHeader>
                   <TableBody>{items.map((item) => <TableRow key={item.id}>
                     <TableCell className="font-medium">{item.fullName}</TableCell>
                     <TableCell className="text-muted-foreground">{item.email}</TableCell>
                     <TableCell>{t(`administration.users.sources.${item.authenticationSource ?? "Local"}`)}</TableCell>
                     <TableCell><div className="flex flex-wrap gap-1">{item.roles.length > 0 ? item.roles.map((role) => <Badge key={role} variant="outline">{role}</Badge>) : <span className="text-muted-foreground">—</span>}</div></TableCell>
                     <TableCell><span className={`text-sm font-medium ${getStatusTextClass(item.isActive ? "active" : "inactive")}`}>{item.isActive ? t("administration.users.active") : t("administration.users.inactive")}</span></TableCell>
-                    {canManageUsers || canResetPasswords ? <TableCell><div className="flex flex-wrap gap-2">
-                      {canManageUsers ? <Button type="button" size="sm" variant="outline" onClick={() => beginEditUser(item)} aria-label={`${t("administration.users.edit")} ${item.fullName}`}><Pencil className="me-1.5 h-3.5 w-3.5" />{t("administration.users.edit")}</Button> : null}
+                    {canEditUser || canResetPasswords || canManageOverrides ? <TableCell><div className="flex flex-wrap gap-2">
+                      {canEditUser ? <Button type="button" size="sm" variant="outline" onClick={() => beginEditUser(item)} aria-label={`${t("administration.users.edit")} ${item.fullName}`}><Pencil className="me-1.5 h-3.5 w-3.5" />{canAssignRoles && !canManageUsers ? t("nav.roles") : t("administration.users.edit")}</Button> : null}
                       {canResetPasswords && (item.authenticationSource ?? "Local") === "Local" && item.id !== user?.id ? <Button type="button" size="sm" variant="outline" disabled={resetPassword.isPending} onClick={() => void handleResetPassword(item)}><KeyRound className="me-1.5 h-3.5 w-3.5" />{t("administration.users.resetPassword")}</Button> : null}
-                      {canManageUsers ? item.id === user?.id
+                      {canManageOverrides ? item.id === user?.id
                         ? <span className="self-center text-xs text-muted-foreground">{t("administration.areas.access.selfChangesBlocked")}</span>
                         : <Button type="button" size="sm" variant="outline" onClick={() => navigate("/administration/access/users/" + item.id + "/permissions", { state: { userName: item.fullName } })}>{t("administration.areas.access.managePermissions")}</Button> : null}
                     </div></TableCell> : null}
@@ -204,19 +215,18 @@ export function AccessUsersPage() {
         {userSheetOpen ? <form className="flex min-h-0 flex-1 flex-col" onSubmit={(event) => void handleSaveUser(event)}>
           <SideSheetBody className="space-y-5">
             <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2"><Label htmlFor="user-first-name">{t("administration.users.firstName")}</Label><Input id="user-first-name" autoComplete="given-name" value={draft.firstName} disabled={isSavingUser} onChange={(event) => updateDraft("firstName", event.target.value)} required maxLength={100} /></div>
-              <div className="space-y-2"><Label htmlFor="user-last-name">{t("administration.users.lastName")}</Label><Input id="user-last-name" autoComplete="family-name" value={draft.lastName} disabled={isSavingUser} onChange={(event) => updateDraft("lastName", event.target.value)} required maxLength={100} /></div>
-              <div className="space-y-2"><Label htmlFor="user-email">{t("administration.users.email")}</Label><Input id="user-email" type="email" autoComplete="email" value={draft.email} disabled={isSavingUser} onChange={(event) => updateDraft("email", event.target.value)} required maxLength={256} /></div>
+              <div className="space-y-2"><Label htmlFor="user-first-name">{t("administration.users.firstName")}</Label><Input id="user-first-name" autoComplete="given-name" value={draft.firstName} disabled={isSavingUser || !canManageUsers} aria-invalid={Boolean(getApiFieldError(apiError, "firstName"))} aria-describedby={getApiFieldError(apiError, "firstName") ? "user-first-name-error" : undefined} onChange={(event) => updateDraft("firstName", event.target.value)} required maxLength={100} /><ApiFieldError id="user-first-name-error" error={apiError} fieldName="firstName" /></div>
+              <div className="space-y-2"><Label htmlFor="user-last-name">{t("administration.users.lastName")}</Label><Input id="user-last-name" autoComplete="family-name" value={draft.lastName} disabled={isSavingUser || !canManageUsers} aria-invalid={Boolean(getApiFieldError(apiError, "lastName"))} aria-describedby={getApiFieldError(apiError, "lastName") ? "user-last-name-error" : undefined} onChange={(event) => updateDraft("lastName", event.target.value)} required maxLength={100} /><ApiFieldError id="user-last-name-error" error={apiError} fieldName="lastName" /></div>
+              <div className="space-y-2"><Label htmlFor="user-email">{t("administration.users.email")}</Label><Input id="user-email" type="email" autoComplete="email" value={draft.email} disabled={isSavingUser || !canManageUsers} aria-invalid={Boolean(getApiFieldError(apiError, "email"))} aria-describedby={getApiFieldError(apiError, "email") ? "user-email-error" : undefined} onChange={(event) => updateDraft("email", event.target.value)} required maxLength={256} /><ApiFieldError id="user-email-error" error={apiError} fieldName="email" /></div>
               {isCreatingUser ? <div className="space-y-2"><Label htmlFor="user-authentication-source">{t("administration.users.authenticationSource")}</Label><select id="user-authentication-source" className="input-field" value={draft.authenticationSource} disabled={isSavingUser} onChange={(event) => updateDraft("authenticationSource", event.target.value as AdminUserDto["authenticationSource"])}><option value="Local">{t("administration.users.sources.Local")}</option><option value="EntraId" disabled>{t("administration.users.sources.EntraId")} — {t("administration.users.directoryUnavailable")}</option><option value="ActiveDirectoryLdap" disabled>{t("administration.users.sources.ActiveDirectoryLdap")} — {t("administration.users.directoryUnavailable")}</option></select><p className="text-xs text-muted-foreground">{t("administration.users.directoryProvisioningHint")}</p></div> : null}
-              <div className="space-y-2"><Label htmlFor="user-job-title">{t("administration.users.jobTitle")}</Label><Input id="user-job-title" autoComplete="organization-title" value={draft.jobTitle} disabled={isSavingUser} onChange={(event) => updateDraft("jobTitle", event.target.value)} maxLength={150} /></div>
-              <div className="space-y-2"><Label htmlFor="user-phone">{t("administration.users.phone")}</Label><Input id="user-phone" type="tel" autoComplete="tel" value={draft.phone} disabled={isSavingUser} onChange={(event) => updateDraft("phone", event.target.value)} maxLength={40} /></div>
             </div>
             <label htmlFor="user-is-active" className="flex cursor-pointer items-start gap-3 rounded-lg border p-3">
-              <input id="user-is-active" type="checkbox" checked={draft.isActive} disabled={isSavingUser || isSelfEdit} onChange={(event) => updateDraft("isActive", event.target.checked)} className="mt-0.5 h-4 w-4 accent-primary" />
+              <input id="user-is-active" type="checkbox" checked={draft.isActive} disabled={isSavingUser || isSelfEdit || !canManageUserStatus} onChange={(event) => updateDraft("isActive", event.target.checked)} className="mt-0.5 h-4 w-4 accent-primary" />
               <span className="text-sm font-medium">{t("administration.users.isActive")}{isSelfEdit ? <span className="ms-2 text-xs font-normal text-muted-foreground">{t("administration.areas.access.selfStatusLocked")}</span> : null}</span>
             </label>
             <section className="space-y-3">
               <div className="space-y-1"><h3 className="text-sm font-semibold">{t("administration.users.rolesLabel")}</h3><p className="text-xs text-muted-foreground">{t("administration.areas.access.roleAssignmentInstructions")}</p></div>
+              {canAssignRoles ? <>
               <Input value={roleSearch} onChange={(event) => setRoleSearch(event.target.value)} placeholder={t("administration.areas.roles.searchRoles")} aria-label={t("administration.areas.roles.searchRoles")} disabled={isSavingUser || isSelfEdit} />
               {roles.isLoading ? <p className="py-5 text-center text-sm text-muted-foreground">{t("common.loading")}</p>
                 : roles.isError ? <div className="flex flex-col items-center gap-3 py-5"><p role="alert" className="text-sm text-destructive">{t("administration.areas.access.roleLoadError")}</p><Button type="button" size="sm" variant="outline" onClick={() => void roles.refetch()}>{t("common.retry")}</Button></div>
@@ -232,13 +242,15 @@ export function AccessUsersPage() {
                       </label>)}
                     </div>}
               {hasUnavailableRoleSelected && !isSelfEdit ? <p className="text-xs text-muted-foreground">{t("administration.areas.access.removeUnavailableRoleFirst")}</p> : null}
+              <ApiFieldError id="user-roles-error" error={apiError} fieldName="roles" />
               {isSelfEdit ? <p className="text-xs text-muted-foreground">{t("administration.areas.access.selfRoleLocked")}</p> : null}
+              </> : <p className="rounded-md border bg-muted/30 p-3 text-sm">{draft.roles.length ? draft.roles.join(", ") : "-"}</p>}
             </section>
             {formError ? <p role="alert" className="text-sm text-destructive">{formError}</p> : null}
           </SideSheetBody>
           <SideSheetFooter>
             <Button type="button" variant="outline" disabled={isSavingUser} onClick={closeUserForm}>{t("common.cancel")}</Button>
-            <Button type="submit" disabled={isSavingUser || roles.isLoading || roles.isError}>{isSavingUser ? t("administration.users.saving") : isCreatingUser ? t("administration.areas.access.createUserAction") : t("administration.users.save")}</Button>
+            <Button type="submit" disabled={isSavingUser || (canAssignRoles && (roles.isLoading || roles.isError))}>{isSavingUser ? t("administration.users.saving") : isCreatingUser ? t("administration.areas.access.createUserAction") : t("administration.users.save")}</Button>
           </SideSheetFooter>
         </form> : null}
       </SideSheet>
@@ -248,8 +260,9 @@ export function AccessUsersPage() {
   );
 }
 
-function TemporaryPasswordDialog({ credential, onClose }: { credential: { userName: string; password: string; expiresAt: string } | null; onClose: () => void }) {
-  const { t } = useI18n();
+function TemporaryPasswordDialog({ credential, onClose }: { credential: { userName: string; password: string; expiresAt?: string } | null; onClose: () => void }) {
+  const { t, locale } = useI18n();
+  const expiry = credential?.expiresAt && Number.isFinite(new Date(credential.expiresAt).getTime()) ? formatDateTime(credential.expiresAt, locale) : null;
   const [revealed, setRevealed] = React.useState(false);
   const [copied, setCopied] = React.useState(false);
   const [copyFailed, setCopyFailed] = React.useState(false);
@@ -287,7 +300,7 @@ function TemporaryPasswordDialog({ credential, onClose }: { credential: { userNa
         </div>
         {copied ? <p role="status" className="text-sm text-success">{t("administration.users.passwordCopied")}</p> : null}
         {copyFailed ? <p role="alert" className="text-sm text-destructive">{t("administration.users.passwordCopyFailed")}</p> : null}
-        <p className="text-sm text-muted-foreground">{t("administration.users.temporaryPasswordExpires", { expiresAt: credential ? new Date(credential.expiresAt).toLocaleString() : "" })}</p>
+        {expiry ? <p className="text-sm text-muted-foreground">{t("administration.users.temporaryPasswordExpires", { expiresAt: expiry })}</p> : null}
         <p className="text-sm text-warning">{t("administration.users.temporaryPasswordOneTimeWarning")}</p>
       </div>
       <DialogFooter><Button type="button" onClick={onClose}>{t("common.close")}</Button></DialogFooter>
@@ -296,12 +309,12 @@ function TemporaryPasswordDialog({ credential, onClose }: { credential: { userNa
 }
 
 export function UserPermissionsPage() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const navigate = useNavigate();
   const location = useLocation();
   const { userId } = useParams<{ userId: string }>();
   const { user } = useAuth();
-  const canManage = Boolean(user && hasPermission(user.permissions, Permissions.Users.Write));
+  const canManage = Boolean(user && hasPermission(user.permissions, Permissions.Users.ManageOverrides));
   const routeState = location.state as { userName?: unknown } | null;
   const userName = typeof routeState?.userName === "string" ? routeState.userName : null;
   const permissions = useUserPermissions(userId ?? null, canManage);
@@ -311,11 +324,15 @@ export function UserPermissionsPage() {
   const [saveError, setSaveError] = React.useState<string | null>(null);
   const actorPermissions = user?.permissions ?? [];
   const hasUnmanageableOverrides = (permissions.data ?? []).some((permission) =>
-    permission.overrideEffect !== null && !hasPermission(actorPermissions, permission.name));
+    !permission.isProtectedAdminBaseline && permission.isActive && permission.isAssignable
+      && permission.overrideEffect !== null && !hasPermission(actorPermissions, permission.name));
 
   React.useEffect(() => {
     if (permissions.data) {
-      setDraft(Object.fromEntries(permissions.data.map((item) => [item.id, item.overrideEffect ?? "Inherit"])));
+      setDraft(Object.fromEntries(permissions.data.map((item) => [
+        item.id,
+        item.isProtectedAdminBaseline ? "Inherit" : item.overrideEffect ?? "Inherit",
+      ])));
     }
   }, [permissions.data, userId]);
 
@@ -323,14 +340,14 @@ export function UserPermissionsPage() {
     const grouped = new Map<string, UserPermissionAssignmentDto[]>();
     const term = search.trim().toLocaleLowerCase();
     for (const permission of permissions.data ?? []) {
-      const label = (permission.name + " " + getPermissionDisplayName(permission, t)).toLocaleLowerCase();
+      const label = (permission.name + " " + getPermissionDisplayName(permission, locale)).toLocaleLowerCase();
       if (term && !label.includes(term)) continue;
       const group = grouped.get(permission.resource) ?? [];
       group.push(permission);
       grouped.set(permission.resource, group);
     }
     return [...grouped.entries()];
-  }, [permissions.data, search, t]);
+  }, [permissions.data, search, locale]);
 
   async function handleSave() {
     if (!userId || savePermissions.isPending) return;
@@ -359,16 +376,16 @@ export function UserPermissionsPage() {
               <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t("administration.areas.access.searchPermissions")} aria-label={t("administration.areas.access.searchPermissions")} />
               {groups.length === 0 ? <p className="py-6 text-center text-sm text-muted-foreground">{t("common.noResults")}</p>
                 : <div className="grid gap-4 md:grid-cols-2">{groups.map(([resource, group]) => <section key={resource} className="space-y-2">
-                  <h3 className="text-sm font-semibold">{getPermissionResourceLabel(group[0], t)}</h3>
+                  <h3 className="text-sm font-semibold">{getPermissionResourceLabel(group[0], locale)}</h3>
                   <div className="overflow-hidden rounded-lg border">
                     {group.map((permission) => {
-                      const effect = draft[permission.id] ?? "Inherit";
-                      const isEffective = effect === "Allow" || (effect === "Inherit" && permission.isRoleGranted);
-                      const canOverride = hasPermission(actorPermissions, permission.name);
+                      const effect = permission.isProtectedAdminBaseline ? "Inherit" : draft[permission.id] ?? "Inherit";
+                      const isEffective = permission.isProtectedAdminBaseline || effect === "Allow" || (effect === "Inherit" && permission.isRoleGranted);
+                      const canOverride = !permission.isProtectedAdminBaseline && permission.isActive && permission.isAssignable && hasPermission(actorPermissions, permission.name);
                       const effectTextClass = effect === "Allow" ? "text-success" : effect === "Deny" ? "text-destructive" : "text-muted-foreground";
                       return <div key={permission.id} className="grid gap-3 border-b p-3 last:border-b-0 lg:grid-cols-[minmax(0,1fr)_13rem] lg:items-center">
-                        <div className="min-w-0"><p className="text-sm font-medium">{getPermissionDisplayName(permission, t)}</p><p className="mt-1 text-xs"><span className={permission.isRoleGranted ? "text-info" : "text-muted-foreground"}>{permission.isRoleGranted ? t("administration.areas.access.roleGranted") : t("administration.areas.access.notRoleGranted")}</span><span className="text-muted-foreground"> · </span><span className={isEffective ? "text-success" : "text-muted-foreground"}>{isEffective ? t("administration.areas.access.effective") : t("administration.areas.access.notEffective")}</span>{!canOverride ? <span className="mt-1 block text-muted-foreground">{t("administration.areas.access.permissionNotAssignable")}</span> : null}</p></div>
-                        <div className="space-y-1"><Label className="sr-only" htmlFor={"user-permission-" + permission.id}>{t("administration.areas.access.overrideFor", { permission: getPermissionDisplayName(permission, t) })}</Label><select id={"user-permission-" + permission.id} aria-describedby={!canOverride ? "permission-assignment-scope-hint" : undefined} className={`h-9 w-full rounded-md border border-input bg-background px-3 text-sm ${effectTextClass}`} value={effect} disabled={savePermissions.isPending || !canOverride} onChange={(event) => { const nextEffect = event.target.value; if (isPermissionOverrideEffect(nextEffect)) setDraft((current) => ({ ...current, [permission.id]: nextEffect })); }}>
+                        <div className="min-w-0"><p className="text-sm font-medium">{getPermissionDisplayName(permission, locale)}</p><p className="mt-1 text-xs"><span className={permission.isRoleGranted ? "text-info" : "text-muted-foreground"}>{permission.isRoleGranted ? t("administration.areas.access.roleGranted") : t("administration.areas.access.notRoleGranted")}</span><span className="text-muted-foreground"> · </span><span className={isEffective ? "text-success" : "text-muted-foreground"}>{isEffective ? t("administration.areas.access.effective") : t("administration.areas.access.notEffective")}</span>{permission.isProtectedAdminBaseline ? <span className="mt-1 block font-medium text-info">{t("administration.areas.access.protectedAdminOverrideLocked")}</span> : !canOverride ? <span className="mt-1 block text-muted-foreground">{t("administration.areas.access.permissionNotAssignable")}</span> : null}</p></div>
+                        <div className="space-y-1"><Label className="sr-only" htmlFor={"user-permission-" + permission.id}>{t("administration.areas.access.overrideFor", { permission: getPermissionDisplayName(permission, locale) })}</Label><select id={"user-permission-" + permission.id} aria-describedby={!canOverride ? "permission-assignment-scope-hint" : undefined} className={`h-9 w-full rounded-md border border-input bg-background px-3 text-sm ${effectTextClass}`} value={effect} disabled={savePermissions.isPending || !canOverride} onChange={(event) => { const nextEffect = event.target.value; if (isPermissionOverrideEffect(nextEffect)) setDraft((current) => ({ ...current, [permission.id]: nextEffect })); }}>
                           <option value="Inherit">{t("administration.areas.access.inherit")}</option><option value="Allow">{t("administration.areas.access.allow")}</option><option value="Deny">{t("administration.areas.access.deny")}</option>
                         </select></div>
                       </div>;

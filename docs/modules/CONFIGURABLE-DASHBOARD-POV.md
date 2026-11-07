@@ -1,5 +1,7 @@
 # Configurable POV Dashboard
 
+> Historical record: Next.js references below describe the retired frontend and are kept only to preserve the original decision or implementation history. The supported frontend is apps/web-react (React, Vite, and React Router); these references are not build, deployment, agent, or audit targets.
+
 ## Overview
 
 The configurable dashboard is the main landing page after login (`/[locale]/home`). A Point of View (POV) is a context and catalogue filter, not a fixed dashboard. Each POV contains multiple named personal and shared dashboards.
@@ -225,3 +227,9 @@ apps/web/src/lib/dashboard-mock-data.ts               # Mock data layer
 - Widgets user lacks permission for are hidden from the library
 - POV switching does not change permissions
 - Frontend sharing and ownership are demonstrative only; production enforcement requires backend authorization and persistence
+
+## Active React/Vite authorization and approval routing
+
+The active implementation is `apps/web-react`; the historical Next.js dashboard descriptions above are not runtime targets. Resource widgets use the exact `Resource.View` permission required by their read API before loading resource or capacity data. Assignment and management permissions do not act as read fallbacks. Saved copies remain unavailable and make no protected request when the user lacks the view permission.
+
+My Work and dashboard approval links use explicit review types for Project Handover, Program Handover, Portfolio Handover, and Project Change Request. The API response is checked against the selected review type and business-object type before the page presents decisions. Project Payment Request approvals remain in the project Financial workspace and use their project-scoped payment-request decision route; they are not mapped to Manager Handover review endpoints.

@@ -1,4 +1,6 @@
+using Microsoft.EntityFrameworkCore;
 using NEXUS.Modules.Meetings.Application;
+using NEXUS.Modules.Organization.Domain;
 using NEXUS.Modules.Portfolio.Application;
 using NEXUS.Modules.ProjectManagement.Application.DTOs;
 using NEXUS.Modules.ProjectManagement.Domain;
@@ -12,6 +14,7 @@ namespace NEXUS.Modules.ProjectManagement.Application;
 
 public sealed class ProjectOverviewService : IProjectOverviewService
 {
+    private readonly DbContext? _context;
     private readonly IProjectService _projectService;
     private readonly IProgramService _programService;
     private readonly IProjectStatusReportService _statusReportService;
@@ -45,8 +48,10 @@ public sealed class ProjectOverviewService : IProjectOverviewService
         IProjectEvmPlanLookup evmPlanLookup,
         IProjectEvmLaborCostLookup evmLaborCostLookup,
         IProjectEvmDirectCostLookup evmDirectCostLookup,
-        ICapacityService capacityService)
+        ICapacityService capacityService,
+        DbContext? context = null)
     {
+        _context = context;
         _projectService = projectService;
         _programService = programService;
         _statusReportService = statusReportService;
@@ -79,14 +84,14 @@ public sealed class ProjectOverviewService : IProjectOverviewService
 
         var risks = await _riskService.GetProjectOverviewAsync(projectId, cancellationToken: cancellationToken);
         var issues = await _workItemService.GetProjectOverviewAsync(projectId, cancellationToken: cancellationToken);
-        var planMilestones = await _planMilestoneLookup.GetAsync(projectId, cancellationToken);
+        var statusDate = DateTime.UtcNow.Date;
+        var planMilestones = await _planMilestoneLookup.GetUpcomingAsync(projectId, statusDate, cancellationToken);
         var changes = await _changeRequestService.GetByProjectIdAsync(projectId, cancellationToken);
         var handoverCount = await _handoverService.GetPendingCountForProjectAsync(projectId, cancellationToken);
         var allocations = await _allocationService.GetProjectOverviewAsync(projectId, cancellationToken);
         var meetings = await _meetingService.GetProjectOverviewAsync(projectId, cancellationToken);
         var planProgress = await _planProgressLookup.GetAsync(projectId, cancellationToken);
         var financialSummary = await _financialLookup.GetAsync(projectId, project.Currency, cancellationToken);
-        var statusDate = DateTime.UtcNow.Date;
         var evmPlan = await _evmPlanLookup.GetAsync(projectId, project.TenantId, cancellationToken);
         var evmLabor = await _evmLaborCostLookup.GetAsync(
             project.TenantId, projectId, project.Currency, statusDate, evmPlan.Assignments, cancellationToken);
@@ -150,11 +155,6 @@ public sealed class ProjectOverviewService : IProjectOverviewService
             Risks = risks,
             Issues = issues,
             Milestones = planMilestones
-                .OrderBy(milestone => IsCompleted(milestone) ? 1 : 0)
-                .ThenBy(milestone => milestone.DueDate.HasValue ? 0 : 1)
-                .ThenBy(milestone => milestone.DueDate)
-                .ThenBy(milestone => milestone.Name)
-                .Take(8)
                 .Select(milestone => new ProjectOverviewMilestoneDto
                 {
                     Id = milestone.Id,
@@ -227,28 +227,88 @@ public sealed class ProjectOverviewService : IProjectOverviewService
 
         var periodStart = startDate.Date;
         var periodEnd = endDate.Date;
-        var members = teamResult.Value
-            .Where(member => string.Equals(member.Status, "Active", StringComparison.OrdinalIgnoreCase)
-                && member.StartDate.Date < periodEnd
-                && member.EndDate.Date >= periodStart)
-            .GroupBy(member => member.ResourceId)
-            .Select(group => group.OrderBy(member => member.StartDate).ThenBy(member => member.Id).First())
+        var candidates = teamResult.Value
+            .Where(member => member.ResourceId.HasValue
+                && string.Equals(member.Status, "Active", StringComparison.OrdinalIgnoreCase)
+                && member.StartDate.Date < periodEnd && member.EndDate.Date >= periodStart)
             .Select(member => new ProjectTeamCapacityMemberInputDto
             {
-                ResourceId = member.ResourceId,
+                ResourceId = member.ResourceId!.Value,
                 ProjectId = projectId,
-                StartDate = member.StartDate,
-                EndDate = member.EndDate,
+                StartDate = member.StartDate.Date,
+                EndDate = member.EndDate.Date,
                 AllocationPercentage = member.AllocationPercentage,
-                // Resource capacity comes from the resource's working calendar.
-                // ProjectMember.HoursPerWeek is a legacy override and must not
-                // replace the resource's overall capacity.
                 HoursPerWeek = null,
-                UseProjectCalendar = string.Equals(
-                    member.CalendarPolicy,
-                    CalendarPolicyConstants.FollowProjectCalendar,
-                    StringComparison.Ordinal),
+                UseProjectCalendar = string.Equals(member.CalendarPolicy, CalendarPolicyConstants.FollowProjectCalendar, StringComparison.Ordinal),
                 ProjectCalendarId = projectResult.Value.WorkingCalendarId
+            })
+            .ToList();
+
+        var groupAssignments = teamResult.Value
+            .Where(member => member.TeamId.HasValue
+                && string.Equals(member.Status, "Active", StringComparison.OrdinalIgnoreCase)
+                && member.StartDate.Date < periodEnd && member.EndDate.Date >= periodStart)
+            .ToList();
+        if (_context is not null && groupAssignments.Count > 0)
+        {
+            var teamIds = groupAssignments.Select(member => member.TeamId!.Value).Distinct().ToArray();
+            var teamRows = await _context.Set<Team>().AsNoTracking()
+                .Where(team => teamIds.Contains(team.Id) && team.IsActive && !team.IsDeleted)
+                .Select(team => team.Id)
+                .ToArrayAsync(cancellationToken);
+            var activeTeamIds = teamRows.ToHashSet();
+            var teamMemberships = await _context.Set<TeamMember>().AsNoTracking()
+                .Where(member => activeTeamIds.Contains(member.TeamId) && member.IsActive && !member.IsDeleted
+                    && member.EffectiveFrom.Date < periodEnd
+                    && (!member.EffectiveTo.HasValue || member.EffectiveTo.Value.Date >= periodStart))
+                .Join(_context.Set<NEXUS.Modules.ResourceManagement.Domain.Resource>().AsNoTracking()
+                        .Where(resource => resource.IsActive && !resource.IsDeleted),
+                    member => member.ResourceId, resource => resource.Id,
+                    (member, resource) => new { member.TeamId, member.ResourceId, member.EffectiveFrom, member.EffectiveTo })
+                .ToListAsync(cancellationToken);
+
+            foreach (var assignment in groupAssignments)
+            foreach (var membership in teamMemberships.Where(member => member.TeamId == assignment.TeamId))
+            {
+                var memberStart = membership.EffectiveFrom.Date > assignment.StartDate.Date
+                    ? membership.EffectiveFrom.Date : assignment.StartDate.Date;
+                var memberEnd = membership.EffectiveTo?.Date ?? assignment.EndDate.Date;
+                if (memberEnd > assignment.EndDate.Date) memberEnd = assignment.EndDate.Date;
+                if (memberStart >= periodEnd || memberEnd < periodStart || memberStart > memberEnd) continue;
+                candidates.Add(new ProjectTeamCapacityMemberInputDto
+                {
+                    ResourceId = membership.ResourceId,
+                    ProjectId = projectId,
+                    StartDate = memberStart,
+                    EndDate = memberEnd,
+                    AllocationPercentage = assignment.AllocationPercentage,
+                    HoursPerWeek = null,
+                    UseProjectCalendar = string.Equals(assignment.CalendarPolicy, CalendarPolicyConstants.FollowProjectCalendar, StringComparison.Ordinal),
+                    ProjectCalendarId = projectResult.Value.WorkingCalendarId
+                });
+            }
+        }
+
+        // A direct assignment and one or more Team memberships can identify the same
+        // Resource. Count that Resource once and use the highest dedication as the
+        // effective project ceiling for the selected reporting period.
+        var members = candidates
+            .GroupBy(member => member.ResourceId)
+            .Select(group =>
+            {
+                var selected = group.OrderByDescending(member => member.AllocationPercentage ?? 0m)
+                    .ThenBy(member => member.StartDate).First();
+                return new ProjectTeamCapacityMemberInputDto
+                {
+                    ResourceId = group.Key,
+                    ProjectId = projectId,
+                    StartDate = group.Min(member => member.StartDate),
+                    EndDate = group.Max(member => member.EndDate),
+                    AllocationPercentage = group.Max(member => member.AllocationPercentage ?? 0m),
+                    HoursPerWeek = null,
+                    UseProjectCalendar = selected.UseProjectCalendar,
+                    ProjectCalendarId = projectResult.Value.WorkingCalendarId
+                };
             })
             .ToArray();
 
@@ -259,11 +319,5 @@ public sealed class ProjectOverviewService : IProjectOverviewService
             EndDate = periodEnd,
             IncludeProposed = true
         }, cancellationToken);
-    }
-
-    private static bool IsCompleted(PlanMilestoneLookupItem milestone)
-    {
-        if (milestone.CompletedDate.HasValue) return true;
-        return milestone.Progress.HasValue && milestone.Progress >= 100;
     }
 }

@@ -8,10 +8,17 @@ public class CreateResourceValidator : AbstractValidator<CreateResourceDto>
 {
     public CreateResourceValidator()
     {
-        RuleFor(x => x.Name).NotEmpty().MaximumLength(ResourceFieldLengths.Name);
+        RuleFor(x => x.Name).NotEmpty().MaximumLength(ResourceFieldLengths.Name)
+            .When(x => x.Type != ResourceType.Staff);
+        RuleFor(x => x.UserId)
+            .NotNull()
+            .NotEqual(Guid.Empty)
+            .WithMessage("Select an active system user for Staff resources.")
+            .When(x => x.Type == ResourceType.Staff);
         RuleFor(x => x.EmployeeId).MaximumLength(ResourceFieldLengths.EmployeeId);
         RuleFor(x => x.JobTitle).MaximumLength(ResourceFieldLengths.JobTitle);
-        RuleFor(x => x.Email).MaximumLength(ResourceFieldLengths.Email).EmailAddress().When(x => !string.IsNullOrEmpty(x.Email));
+        RuleFor(x => x.Email).MaximumLength(ResourceFieldLengths.Email).EmailAddress()
+            .When(x => x.Type != ResourceType.Staff && !string.IsNullOrEmpty(x.Email));
         RuleFor(x => x.Phone).MaximumLength(ResourceFieldLengths.Phone);
         RuleFor(x => x.AvatarUrl).MaximumLength(ResourceFieldLengths.AvatarUrl);
         RuleFor(x => x.Type).IsInEnum();
@@ -21,6 +28,10 @@ public class CreateResourceValidator : AbstractValidator<CreateResourceDto>
         RuleFor(x => x.Timezone).MaximumLength(ResourceFieldLengths.Timezone);
         RuleFor(x => x.Notes).MaximumLength(ResourceFieldLengths.Notes);
         RuleFor(x => x.UtilizationTarget).InclusiveBetween(0, 100).When(x => x.UtilizationTarget.HasValue);
+        RuleFor(x => x.HoursPerDay)
+            .NotNull().WithMessage("Hours per day is required.")
+            .InclusiveBetween(1m, 24m).WithMessage("Hours per day must be between 1 and 24 hours.");
+        RuleFor(x => x.HoursPerWeek).InclusiveBetween(0.01m, 168m).When(x => x.HoursPerWeek.HasValue);
         RuleForEach(x => x.Skills).ChildRules(s =>
         {
             s.RuleFor(x => x.SkillId).NotEmpty();
@@ -37,7 +48,8 @@ public class UpdateResourceValidator : AbstractValidator<UpdateResourceDto>
         RuleFor(x => x.Name).MaximumLength(ResourceFieldLengths.Name).When(x => x.Name != null);
         RuleFor(x => x.EmployeeId).MaximumLength(ResourceFieldLengths.EmployeeId);
         RuleFor(x => x.JobTitle).MaximumLength(ResourceFieldLengths.JobTitle);
-        RuleFor(x => x.Email).MaximumLength(ResourceFieldLengths.Email).EmailAddress().When(x => !string.IsNullOrEmpty(x.Email));
+        RuleFor(x => x.Email).MaximumLength(ResourceFieldLengths.Email).EmailAddress()
+            .When(x => x.Type != ResourceType.Staff && !string.IsNullOrEmpty(x.Email));
         RuleFor(x => x.Phone).MaximumLength(ResourceFieldLengths.Phone);
         RuleFor(x => x.AvatarUrl).MaximumLength(ResourceFieldLengths.AvatarUrl);
         RuleFor(x => x.Type)
@@ -49,5 +61,12 @@ public class UpdateResourceValidator : AbstractValidator<UpdateResourceDto>
         RuleFor(x => x.Timezone).MaximumLength(ResourceFieldLengths.Timezone);
         RuleFor(x => x.Notes).MaximumLength(ResourceFieldLengths.Notes);
         RuleFor(x => x.UtilizationTarget).InclusiveBetween(0, 100).When(x => x.UtilizationTarget.HasValue);
+        RuleFor(x => x.HoursPerDay).InclusiveBetween(1m, 24m).When(x => x.HoursPerDay.HasValue)
+            .WithMessage("Hours per day must be between 1 and 24 hours.");
+        RuleFor(x => x.HoursPerWeek).InclusiveBetween(0.01m, 168m).When(x => x.HoursPerWeek.HasValue);
+        RuleFor(x => x.ClearHoursPerDay).Equal(false)
+            .WithMessage("Hours per day is required and cannot be cleared.");
+        RuleFor(x => x.ClearHoursPerWeek).Must((dto, clear) => !clear || !dto.HoursPerWeek.HasValue)
+            .WithMessage("HoursPerWeek cannot be set and cleared in the same update.");
     }
 }

@@ -48,9 +48,9 @@ vi.mock("@xyflow/react", async () => {
   };
 });
 
-vi.mock("@auth/AuthProvider", () => ({ useAuth: () => ({ user: { id: "user-1", tenantId: "tenant-1", permissions: ["settings.write"] } }) }));
+vi.mock("@auth/AuthProvider", () => ({ useAuth: () => ({ user: { id: "user-1", tenantId: "tenant-1", permissions: ["Settings.ManageTenantConfiguration"] } }) }));
 vi.mock("@api/management", () => ({ useManagement: () => ({ canMutate: !fixtures.readOnly, effectiveReadOnly: fixtures.readOnly, loading: false }) }));
-vi.mock("@api/client", () => ({ api: { get: fixtures.get, post: fixtures.post } }));
+vi.mock("@api/client", () => ({ api: { get: fixtures.get, post: fixtures.post }, setApiErrorLocale: () => undefined }));
 vi.mock("@api/endpoints", () => ({ endpoints: { organization: { unit: (id: string) => `/api/organization/units/${id}`, memberships: "/api/organization/memberships", endMembership: (id: string) => `/api/organization/memberships/${id}/end`, reportingLines: "/api/organization/reporting-lines", endReportingLine: (id: string) => `/api/organization/reporting-lines/${id}/end` } } }));
 vi.mock("@features/resources/api/resources", () => ({ useResources: () => ({ data: { items: fixtures.resources }, isLoading: false, isError: false, refetch: vi.fn() }) }));
 vi.mock("../features/organization/api/organization", () => ({

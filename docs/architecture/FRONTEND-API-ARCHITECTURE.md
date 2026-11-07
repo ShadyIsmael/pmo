@@ -1,13 +1,12 @@
 # Frontend API Architecture
 
-The web application uses a centralized API boundary under `apps/web/src/lib/api/`.
+The supported React/Vite app uses a centralized API boundary under apps/web-react/src/api/.
 
-- `client.ts` owns HTTP transport, base URL resolution, token storage, refresh/retry, 401 session expiry, and response parsing.
-- `endpoints.ts` is the typed endpoint map. Path parameters are encoded by endpoint builders.
-- `types.ts` contains shared transport, pagination, and normalized error contracts.
-- Domain modules (`projects`, `portfolios`, `resources`, `users`, `handover`, and `notifications`) expose API functions and query-key factories.
-- `config.ts` is the environment-backed configuration boundary for API URL, locale, pagination, query freshness, and feature flags.
+- client.ts owns HTTP transport, VITE_API_URL resolution, authentication headers, token refresh, session expiry, and response parsing.
+- endpoints.ts defines the typed endpoint map and encodes path parameters.
+- Domain API modules keep feature requests and query-key factories close to their React feature boundaries.
+- queryClient.ts configures React Query behavior.
 
-React Query remains configured in `src/app/providers.tsx`; domain query keys are stable, namespaced, and intended to be used for invalidation from mutations.
+Feature screens live under apps/web-react/src/features/ and use the shared API client. React Router is configured in apps/web-react/src/routes/AppRoutes.tsx. English and Arabic messages live under apps/web-react/src/i18n/messages/.
 
-The compatibility facade at `src/lib/api-client.ts` re-exports the centralized boundary for legacy imports during migration. New code must import from `@/lib/api` or a domain module. Test fixtures and mock-data files are outside this refactor's scope.
+The only supported browser client is apps/web-react.

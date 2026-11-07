@@ -159,7 +159,12 @@ export function ManagerHandoverPanel({ scope, entityId, entityName, currentManag
       setSheetOpen(false);
       await refreshSnapshot();
     } catch (requestError: unknown) {
-      setError(errorStatus(requestError) === 409 ? t("managerHandover.decisionConflict") : t("managerHandover.saveFailed"));
+      const message = (requestError as { message?: string } | null)?.message ?? "";
+      if (errorStatus(requestError) === 400 && /handover date cannot be after the project end date/i.test(message)) {
+        setError(t("managerHandover.handoverDateAfterProjectEnd"));
+      } else {
+        setError(errorStatus(requestError) === 409 ? t("managerHandover.decisionConflict") : t("managerHandover.saveFailed"));
+      }
     }
   }
 

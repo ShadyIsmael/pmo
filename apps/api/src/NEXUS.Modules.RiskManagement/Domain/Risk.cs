@@ -18,10 +18,12 @@ public class Risk : BaseEntity
     public decimal? PotentialCost { get; set; }
     public decimal? PotentialDelay { get; set; }
     public string? RiskResponse { get; set; }
+    // Legacy compatibility field. Current API writes use OwnerResourceId or OwnerUserId.
     public Guid? OwnerId { get; set; }
     public DateTime? IdentifiedDate { get; set; }
     public DateTime? ClosedDate { get; set; }
     public Guid? OwnerResourceId { get; set; }
+    public Guid? OwnerUserId { get; set; }
     public ICollection<RiskAction> Actions { get; set; } = new List<RiskAction>();
     public ICollection<RiskImpactAssessment> ImpactAssessments { get; set; } = new List<RiskImpactAssessment>();
 }

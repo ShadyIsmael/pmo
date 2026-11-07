@@ -1,8 +1,12 @@
 using System.Globalization;
 using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
+using NEXUS.Modules.Identity.Application;
 using NEXUS.Modules.Identity.Domain;
 
 namespace NEXUS.Modules.Identity.Infrastructure;
@@ -13,9 +17,29 @@ public sealed class InitialPasswordEnforcementMiddleware
 
     public InitialPasswordEnforcementMiddleware(RequestDelegate next) => _next = next;
 
-    public async Task InvokeAsync(HttpContext context, DbContext dbContext)
+    public async Task InvokeAsync(
+        HttpContext context,
+        DbContext dbContext,
+        IHostEnvironment environment,
+        IOptionsMonitor<LocalPasswordPolicyOptions> passwordPolicy)
     {
+        if (context.GetEndpoint()?.Metadata.GetMetadata<IAllowAnonymous>() is not null)
+        {
+            await _next(context);
+            return;
+        }
+
         if (context.User.Identity?.IsAuthenticated != true)
+        {
+            await _next(context);
+            return;
+        }
+
+        // A trusted platform-only token can provision the first tenant without an
+        // application-tenant account. Tenant APIs remain closed because the
+        // permission middleware strips any malformed tenant context downstream.
+        if (HasPlatformAuthority(context.User)
+            && !Guid.TryParse(context.User.FindFirstValue("tenantId"), out _))
         {
             await _next(context);
             return;
@@ -34,6 +58,8 @@ public sealed class InitialPasswordEnforcementMiddleware
             .Where(user => user.Id == userId && user.TenantId == tenantId && !user.IsDeleted)
             .Select(user => new
             {
+                user.Email,
+                user.AuthenticationSource,
                 user.IsActive,
                 user.MustChangePassword,
                 user.TemporaryPasswordExpiresAt,
@@ -58,7 +84,13 @@ public sealed class InitialPasswordEnforcementMiddleware
             return;
         }
 
-        if (state.MustChangePassword && !IsAllowedDuringPasswordChange(context.Request))
+        var bypassInitialPasswordPolicy = DevelopmentAdminTemporaryPasswordBypass.IsEnabled(
+            tenantId,
+            state.Email,
+            state.AuthenticationSource,
+            passwordPolicy.CurrentValue,
+            environment);
+        if (state.MustChangePassword && !bypassInitialPasswordPolicy && !IsAllowedDuringPasswordChange(context.Request))
         {
             var expired = !state.TemporaryPasswordExpiresAt.HasValue || state.TemporaryPasswordExpiresAt <= DateTime.UtcNow;
             await WriteErrorAsync(
@@ -83,6 +115,12 @@ public sealed class InitialPasswordEnforcementMiddleware
                 && (string.Equals(path.Value, "/api/auth/logout", StringComparison.OrdinalIgnoreCase)
                     || string.Equals(path.Value, "/api/auth/change-initial-password", StringComparison.OrdinalIgnoreCase)));
     }
+
+    private static bool HasPlatformAuthority(ClaimsPrincipal principal) =>
+        principal.FindAll("platform_role").Any(claim =>
+            string.Equals(claim.Value, "PlatformAdministrator", StringComparison.OrdinalIgnoreCase))
+        || principal.FindAll("platform_permission").Any(claim =>
+            claim.Value is "tenants.manage");
 
     private static async Task WriteErrorAsync(HttpContext context, int statusCode, string code, string detail)
     {

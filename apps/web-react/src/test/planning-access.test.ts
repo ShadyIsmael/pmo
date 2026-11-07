@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canPerformPlanningWrites, getPlanningBaselineUnavailableReason } from "../features/projects/lib/planning-access";
+import { canPerformPlanningWrites, findActiveWorkingVersion, getPlanningBaselineUnavailableReason } from "../features/projects/lib/planning-access";
 
 describe("planning write access", () => {
   it("requires the planning manage permission", () => {
@@ -16,6 +16,14 @@ describe("planning write access", () => {
 
   it("allows planning writes for an authorized mutable context", () => {
     expect(canPerformPlanningWrites(true, true, false)).toBe(true);
+  });
+
+  it("requires an active Working version instead of falling back to an inactive one", () => {
+    const inactiveWorking = { id: "working-old", type: "Working", status: "Superseded" };
+    const activeWorking = { id: "working-active", type: "Working", status: "Active" };
+
+    expect(findActiveWorkingVersion([inactiveWorking])).toBeUndefined();
+    expect(findActiveWorkingVersion([{ id: "baseline", type: "Baseline", status: "Approved" }, activeWorking])).toBe(activeWorking);
   });
 
   it("explains that baseline lifecycle permission is required", () => {

@@ -1,4 +1,4 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Routes, Route, Outlet } from "react-router-dom";
 import { render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
@@ -8,10 +8,11 @@ import { ManagementProvider } from "../api/management";
 import { ProjectDetailPage } from "../features/projects/ProjectDetailPage";
 import { ProjectOverviewTab } from "../features/projects/ProjectOverviewTab";
 import { setTokens } from "../api/client";
+import { createSessionQueryClient } from "../api/queryClient";
 
 describe("visible-first loading", () => {
   it("fetches project shell once and defers overview until the tab mounts", async () => {
-    setTokens("a", "r");
+    setTokens("a");
     const fetchMock = vi.fn().mockImplementation((input: string) => {
       if (input.includes("/api/auth/me")) {
         return Promise.resolve(new Response(JSON.stringify({ id: "u", email: "a@b.c", firstName: "A", lastName: "B", fullName: "A B", roles: [], permissions: ["Project.View"] }), { status: 200 }));
@@ -24,7 +25,7 @@ describe("visible-first loading", () => {
       return Promise.resolve(new Response("null", { status: 200 }));
     });
     vi.stubGlobal("fetch", fetchMock);
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    const client = createSessionQueryClient();
     render(
       <QueryClientProvider client={client}>
         <I18nProvider>
@@ -47,8 +48,16 @@ describe("visible-first loading", () => {
     const shells = fetchMock.mock.calls.filter(([input]) => String(input).includes("/api/projects/p1/shell"));
     expect(shells).toHaveLength(1);
     // Overview loads because its tab is the visible route…
-    await waitFor(() => expect(fetchMock.mock.calls.filter(([input]) => String(input).includes("/api/projects/p1/overview"))).toHaveLength(1));
+    const overviewCalls = () => fetchMock.mock.calls.filter(([input]) =>
+      new URL(String(input), window.location.origin).pathname === "/api/projects/p1/overview",
+    );
+    await waitFor(() => expect(overviewCalls()).toHaveLength(1));
     // …and hidden tabs (team/people) are never fetched.
-    expect(fetchMock.mock.calls.filter(([input]) => String(input).includes("/people") || String(input).includes("/team"))).toHaveLength(0);
+    expect(fetchMock.mock.calls.filter(([input]) =>
+      /\/api\/projects\/p1\/(people|team)$/.test(new URL(String(input), window.location.origin).pathname),
+    )).toHaveLength(0);
   });
 });
+
+
+

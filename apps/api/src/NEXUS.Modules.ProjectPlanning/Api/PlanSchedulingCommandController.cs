@@ -20,7 +20,7 @@ public sealed class PlanSchedulingCommandController : ControllerBase
         _analysisService = analysisService;
     }
 
-    [Authorize(Policy = "Planning.Manage")]
+    [Authorize(Policy = "Planning.Edit")]
     [HttpPost("recalculate")]
     public async Task<IActionResult> Recalculate(Guid projectId, Guid planId, CancellationToken cancellationToken)
     {

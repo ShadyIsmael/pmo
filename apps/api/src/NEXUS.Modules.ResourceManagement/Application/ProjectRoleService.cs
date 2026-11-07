@@ -33,9 +33,9 @@ public class ProjectRoleService : IProjectRoleService
     /// would write a row that no later query can see.
     /// </summary>
     private Guid CurrentTenantId() =>
-        Guid.TryParse(_httpContextAccessor?.HttpContext?.User.FindFirstValue("tenantId"), out var tenantId)
+        Guid.TryParse(_httpContextAccessor?.HttpContext?.User.FindFirstValue("tenantId"), out var tenantId) && tenantId != Guid.Empty
             ? tenantId
-            : TenantConstants.DemoTenantId;
+            : throw new InvalidOperationException("A trusted tenant context is required.");
 
     public async Task<Result<IReadOnlyList<LookupDto>>> GetActiveAsync(CancellationToken cancellationToken = default)
     {
@@ -136,6 +136,8 @@ public class ProjectRoleService : IProjectRoleService
         var lookup = await _context.Set<Lookup>()
             .FirstOrDefaultAsync(l => l.Id == id && l.Category == Category && !l.IsDeleted, cancellationToken);
         if (lookup is null) return Result<LookupDto>.Failure(Error.NotFound("Project Role not found"));
+        if (lookup.IsActive && dto.IsActive == false)
+            return Result<LookupDto>.Failure(Error.Conflict("Use the Deactivate operation for Project Roles."));
 
         if (dto.Code != null)
         {

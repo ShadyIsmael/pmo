@@ -36,7 +36,7 @@ public sealed class ManagementContextMiddlewareTests
         httpContext.Request.Headers[ManagementContextMiddleware.PerspectiveHeader] = "PortfolioManager";
         httpContext.Request.Headers[ManagementContextMiddleware.ViewModeHeader] = "Native";
 
-        await middleware.InvokeAsync(httpContext, resolver.Object, accessor.Object, NullLogger<ManagementContextMiddleware>.Instance);
+        await middleware.InvokeAsync(httpContext, resolver.Object, accessor.Object, NullLogger<ManagementContextMiddleware>.Instance, Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>());
 
         Assert.True(nextCalled);
         Assert.Equal(StatusCodes.Status200OK, httpContext.Response.StatusCode);
@@ -68,7 +68,7 @@ public sealed class ManagementContextMiddlewareTests
         httpContext.Request.Headers[ManagementContextMiddleware.PerspectiveHeader] = "ProjectManager";
         httpContext.Request.Headers[ManagementContextMiddleware.ViewModeHeader] = "ReadOnlyViewAs";
 
-        await middleware.InvokeAsync(httpContext, resolver.Object, accessor.Object, NullLogger<ManagementContextMiddleware>.Instance);
+        await middleware.InvokeAsync(httpContext, resolver.Object, accessor.Object, NullLogger<ManagementContextMiddleware>.Instance, Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>());
 
         Assert.False(nextCalled);
         Assert.Equal(StatusCodes.Status403Forbidden, httpContext.Response.StatusCode);
@@ -116,7 +116,7 @@ public sealed class ManagementContextMiddlewareTests
             .Callback<ManagementContext>(value => capturedContext = value);
         var httpContext = CreateAuthenticatedContext("/api/projects");
 
-        await middleware.InvokeAsync(httpContext, resolver.Object, accessor.Object, NullLogger<ManagementContextMiddleware>.Instance);
+        await middleware.InvokeAsync(httpContext, resolver.Object, accessor.Object, NullLogger<ManagementContextMiddleware>.Instance, Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>());
 
         Assert.True(nextCalled);
         Assert.NotNull(capturedContext);
@@ -161,7 +161,7 @@ public sealed class ManagementContextMiddlewareTests
             .Callback<ManagementContext>(value => capturedContext = value);
         var httpContext = CreateAuthenticatedContext("/api/projects");
 
-        await middleware.InvokeAsync(httpContext, resolver.Object, accessor.Object, NullLogger<ManagementContextMiddleware>.Instance);
+        await middleware.InvokeAsync(httpContext, resolver.Object, accessor.Object, NullLogger<ManagementContextMiddleware>.Instance, Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>());
 
         Assert.True(nextCalled);
         Assert.Same(existingContext, capturedContext);
@@ -198,7 +198,7 @@ public sealed class ManagementContextMiddlewareTests
         var httpContext = CreateAuthenticatedContext("/api/program-management/programs");
         httpContext.Request.Method = HttpMethods.Get;
 
-        await middleware.InvokeAsync(httpContext, resolver.Object, accessor.Object, NullLogger<ManagementContextMiddleware>.Instance);
+        await middleware.InvokeAsync(httpContext, resolver.Object, accessor.Object, NullLogger<ManagementContextMiddleware>.Instance, Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>());
 
         Assert.True(nextCalled);
         Assert.True(capturedContext?.CanReadAllTenantPortfolioProgramData);
@@ -240,7 +240,7 @@ public sealed class ManagementContextMiddlewareTests
             var httpContext = CreateAuthenticatedContext(path);
             httpContext.Request.Method = HttpMethods.Get;
 
-            await middleware.InvokeAsync(httpContext, resolver.Object, accessor.Object, NullLogger<ManagementContextMiddleware>.Instance);
+            await middleware.InvokeAsync(httpContext, resolver.Object, accessor.Object, NullLogger<ManagementContextMiddleware>.Instance, Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>());
 
             Assert.True(nextCalled);
             Assert.True(capturedContext?.CanReadAllTenantPortfolioProgramData);
@@ -277,7 +277,7 @@ public sealed class ManagementContextMiddlewareTests
             var httpContext = CreateAuthenticatedContext(path);
             httpContext.Request.Method = method;
 
-            await middleware.InvokeAsync(httpContext, resolver.Object, accessor.Object, NullLogger<ManagementContextMiddleware>.Instance);
+            await middleware.InvokeAsync(httpContext, resolver.Object, accessor.Object, NullLogger<ManagementContextMiddleware>.Instance, Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>());
 
             Assert.False(nextCalled);
             Assert.Equal(StatusCodes.Status404NotFound, httpContext.Response.StatusCode);
@@ -323,7 +323,7 @@ public sealed class ManagementContextMiddlewareTests
             httpContext.User.AddIdentity(new ClaimsIdentity(new[] { new Claim("permission", "Handover.AdminInitiate") }, "admin-permission"));
             httpContext.Request.Method = method;
 
-            await middleware.InvokeAsync(httpContext, resolver.Object, accessor.Object, NullLogger<ManagementContextMiddleware>.Instance);
+            await middleware.InvokeAsync(httpContext, resolver.Object, accessor.Object, NullLogger<ManagementContextMiddleware>.Instance, Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>());
 
             Assert.True(nextCalled);
             Assert.Equal(StatusCodes.Status200OK, httpContext.Response.StatusCode);
@@ -365,7 +365,7 @@ public sealed class ManagementContextMiddlewareTests
                 httpContext.Request.Headers[ManagementContextMiddleware.ViewModeHeader] = viewMode;
             }
 
-            await middleware.InvokeAsync(httpContext, resolver.Object, accessor.Object, NullLogger<ManagementContextMiddleware>.Instance);
+            await middleware.InvokeAsync(httpContext, resolver.Object, accessor.Object, NullLogger<ManagementContextMiddleware>.Instance, Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>());
 
             Assert.False(nextCalled);
             Assert.Equal(expectedStatus, httpContext.Response.StatusCode);
@@ -397,7 +397,7 @@ public sealed class ManagementContextMiddlewareTests
         var httpContext = CreateAuthenticatedContext($"/api/program-management/programs/{resourceId}/financials");
         httpContext.Request.Method = HttpMethods.Get;
 
-        await middleware.InvokeAsync(httpContext, resolver.Object, accessor.Object, NullLogger<ManagementContextMiddleware>.Instance);
+        await middleware.InvokeAsync(httpContext, resolver.Object, accessor.Object, NullLogger<ManagementContextMiddleware>.Instance, Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>());
 
         Assert.False(nextCalled);
         Assert.Equal(StatusCodes.Status404NotFound, httpContext.Response.StatusCode);
@@ -433,7 +433,7 @@ public sealed class ManagementContextMiddlewareTests
         httpContext.Request.Headers[ManagementContextMiddleware.PerspectiveHeader] = "PortfolioManager";
         httpContext.Request.Headers[ManagementContextMiddleware.ViewModeHeader] = "Native";
 
-        await middleware.InvokeAsync(httpContext, resolver.Object, accessor.Object, NullLogger<ManagementContextMiddleware>.Instance);
+        await middleware.InvokeAsync(httpContext, resolver.Object, accessor.Object, NullLogger<ManagementContextMiddleware>.Instance, Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>());
 
         Assert.True(nextCalled);
         Assert.True(capturedContext?.HasTenantAdministratorPortfolioWriteScope);
@@ -464,7 +464,7 @@ public sealed class ManagementContextMiddlewareTests
         var httpContext = CreateAuthenticatedContext($"/api/portfolios/{Guid.NewGuid()}");
         httpContext.Request.Method = HttpMethods.Put;
 
-        await middleware.InvokeAsync(httpContext, resolver.Object, accessor.Object, NullLogger<ManagementContextMiddleware>.Instance);
+        await middleware.InvokeAsync(httpContext, resolver.Object, accessor.Object, NullLogger<ManagementContextMiddleware>.Instance, Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>());
 
         Assert.False(nextCalled);
         Assert.Equal(StatusCodes.Status404NotFound, httpContext.Response.StatusCode);
@@ -503,7 +503,7 @@ public sealed class ManagementContextMiddlewareTests
             if (viewMode == "ReadOnlyViewAs")
                 httpContext.Request.Headers[ManagementContextMiddleware.PerspectiveHeader] = "PortfolioManager";
 
-            await middleware.InvokeAsync(httpContext, resolver.Object, accessor.Object, NullLogger<ManagementContextMiddleware>.Instance);
+            await middleware.InvokeAsync(httpContext, resolver.Object, accessor.Object, NullLogger<ManagementContextMiddleware>.Instance, Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>());
 
             Assert.False(nextCalled);
             Assert.Equal(expectedStatus, httpContext.Response.StatusCode);
@@ -552,7 +552,7 @@ public sealed class ManagementContextMiddlewareTests
             var httpContext = CreateAuthenticatedContext(path);
             httpContext.Request.Method = HttpMethods.Get;
 
-            await middleware.InvokeAsync(httpContext, resolver.Object, accessor.Object, NullLogger<ManagementContextMiddleware>.Instance);
+            await middleware.InvokeAsync(httpContext, resolver.Object, accessor.Object, NullLogger<ManagementContextMiddleware>.Instance, Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>());
 
             Assert.True(nextCalled);
         }
@@ -594,7 +594,7 @@ public sealed class ManagementContextMiddlewareTests
             var httpContext = CreateAuthenticatedContext(path);
             httpContext.Request.Method = HttpMethods.Post;
 
-            await middleware.InvokeAsync(httpContext, resolver.Object, accessor.Object, NullLogger<ManagementContextMiddleware>.Instance);
+            await middleware.InvokeAsync(httpContext, resolver.Object, accessor.Object, NullLogger<ManagementContextMiddleware>.Instance, Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>());
 
             Assert.False(nextCalled);
             Assert.Equal(StatusCodes.Status403Forbidden, httpContext.Response.StatusCode);

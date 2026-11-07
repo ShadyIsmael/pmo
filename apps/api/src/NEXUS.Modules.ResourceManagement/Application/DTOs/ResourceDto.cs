@@ -21,19 +21,19 @@ public class ResourceDto
     public string? BusinessUnitName { get; set; }
     public Guid? DepartmentId { get; set; }
     public string? DepartmentName { get; set; }
-    public Guid? TeamId { get; set; }
     public Guid? PrimaryOrganizationalUnitId { get; set; }
     public string? PrimaryOrganizationalUnitName { get; set; }
     public string? PrimaryOrganizationalUnitCode { get; set; }
     public Guid? PrimaryManagerResourceId { get; set; }
     public string? PrimaryManagerResourceName { get; set; }
-    public string? TeamName { get; set; }
     public Guid? LocationId { get; set; }
     public string? LocationName { get; set; }
     public Guid? VendorId { get; set; }
     public string? VendorName { get; set; }
     public Guid? BaseCalendarId { get; set; }
     public string? BaseCalendarName { get; set; }
+    public decimal? HoursPerDay { get; set; }
+    public decimal? HoursPerWeek { get; set; }
     public string? Timezone { get; set; }
     public decimal? UtilizationTarget { get; set; }
     public decimal? CurrentUtilization { get; set; }
@@ -51,6 +51,8 @@ public class ResourceBaseCalendarDto
     public Guid Id { get; set; }
     public string Name { get; set; } = string.Empty;
     public bool IsDefault { get; set; }
+    public bool IsConfigured { get; set; }
+    public int WorkingDaysPerWeek { get; set; }
 }
 
 public sealed class ResourceReferenceDataDto
@@ -112,11 +114,12 @@ public class CreateResourceDto
     public DateTime? DateOfJoining { get; set; }
     public Guid? BusinessUnitId { get; set; }
     public Guid? DepartmentId { get; set; }
-    public Guid? TeamId { get; set; }
     public Guid? PrimaryOrganizationalUnitId { get; set; }
     public Guid? LocationId { get; set; }
     public Guid? VendorId { get; set; }
     public Guid? BaseCalendarId { get; set; }
+    public decimal? HoursPerDay { get; set; }
+    public decimal? HoursPerWeek { get; set; }
     public string? Timezone { get; set; }
     public decimal? UtilizationTarget { get; set; }
     public string? Notes { get; set; }
@@ -140,11 +143,14 @@ public class UpdateResourceDto
     public DateTime? DateOfJoining { get; set; }
     public Guid? BusinessUnitId { get; set; }
     public Guid? DepartmentId { get; set; }
-    public Guid? TeamId { get; set; }
     public Guid? PrimaryOrganizationalUnitId { get; set; }
     public Guid? LocationId { get; set; }
     public Guid? VendorId { get; set; }
     public Guid? BaseCalendarId { get; set; }
+    public decimal? HoursPerDay { get; set; }
+    public decimal? HoursPerWeek { get; set; }
+    public bool ClearHoursPerDay { get; set; }
+    public bool ClearHoursPerWeek { get; set; }
     public string? Timezone { get; set; }
     public decimal? UtilizationTarget { get; set; }
     public string? Notes { get; set; }

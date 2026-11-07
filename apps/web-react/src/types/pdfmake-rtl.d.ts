@@ -1,6 +1,7 @@
 declare module "pdfmake-rtl/build/pdfmake.min.js" {
   interface PdfDocument {
     getBlob(): Promise<Blob>;
+    print(): void;
   }
 
   interface PdfMake {

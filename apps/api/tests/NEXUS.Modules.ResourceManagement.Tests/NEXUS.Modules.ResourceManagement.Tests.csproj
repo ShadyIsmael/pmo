@@ -5,17 +5,23 @@
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <FocusedMinimalSeed Condition="'$(FocusedMinimalSeed)' == ''">false</FocusedMinimalSeed>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.5.0">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <PackageReference Include="Moq" Version="4.20.0" />
+    <PackageReference Include="Moq" Version="4.20.72" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.10" />
     <PackageReference Include="FluentAssertions" Version="6.12.0" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(FocusedMinimalSeed)' == 'true'">
+    <Compile Remove="**\*.cs" />
+    <Compile Include="SeedDataProviderTests.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\NEXUS.Modules.ResourceManagement\NEXUS.Modules.ResourceManagement.csproj" />
@@ -23,5 +29,16 @@
     <ProjectReference Include="..\..\src\NEXUS.Modules.Organization\NEXUS.Modules.Organization.csproj" />
     <ProjectReference Include="..\..\src\NEXUS.Modules.ProjectManagement\NEXUS.Modules.ProjectManagement.csproj" />
     <ProjectReference Include="..\..\src\NEXUS.Persistence\NEXUS.Persistence.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(FocusedMinimalSeed)' == 'true'">
+    <ProjectReference Remove="@(ProjectReference)" />
+    <ProjectReference Include="..\..\src\NEXUS.Persistence\NEXUS.Persistence.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.SharedKernel\NEXUS.SharedKernel.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.Identity\NEXUS.Modules.Identity.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.Organization\NEXUS.Modules.Organization.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.ProjectManagement\NEXUS.Modules.ProjectManagement.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.ResourceManagement\NEXUS.Modules.ResourceManagement.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.RiskManagement\NEXUS.Modules.RiskManagement.csproj" />
   </ItemGroup>
 </Project>

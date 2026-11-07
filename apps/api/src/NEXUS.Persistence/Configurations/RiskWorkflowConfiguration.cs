@@ -10,11 +10,16 @@ public sealed class RiskActionConfiguration : IEntityTypeConfiguration<RiskActio
     {
         builder.ToTable("RiskActions");
         builder.HasKey(action => action.Id);
+        builder.Property(action => action.PublicId).HasDefaultValueSql("NEWID()").IsRequired();
         builder.Property(action => action.Title).HasMaxLength(300).IsRequired();
         builder.Property(action => action.Description).HasMaxLength(4000).IsRequired();
         builder.Property(action => action.Status).HasConversion<string>().HasMaxLength(30).IsRequired();
         builder.Property(action => action.RowVersion).IsRowVersion();
         builder.HasIndex(action => new { action.TenantId, action.RiskId, action.SortOrder });
+        builder.HasIndex(action => new { action.TenantId, action.PublicId })
+            .IsUnique()
+            .HasFilter("[IsDeleted] = 0")
+            .HasDatabaseName("IX_RiskActions_Tenant_PublicId");
         builder.HasOne(action => action.Risk).WithMany(risk => risk.Actions).HasForeignKey(action => action.RiskId).OnDelete(DeleteBehavior.Cascade);
     }
 }

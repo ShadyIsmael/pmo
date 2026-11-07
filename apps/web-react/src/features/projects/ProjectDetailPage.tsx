@@ -1,5 +1,5 @@
 import * as React from "react";
-import { useLocation, useParams, Outlet } from "react-router-dom";
+import { useLocation, useParams, Outlet, useSearchParams } from "react-router-dom";
 import { AlertTriangle } from "lucide-react";
 import { useProjectHandoverCapabilities, useProjectHandoverRequests, useProjectOverview, useProjectShell } from "./api/projects";
 import { ProjectHeader } from "./components/ProjectHeader";
@@ -15,11 +15,26 @@ import { hasPermission, Permissions } from "@lib/permissions";
 export function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
   const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { t } = useI18n();
   const { user } = useAuth();
   const { canMutate, effectiveReadOnly } = useManagement();
   const [changeRequestOpen, setChangeRequestOpen] = React.useState(false);
   const [handoverOpen, setHandoverOpen] = React.useState(false);
+  const [projectSettingsOpen, setProjectSettingsOpen] = React.useState(false);
+  const openSettingsRequested = searchParams.get("openSettings") === "1";
+
+  React.useEffect(() => {
+    setProjectSettingsOpen(false);
+  }, [id]);
+
+  React.useEffect(() => {
+    if (!openSettingsRequested) return;
+    setProjectSettingsOpen(true);
+    const nextSearchParams = new URLSearchParams(searchParams);
+    nextSearchParams.delete("openSettings");
+    setSearchParams(nextSearchParams, { replace: true });
+  }, [openSettingsRequested, searchParams, setSearchParams]);
 
   // VISIBLE-FIRST: shell only on detail mount. Each tab fetches its own data when active.
   const shellQuery = useProjectShell(id ?? "", Boolean(id));
@@ -69,7 +84,9 @@ export function ProjectDetailPage() {
         healthOverride={overviewIsActive ? overviewQuery.data?.statusReports.latestPublishedReport?.overallHealth : undefined}
         onChangeRequest={overviewIsActive && canManageChangeRequests ? () => setChangeRequestOpen(true) : undefined}
         onHandover={overviewIsActive && canManageHandovers ? () => setHandoverOpen(true) : undefined}
-        canInitiateHandover={overviewIsActive && canManageHandovers}
+        canInitiateHandover={canManageHandovers}
+        projectSettingsOpen={projectSettingsOpen}
+        onProjectSettingsOpenChange={setProjectSettingsOpen}
       />
       <Outlet context={{ projectId: id!, project }} />
       {overviewIsActive && canManageChangeRequests ? <ProjectChangeRequestActionSheet open={changeRequestOpen} onOpenChange={setChangeRequestOpen} project={project} /> : null}

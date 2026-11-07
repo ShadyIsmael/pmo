@@ -15,6 +15,7 @@ public sealed class CostUtilizationAnalyticsService : ICostUtilizationAnalyticsS
     private readonly IActualWorkCostLookup _actualWork;
     private readonly IPlannedWorkCostLookup _plannedWork;
     private readonly IProjectReferenceLookup _projects;
+    private readonly ICostUtilizationActivityLookup _activityLookup;
     private readonly IManagementContextAccessor _managementContext;
     private readonly IManagementScopeResolver _scopeResolver;
     private readonly IHttpContextAccessor _http;
@@ -25,6 +26,7 @@ public sealed class CostUtilizationAnalyticsService : ICostUtilizationAnalyticsS
         IActualWorkCostLookup actualWork,
         IPlannedWorkCostLookup plannedWork,
         IProjectReferenceLookup projects,
+        ICostUtilizationActivityLookup activityLookup,
         IManagementContextAccessor managementContext,
         IManagementScopeResolver scopeResolver,
         IHttpContextAccessor http,
@@ -34,10 +36,23 @@ public sealed class CostUtilizationAnalyticsService : ICostUtilizationAnalyticsS
         _actualWork = actualWork;
         _plannedWork = plannedWork;
         _projects = projects;
+        _activityLookup = activityLookup;
         _managementContext = managementContext;
         _scopeResolver = scopeResolver;
         _http = http;
         _calculator = calculator;
+    }
+
+    public async Task<Result<CostUtilizationReportDto>> GetForExportAsync(
+        CostUtilizationFilterDto filter,
+        Guid actorId,
+        Guid tenantId,
+        CancellationToken cancellationToken = default)
+    {
+        if (_http.HttpContext?.User.HasClaim("permission", "CostUtilization.Export") != true)
+            return Result<CostUtilizationReportDto>.Failure(Error.Forbidden("CostUtilization.Export is required to export Cost & Utilization."));
+
+        return await GetAsync(filter, actorId, tenantId, cancellationToken);
     }
 
     public async Task<Result<CostUtilizationReportDto>> GetAsync(
@@ -46,32 +61,78 @@ public sealed class CostUtilizationAnalyticsService : ICostUtilizationAnalyticsS
         Guid tenantId,
         CancellationToken cancellationToken = default)
     {
+        if (_http.HttpContext?.User.HasClaim("permission", "Resource.View") != true)
+            return Result<CostUtilizationReportDto>.Failure(Error.Forbidden("Resource.View is required to view Cost & Utilization."));
+
         var from = (filter.From ?? DateTime.UtcNow.Date.AddDays(-29)).Date;
         var to = (filter.To ?? DateTime.UtcNow.Date).Date;
         if (to < from) return Result<CostUtilizationReportDto>.Failure(Error.Validation("The analytics end date must be on or after the start date"));
         if ((to - from).TotalDays + 1 > MaxReportDays)
             return Result<CostUtilizationReportDto>.Failure(Error.Validation($"The analytics period cannot exceed {MaxReportDays} days"));
 
-        var managementScope = _managementContext.Current?.Scope;
-        if (filter.ProjectId.HasValue && managementScope is not null && managementScope.ProjectIds.Count > 0 && !managementScope.ProjectIds.Contains(filter.ProjectId.Value))
+        var management = _managementContext.Current;
+        if (management is not null && (management.TenantId != tenantId || management.UserId != actorId))
+            return Result<CostUtilizationReportDto>.Failure(Error.Forbidden("The management context does not match the current Tenant and user."));
+
+        var managementScope = management?.Scope;
+        if (filter.ProjectId.HasValue
+            && managementScope?.ProjectIds.Contains(filter.ProjectId.Value) != true
+            && !await _scopeResolver.CanAccessProjectAsync(actorId, tenantId, filter.ProjectId.Value, cancellationToken))
         {
-            if (!await _scopeResolver.CanAccessProjectAsync(actorId, tenantId, filter.ProjectId.Value, cancellationToken))
-                return Result<CostUtilizationReportDto>.Failure(Error.Forbidden("The Project is outside your management scope"));
+            return Result<CostUtilizationReportDto>.Failure(Error.Forbidden("The Project is outside your management scope"));
         }
 
-        IReadOnlyCollection<Guid>? scopedProjectIds = filter.ProjectId.HasValue
+        HashSet<Guid>? teamResourceIds = null;
+        if (filter.TeamId.HasValue)
+        {
+            if (_http.HttpContext?.User.HasClaim("permission", "Team.View") != true)
+                return Result<CostUtilizationReportDto>.Failure(Error.Forbidden("Team.View is required to filter by Team"));
+
+            var teamId = filter.TeamId.Value;
+            var teamExists = await _context.Set<Team>()
+                .AsNoTracking()
+                .AnyAsync(team => team.Id == teamId && team.TenantId == tenantId && !team.IsDeleted && team.IsActive, cancellationToken);
+            if (!teamExists)
+                return Result<CostUtilizationReportDto>.Failure(Error.NotFound("Team not found"));
+
+            teamResourceIds = await _context.Set<TeamMember>()
+                .AsNoTracking()
+                .Where(member => member.TeamId == teamId
+                    && member.TenantId == tenantId
+                    && member.IsActive
+                    && !member.IsDeleted
+                    && member.Team.TenantId == tenantId
+                    && !member.Team.IsDeleted
+                    && member.Team.IsActive
+                    && member.EffectiveFrom.Date <= to
+                    && (!member.EffectiveTo.HasValue || member.EffectiveTo.Value.Date >= from))
+                .Select(member => member.ResourceId)
+                .Distinct()
+                .ToHashSetAsync(cancellationToken);
+
+            if (teamResourceIds.Count == 0)
+                return Result<CostUtilizationReportDto>.Success(EmptyReport(from, to, CanViewCosts()));
+        }
+
+        if (!filter.ProjectId.HasValue && (managementScope is null || managementScope.ProjectIds.Count == 0))
+            return Result<CostUtilizationReportDto>.Success(EmptyReport(from, to, CanViewCosts()));
+
+        IReadOnlyCollection<Guid> scopedProjectIds = filter.ProjectId.HasValue
             ? new[] { filter.ProjectId.Value }
-            : managementScope?.ProjectIds.Count > 0 ? managementScope.ProjectIds.ToArray() : null;
+            : managementScope!.ProjectIds.ToArray();
 
         var actualSlices = await _actualWork.GetAsync(
             tenantId, from, to, projectIds: scopedProjectIds, projectRoleId: filter.ProjectRoleId, cancellationToken: cancellationToken);
         actualSlices = actualSlices
             .Where(slice => (!filter.PlanActivityId.HasValue || slice.PlanActivityId == filter.PlanActivityId)
-                && (!filter.WorkItemId.HasValue || slice.WorkItemId == filter.WorkItemId))
+                && (!filter.WorkItemId.HasValue || slice.WorkItemId == filter.WorkItemId)
+                && (teamResourceIds is null || teamResourceIds.Contains(slice.ResourceId)))
             .ToList();
 
         var plannedAssignments = await _plannedWork.GetPlannedAsync(
             tenantId, from, to, projectIds: scopedProjectIds, projectRoleId: filter.ProjectRoleId, cancellationToken: cancellationToken);
+        if (teamResourceIds is not null)
+            plannedAssignments = plannedAssignments.Where(item => teamResourceIds.Contains(item.ResourceId)).ToList();
 
         var allocationQuery = _context.Set<ResourceAllocation>()
             .AsNoTracking()
@@ -81,6 +142,7 @@ public sealed class CostUtilizationAnalyticsService : ICostUtilizationAnalyticsS
                 && allocation.StartDate.Date <= to
                 && allocation.EndDate.Date >= from);
         if (filter.ResourceId.HasValue) allocationQuery = allocationQuery.Where(allocation => allocation.ResourceId == filter.ResourceId.Value);
+        if (teamResourceIds is not null) allocationQuery = allocationQuery.Where(allocation => teamResourceIds.Contains(allocation.ResourceId));
         if (filter.VendorId.HasValue) allocationQuery = allocationQuery.Where(allocation => allocation.Resource.VendorId == filter.VendorId.Value);
         if (filter.ProjectId.HasValue) allocationQuery = allocationQuery.Where(allocation => allocation.ProjectId == filter.ProjectId.Value);
         if (scopedProjectIds is { Count: > 0 }) allocationQuery = allocationQuery.Where(allocation => allocation.ProjectId.HasValue && scopedProjectIds.Contains(allocation.ProjectId.Value));
@@ -100,19 +162,60 @@ public sealed class CostUtilizationAnalyticsService : ICostUtilizationAnalyticsS
             .AsNoTracking()
             .Where(resource => resource.TenantId == tenantId && !resource.IsDeleted && resource.IsActive);
         if (filter.ResourceId.HasValue) resourceQuery = resourceQuery.Where(resource => resource.Id == filter.ResourceId.Value);
+        if (teamResourceIds is not null) resourceQuery = resourceQuery.Where(resource => teamResourceIds.Contains(resource.Id));
         if (filter.VendorId.HasValue) resourceQuery = resourceQuery.Where(resource => resource.VendorId == filter.VendorId.Value);
-        if (filter.DepartmentId.HasValue) resourceQuery = resourceQuery.Where(resource => resource.DepartmentId == filter.DepartmentId.Value);
 
         if (managementScope is not null && managementScope.ProjectIds.Count > 0)
         {
             var ownResourceIds = await resourceQuery.Where(resource => resource.UserId == actorId).Select(resource => resource.Id).ToListAsync(cancellationToken);
             resourceIds.UnionWith(ownResourceIds);
-            if (resourceIds.Count == 0) return Result<CostUtilizationReportDto>.Success(EmptyReport(from, to, CanViewCosts()));
-            resourceQuery = resourceQuery.Where(resource => resourceIds.Contains(resource.Id));
         }
+        if (resourceIds.Count == 0) return Result<CostUtilizationReportDto>.Success(EmptyReport(from, to, CanViewCosts()));
+
+        // Filter options come only from resources already included by the authorized
+        // report scope. Keep the selected DepartmentId out of this projection so the
+        // remaining eligible options stay available while one department is selected.
+        var departmentResourceQuery = _context.Set<Resource>()
+            .AsNoTracking()
+            .Where(resource => resource.TenantId == tenantId
+                && !resource.IsDeleted
+                && resource.IsActive
+                && resourceIds.Contains(resource.Id)
+                && resource.DepartmentId.HasValue);
+        if (filter.ResourceId.HasValue)
+            departmentResourceQuery = departmentResourceQuery.Where(resource => resource.Id == filter.ResourceId.Value);
+        if (teamResourceIds is not null)
+            departmentResourceQuery = departmentResourceQuery.Where(resource => teamResourceIds.Contains(resource.Id));
+        if (filter.VendorId.HasValue)
+            departmentResourceQuery = departmentResourceQuery.Where(resource => resource.VendorId == filter.VendorId.Value);
+
+        var departmentIdsForOptions = await departmentResourceQuery
+            .Select(resource => resource.DepartmentId!.Value)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+        IReadOnlyList<CostUtilizationDepartmentOptionDto> departmentOptions = departmentIdsForOptions.Count == 0
+            ? []
+            : await _context.Set<Department>()
+                .AsNoTracking()
+                .Where(department => department.TenantId == tenantId
+                    && !department.IsDeleted
+                    && department.IsActive
+                    && departmentIdsForOptions.Contains(department.Id))
+                .OrderBy(department => department.Name)
+                .ThenBy(department => department.Id)
+                .Select(department => new CostUtilizationDepartmentOptionDto
+                {
+                    DepartmentId = department.Id,
+                    Name = department.Name
+                })
+                .ToListAsync(cancellationToken);
+
+        if (filter.DepartmentId.HasValue)
+            resourceQuery = resourceQuery.Where(resource => resource.DepartmentId == filter.DepartmentId.Value);
+        resourceQuery = resourceQuery.Where(resource => resourceIds.Contains(resource.Id));
 
         var resources = await resourceQuery.OrderBy(resource => resource.Name).ToListAsync(cancellationToken);
-        if (resources.Count == 0) return Result<CostUtilizationReportDto>.Success(EmptyReport(from, to, CanViewCosts()));
+        if (resources.Count == 0) return Result<CostUtilizationReportDto>.Success(EmptyReport(from, to, CanViewCosts(), departmentOptions));
 
         var resourceById = resources.ToDictionary(resource => resource.Id);
 
@@ -138,11 +241,10 @@ public sealed class CostUtilizationAnalyticsService : ICostUtilizationAnalyticsS
         var calendars = await _context.Set<WorkingCalendar>()
             .AsNoTracking()
             .Include(calendar => calendar.Holidays)
+            .Include(calendar => calendar.DayRules)
             .Where(calendar => calendar.TenantId == tenantId && !calendar.IsDeleted)
             .ToListAsync(cancellationToken);
-        var defaultCalendar = calendars.FirstOrDefault(calendar => calendar.IsDefault)
-            ?? calendars.FirstOrDefault()
-            ?? new WorkingCalendar();
+        var defaultCalendar = calendars.FirstOrDefault(calendar => calendar.IsDefault && calendar.HasValidSchedule);
         var calendarById = calendars.ToDictionary(calendar => calendar.Id);
 
         var resourceCalendars = await _context.Set<ResourceCalendar>()
@@ -172,9 +274,11 @@ public sealed class CostUtilizationAnalyticsService : ICostUtilizationAnalyticsS
             .Select(offset =>
             {
                 var date = from.AddDays(offset).Date;
-                var calendar = resource.BaseCalendarId.HasValue && calendarById.TryGetValue(resource.BaseCalendarId.Value, out var selectedCalendar)
-                    ? selectedCalendar
-                    : defaultCalendar;
+                var calendar = resource.BaseCalendarId.HasValue
+                    && calendarById.TryGetValue(resource.BaseCalendarId.Value, out var selectedCalendar)
+                    && selectedCalendar.HasValidSchedule
+                        ? selectedCalendar
+                        : defaultCalendar;
                 return new DayState
                 {
                     Resource = resource,
@@ -254,6 +358,15 @@ public sealed class CostUtilizationAnalyticsService : ICostUtilizationAnalyticsS
             ? new Dictionary<Guid, string>()
             : await _context.Set<Lookup>().AsNoTracking().Where(role => roleIds.Contains(role.Id) && role.Category == "ProjectRole")
                 .ToDictionaryAsync(role => role.Id, role => string.IsNullOrWhiteSpace(role.NameEn) ? role.Name : role.NameEn, cancellationToken);
+        var includedPlannedAssignments = plannedAssignments
+            .Where(item => !filter.PlanActivityId.HasValue || item.PlanActivityId == filter.PlanActivityId.Value)
+            .ToList();
+        var activityReferences = await _activityLookup.GetNamesAsync(
+            tenantId,
+            includedPlannedAssignments.Select(item => item.PlanActivityId)
+                .Concat(filteredActual.Where(item => item.PlanActivityId.HasValue).Select(item => item.PlanActivityId!.Value)),
+            filteredActual.Where(item => item.WorkItemId.HasValue).Select(item => item.WorkItemId!.Value),
+            cancellationToken);
 
         var operational = new MetricAccumulator();
         var currencyMetrics = new Dictionary<string, MetricAccumulator>(StringComparer.OrdinalIgnoreCase);
@@ -369,7 +482,8 @@ public sealed class CostUtilizationAnalyticsService : ICostUtilizationAnalyticsS
                 CostProfileMissing = dayResult.CostProfileMissing,
                 CostCoverageComplete = dayResult.CostCoverageComplete,
                 UncostedActualHours = dayResult.UncostedActualHours,
-                UncostedPlannedHours = dayResult.UncostedPlannedHours
+                UncostedPlannedHours = dayResult.UncostedPlannedHours,
+                Activities = BuildActivities(day, activityReferences, projectNames)
             });
         }
 
@@ -391,6 +505,7 @@ public sealed class CostUtilizationAnalyticsService : ICostUtilizationAnalyticsS
                 VendorName = GetVendorName(resourceById[item.Key.ResourceId], vendorNames),
                 Metrics = item.Value.ToDto(item.Key.Currency)
             }).ToList(),
+            Departments = departmentOptions,
             Projects = BuildAttributions(projectMetrics, projectNames, "Unassigned Project", projectReferences),
             Vendors = vendorMetrics.OrderBy(item => item.Key.Currency).ThenBy(item => item.Key.Id).Select(item => new CostUtilizationAttributionDto
             {
@@ -481,6 +596,49 @@ public sealed class CostUtilizationAnalyticsService : ICostUtilizationAnalyticsS
         }
     }
 
+    private static IReadOnlyList<CostUtilizationActivityDto> BuildActivities(
+        DayState day,
+        CostUtilizationActivityReferences references,
+        IReadOnlyDictionary<Guid, string> projectNames)
+    {
+        var grouped = new Dictionary<(Guid? ActivityId, Guid? ProjectId), ActivityAccumulator>();
+        foreach (var line in day.PlannedLines)
+        {
+            var key = (line.ActivityId, line.ProjectId);
+            if (!grouped.TryGetValue(key, out var item)) grouped[key] = item = new ActivityAccumulator();
+            item.PlannedHours += line.Hours;
+        }
+
+        foreach (var entry in day.ActualEntries)
+        {
+            var key = (entry.PlanActivityId, (Guid?)entry.ProjectId);
+            if (!grouped.TryGetValue(key, out var item)) grouped[key] = item = new ActivityAccumulator();
+            item.ActualHours += Math.Max(0m, entry.ActualSeconds / 3600m);
+            if (entry.WorkItemId.HasValue && references.WorkItems.TryGetValue(entry.WorkItemId.Value, out var title)
+                && !string.IsNullOrWhiteSpace(title))
+                item.WorkItemTitles.Add(title);
+        }
+
+        return grouped
+            .OrderBy(item => item.Key.ActivityId.HasValue
+                ? references.PlanActivities.GetValueOrDefault(item.Key.ActivityId.Value) ?? string.Empty
+                : string.Empty, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(item => item.Key.ProjectId)
+            .Select(item => new CostUtilizationActivityDto
+            {
+                PlanActivityId = item.Key.ActivityId,
+                ActivityName = item.Key.ActivityId.HasValue
+                    ? references.PlanActivities.GetValueOrDefault(item.Key.ActivityId.Value)
+                    : null,
+                WorkItemTitles = item.Value.WorkItemTitles.OrderBy(title => title, StringComparer.OrdinalIgnoreCase).ToList(),
+                ProjectId = item.Key.ProjectId,
+                ProjectName = item.Key.ProjectId.HasValue ? projectNames.GetValueOrDefault(item.Key.ProjectId.Value) : null,
+                PlannedHours = item.Value.PlannedHours,
+                ActualHours = item.Value.ActualHours
+            })
+            .ToList();
+    }
+
     private static void AddPlannedHours(
         Dictionary<(Guid ResourceId, DateTime Date), DayState> days,
         Guid resourceId,
@@ -542,36 +700,33 @@ public sealed class CostUtilizationAnalyticsService : ICostUtilizationAnalyticsS
     private static decimal CalculateCapacity(
         Resource resource,
         DateTime date,
-        WorkingCalendar calendar,
+        WorkingCalendar? calendar,
         Dictionary<(Guid ResourceId, DateTime Date), List<ResourceCalendar>> exceptions,
         Dictionary<Guid, List<Contract>> contracts)
     {
         var activeContract = contracts.GetValueOrDefault(resource.Id)?.FirstOrDefault(contract => contract.StartDate.Date <= date.Date && (!contract.EndDate.HasValue || contract.EndDate.Value.Date >= date.Date));
         if (contracts.ContainsKey(resource.Id) && activeContract is null) return 0m;
-        if (IsWeekend(date, calendar.WorkingDaysPerWeek)) return 0m;
-        if ((calendar.Holidays ?? []).Any(holiday => holiday.Date.Date == date.Date)) return 0m;
+        if (calendar?.HasValidSchedule != true) return 0m;
 
-        var productiveHours = Math.Max(0m, calendar.ProductiveHoursPerDay);
-        if (exceptions.TryGetValue((resource.Id, date.Date), out var resourceExceptions))
-        {
-            var deduction = resourceExceptions
-                .Where(item => item.DayType is "Leave" or "NonWorking")
-                .Sum(item => item.AvailableHours ?? productiveHours);
-            productiveHours = Math.Max(0m, productiveHours - deduction);
-        }
-        return productiveHours;
+        ResourceCalendar? exception = exceptions.TryGetValue((resource.Id, date.Date), out var resourceExceptions)
+            ? resourceExceptions.OrderByDescending(item => item.UpdatedAt ?? item.CreatedAt).First()
+            : null;
+        return ResourceWorkingCapacityCalculator.GetAvailableDailyCapacity(resource, calendar, calendar, date, exception);
     }
 
     private static decimal GetCompensationPeriodCapacity(
         DayState day,
         IReadOnlyDictionary<Guid, WorkingCalendar> calendarById,
-        WorkingCalendar defaultCalendar,
+        WorkingCalendar? defaultCalendar,
         Dictionary<(Guid ResourceId, DateTime Date), List<ResourceCalendar>> exceptions,
         Dictionary<Guid, List<Contract>> contracts)
     {
-        var calendar = day.Resource.BaseCalendarId.HasValue && calendarById.TryGetValue(day.Resource.BaseCalendarId.Value, out var selectedCalendar)
-            ? selectedCalendar
-            : defaultCalendar;
+        var calendar = day.Resource.BaseCalendarId.HasValue
+            && calendarById.TryGetValue(day.Resource.BaseCalendarId.Value, out var selectedCalendar)
+            && selectedCalendar.HasValidSchedule
+                ? selectedCalendar
+                : defaultCalendar;
+        if (calendar?.HasValidSchedule != true) return 0m;
         if (day.Profile?.CompensationType == CompensationType.Weekly)
         {
             var monday = day.WorkDate.AddDays(-(((int)day.WorkDate.DayOfWeek + 6) % 7));
@@ -585,9 +740,6 @@ public sealed class CostUtilizationAnalyticsService : ICostUtilizationAnalyticsS
         }
         return 1m;
     }
-
-    private static bool IsWeekend(DateTime date, int workingDaysPerWeek)
-        => workingDaysPerWeek >= 6 ? date.DayOfWeek == DayOfWeek.Sunday : date.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday;
 
     private static ResourceCostProfile? ResolveProfile(
         Guid resourceId,
@@ -606,12 +758,14 @@ public sealed class CostUtilizationAnalyticsService : ICostUtilizationAnalyticsS
     }
 
     private bool CanViewCosts()
-        => _http.HttpContext?.User.HasClaim("permission", "Resource.ViewCostRate") == true
-            || _http.HttpContext?.User.HasClaim("permission", "Resource.ManageRates") == true
-            || _http.HttpContext?.User.HasClaim("permission", "Resource.Manage") == true;
+        => _http.HttpContext?.User.HasClaim("permission", "Resource.ViewCostRate") == true;
 
-    private static CostUtilizationReportDto EmptyReport(DateTime from, DateTime to, bool canViewCosts)
-        => new() { From = from, To = to, CanViewCosts = canViewCosts };
+    private static CostUtilizationReportDto EmptyReport(
+        DateTime from,
+        DateTime to,
+        bool canViewCosts,
+        IReadOnlyList<CostUtilizationDepartmentOptionDto>? departments = null)
+        => new() { From = from, To = to, CanViewCosts = canViewCosts, Departments = departments ?? [] };
 
     private static CostUtilizationReportDto RedactCosts(CostUtilizationReportDto report)
     {
@@ -642,10 +796,11 @@ public sealed class CostUtilizationAnalyticsService : ICostUtilizationAnalyticsS
             Operational = Redact(report.Operational),
             ByCurrency = report.ByCurrency.Select(Redact).ToList(),
             Resources = report.Resources.Select(resource => new CostUtilizationResourceDto { ResourceId = resource.ResourceId, ResourceName = resource.ResourceName, ResourceType = resource.ResourceType, VendorId = resource.VendorId, VendorName = resource.VendorName, Metrics = Redact(resource.Metrics) }).ToList(),
+            Departments = report.Departments,
             Projects = report.Projects.Select(project => new CostUtilizationAttributionDto { Id = project.Id, ProjectPublicId = project.ProjectPublicId, Name = project.Name, Currency = project.Currency, PlannedHours = project.PlannedHours, ActualHours = project.ActualHours, RegularHours = project.RegularHours, ExcessHours = project.ExcessHours, OvertimeHours = project.OvertimeHours, CostProfileMissing = project.CostProfileMissing, CostCoverageComplete = project.CostCoverageComplete }).ToList(),
             Vendors = report.Vendors.Select(vendor => new CostUtilizationAttributionDto { Id = vendor.Id, Name = vendor.Name, Currency = vendor.Currency, PlannedHours = vendor.PlannedHours, ActualHours = vendor.ActualHours, RegularHours = vendor.RegularHours, ExcessHours = vendor.ExcessHours, OvertimeHours = vendor.OvertimeHours, CostProfileMissing = vendor.CostProfileMissing, CostCoverageComplete = vendor.CostCoverageComplete }).ToList(),
             Roles = report.Roles.Select(role => new CostUtilizationAttributionDto { Id = role.Id, Name = role.Name, Currency = role.Currency, PlannedHours = role.PlannedHours, ActualHours = role.ActualHours, RegularHours = role.RegularHours, ExcessHours = role.ExcessHours, OvertimeHours = role.OvertimeHours, CostProfileMissing = role.CostProfileMissing, CostCoverageComplete = role.CostCoverageComplete }).ToList(),
-            Daily = report.Daily.Select(day => new CostUtilizationDailyDto { ResourceId = day.ResourceId, ResourceName = day.ResourceName, WorkDate = day.WorkDate, Currency = day.Currency, CapacityHours = day.CapacityHours, PlannedHours = day.PlannedHours, ActualHours = day.ActualHours, RegularHours = day.RegularHours, PlanningGapHours = day.PlanningGapHours, ExecutionGapHours = day.ExecutionGapHours, UnusedCapacityHours = day.UnusedCapacityHours, ExcessHours = day.ExcessHours, OvertimeHours = day.OvertimeHours, PlannedUtilization = day.PlannedUtilization, ActualUtilization = day.ActualUtilization, CostProfileMissing = day.CostProfileMissing, CostCoverageComplete = day.CostCoverageComplete, UncostedActualHours = day.UncostedActualHours, UncostedPlannedHours = day.UncostedPlannedHours }).ToList(),
+            Daily = report.Daily.Select(day => new CostUtilizationDailyDto { ResourceId = day.ResourceId, ResourceName = day.ResourceName, WorkDate = day.WorkDate, Currency = day.Currency, CapacityHours = day.CapacityHours, PlannedHours = day.PlannedHours, ActualHours = day.ActualHours, RegularHours = day.RegularHours, PlanningGapHours = day.PlanningGapHours, ExecutionGapHours = day.ExecutionGapHours, UnusedCapacityHours = day.UnusedCapacityHours, ExcessHours = day.ExcessHours, OvertimeHours = day.OvertimeHours, PlannedUtilization = day.PlannedUtilization, ActualUtilization = day.ActualUtilization, CostProfileMissing = day.CostProfileMissing, CostCoverageComplete = day.CostCoverageComplete, UncostedActualHours = day.UncostedActualHours, UncostedPlannedHours = day.UncostedPlannedHours, Activities = day.Activities }).ToList(),
             Warnings = report.Warnings
         };
     }
@@ -682,6 +837,13 @@ public sealed class CostUtilizationAnalyticsService : ICostUtilizationAnalyticsS
     }
 
     private sealed record PlannedLine(Guid? ProjectId, Guid? ProjectRoleId, Guid? ActivityId, decimal Hours);
+
+    private sealed class ActivityAccumulator
+    {
+        public decimal PlannedHours;
+        public decimal ActualHours;
+        public HashSet<string> WorkItemTitles { get; } = new(StringComparer.OrdinalIgnoreCase);
+    }
 
     private sealed class MetricAccumulator
     {

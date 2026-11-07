@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@i18n/messages";
 import { MyWorkTimesheetsPage } from "@features/my-work/MyWorkTimesheetsPage";
+import { MemoryRouter } from "react-router-dom";
 
 const mocks = vi.hoisted(() => ({
   user: { id: "user-1", permissions: ["TimeTracking.ViewOwn", "TimeTracking.ManageOwn"] as string[] } as { id: string; permissions: string[] } | null,
@@ -32,7 +33,7 @@ const entry = {
 
 function renderPage(locale: "en" | "ar" = "en") {
   window.localStorage.setItem("nexus-locale", locale);
-  return render(<I18nProvider><MyWorkTimesheetsPage /></I18nProvider>);
+  return render(<MemoryRouter initialEntries={["/my-work/timesheets"]}><I18nProvider><MyWorkTimesheetsPage /></I18nProvider></MemoryRouter>);
 }
 
 describe("My Work time-tracking permission parity", () => {
@@ -59,6 +60,18 @@ describe("My Work time-tracking permission parity", () => {
     expect(screen.queryByRole("button", { name: "Add entry" })).not.toBeInTheDocument();
   });
 
+  it("does not treat a management permission as a substitute for a view permission", () => {
+    mocks.user = { id: "user-1", permissions: ["TimeTracking.ManageOwn", "TimeTracking.ManageTeam"] };
+
+    renderPage();
+
+    expect(mocks.useTimeEntries).toHaveBeenCalledWith(expect.any(Object), false);
+    expect(mocks.useTimeEntrySummary).toHaveBeenCalledWith(expect.any(Object), false);
+    expect(mocks.useProjects).toHaveBeenCalledWith(expect.any(Object), false);
+    expect(screen.getByRole("alert")).toHaveTextContent("You do not have permission to view time entries.");
+    expect(screen.queryByText("Core Modernization")).not.toBeInTheDocument();
+  });
+
   it("allows personal time entry actions with ManageOwn", () => {
     renderPage();
 
@@ -70,7 +83,7 @@ describe("My Work time-tracking permission parity", () => {
   });
 
   it("does not expose mixed personal/team row actions without ManageTeam", () => {
-    mocks.user = { id: "user-1", permissions: ["TimeTracking.ViewTeam", "TimeTracking.ManageOwn"] };
+    mocks.user = { id: "user-1", permissions: ["TimeTracking.ViewOwn", "TimeTracking.ViewTeam", "TimeTracking.ManageOwn"] };
 
     renderPage();
 

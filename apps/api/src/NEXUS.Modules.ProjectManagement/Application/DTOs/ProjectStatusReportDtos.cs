@@ -3,9 +3,19 @@ using NEXUS.SharedKernel;
 
 namespace NEXUS.Modules.ProjectManagement.Application.DTOs;
 
+public static class ProjectResourceUtilizationStatuses
+{
+    public const string Overallocated = "Overallocated";
+    public const string WithinCapacity = "WithinCapacity";
+    public const string NoAssignedWork = "NoAssignedWork";
+    public const string Unavailable = "Unavailable";
+}
+
 public sealed class ProjectStatusReportCurrentProgressDto
 {
     public decimal? ProjectPlanProgressPercent { get; init; }
+    public string ResourceUtilizationStatus { get; init; } = ProjectResourceUtilizationStatuses.Unavailable;
+    public decimal? ResourceUtilizationPercent { get; init; }
 }
 
 public sealed class ProjectStatusReportOverviewDto
@@ -46,6 +56,8 @@ public sealed class ProjectStatusReportDto : ProjectStatusReportListDto
     public string? KeyAchievements { get; init; }
     public string? ChallengesConcerns { get; init; }
     public string? NextPeriodPriorities { get; init; }
+    public string? ActionsNeeded { get; init; }
+    public string? SupportNeeded { get; init; }
     public Guid? PreparedByUserId { get; init; }
     public Guid? PublishedByUserId { get; init; }
     public string? PublishedByNameSnapshot { get; init; }
@@ -59,6 +71,11 @@ public sealed class ProjectStatusReportDto : ProjectStatusReportListDto
     public decimal? CommittedCostAmountSnapshot { get; init; }
     public decimal? ForecastCostAmountSnapshot { get; init; }
     public decimal? CostVarianceAmountSnapshot { get; init; }
+
+    public decimal? ActualPaidSnapshot { get; init; }
+    public decimal? OutstandingPlannedPaymentsSnapshot { get; init; }
+    public decimal? PaymentsDueWithinPeriodSnapshot { get; init; }
+    public decimal? RemainingUnpaidAtPeriodEndSnapshot { get; init; }
     public decimal? ScheduleVarianceDaysSnapshot { get; init; }
     public decimal? ScheduleVariancePercentSnapshot { get; init; }
     public Guid? BaselineIdAtReport { get; init; }
@@ -88,6 +105,8 @@ public class CreateProjectStatusReportDto
     public string? KeyAchievements { get; init; }
     public string? ChallengesConcerns { get; init; }
     public string? NextPeriodPriorities { get; init; }
+    public string? ActionsNeeded { get; init; }
+    public string? SupportNeeded { get; init; }
 }
 
 public sealed class UpdateProjectStatusReportDto : CreateProjectStatusReportDto

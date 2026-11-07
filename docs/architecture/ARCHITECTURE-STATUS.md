@@ -1,5 +1,9 @@
 # Architecture Status
 
+## Current Frontend Authority
+
+React/Vite is the only supported frontend. apps/web-react uses React Router, builds with Vite, runs locally on port 4100, and is served by nginx on Docker host port 4000.
+
 ---
 
 ## Overall Maturity: Foundation Phase
@@ -12,18 +16,14 @@ NEXUS PMO is in the **Foundation Phase** -- a functional shell with working dash
 
 | Metric | Value | Evidence |
 |--------|-------|----------|
-| **Framework** | Next.js 14 (App Router) | `apps/web/package.json:14` |
-| **Pages** | 57 page.tsx files | Glob scan of `apps/web/src/app/**/page.tsx` |
-| **UI Components** | 26 shadcn/ui components | `apps/web/src/components/ui/` directory listing |
-| **Data Source** | Mock data (`mock-data.ts`, 633 lines) | `apps/web/src/lib/mock-data.ts:1` -- `// @ts-nocheck - Mock data file; will be replaced by API calls` |
-| **Layout Components** | 4 (Sidebar, Header, Breadcrumbs, PageHeader) | `apps/web/src/components/layout/` |
-| **State Management** | TanStack React Query 5 (configured, no API fetching verified) | `package.json:42` |
-| **Charts** | Recharts | `package.json:44` |
-| **Forms** | React Hook Form + Zod | `package.json:39-41` |
-| **i18n** | next-intl (EN + AR) | `apps/web/src/messages/en.json`, `ar.json` |
-| **Theming** | next-themes (dark/light) | `package.json:46` |
-
----
+| Framework | React 18, Vite 6, React Router 6 | apps/web-react/package.json |
+| Routes | React Router route tree | apps/web-react/src/routes/AppRoutes.tsx |
+| UI | Shared React components and feature screens | apps/web-react/src/ |
+| API | Shared typed API client and endpoint map | apps/web-react/src/api/ |
+| State and data | TanStack React Query | apps/web-react/package.json |
+| Localization | English and Arabic message catalogs | apps/web-react/src/i18n/messages/ |
+| Local development | Vite on port 4100 | apps/web-react/vite.config.ts |
+| Docker | Static Vite build served by nginx on host port 4000 | apps/web-react/Dockerfile |
 
 ## Backend
 
@@ -42,7 +42,7 @@ NEXUS PMO is in the **Foundation Phase** -- a functional shell with working dash
 | Status | Count | Modules |
 |--------|-------|---------|
 | **Implemented** | 13 | Identity, Organization, Portfolio, ProjectManagement, WorkItems, ResourceManagement, CostManagement, RiskManagement, IssueManagement, Meetings, Approvals, Reporting, Audit |
-| **Partial** | 4 | Workflow Engine (entities exist, execution engine not verified), Notifications (in-app plus durable asynchronous Push foundation; Email deferred), Integrations (entities exist, no real sync adapters), AI Planning (entities exist, MockAIProvider) |
+| **Partial** | 5 | Workflow Engine (entities exist, execution engine not verified), Meetings (schema delivery, SMTP configuration, external-recipient authorization, and owner verification pending), Notifications (in-app, Push, and SMTP Email delivery require runtime configuration and verification), Integrations (entities exist, no real sync adapters), AI Planning (entities exist, MockAIProvider) |
 | **Mocked** | 0 | (All modules have at least structural code) |
 | **Placeholder** | 0 | (No module is completely empty) |
 | **Deferred** | 0 | |
@@ -56,10 +56,10 @@ NEXUS PMO is in the **Foundation Phase** -- a functional shell with working dash
 | **Schema** | Exists in EF Core entity configurations | `AppDbContext.cs:141-159` applies configurations |
 | **Migrations** | Development startup applies EF Core migrations, seed data, and workflow provisioning; `--skip-development-database-initialization` skips all three for read-only runtime checks | `Program.cs`, `Migrations/20261012110228_AddNotificationDeliveryFoundation.cs` |
 | **Provider** | SQL Server | `Program.cs:205` configures `UseSqlServer` |
-| **Seed data** | 591 lines, 8 users, 24 projects, 320 work items, etc. | `SeedDataProvider.cs` |
+| **Seed data** | Deterministic Development seed; a fresh identity bootstrap creates the protected tenant Admin account and role templates | `SeedDataProvider.cs` |
 | **Concurrency** | RowVersion (byte array) on BaseEntity | `BaseEntity.cs` |
 | **Soft delete** | Global query filter for ISoftDeletable | `AppDbContext.cs:162-164` |
-| **Tenant filter** | Global query filter for ITenantEntity (returns Guid.Empty) | `AppDbContext.cs:167-169` |
+| **Tenant filter** | Request-scoped authenticated tenant claim; fails closed on invalid/missing request context | `AppDbContext.cs` |
 
 ---
 
@@ -68,13 +68,13 @@ NEXUS PMO is in the **Foundation Phase** -- a functional shell with working dash
 | Aspect | Status | Evidence |
 |--------|--------|----------|
 | **JWT Bearer** | Implemented | `Program.cs:59-73` |
-| **Demo auth** | Implemented with 8 accounts | `DemoAuthService.cs`, `SeedDataProvider.cs` |
-| **Password** | BCrypt hashed (`Demo123!`) | `SeedDataProvider.cs:39` |
-| **Role switching** | Endpoint exists | `POST /api/auth/switch-role` |
-| **Permission claims in JWT** | Implemented | `DemoAuthService.cs` adds `"permission"` claims for each role permission |
-| **Authorization policies** | 5 Resource policies configured | `Program.cs:75-84` — `Resource.View`, `Resource.Assign`, `Resource.Manage`, `Resource.ViewCostRate`, `Resource.EditCostRate` |
+| **Development bootstrap** | A fresh seed creates the tenant Admin account only; role templates are not shared demo login accounts | `DemoAuthService.cs`, `SeedDataProvider.cs` |
+| **Password** | ASP.NET Core `PasswordHasher<User>` (seeded development credential defined in `SeedDataProvider`) | `SeedDataProvider.cs` |
+| **Role switching** | Compatibility endpoint returns the current user and does not switch roles | `AuthController.cs`, `DemoAuthService.cs` |
+| **Permission claims in JWT** | Login-time snapshot refreshed from persisted effective grants and direct overrides on every authenticated request | `DemoAuthService.cs`, `UserPermissionClaimsMiddleware.cs`, `UserEffectivePermissionService.cs` |
+| **Authorization policies** | Seven canonical Resource policies configured | `Program.cs` — `Resource.View`, `Resource.Create`, `Resource.Edit`, `Resource.Delete`, `Resource.Assign`, `Resource.ViewCostRate`, `Resource.EditCostRate` |
 | **Resource Management controllers** | Permission-protected | 6 controllers updated with policy-based `[Authorize]` attributes |
-| **Production auth** | Not implemented | Hardcoded JWT secret, no enterprise identity |
+| **Production auth** | Not implemented | Demo accounts only; JWT key must be supplied per environment (`Jwt__Secret`) |
 
 ---
 
@@ -96,7 +96,7 @@ NEXUS PMO is in the **Foundation Phase** -- a functional shell with working dash
 | **MS Project** | Manifest only | `plugins/microsoft-project/plugin.json` |
 | **Jira** | Manifest only | `plugins/jira-integration/plugin.json` |
 | **Internal Ticketing** | Manifest only | `plugins/internal-ticketing/plugin.json` |
-| **Email** | Deferred; preference field and structural delivery channel only, no sender/worker | `Notifications/Domain/NotificationDelivery.cs`, `NotificationService.cs` |
+| **Email** | Shared SMTP sender and durable NotificationDelivery worker implemented; requires deployment SMTP settings and real-provider verification | `Notifications/Infrastructure/SmtpEmailNotificationChannel.cs`, `NotificationDeliveryProcessor.cs`, `NotificationDeliveryWorker.cs` |
 | **Push** | Durable asynchronous delivery, retries, device attempts, and FCM adapter; requires Firebase server configuration and browser consent | `NotificationDeliveryWorker.cs`, `NotificationDeliveryProcessor.cs`, `FirebaseNotificationChannel.cs` |
 | **AI Provider** | Mock (`MockAIProvider`) | `AIPlanning/Infrastructure/MockAIProvider.cs` |
 | **File Storage** | Placeholder (`LocalStorageProvider`) | `Documents/Infrastructure/LocalStorageProvider.cs` |
@@ -109,10 +109,10 @@ NEXUS PMO is in the **Foundation Phase** -- a functional shell with working dash
 
 | Aspect | Status | Evidence |
 |--------|--------|----------|
-| **Unit tests (Resource Management)** | Not configured | No test project exists in solution |
-| **Integration tests (Resource Management)** | Not configured | No test project references in `.slnx` |
+| **Unit tests (Resource Management)** | Test project exists; execution pending consolidated final pass | `apps/api/tests/NEXUS.Modules.ResourceManagement.Tests` |
+| **API integration tests** | Test project exists; execution pending consolidated final pass | `apps/api/tests/NEXUS.Api.Tests` |
 | **E2E tests** | None found | No Playwright/Cypress config discovered |
-| **Frontend tests** | None found | No Jest/Vitest config in `package.json` |
+| **Frontend tests** | Vitest configured; execution pending consolidated final pass | `apps/web-react/package.json`, `apps/web-react/src/test` |
 
 ---
 
@@ -129,11 +129,11 @@ NEXUS PMO is in the **Foundation Phase** -- a functional shell with working dash
 
 | Aspect | Detail | Status |
 |--------|--------|--------|
-| **Compose services** | 5 (postgres, redis, api, web, worker) | Implemented |
+| **Compose services** | 5 (sqlserver, redis, api, React/Vite web, worker) | Implemented |
 | **API Dockerfile** | Multi-stage, .NET 10 images + net10.0 TFM | Resolved (ADR-005) |
-| **Web Dockerfile** | Multi-stage, standalone Next.js output | Implemented |
+| **Web Dockerfile** | Multi-stage, Vite static build served by nginx | Implemented |
 | **Worker Dockerfile** | Same as API, `--worker-mode` entrypoint | Implemented (no worker logic) |
-| **Health checks** | postgres + redis | Implemented |
+| **Health checks** | SQL Server + Redis | Implemented |
 
 ---
 
@@ -164,11 +164,11 @@ NEXUS PMO is in the **Foundation Phase** -- a functional shell with working dash
 
 | Risk | Severity | Implication |
 |------|----------|-------------|
-| No tenant isolation enforced | Critical | Multi-tenant deployment broken; all queries return Guid.Empty |
+| Tenant isolation | Implemented in source; live database/runtime coverage pending | Authenticated tenant claims are validated per request; query filters fail closed on missing or malformed context |
 | Mock data embedded in UI | High | Frontend shows fake data; no API integration verified |
-| No production authentication | High | Hardcoded JWT secret, demo credentials |
-| No database migrations | High | `EnsureCreatedAsync` cannot evolve schema safely |
+| External identity integration | Medium | Local password and session authentication are implemented; enterprise identity provider integration remains deferred |
+| Live migration state | High until verified | EF migrations are present and applied by Development initialization; the target database's current history and physical schema must be verified before reset. Only explicit Product Owner-authorized Development `Shady/NexusPmo` reset is exempt from the backup requirement; all EF migrations and the full seed remain required. |
 | Plugin framework is manifest-only | High | No runtime plugin loading |
-| No unit tests | High | No regression safety net |
+| Final test execution | High until verified | Source and test projects exist; the requested consolidated verification pass is pending |
 | Docker/.NET version mismatch | Resolved | SDK 10.0 images building net10.0 code (ADR-005) |
 | All integrations are mocked | Medium | No real external system connectivity |

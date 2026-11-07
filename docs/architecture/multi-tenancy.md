@@ -1,152 +1,46 @@
-# Multi-Tenancy Strategy
+# Multi-Tenancy and Configuration Scope
 
----
+## Identity model
 
-## Tenant Isolation Model
+FOPX PM uses a shared SQL Server / EF Core model with a persisted Tenant registry and tenant-owned records carrying `TenantId`. The authenticated `tenantId` claim is the trusted tenant boundary and is validated against an Active Tenant registry record. `AddTenantRegistry` adds the source model and schema; the migration still requires controlled Development deployment.
 
-NEXUS PMO uses a **shared database, tenant-scoped data** isolation model:
+The application must derive TenantId from the authenticated principal. Settings requests never accept TenantId from the body or query string. Missing or malformed request context fails closed. The EF query filter returns no tenant rows when a request has no valid TenantId claim; the demo fallback is retained only outside HTTP requests for existing development initialization paths. Requests for unregistered, suspended, provisioning, or retired tenants are denied by the registry status validator.
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│                    PostgreSQL Database                        │
-│                                                               │
-│  Tenant A Data              Tenant B Data                    │
-│  ┌──────────────────┐      ┌──────────────────┐              │
-│  │ TenantId = A      │      │ TenantId = B      │             │
-│  │ Projects          │      │ Projects          │             │
-│  │ Resources         │      │ Resources         │             │
-│  │ Users             │      │ Users             │             │
-│  │ ...               │      │ ...               │             │
-│  └──────────────────┘      └──────────────────┘              │
-│                                                               │
-│  Shared Data                                                  │
-│  ┌──────────────────────────────────────────────────┐         │
-│  │ System Config, Global Lookups                     │         │
-│  └──────────────────────────────────────────────────┘         │
-└──────────────────────────────────────────────────────────────┘
-```
+`Organization` is a separate persisted entity with its own `Id` and `TenantId`. One tenant can own multiple Organizations. Organization business units, departments and teams remain attached to the Organization hierarchy. Tenant settings and Organization settings are distinct scopes.
 
-This model provides:
-- **Operational simplicity** -- single database to manage, backup, and monitor
-- **Lower cost** -- no per-tenant database provisioning
-- **Horizontal scalability** -- read replicas serve all tenants
-- **Future extraction** -- tenants can be migrated to dedicated databases if needed
+## Data isolation
 
----
+- Tenant-owned `BaseEntity` records are subject to the tenant query filter in `AppDbContext`.
+- Before `SaveChanges` or `SaveChangesAsync`, tracked `ITenantEntity` additions, updates, and deletes are rejected unless their non-empty `TenantId` matches the authenticated tenant or an explicit `TrustedTenantExecutionContext`; existing tracked rows cannot be reassigned to another tenant. Services must still enforce project and resource scope, and background workers must establish an explicit trusted tenant scope.
+- `Organizations.TenantId` references `Tenants.Id` with restricted deletion. Tenant and Organization settings also reference the registry; Platform settings retain nullable `TenantId` and remain platform-wide.
+- Services that intentionally use `IgnoreQueryFilters()` must add explicit predicates for the trusted TenantId, owner ID, active/deleted state, and any required per-user grant.
+- Platform configuration rows are global and have null TenantId/OwnerId. The settings repository scopes every query by scope and owner; platform access also requires dedicated PlatformSettings authorization.
+- A requested Organization must be verified against `(Organization.Id, Organization.TenantId)` before configuration reads/writes.
+- Tenant `Settings.View` / `Settings.ManageTenantConfiguration` does not imply access to every Organization. `OrganizationSettingsGrant` grants a user read/manage access to one Organization's settings and existing identity fields. A user can have grants for multiple Organizations. These grants do not imply general Organization membership or Organization Management authority.
 
-## TenantId Field in All Entities
+## Configuration scopes and precedence
 
-Every entity inherits from `BaseEntity`, which includes a `TenantId` property:
+| Scope | Owner identity | Current delivery |
+|---|---|---|
+| Platform | `(Scope=Platform, TenantId=NULL, OwnerId=NULL)` | Defaults, global regional settings, read-only product identity |
+| Tenant | `(Scope=Tenant, TenantId=trusted tenant, OwnerId=trusted tenant)` | Tenant regional defaults |
+| Organization | `(Scope=Organization, TenantId=trusted tenant, OwnerId=Organization.Id)` | Existing Organization identity plus regional overrides |
+| Project | Tenant plus Project owner | Resolver extension only; no settings API/storage enabled |
+| User | Tenant plus User owner | Resolver extension only; no settings API/storage enabled |
 
-```csharp
-public abstract class BaseEntity : ISoftDeletable, ITenantEntity
-{
-    public Guid Id { get; set; }
-    public Guid TenantId { get; set; }       // <-- Tenant isolation field
-    public DateTime CreatedAt { get; set; }
-    public DateTime? UpdatedAt { get; set; }
-    public string CreatedBy { get; set; }
-    public string? UpdatedBy { get; set; }
-    public bool IsDeleted { get; set; }
-    public byte[] RowVersion { get; set; }
-}
-```
+The server resolver precedence is User → Project → Organization → Tenant → Platform override/default → setting definition default. Only definitions that declare a scope can be overridden at that scope. A missing Organization override inherits the effective Tenant value; a missing Tenant override inherits the Platform value/default. Mandatory Platform-only constraints cannot be weakened at lower scopes. User-selected locale remains a separate explicit client preference and takes precedence over inherited defaults.
 
-The `ITenantEntity` interface ensures every entity contractually requires a TenantId:
+## Settings authorization
 
-```csharp
-public interface ITenantEntity
-{
-    Guid TenantId { get; set; }
-}
-```
+- Platform reads/writes require `PlatformSettings.Read` / `PlatformSettings.Write`, evaluated from trusted platform roles or the deployment-managed administrator allowlist. Tenant roles cannot grant these permissions.
+- Tenant settings reads require `Settings.View`; writes require `Settings.ManageTenantConfiguration`.
+- Organization settings require the corresponding tenant-level permission plus an active per-user Organization grant. Reads need `CanRead` or `CanManage`; writes require `CanManage` and tenant `Settings.ManageTenantConfiguration`.
+- Grant management requires tenant `Settings.ManageTenantConfiguration`; grant targets are restricted to active users in the authenticated tenant and selected Organizations in that same tenant.
 
----
+## Persistence boundaries
 
-## Global Query Filters
+`ConfigurationSettings` has a polymorphic owner identity and no ambient tenant filter because Platform rows have no tenant. The EF repository applies explicit owner predicates, uses SQL Server rowversion for optimistic concurrency, and soft-deletes an override on reset. Tenant- and Organization-scope settings require a valid Tenant registry row. `OrganizationSettingsGrants` is tenant-owned and has a unique active `(TenantId, OrganizationId, UserId)` key.
 
-EF Core global query filters automatically scope all queries to the current tenant:
+The source model includes Tenant, Organization-to-Tenant and settings-to-Tenant relationships. `AddTenantRegistry` is the third ordered migration after `InitialFopxPmBaseline` and `ProjectPaymentRequestPersistence`; the snapshot is synchronized at source level. The migration backfills registry records for TenantIds already referenced by Users, Organizations, Roles, and settings. Development database identity, applied migration history, backup, and physical schema remain unverified.
 
-```csharp
-// Applied automatically to all ITenantEntity types
-private static void ApplyTenantFilter<T>(ModelBuilder modelBuilder)
-    where T : class, ITenantEntity
-{
-    modelBuilder.Entity<T>().HasQueryFilter(e => e.TenantId == GetCurrentTenantId());
-}
-
-internal static Guid GetCurrentTenantId()
-{
-    // Resolves tenant from current HTTP context / JWT claim
-    return Guid.Empty;  // Placeholder for single-tenant mode
-}
-```
-
-These filters mean:
-- **Every query** automatically includes `WHERE TenantId = @currentTenantId`
-- **No developer oversight required** -- the filter is applied globally
-- **Impossible to accidentally leak data** across tenants at the query level
-- **Soft delete** also applied globally alongside the tenant filter
-
----
-
-## Tenant Configuration
-
-Tenant-specific configuration is stored and applied at runtime:
-
-| Configuration | Description |
-|---------------|-------------|
-| **Branding** | Logo, favicon, company name, colour scheme overrides |
-| **Features** | Per-tenant feature flags (module enable/disable) |
-| **Plugins** | Per-tenant plugin activation (via `TenantPlugin` entity) |
-| **Localization** | Default locale, supported languages |
-| **Security Policies** | Password policy, session timeout, MFA requirements |
-| **Notifications** | Default notification preferences, templates |
-
----
-
-## Cross-Tenant Data Prevention
-
-Cross-tenant data access is prevented at multiple layers:
-
-| Layer | Mechanism |
-|-------|-----------|
-| **Database** | Global `TenantId` query filters on all entities |
-| **Application** | All service methods receive tenant context from JWT |
-| **API** | `[Authorize]` attribute ensures authenticated access |
-| **JWT** | Tenant ID embedded in token claims, validated on every request |
-| **Infrastructure** | Connection strings can be tenant-resolved for database-per-tenant migration path |
-
----
-
-## Tenant Onboarding Flow
-
-```
-1. Company signs up / is added by system admin
-2. Tenant record created in Tenants table
-3. Default roles and permissions provisioned
-4. Default organization structure created
-5. Admin user created with activation link
-6. Tenant configuration applied (branding, locale, features)
-7. Tenant is activated and accessible
-```
-
----
-
-## Current State
-
-| Aspect | Status |
-|--------|--------|
-| **TenantId on all entities** | Implemented |
-| **Global query filters** | Implemented |
-| **Tenant configuration** | Architecture in place |
-| **Multi-tenant onboarding** | Not implemented (uses fixed tenant) |
-| **Tenant-specific feature flags** | Architecture in place |
-| **Cross-tenant data prevention** | Implemented |
-| **Production readiness** | **Single-tenant ready** -- the architecture fully supports multi-tenancy but the tenant resolution and onboarding flows are not yet implemented. In single-tenant mode, `GetCurrentTenantId()` returns a fixed `Guid.Empty`. |
-
-To enable multi-tenancy:
-1. Implement `GetCurrentTenantId()` to resolve from JWT claims or HTTP context
-2. Build tenant onboarding/registration flow
-3. Configure per-tenant settings UI
-4. Test isolation with multiple tenant contexts concurrently
+Organization-specific regional settings are exposed by their API/workspace, but current global runtime formatters remain tenant-scoped because the application has no single active Organization context. Project/User configuration remains deferred.

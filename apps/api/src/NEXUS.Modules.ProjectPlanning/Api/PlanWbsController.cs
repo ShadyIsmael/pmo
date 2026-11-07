@@ -31,7 +31,7 @@ public class PlanWbsController : ControllerBase
         return Ok(result.Value);
     }
 
-    [Authorize(Policy = "Planning.Manage")]
+    [Authorize(Policy = "Planning.Edit")]
     [HttpPost]
     public async Task<IActionResult> Create(Guid projectId, Guid planId, [FromBody] CreatePlanWbsNodeDto dto, CancellationToken cancellationToken)
     {
@@ -47,7 +47,7 @@ public class PlanWbsController : ControllerBase
         return CreatedAtAction(nameof(GetTree), new { projectId, planId }, result.Value);
     }
 
-    [Authorize(Policy = "Planning.Manage")]
+    [Authorize(Policy = "Planning.Edit")]
     [HttpPut("{nodeId:guid}")]
     public async Task<IActionResult> Update(Guid projectId, Guid planId, Guid nodeId, [FromBody] UpdatePlanWbsNodeDto dto, CancellationToken cancellationToken)
     {
@@ -63,7 +63,7 @@ public class PlanWbsController : ControllerBase
         return Ok(result.Value);
     }
 
-    [Authorize(Policy = "Planning.Manage")]
+    [Authorize(Policy = "Planning.Edit")]
     [HttpPut("bulk-placement")]
     public async Task<IActionResult> UpdatePlacements(Guid projectId, Guid planId, [FromBody] BulkUpdatePlanWbsPlacementsDto dto, CancellationToken cancellationToken)
     {
@@ -79,7 +79,7 @@ public class PlanWbsController : ControllerBase
         return Ok(result.Value);
     }
 
-    [Authorize(Policy = "Planning.Manage")]
+    [Authorize(Policy = "Planning.Edit")]
     [HttpDelete("{nodeId:guid}")]
     public async Task<IActionResult> Delete(Guid projectId, Guid planId, Guid nodeId, [FromQuery] byte[] rowVersion, CancellationToken cancellationToken)
     {

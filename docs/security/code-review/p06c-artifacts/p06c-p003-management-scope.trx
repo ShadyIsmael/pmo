@@ -1,0 +1,120 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="9a09120d-6250-42f7-8dd1-8a0ccf5f9304" name="shady@SHADY 2026-11-05 19:11:13" runUser="SHADY\shady" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-11-05T19:11:13.5591917+02:00" queuing="2026-11-05T19:11:13.5591922+02:00" start="2026-11-05T19:11:11.4813780+02:00" finish="2026-11-05T19:11:14.3210546+02:00" />
+  <TestSettings name="default" id="a5336c43-929d-42f1-93ff-decfa99800e8">
+    <Deployment runDeploymentRoot="shady_SHADY_2026-11-05_19_11_13" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="f0830d43-b2f0-40b8-8454-7955535332d5" testId="412f393f-9c01-8786-0f73-018ea446c37a" testName="NEXUS.Api.Tests.Security.PortfolioProgramStatusScopeTests.Direct_status_api_routes_require_their_canonical_permission(controllerType: typeof(NEXUS.Modules.Portfolio.Api.ProgramController), actionName: &quot;Reactivate&quot;, requiredPermission: &quot;Program.Reactivate&quot;)" computerName="SHADY" duration="00:00:00.0003918" startTime="2026-11-05T19:11:13.6131196+02:00" endTime="2026-11-05T19:11:13.6134064+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="f0830d43-b2f0-40b8-8454-7955535332d5" />
+    <UnitTestResult executionId="3c8d54ac-83db-4325-9c97-c7a4122afa64" testId="3452a656-6bf2-9e65-4878-bf9f7b5fbfa9" testName="NEXUS.Api.Tests.Security.PortfolioProgramStatusScopeTests.Direct_status_api_routes_require_their_canonical_permission(controllerType: typeof(NEXUS.Modules.Portfolio.Api.PortfolioController), actionName: &quot;Reactivate&quot;, requiredPermission: &quot;Portfolio.Reactivate&quot;)" computerName="SHADY" duration="00:00:00.0239306" startTime="2026-11-05T19:11:13.5882679+02:00" endTime="2026-11-05T19:11:13.6091710+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="3c8d54ac-83db-4325-9c97-c7a4122afa64" />
+    <UnitTestResult executionId="c927f1a9-d952-4926-b0a9-c0171403cf8b" testId="cee886bb-c118-dfa6-cbd3-93d4229fb597" testName="NEXUS.Api.Tests.Security.PortfolioProgramAuthorizationTests.Update_rejects_first_program_manager_assignment_without_handover_permission" computerName="SHADY" duration="00:00:00.7894947" startTime="2026-11-05T19:11:12.8124889+02:00" endTime="2026-11-05T19:11:13.5799415+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="c927f1a9-d952-4926-b0a9-c0171403cf8b">
+      <Output>
+        <ErrorInfo>
+          <Message>Assert.Equal() Failure: Values differ&#xD;
+Expected: 403&#xD;
+Actual:   404</Message>
+          <StackTrace>   at NEXUS.Api.Tests.Security.PortfolioProgramAuthorizationTests.Update_rejects_first_program_manager_assignment_without_handover_permission() in C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Security\PortfolioProgramAuthorizationTests.cs:line 53&#xD;
+   at NEXUS.Api.Tests.Security.PortfolioProgramAuthorizationTests.Update_rejects_first_program_manager_assignment_without_handover_permission() in C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Security\PortfolioProgramAuthorizationTests.cs:line 55&#xD;
+--- End of stack trace from previous location ---</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="2195119f-e57c-4d4a-ba4b-68ce6bff98e3" testId="6fa23514-0914-be2b-697b-b326682a982a" testName="NEXUS.Api.Tests.Security.PortfolioProgramStatusScopeTests.Direct_status_api_routes_require_their_canonical_permission(controllerType: typeof(NEXUS.Modules.Portfolio.Api.ProgramController), actionName: &quot;Archive&quot;, requiredPermission: &quot;Program.Archive&quot;)" computerName="SHADY" duration="00:00:00.0050286" startTime="2026-11-05T19:11:13.6110331+02:00" endTime="2026-11-05T19:11:13.6116581+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="2195119f-e57c-4d4a-ba4b-68ce6bff98e3" />
+    <UnitTestResult executionId="3662339c-b82c-4c4f-af85-a9ea7c450a95" testId="91de0655-8970-a254-57b2-91e913da2720" testName="NEXUS.Api.Tests.Security.PortfolioProgramAuthorizationTests.Create_rejects_initial_program_manager_assignment_without_handover_permission" computerName="SHADY" duration="00:00:00.4090823" startTime="2026-11-05T19:11:12.3600016+02:00" endTime="2026-11-05T19:11:12.7895840+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="3662339c-b82c-4c4f-af85-a9ea7c450a95">
+      <Output>
+        <ErrorInfo>
+          <Message>Assert.Contains() Failure: Sub-string not found&#xD;
+String:    "A valid tenant management context is requ"···&#xD;
+Not found: "Handover.AdminInitiate"</Message>
+          <StackTrace>   at NEXUS.Api.Tests.Security.PortfolioProgramAuthorizationTests.Create_rejects_initial_program_manager_assignment_without_handover_permission() in C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Security\PortfolioProgramAuthorizationTests.cs:line 25&#xD;
+   at NEXUS.Api.Tests.Security.PortfolioProgramAuthorizationTests.Create_rejects_initial_program_manager_assignment_without_handover_permission() in C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Security\PortfolioProgramAuthorizationTests.cs:line 26&#xD;
+--- End of stack trace from previous location ---</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="ac40043c-dcdc-4038-9675-589ff72912c7" testId="8ba4edcf-a66f-5bdd-5c44-0b800ee7e6cc" testName="NEXUS.Api.Tests.Security.PortfolioProgramStatusScopeTests.Direct_status_api_routes_require_their_canonical_permission(controllerType: typeof(NEXUS.Modules.Portfolio.Api.PortfolioController), actionName: &quot;Archive&quot;, requiredPermission: &quot;Portfolio.Archive&quot;)" computerName="SHADY" duration="00:00:00.0007279" startTime="2026-11-05T19:11:13.6123822+02:00" endTime="2026-11-05T19:11:13.6126594+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="ac40043c-dcdc-4038-9675-589ff72912c7" />
+    <UnitTestResult executionId="25ecf99a-3560-42d3-97c6-91b94ecf0146" testId="a250e322-902c-7a14-81e2-d9ab1c27bd6c" testName="NEXUS.Api.Tests.Security.PortfolioProgramStatusScopeTests.Program_status_mutations_require_a_scoped_same_tenant_record" computerName="SHADY" duration="00:00:00.0835710" startTime="2026-11-05T19:11:14.1485507+02:00" endTime="2026-11-05T19:11:14.2323513+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="25ecf99a-3560-42d3-97c6-91b94ecf0146" />
+    <UnitTestResult executionId="3ace4b35-8864-4add-b63d-fb1aad2bea12" testId="17198bab-ab03-73b7-4f21-0d073f18cd51" testName="NEXUS.Api.Tests.Security.PortfolioProgramStatusScopeTests.Portfolio_status_mutations_require_a_scoped_same_tenant_record" computerName="SHADY" duration="00:00:00.5353161" startTime="2026-11-05T19:11:13.6137291+02:00" endTime="2026-11-05T19:11:14.1482490+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="3ace4b35-8864-4add-b63d-fb1aad2bea12" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="NEXUS.Api.Tests.Security.PortfolioProgramAuthorizationTests.Create_rejects_initial_program_manager_assignment_without_handover_permission" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\release\net10.0\nexus.api.tests.dll" id="91de0655-8970-a254-57b2-91e913da2720">
+      <Execution id="3662339c-b82c-4c4f-af85-a9ea7c450a95" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Release\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.PortfolioProgramAuthorizationTests" name="Create_rejects_initial_program_manager_assignment_without_handover_permission" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.PortfolioProgramStatusScopeTests.Portfolio_status_mutations_require_a_scoped_same_tenant_record" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\release\net10.0\nexus.api.tests.dll" id="17198bab-ab03-73b7-4f21-0d073f18cd51">
+      <Execution id="3ace4b35-8864-4add-b63d-fb1aad2bea12" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Release\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.PortfolioProgramStatusScopeTests" name="Portfolio_status_mutations_require_a_scoped_same_tenant_record" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.PortfolioProgramStatusScopeTests.Direct_status_api_routes_require_their_canonical_permission(controllerType: typeof(NEXUS.Modules.Portfolio.Api.ProgramController), actionName: &quot;Archive&quot;, requiredPermission: &quot;Program.Archive&quot;)" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\release\net10.0\nexus.api.tests.dll" id="6fa23514-0914-be2b-697b-b326682a982a">
+      <Execution id="2195119f-e57c-4d4a-ba4b-68ce6bff98e3" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Release\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.PortfolioProgramStatusScopeTests" name="Direct_status_api_routes_require_their_canonical_permission" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.PortfolioProgramStatusScopeTests.Program_status_mutations_require_a_scoped_same_tenant_record" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\release\net10.0\nexus.api.tests.dll" id="a250e322-902c-7a14-81e2-d9ab1c27bd6c">
+      <Execution id="25ecf99a-3560-42d3-97c6-91b94ecf0146" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Release\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.PortfolioProgramStatusScopeTests" name="Program_status_mutations_require_a_scoped_same_tenant_record" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.PortfolioProgramAuthorizationTests.Update_rejects_first_program_manager_assignment_without_handover_permission" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\release\net10.0\nexus.api.tests.dll" id="cee886bb-c118-dfa6-cbd3-93d4229fb597">
+      <Execution id="c927f1a9-d952-4926-b0a9-c0171403cf8b" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Release\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.PortfolioProgramAuthorizationTests" name="Update_rejects_first_program_manager_assignment_without_handover_permission" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.PortfolioProgramStatusScopeTests.Direct_status_api_routes_require_their_canonical_permission(controllerType: typeof(NEXUS.Modules.Portfolio.Api.PortfolioController), actionName: &quot;Reactivate&quot;, requiredPermission: &quot;Portfolio.Reactivate&quot;)" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\release\net10.0\nexus.api.tests.dll" id="3452a656-6bf2-9e65-4878-bf9f7b5fbfa9">
+      <Execution id="3c8d54ac-83db-4325-9c97-c7a4122afa64" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Release\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.PortfolioProgramStatusScopeTests" name="Direct_status_api_routes_require_their_canonical_permission" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.PortfolioProgramStatusScopeTests.Direct_status_api_routes_require_their_canonical_permission(controllerType: typeof(NEXUS.Modules.Portfolio.Api.ProgramController), actionName: &quot;Reactivate&quot;, requiredPermission: &quot;Program.Reactivate&quot;)" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\release\net10.0\nexus.api.tests.dll" id="412f393f-9c01-8786-0f73-018ea446c37a">
+      <Execution id="f0830d43-b2f0-40b8-8454-7955535332d5" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Release\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.PortfolioProgramStatusScopeTests" name="Direct_status_api_routes_require_their_canonical_permission" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.PortfolioProgramStatusScopeTests.Direct_status_api_routes_require_their_canonical_permission(controllerType: typeof(NEXUS.Modules.Portfolio.Api.PortfolioController), actionName: &quot;Archive&quot;, requiredPermission: &quot;Portfolio.Archive&quot;)" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\release\net10.0\nexus.api.tests.dll" id="8ba4edcf-a66f-5bdd-5c44-0b800ee7e6cc">
+      <Execution id="ac40043c-dcdc-4038-9675-589ff72912c7" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Release\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.PortfolioProgramStatusScopeTests" name="Direct_status_api_routes_require_their_canonical_permission" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="412f393f-9c01-8786-0f73-018ea446c37a" executionId="f0830d43-b2f0-40b8-8454-7955535332d5" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="3452a656-6bf2-9e65-4878-bf9f7b5fbfa9" executionId="3c8d54ac-83db-4325-9c97-c7a4122afa64" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="cee886bb-c118-dfa6-cbd3-93d4229fb597" executionId="c927f1a9-d952-4926-b0a9-c0171403cf8b" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="6fa23514-0914-be2b-697b-b326682a982a" executionId="2195119f-e57c-4d4a-ba4b-68ce6bff98e3" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="91de0655-8970-a254-57b2-91e913da2720" executionId="3662339c-b82c-4c4f-af85-a9ea7c450a95" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="8ba4edcf-a66f-5bdd-5c44-0b800ee7e6cc" executionId="ac40043c-dcdc-4038-9675-589ff72912c7" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="a250e322-902c-7a14-81e2-d9ab1c27bd6c" executionId="25ecf99a-3560-42d3-97c6-91b94ecf0146" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="17198bab-ab03-73b7-4f21-0d073f18cd51" executionId="3ace4b35-8864-4add-b63d-fb1aad2bea12" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Failed">
+    <Counters total="8" executed="8" passed="6" failed="2" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.0.0+e341b939fe (64-bit .NET 10.0.10)&#xD;
+[xUnit.net 00:00:00.10]   Discovering: NEXUS.Api.Tests&#xD;
+[xUnit.net 00:00:00.26]   Discovered:  NEXUS.Api.Tests&#xD;
+[xUnit.net 00:00:00.30]   Starting:    NEXUS.Api.Tests&#xD;
+[xUnit.net 00:00:00.75]       Assert.Contains() Failure: Sub-string not found&#xD;
+[xUnit.net 00:00:00.75]       String:    "A valid tenant management context is requ"···&#xD;
+[xUnit.net 00:00:00.75]       Not found: "Handover.AdminInitiate"&#xD;
+[xUnit.net 00:00:00.75]       Stack Trace:&#xD;
+[xUnit.net 00:00:00.75]         C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Security\PortfolioProgramAuthorizationTests.cs(25,0): at NEXUS.Api.Tests.Security.PortfolioProgramAuthorizationTests.Create_rejects_initial_program_manager_assignment_without_handover_permission()&#xD;
+[xUnit.net 00:00:00.75]         C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Security\PortfolioProgramAuthorizationTests.cs(26,0): at NEXUS.Api.Tests.Security.PortfolioProgramAuthorizationTests.Create_rejects_initial_program_manager_assignment_without_handover_permission()&#xD;
+[xUnit.net 00:00:00.76]         --- End of stack trace from previous location ---&#xD;
+[xUnit.net 00:00:01.54]       Assert.Equal() Failure: Values differ&#xD;
+[xUnit.net 00:00:01.54]       Expected: 403&#xD;
+[xUnit.net 00:00:01.54]       Actual:   404&#xD;
+[xUnit.net 00:00:01.54]       Stack Trace:&#xD;
+[xUnit.net 00:00:01.54]         C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Security\PortfolioProgramAuthorizationTests.cs(53,0): at NEXUS.Api.Tests.Security.PortfolioProgramAuthorizationTests.Update_rejects_first_program_manager_assignment_without_handover_permission()&#xD;
+[xUnit.net 00:00:01.54]         C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Security\PortfolioProgramAuthorizationTests.cs(55,0): at NEXUS.Api.Tests.Security.PortfolioProgramAuthorizationTests.Update_rejects_first_program_manager_assignment_without_handover_permission()&#xD;
+[xUnit.net 00:00:01.54]         --- End of stack trace from previous location ---&#xD;
+[xUnit.net 00:00:02.19]   Finished:    NEXUS.Api.Tests&#xD;
+</StdOut>
+    </Output>
+    <RunInfos>
+      <RunInfo computerName="SHADY" outcome="Error" timestamp="2026-11-05T19:11:12.7943660+02:00">
+        <Text>[xUnit.net 00:00:00.75]     NEXUS.Api.Tests.Security.PortfolioProgramAuthorizationTests.Create_rejects_initial_program_manager_assignment_without_handover_permission [FAIL]</Text>
+      </RunInfo>
+      <RunInfo computerName="SHADY" outcome="Error" timestamp="2026-11-05T19:11:13.5809034+02:00">
+        <Text>[xUnit.net 00:00:01.54]     NEXUS.Api.Tests.Security.PortfolioProgramAuthorizationTests.Update_rejects_first_program_manager_assignment_without_handover_permission [FAIL]</Text>
+      </RunInfo>
+    </RunInfos>
+  </ResultSummary>
+</TestRun>

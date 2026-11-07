@@ -5,23 +5,48 @@ namespace NEXUS.Modules.Meetings.Application.DTOs;
 public sealed class MeetingListDto
 {
     public Guid Id { get; init; }
+    public Guid PublicId { get; init; }
     public string Title { get; init; } = string.Empty;
     public Guid? ProjectId { get; init; }
     public Guid? ProjectPublicId { get; init; }
     public string? ProjectName { get; init; }
+    public string? ProjectCode { get; init; }
     public Guid? OrganizerId { get; init; }
     public string? OrganizerName { get; init; }
     public DateTime StartTime { get; init; }
     public DateTime EndTime { get; init; }
+    public DateTime? ActualStartTime { get; init; }
+    public DateTime? ActualEndTime { get; init; }
     public string? Status { get; init; }
     public int? ReminderOffsetMinutes { get; init; }
     public int AttendeeCount { get; init; }
     public string? MinutesState { get; init; }
+    public bool IsRecurring { get; init; }
+    public Guid? SeriesId { get; init; }
+    public string? OccurrenceKey { get; init; }
+}
+
+public sealed class MeetingCalendarDto
+{
+    public DateTime From { get; init; }
+    public DateTime To { get; init; }
+    public int TotalCount { get; init; }
+    public bool IsTruncated { get; init; }
+    public IReadOnlyList<MeetingListDto> Items { get; init; } = Array.Empty<MeetingListDto>();
+}
+
+public sealed class MeetingProjectOptionDto
+{
+    public Guid Id { get; init; }
+    public Guid PublicId { get; init; }
+    public string Name { get; init; } = string.Empty;
+    public string? Code { get; init; }
 }
 
 public sealed class MeetingDetailDto
 {
     public Guid Id { get; init; }
+    public Guid PublicId { get; init; }
     public string Title { get; init; } = string.Empty;
     public string? Objective { get; init; }
     public Guid? ProjectId { get; init; }
@@ -31,6 +56,8 @@ public sealed class MeetingDetailDto
     public string? OrganizerName { get; init; }
     public DateTime StartTime { get; init; }
     public DateTime EndTime { get; init; }
+    public DateTime? ActualStartTime { get; init; }
+    public DateTime? ActualEndTime { get; init; }
     public string? Location { get; init; }
     public string? MeetingLink { get; init; }
     public string? Status { get; init; }
@@ -38,6 +65,9 @@ public sealed class MeetingDetailDto
     public IReadOnlyList<MeetingAttendeeDto> Attendees { get; init; } = Array.Empty<MeetingAttendeeDto>();
     public string? MinutesState { get; init; }
     public byte[] RowVersion { get; init; } = Array.Empty<byte>();
+    public bool IsRecurring { get; init; }
+    public Guid? SeriesId { get; init; }
+    public string? OccurrenceKey { get; init; }
 }
 
 public class CreateMeetingRequest
@@ -51,6 +81,7 @@ public class CreateMeetingRequest
     public string? MeetingLink { get; init; }
     public Guid? OrganizerId { get; init; }
     public IReadOnlyList<MeetingAttendeeInput> Attendees { get; init; } = Array.Empty<MeetingAttendeeInput>();
+    public IReadOnlyList<CreateMeetingAgendaItemRequest> AgendaItems { get; init; } = Array.Empty<CreateMeetingAgendaItemRequest>();
     public string? Status { get; init; }
     public int? ReminderOffsetMinutes { get; init; }
 }
@@ -112,6 +143,7 @@ public sealed class FinalizeMeetingMinutesRequest
 public sealed class MeetingMinutesCommentDto
 {
     public Guid Id { get; init; }
+    public Guid PublicId { get; init; }
     public Guid MeetingMinutesId { get; init; }
     public Guid? ParentCommentId { get; init; }
     public string CommentText { get; init; } = string.Empty;

@@ -1,6 +1,7 @@
 import { cn } from "@lib/utils";
 import { Button } from "./Button";
 import { AlertCircle } from "lucide-react";
+import { useI18n } from "@i18n/messages";
 
 interface EmptyStateProps {
   title: string;
@@ -31,6 +32,7 @@ interface ErrorStateProps {
 }
 
 export function ErrorState({ title, description, onRetry, className }: ErrorStateProps) {
+  const { t } = useI18n();
   return (
     <div className={cn("flex flex-col items-center justify-center gap-4 py-12 text-center", className)}>
       <AlertCircle className="h-8 w-8 text-destructive" />
@@ -38,7 +40,7 @@ export function ErrorState({ title, description, onRetry, className }: ErrorStat
         <h3 className="text-sm font-medium text-destructive">{title}</h3>
         {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
       </div>
-      {onRetry && <Button variant="outline" size="sm" onClick={onRetry}>Retry</Button>}
+      {onRetry && <Button variant="outline" size="sm" onClick={onRetry}>{t("common.retry")}</Button>}
     </div>
   );
 }

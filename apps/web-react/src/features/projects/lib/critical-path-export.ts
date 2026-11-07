@@ -7,6 +7,8 @@ import type {
   PlanWbsNodeDto,
 } from "../api/planningFull";
 import { roundPlanProgress } from "./plan-progress";
+import { brand } from "@lib/brand";
+import { formatNumberValue } from "@lib/formatting/number";
 
 export type CriticalPathExportFormat = "pdf" | "svg" | "png";
 export type CriticalPathExportScope = "full" | "critical";
@@ -309,7 +311,7 @@ export function prepareCriticalPathExport(
     if (options.showDuration) metricRows.push({ label: labels.duration, value: `${labels.formatNumber(activity.duration)} ${labels.days}` });
     if (options.showTotalFloat) {
       const totalFloat = metrics?.totalSlack ?? activity.totalSlack;
-      metricRows.push({ label: labels.totalFloat, value: totalFloat == null ? "â€”" : `${labels.formatNumber(totalFloat)} ${labels.days}` });
+      metricRows.push({ label: labels.totalFloat, value: totalFloat == null ? "—" : `${labels.formatNumber(totalFloat)} ${labels.days}` });
     }
     if (options.showTaskDates) {
       metricRows.push({ label: labels.start, value: labels.formatDate(activity.startDate!) });
@@ -317,11 +319,11 @@ export function prepareCriticalPathExport(
     }
     if (options.showProgress) {
       const progress = roundPlanProgress(activity.progress);
-      metricRows.push({ label: labels.progress, value: progress == null ? "â€”" : `${labels.formatNumber(progress)}%` });
+      metricRows.push({ label: labels.progress, value: progress == null ? "—" : `${labels.formatNumber(progress)}%` });
     }
     const wbsPath = activity.wbsId ? wbsPaths.get(activity.wbsId) : undefined;
     const wrappedName = wrapText(cleanText(activity.name), Math.max(12, Math.floor((cardWidth - 28) / 6.4)));
-    const nameLines = wrappedName.length > 2 ? [...wrappedName.slice(0, 1), `${wrappedName[1].slice(0, -1)}â€¦`] : wrappedName;
+    const nameLines = wrappedName.length > 2 ? [...wrappedName.slice(0, 1), `${wrappedName[1].slice(0, -1)}…`] : wrappedName;
     const wbsLines = wbsPath ? [cleanText(wbsPath)] : [];
     return {
       activity,
@@ -348,7 +350,7 @@ export function prepareCriticalPathExport(
     const target = nodeById.get(dependency.activityId);
     if (!source || !target) throw new CriticalPathExportError("invalidDependencies");
     const lag = dependency.lag ?? 0;
-    const lagLabel = lag === 0 ? "" : ` ${lag > 0 ? "+" : "âˆ’"}${labels.formatNumber(Math.abs(lag))} ${labels.days}`;
+    const lagLabel = lag === 0 ? "" : ` ${lag > 0 ? "+" : "−"}${labels.formatNumber(Math.abs(lag))} ${labels.days}`;
     return { dependency, critical: criticalEdges.has(dependency.id), label: `${labels.dependencyType[dependency.type]}${lagLabel}`, source, target };
   });
   const bounds = graphBounds(positioned);
@@ -422,7 +424,7 @@ function flattenWbs(items: readonly PlanWbsNodeDto[]): PlanWbsNodeDto[] {
 function flattenWbsPaths(items: readonly PlanWbsNodeDto[]): Map<string, string> {
   const paths = new Map<string, string>();
   const visit = (nodes: readonly PlanWbsNodeDto[], parentPath: string) => nodes.forEach((node) => {
-    const path = parentPath ? `${parentPath} â€º ${node.code}` : node.code;
+    const path = parentPath ? `${parentPath} › ${node.code}` : node.code;
     paths.set(node.id, path);
     visit(node.children ?? [], path);
   });
@@ -445,7 +447,7 @@ function escapeXml(value: string): string {
 
 function wrapText(value: string, maxCharacters: number): string[] {
   const words = value.split(/\s+/).filter(Boolean);
-  if (!words.length) return ["â€”"];
+  if (!words.length) return ["—"];
   const lines: string[] = [];
   let current = "";
   for (const word of words) {
@@ -461,7 +463,7 @@ function wrapText(value: string, maxCharacters: number): string[] {
     }
   }
   if (current) lines.push(current);
-  return lines.length ? lines : ["â€”"];
+  return lines.length ? lines : ["—"];
 }
 
 function textElement(text: string, x: number, y: number, options: { size?: number; color?: string; weight?: number; anchor?: "start" | "middle" | "end"; direction?: "ltr" | "rtl" } = {}): string {
@@ -579,12 +581,12 @@ function renderLegend(labels: CriticalPathExportLabels, startY: number, width: n
 
 function summaryLines(model: PreparedCriticalPathExport, labels: CriticalPathExportLabels): string[] {
   const { snapshot } = model;
-  const formattedPathCount = new Intl.NumberFormat(labels.direction === "rtl" ? "ar-SA-u-nu-latn" : "en-US").format(BigInt(model.criticalPathCount));
+  const formattedPathCount = formatNumberValue(BigInt(model.criticalPathCount), labels.direction === "rtl" ? "ar" : "en");
   return [
     `${labels.project}: ${snapshot.projectName}${snapshot.projectCode ? ` (${snapshot.projectCode})` : ""}`,
-    `${labels.plan}: ${snapshot.planName} Â· ${labels.workingVersion} ${snapshot.planVersionNumber}`,
+    `${labels.plan}: ${snapshot.planName} · ${labels.workingVersion} ${snapshot.planVersionNumber}`,
     `${labels.exportedAt}: ${labels.formatDate(snapshot.exportedAt)}`,
-    `${labels.activities}: ${labels.formatNumber(snapshot.activities.length)} Â· ${labels.dependencies}: ${labels.formatNumber(snapshot.dependencies.length)} Â· ${labels.criticalActivities}: ${labels.formatNumber(model.criticalActivityCount)} Â· ${labels.criticalPaths}: ${formattedPathCount}`,
+    `${labels.activities}: ${labels.formatNumber(snapshot.activities.length)} · ${labels.dependencies}: ${labels.formatNumber(snapshot.dependencies.length)} · ${labels.criticalActivities}: ${labels.formatNumber(model.criticalActivityCount)} · ${labels.criticalPaths}: ${formattedPathCount}`,
     `${labels.projectFinish}: ${snapshot.analysis?.projectFinishDate ? labels.formatDate(snapshot.analysis.projectFinishDate) : labels.projectFinishUnavailable}`,
   ];
 }
@@ -631,7 +633,7 @@ function renderNetworkSvgNatural(model: PreparedCriticalPathExport): string {
   if (options.includeSummary) {
     markup += summaryLines(model, labels).map((line, index) => textElement(line, graphOffsetX, 64 + index * 16, { size: 9, color: index === 0 ? COLORS.text : COLORS.muted, weight: index === 0 ? 600 : 400, direction: labels.direction })).join("");
   } else {
-    markup += textElement(`${model.snapshot.projectName} Â· ${model.snapshot.planName} Â· ${labels.workingVersion} ${model.snapshot.planVersionNumber}`, graphOffsetX, 66, { size: 10, color: COLORS.muted, direction: labels.direction });
+    markup += textElement(`${model.snapshot.projectName} · ${model.snapshot.planName} · ${labels.workingVersion} ${model.snapshot.planVersionNumber}`, graphOffsetX, 66, { size: 10, color: COLORS.muted, direction: labels.direction });
   }
   markup += `<g transform="translate(${graphOffsetX - model.minX} ${graphOffsetY - model.minY})">${renderNetworkContent(model, labels, options)}</g>`;
   if (options.includeLegend) markup += renderLegend(labels, contentHeight - legendHeight + 8, graphWidth);
@@ -650,7 +652,7 @@ export function buildCriticalPathSvg(model: PreparedCriticalPathExport): string 
 
 export function criticalPathExportFilename(model: PreparedCriticalPathExport, extension: CriticalPathExportFormat): string {
   const safePart = (value: string, fallback: string) => value.normalize("NFKD").replace(/[^a-zA-Z0-9._-]+/g, "_").replace(/^\.+|\.+$/g, "") || fallback;
-  return `NEXUS_Critical_Path_${safePart(model.snapshot.projectCode, "Project")}_${safePart(model.snapshot.planName, "Plan")}_v${model.snapshot.planVersionNumber}.${extension}`;
+  return `${brand.company.name.toUpperCase()}_Critical_Path_${safePart(model.snapshot.projectCode, "Project")}_${safePart(model.snapshot.planName, "Plan")}_v${model.snapshot.planVersionNumber}.${extension}`;
 }
 
 export interface CriticalPathPdfDocumentPlan {
@@ -829,12 +831,12 @@ function nodeTileBounds(model: PreparedCriticalPathExport, node: ExportNode) {
 
 function renderTiledPageSvg(model: PreparedCriticalPathExport, dimensions: PageDimensions, tile: DiagramTile, pageNumber: number, pageCount: number, viewWidth: number, viewHeight: number): string {
   const { labels, options } = model;
-  let markup = textElement(`${labels.title} Â· ${labels.page} ${pageNumber} ${labels.of} ${pageCount}`, 18, 21, { size: 11, color: COLORS.blue, weight: 700, direction: labels.direction });
-  markup += textElement(`${labels.tile} Â· ${labels.row} ${tile.row + 1} Â· ${labels.column} ${tile.column + 1}`, 18, 39, { size: 8, color: COLORS.muted, direction: labels.direction });
+  let markup = textElement(`${labels.title} · ${labels.page} ${pageNumber} ${labels.of} ${pageCount}`, 18, 21, { size: 11, color: COLORS.blue, weight: 700, direction: labels.direction });
+  markup += textElement(`${labels.tile} · ${labels.row} ${tile.row + 1} · ${labels.column} ${tile.column + 1}`, 18, 39, { size: 8, color: COLORS.muted, direction: labels.direction });
   if (options.includeSummary) {
     markup += summaryLines(model, labels).map((line, index) => textElement(line, 18, 54 + index * 11, { size: 7, color: index === 0 ? COLORS.text : COLORS.muted, weight: index === 0 ? 600 : 400, direction: labels.direction })).join("");
   } else {
-    markup += textElement(`${model.snapshot.projectName} Â· ${model.snapshot.planName} Â· ${labels.workingVersion} ${model.snapshot.planVersionNumber}`, 18, 51, { size: 7.5, color: COLORS.muted, direction: labels.direction });
+    markup += textElement(`${model.snapshot.projectName} · ${model.snapshot.planName} · ${labels.workingVersion} ${model.snapshot.planVersionNumber}`, 18, 51, { size: 7.5, color: COLORS.muted, direction: labels.direction });
   }
   const graphTop = PDF_TILE_HEADER + (options.includeSummary ? 48 : 0);
   markup += `<svg x="18" y="${graphTop}" width="${viewWidth}" height="${viewHeight}" viewBox="${tile.x} ${tile.y} ${viewWidth} ${viewHeight}" preserveAspectRatio="none" overflow="hidden"><g transform="translate(${-model.minX} ${-model.minY})">${renderNetworkContent(model, labels, options, { ...tile, width: viewWidth, height: viewHeight })}</g></svg>`;
@@ -878,7 +880,7 @@ export function buildCriticalPathPdfDocumentPlan(model: PreparedCriticalPathExpo
       ...(dimensions.pageSize === "CUSTOM" ? {} : { pageOrientation: dimensions.orientation }),
       pageMargins: [22, 22, 22, 22],
       defaultStyle: { font: fonts },
-      info: { title: `${model.labels.title} - ${model.snapshot.projectName}`, author: "NEXUS PMO" },
+      info: { title: `${model.labels.title} - ${model.snapshot.projectName}`, author: brand.product.fullName },
       content: pageBreakContent,
     },
     pageCount,

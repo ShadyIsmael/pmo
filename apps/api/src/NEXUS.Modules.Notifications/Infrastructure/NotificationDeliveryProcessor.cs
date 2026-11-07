@@ -1,7 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using NEXUS.Modules.Identity.Domain;
 using NEXUS.Modules.Notifications.Application;
 using NEXUS.Modules.Notifications.Domain;
+using NEXUS.SharedKernel;
 
 namespace NEXUS.Modules.Notifications.Infrastructure;
 
@@ -9,14 +11,17 @@ public sealed class NotificationDeliveryProcessor
 {
     private readonly DbContext _context;
     private readonly IPushNotificationSender _pushSender;
+    private readonly IEmailNotificationSender? _emailSender;
     private readonly NotificationDeliveryOptions _options;
     public NotificationDeliveryProcessor(
         DbContext context,
         IPushNotificationSender pushSender,
-        IOptions<NotificationDeliveryOptions> options)
+        IOptions<NotificationDeliveryOptions> options,
+        IEmailNotificationSender? emailSender = null)
     {
         _context = context;
         _pushSender = pushSender;
+        _emailSender = emailSender;
         _options = options.Value;
     }
 
@@ -55,6 +60,8 @@ public sealed class NotificationDeliveryProcessor
         foreach (var delivery in deliveries)
         {
             cancellationToken.ThrowIfCancellationRequested();
+
+            using var trustedTenant = TrustedTenantExecutionContext.Enter(delivery.TenantId);
             await ProcessAsync(delivery, cancellationToken);
         }
         return deliveries.Count;
@@ -64,7 +71,18 @@ public sealed class NotificationDeliveryProcessor
     {
         var notification = await _context.Set<Notification>().IgnoreQueryFilters().AsNoTracking()
             .SingleOrDefaultAsync(item => item.Id == delivery.NotificationId && item.TenantId == delivery.TenantId, cancellationToken);
-        if (notification is null || !notification.UserId.HasValue)
+        if (notification is null)
+        {
+            Finish(delivery, NotificationDeliveryStatus.FailedPermanent, "MissingNotification", "The notification is unavailable.");
+            await _context.SaveChangesAsync(cancellationToken);
+            return;
+        }
+        if (delivery.Channel == NotificationDeliveryChannel.Email)
+        {
+            await ProcessEmailAsync(delivery, notification, cancellationToken);
+            return;
+        }
+        if (!notification.UserId.HasValue)
         {
             Finish(delivery, NotificationDeliveryStatus.FailedPermanent, "MissingRecipient", "The notification recipient is unavailable.");
             await _context.SaveChangesAsync(cancellationToken);
@@ -197,6 +215,105 @@ public sealed class NotificationDeliveryProcessor
             Finish(delivery, NotificationDeliveryStatus.FailedPermanent,
                 failure?.FailureCategory ?? "NoDeliverableDevice",
                 failure?.LastError ?? "No device accepted the push notification.");
+        }
+        await _context.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task ProcessEmailAsync(NotificationDelivery delivery, Notification notification, CancellationToken cancellationToken)
+    {
+        var emailSender = _emailSender;
+        if (emailSender is null)
+        {
+            Finish(delivery, NotificationDeliveryStatus.Cancelled, "EmailUnavailable", "Email delivery is not configured.");
+            await _context.SaveChangesAsync(cancellationToken);
+            return;
+        }
+
+        if (!notification.UserId.HasValue)
+        {
+            Finish(delivery, NotificationDeliveryStatus.FailedPermanent, "MissingRecipient", "Email delivery requires an authenticated tenant user.");
+            await _context.SaveChangesAsync(cancellationToken);
+            return;
+        }
+
+        var user = await _context.Set<User>().IgnoreQueryFilters().AsNoTracking()
+            .SingleOrDefaultAsync(candidate => candidate.Id == notification.UserId.Value
+                && candidate.TenantId == delivery.TenantId && !candidate.IsDeleted && candidate.IsActive, cancellationToken);
+        if (user is null)
+        {
+            Finish(delivery, NotificationDeliveryStatus.FailedPermanent, "MissingRecipient", "The notification recipient is unavailable.");
+            await _context.SaveChangesAsync(cancellationToken);
+            return;
+        }
+
+        var preference = await _context.Set<NotificationPreference>().IgnoreQueryFilters().AsNoTracking()
+            .SingleOrDefaultAsync(item => item.TenantId == delivery.TenantId
+                && item.UserId == user.Id && item.Type == notification.Type && !item.IsDeleted, cancellationToken);
+        if (!(preference?.EmailEnabled ?? NotificationPreferenceDefaults.EmailEnabled(notification.Type)))
+        {
+            Finish(delivery, NotificationDeliveryStatus.Cancelled, "PreferenceDisabled", "The recipient has disabled email delivery for this notification type.");
+            await _context.SaveChangesAsync(cancellationToken);
+            return;
+        }
+
+        EmailSendResult? result = null;
+        bool profileConfigured;
+        try
+        {
+            profileConfigured = await emailSender.IsConfiguredAsync(delivery.TenantId, notification.OrganizationId, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            profileConfigured = false;
+            result = new(false, EmailFailureKind.Transient, "EmailProfileUnavailable", "Email delivery configuration is temporarily unavailable.");
+        }
+
+        if (result is null && !profileConfigured)
+        {
+            Finish(delivery, NotificationDeliveryStatus.Cancelled, "EmailUnavailable", "The effective email profile is disabled or unavailable.");
+            await _context.SaveChangesAsync(cancellationToken);
+            return;
+        }
+
+        if (result is null)
+        {
+            try
+            {
+                result = await emailSender.SendAsync(notification, user.Email, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch
+            {
+                result = new(false, EmailFailureKind.Transient, "EmailDeliveryUnavailable", "Email delivery is temporarily unavailable.");
+            }
+        }
+
+        var sendResult = result ?? new(false, EmailFailureKind.Transient, "ProviderError", "Email delivery could not complete.");
+        if (sendResult.Succeeded)
+        {
+            Finish(delivery, NotificationDeliveryStatus.Accepted, null, null);
+            delivery.AcceptedAt = DateTime.UtcNow;
+        }
+        else if (sendResult.FailureKind == EmailFailureKind.Transient && delivery.AttemptCount < delivery.MaxAttempts)
+        {
+            delivery.Status = NotificationDeliveryStatus.RetryScheduled;
+            delivery.NextAttemptAt = NotificationRetryPolicy.NextAttempt(DateTime.UtcNow, delivery.AttemptCount, _options);
+            delivery.FailureCategory = sendResult.FailureCategory ?? "ProviderError";
+            delivery.LastError = sendResult.SafeFailureSummary ?? "The email provider could not complete the request.";
+            ClearLease(delivery);
+        }
+        else
+        {
+            Finish(delivery, NotificationDeliveryStatus.FailedPermanent,
+                sendResult.FailureCategory ?? "ProviderRejected",
+                sendResult.SafeFailureSummary ?? "The email provider could not complete the request.");
         }
         await _context.SaveChangesAsync(cancellationToken);
     }

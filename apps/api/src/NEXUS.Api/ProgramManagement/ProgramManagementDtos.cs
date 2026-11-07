@@ -15,7 +15,6 @@ public sealed class ProgramManagementListItemDto
     public int ProjectCount { get; init; }
     public int ProjectsRequiringAttention { get; init; }
     public string ScheduleIndicator { get; init; } = "Unknown";
-    public string FinancialIndicator { get; init; } = "Unavailable";
 }
 
 public sealed class ProgramManagementOverviewDto
@@ -23,7 +22,6 @@ public sealed class ProgramManagementOverviewDto
     public ProgramManagementIdentityDto Program { get; init; } = new();
     public ProgramManagementSummaryDto Summary { get; init; } = new();
     public ProgramDeliverySummaryDto Delivery { get; init; } = new();
-    public ProgramFinancialSummaryDto Financials { get; init; } = new();
     public ProgramRiskSummaryDto Risks { get; init; } = new();
     public ProgramIssueSummaryDto Issues { get; init; } = new();
     public ProgramResourceSummaryDto Resources { get; init; } = new();
@@ -53,7 +51,6 @@ public sealed class ProgramManagementIdentityDto
     public string Currency { get; init; } = string.Empty;
     public DateTime? StartDate { get; init; }
     public DateTime? EndDate { get; init; }
-    public decimal? Budget { get; init; }
 }
 
 public sealed class ProgramManagementSummaryDto
@@ -93,43 +90,11 @@ public sealed class ProgramProjectManagementDto
     public string ScheduleCondition { get; init; } = "Unknown";
     public DateTime? ForecastEndDate { get; init; }
     public string Currency { get; init; } = string.Empty;
-    public decimal? Budget { get; init; }
-    public decimal? ActualCost { get; init; }
     public bool RequiresAttention { get; init; }
     public int OpenRiskCount { get; init; }
     public int OpenIssueCount { get; init; }
     public string StatusReportState { get; init; } = "Missing";
     public DateTime? LatestStatusReportDate { get; init; }
-}
-
-public sealed class ProgramFinancialSummaryDto
-{
-    public string BaseCurrency { get; init; } = string.Empty;
-    public bool HasMixedCurrencies { get; init; }
-    public IReadOnlyList<ProgramFinancialCurrencyGroupDto> Groups { get; init; } = [];
-}
-
-public sealed class ProgramFinancialCurrencyGroupDto
-{
-    public string Currency { get; init; } = string.Empty;
-    public bool IsBaseCurrency { get; init; }
-    public decimal Budget { get; init; }
-    public decimal Actual { get; init; }
-    public decimal Committed { get; init; }
-    public decimal Forecast { get; init; }
-    public decimal? Remaining { get; init; }
-    public IReadOnlyList<ProgramFinancialProjectDto> Projects { get; init; } = [];
-}
-
-public sealed class ProgramFinancialProjectDto
-{
-    public Guid ProjectId { get; init; }
-    public Guid ProjectPublicId { get; init; }
-    public string ProjectName { get; init; } = string.Empty;
-    public decimal Budget { get; init; }
-    public decimal Actual { get; init; }
-    public decimal Committed { get; init; }
-    public decimal Forecast { get; init; }
 }
 
 public sealed class ProgramRiskSummaryDto

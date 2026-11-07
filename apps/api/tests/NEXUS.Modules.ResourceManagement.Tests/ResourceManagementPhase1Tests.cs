@@ -177,6 +177,37 @@ public class ResourceManagementPhase1Tests : TestBase
     }
 
     [Fact]
+    public void WorkingCalendar_UsesConfiguredWeekdaysIntervalsAndRecurringHolidayRanges()
+    {
+        var calendar = new WorkingCalendar
+        {
+            Name = "Configured working week",
+            DayRules = Enum.GetValues<DayOfWeek>().Select(day => new WorkingCalendarDayRule
+            {
+                DayOfWeek = day,
+                IsWorkingDay = day is not DayOfWeek.Saturday and not DayOfWeek.Sunday,
+                StartTime = day is DayOfWeek.Saturday or DayOfWeek.Sunday ? null : new TimeSpan(9, 0, 0),
+                EndTime = day is DayOfWeek.Saturday or DayOfWeek.Sunday ? null : new TimeSpan(17, 0, 0),
+                BreakStartTime = day is DayOfWeek.Saturday or DayOfWeek.Sunday ? null : new TimeSpan(12, 0, 0),
+                BreakEndTime = day is DayOfWeek.Saturday or DayOfWeek.Sunday ? null : new TimeSpan(13, 0, 0)
+            }).ToList()
+        };
+        calendar.Holidays.Add(new Holiday
+        {
+            Name = "Annual shutdown",
+            Date = new DateTime(2026, 1, 5),
+            EndDate = new DateTime(2026, 1, 6),
+            IsRecurring = true
+        });
+
+        Assert.True(calendar.HasValidSchedule);
+        Assert.Equal(35m, calendar.WeeklyProductiveHours);
+        Assert.Equal(0m, calendar.GetProductiveHours(new DateTime(2026, 1, 4)));
+        Assert.Equal(0m, calendar.GetProductiveHours(new DateTime(2027, 1, 6)));
+        Assert.Equal(7m, calendar.GetProductiveHours(new DateTime(2027, 1, 7)));
+    }
+
+    [Fact]
     public async Task ProjectRole_LookupCRUD()
     {
         using var context = CreateContext();
@@ -449,7 +480,8 @@ public class ResourceManagementPhase1Tests : TestBase
             Name = "New Vendor Resource",
             Type = ResourceType.Vendor,
             Status = "Active",
-            VendorId = inactiveVendor.Id
+            VendorId = inactiveVendor.Id,
+            HoursPerDay = 8m
         }, "11111111-1111-1111-1111-111111111111");
 
         Assert.False(create.IsSuccess);

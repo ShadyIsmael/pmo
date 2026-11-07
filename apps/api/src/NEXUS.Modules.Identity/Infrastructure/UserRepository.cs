@@ -46,12 +46,54 @@ public class UserRepository : IUserRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<User>> GetActiveInTenantAsync(Guid tenantId, CancellationToken cancellationToken = default)
+    {
+        if (tenantId == Guid.Empty)
+            return Array.Empty<User>();
+
+        return await _context.Set<User>().IgnoreQueryFilters().AsNoTracking()
+            .Where(user => user.TenantId == tenantId && user.IsActive && !user.IsDeleted)
+            .OrderBy(user => user.FirstName)
+            .ThenBy(user => user.LastName)
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyList<User>> GetByRoleNameAsync(string roleName, CancellationToken cancellationToken = default)
     {
         return await _context.Set<User>()
             .Where(u => u.IsActive && u.UserRoles.Any(ur => ur.Role.Name == roleName))
             .OrderBy(u => u.FirstName)
             .ThenBy(u => u.LastName)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<User>> GetByRoleNameInTenantAsync(string roleName, Guid tenantId, CancellationToken cancellationToken = default)
+    {
+        if (tenantId == Guid.Empty || string.IsNullOrWhiteSpace(roleName))
+            return Array.Empty<User>();
+
+        return await _context.Set<User>().IgnoreQueryFilters().AsNoTracking()
+            .Where(user => user.TenantId == tenantId && user.IsActive && !user.IsDeleted
+                && user.UserRoles.Any(userRole => userRole.TenantId == tenantId && !userRole.IsDeleted
+                    && userRole.Role.TenantId == tenantId && !userRole.Role.IsDeleted
+                    && userRole.Role.Name == roleName))
+            .OrderBy(user => user.FirstName)
+            .ThenBy(user => user.LastName)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<User>> GetByRoleCategoryInTenantAsync(string category, Guid tenantId, CancellationToken cancellationToken = default)
+    {
+        if (tenantId == Guid.Empty || string.IsNullOrWhiteSpace(category))
+            return Array.Empty<User>();
+
+        return await _context.Set<User>().IgnoreQueryFilters().AsNoTracking()
+            .Where(user => user.TenantId == tenantId && user.IsActive && !user.IsDeleted
+                && user.UserRoles.Any(userRole => userRole.TenantId == tenantId && !userRole.IsDeleted
+                    && userRole.Role.TenantId == tenantId && !userRole.Role.IsDeleted
+                    && userRole.Role.Category == category))
+            .OrderBy(user => user.FirstName)
+            .ThenBy(user => user.LastName)
             .ToListAsync(cancellationToken);
     }
 

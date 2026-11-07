@@ -11,7 +11,7 @@ namespace NEXUS.Modules.CostManagement.Api;
 [Authorize]
 public sealed class CommitmentController(ICommitmentService commitmentService) : ControllerBase
 {
-    [Authorize(Policy = "Finances.Read")]
+    [Authorize(Policy = "Commitment.View")]
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
     {
@@ -19,34 +19,34 @@ public sealed class CommitmentController(ICommitmentService commitmentService) :
         return result.IsFailure ? NotFound(new { error = result.Error?.Message }) : Ok(result.Value);
     }
 
-    [Authorize(Policy = "Finances.Read")]
+    [Authorize(Policy = "Commitment.View")]
     [HttpGet]
     public async Task<IActionResult> GetPaged(
         [FromQuery] int page = 1, [FromQuery] int pageSize = 20,
         [FromQuery] Guid? projectId = null, CancellationToken cancellationToken = default) =>
         Ok(await commitmentService.GetPagedAsync(page, pageSize, projectId, cancellationToken));
 
-    [Authorize(Policy = "Finances.Write")]
+    [Authorize(Policy = "Commitment.Create")]
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateCommitmentDto dto, CancellationToken cancellationToken) =>
         ToActionResult(await commitmentService.CreateAsync(dto, UserId(), cancellationToken), nameof(GetById));
 
-    [Authorize(Policy = "Finances.Write")]
+    [Authorize(Policy = "Commitment.Edit")]
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateCommitmentDto dto, CancellationToken cancellationToken) =>
         ToActionResult(await commitmentService.UpdateAsync(id, dto, UserId(), cancellationToken));
 
-    [Authorize(Policy = "Finances.Write")]
+    [Authorize(Policy = "Commitment.Close")]
     [HttpPost("{id:guid}/close")]
     public async Task<IActionResult> Close(Guid id, [FromQuery] byte[]? rowVersion, CancellationToken cancellationToken) =>
         ToActionResult(await commitmentService.CloseAsync(id, rowVersion ?? [], UserId(), cancellationToken));
 
-    [Authorize(Policy = "Finances.Write")]
+    [Authorize(Policy = "Commitment.Cancel")]
     [HttpPost("{id:guid}/cancel")]
     public async Task<IActionResult> Cancel(Guid id, [FromQuery] byte[]? rowVersion, CancellationToken cancellationToken) =>
         ToActionResult(await commitmentService.CancelAsync(id, rowVersion ?? [], UserId(), cancellationToken));
 
-    [Authorize(Policy = "Finances.Write")]
+    [Authorize(Policy = "Commitment.Delete")]
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id, [FromQuery] byte[]? rowVersion, CancellationToken cancellationToken) =>
         ToActionResult(await commitmentService.DeleteAsync(id, rowVersion ?? [], UserId(), cancellationToken));
@@ -64,6 +64,8 @@ public sealed class CommitmentController(ICommitmentService commitmentService) :
 
     private IActionResult ErrorResult(Error? error) => error?.StatusCode switch
     {
+        401 => Unauthorized(new { error = error.Message }),
+        403 => Forbid(),
         404 => NotFound(new { error = error.Message }),
         409 => Conflict(new { error = error.Message }),
         _ => BadRequest(new { error = error?.Message ?? "Request failed" })

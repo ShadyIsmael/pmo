@@ -1,7 +1,11 @@
 using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Data;
+using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using NEXUS.Modules.Audit.Application;
 using NEXUS.Modules.Audit.Domain;
 using NEXUS.Modules.Meetings.Application.DTOs;
@@ -14,6 +18,8 @@ namespace NEXUS.Modules.Meetings.Application;
 
 public sealed class MeetingService : IMeetingService
 {
+    private const int MaxCalendarEvents = 2000;
+    private static readonly TimeSpan MaxCalendarRange = TimeSpan.FromDays(366);
     private readonly DbContext _context;
     private readonly IAuditService _auditService;
     private readonly IProjectReferenceLookup _projectLookup;
@@ -23,6 +29,7 @@ public sealed class MeetingService : IMeetingService
     private readonly IMeetingMinutesAttachmentStorage _attachmentStorage;
     private readonly IMeetingMinutesAttachmentPolicy _attachmentPolicy;
     private readonly IManagementContextAccessor _managementContext;
+    private readonly IMeetingNotificationPublisher _meetingNotifications;
 
     public MeetingService(
         DbContext context,
@@ -33,7 +40,8 @@ public sealed class MeetingService : IMeetingService
         IHttpContextAccessor httpContextAccessor,
         IMeetingMinutesAttachmentStorage attachmentStorage,
         IMeetingMinutesAttachmentPolicy attachmentPolicy,
-        IManagementContextAccessor managementContext)
+        IManagementContextAccessor managementContext,
+        IMeetingNotificationPublisher meetingNotifications)
     {
         _context = context;
         _auditService = auditService;
@@ -44,6 +52,7 @@ public sealed class MeetingService : IMeetingService
         _attachmentStorage = attachmentStorage;
         _attachmentPolicy = attachmentPolicy;
         _managementContext = managementContext;
+        _meetingNotifications = meetingNotifications;
     }
 
     public async Task<PagedResult<MeetingListDto>> GetPagedAsync(
@@ -54,18 +63,12 @@ public sealed class MeetingService : IMeetingService
         Guid? projectId = null,
         DateTime? dateFrom = null,
         DateTime? dateTo = null,
+        IReadOnlyList<Guid>? projectIds = null,
         CancellationToken cancellationToken = default)
     {
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 100);
-        var query = InScope(_context.Set<Meeting>().AsNoTracking());
-        if (!string.IsNullOrWhiteSpace(search))
-        {
-            var term = search.Trim();
-            query = query.Where(meeting => meeting.Title.Contains(term) || (meeting.Description != null && meeting.Description.Contains(term)));
-        }
-        if (!string.IsNullOrWhiteSpace(status)) query = query.Where(meeting => meeting.Status == status.Trim());
-        if (projectId.HasValue) query = query.Where(meeting => meeting.ProjectId == projectId.Value);
+        var query = ApplyFilters(InScope(_context.Set<Meeting>().AsNoTracking()), search, status, projectId, projectIds);
         if (dateFrom.HasValue) query = query.Where(meeting => meeting.StartTime >= dateFrom.Value);
         if (dateTo.HasValue) query = query.Where(meeting => meeting.StartTime <= dateTo.Value);
 
@@ -77,38 +80,96 @@ public sealed class MeetingService : IMeetingService
             .Take(pageSize)
             .Select(meeting => new MeetingListRow(
                 meeting.Id,
+                meeting.PublicId,
                 meeting.Title,
                 meeting.ProjectId,
                 meeting.OrganizerId,
                 meeting.StartTime,
                 meeting.EndTime,
+                meeting.ActualStartTime,
+                meeting.ActualEndTime,
                 meeting.Status,
                 meeting.ReminderOffsetMinutes,
                 meeting.Participants.Count,
-                meeting.Minutes.OrderByDescending(minutes => minutes.CreatedAt).Select(minutes => minutes.State).FirstOrDefault()))
+                meeting.Status == MeetingStatuses.Completed
+                    ? meeting.Minutes.OrderByDescending(minutes => minutes.CreatedAt).Select(minutes => minutes.State).FirstOrDefault()
+                    : null,
+                meeting.Recurrence != null && meeting.Recurrence.StartsWith(MeetingRecurrenceMarkerCodec.Prefix)))
             .ToListAsync(cancellationToken);
 
-        var projectReferences = await _projectLookup.GetFinancialReferencesAsync(cancellationToken);
-        var projectById = projectReferences.ToDictionary(project => project.Id);
-        var organizerNames = await _userLookup.GetManyAsync(rows.Where(row => row.OrganizerId.HasValue).Select(row => row.OrganizerId.GetValueOrDefault()), cancellationToken);
-        var items = rows.Select(row => new MeetingListDto
-        {
-            Id = row.Id,
-            Title = row.Title,
-            ProjectId = row.ProjectId,
-            ProjectPublicId = row.ProjectId.HasValue && projectById.TryGetValue(row.ProjectId.Value, out var projectReference) ? projectReference.PublicId : null,
-            ProjectName = row.ProjectId.HasValue && projectById.TryGetValue(row.ProjectId.Value, out var meetingProject) ? meetingProject.Name : null,
-            OrganizerId = row.OrganizerId,
-            OrganizerName = row.OrganizerId.HasValue && organizerNames.TryGetValue(row.OrganizerId.Value, out var organizerName) ? organizerName.FullName : null,
-            StartTime = row.StartTime,
-            EndTime = row.EndTime,
-            Status = row.Status,
-            ReminderOffsetMinutes = row.ReminderOffsetMinutes,
-            AttendeeCount = row.AttendeeCount,
-            MinutesState = row.MinutesState
-        }).ToList();
+        return new PagedResult<MeetingListDto>(await ToListDtosAsync(rows, cancellationToken), page, pageSize, total);
+    }
 
-        return new PagedResult<MeetingListDto>(items, page, pageSize, total);
+    public async Task<Result<MeetingCalendarDto>> GetCalendarAsync(
+        DateTime from,
+        DateTime to,
+        IReadOnlyList<Guid>? projectIds = null,
+        string? status = null,
+        string? search = null,
+        CancellationToken cancellationToken = default)
+    {
+        from = AsUtc(from);
+        to = AsUtc(to);
+        if (to <= from) return Result<MeetingCalendarDto>.Failure(Error.Validation("The calendar range end must be after the range start."));
+        if (to - from > MaxCalendarRange) return Result<MeetingCalendarDto>.Failure(Error.Validation("The calendar range cannot exceed 366 days."));
+
+        var query = ApplyFilters(InScope(_context.Set<Meeting>().AsNoTracking()), search, status, null, projectIds)
+            .Where(meeting => meeting.StartTime < to && meeting.EndTime > from);
+
+        var total = await query.CountAsync(cancellationToken);
+        var rows = await query
+            .OrderBy(meeting => meeting.StartTime)
+            .ThenBy(meeting => meeting.Title)
+            .Take(MaxCalendarEvents + 1)
+            .Select(meeting => new MeetingListRow(
+                meeting.Id,
+                meeting.PublicId,
+                meeting.Title,
+                meeting.ProjectId,
+                meeting.OrganizerId,
+                meeting.StartTime,
+                meeting.EndTime,
+                meeting.ActualStartTime,
+                meeting.ActualEndTime,
+                meeting.Status,
+                meeting.ReminderOffsetMinutes,
+                meeting.Participants.Count,
+                meeting.Status == MeetingStatuses.Completed
+                    ? meeting.Minutes.OrderByDescending(minutes => minutes.CreatedAt).Select(minutes => minutes.State).FirstOrDefault()
+                    : null,
+                meeting.Recurrence != null && meeting.Recurrence.StartsWith(MeetingRecurrenceMarkerCodec.Prefix)))
+            .ToListAsync(cancellationToken);
+
+        var isTruncated = rows.Count > MaxCalendarEvents;
+        if (isTruncated) rows = rows.Take(MaxCalendarEvents).ToList();
+
+        return Result<MeetingCalendarDto>.Success(new MeetingCalendarDto
+        {
+            From = from,
+            To = to,
+            TotalCount = total,
+            IsTruncated = isTruncated,
+            Items = await ToListDtosAsync(rows, cancellationToken)
+        });
+    }
+
+    public async Task<IReadOnlyList<MeetingProjectOptionDto>> GetAccessibleProjectsAsync(string? search = null, CancellationToken cancellationToken = default)
+    {
+        var term = search?.Trim();
+        var projects = await _projectLookup.GetFinancialReferencesAsync(cancellationToken);
+        return projects
+            .Where(project => string.IsNullOrEmpty(term)
+                || project.Name.Contains(term, StringComparison.OrdinalIgnoreCase)
+                || (project.Code?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false))
+            .OrderBy(project => project.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(project => new MeetingProjectOptionDto
+            {
+                Id = project.Id,
+                PublicId = project.PublicId,
+                Name = project.Name,
+                Code = project.Code
+            })
+            .ToList();
     }
 
     public async Task<ProjectMeetingOverviewDto> GetProjectOverviewAsync(Guid projectId, CancellationToken cancellationToken = default)
@@ -126,23 +187,41 @@ public sealed class MeetingService : IMeetingService
         var meeting = await InScope(_context.Set<Meeting>().AsNoTracking()).FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
         if (meeting is null) return Result<MeetingDetailDto>.Failure(Error.NotFound("Meeting not found"));
 
+        return await BuildDetailAsync(meeting, cancellationToken);
+    }
+
+    public async Task<Result<MeetingDetailDto>> GetByPublicIdAsync(Guid publicId, CancellationToken cancellationToken = default)
+    {
+        var meeting = await InScope(_context.Set<Meeting>().AsNoTracking())
+            .FirstOrDefaultAsync(item => item.PublicId == publicId, cancellationToken);
+        if (meeting is null) return Result<MeetingDetailDto>.Failure(Error.NotFound("Meeting not found"));
+
+        return await BuildDetailAsync(meeting, cancellationToken);
+    }
+
+    private async Task<Result<MeetingDetailDto>> BuildDetailAsync(Meeting meeting, CancellationToken cancellationToken)
+    {
         var participants = await _context.Set<MeetingParticipant>().AsNoTracking()
-            .Where(item => item.MeetingId == id)
+            .Where(item => item.MeetingId == meeting.Id)
             .OrderBy(item => item.Name)
             .ThenBy(item => item.Id)
             .ToListAsync(cancellationToken);
         var userIds = participants.Where(item => item.UserId.HasValue).Select(item => item.UserId.GetValueOrDefault()).Append(meeting.OrganizerId ?? Guid.Empty);
         var users = await _userLookup.GetManyAsync(userIds, cancellationToken);
         var project = meeting.ProjectId.HasValue ? await _projectLookup.FindAsync(meeting.ProjectId.Value, cancellationToken) : null;
-        var minutesState = await _context.Set<MeetingMinutes>().AsNoTracking()
-            .Where(item => item.MeetingId == id)
-            .OrderByDescending(item => item.CreatedAt)
-            .Select(item => item.State)
-            .FirstOrDefaultAsync(cancellationToken);
+        var minutesState = (meeting.Status ?? MeetingStatuses.Scheduled) == MeetingStatuses.Completed
+            ? await _context.Set<MeetingMinutes>().AsNoTracking()
+                .Where(item => item.MeetingId == meeting.Id)
+                .OrderByDescending(item => item.CreatedAt)
+                .Select(item => item.State)
+                .FirstOrDefaultAsync(cancellationToken)
+            : null;
 
+        var isRecurring = MeetingRecurrenceMarkerCodec.TryDecode(meeting.Recurrence, out var recurrenceMarker);
         return Result<MeetingDetailDto>.Success(new MeetingDetailDto
         {
             Id = meeting.Id,
+            PublicId = meeting.PublicId,
             Title = meeting.Title,
             Objective = meeting.Description,
             ProjectId = meeting.ProjectId,
@@ -150,22 +229,42 @@ public sealed class MeetingService : IMeetingService
             ProjectName = project?.Name,
             OrganizerId = meeting.OrganizerId,
             OrganizerName = meeting.OrganizerId.HasValue && users.TryGetValue(meeting.OrganizerId.Value, out var organizer) ? organizer.FullName : null,
-            StartTime = meeting.StartTime,
-            EndTime = meeting.EndTime,
+            StartTime = AsUtc(meeting.StartTime),
+            EndTime = AsUtc(meeting.EndTime),
+            ActualStartTime = AsUtc(meeting.ActualStartTime),
+            ActualEndTime = AsUtc(meeting.ActualEndTime),
             Location = meeting.Location,
             MeetingLink = meeting.MeetingLink,
             Status = meeting.Status,
             ReminderOffsetMinutes = meeting.ReminderOffsetMinutes,
             Attendees = participants.Select(item => ToAttendee(item, users)).ToList(),
             MinutesState = minutesState,
-            RowVersion = meeting.RowVersion
+            RowVersion = meeting.RowVersion,
+            IsRecurring = isRecurring,
+            SeriesId = recurrenceMarker?.SeriesId,
+            OccurrenceKey = recurrenceMarker?.OccurrenceKey
         });
     }
 
     public async Task<Result<MeetingDetailDto>> CreateAsync(CreateMeetingRequest request, string userId, CancellationToken cancellationToken = default)
     {
+        if (request.Status is not null && CanonicalStatus(request.Status) != MeetingStatuses.Scheduled)
+            return Result<MeetingDetailDto>.Failure(Error.Validation("New meetings must start in the Scheduled status"));
         var validation = await ValidateMeetingAsync(request, userId, cancellationToken);
         if (validation is not null) return Result<MeetingDetailDto>.Failure(validation);
+
+        var agendaInputs = request.AgendaItems ?? Array.Empty<CreateMeetingAgendaItemRequest>();
+        foreach (var agendaInput in agendaInputs)
+        {
+            if (string.IsNullOrWhiteSpace(agendaInput.Topic) || agendaInput.Topic.Trim().Length > 500)
+                return Result<MeetingDetailDto>.Failure(Error.Validation("Agenda topic is required and cannot exceed 500 characters"));
+            if (agendaInput.Description?.Length > 4000)
+                return Result<MeetingDetailDto>.Failure(Error.Validation("Agenda description cannot exceed 4000 characters"));
+            if (agendaInput.DurationMinutes is <= 0 or > 1440)
+                return Result<MeetingDetailDto>.Failure(Error.Validation("Agenda duration must be between 1 and 1440 minutes"));
+            if (agendaInput.OwnerId.HasValue && await _userLookup.FindAsync(agendaInput.OwnerId.Value, cancellationToken) is null)
+                return Result<MeetingDetailDto>.Failure(Error.NotFound("Active agenda owner not found"));
+        }
 
         var organizerId = request.OrganizerId ?? ParseUserId(userId);
         var attendees = await ResolveAttendeesAsync(request.Attendees, cancellationToken);
@@ -179,18 +278,234 @@ public sealed class MeetingService : IMeetingService
             StartTime = request.StartTime,
             EndTime = request.EndTime,
             Location = Normalize(request.Location),
-            MeetingLink = Normalize(request.MeetingLink),
+            MeetingLink = MeetingLinkPolicy.Normalize(request.MeetingLink),
             OrganizerId = organizerId,
             Status = CanonicalStatus(request.Status) ?? MeetingStatuses.Scheduled,
             ReminderOffsetMinutes = request.ReminderOffsetMinutes,
             CreatedBy = userId
         };
-        await SynchronizeAttendeesAsync(meeting, attendees.Value, userId, cancellationToken);
+        var sortOrder = 0;
+        foreach (var agendaInput in agendaInputs)
+        {
+            meeting.AgendaItems.Add(new MeetingAgenda
+            {
+                TenantId = meeting.TenantId,
+                Topic = agendaInput.Topic.Trim(),
+                Description = Normalize(agendaInput.Description),
+                DurationMinutes = agendaInput.DurationMinutes,
+                OwnerId = agendaInput.OwnerId,
+                SortOrder = sortOrder++,
+                CreatedBy = userId
+            });
+        }
+        var newInvitations = await SynchronizeAttendeesAsync(meeting, attendees.Value, userId, cancellationToken);
 
-        _context.Set<Meeting>().Add(meeting);
-        await _context.SaveChangesAsync(cancellationToken);
+        await using (var transaction = await BeginNotificationTransactionAsync(cancellationToken))
+        {
+            _context.Set<Meeting>().Add(meeting);
+            await _context.SaveChangesAsync(cancellationToken);
+            var invitationResult = await QueueInvitationsAsync(meeting, newInvitations, ParseOptionalUserId(userId), cancellationToken);
+            if (invitationResult.IsFailure)
+            {
+                if (transaction is not null) await transaction.RollbackAsync(cancellationToken);
+                return Result<MeetingDetailDto>.Failure(invitationResult.Error ?? Error.Validation("Meeting invitations could not be queued."));
+            }
+            if (transaction is not null) await transaction.CommitAsync(cancellationToken);
+        }
         await AuditAsync(meeting, "Created", userId, new { meeting.Title, meeting.ProjectId, meeting.Status }, cancellationToken);
         return await GetByIdAsync(meeting.Id, cancellationToken);
+    }
+
+    public async Task<Result<MeetingDetailDto>> CreateSeriesAsync(CreateMeetingSeriesRequest request, string userId, CancellationToken cancellationToken = default)
+    {
+        if (request.RequestId == Guid.Empty)
+            return Result<MeetingDetailDto>.Failure(Error.Validation("A request ID is required for safe recurring-series retries."));
+        var schedule = MeetingRecurrenceSchedule.Build(request.Rule);
+        if (schedule.IsFailure) return Result<MeetingDetailDto>.Failure(schedule.Error!);
+        var first = schedule.Value!.Occurrences[0];
+        var input = request.Template;
+        var template = new CreateMeetingRequest
+        {
+            Title = input.Title,
+            Objective = input.Objective,
+            ProjectId = input.ProjectId,
+            StartTime = first.StartTime,
+            EndTime = first.EndTime,
+            Location = input.Location,
+            MeetingLink = input.MeetingLink,
+            OrganizerId = input.OrganizerId,
+            Attendees = input.Attendees,
+            AgendaItems = input.AgendaItems,
+            Status = input.Status,
+            ReminderOffsetMinutes = input.ReminderOffsetMinutes,
+        };
+        if (template.Status is not null && CanonicalStatus(template.Status) != MeetingStatuses.Scheduled)
+            return Result<MeetingDetailDto>.Failure(Error.Validation("Recurring meetings must start in the Scheduled status."));
+        var validation = await ValidateMeetingAsync(template, userId, cancellationToken);
+        if (validation is not null) return Result<MeetingDetailDto>.Failure(validation);
+
+        var agendaInputs = template.AgendaItems ?? Array.Empty<CreateMeetingAgendaItemRequest>();
+        foreach (var agendaInput in agendaInputs)
+        {
+            if (string.IsNullOrWhiteSpace(agendaInput.Topic) || agendaInput.Topic.Trim().Length > 500)
+                return Result<MeetingDetailDto>.Failure(Error.Validation("Agenda topic is required and cannot exceed 500 characters."));
+            if (agendaInput.Description?.Length > 4000 || agendaInput.DurationMinutes is <= 0 or > 1440)
+                return Result<MeetingDetailDto>.Failure(Error.Validation("Agenda details or duration are invalid."));
+            if (agendaInput.OwnerId.HasValue && await _userLookup.FindAsync(agendaInput.OwnerId.Value, cancellationToken) is null)
+                return Result<MeetingDetailDto>.Failure(Error.NotFound("Active agenda owner not found."));
+        }
+        var attendeesResult = await ResolveAttendeesAsync(template.Attendees, cancellationToken);
+        if (!attendeesResult.IsSuccess || attendeesResult.Value is null)
+            return Result<MeetingDetailDto>.Failure(attendeesResult.Error ?? Error.Validation("Meeting attendees are invalid."));
+
+        var tenantId = GetCurrentTenantId();
+        var seriesId = MeetingRecurrenceMarkerCodec.DeriveSeriesId(tenantId, request.RequestId);
+        var fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
+            JsonSerializer.Serialize(new { request.Template, request.Rule }, new JsonSerializerOptions(JsonSerializerDefaults.Web)))));
+        var existing = await _context.Set<Meeting>().IgnoreQueryFilters().AsNoTracking()
+            .FirstOrDefaultAsync(item => item.Id == seriesId && item.TenantId == tenantId, cancellationToken);
+        if (existing is not null)
+        {
+            if (MeetingRecurrenceMarkerCodec.TryDecode(existing.Recurrence, out var marker)
+                && marker!.IsSeriesAnchor && marker.RequestId == request.RequestId
+                && string.Equals(marker.RequestFingerprint, fingerprint, StringComparison.Ordinal))
+                return await GetByIdAsync(existing.Id, cancellationToken);
+            return Result<MeetingDetailDto>.Failure(Error.Conflict("This recurring-series request ID has already been used."));
+        }
+
+        var organizerId = template.OrganizerId ?? ParseUserId(userId);
+        var meetings = new List<Meeting>(schedule.Value.TotalOccurrenceCount);
+        var occurrenceInvitations = new List<(Meeting Meeting, IReadOnlyList<MeetingParticipant> Participants)>();
+        foreach (var occurrence in schedule.Value.Occurrences)
+        {
+            var isAnchor = meetings.Count == 0;
+            var meetingId = isAnchor ? seriesId : MeetingRecurrenceMarkerCodec.DeriveOccurrenceId(seriesId, occurrence.OccurrenceKey);
+            var meeting = new Meeting
+            {
+                Id = meetingId,
+                TenantId = tenantId,
+                Title = template.Title.Trim(),
+                Description = Normalize(template.Objective),
+                ProjectId = template.ProjectId,
+                StartTime = occurrence.StartTime,
+                EndTime = occurrence.EndTime,
+                Location = Normalize(template.Location),
+                MeetingLink = MeetingLinkPolicy.Normalize(template.MeetingLink),
+                OrganizerId = organizerId,
+                Status = MeetingStatuses.Scheduled,
+                ReminderOffsetMinutes = template.ReminderOffsetMinutes,
+                Recurrence = MeetingRecurrenceMarkerCodec.Encode(new MeetingRecurrenceMarker
+                {
+                    SeriesId = seriesId,
+                    OccurrenceKey = occurrence.OccurrenceKey,
+                    IsSeriesAnchor = isAnchor,
+                    Rule = isAnchor ? request.Rule : null,
+                    RequestId = isAnchor ? request.RequestId : null,
+                    RequestFingerprint = isAnchor ? fingerprint : null,
+                }),
+                CreatedBy = userId,
+            };
+
+            var agendaOrder = 0;
+            foreach (var agendaInput in agendaInputs)
+                meeting.AgendaItems.Add(new MeetingAgenda
+                {
+                    TenantId = tenantId,
+                    Topic = agendaInput.Topic.Trim(),
+                    Description = Normalize(agendaInput.Description),
+                    DurationMinutes = agendaInput.DurationMinutes,
+                    OwnerId = agendaInput.OwnerId,
+                    SortOrder = agendaOrder++,
+                    CreatedBy = userId,
+                });
+            var participants = new List<MeetingParticipant>();
+            foreach (var attendee in attendeesResult.Value)
+            {
+                var participant = new MeetingParticipant
+                {
+                    TenantId = tenantId,
+                    UserId = attendee.UserId,
+                    Email = attendee.Email,
+                    Name = attendee.DisplayName,
+                    InvitationResponseStatus = MeetingInvitationResponseStatuses.Pending,
+                    CreatedBy = userId,
+                };
+                meeting.Participants.Add(participant);
+                participants.Add(participant);
+            }
+            meetings.Add(meeting);
+            occurrenceInvitations.Add((meeting, participants));
+        }
+
+        _context.Set<Meeting>().AddRange(meetings);
+        var occurrenceDataPersisted = false;
+        try
+        {
+            // Persist all occurrences and invitation events atomically, so retries never
+            // leave a committed series without its corresponding notification records.
+            await using var transaction = await BeginNotificationTransactionAsync(cancellationToken);
+            await _context.SaveChangesAsync(cancellationToken);
+            occurrenceDataPersisted = true;
+            foreach (var occurrence in occurrenceInvitations)
+            {
+                var invitationResult = await QueueInvitationsAsync(occurrence.Meeting, occurrence.Participants,
+                    ParseOptionalUserId(userId), cancellationToken);
+                if (invitationResult.IsFailure)
+                {
+                    if (transaction is not null) await transaction.RollbackAsync(cancellationToken);
+                    return Result<MeetingDetailDto>.Failure(invitationResult.Error ?? Error.Validation("Meeting invitations could not be queued."));
+                }
+            }
+            if (transaction is not null) await transaction.CommitAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            if (occurrenceDataPersisted) throw;
+            foreach (var entry in _context.ChangeTracker.Entries<MeetingAgenda>().Where(entry => entry.State == EntityState.Added && meetings.Any(meeting => meeting.Id == entry.Entity.MeetingId)).ToArray())
+                entry.State = EntityState.Detached;
+            foreach (var entry in _context.ChangeTracker.Entries<MeetingParticipant>().Where(entry => entry.State == EntityState.Added && meetings.Any(meeting => meeting.Id == entry.Entity.MeetingId)).ToArray())
+                entry.State = EntityState.Detached;
+            foreach (var entry in _context.ChangeTracker.Entries<Meeting>().Where(entry => entry.State == EntityState.Added && meetings.Any(meeting => meeting.Id == entry.Entity.Id)).ToArray())
+                entry.State = EntityState.Detached;
+            existing = await _context.Set<Meeting>().IgnoreQueryFilters().AsNoTracking()
+                .FirstOrDefaultAsync(item => item.Id == seriesId && item.TenantId == tenantId, cancellationToken);
+            if (existing is not null && MeetingRecurrenceMarkerCodec.TryDecode(existing.Recurrence, out var marker)
+                && marker!.IsSeriesAnchor && marker.RequestId == request.RequestId
+                && string.Equals(marker.RequestFingerprint, fingerprint, StringComparison.Ordinal))
+                return await GetByIdAsync(existing.Id, cancellationToken);
+            return Result<MeetingDetailDto>.Failure(Error.Conflict("The recurring series could not be created because its request ID conflicts with an existing meeting."));
+        }
+
+        await AuditAsync(meetings[0], "RecurringSeriesCreated", userId,
+            new { seriesId, occurrenceIds = meetings.Select(meeting => meeting.Id).ToArray(), schedule.Value.TotalOccurrenceCount }, cancellationToken);
+        return await GetByIdAsync(meetings[0].Id, cancellationToken);
+    }
+
+    public async Task<Result<MeetingSeriesDto>> GetSeriesAsync(Guid meetingId, CancellationToken cancellationToken = default)
+    {
+        var current = await InScope(_context.Set<Meeting>().AsNoTracking())
+            .FirstOrDefaultAsync(item => item.Id == meetingId, cancellationToken);
+        if (current is null || !MeetingRecurrenceMarkerCodec.TryDecode(current.Recurrence, out var currentMarker))
+            return Result<MeetingSeriesDto>.Failure(Error.NotFound("Recurring series not found."));
+
+        var seriesId = currentMarker!.SeriesId;
+        var anchor = await InScope(_context.Set<Meeting>().AsNoTracking())
+            .FirstOrDefaultAsync(item => item.Id == seriesId && item.TenantId == current.TenantId, cancellationToken);
+        if (anchor is null || !MeetingRecurrenceMarkerCodec.TryDecode(anchor.Recurrence, out var anchorMarker)
+            || !anchorMarker!.IsSeriesAnchor || anchorMarker.Rule is null)
+            return Result<MeetingSeriesDto>.Failure(Error.NotFound("Recurring series settings are unavailable."));
+
+        var candidates = await InScope(_context.Set<Meeting>().AsNoTracking())
+            .Where(item => item.TenantId == current.TenantId && item.Recurrence != null && item.Recurrence.Contains(seriesId.ToString("D")))
+            .ToListAsync(cancellationToken);
+        var occurrences = candidates
+            .Select(item => (Meeting: item, Valid: MeetingRecurrenceMarkerCodec.TryDecode(item.Recurrence, out var marker), Marker: marker))
+            .Where(item => item.Valid && item.Marker!.SeriesId == seriesId)
+            .OrderBy(item => item.Marker!.OccurrenceKey, StringComparer.Ordinal)
+            .Select(item => new MeetingSeriesOccurrenceDto(item.Meeting.Id, item.Marker!.OccurrenceKey, item.Meeting.Title,
+                AsUtc(item.Meeting.StartTime), AsUtc(item.Meeting.EndTime), item.Meeting.Status, item.Marker.IsSeriesAnchor))
+            .ToArray();
+        return Result<MeetingSeriesDto>.Success(new MeetingSeriesDto(seriesId, anchorMarker.Rule, anchor.Title, occurrences));
     }
 
     public async Task<Result<MeetingDetailDto>> UpdateAsync(Guid id, UpdateMeetingRequest request, string userId, CancellationToken cancellationToken = default)
@@ -202,10 +517,12 @@ public sealed class MeetingService : IMeetingService
         var attendees = await ResolveAttendeesAsync(request.Attendees, cancellationToken);
         if (!attendees.IsSuccess || attendees.Value is null) return Result<MeetingDetailDto>.Failure(attendees.Error ?? Error.Validation("Meeting attendees are invalid"));
 
-        var requestedStatus = CanonicalStatus(request.Status) ?? meeting.Status ?? MeetingStatuses.Scheduled;
-        if (!IsValidTransition(meeting.Status ?? MeetingStatuses.Scheduled, requestedStatus))
+        var currentStatus = meeting.Status ?? MeetingStatuses.Scheduled;
+        var requestedStatus = CanonicalStatus(request.Status) ?? currentStatus;
+        if (currentStatus != MeetingStatuses.Scheduled
+            || requestedStatus is not (MeetingStatuses.Scheduled or MeetingStatuses.Cancelled))
         {
-            return Result<MeetingDetailDto>.Failure(Error.Conflict("The meeting status transition is not allowed"));
+            return Result<MeetingDetailDto>.Failure(Error.Conflict("Only scheduled meetings can be edited here. Use the lifecycle actions to start or end a meeting."));
         }
         if (request.RowVersion is { Length: > 0 }) _context.Entry(meeting).Property(item => item.RowVersion).OriginalValue = request.RowVersion;
         var reminderConfigurationChanged = meeting.StartTime != request.StartTime || meeting.ReminderOffsetMinutes != request.ReminderOffsetMinutes || !string.Equals(meeting.Status, requestedStatus, StringComparison.Ordinal);
@@ -216,16 +533,24 @@ public sealed class MeetingService : IMeetingService
         meeting.StartTime = request.StartTime;
         meeting.EndTime = request.EndTime;
         meeting.Location = Normalize(request.Location);
-        meeting.MeetingLink = Normalize(request.MeetingLink);
+        meeting.MeetingLink = MeetingLinkPolicy.Normalize(request.MeetingLink);
         meeting.OrganizerId = request.OrganizerId ?? meeting.OrganizerId ?? ParseUserId(userId);
         meeting.Status = requestedStatus;
         meeting.ReminderOffsetMinutes = request.ReminderOffsetMinutes;
         meeting.UpdatedBy = userId;
         if (reminderConfigurationChanged) await DeactivatePendingRemindersAsync(meeting.Id, userId, cancellationToken);
-        await SynchronizeAttendeesAsync(meeting, attendees.Value, userId, cancellationToken);
+        var newInvitations = await SynchronizeAttendeesAsync(meeting, attendees.Value, userId, cancellationToken);
         try
         {
+            await using var transaction = await BeginNotificationTransactionAsync(cancellationToken);
             await _context.SaveChangesAsync(cancellationToken);
+            var invitationResult = await QueueInvitationsAsync(meeting, newInvitations, ParseOptionalUserId(userId), cancellationToken);
+            if (invitationResult.IsFailure)
+            {
+                if (transaction is not null) await transaction.RollbackAsync(cancellationToken);
+                return Result<MeetingDetailDto>.Failure(invitationResult.Error ?? Error.Validation("Meeting invitations could not be queued."));
+            }
+            if (transaction is not null) await transaction.CommitAsync(cancellationToken);
         }
         catch (DbUpdateConcurrencyException)
         {
@@ -233,6 +558,64 @@ public sealed class MeetingService : IMeetingService
         }
 
         await AuditAsync(meeting, requestedStatus == MeetingStatuses.Completed ? "Completed" : requestedStatus == MeetingStatuses.Cancelled ? "Cancelled" : "Updated", userId, new { meeting.Title, meeting.ProjectId, meeting.Status }, cancellationToken);
+        return await GetByIdAsync(id, cancellationToken);
+    }
+
+    public async Task<Result<MeetingDetailDto>> StartAsync(Guid id, MeetingLifecycleRequest request, string userId, CancellationToken cancellationToken = default)
+    {
+        var meeting = await InScope(_context.Set<Meeting>()).FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
+        if (meeting is null) return Result<MeetingDetailDto>.Failure(Error.NotFound("Meeting not found"));
+        var currentStatus = meeting.Status ?? MeetingStatuses.Scheduled;
+        if (currentStatus == MeetingStatuses.InProgress) return await GetByIdAsync(id, cancellationToken);
+        if (currentStatus != MeetingStatuses.Scheduled)
+            return Result<MeetingDetailDto>.Failure(Error.Conflict("Only a scheduled meeting can be started"));
+
+        if (request.RowVersion is { Length: > 0 }) _context.Entry(meeting).Property(item => item.RowVersion).OriginalValue = request.RowVersion;
+        var startedAtUtc = DateTime.UtcNow;
+        meeting.Status = MeetingStatuses.InProgress;
+        meeting.ActualStartTime = startedAtUtc;
+        meeting.ActualEndTime = null;
+        meeting.UpdatedBy = userId;
+        await DeactivatePendingRemindersAsync(meeting.Id, userId, cancellationToken);
+        try
+        {
+            await using var transaction = await BeginNotificationTransactionAsync(cancellationToken);
+            await _context.SaveChangesAsync(cancellationToken);
+            var actorId = ParseOptionalUserId(userId);
+            if (actorId is null)
+            {
+                if (transaction is not null) await transaction.RollbackAsync(cancellationToken);
+                return Result<MeetingDetailDto>.Failure(Error.Unauthorized("The meeting actor could not be resolved."));
+            }
+            var notificationResult = await _meetingNotifications.QueueStartedAsync(meeting, actorId.Value, cancellationToken);
+            if (notificationResult.IsFailure)
+            {
+                if (transaction is not null) await transaction.RollbackAsync(cancellationToken);
+                return Result<MeetingDetailDto>.Failure(notificationResult.Error ?? Error.Validation("Meeting start notifications could not be queued."));
+            }
+            if (transaction is not null) await transaction.CommitAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException) { return Result<MeetingDetailDto>.Failure(Error.Conflict("The meeting was changed by another user")); }
+        await AuditAsync(meeting, "Started", userId, new { meeting.ActualStartTime, ActorId = ParseOptionalUserId(userId) }, cancellationToken);
+        return await GetByIdAsync(id, cancellationToken);
+    }
+
+    public async Task<Result<MeetingDetailDto>> EndAsync(Guid id, MeetingLifecycleRequest request, string userId, CancellationToken cancellationToken = default)
+    {
+        var meeting = await InScope(_context.Set<Meeting>()).FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
+        if (meeting is null) return Result<MeetingDetailDto>.Failure(Error.NotFound("Meeting not found"));
+        if ((meeting.Status ?? MeetingStatuses.Scheduled) != MeetingStatuses.InProgress || !meeting.ActualStartTime.HasValue)
+            return Result<MeetingDetailDto>.Failure(Error.Conflict("Only an in-progress meeting can be ended"));
+
+        if (request.RowVersion is { Length: > 0 }) _context.Entry(meeting).Property(item => item.RowVersion).OriginalValue = request.RowVersion;
+        var endedAtUtc = DateTime.UtcNow;
+        if (endedAtUtc < meeting.ActualStartTime.Value) endedAtUtc = meeting.ActualStartTime.Value;
+        meeting.Status = MeetingStatuses.Completed;
+        meeting.ActualEndTime = endedAtUtc;
+        meeting.UpdatedBy = userId;
+        try { await _context.SaveChangesAsync(cancellationToken); }
+        catch (DbUpdateConcurrencyException) { return Result<MeetingDetailDto>.Failure(Error.Conflict("The meeting was changed by another user")); }
+        await AuditAsync(meeting, "Ended", userId, new { meeting.ActualEndTime, ActorId = ParseOptionalUserId(userId) }, cancellationToken);
         return await GetByIdAsync(id, cancellationToken);
     }
 
@@ -267,10 +650,18 @@ public sealed class MeetingService : IMeetingService
         var current = await GetCurrentAttendeesAsync(meeting, cancellationToken);
         if (current.Any(existing => SameAttendee(existing, target))) return Result<MeetingAttendeeDto>.Failure(Error.Conflict("The attendee is already in this meeting"));
         current.Add(target);
-        await SynchronizeAttendeesAsync(meeting, current, userId, cancellationToken);
+        var newInvitations = await SynchronizeAttendeesAsync(meeting, current, userId, cancellationToken);
         try
         {
+            await using var transaction = await BeginNotificationTransactionAsync(cancellationToken);
             await _context.SaveChangesAsync(cancellationToken);
+            var invitationResult = await QueueInvitationsAsync(meeting, newInvitations, ParseOptionalUserId(userId), cancellationToken);
+            if (invitationResult.IsFailure)
+            {
+                if (transaction is not null) await transaction.RollbackAsync(cancellationToken);
+                return Result<MeetingAttendeeDto>.Failure(invitationResult.Error ?? Error.Validation("Meeting invitation could not be queued."));
+            }
+            if (transaction is not null) await transaction.CommitAsync(cancellationToken);
         }
         catch (DbUpdateException)
         {
@@ -298,7 +689,10 @@ public sealed class MeetingService : IMeetingService
 
     public async Task<Result<MeetingMinutesDto?>> GetMinutesAsync(Guid meetingId, CancellationToken cancellationToken = default)
     {
-        if (!await MeetingExistsAsync(meetingId, cancellationToken)) return Result<MeetingMinutesDto?>.Failure(Error.NotFound("Meeting not found"));
+        var meeting = await InScope(_context.Set<Meeting>()).AsNoTracking().FirstOrDefaultAsync(item => item.Id == meetingId, cancellationToken);
+        if (meeting is null) return Result<MeetingMinutesDto?>.Failure(Error.NotFound("Meeting not found"));
+        if ((meeting.Status ?? MeetingStatuses.Scheduled) != MeetingStatuses.Completed)
+            return Result<MeetingMinutesDto?>.Failure(Error.NotFound("Meeting minutes are available after the meeting is completed"));
         var minutes = await _context.Set<MeetingMinutes>().AsNoTracking().Where(item => item.MeetingId == meetingId).OrderByDescending(item => item.CreatedAt).FirstOrDefaultAsync(cancellationToken);
         return Result<MeetingMinutesDto?>.Success(minutes is null ? null : ToMinutes(minutes));
     }
@@ -307,22 +701,71 @@ public sealed class MeetingService : IMeetingService
     {
         var meeting = await InScope(_context.Set<Meeting>()).FirstOrDefaultAsync(item => item.Id == meetingId, cancellationToken);
         if (meeting is null) return Result<MeetingMinutesDto>.Failure(Error.NotFound("Meeting not found"));
-        if (await _context.Set<MeetingMinutes>().AnyAsync(item => item.MeetingId == meetingId, cancellationToken)) return Result<MeetingMinutesDto>.Failure(Error.Conflict("Minutes already exist for this meeting"));
-        var minutes = new MeetingMinutes
+        if ((meeting.Status ?? MeetingStatuses.Scheduled) != MeetingStatuses.Completed)
+            return Result<MeetingMinutesDto>.Failure(Error.Conflict("Meeting minutes can only be created after the meeting is completed"));
+
+        // A completed meeting has one Minutes draft. Make initialization safe to retry and
+        // serialize relational callers so two empty-state requests cannot both insert one.
+        // MeetingId already has an index, which lets SQL Server take a serializable key-range lock.
+        MeetingMinutes? minutes = null;
+        try
         {
-            MeetingId = meetingId, TenantId = meeting.TenantId, Summary = Normalize(request.Summary), DiscussionNotes = Normalize(request.DiscussionNotes),
-            Decisions = Normalize(request.Decisions), Outcomes = Normalize(request.Outcomes), State = MeetingMinutesStates.Draft, RecordedBy = ParseOptionalUserId(userId), CreatedBy = userId
-        };
-        _context.Set<MeetingMinutes>().Add(minutes);
-        await _context.SaveChangesAsync(cancellationToken);
-        await AuditAsync(meeting, "MinutesCreated", userId, new { minutes.Id }, cancellationToken);
-        return Result<MeetingMinutesDto>.Success(ToMinutes(minutes));
+            await using (var transaction = _context.Database.IsRelational()
+                ? await _context.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken)
+                : null)
+            {
+                var existing = await FindMinutesForMeetingAsync(meetingId, cancellationToken);
+                if (existing is not null)
+                {
+                    if (transaction is not null) await transaction.CommitAsync(cancellationToken);
+                    return Result<MeetingMinutesDto>.Success(ToMinutes(existing));
+                }
+
+                minutes = new MeetingMinutes
+                {
+                    MeetingId = meetingId, TenantId = meeting.TenantId, Summary = Normalize(request.Summary), DiscussionNotes = Normalize(request.DiscussionNotes),
+                    Decisions = Normalize(request.Decisions), Outcomes = Normalize(request.Outcomes), State = MeetingMinutesStates.Draft, RecordedBy = ParseOptionalUserId(userId), CreatedBy = userId
+                };
+                _context.Set<MeetingMinutes>().Add(minutes);
+                try
+                {
+                    await _context.SaveChangesAsync(cancellationToken);
+                    if (transaction is not null) await transaction.CommitAsync(cancellationToken);
+                }
+                catch (DbUpdateException)
+                {
+                    if (transaction is not null) await transaction.RollbackAsync(cancellationToken);
+                    throw;
+                }
+            }
+        }
+        catch (DbUpdateException)
+        {
+            if (minutes is not null) _context.Entry(minutes).State = EntityState.Detached;
+
+            // The failed transaction has been disposed before this lookup. Return a live,
+            // tenant-visible record only if another request actually persisted it.
+            var createdByAnotherRequest = await FindMinutesForMeetingAsync(meetingId, cancellationToken);
+            if (createdByAnotherRequest is null) throw;
+            return Result<MeetingMinutesDto>.Success(ToMinutes(createdByAnotherRequest));
+        }
+        await AuditAsync(meeting, "MinutesCreated", userId, new { minutes!.Id }, cancellationToken);
+        return Result<MeetingMinutesDto>.Success(ToMinutes(minutes!));
     }
+
+    private Task<MeetingMinutes?> FindMinutesForMeetingAsync(Guid meetingId, CancellationToken cancellationToken) =>
+        _context.Set<MeetingMinutes>()
+            .Where(item => item.MeetingId == meetingId)
+            .OrderByDescending(item => item.CreatedAt)
+            .ThenByDescending(item => item.Id)
+            .FirstOrDefaultAsync(cancellationToken);
 
     public async Task<Result<MeetingMinutesDto>> UpdateMinutesAsync(Guid meetingId, UpdateMeetingMinutesRequest request, string userId, CancellationToken cancellationToken = default)
     {
         var meeting = await InScope(_context.Set<Meeting>()).FirstOrDefaultAsync(item => item.Id == meetingId, cancellationToken);
         if (meeting is null) return Result<MeetingMinutesDto>.Failure(Error.NotFound("Meeting not found"));
+        if ((meeting.Status ?? MeetingStatuses.Scheduled) != MeetingStatuses.Completed)
+            return Result<MeetingMinutesDto>.Failure(Error.Conflict("Meeting minutes can only be edited after the meeting is completed"));
         var minutes = await _context.Set<MeetingMinutes>().FirstOrDefaultAsync(item => item.MeetingId == meetingId, cancellationToken);
         if (minutes is null) return Result<MeetingMinutesDto>.Failure(Error.NotFound("Minutes not found"));
         if (minutes.State == MeetingMinutesStates.Final) return Result<MeetingMinutesDto>.Failure(Error.Conflict("Final minutes cannot be edited"));
@@ -339,6 +782,8 @@ public sealed class MeetingService : IMeetingService
     {
         var meeting = await InScope(_context.Set<Meeting>()).FirstOrDefaultAsync(item => item.Id == meetingId, cancellationToken);
         if (meeting is null) return Result<MeetingMinutesDto>.Failure(Error.NotFound("Meeting not found"));
+        if ((meeting.Status ?? MeetingStatuses.Scheduled) != MeetingStatuses.Completed)
+            return Result<MeetingMinutesDto>.Failure(Error.Conflict("Meeting minutes can only be finalized after the meeting is completed"));
         var minutes = await _context.Set<MeetingMinutes>().FirstOrDefaultAsync(item => item.MeetingId == meetingId, cancellationToken);
         if (minutes is null) return Result<MeetingMinutesDto>.Failure(Error.NotFound("Minutes not found"));
         if (minutes.State == MeetingMinutesStates.Final) return Result<MeetingMinutesDto>.Success(ToMinutes(minutes));
@@ -347,7 +792,24 @@ public sealed class MeetingService : IMeetingService
         minutes.RecordedAt = DateTime.UtcNow;
         minutes.RecordedBy = ParseOptionalUserId(userId);
         minutes.UpdatedBy = userId;
-        try { await _context.SaveChangesAsync(cancellationToken); }
+        try
+        {
+            await using var transaction = await BeginNotificationTransactionAsync(cancellationToken);
+            await _context.SaveChangesAsync(cancellationToken);
+            var actorId = ParseOptionalUserId(userId);
+            if (actorId is null)
+            {
+                if (transaction is not null) await transaction.RollbackAsync(cancellationToken);
+                return Result<MeetingMinutesDto>.Failure(Error.Unauthorized("The meeting actor could not be resolved."));
+            }
+            var notificationResult = await _meetingNotifications.QueueMinutesPublishedAsync(meeting, minutes, actorId.Value, cancellationToken);
+            if (notificationResult.IsFailure)
+            {
+                if (transaction is not null) await transaction.RollbackAsync(cancellationToken);
+                return Result<MeetingMinutesDto>.Failure(notificationResult.Error ?? Error.Validation("Meeting minutes notifications could not be queued."));
+            }
+            if (transaction is not null) await transaction.CommitAsync(cancellationToken);
+        }
         catch (DbUpdateConcurrencyException) { return Result<MeetingMinutesDto>.Failure(Error.Conflict("The minutes were changed by another user")); }
         await AuditAsync(meeting, "MinutesFinalized", userId, new { minutes.Id }, cancellationToken);
         return Result<MeetingMinutesDto>.Success(ToMinutes(minutes));
@@ -378,7 +840,23 @@ public sealed class MeetingService : IMeetingService
         }
         var comment = new MeetingMinutesComment { MeetingMinutesId = minutes.Id, TenantId = minutes.TenantId, ParentCommentId = request.ParentCommentId, CommentText = text, CreatedBy = userId };
         _context.Set<MeetingMinutesComment>().Add(comment);
-        await _context.SaveChangesAsync(cancellationToken);
+        await using (var transaction = await BeginNotificationTransactionAsync(cancellationToken))
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+            var actorId = ParseOptionalUserId(userId);
+            if (actorId is null)
+            {
+                if (transaction is not null) await transaction.RollbackAsync(cancellationToken);
+                return Result<MeetingMinutesCommentDto>.Failure(Error.Unauthorized("The meeting actor could not be resolved."));
+            }
+            var notificationResult = await _meetingNotifications.QueueMinutesCommentAsync(meeting, minutes, comment, actorId.Value, cancellationToken);
+            if (notificationResult.IsFailure)
+            {
+                if (transaction is not null) await transaction.RollbackAsync(cancellationToken);
+                return Result<MeetingMinutesCommentDto>.Failure(notificationResult.Error ?? Error.Validation("Meeting comment notifications could not be queued."));
+            }
+            if (transaction is not null) await transaction.CommitAsync(cancellationToken);
+        }
         var users = await _userLookup.GetManyAsync([ParseOptionalUserId(userId).GetValueOrDefault()], cancellationToken);
         return Result<MeetingMinutesCommentDto>.Success(ToComment(comment, users));
     }
@@ -576,7 +1054,7 @@ public sealed class MeetingService : IMeetingService
         var links = await _context.Set<MeetingMinutesWorkItemLink>().AsNoTracking().Where(item => item.MeetingMinutesId == minutes.Id).OrderBy(item => item.CreatedAt).ThenBy(item => item.Id).ToListAsync(cancellationToken);
         var workItems = await _workItemLookup.GetManyAsync(links.Select(item => item.WorkItemId), cancellationToken);
         var visibleWorkItemIds = workItems.Values
-            .Where(IsWorkItemInScope)
+            .Where(item => item.TenantId == minutes.TenantId && IsWorkItemInScope(item))
             .Select(item => item.Id)
             .ToHashSet();
         links = links.Where(item => visibleWorkItemIds.Contains(item.WorkItemId)).ToList();
@@ -591,6 +1069,7 @@ public sealed class MeetingService : IMeetingService
         if (minutes is null) return Result<MeetingWorkItemLinkDto>.Failure(Error.NotFound("Meeting minutes not found"));
         var workItem = await _workItemLookup.FindAsync(request.WorkItemId, cancellationToken);
         if (workItem is null) return Result<MeetingWorkItemLinkDto>.Failure(Error.NotFound("Linkable task or issue not found"));
+        if (workItem.TenantId != meeting.TenantId) return Result<MeetingWorkItemLinkDto>.Failure(Error.NotFound("Linkable task or issue not found"));
         if (!IsWorkItemInScope(workItem)) return Result<MeetingWorkItemLinkDto>.Failure(Error.NotFound("Linkable task or issue not found"));
         if (await _context.Set<MeetingMinutesWorkItemLink>().AnyAsync(item => item.MeetingMinutesId == minutes.Id && item.WorkItemId == request.WorkItemId, cancellationToken)) return Result<MeetingWorkItemLinkDto>.Failure(Error.Conflict("The work item is already linked"));
         var link = await _context.Set<MeetingMinutesWorkItemLink>().IgnoreQueryFilters().FirstOrDefaultAsync(item => item.MeetingMinutesId == minutes.Id && item.WorkItemId == request.WorkItemId && item.TenantId == minutes.TenantId, cancellationToken);
@@ -624,6 +1103,7 @@ public sealed class MeetingService : IMeetingService
     private async Task<Error?> ValidateMeetingAsync(CreateMeetingRequest request, string userId, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.Title) || request.Title.Trim().Length > 500) return Error.Validation("Title is required and cannot exceed 500 characters");
+        if (!MeetingLinkPolicy.TryNormalize(request.MeetingLink, out _)) return Error.Validation("Meeting link must be an absolute http or https URL");
         if (request.EndTime <= request.StartTime) return Error.Validation("End time must be later than start time");
         if (request.Status is not null && CanonicalStatus(request.Status) is null) return Error.Validation("Invalid meeting status");
         if (!MeetingReminderOffsets.IsSupported(request.ReminderOffsetMinutes)) return Error.Validation("Invalid meeting reminder offset");
@@ -705,24 +1185,31 @@ public sealed class MeetingService : IMeetingService
             : new ResolvedAttendee(item.UserId, MeetingEmailRules.Normalize(item.Email), item.Name)).ToList();
     }
 
-    private async Task SynchronizeAttendeesAsync(Meeting meeting, IReadOnlyList<ResolvedAttendee> requested, string userId, CancellationToken cancellationToken)
+    private async Task<IReadOnlyList<MeetingParticipant>> SynchronizeAttendeesAsync(Meeting meeting, IReadOnlyList<ResolvedAttendee> requested, string userId, CancellationToken cancellationToken)
     {
         var existing = await _context.Set<MeetingParticipant>()
             .IgnoreQueryFilters()
             .Where(item => item.MeetingId == meeting.Id && item.TenantId == meeting.TenantId)
             .ToListAsync(cancellationToken);
         var claimed = new HashSet<Guid>();
+        var newlyInvitedParticipants = new List<MeetingParticipant>();
 
         foreach (var attendee in requested)
         {
             var participant = existing
-                .Where(item => !claimed.Contains(item.Id))
-                .OrderBy(item => item.IsDeleted)
+                .Where(item => !item.IsDeleted && !claimed.Contains(item.Id))
                 .FirstOrDefault(item => SameAttendee(item, attendee));
             if (participant is null)
             {
-                participant = new MeetingParticipant { MeetingId = meeting.Id, TenantId = meeting.TenantId, CreatedBy = userId };
+                participant = new MeetingParticipant
+                {
+                    MeetingId = meeting.Id,
+                    TenantId = meeting.TenantId,
+                    InvitationResponseStatus = MeetingInvitationResponseStatuses.Pending,
+                    CreatedBy = userId
+                };
                 _context.Set<MeetingParticipant>().Add(participant);
+                newlyInvitedParticipants.Add(participant);
             }
             participant.UserId = attendee.UserId;
             participant.Email = attendee.Email;
@@ -737,6 +1224,28 @@ public sealed class MeetingService : IMeetingService
             participant.IsDeleted = true;
             participant.UpdatedBy = userId;
         }
+
+        return newlyInvitedParticipants;
+    }
+
+    private async Task<IDbContextTransaction?> BeginNotificationTransactionAsync(CancellationToken cancellationToken) =>
+        _context.Database.IsRelational()
+            ? await _context.Database.BeginTransactionAsync(cancellationToken)
+            : null;
+
+    private async Task<Result> QueueInvitationsAsync(
+        Meeting meeting,
+        IEnumerable<MeetingParticipant> invitees,
+        Guid? actorId,
+        CancellationToken cancellationToken)
+    {
+        if (actorId is null) return Result.Failure(Error.Unauthorized("The meeting actor could not be resolved."));
+        foreach (var invitee in invitees.Where(participant => participant.UserId.HasValue && participant.UserId != actorId))
+        {
+            var queued = await _meetingNotifications.QueueInvitationAsync(meeting, invitee, actorId.Value, cancellationToken);
+            if (queued.IsFailure) return queued;
+        }
+        return Result.Success();
     }
 
     private static bool SameAttendee(ResolvedAttendee left, ResolvedAttendee right) =>
@@ -749,8 +1258,8 @@ public sealed class MeetingService : IMeetingService
 
     private bool IsProjectInScope(Guid projectId)
     {
-        var context = _managementContext.Current;
-        return context is null || context.Scope.ProjectIds.Contains(projectId);
+        var context = _managementContext?.Current;
+        return context is not null && context.Scope.ProjectIds.Contains(projectId);
     }
 
     private bool IsWorkItemInScope(WorkItemReference workItem) =>
@@ -758,10 +1267,71 @@ public sealed class MeetingService : IMeetingService
 
     private async Task<bool> MeetingExistsAsync(Guid id, CancellationToken cancellationToken) => await InScope(_context.Set<Meeting>()).AnyAsync(item => item.Id == id, cancellationToken);
 
+    private async Task<IReadOnlyList<MeetingListDto>> ToListDtosAsync(IReadOnlyList<MeetingListRow> rows, CancellationToken cancellationToken)
+    {
+        if (rows.Count == 0) return Array.Empty<MeetingListDto>();
+
+        var projectIds = rows.Where(row => row.ProjectId.HasValue).Select(row => row.ProjectId!.Value).Distinct().ToList();
+        var projectById = projectIds.Count == 0
+            ? new Dictionary<Guid, ProjectReference>()
+            : await _projectLookup.GetReferencesAsync(projectIds, cancellationToken);
+        var organizerNames = await _userLookup.GetManyAsync(rows.Where(row => row.OrganizerId.HasValue).Select(row => row.OrganizerId.GetValueOrDefault()), cancellationToken);
+        return rows.Select(row =>
+        {
+            var project = row.ProjectId.HasValue && projectById.TryGetValue(row.ProjectId.Value, out var reference) ? reference : null;
+            return new MeetingListDto
+            {
+                Id = row.Id,
+                PublicId = row.PublicId,
+                Title = row.Title,
+                ProjectId = row.ProjectId,
+                ProjectPublicId = project?.PublicId,
+                ProjectName = project?.Name,
+                ProjectCode = project?.Code,
+                OrganizerId = row.OrganizerId,
+                OrganizerName = row.OrganizerId.HasValue && organizerNames.TryGetValue(row.OrganizerId.Value, out var organizerName) ? organizerName.FullName : null,
+                StartTime = AsUtc(row.StartTime),
+                EndTime = AsUtc(row.EndTime),
+                ActualStartTime = AsUtc(row.ActualStartTime),
+                ActualEndTime = AsUtc(row.ActualEndTime),
+                Status = row.Status,
+                ReminderOffsetMinutes = row.ReminderOffsetMinutes,
+                AttendeeCount = row.AttendeeCount,
+                MinutesState = row.MinutesState,
+                IsRecurring = row.IsRecurring
+            };
+        }).ToList();
+    }
+
+    private static IQueryable<Meeting> ApplyFilters(
+        IQueryable<Meeting> query,
+        string? search,
+        string? status,
+        Guid? projectId,
+        IReadOnlyList<Guid>? projectIds)
+    {
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim();
+            query = query.Where(meeting => meeting.Title.Contains(term) || (meeting.Description != null && meeting.Description.Contains(term)));
+        }
+        if (!string.IsNullOrWhiteSpace(status)) query = query.Where(meeting => meeting.Status == status.Trim());
+
+        var selectedProjectIds = (projectIds ?? Array.Empty<Guid>()).Where(id => id != Guid.Empty).Distinct().ToList();
+        if (projectId.HasValue && projectId.Value != Guid.Empty) selectedProjectIds.Add(projectId.Value);
+        if (selectedProjectIds.Count > 0)
+        {
+            var ids = selectedProjectIds.Distinct().ToArray();
+            query = query.Where(meeting => meeting.ProjectId.HasValue && ids.Contains(meeting.ProjectId.Value));
+        }
+
+        return query;
+    }
+
     private IQueryable<Meeting> InScope(IQueryable<Meeting> query)
     {
-        var context = _managementContext.Current;
-        if (context is null) return query;
+        var context = _managementContext?.Current;
+        if (context is null) return query.Where(_ => false);
 
         var userId = context.UserId;
         var projectIds = context.Scope.ProjectIds;
@@ -785,7 +1355,8 @@ public sealed class MeetingService : IMeetingService
 
     private async Task<MeetingMinutes?> GetMinutesEntityAsync(Guid meetingId, CancellationToken cancellationToken)
     {
-        if (!await MeetingExistsAsync(meetingId, cancellationToken)) return null;
+        var meeting = await InScope(_context.Set<Meeting>()).FirstOrDefaultAsync(item => item.Id == meetingId, cancellationToken);
+        if (meeting is null || (meeting.Status ?? MeetingStatuses.Scheduled) != MeetingStatuses.Completed) return null;
         return await _context.Set<MeetingMinutes>().FirstOrDefaultAsync(item => item.MeetingId == meetingId, cancellationToken);
     }
 
@@ -805,10 +1376,14 @@ public sealed class MeetingService : IMeetingService
         }, cancellationToken);
     }
 
-    private Guid GetCurrentTenantId() => Guid.TryParse(_httpContextAccessor.HttpContext?.User.FindFirstValue("tenantId"), out var tenantId) ? tenantId : TenantConstants.DemoTenantId;
+    private Guid GetCurrentTenantId() => Guid.TryParse(_httpContextAccessor.HttpContext?.User.FindFirstValue("tenantId"), out var tenantId) && tenantId != Guid.Empty
+        ? tenantId
+        : throw new InvalidOperationException("A trusted tenant context is required.");
     private static Guid? ParseUserId(string userId) => Guid.TryParse(userId, out var value) ? value : null;
     private static Guid? ParseOptionalUserId(string userId) => ParseUserId(userId);
     private static string? Normalize(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    private static DateTime? AsUtc(DateTime? value) => value.HasValue ? DateTime.SpecifyKind(value.Value, DateTimeKind.Utc) : null;
+    private static DateTime AsUtc(DateTime value) => DateTime.SpecifyKind(value, DateTimeKind.Utc);
     private static Error? ValidateChecklistTitle(string? value, out string title)
     {
         title = value?.Trim() ?? string.Empty;
@@ -819,11 +1394,11 @@ public sealed class MeetingService : IMeetingService
     private static string? CanonicalStatus(string? value) => value?.Trim().ToLowerInvariant() switch
     {
         "scheduled" => MeetingStatuses.Scheduled,
+        "inprogress" or "in progress" => MeetingStatuses.InProgress,
         "completed" => MeetingStatuses.Completed,
         "cancelled" or "canceled" => MeetingStatuses.Cancelled,
         _ => null
     };
-    private static bool IsValidTransition(string current, string requested) => current == requested || current == MeetingStatuses.Scheduled;
     private static void ApplyMinutes(MeetingMinutes minutes, CreateMeetingMinutesRequest request)
     {
         minutes.Summary = Normalize(request.Summary);
@@ -853,7 +1428,7 @@ public sealed class MeetingService : IMeetingService
     };
     private static MeetingMinutesCommentDto ToComment(MeetingMinutesComment comment, IReadOnlyDictionary<Guid, UserReference> users) => new()
     {
-        Id = comment.Id, MeetingMinutesId = comment.MeetingMinutesId, ParentCommentId = comment.ParentCommentId,
+        Id = comment.Id, PublicId = comment.PublicId, MeetingMinutesId = comment.MeetingMinutesId, ParentCommentId = comment.ParentCommentId,
         CommentText = comment.CommentText, CreatedBy = comment.CreatedBy, AuthorName = ParseOptionalUserId(comment.CreatedBy) is { } id && users.TryGetValue(id, out var user) ? user.FullName : null, CreatedAt = comment.CreatedAt
     };
     private static MeetingMinutesChecklistItemDto ToChecklistItem(MeetingMinutesChecklistItem item) => new()
@@ -882,6 +1457,6 @@ public sealed class MeetingService : IMeetingService
         ProjectId = workItems.TryGetValue(link.WorkItemId, out item) ? item.ProjectId : null
     };
 
-    private sealed record MeetingListRow(Guid Id, string Title, Guid? ProjectId, Guid? OrganizerId, DateTime StartTime, DateTime EndTime, string? Status, int? ReminderOffsetMinutes, int AttendeeCount, string? MinutesState);
+    private sealed record MeetingListRow(Guid Id, Guid PublicId, string Title, Guid? ProjectId, Guid? OrganizerId, DateTime StartTime, DateTime EndTime, DateTime? ActualStartTime, DateTime? ActualEndTime, string? Status, int? ReminderOffsetMinutes, int AttendeeCount, string? MinutesState, bool IsRecurring);
     private sealed record ResolvedAttendee(Guid? UserId, string Email, string? DisplayName);
 }

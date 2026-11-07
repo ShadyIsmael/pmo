@@ -1,5 +1,9 @@
 # NEXUS PMO Architecture Reference
 
+> Historical record: Next.js references below describe the retired frontend and are kept only to preserve the original decision or implementation history. The supported frontend is apps/web-react (React, Vite, and React Router); these references are not build, deployment, agent, or audit targets.
+>
+> The July 2026 maturity, seed, and migration statements are historical snapshots. Current identity and security behavior is documented in `SECURITY-ARCHITECTURE.md`, `AUTHENTICATION-AND-IDENTITY.md`, and `multi-tenancy.md`; the documented EF Core database workflow is in `docs/development/ef-core-database-workflow.md`.
+
 ## 1. Document Metadata
 
 | Attribute | Value |
@@ -21,13 +25,13 @@ NEXUS PMO is an **Enterprise Project Portfolio Management Platform** whose main 
 
 - **Primary users:** Executives, Portfolio Managers, Project Managers, Team Members, PMO Administrators, Finance Controllers, Resource Managers (verifiable via `SeedDataProvider.cs` demo accounts and `permissions.ts` role definitions)
 - **Core architectural style:** Modular Monolith with Clean Architecture (verifiable via ADR-001, solution structure with 22 .NET projects in a single `.slnx`, and `Program.cs` registering 19 modules via `IServiceCollection` extension methods)
-- **Current maturity:** Foundation phase -- functional shell with working dashboards, navigation, and extensive mock data (`mock-data.ts` contains 633 lines of mock data embedded in client components; 57 pages render UI; 19 backend modules have domain entities, controllers, and registrations; database schema is auto-created via `EnsureCreatedAsync`; demo auth with JWT tokens works for 8 accounts)
+- **Historical maturity snapshot (July 2026):** The original baseline described mock UI data, `EnsureCreatedAsync`, and eight demo accounts. It is superseded: the current source uses EF migrations and a secure single-Admin Development bootstrap; see the current security and database delivery reports.
 
 **Evidence:**
 - `README.md:5-8` -- Product description and architecture overview
 - `NEXUS.slnx` -- 22 project references
 - `Program.cs:99-117` -- 19 module registrations
-- `SeedDataProvider.cs` -- 8 demo users, roles, and 591 lines of seed data
+- `SeedDataProvider.cs` -- deterministic Development seed; fresh identity bootstrap creates the protected Admin account and role templates
 - `mock-data.ts` -- 633 lines of mock interfaces and arrays
 
 ---
@@ -87,7 +91,7 @@ C4Context
 ```
 
 **Evidence:**
-- End users: `SeedDataProvider.cs:160-170` (8 demo accounts with distinct roles)
+- End-user role examples describe role templates, not shared-password login accounts; fresh Development identity bootstrap creates the protected Admin account.
 - MS Project, Jira, Ticketing: plugins/jira-integration/plugin.json, plugins/microsoft-project/plugin.json, plugins/internal-ticketing/plugin.json (all manifest-based placeholders)
 - AI provider: `Program.cs:117` registers AIPlanning module; `docs/architecture/module-catalogue.md:525-546` documents AI planning entities
 - Notifications: `NotificationService`, durable `NotificationDelivery` rows, a leased background worker, per-device attempts, and an FCM adapter are implemented; Email remains deferred.
@@ -352,13 +356,13 @@ All 19 modules. Evidence cross-referenced from `docs/architecture/module-catalog
 ### 8.1 Identity
 | Attribute | Detail |
 |-----------|--------|
-| **Responsibility** | Authentication, authorization, user and role management, JWT issuance, context-based role switching |
+| **Responsibility** | Authentication, authorization, user and role management, and JWT issuance |
 | **Entities** | User, Role, Permission, UserRole, UserSession |
 | **Services** | IAuthenticationService (DemoAuthService), IUserRepository (UserRepository) |
-| **API endpoints** | POST /api/auth/login, GET /api/auth/me, POST /api/auth/logout, POST /api/auth/switch-role |
+| **API endpoints** | POST /api/auth/login, GET /api/auth/me, POST /api/auth/logout; the retained switch-role compatibility route returns current user state and does not change roles |
 | **Events** | UserLoggedIn, UserRoleChanged (documented, not verified in code) |
 | **Dependencies** | SharedKernel |
-| **Maturity** | Implemented (auth flow + seed data verified) |
+| **Maturity** | Implemented in source; live permission/database verification is tracked in the current permission closure report |
 
 ### 8.2 Organization
 | **Responsibility** | Company structure: business units, departments, teams, locations, working calendars |
@@ -463,9 +467,9 @@ All 19 modules. Evidence cross-referenced from `docs/architecture/module-catalog
 ### 8.16 Audit
 | **Responsibility** | Immutable audit trail, entity change tracking, activity log |
 | **Entities** | AuditEntry, AuditActivity |
-| **API endpoints** | GET /api/audit-log, entity-specific trail |
-| **Dependencies** | SharedKernel (IAuditable) |
-| **Maturity** | Implemented (entities verified) |
+| **API endpoints** | GET /api/audit (tenant-wide), GET /api/projects/{projectId}/audit and /facets (project trail); read-only, `Audit.View` |
+| **Dependencies** | SharedKernel (IAuditable), Persistence (project scope provider, append-only guard) |
+| **Maturity** | Implemented; project trail migration created but not applied. See `docs/modules/AUDIT-TRAIL.md` |
 
 ### 8.17 Integrations
 | **Responsibility** | External system connection management, sync jobs, webhooks, conflict resolution |
@@ -659,27 +663,17 @@ The `WorkItem` entity (owned by `NEXUS.Modules.WorkItems`) serves as the unified
 ## 12. Security and Authorization Architecture
 
 ### Authentication
-- **JWT Bearer tokens** -- verifiable in `Program.cs:59-73`. Symmetric key (`NEXUS-Demo-Secret-Key-Minimum-16-Chars!`), issuer `NEXUS`, audience `NEXUS-API`.
-- **Demo authentication** -- `DemoAuthService` registered in `IdentityModuleRegistration.cs:11`. 8 demo accounts seeded with password `Demo123!` (BCrypt hashed).
+- **JWT Bearer tokens** -- verifiable in `Program.cs`. Symmetric HS256 key supplied through `Jwt__Secret` (no key is stored in source), issuer `NEXUS`, audience `NEXUS-API`.
+- **Development authentication** -- `DemoAuthService` handles local login and persisted sessions. A fresh Development seed creates the protected Admin identity and uses a secure bootstrap password supplied from the environment; role templates are not shared-password login accounts.
 
 ### Authorization
 - **`[Authorize]` attribute** -- documented for all controllers (not verified in individual controller scans but stated in docs/architecture/README.md).
 - **Role-based permissions** -- `Role` and `Permission` entities in Identity module.
 - **14 permission categories** defined in `permissions.ts`: Project, Portfolio, Program, Task, Resource, Risk, Issue, Meeting, Workflow, Report, Document, Notification, Ticket, TestManagement, Integration, Administration, SecurityAndAudit, AICopilot, Costs.
 
-### Demo Accounts (8)
-| User | Email | Role |
-|------|-------|------|
-| Alex Admin | admin@nexuspmo.local | System Administrator |
-| Sarah Executive | executive@nexuspmo.local | Executive |
-| James Portfolio | portfolio.manager@nexuspmo.local | Portfolio Manager |
-| Emily Project | project.manager@nexuspmo.local | Project Manager |
-| Michael Member | team.member@nexuspmo.local | Team Member |
-| Rachel PMO | pmo.admin@nexuspmo.local | PMO Administrator |
-| David Finance | finance.controller@nexuspmo.local | Finance Controller |
-| Lisa Resource | resource.manager@nexuspmo.local | Resource Manager |
+### Development Bootstrap
 
-**Evidence:** `SeedDataProvider.cs:160-170`. Note: Emails in seed data use `@nexus.com` while README shows `@nexuspmo.local`.
+A fresh Development seed creates the protected `admin@nexus.com` user. Role templates do not create additional login accounts. A new or legacy-hash Admin requires the secure `NEXUS_ADMIN_BOOTSTRAP_PASSWORD` environment setting and is marked to change the password after first login.
 
 ### Architectural Model: Four Dimensions
 
@@ -687,12 +681,12 @@ The `WorkItem` entity (owned by `NEXUS.Modules.WorkItems`) serves as the unified
 |-----------|-------------|--------|
 | **Authentication** | JWT token validation, user identity | Implemented (DemoAuthService, JWT middleware) |
 | **Authorization** | Role/Permission checking, `[Authorize]` | Implemented (Role + Permission entities, seeded) |
-| **Point of View** | Context-based role switching (`POST /api/auth/switch-role`) | Documented, endpoint listed, not verified in seed data/test |
-| **Data Scope** | TenantId scoping via global query filters | Structurally present but `GetCurrentTenantId()` returns `Guid.Empty` |
+| **Point of View** | Persisted tenant roles determine authorization; the compatibility switch-role route does not change roles | Request claims are refreshed from current persisted roles and overrides |
+| **Data Scope** | TenantId scoping via authenticated tenant claim and EF query filters | Missing request tenant context resolves to `Guid.Empty`; demo-tenant fallback applies only outside HTTP requests |
 
-### Field-Level Financial Permissions
-- `Project.ViewFinancials`, `Project.EditFinancials`, `Costs.Approve` are defined in `permissions.ts:7-10,123-126`.
-- **Not enforced** -- no verification that controllers check these field-level permissions. This is an intended pattern.
+### Financial Permissions
+- Program and Portfolio financial rollup APIs require canonical `ProjectFinance.View` plus their corresponding `Program.View` or `Portfolio.View` permission.
+- Project annual budgets, payment requests, settlements, reversals, and fiscal-year closing use their specific canonical permissions; source and resource scope are checked by the backend.
 
 ---
 
@@ -706,16 +700,15 @@ The `WorkItem` entity (owned by `NEXUS.Modules.WorkItems`) serves as the unified
 | `TenantId` on every entity | `BaseEntity.cs:6` | Implemented |
 | Global query filter (soft delete) | `AppDbContext.cs:162-164` | Implemented |
 | Global query filter (tenant) | `AppDbContext.cs:167-169` | Implemented |
-| `GetCurrentTenantId()` | `AppDbContext.cs:190-193` | Returns `Guid.Empty` -- **NOT resolved from context** |
+| `GetCurrentTenantId()` | `AppDbContext.cs` | Resolves the authenticated `tenantId` claim per request and returns `Guid.Empty` when request context is missing or invalid; Development initialization outside HTTP retains the seed-tenant fallback |
 | Application of filters in `OnModelCreating` | `AppDbContext.cs:146-159` | Implemented |
 | Single tenant seed data | `SeedDataProvider.cs:19` uses fixed `TenantId = Guid.Parse("11111111-1111-1111-1111-111111111111")` | Implemented |
 
 ### Current State
-- **Structurally ready for multi-tenancy** -- every entity has `TenantId`, query filters are in place.
-- **Not actively enforced** -- `GetCurrentTenantId()` returns `Guid.Empty`, which means all queries filter by `Guid.Empty` rather than the actual tenant. In single-tenant mode with seed data using `11111111-...`, this means queries return zero results unless the tenant filter is bypassed or `GetCurrentTenantId()` is updated to return the seed tenant ID.
-- **Critical gap:** Tenant isolation infrastructure exists but does not work correctly in the current configuration. A tenant resolution implementation (reading TenantId from JWT claims) is required.
+- Tenant-owned queries use the authenticated tenant claim through the EF query filter. Invalid or missing request context fails closed to `Guid.Empty`; trusted out-of-request Development initialization retains the fixed seed-tenant fallback.
+- Services that bypass EF query filters must provide explicit tenant and resource predicates. Platform and Organization configuration paths have separate scope checks.
 
-**Evidence:** `docs/architecture/multi-tenancy.md:136-152` explicitly documents this gap.
+**Evidence:** `AppDbContext.cs`, `UserPermissionClaimsMiddleware.cs`, and `docs/architecture/multi-tenancy.md` describe the current request and initialization boundaries.
 
 ---
 
@@ -846,7 +839,7 @@ The `WorkItem` entity (owned by `NEXUS.Modules.WorkItems`) serves as the unified
 
 ### Database
 - **Single database** (`nexus_pmo`) shared across all modules.
-- **Primary:** PostgreSQL 16 (Npgsql) -- verifiable from `NEXUS.Persistence.csproj:13`.
+- **Primary:** SQL Server 2022 -- verifiable from `NEXUS.Persistence.csproj:13` and `Program.cs:86-90`.
 - **Single provider:** SQL Server 2022 -- verifiable from `NEXUS.Persistence.csproj:13` and `Program.cs:86-90`.
 - Connection string: `Program.cs:86-90` uses `DefaultConnection` with `UseSqlServer`.
 
@@ -892,7 +885,7 @@ The `WorkItem` entity (owned by `NEXUS.Modules.WorkItems`) serves as the unified
 
 ### Middleware Pipeline (in order)
 1. Swagger/SwaggerUI (Development only)
-2. `EnsureCreatedAsync` + seed (Development only)
+2. EF Core migrations + complete Development seed (current initialization path)
 3. CORS
 4. Authentication
 5. Authorization
@@ -941,7 +934,7 @@ C4Deployment
   title NEXUS PMO Deployment Diagram
 
   Deployment_Node(docker, "Docker Host", "Docker Compose") {
-    Deployment_Node(postgres, "PostgreSQL", "postgres:16-alpine") {
+    Deployment_Node(sqlserver, "SQL Server", "mcr.microsoft.com/mssql/server:2022-latest") {
       ContainerDb(pgdb, "SQL Server 2022", "Port 1433, Volume: sqlserver-data")
     }
     Deployment_Node(redis, "Redis", "redis:7-alpine") {
@@ -951,17 +944,17 @@ C4Deployment
       Container(api, "NEXUS API", "ASP.NET Core 10, Port 5000")
     }
     Deployment_Node(web_node, "Web Server", "Multi-stage Dockerfile") {
-      Container(web, "NEXUS Web", "Next.js 14, Port 3000")
+      Container(web, "NEXUS Web", "React/Vite, Port 3000")
     }
     Deployment_Node(worker_node, "Background Worker", "Dockerfile.worker") {
       Container(worker, "Worker", "NET 10, Port internal")
     }
   }
 
-  Rel(api, pgdb, "EF Core (Npgsql)", "SQL, port 5432")
+  Rel(api, pgdb, "EF Core (SQL Server)", "SQL, port 1433")
   Rel(api, rdb, "StackExchange.Redis", "TCP, port 6379")
   Rel(web, api, "HTTP", "JSON, port 5000")
-  Rel(worker, pgdb, "EF Core", "SQL, port 5432")
+  Rel(worker, pgdb, "EF Core", "SQL, port 1433")
   Rel(worker, rdb, "StackExchange.Redis", "TCP, port 6379")
 ```
 
@@ -969,7 +962,7 @@ C4Deployment
 
 | Service | Image/Context | Ports | Healthcheck | Depends On |
 |---------|--------------|-------|-------------|------------|
-| postgres | postgres:16-alpine | 5432:5432 | pg_isready | - |
+| sqlserver | mcr.microsoft.com/mssql/server:2022-latest | 1433:1433 | - | - |
 | redis | redis:7-alpine | 6379:6379 | redis-cli ping | - |
 | api | ./apps/api, Dockerfile | 5000:5000 | - | postgres (healthy), redis (healthy) |
 | web | ./apps/web, Dockerfile | 3000:3000 | - | api |
@@ -1010,7 +1003,7 @@ C4Deployment
 - redis: `redis-cli ping` (same intervals)
 
 **IMPORTANT:** Hardcoded credentials in `docker-compose.yml`:
-- PostgreSQL: `nexus` / `nexus_dev_2024`
+- SQL Server: credentials supplied by the environment (no committed default)
 - These are development-only values but are a security concern.
 
 **NOTE:** No CI/CD pipeline was verified. `README.md:173` mentions "GitHub Actions (configured)" but no workflow files were found.
@@ -1095,11 +1088,11 @@ C4Deployment
 |------|---------------|-------------|------------|
 | **Tenant isolation not enforced** | Critical | `GetCurrentTenantId()` returns `Guid.Empty`; all tenant filters filter by empty GUID, meaning queries return no data for seeded tenant `11111111-...` | Implement tenant resolution from JWT claims immediately before any production use |
 | **Mock data embedded in UI components** | High | `mock-data.ts` (633 lines) used instead of API calls; frontend shows fake data | Build API integration layer in TanStack Query; remove mock data dependency |
-| **No production authentication** | High | JWT secret is hardcoded string (`NEXUS-Demo-Secret-Key-Minimum-16-Chars!`); demo auth uses hardcoded passwords | Implement proper key management; integrate with enterprise identity |
-| **Database uses EnsureCreatedAsync** | High | `Program.cs:128` uses `EnsureCreatedAsync()` instead of migrations; no migration history | Implement EF Core migrations for production schema management |
+| **No production authentication** | High | Demo authentication uses seeded development accounts | Implement proper key management; integrate with enterprise identity |
+| **Live database migration state** | High until verified | EF migrations and guarded Development database tooling are present; current target migration history and physical schema still require verification | Before the one Product Owner-authorized Development `Shady/NexusPmo` reset, verify the exact environment/target, pending migrations, and schema path; no backup is required for this reset exception. Apply all EF migrations and complete the full seed before closure. Ordinary writes retain their backup gate. |
 | **Plugin framework is manifest-only** | High | 7 plugin directories have `plugin.json` but no runtime loading code; `IPlugin` interfaces not implemented | Prioritize plugin loading engine or remove plugin abstraction until ready to implement |
-| **No unit tests** | High | No test projects found in the solution; `dotnet test` and `npm run test` commands fail | Establish test strategy; add unit tests for domain logic |
-| **Hardcoded secrets in docker-compose** | High | `POSTGRES_PASSWORD: nexus_dev_2024` in compose file; JWT secret in `appsettings.json` | Use environment variables or secrets management |
+| **Final test execution** | High until verified | Backend and Vitest projects exist; consolidated build/test execution is pending | Run the final source test pass after implementation and record any execution blockers |
+| **Hardcoded secrets in docker-compose** | Resolved | Database password and JWT secret are supplied through environment variables (`NEXUS_DB_PASSWORD`, `NEXUS_JWT_SECRET`) | - |
 | **No real integrations** | Medium | All external system adapters (Jira, MS Project, email, AI) are placeholders | Implement one integration fully before adding more placeholders |
 | **Docker image mismatch** | Resolved | Dockerfiles use `dotnet/sdk:10.0` with `net10.0` TFM | Aligned in ADR-005 |
 | **CORS allows AnyHeader/AnyMethod** | Medium | `WithOrigins` restricts origins but allows all headers and methods | Tighten CORS to specific required headers and methods |
@@ -1153,7 +1146,7 @@ JWT secrets, database passwords, API keys, and connection strings must be extern
 No unit test project exists. All new services, domain logic, and API controllers must include corresponding unit tests. Integration tests are required for repository and endpoint validation.
 
 ### Rule 5: Database Migrations Required
-`EnsureCreatedAsync()` must be replaced with EF Core migrations for production. All schema changes must be done via migrations, not by modifying `EnsureCreated` behavior.
+EF Core migrations are the supported schema path. Do not use `EnsureCreatedAsync` to evolve the Development database; validate and apply repository migrations through the documented EF Core workflow and repository database tooling.
 
 ### Rule 6: Module Boundaries Must Be Respected
 No module may directly reference another module's domain entities. Cross-module communication must use:

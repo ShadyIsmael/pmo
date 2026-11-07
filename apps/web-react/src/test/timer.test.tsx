@@ -11,7 +11,7 @@ import type { TimerSessionDto } from "../api/timer";
 
 describe("Header Timer", () => {
   it("shows the no-active-timer state without polling", async () => {
-    setTokens("access", "refresh");
+    setTokens("access");
     const fetchMock = vi.fn().mockImplementation((input: string) => {
       if (input.includes("/api/auth/me")) return Promise.resolve(new Response(JSON.stringify({ id: "u", email: "a@nexus.com", firstName: "A", lastName: "N", fullName: "A N", roles: [], permissions: ["TimeTracking.ManageOwn"] }), { status: 200 }));
       if (input.includes("/api/timer/current")) return Promise.resolve(new Response("null", { status: 200 }));

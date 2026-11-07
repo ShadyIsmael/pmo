@@ -1,0 +1,266 @@
+namespace NEXUS.Modules.CostManagement.Application.DTOs;
+
+/// <summary>
+/// API contracts for the project-scoped Payment Request workflow.
+/// </summary>
+public sealed record CreatePaymentRequestDto(
+    string Title,
+    decimal Amount,
+    string Reason,
+    Guid? ProjectPlanMilestoneId,
+    Guid? IdempotencyKey = null);
+
+public sealed record UpdatePaymentRequestDto(
+    string Title,
+    decimal Amount,
+    string Reason,
+    Guid? ProjectPlanMilestoneId,
+    byte[] RowVersion);
+
+public sealed record PaymentRequestApproverSelectionDto(
+    Guid UserId,
+    int? Position,
+    string Requirement);
+
+public sealed record SubmitPaymentRequestDto(
+    string ApprovalMode,
+    IReadOnlyList<PaymentRequestApproverSelectionDto> Approvers,
+    byte[] RowVersion);
+
+public sealed record DecidePaymentRequestApprovalDto(
+    string Decision,
+    string? Comment,
+    byte[] RowVersion);
+
+public sealed record CancelPaymentRequestDto(byte[] RowVersion);
+
+public sealed record CreatePaymentReversalDto(decimal Amount, string Reason, Guid IdempotencyKey);
+
+public sealed record UpdatePaymentReversalDto(decimal Amount, string Reason, byte[] RowVersion);
+
+public sealed record SubmitPaymentReversalDto(
+    string ApprovalMode,
+    IReadOnlyList<PaymentRequestApproverSelectionDto> Approvers,
+    byte[] RowVersion);
+
+public sealed record ProjectPaymentReversalDto(
+    Guid Id,
+    string Reference,
+    Guid OriginalPaymentRequestId,
+    string OriginalPaymentRequestReference,
+    Guid? AnnualBudgetId,
+    int? AnnualBudgetFiscalYear,
+    string? AnnualBudgetReference,
+    decimal OriginalApprovedAmount,
+    decimal TotalSettled,
+    decimal PreviouslyReleasedAmount,
+    decimal MaximumReversibleAmount,
+    decimal Amount,
+    string Currency,
+    string Reason,
+    string Status,
+    Guid RequesterId,
+    string RequesterName,
+    DateTime CreatedAtUtc,
+    DateTime? SubmittedAtUtc,
+    DateTime? CompletedAtUtc,
+    string? ApprovalMode,
+    IReadOnlyList<PaymentRequestApproverDto> Approvers,
+    byte[] RowVersion,
+    bool CanEdit,
+    bool CanSubmit,
+    bool CanDecide,
+    bool CanCancel);
+
+public sealed record ProjectPaymentReversalPageDto(
+    Guid OriginalPaymentRequestId,
+    string OriginalPaymentRequestReference,
+    decimal OriginalApprovedAmount,
+    decimal TotalSettled,
+    decimal TotalReleased,
+    decimal RemainingActiveAllocation,
+    decimal RemainingPayable,
+    decimal MaximumReversibleAmount,
+    string Currency,
+    Guid? AnnualBudgetId,
+    int? AnnualBudgetFiscalYear,
+    string? AnnualBudgetReference,
+    bool HasPendingReversal,
+    bool CanCreate,
+    IReadOnlyList<ProjectPaymentReversalDto> Items);
+
+/// <summary>Actual payment fact applied to an already approved Payment Request.</summary>
+public sealed record RecordProjectPaymentSettlementDto(
+    Guid IdempotencyKey,
+    decimal Amount,
+    DateOnly PaymentDate,
+    string PaymentReference,
+    string? Description);
+
+public sealed record ProjectPaymentRequestSettlementDto(
+    Guid Id,
+    Guid PaymentRequestId,
+    Guid ProjectId,
+    string PaymentRequestReference,
+    string SettlementReference,
+    decimal Amount,
+    string Currency,
+    DateOnly PaymentDate,
+    int ReportingFiscalYear,
+    string? Description,
+    DateTime CreatedAtUtc,
+    Guid? CreatedBy);
+
+public sealed record ProjectPaymentRequestSettlementSummaryDto(
+    Guid PaymentRequestId,
+    string PaymentRequestReference,
+    string RequestStatus,
+    decimal ApprovedAmount,
+    decimal TotalSettled,
+    decimal TotalReleased,
+    decimal EffectiveActiveAllocation,
+    decimal OutstandingAmount,
+    string SettlementStatus,
+    string Currency,
+    Guid? AnnualBudgetId,
+    int? AnnualBudgetFiscalYear,
+    string? AnnualBudgetReference);
+
+public sealed record ProjectPaymentRequestSettlementPageDto(
+    ProjectPaymentRequestSettlementSummaryDto Summary,
+    IReadOnlyList<ProjectPaymentRequestSettlementDto> Items,
+    int Page,
+    int PageSize,
+    int Total);
+
+public sealed record PaymentRequestApproverDto(
+    Guid UserId,
+    string DisplayName,
+    int? Position,
+    string Requirement,
+    string DecisionStatus,
+    DateTime? DecidedAt,
+    string? Comment,
+    bool IsActive,
+    bool CanDecide);
+
+public sealed record PaymentRequestEligibleApproverDto(Guid UserId, string DisplayName);
+
+public sealed record PaymentRequestMilestoneOptionDto(Guid Id, string Name, DateTime? EndDate);
+
+public sealed record ProjectPaymentRequestListItemDto(
+    Guid Id,
+    string Reference,
+    string Title,
+    decimal Amount,
+    string Currency,
+    string Status,
+    Guid RequesterId,
+    string RequesterName,
+    DateTime CreatedAtUtc,
+    DateTime? SubmittedAtUtc,
+    DateTime? CompletedAtUtc,
+    string? ApprovalMode,
+    bool ReservesBudget,
+    byte[] RowVersion,
+    bool CanEdit,
+    bool CanSubmit,
+    bool CanDecide,
+    bool CanCancel,
+    Guid? AnnualBudgetId,
+    int? AnnualBudgetFiscalYear,
+    string? AnnualBudgetReference);
+
+public sealed record ProjectPaymentRequestBudgetAvailabilityDto(
+    Guid? AnnualBudgetId,
+    int FiscalYear,
+    string FiscalYearLabel,
+    DateOnly FiscalYearStartDate,
+    DateOnly FiscalYearEndDate,
+    string? AnnualBudgetReference,
+    string Currency,
+    string? AnnualBudgetStatus,
+    decimal? ApprovedAnnualBudget,
+    decimal ApprovedReservations,
+    decimal? AvailableAmount,
+    int LegacyUnassociatedApprovedRequests,
+    string AvailabilityStatus,
+    bool CanCreate,
+    bool CanSubmit);
+
+public sealed record ProjectPaymentRequestPageDto(
+    IReadOnlyList<ProjectPaymentRequestListItemDto> Items,
+    int Page,
+    int PageSize,
+    int Total,
+    ProjectPaymentRequestBudgetAvailabilityDto BudgetAvailability);
+
+public sealed record ProjectPaymentRequestDetailDto(
+    Guid Id,
+    Guid ProjectId,
+    string Reference,
+    string Title,
+    decimal Amount,
+    string Currency,
+    string Reason,
+    Guid? ProjectPlanMilestoneId,
+    string? ProjectPlanMilestoneName,
+    string Status,
+    Guid RequesterId,
+    string RequesterName,
+    DateTime CreatedAtUtc,
+    DateTime? SubmittedAtUtc,
+    DateTime? CompletedAtUtc,
+    string? ApprovalMode,
+    IReadOnlyList<PaymentRequestApproverDto> Approvers,
+    byte[] RowVersion,
+    bool CanEdit,
+    bool CanSubmit,
+    bool CanDecide,
+    bool CanCancel,
+    Guid? AnnualBudgetId,
+    int? AnnualBudgetFiscalYear,
+    string? AnnualBudgetReference);
+
+public static class PaymentRequestApprovalModes
+{
+    public const string Sequential = "Sequential";
+    public const string Parallel = "Parallel";
+
+    public static bool IsValid(string? value) =>
+        value is Sequential or Parallel;
+}
+
+public static class PaymentRequestApproverRequirements
+{
+    public const string Mandatory = "Mandatory";
+    public const string Optional = "Optional";
+
+    public static bool IsValid(string? value) =>
+        value is Mandatory or Optional;
+}
+
+public static class PaymentRequestDecisions
+{
+    public const string Approved = "Approved";
+    public const string Rejected = "Rejected";
+
+    public static bool IsValid(string? value) =>
+        value is Approved or Rejected;
+}
+
+public static class PaymentRequestStatuses
+{
+    public const string Draft = "Draft";
+    public const string Pending = "Pending";
+    public const string Approved = "Approved";
+    public const string Rejected = "Rejected";
+    public const string Cancelled = "Cancelled";
+    public const string Reversed = "Reversed";
+}
+
+public sealed record PaymentRequestApproverState(
+    Guid UserId,
+    int? Position,
+    string Requirement,
+    string? Decision);

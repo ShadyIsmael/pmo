@@ -5,6 +5,7 @@ using NEXUS.Modules.Organization.Domain;
 using NEXUS.Modules.ResourceManagement.Application.DTOs;
 using NEXUS.Modules.ResourceManagement.Domain;
 using NEXUS.SharedKernel;
+using NEXUS.SharedKernel.Management;
 
 namespace NEXUS.Modules.ResourceManagement.Application;
 
@@ -12,16 +13,18 @@ public class AllocationService : IAllocationService
 {
     private readonly DbContext _context;
     private readonly IAuditService _auditService;
+    private readonly IManagementContextAccessor? _managementContext;
 
-    public AllocationService(DbContext context, IAuditService auditService)
+    public AllocationService(DbContext context, IAuditService auditService, IManagementContextAccessor? managementContext = null)
     {
         _context = context;
         _auditService = auditService;
+        _managementContext = managementContext;
     }
 
     public async Task<PagedResult<AllocationDto>> GetPagedAsync(int page, int pageSize, Guid? resourceId = null, Guid? projectId = null, string? status = null, CancellationToken cancellationToken = default)
     {
-        var query = BuildQuery();
+        var query = ApplyManagementScope(BuildQuery());
         if (resourceId.HasValue) query = query.Where(a => a.ResourceId == resourceId.Value);
         if (projectId.HasValue) query = query.Where(a => a.ProjectId == projectId.Value);
         if (!string.IsNullOrWhiteSpace(status)) query = query.Where(a => a.Status == status);
@@ -30,13 +33,13 @@ public class AllocationService : IAllocationService
 
     public async Task<PagedResult<AllocationDto>> GetByResourceAsync(Guid resourceId, int page, int pageSize, CancellationToken cancellationToken = default)
     {
-        var query = BuildQuery().Where(a => a.ResourceId == resourceId);
+        var query = ApplyManagementScope(BuildQuery()).Where(a => a.ResourceId == resourceId);
         return await ToPagedResultAsync(query, page, pageSize, cancellationToken);
     }
 
     public async Task<PagedResult<AllocationDto>> GetByProjectAsync(Guid projectId, int page, int pageSize, CancellationToken cancellationToken = default)
     {
-        var query = BuildQuery().Where(a => a.ProjectId == projectId);
+        var query = ApplyManagementScope(BuildQuery()).Where(a => a.ProjectId == projectId);
         return await ToPagedResultAsync(query, page, pageSize, cancellationToken);
     }
 
@@ -68,7 +71,7 @@ public class AllocationService : IAllocationService
 
     public async Task<Result<AllocationDto>> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var allocation = await BuildQuery().FirstOrDefaultAsync(a => a.Id == id, cancellationToken);
+        var allocation = await ApplyManagementScope(BuildQuery()).FirstOrDefaultAsync(a => a.Id == id, cancellationToken);
         if (allocation is null)
             return Result<AllocationDto>.Failure(Error.NotFound("Allocation not found"));
         return Result<AllocationDto>.Success(MapToDto(allocation));
@@ -95,6 +98,9 @@ public class AllocationService : IAllocationService
     {
         var validation = await ValidateAllocationAsync(dto.ResourceId, dto.StartDate, dto.EndDate, dto.AllocationPercentage, null, userId, cancellationToken);
         if (validation.IsFailure) return Result<AllocationDto>.Failure(validation.Error!);
+
+        if (!IsProjectInScope(dto.ProjectId))
+            return Result<AllocationDto>.Failure(Error.NotFound("Project not found"));
 
         var resource = await _context.Set<Resource>().FirstOrDefaultAsync(r => r.Id == dto.ResourceId && !r.IsDeleted, cancellationToken);
         if (resource is null) return Result<AllocationDto>.Failure(Error.NotFound("Resource not found"));
@@ -140,8 +146,11 @@ public class AllocationService : IAllocationService
             .Include(a => a.Resource)
             .FirstOrDefaultAsync(a => a.Id == id && !a.IsDeleted, cancellationToken);
 
-        if (allocation is null)
+        if (allocation is null || !IsProjectInScope(allocation.ProjectId))
             return Result<AllocationDto>.Failure(Error.NotFound("Allocation not found"));
+
+        if (dto.ProjectId.HasValue && !IsProjectInScope(dto.ProjectId))
+            return Result<AllocationDto>.Failure(Error.NotFound("Project not found"));
 
         var startDate = dto.StartDate ?? allocation.StartDate;
         var endDate = dto.EndDate ?? allocation.EndDate;
@@ -183,7 +192,8 @@ public class AllocationService : IAllocationService
     {
         var allocation = await _context.Set<ResourceAllocation>()
             .FirstOrDefaultAsync(a => a.Id == id && !a.IsDeleted, cancellationToken);
-        if (allocation is null) return Result.Failure(Error.NotFound("Allocation not found"));
+        if (allocation is null || !IsProjectInScope(allocation.ProjectId))
+            return Result.Failure(Error.NotFound("Allocation not found"));
 
         allocation.IsDeleted = true;
         allocation.UpdatedBy = userId;
@@ -248,6 +258,28 @@ public class AllocationService : IAllocationService
         return _context.Set<ResourceAllocation>()
             .Include(a => a.Resource)
             .Where(a => !a.IsDeleted);
+    }
+
+    /// <summary>
+    /// Object-level project scope for allocations. A missing management context fails
+    /// closed; an empty assignment set means "no project assignments". Resource-level
+    /// allocations without a project remain available only when an established context
+    /// grants that resource-level view.
+    /// </summary>
+    private IQueryable<ResourceAllocation> ApplyManagementScope(IQueryable<ResourceAllocation> query)
+    {
+        var projectIds = _managementContext?.Current?.Scope.ProjectIds;
+        if (projectIds is null) return query.Where(_ => false);
+        if (projectIds.Count == 0) return query.Where(a => a.ProjectId == null);
+        var scoped = projectIds.ToArray();
+        return query.Where(a => a.ProjectId == null || scoped.Contains(a.ProjectId.Value));
+    }
+
+    private bool IsProjectInScope(Guid? projectId)
+    {
+        if (!projectId.HasValue) return true;
+        var projectIds = _managementContext?.Current?.Scope.ProjectIds;
+        return projectIds is not null && projectIds.Contains(projectId.Value);
     }
 
     private async Task<PagedResult<AllocationDto>> ToPagedResultAsync(IQueryable<ResourceAllocation> query, int page, int pageSize, CancellationToken cancellationToken)

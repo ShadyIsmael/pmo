@@ -13,6 +13,7 @@ const firstMeeting: MeetingListDto = {
   endTime: "2026-10-15T10:00:00Z",
   status: "Scheduled",
   attendeeCount: 1,
+  isRecurring: false,
 };
 
 const createdMeeting: MeetingDetailDto = {

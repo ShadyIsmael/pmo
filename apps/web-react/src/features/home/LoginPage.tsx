@@ -86,7 +86,7 @@ export function LoginPage() {
                   <Input
                     id="email"
                     type="email"
-                    placeholder="you@company.com"
+                    placeholder={t("auth.emailPlaceholder")}
                     autoComplete="username"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
@@ -117,7 +117,7 @@ export function LoginPage() {
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-muted-foreground transition-colors"
-                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    aria-label={showPassword ? t("administration.users.hidePassword") : t("administration.users.showPassword")}
                   >
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
@@ -147,10 +147,6 @@ export function LoginPage() {
                   </>
                 )}
               </Button>
-
-              <p className="text-center text-xs text-muted-foreground">
-                Demo: admin@nexus.com · password Demo123!
-              </p>
             </CardFooter>
           </form>
         </Card>

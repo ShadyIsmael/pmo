@@ -7,7 +7,7 @@ import { RisksPage } from "../features/risks/RisksPage";
 
 const fixtures = vi.hoisted(() => ({ get: vi.fn(), permissions: ["Risk.View"] as string[] }));
 
-vi.mock("@api/client", () => ({ api: { get: fixtures.get } }));
+vi.mock("@api/client", () => ({ api: { get: fixtures.get }, setApiErrorLocale: () => undefined }));
 vi.mock("@auth/AuthProvider", () => ({ useAuth: () => ({ user: { permissions: fixtures.permissions } }) }));
 
 function risk(id: string, title: string, ownerResourceId = "owner-1", ownerResourceName = "Risk Owner") {

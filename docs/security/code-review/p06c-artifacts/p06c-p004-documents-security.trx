@@ -1,0 +1,403 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="5e063fb0-a1a7-4072-b883-5080ea73889e" name="shady@SHADY 2026-11-05 19:11:26" runUser="SHADY\shady" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-11-05T19:11:26.0714988+02:00" queuing="2026-11-05T19:11:26.0714994+02:00" start="2026-11-05T19:11:22.1445512+02:00" finish="2026-11-05T19:11:27.6964746+02:00" />
+  <TestSettings name="default" id="eae09239-daa2-4853-bf27-d1faf7ef6acf">
+    <Deployment runDeploymentRoot="shady_SHADY_2026-11-05_19_11_26" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="6671baac-bf4e-4d12-8b73-a120bf962498" testId="13ed2623-6fdb-d204-fca0-615817142a11" testName="NEXUS.Api.Tests.Security.DocumentContentTypesTests.CanPreviewInline_allows_only_non_executable_types(contentType: &quot;application/octet-stream&quot;, expected: False)" computerName="SHADY" duration="00:00:00.0044896" startTime="2026-11-05T19:11:27.5876536+02:00" endTime="2026-11-05T19:11:27.5901762+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="6671baac-bf4e-4d12-8b73-a120bf962498" />
+    <UnitTestResult executionId="8cb7500f-9e08-4f7d-b270-9864e0fac0b1" testId="8d328ceb-2c51-6568-51ae-3fd9ed05775a" testName="NEXUS.Api.Tests.Security.DocumentContentTypesTests.CanPreviewInline_allows_only_non_executable_types(contentType: &quot;text/plain; charset=utf-8&quot;, expected: False)" computerName="SHADY" duration="00:00:00.0000014" startTime="2026-11-05T19:11:27.5970584+02:00" endTime="2026-11-05T19:11:27.5973003+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="8cb7500f-9e08-4f7d-b270-9864e0fac0b1" />
+    <UnitTestResult executionId="5eec352c-21a4-48d0-b58a-9c54042b172d" testId="430677a8-168a-1b8f-c245-9f06344fffa6" testName="NEXUS.Api.Tests.Security.DocumentContentTypesTests.ForFileName_never_returns_a_browser_executable_type(fileName: &quot;payload.js&quot;)" computerName="SHADY" duration="00:00:00.0000139" startTime="2026-11-05T19:11:27.5996242+02:00" endTime="2026-11-05T19:11:27.5996987+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="5eec352c-21a4-48d0-b58a-9c54042b172d" />
+    <UnitTestResult executionId="a6408ef3-f921-44bf-a8c3-ae3a5bc9ba0f" testId="9dcc024b-84e7-3111-679f-4e825498a6fd" testName="NEXUS.Api.Tests.Security.DocumentTenantBoundaryTests.Tenant_mismatch_and_foreign_tenant_category_are_rejected" computerName="SHADY" duration="00:00:00.0010000" startTime="2026-11-05T19:11:26.0497358+02:00" endTime="2026-11-05T19:11:26.5477731+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="a6408ef3-f921-44bf-a8c3-ae3a5bc9ba0f">
+      <Output>
+        <ErrorInfo>
+          <Message>Microsoft.Data.Sqlite.SqliteException : SQLite Error 1: 'near "max": syntax error'.</Message>
+          <StackTrace>   at Microsoft.Data.Sqlite.SqliteException.ThrowExceptionForRC(Int32 rc, sqlite3 db)&#xD;
+   at Microsoft.Data.Sqlite.SqliteCommand.PrepareAndEnumerateStatements()+MoveNext()&#xD;
+   at Microsoft.Data.Sqlite.SqliteCommand.GetStatements()+MoveNext()&#xD;
+   at Microsoft.Data.Sqlite.SqliteDataReader.NextResult()&#xD;
+   at Microsoft.Data.Sqlite.SqliteCommand.ExecuteReader(CommandBehavior behavior)&#xD;
+   at Microsoft.Data.Sqlite.SqliteCommand.ExecuteReader()&#xD;
+   at Microsoft.Data.Sqlite.SqliteCommand.ExecuteNonQuery()&#xD;
+   at Microsoft.EntityFrameworkCore.Storage.RelationalCommand.ExecuteNonQuery(RelationalCommandParameterObject parameterObject)&#xD;
+   at Microsoft.EntityFrameworkCore.Migrations.MigrationCommand.ExecuteNonQuery(IRelationalConnection connection, IReadOnlyDictionary`2 parameterValues)&#xD;
+   at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.Execute(IReadOnlyList`1 migrationCommands, IRelationalConnection connection, MigrationExecutionState executionState, Boolean beginTransaction, Boolean commitTransaction, Nullable`1 isolationLevel)&#xD;
+   at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.&lt;&gt;c.&lt;ExecuteNonQuery&gt;b__3_1(DbContext _, ValueTuple`6 s)&#xD;
+   at Microsoft.EntityFrameworkCore.Storage.NonRetryingExecutionStrategy.Execute[TState,TResult](TState state, Func`3 operation, Func`3 verifySucceeded)&#xD;
+   at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.ExecuteNonQuery(IReadOnlyList`1 migrationCommands, IRelationalConnection connection, MigrationExecutionState executionState, Boolean commitTransaction, Nullable`1 isolationLevel)&#xD;
+   at Microsoft.EntityFrameworkCore.Storage.RelationalDatabaseCreator.CreateTables()&#xD;
+   at Microsoft.EntityFrameworkCore.Storage.RelationalDatabaseCreator.EnsureCreated()&#xD;
+   at Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade.EnsureCreated()&#xD;
+   at NEXUS.Api.Tests.Security.DocumentTenantBoundaryTests..ctor() in C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Security\DocumentTenantBoundaryTests.cs:line 42&#xD;
+   at System.RuntimeType.CreateInstanceDefaultCtor(Boolean publicOnly, Boolean wrapExceptions)</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="faad6c5b-5c69-4296-aab5-79765c10957c" testId="f2bf5f30-0bdb-3d28-0911-703d5d28af99" testName="NEXUS.Api.Tests.Security.DocumentContentTypesTests.CanPreviewInline_allows_only_non_executable_types(contentType: &quot;application/pdf&quot;, expected: True)" computerName="SHADY" duration="00:00:00.0003160" startTime="2026-11-05T19:11:27.5907571+02:00" endTime="2026-11-05T19:11:27.5910008+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="faad6c5b-5c69-4296-aab5-79765c10957c" />
+    <UnitTestResult executionId="ffc2a74e-533d-4446-94d7-b19e8fa942c6" testId="329821e1-4e26-f11d-8397-fa00cd07d6d9" testName="NEXUS.Api.Tests.Security.DocumentContentTypesTests.ForFileName_maps_allowed_extensions_to_fixed_types(fileName: &quot;plan.docx&quot;, expected: &quot;application/vnd.openxmlformats-officedocument.word&quot;···)" computerName="SHADY" duration="00:00:00.0075598" startTime="2026-11-05T19:11:27.5825028+02:00" endTime="2026-11-05T19:11:27.5858341+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="ffc2a74e-533d-4446-94d7-b19e8fa942c6" />
+    <UnitTestResult executionId="76edd61a-d727-4a7b-98b3-8877e1f86712" testId="2aa085b7-2921-58d4-1bed-928c7441dd2c" testName="NEXUS.Api.Tests.Security.DocumentContentTypesTests.ForFileName_maps_allowed_extensions_to_fixed_types(fileName: &quot;notes.txt&quot;, expected: &quot;text/plain; charset=utf-8&quot;)" computerName="SHADY" duration="00:00:00.0002171" startTime="2026-11-05T19:11:27.5868792+02:00" endTime="2026-11-05T19:11:27.5869480+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="76edd61a-d727-4a7b-98b3-8877e1f86712" />
+    <UnitTestResult executionId="3b573756-cf34-43ba-8683-d14fe57a2fdc" testId="5615b9e3-e79e-65d5-f91b-7451d2772077" testName="NEXUS.Api.Tests.Security.DocumentContentTypesTests.ForFileName_maps_allowed_extensions_to_fixed_types(fileName: &quot;report.pdf&quot;, expected: &quot;application/pdf&quot;)" computerName="SHADY" duration="00:00:00.0000025" startTime="2026-11-05T19:11:27.5871836+02:00" endTime="2026-11-05T19:11:27.5872303+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="3b573756-cf34-43ba-8683-d14fe57a2fdc" />
+    <UnitTestResult executionId="e669969b-06fc-4217-ae93-9cda1b786c9f" testId="99adfbc0-3e96-fec5-f63f-eb85144b49f0" testName="NEXUS.Api.Tests.Security.DocumentTenantBoundaryTests.Null_management_context_denies_document_records_and_project_linked_create" computerName="SHADY" duration="00:00:00.0010000" startTime="2026-11-05T19:11:27.2671179+02:00" endTime="2026-11-05T19:11:27.5714466+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="e669969b-06fc-4217-ae93-9cda1b786c9f">
+      <Output>
+        <ErrorInfo>
+          <Message>Microsoft.Data.Sqlite.SqliteException : SQLite Error 1: 'near "max": syntax error'.</Message>
+          <StackTrace>   at Microsoft.Data.Sqlite.SqliteException.ThrowExceptionForRC(Int32 rc, sqlite3 db)&#xD;
+   at Microsoft.Data.Sqlite.SqliteCommand.PrepareAndEnumerateStatements()+MoveNext()&#xD;
+   at Microsoft.Data.Sqlite.SqliteCommand.GetStatements()+MoveNext()&#xD;
+   at Microsoft.Data.Sqlite.SqliteDataReader.NextResult()&#xD;
+   at Microsoft.Data.Sqlite.SqliteCommand.ExecuteReader(CommandBehavior behavior)&#xD;
+   at Microsoft.Data.Sqlite.SqliteCommand.ExecuteReader()&#xD;
+   at Microsoft.Data.Sqlite.SqliteCommand.ExecuteNonQuery()&#xD;
+   at Microsoft.EntityFrameworkCore.Storage.RelationalCommand.ExecuteNonQuery(RelationalCommandParameterObject parameterObject)&#xD;
+   at Microsoft.EntityFrameworkCore.Migrations.MigrationCommand.ExecuteNonQuery(IRelationalConnection connection, IReadOnlyDictionary`2 parameterValues)&#xD;
+   at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.Execute(IReadOnlyList`1 migrationCommands, IRelationalConnection connection, MigrationExecutionState executionState, Boolean beginTransaction, Boolean commitTransaction, Nullable`1 isolationLevel)&#xD;
+   at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.&lt;&gt;c.&lt;ExecuteNonQuery&gt;b__3_1(DbContext _, ValueTuple`6 s)&#xD;
+   at Microsoft.EntityFrameworkCore.Storage.NonRetryingExecutionStrategy.Execute[TState,TResult](TState state, Func`3 operation, Func`3 verifySucceeded)&#xD;
+   at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.ExecuteNonQuery(IReadOnlyList`1 migrationCommands, IRelationalConnection connection, MigrationExecutionState executionState, Boolean commitTransaction, Nullable`1 isolationLevel)&#xD;
+   at Microsoft.EntityFrameworkCore.Storage.RelationalDatabaseCreator.CreateTables()&#xD;
+   at Microsoft.EntityFrameworkCore.Storage.RelationalDatabaseCreator.EnsureCreated()&#xD;
+   at Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade.EnsureCreated()&#xD;
+   at NEXUS.Api.Tests.Security.DocumentTenantBoundaryTests..ctor() in C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Security\DocumentTenantBoundaryTests.cs:line 42&#xD;
+   at System.RuntimeType.CreateInstanceDefaultCtor(Boolean publicOnly, Boolean wrapExceptions)</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="5496e4b0-a5b2-45ee-967d-2042dcc37fe0" testId="b0d99610-f5e8-321a-f845-79674c0b23c4" testName="NEXUS.Api.Tests.Security.DocumentContentTypesTests.ForFileName_never_returns_a_browser_executable_type(fileName: &quot;payload.svg&quot;)" computerName="SHADY" duration="00:00:00.0000279" startTime="2026-11-05T19:11:27.5985648+02:00" endTime="2026-11-05T19:11:27.5986134+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="5496e4b0-a5b2-45ee-967d-2042dcc37fe0" />
+    <UnitTestResult executionId="134264f0-b7dd-4be2-b75f-83f606be5a4b" testId="412f05c2-2a7d-c91e-7ebf-6f61c399bf16" testName="NEXUS.Api.Tests.Security.DocumentContentTypesTests.ForFileName_never_returns_a_browser_executable_type(fileName: &quot;payload.html&quot;)" computerName="SHADY" duration="00:00:00.0005522" startTime="2026-11-05T19:11:27.5984427+02:00" endTime="2026-11-05T19:11:27.5984897+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="134264f0-b7dd-4be2-b75f-83f606be5a4b" />
+    <UnitTestResult executionId="111d4e05-cfee-495e-b6e1-a9a66a6cfc03" testId="42cbcbe4-f9a8-5348-506e-34c3445123f0" testName="NEXUS.Api.Tests.Security.DocumentTenantBoundaryTests.Tenant_categories_remain_available_without_project_management_context" computerName="SHADY" duration="00:00:00.0010000" startTime="2026-11-05T19:11:22.9830270+02:00" endTime="2026-11-05T19:11:26.0041119+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="111d4e05-cfee-495e-b6e1-a9a66a6cfc03">
+      <Output>
+        <ErrorInfo>
+          <Message>Microsoft.Data.Sqlite.SqliteException : SQLite Error 1: 'near "max": syntax error'.</Message>
+          <StackTrace>   at Microsoft.Data.Sqlite.SqliteException.ThrowExceptionForRC(Int32 rc, sqlite3 db)&#xD;
+   at Microsoft.Data.Sqlite.SqliteCommand.PrepareAndEnumerateStatements()+MoveNext()&#xD;
+   at Microsoft.Data.Sqlite.SqliteCommand.GetStatements()+MoveNext()&#xD;
+   at Microsoft.Data.Sqlite.SqliteDataReader.NextResult()&#xD;
+   at Microsoft.Data.Sqlite.SqliteCommand.ExecuteReader(CommandBehavior behavior)&#xD;
+   at Microsoft.Data.Sqlite.SqliteCommand.ExecuteReader()&#xD;
+   at Microsoft.Data.Sqlite.SqliteCommand.ExecuteNonQuery()&#xD;
+   at Microsoft.EntityFrameworkCore.Storage.RelationalCommand.ExecuteNonQuery(RelationalCommandParameterObject parameterObject)&#xD;
+   at Microsoft.EntityFrameworkCore.Migrations.MigrationCommand.ExecuteNonQuery(IRelationalConnection connection, IReadOnlyDictionary`2 parameterValues)&#xD;
+   at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.Execute(IReadOnlyList`1 migrationCommands, IRelationalConnection connection, MigrationExecutionState executionState, Boolean beginTransaction, Boolean commitTransaction, Nullable`1 isolationLevel)&#xD;
+   at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.&lt;&gt;c.&lt;ExecuteNonQuery&gt;b__3_1(DbContext _, ValueTuple`6 s)&#xD;
+   at Microsoft.EntityFrameworkCore.Storage.NonRetryingExecutionStrategy.Execute[TState,TResult](TState state, Func`3 operation, Func`3 verifySucceeded)&#xD;
+   at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.ExecuteNonQuery(IReadOnlyList`1 migrationCommands, IRelationalConnection connection, MigrationExecutionState executionState, Boolean commitTransaction, Nullable`1 isolationLevel)&#xD;
+   at Microsoft.EntityFrameworkCore.Storage.RelationalDatabaseCreator.CreateTables()&#xD;
+   at Microsoft.EntityFrameworkCore.Storage.RelationalDatabaseCreator.EnsureCreated()&#xD;
+   at Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade.EnsureCreated()&#xD;
+   at NEXUS.Api.Tests.Security.DocumentTenantBoundaryTests..ctor() in C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Security\DocumentTenantBoundaryTests.cs:line 42&#xD;
+   at System.RuntimeType.CreateInstanceDefaultCtor(Boolean publicOnly, Boolean wrapExceptions)</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="09b716ed-da76-4ea1-a6ce-8ec96afada70" testId="0cb46032-0695-ff6c-577d-7f733bd6095d" testName="NEXUS.Api.Tests.Security.DocumentContentTypesTests.ForFileName_maps_allowed_extensions_to_fixed_types(fileName: &quot;photo.PNG&quot;, expected: &quot;image/png&quot;)" computerName="SHADY" duration="00:00:00.0000074" startTime="2026-11-05T19:11:27.5870503+02:00" endTime="2026-11-05T19:11:27.5870966+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="09b716ed-da76-4ea1-a6ce-8ec96afada70" />
+    <UnitTestResult executionId="3ca47e04-0079-4e15-9366-7a7b653121d7" testId="f64b515c-2e82-72b0-34c7-2f48ab7c4b5f" testName="NEXUS.Api.Tests.Security.DocumentContentTypesTests.CanPreviewInline_allows_only_non_executable_types(contentType: &quot;image/jpeg&quot;, expected: True)" computerName="SHADY" duration="00:00:00.0000028" startTime="2026-11-05T19:11:27.5963545+02:00" endTime="2026-11-05T19:11:27.5965763+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="3ca47e04-0079-4e15-9366-7a7b653121d7" />
+    <UnitTestResult executionId="91a696b0-d37a-4457-a2e5-cfe700f52c48" testId="d56d8654-6915-9239-bb57-aa7de68abed1" testName="NEXUS.Api.Tests.Security.DocumentContentTypesTests.CanPreviewInline_allows_only_non_executable_types(contentType: &quot;text/html&quot;, expected: False)" computerName="SHADY" duration="00:00:00.0000090" startTime="2026-11-05T19:11:27.5956375+02:00" endTime="2026-11-05T19:11:27.5958940+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="91a696b0-d37a-4457-a2e5-cfe700f52c48" />
+    <UnitTestResult executionId="1aafeda5-b720-4e06-89d3-c6641568a792" testId="d71fe269-e2a6-25b5-e0f8-b57627ea88d9" testName="NEXUS.Api.Tests.Security.DocumentTenantBoundaryTests.Project_document_outside_organization_scope_is_denied_even_when_owned_by_current_user" computerName="SHADY" duration="00:00:00.0010000" startTime="2026-11-05T19:11:26.9412950+02:00" endTime="2026-11-05T19:11:27.2624411+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="1aafeda5-b720-4e06-89d3-c6641568a792">
+      <Output>
+        <ErrorInfo>
+          <Message>Microsoft.Data.Sqlite.SqliteException : SQLite Error 1: 'near "max": syntax error'.</Message>
+          <StackTrace>   at Microsoft.Data.Sqlite.SqliteException.ThrowExceptionForRC(Int32 rc, sqlite3 db)&#xD;
+   at Microsoft.Data.Sqlite.SqliteCommand.PrepareAndEnumerateStatements()+MoveNext()&#xD;
+   at Microsoft.Data.Sqlite.SqliteCommand.GetStatements()+MoveNext()&#xD;
+   at Microsoft.Data.Sqlite.SqliteDataReader.NextResult()&#xD;
+   at Microsoft.Data.Sqlite.SqliteCommand.ExecuteReader(CommandBehavior behavior)&#xD;
+   at Microsoft.Data.Sqlite.SqliteCommand.ExecuteReader()&#xD;
+   at Microsoft.Data.Sqlite.SqliteCommand.ExecuteNonQuery()&#xD;
+   at Microsoft.EntityFrameworkCore.Storage.RelationalCommand.ExecuteNonQuery(RelationalCommandParameterObject parameterObject)&#xD;
+   at Microsoft.EntityFrameworkCore.Migrations.MigrationCommand.ExecuteNonQuery(IRelationalConnection connection, IReadOnlyDictionary`2 parameterValues)&#xD;
+   at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.Execute(IReadOnlyList`1 migrationCommands, IRelationalConnection connection, MigrationExecutionState executionState, Boolean beginTransaction, Boolean commitTransaction, Nullable`1 isolationLevel)&#xD;
+   at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.&lt;&gt;c.&lt;ExecuteNonQuery&gt;b__3_1(DbContext _, ValueTuple`6 s)&#xD;
+   at Microsoft.EntityFrameworkCore.Storage.NonRetryingExecutionStrategy.Execute[TState,TResult](TState state, Func`3 operation, Func`3 verifySucceeded)&#xD;
+   at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.ExecuteNonQuery(IReadOnlyList`1 migrationCommands, IRelationalConnection connection, MigrationExecutionState executionState, Boolean commitTransaction, Nullable`1 isolationLevel)&#xD;
+   at Microsoft.EntityFrameworkCore.Storage.RelationalDatabaseCreator.CreateTables()&#xD;
+   at Microsoft.EntityFrameworkCore.Storage.RelationalDatabaseCreator.EnsureCreated()&#xD;
+   at Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade.EnsureCreated()&#xD;
+   at NEXUS.Api.Tests.Security.DocumentTenantBoundaryTests..ctor() in C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Security\DocumentTenantBoundaryTests.cs:line 42&#xD;
+   at System.RuntimeType.CreateInstanceDefaultCtor(Boolean publicOnly, Boolean wrapExceptions)</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="c6dfdd0c-25b2-45b2-89db-d246189d729d" testId="d525c671-234e-f2b2-4f77-66623efc01db" testName="NEXUS.Api.Tests.Security.DocumentContentTypesTests.ForFileName_maps_allowed_extensions_to_fixed_types(fileName: &quot;photo.jpeg&quot;, expected: &quot;image/jpeg&quot;)" computerName="SHADY" duration="00:00:00.0000018" startTime="2026-11-05T19:11:27.5874663+02:00" endTime="2026-11-05T19:11:27.5875224+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="c6dfdd0c-25b2-45b2-89db-d246189d729d" />
+    <UnitTestResult executionId="fa4dd050-c6ca-4c01-9875-2b10f325ec81" testId="442b2d05-72ba-9367-e7f2-6f60b7ea2fd8" testName="NEXUS.Api.Tests.Security.DocumentContentTypesTests.ForFileName_maps_allowed_extensions_to_fixed_types(fileName: &quot;data.csv&quot;, expected: &quot;text/csv; charset=utf-8&quot;)" computerName="SHADY" duration="00:00:00.0000013" startTime="2026-11-05T19:11:27.5873097+02:00" endTime="2026-11-05T19:11:27.5873534+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="fa4dd050-c6ca-4c01-9875-2b10f325ec81" />
+    <UnitTestResult executionId="354ffa02-129c-4616-99c8-5dc6483841e8" testId="9aaa6f3c-e87a-6c0e-0f33-a7781a54638b" testName="NEXUS.Api.Tests.Security.DocumentContentTypesTests.CanPreviewInline_allows_only_non_executable_types(contentType: &quot;image/svg+xml&quot;, expected: False)" computerName="SHADY" duration="00:00:00.0000014" startTime="2026-11-05T19:11:27.5981349+02:00" endTime="2026-11-05T19:11:27.5981924+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="354ffa02-129c-4616-99c8-5dc6483841e8" />
+    <UnitTestResult executionId="043adc22-7fe8-48cc-9a6d-03bcb27432e2" testId="9f7e3b28-c9d0-d9d4-6c6e-4f323a0e1777" testName="NEXUS.Api.Tests.Security.DocumentContentTypesTests.CanPreviewInline_allows_only_non_executable_types(contentType: &quot;image/png&quot;, expected: True)" computerName="SHADY" duration="00:00:00.0000015" startTime="2026-11-05T19:11:27.5977091+02:00" endTime="2026-11-05T19:11:27.5979830+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="043adc22-7fe8-48cc-9a6d-03bcb27432e2" />
+    <UnitTestResult executionId="e3f06872-caaf-41e0-bd2e-1b4fe0b2df77" testId="817049ef-bbeb-fe3d-39de-8717cbed2fa0" testName="NEXUS.Api.Tests.Security.DocumentContentTypesTests.ForFileName_never_returns_a_browser_executable_type(fileName: &quot;no-extension&quot;)" computerName="SHADY" duration="00:00:00.0000165" startTime="2026-11-05T19:11:27.5986869+02:00" endTime="2026-11-05T19:11:27.5987346+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="e3f06872-caaf-41e0-bd2e-1b4fe0b2df77" />
+    <UnitTestResult executionId="71ddc145-6393-4f11-8a8b-0fc2a883399c" testId="a0fe98d1-bbaf-59e2-bbfb-0e58678569d3" testName="NEXUS.Api.Tests.Security.DocumentTenantBoundaryTests.Trusted_same_tenant_project_scope_allows_its_documents_and_unlinked_owner_records" computerName="SHADY" duration="00:00:00.0010000" startTime="2026-11-05T19:11:26.5524332+02:00" endTime="2026-11-05T19:11:26.9360150+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="71ddc145-6393-4f11-8a8b-0fc2a883399c">
+      <Output>
+        <ErrorInfo>
+          <Message>Microsoft.Data.Sqlite.SqliteException : SQLite Error 1: 'near "max": syntax error'.</Message>
+          <StackTrace>   at Microsoft.Data.Sqlite.SqliteException.ThrowExceptionForRC(Int32 rc, sqlite3 db)&#xD;
+   at Microsoft.Data.Sqlite.SqliteCommand.PrepareAndEnumerateStatements()+MoveNext()&#xD;
+   at Microsoft.Data.Sqlite.SqliteCommand.GetStatements()+MoveNext()&#xD;
+   at Microsoft.Data.Sqlite.SqliteDataReader.NextResult()&#xD;
+   at Microsoft.Data.Sqlite.SqliteCommand.ExecuteReader(CommandBehavior behavior)&#xD;
+   at Microsoft.Data.Sqlite.SqliteCommand.ExecuteReader()&#xD;
+   at Microsoft.Data.Sqlite.SqliteCommand.ExecuteNonQuery()&#xD;
+   at Microsoft.EntityFrameworkCore.Storage.RelationalCommand.ExecuteNonQuery(RelationalCommandParameterObject parameterObject)&#xD;
+   at Microsoft.EntityFrameworkCore.Migrations.MigrationCommand.ExecuteNonQuery(IRelationalConnection connection, IReadOnlyDictionary`2 parameterValues)&#xD;
+   at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.Execute(IReadOnlyList`1 migrationCommands, IRelationalConnection connection, MigrationExecutionState executionState, Boolean beginTransaction, Boolean commitTransaction, Nullable`1 isolationLevel)&#xD;
+   at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.&lt;&gt;c.&lt;ExecuteNonQuery&gt;b__3_1(DbContext _, ValueTuple`6 s)&#xD;
+   at Microsoft.EntityFrameworkCore.Storage.NonRetryingExecutionStrategy.Execute[TState,TResult](TState state, Func`3 operation, Func`3 verifySucceeded)&#xD;
+   at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.ExecuteNonQuery(IReadOnlyList`1 migrationCommands, IRelationalConnection connection, MigrationExecutionState executionState, Boolean commitTransaction, Nullable`1 isolationLevel)&#xD;
+   at Microsoft.EntityFrameworkCore.Storage.RelationalDatabaseCreator.CreateTables()&#xD;
+   at Microsoft.EntityFrameworkCore.Storage.RelationalDatabaseCreator.EnsureCreated()&#xD;
+   at Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade.EnsureCreated()&#xD;
+   at NEXUS.Api.Tests.Security.DocumentTenantBoundaryTests..ctor() in C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Security\DocumentTenantBoundaryTests.cs:line 42&#xD;
+   at System.RuntimeType.CreateInstanceDefaultCtor(Boolean publicOnly, Boolean wrapExceptions)</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="30b6860b-019b-4200-9559-6b6f27e86eef" testId="6c54f5b8-89f2-77d5-1f00-b972a4019a5e" testName="NEXUS.Api.Tests.Security.DocumentContentTypesTests.ForFileName_never_returns_a_browser_executable_type(fileName: null)" computerName="SHADY" duration="00:00:00.0006600" startTime="2026-11-05T19:11:27.5983172+02:00" endTime="2026-11-05T19:11:27.5983674+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="30b6860b-019b-4200-9559-6b6f27e86eef" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="NEXUS.Api.Tests.Security.DocumentContentTypesTests.CanPreviewInline_allows_only_non_executable_types(contentType: &quot;image/png&quot;, expected: True)" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\release\net10.0\nexus.api.tests.dll" id="9f7e3b28-c9d0-d9d4-6c6e-4f323a0e1777">
+      <Execution id="043adc22-7fe8-48cc-9a6d-03bcb27432e2" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Release\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.DocumentContentTypesTests" name="CanPreviewInline_allows_only_non_executable_types" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.DocumentContentTypesTests.ForFileName_never_returns_a_browser_executable_type(fileName: &quot;payload.js&quot;)" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\release\net10.0\nexus.api.tests.dll" id="430677a8-168a-1b8f-c245-9f06344fffa6">
+      <Execution id="5eec352c-21a4-48d0-b58a-9c54042b172d" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Release\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.DocumentContentTypesTests" name="ForFileName_never_returns_a_browser_executable_type" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.DocumentTenantBoundaryTests.Tenant_categories_remain_available_without_project_management_context" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\release\net10.0\nexus.api.tests.dll" id="42cbcbe4-f9a8-5348-506e-34c3445123f0">
+      <Execution id="111d4e05-cfee-495e-b6e1-a9a66a6cfc03" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Release\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.DocumentTenantBoundaryTests" name="Tenant_categories_remain_available_without_project_management_context" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.DocumentContentTypesTests.ForFileName_maps_allowed_extensions_to_fixed_types(fileName: &quot;data.csv&quot;, expected: &quot;text/csv; charset=utf-8&quot;)" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\release\net10.0\nexus.api.tests.dll" id="442b2d05-72ba-9367-e7f2-6f60b7ea2fd8">
+      <Execution id="fa4dd050-c6ca-4c01-9875-2b10f325ec81" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Release\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.DocumentContentTypesTests" name="ForFileName_maps_allowed_extensions_to_fixed_types" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.DocumentContentTypesTests.ForFileName_never_returns_a_browser_executable_type(fileName: &quot;no-extension&quot;)" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\release\net10.0\nexus.api.tests.dll" id="817049ef-bbeb-fe3d-39de-8717cbed2fa0">
+      <Execution id="e3f06872-caaf-41e0-bd2e-1b4fe0b2df77" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Release\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.DocumentContentTypesTests" name="ForFileName_never_returns_a_browser_executable_type" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.DocumentContentTypesTests.ForFileName_never_returns_a_browser_executable_type(fileName: &quot;payload.html&quot;)" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\release\net10.0\nexus.api.tests.dll" id="412f05c2-2a7d-c91e-7ebf-6f61c399bf16">
+      <Execution id="134264f0-b7dd-4be2-b75f-83f606be5a4b" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Release\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.DocumentContentTypesTests" name="ForFileName_never_returns_a_browser_executable_type" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.DocumentContentTypesTests.CanPreviewInline_allows_only_non_executable_types(contentType: &quot;image/jpeg&quot;, expected: True)" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\release\net10.0\nexus.api.tests.dll" id="f64b515c-2e82-72b0-34c7-2f48ab7c4b5f">
+      <Execution id="3ca47e04-0079-4e15-9366-7a7b653121d7" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Release\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.DocumentContentTypesTests" name="CanPreviewInline_allows_only_non_executable_types" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.DocumentContentTypesTests.CanPreviewInline_allows_only_non_executable_types(contentType: &quot;application/octet-stream&quot;, expected: False)" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\release\net10.0\nexus.api.tests.dll" id="13ed2623-6fdb-d204-fca0-615817142a11">
+      <Execution id="6671baac-bf4e-4d12-8b73-a120bf962498" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Release\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.DocumentContentTypesTests" name="CanPreviewInline_allows_only_non_executable_types" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.DocumentTenantBoundaryTests.Project_document_outside_organization_scope_is_denied_even_when_owned_by_current_user" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\release\net10.0\nexus.api.tests.dll" id="d71fe269-e2a6-25b5-e0f8-b57627ea88d9">
+      <Execution id="1aafeda5-b720-4e06-89d3-c6641568a792" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Release\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.DocumentTenantBoundaryTests" name="Project_document_outside_organization_scope_is_denied_even_when_owned_by_current_user" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.DocumentContentTypesTests.CanPreviewInline_allows_only_non_executable_types(contentType: &quot;application/pdf&quot;, expected: True)" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\release\net10.0\nexus.api.tests.dll" id="f2bf5f30-0bdb-3d28-0911-703d5d28af99">
+      <Execution id="faad6c5b-5c69-4296-aab5-79765c10957c" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Release\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.DocumentContentTypesTests" name="CanPreviewInline_allows_only_non_executable_types" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.DocumentTenantBoundaryTests.Tenant_mismatch_and_foreign_tenant_category_are_rejected" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\release\net10.0\nexus.api.tests.dll" id="9dcc024b-84e7-3111-679f-4e825498a6fd">
+      <Execution id="a6408ef3-f921-44bf-a8c3-ae3a5bc9ba0f" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Release\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.DocumentTenantBoundaryTests" name="Tenant_mismatch_and_foreign_tenant_category_are_rejected" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.DocumentContentTypesTests.ForFileName_maps_allowed_extensions_to_fixed_types(fileName: &quot;photo.PNG&quot;, expected: &quot;image/png&quot;)" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\release\net10.0\nexus.api.tests.dll" id="0cb46032-0695-ff6c-577d-7f733bd6095d">
+      <Execution id="09b716ed-da76-4ea1-a6ce-8ec96afada70" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Release\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.DocumentContentTypesTests" name="ForFileName_maps_allowed_extensions_to_fixed_types" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.DocumentContentTypesTests.ForFileName_maps_allowed_extensions_to_fixed_types(fileName: &quot;notes.txt&quot;, expected: &quot;text/plain; charset=utf-8&quot;)" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\release\net10.0\nexus.api.tests.dll" id="2aa085b7-2921-58d4-1bed-928c7441dd2c">
+      <Execution id="76edd61a-d727-4a7b-98b3-8877e1f86712" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Release\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.DocumentContentTypesTests" name="ForFileName_maps_allowed_extensions_to_fixed_types" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.DocumentTenantBoundaryTests.Null_management_context_denies_document_records_and_project_linked_create" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\release\net10.0\nexus.api.tests.dll" id="99adfbc0-3e96-fec5-f63f-eb85144b49f0">
+      <Execution id="e669969b-06fc-4217-ae93-9cda1b786c9f" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Release\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.DocumentTenantBoundaryTests" name="Null_management_context_denies_document_records_and_project_linked_create" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.DocumentTenantBoundaryTests.Trusted_same_tenant_project_scope_allows_its_documents_and_unlinked_owner_records" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\release\net10.0\nexus.api.tests.dll" id="a0fe98d1-bbaf-59e2-bbfb-0e58678569d3">
+      <Execution id="71ddc145-6393-4f11-8a8b-0fc2a883399c" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Release\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.DocumentTenantBoundaryTests" name="Trusted_same_tenant_project_scope_allows_its_documents_and_unlinked_owner_records" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.DocumentContentTypesTests.ForFileName_maps_allowed_extensions_to_fixed_types(fileName: &quot;photo.jpeg&quot;, expected: &quot;image/jpeg&quot;)" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\release\net10.0\nexus.api.tests.dll" id="d525c671-234e-f2b2-4f77-66623efc01db">
+      <Execution id="c6dfdd0c-25b2-45b2-89db-d246189d729d" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Release\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.DocumentContentTypesTests" name="ForFileName_maps_allowed_extensions_to_fixed_types" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.DocumentContentTypesTests.CanPreviewInline_allows_only_non_executable_types(contentType: &quot;text/html&quot;, expected: False)" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\release\net10.0\nexus.api.tests.dll" id="d56d8654-6915-9239-bb57-aa7de68abed1">
+      <Execution id="91a696b0-d37a-4457-a2e5-cfe700f52c48" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Release\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.DocumentContentTypesTests" name="CanPreviewInline_allows_only_non_executable_types" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.DocumentContentTypesTests.ForFileName_never_returns_a_browser_executable_type(fileName: &quot;payload.svg&quot;)" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\release\net10.0\nexus.api.tests.dll" id="b0d99610-f5e8-321a-f845-79674c0b23c4">
+      <Execution id="5496e4b0-a5b2-45ee-967d-2042dcc37fe0" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Release\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.DocumentContentTypesTests" name="ForFileName_never_returns_a_browser_executable_type" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.DocumentContentTypesTests.ForFileName_maps_allowed_extensions_to_fixed_types(fileName: &quot;report.pdf&quot;, expected: &quot;application/pdf&quot;)" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\release\net10.0\nexus.api.tests.dll" id="5615b9e3-e79e-65d5-f91b-7451d2772077">
+      <Execution id="3b573756-cf34-43ba-8683-d14fe57a2fdc" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Release\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.DocumentContentTypesTests" name="ForFileName_maps_allowed_extensions_to_fixed_types" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.DocumentContentTypesTests.ForFileName_maps_allowed_extensions_to_fixed_types(fileName: &quot;plan.docx&quot;, expected: &quot;application/vnd.openxmlformats-officedocument.word&quot;···)" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\release\net10.0\nexus.api.tests.dll" id="329821e1-4e26-f11d-8397-fa00cd07d6d9">
+      <Execution id="ffc2a74e-533d-4446-94d7-b19e8fa942c6" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Release\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.DocumentContentTypesTests" name="ForFileName_maps_allowed_extensions_to_fixed_types" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.DocumentContentTypesTests.ForFileName_never_returns_a_browser_executable_type(fileName: null)" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\release\net10.0\nexus.api.tests.dll" id="6c54f5b8-89f2-77d5-1f00-b972a4019a5e">
+      <Execution id="30b6860b-019b-4200-9559-6b6f27e86eef" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Release\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.DocumentContentTypesTests" name="ForFileName_never_returns_a_browser_executable_type" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.DocumentContentTypesTests.CanPreviewInline_allows_only_non_executable_types(contentType: &quot;image/svg+xml&quot;, expected: False)" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\release\net10.0\nexus.api.tests.dll" id="9aaa6f3c-e87a-6c0e-0f33-a7781a54638b">
+      <Execution id="354ffa02-129c-4616-99c8-5dc6483841e8" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Release\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.DocumentContentTypesTests" name="CanPreviewInline_allows_only_non_executable_types" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.DocumentContentTypesTests.CanPreviewInline_allows_only_non_executable_types(contentType: &quot;text/plain; charset=utf-8&quot;, expected: False)" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\release\net10.0\nexus.api.tests.dll" id="8d328ceb-2c51-6568-51ae-3fd9ed05775a">
+      <Execution id="8cb7500f-9e08-4f7d-b270-9864e0fac0b1" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Release\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.DocumentContentTypesTests" name="CanPreviewInline_allows_only_non_executable_types" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="13ed2623-6fdb-d204-fca0-615817142a11" executionId="6671baac-bf4e-4d12-8b73-a120bf962498" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="8d328ceb-2c51-6568-51ae-3fd9ed05775a" executionId="8cb7500f-9e08-4f7d-b270-9864e0fac0b1" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="430677a8-168a-1b8f-c245-9f06344fffa6" executionId="5eec352c-21a4-48d0-b58a-9c54042b172d" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="9dcc024b-84e7-3111-679f-4e825498a6fd" executionId="a6408ef3-f921-44bf-a8c3-ae3a5bc9ba0f" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="f2bf5f30-0bdb-3d28-0911-703d5d28af99" executionId="faad6c5b-5c69-4296-aab5-79765c10957c" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="329821e1-4e26-f11d-8397-fa00cd07d6d9" executionId="ffc2a74e-533d-4446-94d7-b19e8fa942c6" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="2aa085b7-2921-58d4-1bed-928c7441dd2c" executionId="76edd61a-d727-4a7b-98b3-8877e1f86712" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="5615b9e3-e79e-65d5-f91b-7451d2772077" executionId="3b573756-cf34-43ba-8683-d14fe57a2fdc" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="99adfbc0-3e96-fec5-f63f-eb85144b49f0" executionId="e669969b-06fc-4217-ae93-9cda1b786c9f" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="b0d99610-f5e8-321a-f845-79674c0b23c4" executionId="5496e4b0-a5b2-45ee-967d-2042dcc37fe0" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="412f05c2-2a7d-c91e-7ebf-6f61c399bf16" executionId="134264f0-b7dd-4be2-b75f-83f606be5a4b" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="42cbcbe4-f9a8-5348-506e-34c3445123f0" executionId="111d4e05-cfee-495e-b6e1-a9a66a6cfc03" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="0cb46032-0695-ff6c-577d-7f733bd6095d" executionId="09b716ed-da76-4ea1-a6ce-8ec96afada70" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="f64b515c-2e82-72b0-34c7-2f48ab7c4b5f" executionId="3ca47e04-0079-4e15-9366-7a7b653121d7" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="d56d8654-6915-9239-bb57-aa7de68abed1" executionId="91a696b0-d37a-4457-a2e5-cfe700f52c48" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="d71fe269-e2a6-25b5-e0f8-b57627ea88d9" executionId="1aafeda5-b720-4e06-89d3-c6641568a792" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="d525c671-234e-f2b2-4f77-66623efc01db" executionId="c6dfdd0c-25b2-45b2-89db-d246189d729d" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="442b2d05-72ba-9367-e7f2-6f60b7ea2fd8" executionId="fa4dd050-c6ca-4c01-9875-2b10f325ec81" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="9aaa6f3c-e87a-6c0e-0f33-a7781a54638b" executionId="354ffa02-129c-4616-99c8-5dc6483841e8" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="9f7e3b28-c9d0-d9d4-6c6e-4f323a0e1777" executionId="043adc22-7fe8-48cc-9a6d-03bcb27432e2" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="817049ef-bbeb-fe3d-39de-8717cbed2fa0" executionId="e3f06872-caaf-41e0-bd2e-1b4fe0b2df77" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="a0fe98d1-bbaf-59e2-bbfb-0e58678569d3" executionId="71ddc145-6393-4f11-8a8b-0fc2a883399c" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="6c54f5b8-89f2-77d5-1f00-b972a4019a5e" executionId="30b6860b-019b-4200-9559-6b6f27e86eef" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Failed">
+    <Counters total="23" executed="23" passed="18" failed="5" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.0.0+e341b939fe (64-bit .NET 10.0.10)&#xD;
+[xUnit.net 00:00:00.11]   Discovering: NEXUS.Api.Tests&#xD;
+[xUnit.net 00:00:00.24]   Discovered:  NEXUS.Api.Tests&#xD;
+[xUnit.net 00:00:00.27]   Starting:    NEXUS.Api.Tests&#xD;
+[xUnit.net 00:00:03.33]       Microsoft.Data.Sqlite.SqliteException : SQLite Error 1: 'near "max": syntax error'.&#xD;
+[xUnit.net 00:00:03.33]       Stack Trace:&#xD;
+[xUnit.net 00:00:03.34]            at Microsoft.Data.Sqlite.SqliteException.ThrowExceptionForRC(Int32 rc, sqlite3 db)&#xD;
+[xUnit.net 00:00:03.34]            at Microsoft.Data.Sqlite.SqliteCommand.PrepareAndEnumerateStatements()+MoveNext()&#xD;
+[xUnit.net 00:00:03.34]            at Microsoft.Data.Sqlite.SqliteCommand.GetStatements()+MoveNext()&#xD;
+[xUnit.net 00:00:03.34]            at Microsoft.Data.Sqlite.SqliteDataReader.NextResult()&#xD;
+[xUnit.net 00:00:03.34]            at Microsoft.Data.Sqlite.SqliteCommand.ExecuteReader(CommandBehavior behavior)&#xD;
+[xUnit.net 00:00:03.34]            at Microsoft.Data.Sqlite.SqliteCommand.ExecuteReader()&#xD;
+[xUnit.net 00:00:03.34]            at Microsoft.Data.Sqlite.SqliteCommand.ExecuteNonQuery()&#xD;
+[xUnit.net 00:00:03.34]            at Microsoft.EntityFrameworkCore.Storage.RelationalCommand.ExecuteNonQuery(RelationalCommandParameterObject parameterObject)&#xD;
+[xUnit.net 00:00:03.34]            at Microsoft.EntityFrameworkCore.Migrations.MigrationCommand.ExecuteNonQuery(IRelationalConnection connection, IReadOnlyDictionary`2 parameterValues)&#xD;
+[xUnit.net 00:00:03.34]            at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.Execute(IReadOnlyList`1 migrationCommands, IRelationalConnection connection, MigrationExecutionState executionState, Boolean beginTransaction, Boolean commitTransaction, Nullable`1 isolationLevel)&#xD;
+[xUnit.net 00:00:03.34]            at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.&lt;&gt;c.&lt;ExecuteNonQuery&gt;b__3_1(DbContext _, ValueTuple`6 s)&#xD;
+[xUnit.net 00:00:03.34]            at Microsoft.EntityFrameworkCore.Storage.NonRetryingExecutionStrategy.Execute[TState,TResult](TState state, Func`3 operation, Func`3 verifySucceeded)&#xD;
+[xUnit.net 00:00:03.34]            at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.ExecuteNonQuery(IReadOnlyList`1 migrationCommands, IRelationalConnection connection, MigrationExecutionState executionState, Boolean commitTransaction, Nullable`1 isolationLevel)&#xD;
+[xUnit.net 00:00:03.34]            at Microsoft.EntityFrameworkCore.Storage.RelationalDatabaseCreator.CreateTables()&#xD;
+[xUnit.net 00:00:03.34]            at Microsoft.EntityFrameworkCore.Storage.RelationalDatabaseCreator.EnsureCreated()&#xD;
+[xUnit.net 00:00:03.34]            at Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade.EnsureCreated()&#xD;
+[xUnit.net 00:00:03.34]         C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Security\DocumentTenantBoundaryTests.cs(42,0): at NEXUS.Api.Tests.Security.DocumentTenantBoundaryTests..ctor()&#xD;
+[xUnit.net 00:00:03.34]            at System.RuntimeType.CreateInstanceDefaultCtor(Boolean publicOnly, Boolean wrapExceptions)&#xD;
+[xUnit.net 00:00:03.87]       Microsoft.Data.Sqlite.SqliteException : SQLite Error 1: 'near "max": syntax error'.&#xD;
+[xUnit.net 00:00:03.87]       Stack Trace:&#xD;
+[xUnit.net 00:00:03.87]            at Microsoft.Data.Sqlite.SqliteException.ThrowExceptionForRC(Int32 rc, sqlite3 db)&#xD;
+[xUnit.net 00:00:03.87]            at Microsoft.Data.Sqlite.SqliteCommand.PrepareAndEnumerateStatements()+MoveNext()&#xD;
+[xUnit.net 00:00:03.87]            at Microsoft.Data.Sqlite.SqliteCommand.GetStatements()+MoveNext()&#xD;
+[xUnit.net 00:00:03.87]            at Microsoft.Data.Sqlite.SqliteDataReader.NextResult()&#xD;
+[xUnit.net 00:00:03.87]            at Microsoft.Data.Sqlite.SqliteCommand.ExecuteReader(CommandBehavior behavior)&#xD;
+[xUnit.net 00:00:03.87]            at Microsoft.Data.Sqlite.SqliteCommand.ExecuteReader()&#xD;
+[xUnit.net 00:00:03.87]            at Microsoft.Data.Sqlite.SqliteCommand.ExecuteNonQuery()&#xD;
+[xUnit.net 00:00:03.87]            at Microsoft.EntityFrameworkCore.Storage.RelationalCommand.ExecuteNonQuery(RelationalCommandParameterObject parameterObject)&#xD;
+[xUnit.net 00:00:03.87]            at Microsoft.EntityFrameworkCore.Migrations.MigrationCommand.ExecuteNonQuery(IRelationalConnection connection, IReadOnlyDictionary`2 parameterValues)&#xD;
+[xUnit.net 00:00:03.87]            at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.Execute(IReadOnlyList`1 migrationCommands, IRelationalConnection connection, MigrationExecutionState executionState, Boolean beginTransaction, Boolean commitTransaction, Nullable`1 isolationLevel)&#xD;
+[xUnit.net 00:00:03.87]            at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.&lt;&gt;c.&lt;ExecuteNonQuery&gt;b__3_1(DbContext _, ValueTuple`6 s)&#xD;
+[xUnit.net 00:00:03.87]            at Microsoft.EntityFrameworkCore.Storage.NonRetryingExecutionStrategy.Execute[TState,TResult](TState state, Func`3 operation, Func`3 verifySucceeded)&#xD;
+[xUnit.net 00:00:03.87]            at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.ExecuteNonQuery(IReadOnlyList`1 migrationCommands, IRelationalConnection connection, MigrationExecutionState executionState, Boolean commitTransaction, Nullable`1 isolationLevel)&#xD;
+[xUnit.net 00:00:03.87]            at Microsoft.EntityFrameworkCore.Storage.RelationalDatabaseCreator.CreateTables()&#xD;
+[xUnit.net 00:00:03.87]            at Microsoft.EntityFrameworkCore.Storage.RelationalDatabaseCreator.EnsureCreated()&#xD;
+[xUnit.net 00:00:03.87]            at Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade.EnsureCreated()&#xD;
+[xUnit.net 00:00:03.87]         C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Security\DocumentTenantBoundaryTests.cs(42,0): at NEXUS.Api.Tests.Security.DocumentTenantBoundaryTests..ctor()&#xD;
+[xUnit.net 00:00:03.87]            at System.RuntimeType.CreateInstanceDefaultCtor(Boolean publicOnly, Boolean wrapExceptions)&#xD;
+[xUnit.net 00:00:04.26]       Microsoft.Data.Sqlite.SqliteException : SQLite Error 1: 'near "max": syntax error'.&#xD;
+[xUnit.net 00:00:04.26]       Stack Trace:&#xD;
+[xUnit.net 00:00:04.26]            at Microsoft.Data.Sqlite.SqliteException.ThrowExceptionForRC(Int32 rc, sqlite3 db)&#xD;
+[xUnit.net 00:00:04.26]            at Microsoft.Data.Sqlite.SqliteCommand.PrepareAndEnumerateStatements()+MoveNext()&#xD;
+[xUnit.net 00:00:04.26]            at Microsoft.Data.Sqlite.SqliteCommand.GetStatements()+MoveNext()&#xD;
+[xUnit.net 00:00:04.26]            at Microsoft.Data.Sqlite.SqliteDataReader.NextResult()&#xD;
+[xUnit.net 00:00:04.26]            at Microsoft.Data.Sqlite.SqliteCommand.ExecuteReader(CommandBehavior behavior)&#xD;
+[xUnit.net 00:00:04.26]            at Microsoft.Data.Sqlite.SqliteCommand.ExecuteReader()&#xD;
+[xUnit.net 00:00:04.26]            at Microsoft.Data.Sqlite.SqliteCommand.ExecuteNonQuery()&#xD;
+[xUnit.net 00:00:04.26]            at Microsoft.EntityFrameworkCore.Storage.RelationalCommand.ExecuteNonQuery(RelationalCommandParameterObject parameterObject)&#xD;
+[xUnit.net 00:00:04.26]            at Microsoft.EntityFrameworkCore.Migrations.MigrationCommand.ExecuteNonQuery(IRelationalConnection connection, IReadOnlyDictionary`2 parameterValues)&#xD;
+[xUnit.net 00:00:04.26]            at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.Execute(IReadOnlyList`1 migrationCommands, IRelationalConnection connection, MigrationExecutionState executionState, Boolean beginTransaction, Boolean commitTransaction, Nullable`1 isolationLevel)&#xD;
+[xUnit.net 00:00:04.26]            at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.&lt;&gt;c.&lt;ExecuteNonQuery&gt;b__3_1(DbContext _, ValueTuple`6 s)&#xD;
+[xUnit.net 00:00:04.26]            at Microsoft.EntityFrameworkCore.Storage.NonRetryingExecutionStrategy.Execute[TState,TResult](TState state, Func`3 operation, Func`3 verifySucceeded)&#xD;
+[xUnit.net 00:00:04.26]            at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.ExecuteNonQuery(IReadOnlyList`1 migrationCommands, IRelationalConnection connection, MigrationExecutionState executionState, Boolean commitTransaction, Nullable`1 isolationLevel)&#xD;
+[xUnit.net 00:00:04.26]            at Microsoft.EntityFrameworkCore.Storage.RelationalDatabaseCreator.CreateTables()&#xD;
+[xUnit.net 00:00:04.26]            at Microsoft.EntityFrameworkCore.Storage.RelationalDatabaseCreator.EnsureCreated()&#xD;
+[xUnit.net 00:00:04.26]            at Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade.EnsureCreated()&#xD;
+[xUnit.net 00:00:04.26]         C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Security\DocumentTenantBoundaryTests.cs(42,0): at NEXUS.Api.Tests.Security.DocumentTenantBoundaryTests..ctor()&#xD;
+[xUnit.net 00:00:04.26]            at System.RuntimeType.CreateInstanceDefaultCtor(Boolean publicOnly, Boolean wrapExceptions)&#xD;
+[xUnit.net 00:00:04.58]       Microsoft.Data.Sqlite.SqliteException : SQLite Error 1: 'near "max": syntax error'.&#xD;
+[xUnit.net 00:00:04.58]       Stack Trace:&#xD;
+[xUnit.net 00:00:04.58]            at Microsoft.Data.Sqlite.SqliteException.ThrowExceptionForRC(Int32 rc, sqlite3 db)&#xD;
+[xUnit.net 00:00:04.58]            at Microsoft.Data.Sqlite.SqliteCommand.PrepareAndEnumerateStatements()+MoveNext()&#xD;
+[xUnit.net 00:00:04.58]            at Microsoft.Data.Sqlite.SqliteCommand.GetStatements()+MoveNext()&#xD;
+[xUnit.net 00:00:04.58]            at Microsoft.Data.Sqlite.SqliteDataReader.NextResult()&#xD;
+[xUnit.net 00:00:04.58]            at Microsoft.Data.Sqlite.SqliteCommand.ExecuteReader(CommandBehavior behavior)&#xD;
+[xUnit.net 00:00:04.58]            at Microsoft.Data.Sqlite.SqliteCommand.ExecuteReader()&#xD;
+[xUnit.net 00:00:04.58]            at Microsoft.Data.Sqlite.SqliteCommand.ExecuteNonQuery()&#xD;
+[xUnit.net 00:00:04.58]            at Microsoft.EntityFrameworkCore.Storage.RelationalCommand.ExecuteNonQuery(RelationalCommandParameterObject parameterObject)&#xD;
+[xUnit.net 00:00:04.58]            at Microsoft.EntityFrameworkCore.Migrations.MigrationCommand.ExecuteNonQuery(IRelationalConnection connection, IReadOnlyDictionary`2 parameterValues)&#xD;
+[xUnit.net 00:00:04.58]            at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.Execute(IReadOnlyList`1 migrationCommands, IRelationalConnection connection, MigrationExecutionState executionState, Boolean beginTransaction, Boolean commitTransaction, Nullable`1 isolationLevel)&#xD;
+[xUnit.net 00:00:04.58]            at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.&lt;&gt;c.&lt;ExecuteNonQuery&gt;b__3_1(DbContext _, ValueTuple`6 s)&#xD;
+[xUnit.net 00:00:04.58]            at Microsoft.EntityFrameworkCore.Storage.NonRetryingExecutionStrategy.Execute[TState,TResult](TState state, Func`3 operation, Func`3 verifySucceeded)&#xD;
+[xUnit.net 00:00:04.59]            at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.ExecuteNonQuery(IReadOnlyList`1 migrationCommands, IRelationalConnection connection, MigrationExecutionState executionState, Boolean commitTransaction, Nullable`1 isolationLevel)&#xD;
+[xUnit.net 00:00:04.59]            at Microsoft.EntityFrameworkCore.Storage.RelationalDatabaseCreator.CreateTables()&#xD;
+[xUnit.net 00:00:04.59]            at Microsoft.EntityFrameworkCore.Storage.RelationalDatabaseCreator.EnsureCreated()&#xD;
+[xUnit.net 00:00:04.59]            at Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade.EnsureCreated()&#xD;
+[xUnit.net 00:00:04.59]         C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Security\DocumentTenantBoundaryTests.cs(42,0): at NEXUS.Api.Tests.Security.DocumentTenantBoundaryTests..ctor()&#xD;
+[xUnit.net 00:00:04.59]            at System.RuntimeType.CreateInstanceDefaultCtor(Boolean publicOnly, Boolean wrapExceptions)&#xD;
+[xUnit.net 00:00:04.89]       Microsoft.Data.Sqlite.SqliteException : SQLite Error 1: 'near "max": syntax error'.&#xD;
+[xUnit.net 00:00:04.89]       Stack Trace:&#xD;
+[xUnit.net 00:00:04.89]            at Microsoft.Data.Sqlite.SqliteException.ThrowExceptionForRC(Int32 rc, sqlite3 db)&#xD;
+[xUnit.net 00:00:04.89]            at Microsoft.Data.Sqlite.SqliteCommand.PrepareAndEnumerateStatements()+MoveNext()&#xD;
+[xUnit.net 00:00:04.89]            at Microsoft.Data.Sqlite.SqliteCommand.GetStatements()+MoveNext()&#xD;
+[xUnit.net 00:00:04.89]            at Microsoft.Data.Sqlite.SqliteDataReader.NextResult()&#xD;
+[xUnit.net 00:00:04.89]            at Microsoft.Data.Sqlite.SqliteCommand.ExecuteReader(CommandBehavior behavior)&#xD;
+[xUnit.net 00:00:04.89]            at Microsoft.Data.Sqlite.SqliteCommand.ExecuteReader()&#xD;
+[xUnit.net 00:00:04.89]            at Microsoft.Data.Sqlite.SqliteCommand.ExecuteNonQuery()&#xD;
+[xUnit.net 00:00:04.89]            at Microsoft.EntityFrameworkCore.Storage.RelationalCommand.ExecuteNonQuery(RelationalCommandParameterObject parameterObject)&#xD;
+[xUnit.net 00:00:04.89]            at Microsoft.EntityFrameworkCore.Migrations.MigrationCommand.ExecuteNonQuery(IRelationalConnection connection, IReadOnlyDictionary`2 parameterValues)&#xD;
+[xUnit.net 00:00:04.89]            at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.Execute(IReadOnlyList`1 migrationCommands, IRelationalConnection connection, MigrationExecutionState executionState, Boolean beginTransaction, Boolean commitTransaction, Nullable`1 isolationLevel)&#xD;
+[xUnit.net 00:00:04.89]            at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.&lt;&gt;c.&lt;ExecuteNonQuery&gt;b__3_1(DbContext _, ValueTuple`6 s)&#xD;
+[xUnit.net 00:00:04.89]            at Microsoft.EntityFrameworkCore.Storage.NonRetryingExecutionStrategy.Execute[TState,TResult](TState state, Func`3 operation, Func`3 verifySucceeded)&#xD;
+[xUnit.net 00:00:04.89]            at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.ExecuteNonQuery(IReadOnlyList`1 migrationCommands, IRelationalConnection connection, MigrationExecutionState executionState, Boolean commitTransaction, Nullable`1 isolationLevel)&#xD;
+[xUnit.net 00:00:04.89]            at Microsoft.EntityFrameworkCore.Storage.RelationalDatabaseCreator.CreateTables()&#xD;
+[xUnit.net 00:00:04.89]            at Microsoft.EntityFrameworkCore.Storage.RelationalDatabaseCreator.EnsureCreated()&#xD;
+[xUnit.net 00:00:04.89]            at Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade.EnsureCreated()&#xD;
+[xUnit.net 00:00:04.89]         C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Security\DocumentTenantBoundaryTests.cs(42,0): at NEXUS.Api.Tests.Security.DocumentTenantBoundaryTests..ctor()&#xD;
+[xUnit.net 00:00:04.89]            at System.RuntimeType.CreateInstanceDefaultCtor(Boolean publicOnly, Boolean wrapExceptions)&#xD;
+[xUnit.net 00:00:04.92]   Finished:    NEXUS.Api.Tests&#xD;
+</StdOut>
+    </Output>
+    <RunInfos>
+      <RunInfo computerName="SHADY" outcome="Error" timestamp="2026-11-05T19:11:26.0081559+02:00">
+        <Text>[xUnit.net 00:00:03.33]     NEXUS.Api.Tests.Security.DocumentTenantBoundaryTests.Tenant_categories_remain_available_without_project_management_context [FAIL]</Text>
+      </RunInfo>
+      <RunInfo computerName="SHADY" outcome="Error" timestamp="2026-11-05T19:11:26.5490976+02:00">
+        <Text>[xUnit.net 00:00:03.87]     NEXUS.Api.Tests.Security.DocumentTenantBoundaryTests.Tenant_mismatch_and_foreign_tenant_category_are_rejected [FAIL]</Text>
+      </RunInfo>
+      <RunInfo computerName="SHADY" outcome="Error" timestamp="2026-11-05T19:11:26.9370535+02:00">
+        <Text>[xUnit.net 00:00:04.26]     NEXUS.Api.Tests.Security.DocumentTenantBoundaryTests.Trusted_same_tenant_project_scope_allows_its_documents_and_unlinked_owner_records [FAIL]</Text>
+      </RunInfo>
+      <RunInfo computerName="SHADY" outcome="Error" timestamp="2026-11-05T19:11:27.2634855+02:00">
+        <Text>[xUnit.net 00:00:04.58]     NEXUS.Api.Tests.Security.DocumentTenantBoundaryTests.Project_document_outside_organization_scope_is_denied_even_when_owned_by_current_user [FAIL]</Text>
+      </RunInfo>
+      <RunInfo computerName="SHADY" outcome="Error" timestamp="2026-11-05T19:11:27.5723355+02:00">
+        <Text>[xUnit.net 00:00:04.89]     NEXUS.Api.Tests.Security.DocumentTenantBoundaryTests.Null_management_context_denies_document_records_and_project_linked_create [FAIL]</Text>
+      </RunInfo>
+    </RunInfos>
+  </ResultSummary>
+</TestRun>

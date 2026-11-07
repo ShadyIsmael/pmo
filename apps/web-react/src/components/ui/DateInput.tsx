@@ -2,6 +2,7 @@ import * as React from "react";
 import { createPortal } from "react-dom";
 import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@lib/utils";
+import { getFirstDayOfWeekIndex } from "@lib/formatting/regional";
 
 export interface DateInputLabels {
   openCalendar: string;
@@ -347,8 +348,7 @@ function CalendarPanel({
   onToday: () => void;
   onClear: () => void;
 }) {
-  const arabic = locale.toLowerCase().startsWith("ar");
-  const weekStart = arabic ? 6 : 0;
+  const weekStart = getFirstDayOfWeekIndex(1);
   const gregorian = `${locale}-u-ca-gregory`;
   const firstOfMonth = new Date(view.getFullYear(), view.getMonth(), 1);
   const leading = (firstOfMonth.getDay() - weekStart + 7) % 7;

@@ -3,7 +3,12 @@ import { check, sleep } from 'k6';
 import { Counter, Rate, Trend } from 'k6/metrics';
 
 const BASE_URL = (__ENV.BASE_URL || 'http://localhost:5000').replace(/\/$/, '');
-const PASSWORD = __ENV.K6_PASSWORD || 'Demo123!';
+// No default credential: supply the seeded demo password explicitly, e.g.
+//   $env:K6_PASSWORD = '<development seed password>'
+const PASSWORD = __ENV.K6_PASSWORD;
+if (!PASSWORD) {
+  throw new Error('K6_PASSWORD must be set to the seeded development password before running this test.');
+}
 const MODE = (__ENV.AUTH_MODE || __ENV.MODE || 'shared').toLowerCase();
 const ONCE_PER_VU = (__ENV.AUTH_ONCE_PER_VU || 'true').toLowerCase() !== 'false';
 

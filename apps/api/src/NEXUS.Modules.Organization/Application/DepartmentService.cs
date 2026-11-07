@@ -6,8 +6,8 @@ namespace NEXUS.Modules.Organization.Application;
 
 public interface IDepartmentService
 {
-    Task<Result<Department>> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
-    Task<PagedResult<Department>> GetPagedAsync(int page, int pageSize, CancellationToken cancellationToken = default);
+    Task<Result<DepartmentResponseDto>> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<PagedResult<DepartmentResponseDto>> GetPagedAsync(int page, int pageSize, CancellationToken cancellationToken = default);
 }
 
 public class DepartmentService : IDepartmentService
@@ -19,22 +19,27 @@ public class DepartmentService : IDepartmentService
         _context = context;
     }
 
-    public async Task<Result<Department>> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
+    public async Task<Result<DepartmentResponseDto>> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var department = await _context.Set<Department>()
+            .AsNoTracking()
+            .AsSplitQuery()
             .Include(d => d.Teams)
             .FirstOrDefaultAsync(d => d.Id == id, cancellationToken);
-        return department is null ? Result<Department>.Failure(Error.NotFound()) : Result<Department>.Success(department);
+        return department is null
+            ? Result<DepartmentResponseDto>.Failure(Error.NotFound())
+            : Result<DepartmentResponseDto>.Success(OrganizationResponseMapper.ToDepartmentResponse(department));
     }
 
-    public async Task<PagedResult<Department>> GetPagedAsync(int page, int pageSize, CancellationToken cancellationToken = default)
+    public async Task<PagedResult<DepartmentResponseDto>> GetPagedAsync(int page, int pageSize, CancellationToken cancellationToken = default)
     {
-        var query = _context.Set<Department>().AsQueryable();
+        var query = _context.Set<Department>().AsNoTracking();
         var total = await query.CountAsync(cancellationToken);
-        var items = await query.OrderBy(d => d.Name)
+        var departments = await query.OrderBy(d => d.Name).ThenBy(d => d.Id)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync(cancellationToken);
-        return new PagedResult<Department>(items, page, pageSize, total);
+        var items = departments.Select(OrganizationResponseMapper.ToDepartmentResponse).ToArray();
+        return new PagedResult<DepartmentResponseDto>(items, page, pageSize, total);
     }
 }

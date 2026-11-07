@@ -30,7 +30,7 @@ public sealed class ProjectPublicIdRoutingMiddlewareTests
         var nextCalled = false;
         var middleware = new ProjectPublicIdRoutingMiddleware(_ => { nextCalled = true; return Task.CompletedTask; });
 
-        await middleware.InvokeAsync(context, db);
+        await middleware.InvokeAsync(context, db, NullLogger<ProjectPublicIdRoutingMiddleware>.Instance, Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>());
 
         Assert.True(nextCalled);
         Assert.Equal(project.Id, context.Request.RouteValues["projectId"]);
@@ -49,7 +49,7 @@ public sealed class ProjectPublicIdRoutingMiddlewareTests
         var nextCalled = false;
         var middleware = new ProjectPublicIdRoutingMiddleware(_ => { nextCalled = true; return Task.CompletedTask; });
 
-        await middleware.InvokeAsync(context, db);
+        await middleware.InvokeAsync(context, db, NullLogger<ProjectPublicIdRoutingMiddleware>.Instance, Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>());
 
         Assert.False(nextCalled);
         Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
@@ -63,14 +63,57 @@ public sealed class ProjectPublicIdRoutingMiddlewareTests
         var project = new Project { Id = Guid.NewGuid(), PublicId = Guid.NewGuid(), TenantId = tenantB, Name = "Project B", Code = "B" };
         await using var db = CreateDb(project);
         var context = AuthenticatedContext(tenantA);
+        context.Request.Path = $"/api/projects/{project.PublicId:D}/plans";
+        context.Request.Method = HttpMethods.Post;
         context.Request.RouteValues["projectId"] = project.PublicId.ToString("D");
         var nextCalled = false;
         var middleware = new ProjectPublicIdRoutingMiddleware(_ => { nextCalled = true; return Task.CompletedTask; });
 
-        await middleware.InvokeAsync(context, db);
+        await middleware.InvokeAsync(context, db, NullLogger<ProjectPublicIdRoutingMiddleware>.Instance, Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>());
 
         Assert.False(nextCalled);
         Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Plan_create_outside_management_scope_is_rejected_before_controller_execution()
+    {
+        var tenantId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var project = new Project { Id = Guid.NewGuid(), PublicId = Guid.NewGuid(), TenantId = tenantId, Name = "Project A", Code = "A" };
+        await using var db = CreateDb(project);
+        var context = AuthenticatedContext(tenantId, userId);
+        context.Request.Path = $"/api/projects/{project.PublicId:D}/plans";
+        context.Request.Method = HttpMethods.Post;
+        context.Request.RouteValues["projectId"] = project.PublicId.ToString("D");
+
+        var resolver = new Mock<IManagementScopeResolver>();
+        resolver.Setup(item => item.ResolveAsync(
+                It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<ManagementPerspective?>(), It.IsAny<ManagementViewMode>(),
+                It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Guid resolvedUserId, Guid resolvedTenantId, ManagementPerspective? _, ManagementViewMode _, Guid? _, Guid? _, Guid? _, CancellationToken _) =>
+                new ManagementContext(resolvedUserId, resolvedTenantId, ManagementPerspective.ProjectManager, ManagementViewMode.Native, null, null, null,
+                    new ManagementScope(new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>())));
+
+        var accessor = new ManagementContextAccessor();
+        var controllerReached = false;
+        var resourceScope = new ProjectResourceScopeMiddleware(_ => { controllerReached = true; return Task.CompletedTask; });
+        var management = new ManagementContextMiddleware(http => resourceScope.InvokeAsync(http, db, accessor));
+        var routing = new ProjectPublicIdRoutingMiddleware(http => management.InvokeAsync(
+            http,
+            resolver.Object,
+            accessor,
+            NullLogger<ManagementContextMiddleware>.Instance,
+            Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>()));
+
+        await routing.InvokeAsync(
+            context,
+            db,
+            NullLogger<ProjectPublicIdRoutingMiddleware>.Instance,
+            Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>());
+
+        Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
+        Assert.False(controllerReached);
     }
 
     [Fact]
@@ -83,7 +126,7 @@ public sealed class ProjectPublicIdRoutingMiddlewareTests
         context.Request.QueryString = new QueryString($"?projectId={project.PublicId:D}&page=2");
         var middleware = new ProjectPublicIdRoutingMiddleware(_ => Task.CompletedTask);
 
-        await middleware.InvokeAsync(context, db);
+        await middleware.InvokeAsync(context, db, NullLogger<ProjectPublicIdRoutingMiddleware>.Instance, Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>());
 
         Assert.Equal(project.Id.ToString("D"), context.Request.Query["projectId"]);
         Assert.Equal("2", context.Request.Query["page"]);
@@ -101,7 +144,134 @@ public sealed class ProjectPublicIdRoutingMiddlewareTests
         var nextCalled = false;
         var middleware = new ProjectPublicIdRoutingMiddleware(_ => { nextCalled = true; return Task.CompletedTask; });
 
-        await middleware.InvokeAsync(context, db);
+        await middleware.InvokeAsync(context, db, NullLogger<ProjectPublicIdRoutingMiddleware>.Instance, Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>());
+
+        Assert.False(nextCalled);
+        Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Resolves_comma_separated_public_project_ids_and_rewrites_the_filter()
+    {
+        var tenantId = Guid.NewGuid();
+        var projectA = new Project { Id = Guid.NewGuid(), PublicId = Guid.NewGuid(), TenantId = tenantId, Name = "Project A", Code = "A" };
+        var projectB = new Project { Id = Guid.NewGuid(), PublicId = Guid.NewGuid(), TenantId = tenantId, Name = "Project B", Code = "B" };
+        await using var db = CreateDb([projectA, projectB]);
+        var context = AuthenticatedContext(tenantId);
+        context.Request.QueryString = new QueryString($"?projectIds={projectA.PublicId:D},{projectB.PublicId:D}&page=3");
+        var nextCalled = false;
+        var middleware = new ProjectPublicIdRoutingMiddleware(_ => { nextCalled = true; return Task.CompletedTask; });
+
+        await middleware.InvokeAsync(context, db, NullLogger<ProjectPublicIdRoutingMiddleware>.Instance, Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>());
+
+        Assert.True(nextCalled);
+        var resolved = context.Request.Query["projectIds"].ToString().Split(',', StringSplitOptions.RemoveEmptyEntries);
+        Assert.Equal(2, resolved.Length);
+        Assert.Contains(projectA.Id.ToString("D"), resolved);
+        Assert.Contains(projectB.Id.ToString("D"), resolved);
+        Assert.Equal("3", context.Request.Query["page"]);
+        Assert.Null(ProjectRequestContext.GetInternalProjectId(context));
+    }
+
+    [Fact]
+    public async Task Resolves_repeated_public_project_ids_and_deduplicates_them()
+    {
+        var tenantId = Guid.NewGuid();
+        var project = new Project { Id = Guid.NewGuid(), PublicId = Guid.NewGuid(), TenantId = tenantId, Name = "Project A", Code = "A" };
+        await using var db = CreateDb([project]);
+        var context = AuthenticatedContext(tenantId);
+        context.Request.QueryString = new QueryString($"?projectIds={project.PublicId:D}&projectIds={project.PublicId:D}");
+        var nextCalled = false;
+        var middleware = new ProjectPublicIdRoutingMiddleware(_ => { nextCalled = true; return Task.CompletedTask; });
+
+        await middleware.InvokeAsync(context, db, NullLogger<ProjectPublicIdRoutingMiddleware>.Instance, Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>());
+
+        Assert.True(nextCalled);
+        Assert.Equal(project.Id.ToString("D"), context.Request.Query["projectIds"].ToString());
+    }
+
+    [Fact]
+    public async Task Rejects_mixing_project_id_and_project_ids_filters()
+    {
+        var tenantId = Guid.NewGuid();
+        var project = new Project { Id = Guid.NewGuid(), PublicId = Guid.NewGuid(), TenantId = tenantId, Name = "Project A", Code = "A" };
+        await using var db = CreateDb(project);
+        var context = AuthenticatedContext(tenantId);
+        context.Request.QueryString = new QueryString($"?projectId={project.PublicId:D}&projectIds={project.PublicId:D}");
+        var nextCalled = false;
+        var middleware = new ProjectPublicIdRoutingMiddleware(_ => { nextCalled = true; return Task.CompletedTask; });
+
+        await middleware.InvokeAsync(context, db, NullLogger<ProjectPublicIdRoutingMiddleware>.Instance, Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>());
+
+        Assert.False(nextCalled);
+        Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Rejects_unknown_project_in_project_ids_filter()
+    {
+        var tenantId = Guid.NewGuid();
+        var project = new Project { Id = Guid.NewGuid(), PublicId = Guid.NewGuid(), TenantId = tenantId, Name = "Project A", Code = "A" };
+        await using var db = CreateDb(project);
+        var context = AuthenticatedContext(tenantId);
+        context.Request.QueryString = new QueryString($"?projectIds={project.PublicId:D},{Guid.NewGuid():D}");
+        var nextCalled = false;
+        var middleware = new ProjectPublicIdRoutingMiddleware(_ => { nextCalled = true; return Task.CompletedTask; });
+
+        await middleware.InvokeAsync(context, db, NullLogger<ProjectPublicIdRoutingMiddleware>.Instance, Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>());
+
+        Assert.False(nextCalled);
+        Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Rejects_internal_project_id_in_project_ids_filter()
+    {
+        var tenantId = Guid.NewGuid();
+        var project = new Project { Id = Guid.NewGuid(), PublicId = Guid.NewGuid(), TenantId = tenantId, Name = "Project A", Code = "A" };
+        await using var db = CreateDb(project);
+        var context = AuthenticatedContext(tenantId);
+        context.Request.QueryString = new QueryString($"?projectIds={project.Id:D}");
+        var nextCalled = false;
+        var middleware = new ProjectPublicIdRoutingMiddleware(_ => { nextCalled = true; return Task.CompletedTask; });
+
+        await middleware.InvokeAsync(context, db, NullLogger<ProjectPublicIdRoutingMiddleware>.Instance, Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>());
+
+        Assert.False(nextCalled);
+        Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Rejects_malformed_project_ids_filter()
+    {
+        var tenantId = Guid.NewGuid();
+        var project = new Project { Id = Guid.NewGuid(), PublicId = Guid.NewGuid(), TenantId = tenantId, Name = "Project A", Code = "A" };
+        await using var db = CreateDb(project);
+        var context = AuthenticatedContext(tenantId);
+        context.Request.QueryString = new QueryString($"?projectIds={project.PublicId:D},not-a-guid");
+        var nextCalled = false;
+        var middleware = new ProjectPublicIdRoutingMiddleware(_ => { nextCalled = true; return Task.CompletedTask; });
+
+        await middleware.InvokeAsync(context, db, NullLogger<ProjectPublicIdRoutingMiddleware>.Instance, Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>());
+
+        Assert.False(nextCalled);
+        Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Rejects_project_route_id_that_is_not_part_of_project_ids_filter()
+    {
+        var tenantId = Guid.NewGuid();
+        var projectA = new Project { Id = Guid.NewGuid(), PublicId = Guid.NewGuid(), TenantId = tenantId, Name = "Project A", Code = "A" };
+        var projectB = new Project { Id = Guid.NewGuid(), PublicId = Guid.NewGuid(), TenantId = tenantId, Name = "Project B", Code = "B" };
+        await using var db = CreateDb([projectA, projectB]);
+        var context = AuthenticatedContext(tenantId);
+        context.Request.RouteValues["projectId"] = projectA.PublicId.ToString("D");
+        context.Request.QueryString = new QueryString($"?projectIds={projectB.PublicId:D}");
+        var nextCalled = false;
+        var middleware = new ProjectPublicIdRoutingMiddleware(_ => { nextCalled = true; return Task.CompletedTask; });
+
+        await middleware.InvokeAsync(context, db, NullLogger<ProjectPublicIdRoutingMiddleware>.Instance, Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>());
 
         Assert.False(nextCalled);
         Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
@@ -137,9 +307,9 @@ public sealed class ProjectPublicIdRoutingMiddlewareTests
         var nextCalled = false;
         var resourceScope = new ProjectResourceScopeMiddleware(_ => { nextCalled = true; return Task.CompletedTask; });
         var management = new ManagementContextMiddleware(http => resourceScope.InvokeAsync(http, db, accessor));
-        var routing = new ProjectPublicIdRoutingMiddleware(http => management.InvokeAsync(http, resolver.Object, accessor, NullLogger<ManagementContextMiddleware>.Instance));
+        var routing = new ProjectPublicIdRoutingMiddleware(http => management.InvokeAsync(http, resolver.Object, accessor, NullLogger<ManagementContextMiddleware>.Instance, Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>()));
 
-        await routing.InvokeAsync(context, db);
+        await routing.InvokeAsync(context, db, NullLogger<ProjectPublicIdRoutingMiddleware>.Instance, Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>());
 
         Assert.Equal(expectedStatus, context.Response.StatusCode);
         Assert.Equal(expectedStatus == StatusCodes.Status200OK, nextCalled);
@@ -172,9 +342,9 @@ public sealed class ProjectPublicIdRoutingMiddlewareTests
         var nextCalled = false;
         var resourceScope = new ProjectResourceScopeMiddleware(_ => { nextCalled = true; return Task.CompletedTask; });
         var management = new ManagementContextMiddleware(http => resourceScope.InvokeAsync(http, db, accessor));
-        var routing = new ProjectPublicIdRoutingMiddleware(http => management.InvokeAsync(http, resolver.Object, accessor, NullLogger<ManagementContextMiddleware>.Instance));
+        var routing = new ProjectPublicIdRoutingMiddleware(http => management.InvokeAsync(http, resolver.Object, accessor, NullLogger<ManagementContextMiddleware>.Instance, Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>()));
 
-        await routing.InvokeAsync(context, db);
+        await routing.InvokeAsync(context, db, NullLogger<ProjectPublicIdRoutingMiddleware>.Instance, Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>());
 
         Assert.Equal(expectedStatus, context.Response.StatusCode);
         Assert.Equal(expectedStatus == StatusCodes.Status200OK, nextCalled);
@@ -282,6 +452,45 @@ public sealed class ProjectPublicIdRoutingMiddlewareTests
 
         Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
         Assert.True(nextCalled);
+    }
+
+    [Fact]
+    public async Task Plan_assignment_batch_route_is_allowed_only_for_the_addressed_project_plan()
+    {
+        var tenantId = Guid.NewGuid();
+        var projectA = new Project { Id = Guid.NewGuid(), PublicId = Guid.NewGuid(), TenantId = tenantId, Name = "Project A", Code = "A" };
+        var projectB = new Project { Id = Guid.NewGuid(), PublicId = Guid.NewGuid(), TenantId = tenantId, Name = "Project B", Code = "B" };
+        var planA = new Plan { Id = Guid.NewGuid(), TenantId = tenantId, ProjectId = projectA.Id, Name = "Plan A" };
+        var planB = new Plan { Id = Guid.NewGuid(), TenantId = tenantId, ProjectId = projectB.Id, Name = "Plan B" };
+        await using var db = CreateDb([projectA, projectB], [planA, planB]);
+        var accessor = new ManagementContextAccessor();
+        accessor.Set(new ManagementContext(Guid.NewGuid(), tenantId, ManagementPerspective.ProjectManager, ManagementViewMode.Native, null, null, null,
+            new ManagementScope(new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid> { projectA.Id })));
+
+        var validContext = AuthenticatedContext(tenantId);
+        validContext.Request.Path = $"/api/projects/{projectA.PublicId:D}/plans/{planA.Id:D}/assignments/batch";
+        validContext.Request.Method = HttpMethods.Post;
+        validContext.Request.RouteValues["projectId"] = projectA.PublicId.ToString("D");
+        validContext.Request.RouteValues["planId"] = planA.Id.ToString("D");
+        validContext.Items[ProjectRequestContext.InternalProjectIdKey] = projectA.Id;
+        var validNextCalled = false;
+        await new ProjectResourceScopeMiddleware(_ => { validNextCalled = true; return Task.CompletedTask; })
+            .InvokeAsync(validContext, db, accessor);
+
+        var foreignPlanContext = AuthenticatedContext(tenantId);
+        foreignPlanContext.Request.Path = $"/api/projects/{projectA.PublicId:D}/plans/{planB.Id:D}/assignments/batch";
+        foreignPlanContext.Request.Method = HttpMethods.Post;
+        foreignPlanContext.Request.RouteValues["projectId"] = projectA.PublicId.ToString("D");
+        foreignPlanContext.Request.RouteValues["planId"] = planB.Id.ToString("D");
+        foreignPlanContext.Items[ProjectRequestContext.InternalProjectIdKey] = projectA.Id;
+        var foreignPlanNextCalled = false;
+        await new ProjectResourceScopeMiddleware(_ => { foreignPlanNextCalled = true; return Task.CompletedTask; })
+            .InvokeAsync(foreignPlanContext, db, accessor);
+
+        Assert.Equal(StatusCodes.Status200OK, validContext.Response.StatusCode);
+        Assert.True(validNextCalled);
+        Assert.Equal(StatusCodes.Status404NotFound, foreignPlanContext.Response.StatusCode);
+        Assert.False(foreignPlanNextCalled);
     }
 
     [Fact]

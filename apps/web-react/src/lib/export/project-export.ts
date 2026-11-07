@@ -1,4 +1,5 @@
 ﻿import { api } from "@api/client";
+import { brand } from "@lib/brand";
 
 interface ExportProjectSummary {
   id: string;
@@ -22,6 +23,7 @@ interface PagedExportResult {
 
 export interface ProjectExportParams {
   status?: string;
+  includeAllStatuses?: boolean;
   search?: string;
   name?: string;
   code?: string;
@@ -41,7 +43,7 @@ export interface ProjectExportParams {
 const EXCLUDED_STATUSES = ["Completed", "Cancelled"];
 
 export async function fetchFilteredProjects(params: ProjectExportParams = {}): Promise<ExportProjectSummary[]> {
-  const { status, search, name, code, statuses, healths, progressMin, progressMax, budgetMin, budgetMax, forecastMin, forecastMax, projectManager, dueDateFrom, dueDateTo } = params;
+  const { status, includeAllStatuses = false, search, name, code, statuses, healths, progressMin, progressMax, budgetMin, budgetMax, forecastMin, forecastMax, projectManager, dueDateFrom, dueDateTo } = params;
 
   const pageSize = 100;
   const all: ExportProjectSummary[] = [];
@@ -55,7 +57,11 @@ export async function fetchFilteredProjects(params: ProjectExportParams = {}): P
     page += 1;
   } while (page <= totalPages);
 
-  const active = statuses && statuses.length > 0 ? all : all.filter((p) => !EXCLUDED_STATUSES.includes(p.status));
+  const active = statuses && statuses.length > 0
+    ? all
+    : includeAllStatuses
+      ? all
+      : all.filter((p) => !EXCLUDED_STATUSES.includes(p.status));
 
   return active.filter((p) => {
     if (name?.trim() && !p.name.toLowerCase().includes(name.toLowerCase())) return false;
@@ -120,7 +126,7 @@ export async function generateProjectsExcel(options: ProjectsExcelOptions): Prom
   const { default: ExcelJS } = await import("exceljs");
 
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = "NEXUS PMO";
+  workbook.creator = brand.product.fullName;
 
   const worksheet = workbook.addWorksheet("Projects", {
     views: [{ state: "frozen", ySplit: 1 }],

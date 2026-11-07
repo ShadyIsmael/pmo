@@ -19,12 +19,13 @@ public class Resource : BaseEntity
     public DateTime? DateOfJoining { get; set; }
     public Guid? BusinessUnitId { get; set; }
     public Guid? DepartmentId { get; set; }
-    public Guid? TeamId { get; set; }
     public Guid? LocationId { get; set; }
     public Guid? VendorId { get; set; }
     public Vendor? Vendor { get; set; }
     public Guid? BaseCalendarId { get; set; }
     public NEXUS.Modules.Organization.Domain.WorkingCalendar? BaseCalendar { get; set; }
+    public decimal? HoursPerDay { get; set; }
+    public decimal? HoursPerWeek { get; set; }
     public string? Timezone { get; set; }
     public decimal? UtilizationTarget { get; set; }
     public decimal? CurrentUtilization { get; set; }

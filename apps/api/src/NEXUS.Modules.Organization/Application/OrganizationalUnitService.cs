@@ -32,6 +32,21 @@ public sealed class OrganizationalUnitService : IOrganizationalUnitService
         return await MapUnitsAsync(units, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<OrganizationalUnitLookupDto>> GetProjectLookupAsync(CancellationToken cancellationToken = default)
+    {
+        var tenantId = CurrentTenantId();
+        return await _context.Set<OrganizationalUnit>()
+            .Where(unit => unit.TenantId == tenantId && unit.IsActive)
+            .OrderBy(unit => unit.SortOrder)
+            .ThenBy(unit => unit.Name)
+            .Select(unit => new OrganizationalUnitLookupDto
+            {
+                Id = unit.Id,
+                Name = unit.Name
+            })
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<Result<OrganizationalUnitDto>> GetUnitAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var unit = await _context.Set<OrganizationalUnit>().FirstOrDefaultAsync(item => item.TenantId == CurrentTenantId() && item.Id == id, cancellationToken);
@@ -352,7 +367,9 @@ public sealed class OrganizationalUnitService : IOrganizationalUnitService
 
     private static OrganizationalUnitTypeDto ToTypeDto(Lookup type) => new() { Id = type.Id, Code = type.Code, NameEn = type.NameEn, NameAr = type.NameAr, DisplayOrder = type.DisplayOrder, IsActive = type.IsActive };
     private static ResourceReportingLineDto ToReportingDto(ResourceReportingLine line, string resourceName, string managerName) => new() { Id = line.Id, ResourceId = line.ResourceId, ResourceName = resourceName, ManagerResourceId = line.ManagerResourceId, ManagerResourceName = managerName, ReportingType = line.ReportingType, IsPrimary = line.IsPrimary, EffectiveFrom = line.EffectiveFrom, EffectiveTo = line.EffectiveTo, IsActive = line.IsActive };
-    private Guid CurrentTenantId() => Guid.TryParse(_httpContextAccessor.HttpContext?.User.FindFirstValue("tenantId"), out var tenantId) ? tenantId : TenantConstants.DemoTenantId;
+    private Guid CurrentTenantId() => Guid.TryParse(_httpContextAccessor.HttpContext?.User.FindFirstValue("tenantId"), out var tenantId) && tenantId != Guid.Empty
+        ? tenantId
+        : throw new InvalidOperationException("A trusted tenant context is required.");
     private static string? Normalize(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
 }

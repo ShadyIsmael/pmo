@@ -80,9 +80,9 @@ describe("Vendors source parity", () => {
     expect(within(screen.getByRole("cell", { name: "Active" })).getByText("Active")).toHaveClass("text-success");
     expect(screen.getByRole("combobox", { name: "Filter by category" })).toHaveTextContent("All categories");
 
-    mocks.useAuth.mockReturnValue({ user: { id: "manager-1", permissions: ["Resource.Manage"] }, status: "authenticated" });
+    mocks.useAuth.mockReturnValue({ user: { id: "manager-1", permissions: ["Resource.View"] }, status: "authenticated" });
     rerender(<I18nProvider><VendorsPage /></I18nProvider>);
-    expect(screen.getByText("You do not have permission to add vendors.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Add Vendor" })).not.toBeInTheDocument();
   });
 
   it("keeps Add Vendor in a Side Sheet and shows the generated code after successful creation", async () => {

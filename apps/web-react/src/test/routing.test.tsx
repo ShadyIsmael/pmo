@@ -19,7 +19,7 @@ function mockFetch(routes: Record<string, unknown>) {
   });
 }
 
-function shell(_userPermissions: string[] = ["projects.read", "Resource.View", "Team.View", "Workflow.View", "finances.read", "Risk.View", "Document.View", "WorkItem.View", "Meeting.View", "settings.read", "users.read", "TimeTracking.ManageOwn"]) {
+function shell(_userPermissions: string[] = ["Project.View", "Resource.View", "Team.View", "Workflow.View", "ProjectFinance.View", "Risk.View", "Document.View", "WorkItem.View", "Meeting.View", "Settings.View", "Users.View", "TimeTracking.ManageOwn"]) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   return ({ children }: { children: React.ReactNode }) => (
     <QueryClientProvider client={client}>
@@ -38,9 +38,9 @@ describe("routing and permission guards", () => {
   beforeEach(() => { window.localStorage.clear(); });
 
   it("renders projects list for permitted users without duplicate requests", async () => {
-    setTokens("a", "r");
+    setTokens("a");
     const fetchMock = mockFetch({
-      "/api/auth/me": { id: "u", email: "a@b.c", firstName: "A", lastName: "B", fullName: "A B", roles: [], permissions: ["projects.read", "TimeTracking.ManageOwn"] },
+      "/api/auth/me": { id: "u", email: "a@b.c", firstName: "A", lastName: "B", fullName: "A B", roles: [], permissions: ["Project.View", "TimeTracking.ManageOwn"] },
       "/api/me/perspectives": { availablePerspectives: [], scope: { portfolioIds: [], programIds: [], projectIds: [] } },
       "/api/projects": { items: [], totalCount: 0, page: 1, pageSize: 20, totalPages: 0 },
       "/api/timer/current": null,
@@ -53,7 +53,7 @@ describe("routing and permission guards", () => {
   });
 
   it("shows permission message when lacking access", async () => {
-    setTokens("a", "r");
+    setTokens("a");
     const fetchMock = mockFetch({
       "/api/auth/me": { id: "u", email: "a@b.c", firstName: "A", lastName: "B", fullName: "A B", roles: [], permissions: [] },
       "/api/me/perspectives": { availablePerspectives: [], scope: { portfolioIds: [], programIds: [], projectIds: [] } },
@@ -71,15 +71,15 @@ describe("routing and permission guards", () => {
     { path: "/projects/matrix", restrictedEndpoints: ["/api/resources"] },
     { path: "/projects/templates", restrictedEndpoints: ["/api/documents"] },
   ])("guards $path with its data permission before issuing feature requests", async ({ path, restrictedEndpoints }) => {
-    setTokens("a", "r");
+    setTokens("a");
     const fetchMock = mockFetch({
-      "/api/auth/me": { id: "u", email: "a@b.c", firstName: "A", lastName: "B", fullName: "A B", roles: [], permissions: ["projects.read"] },
+      "/api/auth/me": { id: "u", email: "a@b.c", firstName: "A", lastName: "B", fullName: "A B", roles: [], permissions: ["Project.View"] },
       "/api/me/perspectives": { availablePerspectives: [], scope: { portfolioIds: [], programIds: [], projectIds: [] } },
       "/api/timer/current": null,
       "/api/notifications": { items: [], totalCount: 0 },
     });
     vi.stubGlobal("fetch", fetchMock);
-    render(<MemoryRouter initialEntries={[path]}><AppRoutes /></MemoryRouter>, { wrapper: shell(["projects.read"]) });
+    render(<MemoryRouter initialEntries={[path]}><AppRoutes /></MemoryRouter>, { wrapper: shell(["Project.View"]) });
 
     await waitFor(() => expect(screen.getByText(/do not have permission/i)).toBeInTheDocument());
     for (const endpoint of restrictedEndpoints) {
@@ -92,22 +92,47 @@ describe("routing and permission guards", () => {
     { path: "/projects/project-1/gantt", restrictedEndpoint: "/api/planning/" },
     { path: "/projects/project-1/matrix", restrictedEndpoint: "/api/resources" },
   ])("guards nested project route $path before its feature query", async ({ path, restrictedEndpoint }) => {
-    setTokens("a", "r");
+    setTokens("a");
     const fetchMock = mockFetch({
-      "/api/auth/me": { id: "u", email: "a@b.c", firstName: "A", lastName: "B", fullName: "A B", roles: [], permissions: ["projects.read"] },
+      "/api/auth/me": { id: "u", email: "a@b.c", firstName: "A", lastName: "B", fullName: "A B", roles: [], permissions: ["Project.View"] },
       "/api/me/perspectives": { availablePerspectives: [], scope: { portfolioIds: [], programIds: [], projectIds: [] } },
       "/api/timer/current": null,
       "/api/notifications": { items: [], totalCount: 0 },
     });
     vi.stubGlobal("fetch", fetchMock);
-    render(<MemoryRouter initialEntries={[path]}><AppRoutes /></MemoryRouter>, { wrapper: shell(["projects.read"]) });
+    render(<MemoryRouter initialEntries={[path]}><AppRoutes /></MemoryRouter>, { wrapper: shell(["Project.View"]) });
 
     await waitFor(() => expect(screen.getByText(/do not have permission/i)).toBeInTheDocument());
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes(restrictedEndpoint))).toBe(false);
   });
 
+  it.each([
+    { path: "/ai-workspace", forbidden: ["/api/ai-planning"] },
+    { path: "/security-audit", forbidden: ["/api/audit"] },
+    { path: "/tickets", forbidden: ["/api/work-items"] },
+    { path: "/test-management", forbidden: ["/api/test-management"] },
+    { path: "/integrations", forbidden: ["/api/integrations"] },
+    { path: "/plugins", forbidden: ["/api/plugins"] },
+    { path: "/risks-issues/issues", forbidden: ["/api/issues"] },
+  ])("guards $path before requesting its protected data", async ({ path, forbidden }) => {
+    setTokens("a");
+    const fetchMock = mockFetch({
+      "/api/auth/me": { id: "u", email: "a@b.c", firstName: "A", lastName: "B", fullName: "A B", roles: [], permissions: [] },
+      "/api/me/perspectives": { availablePerspectives: [], scope: { portfolioIds: [], programIds: [], projectIds: [] } },
+      "/api/timer/current": null,
+      "/api/notifications": { items: [], totalCount: 0 },
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<MemoryRouter initialEntries={[path]}><AppRoutes /></MemoryRouter>, { wrapper: shell([]) });
+
+    await waitFor(() => expect(screen.getByText(/do not have permission/i)).toBeInTheDocument());
+    for (const endpoint of forbidden) {
+      expect(fetchMock.mock.calls.some(([input]) => String(input).includes(endpoint))).toBe(false);
+    }
+  });
+
   it("guards the direct Organization route and does not fetch organization data without access", async () => {
-    setTokens("a", "r");
+    setTokens("a");
     const fetchMock = mockFetch({
       "/api/auth/me": { id: "u", email: "a@b.c", firstName: "A", lastName: "B", fullName: "A B", roles: [], permissions: [] },
       "/api/me/perspectives": { availablePerspectives: [], scope: { portfolioIds: [], programIds: [], projectIds: [] } },

@@ -10,4 +10,10 @@ public interface ICostUtilizationAnalyticsService
         Guid actorId,
         Guid tenantId,
         CancellationToken cancellationToken = default);
+
+    Task<Result<CostUtilizationReportDto>> GetForExportAsync(
+        CostUtilizationFilterDto filter,
+        Guid actorId,
+        Guid tenantId,
+        CancellationToken cancellationToken = default);
 }

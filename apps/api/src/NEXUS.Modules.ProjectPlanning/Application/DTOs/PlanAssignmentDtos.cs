@@ -23,6 +23,21 @@ public class UpdatePlanAssignmentDto : CreatePlanAssignmentDto
     public byte[] RowVersion { get; set; } = Array.Empty<byte>();
 }
 
+public sealed class CreatePlanAssignmentsBatchDto
+{
+    public Guid ActivityId { get; set; }
+    public List<CreatePlanAssignmentBatchItemDto> Assignments { get; set; } = [];
+}
+
+public sealed class CreatePlanAssignmentBatchItemDto
+{
+    public Guid ResourceId { get; set; }
+    public decimal AssignedWorkHours { get; set; }
+    public DateTime? StartDate { get; set; }
+    public DateTime? EndDate { get; set; }
+    public Guid? ProjectRoleId { get; set; }
+}
+
 public class PlanAssignmentDto
 {
     public Guid Id { get; set; }
@@ -45,6 +60,9 @@ public sealed class PlanAssignmentCapacityDto
     public Guid ResourceId { get; init; }
     public DateTime StartDate { get; init; }
     public DateTime EndDate { get; init; }
+    public DateTime MembershipStartDate { get; init; }
+    public DateTime MembershipEndDate { get; init; }
+    public bool IsScheduleWithinMembership { get; init; }
     public decimal ProjectAllocationPercentage { get; init; }
     public decimal ResourceCapacityHoursPerWeek { get; init; }
     public decimal ProjectCapacityHoursPerWeek { get; init; }

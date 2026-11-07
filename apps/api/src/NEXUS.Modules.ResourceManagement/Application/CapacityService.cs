@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using NEXUS.Modules.Organization.Domain;
 using NEXUS.Modules.ResourceManagement.Application.DTOs;
@@ -9,11 +10,24 @@ namespace NEXUS.Modules.ResourceManagement.Application;
 public class CapacityService : ICapacityService
 {
     private readonly DbContext _context;
-    private const int DefaultDaysPerWeek = 5;
+    private readonly IHttpContextAccessor? _httpContextAccessor;
 
-    public CapacityService(DbContext context)
+    public CapacityService(DbContext context, IHttpContextAccessor? httpContextAccessor = null)
     {
         _context = context;
+        _httpContextAccessor = httpContextAccessor;
+    }
+
+    /// <summary>
+    /// Cost rates are commercially sensitive. Capacity data itself is available with
+    /// <c>Resource.View</c>, but the derived labour cost and hourly rate must only be
+    /// returned to callers that hold a cost-rate permission.
+    /// </summary>
+    private bool CanViewCostRate()
+    {
+        var principal = _httpContextAccessor?.HttpContext?.User;
+        if (principal?.Identity?.IsAuthenticated != true) return false;
+        return principal.HasClaim("permission", "Resource.ViewCostRate");
     }
 
     public Task<Result<CapacityMatrixDto>> GetMatrixAsync(CapacityFilterDto filter, CancellationToken cancellationToken = default)
@@ -27,6 +41,7 @@ public class CapacityService : ICapacityService
         var startDate = filter.StartDate ?? new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1);
         var endDate = filter.EndDate ?? startDate.AddMonths(3);
         var periods = GeneratePeriods(filter.PeriodType, startDate, endDate);
+        var canViewCostRate = CanViewCostRate();
 
         var resourcesQuery = _context.Set<Resource>().Where(r => !r.IsDeleted && r.IsActive);
         if (teamMembers is not null)
@@ -58,9 +73,11 @@ public class CapacityService : ICapacityService
                 a.StartDate < endDate && (a.EndDate > startDate || (a.AllocationSource == ResourceAllocation.SourceProjectPlan && a.EndDate >= startDate)))
             .ToListAsync(cancellationToken);
 
-        var calendars = await _context.Set<WorkingCalendar>().Include(c => c.Holidays).ToListAsync(cancellationToken);
+        var calendars = await _context.Set<WorkingCalendar>()
+            .Include(calendar => calendar.Holidays)
+            .Include(calendar => calendar.DayRules)
+            .ToListAsync(cancellationToken);
         var defaultCalendar = calendars.FirstOrDefault(c => c.IsDefault);
-        var fallbackCalendar = defaultCalendar ?? new WorkingCalendar();
 
         var resourceCalendars = await _context.Set<ResourceCalendar>()
             .Where(rc => rc.Date >= startDate && rc.Date < endDate)
@@ -82,28 +99,29 @@ public class CapacityService : ICapacityService
             var teamMember = teamMembers?.GetValueOrDefault(resource.Id);
             var resourceAllocs = allocations.Where(a => a.ResourceId == resource.Id
                 && (teamMember?.ProjectId is null || a.ProjectId == teamMember.ProjectId)).ToList();
+            var resourceCalendar = resource.BaseCalendarId.HasValue
+                ? calendars.FirstOrDefault(calendar => calendar.Id == resource.BaseCalendarId.Value)
+                : null;
+            if (resourceCalendar?.HasValidSchedule != true) resourceCalendar = null;
+            var projectCalendar = teamMember?.ProjectCalendarId is Guid projectCalendarId
+                ? calendars.FirstOrDefault(calendar => calendar.Id == projectCalendarId)
+                : null;
+            if (projectCalendar?.HasValidSchedule != true) projectCalendar = null;
+            if (defaultCalendar?.HasValidSchedule != true) defaultCalendar = null;
             var requestedCalendar = teamMember?.UseProjectCalendar == true
-                ? teamMember.ProjectCalendarId.HasValue
-                    ? calendars.FirstOrDefault(calendar => calendar.Id == teamMember.ProjectCalendarId.Value)
-                    : defaultCalendar
-                : resource.BaseCalendarId.HasValue
-                    ? calendars.FirstOrDefault(calendar => calendar.Id == resource.BaseCalendarId.Value) ?? defaultCalendar
-                    : defaultCalendar;
-            var hasValidRequestedCalendar = requestedCalendar is not null
-                && requestedCalendar.WorkingDaysPerWeek is > 0 and <= 7
-                && requestedCalendar.ProductiveHoursPerDay > 0m;
-            var hasValidMemberHours = teamMember?.HoursPerWeek is null
-                || teamMember.HoursPerWeek is > 0m and <= 168m;
+                ? projectCalendar ?? resourceCalendar ?? defaultCalendar
+                : resourceCalendar ?? projectCalendar ?? defaultCalendar;
+            var hasValidRequestedCalendar = requestedCalendar?.HasValidSchedule == true;
+            var capacityCalendar = resourceCalendar ?? defaultCalendar ?? requestedCalendar;
             var hasValidMemberDedication = teamMember?.AllocationPercentage is >= 0m and <= 100m;
-            decimal? teamBaseWeeklyCapacity = teamMember is null
+            decimal? teamBaseWeeklyCapacity = teamMember is null || !hasValidMemberDedication
                 ? null
-                : teamMember.HoursPerWeek
-                    ?? (hasValidRequestedCalendar ? CalculateWeeklyCapacity(resource, requestedCalendar!) : null);
+                : hasValidRequestedCalendar ? CalculateWeeklyCapacity(resource, capacityCalendar, requestedCalendar) : null;
             var hasWorkingCalendarData = teamMember is null
-                ? hasValidRequestedCalendar
-                : hasValidMemberHours && hasValidMemberDedication && teamBaseWeeklyCapacity.HasValue;
+                ? hasValidRequestedCalendar && CalculateWeeklyCapacity(resource, capacityCalendar, requestedCalendar) > 0m
+                : hasValidMemberDedication && teamBaseWeeklyCapacity is > 0m;
             var teamDedicationFactor = teamMember?.AllocationPercentage / 100m ?? 1m;
-            var resourceCalendar = requestedCalendar ?? fallbackCalendar;
+            var effectiveCalendar = hasValidRequestedCalendar ? requestedCalendar : null;
             var cells = new List<CapacityCellDto>();
 
             foreach (var period in periods)
@@ -139,23 +157,25 @@ public class CapacityService : ICapacityService
                         if (teamBaseWeeklyCapacity.HasValue && hasValidMemberDedication)
                         {
                             var baseGrossHours = CalculateWeeklyCapacityOverRange(
-                                teamBaseWeeklyCapacity.Value,
-                                effectiveStart,
-                                effectiveEnd);
-                            var baseNonWorkingHours = requestedCalendar is null
-                                ? 0m
-                                : GetNonWorkingHours(
-                                    effectiveStart,
-                                    effectiveEnd,
-                                    requestedCalendar,
-                                    calendars,
-                                    teamBaseWeeklyCapacity.Value);
-                            var calendarAdjustment = CalculateResourceCalendarAdjustment(
+                                resource,
                                 effectiveStart,
                                 effectiveEnd,
                                 requestedCalendar,
-                                resourceCalendars.Where(entry => entry.ResourceId == resource.Id),
-                                teamBaseWeeklyCapacity.Value);
+                                capacityCalendar);
+                            var baseNonWorkingHours = requestedCalendar is null
+                                ? 0m
+                                : GetNonWorkingHours(resource, effectiveStart, effectiveEnd, requestedCalendar, capacityCalendar);
+                            var memberExceptions = resourceCalendars.Where(entry => entry.ResourceId == resource.Id
+                                && entry.Date >= effectiveStart && entry.Date < effectiveEnd).ToList();
+                            var calendarAdjustment = requestedCalendar is null
+                                ? (AdjustmentHours: 0m, IsComplete: memberExceptions.Count == 0)
+                                : CalculateResourceCalendarAdjustment(
+                                    resource,
+                                    effectiveStart,
+                                    effectiveEnd,
+                                    requestedCalendar,
+                                    memberExceptions,
+                                    capacityCalendar);
                             hasWorkingCalendarData &= calendarAdjustment.IsComplete;
                             var baseNetHours = Math.Max(
                                 0m,
@@ -177,13 +197,15 @@ public class CapacityService : ICapacityService
                     }
                     else
                     {
-                        grossHours = CalculateGrossCapacity(resource, effectiveStart, effectiveEnd, resourceCalendar);
-                        nonWorkingHours = GetNonWorkingHours(effectiveStart, effectiveEnd, resourceCalendar, calendars);
+                        grossHours = CalculateGrossCapacity(resource, effectiveStart, effectiveEnd, effectiveCalendar, capacityCalendar);
+                        nonWorkingHours = effectiveCalendar is null ? 0m : GetNonWorkingHours(resource, effectiveStart, effectiveEnd, effectiveCalendar, capacityCalendar);
                         var calendarAdjustment = CalculateResourceCalendarAdjustment(
+                            resource,
                             effectiveStart,
                             effectiveEnd,
-                            resourceCalendar,
-                            resourceCalendars.Where(entry => entry.ResourceId == resource.Id));
+                            effectiveCalendar,
+                            resourceCalendars.Where(entry => entry.ResourceId == resource.Id),
+                            capacityCalendar);
                         hasWorkingCalendarData &= calendarAdjustment.IsComplete;
                         netHours = Math.Max(0, grossHours - nonWorkingHours + calendarAdjustment.AdjustmentHours);
                         leaveHours = Math.Max(0, grossHours - nonWorkingHours - netHours);
@@ -213,8 +235,9 @@ public class CapacityService : ICapacityService
                         effectiveStart,
                         effectiveEnd,
                         resource,
-                        resourceCalendar,
-                        allocationWeeklyCapacity));
+                        effectiveCalendar,
+                        allocationWeeklyCapacity,
+                        capacityCalendar));
 
                 var confirmedHours = periodAllocs
                     .Where(a => a.Status == ResourceAllocation.StatusConfirmed)
@@ -236,16 +259,20 @@ public class CapacityService : ICapacityService
                 totalProposed += proposedHours;
 
                 var overallocatedHours = Math.Max(0, confirmedHours + proposedHours - netHours);
-                var resourceActiveCostProfile = costProfiles
-                    .Where(cp => cp.ResourceId == resource.Id)
-                    .OrderByDescending(cp => cp.EffectiveFrom)
-                    .FirstOrDefault();
+                var resourceActiveCostProfile = canViewCostRate
+                    ? costProfiles
+                        .Where(cp => cp.ResourceId == resource.Id)
+                        .OrderByDescending(cp => cp.EffectiveFrom)
+                        .FirstOrDefault()
+                    : null;
                 var allocCurrency = resourceActiveCostProfile?.Currency;
 
                 var allocCosts = new List<(Guid allocationId, decimal? plannedLaborCost, string? currency)>();
                 foreach (var alloc in periodAllocs)
                 {
-                    var cost = await CalculatePlannedLaborCostAsync(alloc.ResourceId, alloc.PlannedHours ?? 0m, alloc.StartDate, alloc.EndDate, cancellationToken);
+                    var cost = canViewCostRate
+                        ? await CalculatePlannedLaborCostAsync(alloc.ResourceId, alloc.PlannedHours ?? 0m, alloc.StartDate, alloc.EndDate, cancellationToken)
+                        : 0m;
                     allocCosts.Add((alloc.Id, cost > 0 ? cost : null, allocCurrency));
                 }
 
@@ -283,14 +310,16 @@ public class CapacityService : ICapacityService
                 });
             }
 
-            var weeklyHours = CalculateWeeklyCapacity(resource, resourceCalendar);
+            var weeklyHours = CalculateWeeklyCapacity(resource, capacityCalendar, effectiveCalendar);
             var currentUtil = resource.CurrentUtilization ?? 0;
             var earliestDate = CalculateEarliestAvailableDate(resource, resourceAllocs, startDate);
 
-            var activeCostProfile = costProfiles
-                .Where(cp => cp.ResourceId == resource.Id)
-                .OrderByDescending(cp => cp.EffectiveFrom)
-                .FirstOrDefault();
+            var activeCostProfile = canViewCostRate
+                ? costProfiles
+                    .Where(cp => cp.ResourceId == resource.Id)
+                    .OrderByDescending(cp => cp.EffectiveFrom)
+                    .FirstOrDefault()
+                : null;
 
             rows.Add(new CapacityMatrixRowDto
             {
@@ -434,12 +463,14 @@ public class CapacityService : ICapacityService
                 a.StartDate < endDate && (a.EndDate > startDate || (a.AllocationSource == ResourceAllocation.SourceProjectPlan && a.EndDate >= startDate)))
             .ToListAsync(cancellationToken);
 
-        var calendars = await _context.Set<WorkingCalendar>().Include(c => c.Holidays).ToListAsync(cancellationToken);
-        var defaultCalendar = calendars.FirstOrDefault(c => c.IsDefault) ?? new WorkingCalendar();
+        var calendars = await _context.Set<WorkingCalendar>()
+            .Include(calendar => calendar.Holidays)
+            .Include(calendar => calendar.DayRules)
+            .ToListAsync(cancellationToken);
+        var defaultCalendar = calendars.FirstOrDefault(calendar => calendar.IsDefault && calendar.HasValidSchedule);
 
         var resourceCalendars = await _context.Set<ResourceCalendar>()
-            .Where(rc => rc.DayType == "Leave" || rc.DayType == "NonWorking")
-            .Where(rc => rc.Date >= startDate && rc.Date < endDate)
+            .Where(rc => rc.Date >= startDate && rc.Date < endDate && !rc.IsDeleted)
             .ToListAsync(cancellationToken);
 
         var contracts = await _context.Set<Contract>()
@@ -453,9 +484,13 @@ public class CapacityService : ICapacityService
         var items = resources.Select(r =>
         {
             var allocs = allAllocations.Where(a => a.ResourceId == r.Id).ToList();
-            var resourceCalendar = r.BaseCalendarId.HasValue
-                ? calendars.FirstOrDefault(c => c.Id == r.BaseCalendarId) ?? defaultCalendar
+            var selectedCalendar = r.BaseCalendarId.HasValue
+                ? calendars.FirstOrDefault(c => c.Id == r.BaseCalendarId)
                 : defaultCalendar;
+            var resourceCalendar = selectedCalendar?.HasValidSchedule == true
+                ? selectedCalendar
+                : defaultCalendar;
+            var capacityCalendar = resourceCalendar ?? defaultCalendar;
 
             var activeContract = contracts.FirstOrDefault(c => c.ResourceId == r.Id);
             var effectiveStart = startDate;
@@ -469,15 +504,21 @@ public class CapacityService : ICapacityService
             }
 
             decimal grossCapacity, netCapacity;
+            var hasCapacityData = resourceCalendar is not null
+                && CalculateWeeklyCapacity(r, capacityCalendar, resourceCalendar) > 0m;
             if (effectiveStart < effectiveEnd)
             {
-                grossCapacity = CalculateGrossCapacity(r, effectiveStart, effectiveEnd, resourceCalendar);
-                var nonWorking = GetNonWorkingHours(effectiveStart, effectiveEnd, resourceCalendar, calendars);
-                var paidBreakHours = resourceCalendar.PaidBreakMinutesPerDay / 60m;
-                var leaveHours = resourceCalendars
-                    .Where(rc => rc.ResourceId == r.Id && rc.Date >= effectiveStart && rc.Date < effectiveEnd)
-                    .Sum(rc => rc.AvailableHours ?? Math.Max(0, resourceCalendar.ProductiveHoursPerDay - paidBreakHours));
-                netCapacity = grossCapacity - nonWorking - leaveHours;
+                grossCapacity = CalculateGrossCapacity(r, effectiveStart, effectiveEnd, resourceCalendar, capacityCalendar);
+                var nonWorking = resourceCalendar is null ? 0m : GetNonWorkingHours(r, effectiveStart, effectiveEnd, resourceCalendar, capacityCalendar);
+                var calendarAdjustment = CalculateResourceCalendarAdjustment(
+                    r,
+                    effectiveStart,
+                    effectiveEnd,
+                    resourceCalendar,
+                    resourceCalendars.Where(rc => rc.ResourceId == r.Id),
+                    capacityCalendar);
+                netCapacity = Math.Max(0m, grossCapacity - nonWorking + calendarAdjustment.AdjustmentHours);
+                hasCapacityData &= calendarAdjustment.IsComplete;
             }
             else
             {
@@ -489,14 +530,17 @@ public class CapacityService : ICapacityService
                 .Sum(a => a.PlannedHours ?? a.HoursPerWeek ?? (a.AllocationPercentage / 100m * grossCapacity));
             var available = netCapacity - confirmed;
             var utilization = netCapacity > 0 ? Math.Round(confirmed / netCapacity * 100, 1) : 0;
-            var activeCostProfile = resourceCostProfiles.Where(cp => cp.ResourceId == r.Id).OrderByDescending(cp => cp.EffectiveFrom).FirstOrDefault();
+            var activeCostProfile = CanViewCostRate()
+                ? resourceCostProfiles.Where(cp => cp.ResourceId == r.Id).OrderByDescending(cp => cp.EffectiveFrom).FirstOrDefault()
+                : null;
 
             return new ResourceAvailabilityDto
             {
                 ResourceId = r.Id,
                 ResourceName = r.Name,
                 JobTitle = r.JobTitle,
-                WeeklyCapacityHours = Math.Round(CalculateWeeklyCapacity(r, resourceCalendar), 1),
+                WeeklyCapacityHours = Math.Round(CalculateWeeklyCapacity(r, capacityCalendar, resourceCalendar), 1),
+                HasCapacityData = hasCapacityData,
                 CurrentUtilization = r.CurrentUtilization ?? utilization,
                 AvailableCapacityHours = Math.Round(Math.Max(0, available), 1),
                 EarliestAvailableDate = CalculateEarliestAvailableDate(r, allocs, startDate),
@@ -632,20 +676,27 @@ public class CapacityService : ICapacityService
                 a.StartDate < endDate && (a.EndDate > startDate || (a.AllocationSource == ResourceAllocation.SourceProjectPlan && a.EndDate >= startDate)))
             .ToListAsync(cancellationToken);
 
-        var calendars = await _context.Set<WorkingCalendar>().Include(c => c.Holidays).ToListAsync(cancellationToken);
-        var defaultCalendar = calendars.FirstOrDefault(c => c.IsDefault) ?? new WorkingCalendar();
+        var calendars = await _context.Set<WorkingCalendar>()
+            .Include(calendar => calendar.Holidays)
+            .Include(calendar => calendar.DayRules)
+            .ToListAsync(cancellationToken);
+        var defaultCalendar = calendars.FirstOrDefault(calendar => calendar.IsDefault && calendar.HasValidSchedule);
 
         var resourceCalendars = await _context.Set<ResourceCalendar>()
-            .Where(rc => rc.ResourceId == resourceId && (rc.DayType == "Leave" || rc.DayType == "NonWorking"))
+            .Where(rc => rc.ResourceId == resourceId && !rc.IsDeleted)
             .Where(rc => rc.Date >= startDate && rc.Date < endDate)
             .ToListAsync(cancellationToken);
 
         var activeContract = await _context.Set<Contract>()
             .FirstOrDefaultAsync(c => c.ResourceId == resourceId && c.Status == "Active", cancellationToken);
 
-        var resourceCalendar = resource.BaseCalendarId.HasValue
-            ? calendars.FirstOrDefault(c => c.Id == resource.BaseCalendarId) ?? defaultCalendar
+        var selectedCalendar = resource.BaseCalendarId.HasValue
+            ? calendars.FirstOrDefault(c => c.Id == resource.BaseCalendarId)
             : defaultCalendar;
+        var resourceCalendar = selectedCalendar?.HasValidSchedule == true
+            ? selectedCalendar
+            : calendars.FirstOrDefault(calendar => calendar.IsDefault && calendar.HasValidSchedule);
+        var capacityCalendar = resourceCalendar;
 
         var effectiveStart = startDate;
         var effectiveEnd = endDate;
@@ -658,15 +709,21 @@ public class CapacityService : ICapacityService
         }
 
         decimal grossCapacity, netCapacity;
+        var hasCapacityData = resourceCalendar is not null
+            && CalculateWeeklyCapacity(resource, capacityCalendar, resourceCalendar) > 0m;
         if (effectiveStart < effectiveEnd)
         {
-            grossCapacity = CalculateGrossCapacity(resource, effectiveStart, effectiveEnd, resourceCalendar);
-            var nonWorking = GetNonWorkingHours(effectiveStart, effectiveEnd, resourceCalendar, calendars);
-            var paidBreakHours = resourceCalendar.PaidBreakMinutesPerDay / 60m;
-            var leaveHours = resourceCalendars
-                .Where(rc => rc.Date >= effectiveStart && rc.Date < effectiveEnd)
-                .Sum(rc => rc.AvailableHours ?? Math.Max(0, resourceCalendar.ProductiveHoursPerDay - paidBreakHours));
-            netCapacity = grossCapacity - nonWorking - leaveHours;
+            grossCapacity = CalculateGrossCapacity(resource, effectiveStart, effectiveEnd, resourceCalendar, capacityCalendar);
+            var nonWorking = resourceCalendar is null ? 0m : GetNonWorkingHours(resource, effectiveStart, effectiveEnd, resourceCalendar, capacityCalendar);
+            var calendarAdjustment = CalculateResourceCalendarAdjustment(
+                resource,
+                effectiveStart,
+                effectiveEnd,
+                resourceCalendar,
+                resourceCalendars,
+                capacityCalendar);
+            netCapacity = Math.Max(0m, grossCapacity - nonWorking + calendarAdjustment.AdjustmentHours);
+            hasCapacityData &= calendarAdjustment.IsComplete;
         }
         else
         {
@@ -677,17 +734,20 @@ public class CapacityService : ICapacityService
         var confirmed = allocations.Where(a => a.Status == ResourceAllocation.StatusConfirmed)
             .Sum(a => a.PlannedHours ?? a.HoursPerWeek ?? (a.AllocationPercentage / 100m * grossCapacity));
 
-        var activeCostProfile = await _context.Set<ResourceCostProfile>()
-            .Where(cp => cp.ResourceId == resourceId && cp.EffectiveFrom <= endDate && (!cp.EffectiveTo.HasValue || cp.EffectiveTo.Value >= startDate))
-            .OrderByDescending(cp => cp.EffectiveFrom)
-            .FirstOrDefaultAsync(cancellationToken);
+        var activeCostProfile = CanViewCostRate()
+            ? await _context.Set<ResourceCostProfile>()
+                .Where(cp => cp.ResourceId == resourceId && cp.EffectiveFrom <= endDate && (!cp.EffectiveTo.HasValue || cp.EffectiveTo.Value >= startDate))
+                .OrderByDescending(cp => cp.EffectiveFrom)
+                .FirstOrDefaultAsync(cancellationToken)
+            : null;
 
         return Result<ResourceAvailabilityDto>.Success(new ResourceAvailabilityDto
         {
             ResourceId = resource.Id,
             ResourceName = resource.Name,
             JobTitle = resource.JobTitle,
-            WeeklyCapacityHours = Math.Round(CalculateWeeklyCapacity(resource, resourceCalendar), 1),
+            WeeklyCapacityHours = Math.Round(CalculateWeeklyCapacity(resource, capacityCalendar, resourceCalendar), 1),
+            HasCapacityData = hasCapacityData,
             CurrentUtilization = netCapacity > 0 ? Math.Round(confirmed / netCapacity * 100, 1) : 0,
             AvailableCapacityHours = Math.Round(Math.Max(0, netCapacity - confirmed), 1),
             EarliestAvailableDate = CalculateEarliestAvailableDate(resource, allocations, startDate),
@@ -696,53 +756,52 @@ public class CapacityService : ICapacityService
         });
     }
 
-    private static decimal CalculateGrossCapacity(Resource resource, DateTime start, DateTime end, WorkingCalendar calendar)
+    private static decimal CalculateGrossCapacity(
+        Resource resource,
+        DateTime start,
+        DateTime end,
+        WorkingCalendar? scheduleCalendar,
+        WorkingCalendar? capacityCalendar)
     {
-        var calendarDays = Math.Max(0, (end.Date - start.Date).Days);
-        var fullWeeks = calendarDays / 7;
-        var partialWeekDays = calendarDays % 7;
-        var expectedWorkingDays = (fullWeeks * calendar.WorkingDaysPerWeek)
-            + (partialWeekDays * calendar.WorkingDaysPerWeek / 7m);
-        return expectedWorkingDays * calendar.ProductiveHoursPerDay;
+        if (scheduleCalendar?.HasValidSchedule != true || end.Date <= start.Date) return 0m;
+        var capacity = 0m;
+        for (var date = start.Date; date < end.Date; date = date.AddDays(1))
+            capacity += ResourceWorkingCapacityCalculator.GetScheduledDailyCapacity(
+                resource, capacityCalendar, scheduleCalendar, date);
+        return capacity;
     }
 
-    private static decimal CalculateWeeklyCapacity(Resource resource, WorkingCalendar calendar)
-    {
-        return calendar.WorkingDaysPerWeek * calendar.ProductiveHoursPerDay;
-    }
+    private static decimal CalculateWeeklyCapacity(
+        Resource resource,
+        WorkingCalendar? capacityCalendar,
+        WorkingCalendar? scheduleCalendar) =>
+        ResourceWorkingCapacityCalculator.GetWeeklyCapacity(resource, capacityCalendar, scheduleCalendar);
 
     private decimal GetNonWorkingHours(
+        Resource resource,
         DateTime start,
         DateTime end,
         WorkingCalendar calendar,
-        List<WorkingCalendar> calendars,
-        decimal? weeklyCapacityOverride = null)
+        WorkingCalendar? capacityCalendar)
     {
-        var holidays = calendars
-            .Where(item => item.Id == calendar.Id)
-            .SelectMany(item => item.Holidays ?? new List<Holiday>())
-            .ToList();
-        var holidayDates = 0;
+        var holidayCapacity = 0m;
         for (var date = start.Date; date < end.Date; date = date.AddDays(1))
         {
-            if (holidays.Any(holiday => holiday.IsRecurring
-                    ? holiday.Date.Month == date.Month && holiday.Date.Day == date.Day
-                    : holiday.Date.Date == date))
-            {
-                holidayDates++;
-            }
+            if (calendar.IsHoliday(date))
+                holidayCapacity += ResourceWorkingCapacityCalculator.GetScheduledDailyCapacity(
+                    resource, capacityCalendar, calendar, date);
         }
-
-        var holidayCapacity = weeklyCapacityOverride.HasValue && calendar.WorkingDaysPerWeek > 0
-            ? weeklyCapacityOverride.Value / calendar.WorkingDaysPerWeek
-            : calendar.ProductiveHoursPerDay;
-        return holidayDates * holidayCapacity;
+        return holidayCapacity;
     }
 
-    private static decimal CalculateWeeklyCapacityOverRange(decimal weeklyCapacity, DateTime start, DateTime end)
+    private static decimal CalculateWeeklyCapacityOverRange(
+        Resource resource,
+        DateTime start,
+        DateTime end,
+        WorkingCalendar? scheduleCalendar,
+        WorkingCalendar? capacityCalendar)
     {
-        var calendarDays = Math.Max(0, (end.Date - start.Date).Days);
-        return weeklyCapacity * calendarDays / 7m;
+        return CalculateGrossCapacity(resource, start, end, scheduleCalendar, capacityCalendar);
     }
 
     private static decimal CalculateAllocationHours(
@@ -750,9 +809,11 @@ public class CapacityService : ICapacityService
         DateTime periodStart,
         DateTime periodEnd,
         Resource resource,
-        WorkingCalendar calendar,
-        decimal? weeklyCapacityOverride = null)
+        WorkingCalendar? calendar,
+        decimal? weeklyCapacityOverride = null,
+        WorkingCalendar? capacityCalendar = null)
     {
+        if (calendar?.HasValidSchedule != true && !weeklyCapacityOverride.HasValue) return 0m;
         var allocationEndExclusive = allocation.AllocationSource == ResourceAllocation.SourceProjectPlan
             ? allocation.EndDate.Date.AddDays(1)
             : allocation.EndDate;
@@ -761,13 +822,13 @@ public class CapacityService : ICapacityService
         if (allocationStart >= allocationEnd) return 0m;
 
         var overlappingCapacity = weeklyCapacityOverride.HasValue
-            ? CalculateWeeklyCapacityOverRange(weeklyCapacityOverride.Value, allocationStart, allocationEnd)
-            : CalculateGrossCapacity(resource, allocationStart, allocationEnd, calendar);
+            ? CalculateWeeklyCapacityOverRange(resource, allocationStart, allocationEnd, calendar, capacityCalendar ?? calendar)
+            : CalculateGrossCapacity(resource, allocationStart, allocationEnd, calendar, capacityCalendar ?? calendar);
         if (allocation.PlannedHours.HasValue)
         {
             var fullAllocationCapacity = weeklyCapacityOverride.HasValue
-                ? CalculateWeeklyCapacityOverRange(weeklyCapacityOverride.Value, allocation.StartDate, allocationEndExclusive)
-                : CalculateGrossCapacity(resource, allocation.StartDate, allocationEndExclusive, calendar);
+                ? CalculateWeeklyCapacityOverRange(resource, allocation.StartDate, allocationEndExclusive, calendar, capacityCalendar ?? calendar)
+                : CalculateGrossCapacity(resource, allocation.StartDate, allocationEndExclusive, calendar, capacityCalendar ?? calendar);
             return fullAllocationCapacity > 0m
                 ? allocation.PlannedHours.Value * Math.Min(1m, overlappingCapacity / fullAllocationCapacity)
                 : 0m;
@@ -775,7 +836,7 @@ public class CapacityService : ICapacityService
 
         if (allocation.HoursPerWeek.HasValue)
         {
-            var weeklyCapacity = weeklyCapacityOverride ?? CalculateWeeklyCapacity(resource, calendar);
+            var weeklyCapacity = weeklyCapacityOverride ?? CalculateWeeklyCapacity(resource, capacityCalendar ?? calendar, calendar);
             return weeklyCapacity > 0m ? allocation.HoursPerWeek.Value * overlappingCapacity / weeklyCapacity : 0m;
         }
 
@@ -783,25 +844,17 @@ public class CapacityService : ICapacityService
     }
 
     private static (decimal AdjustmentHours, bool IsComplete) CalculateResourceCalendarAdjustment(
+        Resource resource,
         DateTime start,
         DateTime end,
         WorkingCalendar? calendar,
         IEnumerable<ResourceCalendar> resourceCalendarEntries,
-        decimal? weeklyCapacityOverride = null)
+        WorkingCalendar? capacityCalendar)
     {
         var entriesByDate = resourceCalendarEntries
             .Where(entry => entry.Date >= start && entry.Date < end)
             .GroupBy(entry => entry.Date.Date)
             .Select(group => group.OrderByDescending(entry => entry.UpdatedAt ?? entry.CreatedAt).First());
-        var hasValidWorkingDays = calendar?.WorkingDaysPerWeek is > 0 and <= 7;
-        var dailyExpectedCapacity = weeklyCapacityOverride.HasValue
-            ? weeklyCapacityOverride.Value / 7m
-            : calendar is null ? 0m : calendar.ProductiveHoursPerDay * calendar.WorkingDaysPerWeek / 7m;
-        var dailyWorkingCapacity = weeklyCapacityOverride.HasValue
-            ? hasValidWorkingDays
-                ? weeklyCapacityOverride.Value / calendar!.WorkingDaysPerWeek
-                : weeklyCapacityOverride.Value / 7m
-            : calendar?.ProductiveHoursPerDay ?? 0m;
         var adjustment = 0m;
         var complete = true;
 
@@ -809,12 +862,7 @@ public class CapacityService : ICapacityService
         {
             var dayType = (entry.DayType ?? string.Empty).Trim();
             var isWorking = string.Equals(dayType, "WorkingDay", StringComparison.OrdinalIgnoreCase);
-            var isUnavailable = string.Equals(dayType, "NonWorking", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(dayType, "NonWorkingDay", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(dayType, "Holiday", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(dayType, "Leave", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(dayType, "SickLeave", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(dayType, "PersonalLeave", StringComparison.OrdinalIgnoreCase);
+            var isUnavailable = ResourceWorkingCapacityCalculator.IsUnavailableDayType(dayType);
 
             if (!isWorking && !isUnavailable)
             {
@@ -822,17 +870,18 @@ public class CapacityService : ICapacityService
                 continue;
             }
 
-            if (entry.AvailableHours is < 0m || entry.AvailableHours > dailyWorkingCapacity)
+            if (entry.AvailableHours is < 0m or > 24m)
             {
                 complete = false;
                 continue;
             }
 
-            var hasCalendarHoliday = (calendar?.Holidays ?? Array.Empty<Holiday>()).Any(holiday => holiday.IsRecurring
-                ? holiday.Date.Month == entry.Date.Month && holiday.Date.Day == entry.Date.Day
-                : holiday.Date.Date == entry.Date.Date);
-            var baselineHours = hasCalendarHoliday ? 0m : dailyExpectedCapacity;
-            var adjustedHours = entry.AvailableHours ?? (isWorking ? dailyWorkingCapacity : 0m);
+            var baselineHours = calendar is null || calendar.IsHoliday(entry.Date)
+                ? 0m
+                : ResourceWorkingCapacityCalculator.GetScheduledDailyCapacity(resource, capacityCalendar, calendar, entry.Date);
+            var adjustedHours = calendar is null
+                ? 0m
+                : ResourceWorkingCapacityCalculator.GetAvailableDailyCapacity(resource, capacityCalendar, calendar, entry.Date, entry);
             adjustment += adjustedHours - baselineHours;
         }
 
@@ -859,7 +908,7 @@ public class CapacityService : ICapacityService
     private static string GetHeatmapState(decimal utilization, decimal confirmed, decimal proposed, decimal gross)
     {
         if (gross == 0) return "Unavailable";
-        if (confirmed + proposed > gross) return "Overallocated";
+        if (confirmed + proposed - gross > 0.05m) return "Overallocated";
         if (utilization >= 100) return "FullyAllocated";
         if (utilization >= 80) return "NearCapacity";
         if (utilization >= 50) return "Balanced";

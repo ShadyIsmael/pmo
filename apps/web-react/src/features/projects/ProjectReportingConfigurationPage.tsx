@@ -47,7 +47,7 @@ function nextUtcDate(value?: string) {
 
 export function ProjectReportingConfigurationPage() {
   const { projectId, project } = useOutletContext<ProjectContext>();
-  const { t, locale } = useI18n();
+  const { t, locale, formatDate } = useI18n();
   const { user } = useAuth();
   const { canMutate, effectiveReadOnly } = useManagement();
   const confirm = useConfirm();
@@ -139,7 +139,7 @@ export function ProjectReportingConfigurationPage() {
         {canManage ? <Button size="sm" onClick={() => { setError(null); setSheetOpen(true); }}>{configurationQuery.data ? t("common.edit") : t("projects.reporting.configureAction")}</Button> : null}
       </CardHeader>
       <CardContent className="space-y-3">
-        {configurationQuery.data ? <><div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border bg-muted/20 px-3 py-2 text-xs"><span><strong>{t("projects.reporting.configurationVersion")}:</strong> {configurationQuery.data.version}</span><span><strong>{t("projects.reporting.effectiveFrom")}:</strong> {new Date(configurationQuery.data.effectiveFrom).toLocaleDateString(locale === "ar" ? "ar-EG-u-nu-latn" : "en-US")}</span><span><strong>{t("projects.reporting.currency")}:</strong> {configurationQuery.data.currencyCode}</span><span className="text-success"><Check className="me-1 inline h-3.5 w-3.5" />{t("projects.reporting.approvedConfiguration")}</span></div><div className="flex flex-wrap gap-2">{configurationQuery.data.plans.filter(item => item.includeInConsolidatedReporting).map(item => <span key={item.planId} className="rounded-full border px-2.5 py-1 text-xs">{item.planName} · {t("projects.reporting.officialScope")}</span>)}</div></> : <p className="rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-xs text-muted-foreground">{t("projects.reporting.noConfiguration")}</p>}
+        {configurationQuery.data ? <><div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border bg-muted/20 px-3 py-2 text-xs"><span><strong>{t("projects.reporting.configurationVersion")}:</strong> {configurationQuery.data.version}</span><span><strong>{t("projects.reporting.effectiveFrom")}:</strong> {formatDate(configurationQuery.data.effectiveFrom)}</span><span><strong>{t("projects.reporting.currency")}:</strong> {configurationQuery.data.currencyCode}</span><span className="text-success"><Check className="me-1 inline h-3.5 w-3.5" />{t("projects.reporting.approvedConfiguration")}</span></div><div className="flex flex-wrap gap-2">{configurationQuery.data.plans.filter(item => item.includeInConsolidatedReporting).map(item => <span key={item.planId} className="rounded-full border px-2.5 py-1 text-xs">{item.planName} · {t("projects.reporting.officialScope")}</span>)}</div></> : <p className="rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-xs text-muted-foreground">{t("projects.reporting.noConfiguration")}</p>}
       </CardContent>
     </Card>
     <SideSheet open={sheetOpen} onOpenChange={setSheetOpen} title={t("projects.reporting.configurationTitle")} description={t("projects.reporting.configurationDescription")}>

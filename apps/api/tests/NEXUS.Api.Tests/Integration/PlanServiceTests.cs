@@ -2,12 +2,15 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Moq;
+using NEXUS.Api.Management;
 using NEXUS.Modules.Audit.Application;
 using NEXUS.Modules.Audit.Domain;
 using NEXUS.Modules.ProjectPlanning.Application;
 using NEXUS.Modules.ProjectPlanning.Application.DTOs;
 using NEXUS.Modules.ProjectPlanning.Domain;
 using NEXUS.Persistence;
+using NEXUS.SharedKernel;
+using NEXUS.SharedKernel.Management;
 using System.Security.Claims;
 using Xunit;
 
@@ -25,6 +28,8 @@ public class PlanServiceTests : IDisposable
     private readonly AppDbContext _context;
     private readonly Mock<IHttpContextAccessor> _accessor;
     private readonly Mock<IAuditService> _auditService;
+    private readonly ManagementContextAccessor _managementContext = new();
+    private readonly Mock<IProjectPublicIdLookup> _projectLookup = new();
     private readonly PlanService _service;
 
     private readonly Guid _tenantA = Guid.NewGuid();
@@ -43,7 +48,18 @@ public class PlanServiceTests : IDisposable
         _context.Database.EnsureCreatedAsync().GetAwaiter().GetResult();
         _accessor = new Mock<IHttpContextAccessor>();
         _auditService = new Mock<IAuditService>();
-        _service = new PlanService(_context, _auditService.Object, _accessor.Object);
+        _projectLookup.Setup(lookup => lookup.FindPublicIdAsync(
+                _projectId, _tenantA, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Guid.NewGuid());
+        _projectLookup.Setup(lookup => lookup.FindPublicIdAsync(
+                _projectId, _tenantB, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Guid?)null);
+        _service = new PlanService(
+            _context,
+            _auditService.Object,
+            _accessor.Object,
+            managementContextAccessor: _managementContext,
+            projectPublicIdLookup: _projectLookup.Object);
     }
 
     private void SetTenant(Guid tenantId, Guid userId)
@@ -56,6 +72,15 @@ public class PlanServiceTests : IDisposable
         }, "mock"));
         _accessor.Setup(x => x.HttpContext).Returns(httpContext);
         AppDbContext.ConfigureTenantResolution(_accessor.Object);
+        _managementContext.Set(new ManagementContext(
+            userId,
+            tenantId,
+            ManagementPerspective.ProjectManager,
+            ManagementViewMode.Native,
+            null,
+            null,
+            null,
+            new ManagementScope(new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid> { _projectId })));
     }
 
     private CreatePlanDto NewDto(PlanType type, string? name = null)

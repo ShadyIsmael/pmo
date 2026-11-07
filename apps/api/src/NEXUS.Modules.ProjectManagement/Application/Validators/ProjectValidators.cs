@@ -12,9 +12,6 @@ public class CreateProjectValidator : AbstractValidator<CreateProjectDto>
             .NotEmpty().WithMessage("Project name is required")
             .MaximumLength(200).WithMessage("Project name cannot exceed 200 characters");
 
-        RuleFor(x => x.ProjectManagerId)
-            .NotEmpty().WithMessage("Project manager is required");
-
         RuleFor(x => x.Code)
             .MaximumLength(50).WithMessage("Project code cannot exceed 50 characters")
             .When(x => !string.IsNullOrWhiteSpace(x.Code));
@@ -168,8 +165,17 @@ public class CreateProjectMemberValidator : AbstractValidator<CreateProjectMembe
         RuleFor(x => x.ProjectId)
             .NotEmpty().WithMessage("Project ID is required");
 
+        RuleFor(x => x)
+            .Must(x => x.ResourceId.HasValue != x.TeamId.HasValue)
+            .WithMessage("Choose exactly one Resource or Team");
+
         RuleFor(x => x.ResourceId)
-            .NotEmpty().WithMessage("Resource ID is required");
+            .NotEmpty().When(x => x.ResourceId.HasValue)
+            .WithMessage("Resource ID cannot be empty");
+
+        RuleFor(x => x.TeamId)
+            .NotEmpty().When(x => x.TeamId.HasValue)
+            .WithMessage("Team ID cannot be empty");
 
         RuleFor(x => x.Role)
             .NotEmpty().WithMessage("Role is required")

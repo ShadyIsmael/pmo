@@ -46,7 +46,7 @@ public class ProjectInitialBaselineTests : IDisposable
             .Setup(a => a.LogAsync(It.IsAny<NEXUS.Modules.Audit.Domain.AuditEntry>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success());
 
-        var snapshotService = new ProjectSnapshotService(_context, _auditService.Object, _accessor.Object);
+        var snapshotService = new ProjectSnapshotService(_context, _auditService.Object, _accessor.Object, new ProjectManagerMembershipSynchronizer(_context));
         _service = new ProjectBaselineService(_context, _auditService.Object, _accessor.Object, snapshotService);
     }
 

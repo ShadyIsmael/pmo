@@ -10,11 +10,16 @@ public class ResourceFinderService : IResourceFinderService
 {
     private readonly DbContext _context;
     private readonly ICapacityService _capacityService;
+    private readonly IProjectResourcePlanningContextLookup? _planningContextLookup;
 
-    public ResourceFinderService(DbContext context, ICapacityService capacityService)
+    public ResourceFinderService(
+        DbContext context,
+        ICapacityService capacityService,
+        IProjectResourcePlanningContextLookup? planningContextLookup = null)
     {
         _context = context;
         _capacityService = capacityService;
+        _planningContextLookup = planningContextLookup;
     }
 
     public async Task<PagedResult<ResourceFinderResultDto>> FindAsync(ResourceFinderQueryDto query, CancellationToken cancellationToken = default)
@@ -63,14 +68,44 @@ public class ResourceFinderService : IResourceFinderService
             .Where(a => a.Status != ResourceAllocation.StatusCancelled && !a.IsDeleted &&
                 a.StartDate < endDate && a.EndDate > startDate)
             .ToListAsync(cancellationToken);
+        var resourceIds = resources.Select(resource => resource.Id).ToArray();
+        var resourceCalendarEntries = await _context.Set<ResourceCalendar>().AsNoTracking()
+            .Where(entry => resourceIds.Contains(entry.ResourceId) && entry.Date >= startDate && entry.Date < endDate && !entry.IsDeleted)
+            .ToListAsync(cancellationToken);
 
-        var calendars = await _context.Set<WorkingCalendar>().Include(c => c.Holidays).ToListAsync(cancellationToken);
-        var defaultCalendar = calendars.FirstOrDefault(c => c.IsDefault) ?? new WorkingCalendar();
+        var calendars = await _context.Set<WorkingCalendar>()
+            .Include(calendar => calendar.Holidays)
+            .Include(calendar => calendar.DayRules)
+            .ToListAsync(cancellationToken);
+        var defaultCalendar = calendars.FirstOrDefault(calendar => calendar.IsDefault && calendar.HasValidSchedule);
+        var planningContexts = query.ProjectId.HasValue && _planningContextLookup is not null
+            ? await _planningContextLookup.GetPlanningContextsAsync(query.ProjectId.Value, resources.Select(resource => resource.Id), cancellationToken)
+            : new Dictionary<Guid, ProjectResourcePlanningContext>();
 
         var results = resources.Select(r =>
         {
             var resourceAllocs = allAllocations.Where(a => a.ResourceId == r.Id).ToList();
-            var grossCapacity = CalculateGrossCapacity(startDate, endDate, defaultCalendar);
+            planningContexts.TryGetValue(r.Id, out var memberContext);
+            var resourceCalendar = r.BaseCalendarId.HasValue
+                ? calendars.FirstOrDefault(calendar => calendar.Id == r.BaseCalendarId.Value)
+                : null;
+            if (resourceCalendar?.HasValidSchedule != true) resourceCalendar = null;
+            var projectCalendar = memberContext?.ProjectCalendarId is Guid projectCalendarId
+                ? calendars.FirstOrDefault(calendar => calendar.Id == projectCalendarId)
+                : null;
+            if (projectCalendar?.HasValidSchedule != true) projectCalendar = null;
+            var selectedCalendar = string.Equals(memberContext?.CalendarPolicy, "FollowProjectCalendar", StringComparison.Ordinal)
+                ? projectCalendar ?? resourceCalendar ?? defaultCalendar
+                : resourceCalendar ?? projectCalendar ?? defaultCalendar;
+            var effectiveCalendar = selectedCalendar?.HasValidSchedule == true ? selectedCalendar : null;
+            var capacityCalendar = resourceCalendar ?? defaultCalendar ?? effectiveCalendar;
+            var grossCapacity = CalculateGrossCapacity(
+                r,
+                startDate,
+                endDate,
+                effectiveCalendar,
+                capacityCalendar,
+                resourceCalendarEntries.Where(entry => entry.ResourceId == r.Id));
             var confirmedHours = resourceAllocs.Where(a => a.Status == ResourceAllocation.StatusConfirmed)
                 .Sum(a => a.HoursPerWeek ?? (a.AllocationPercentage / 100m * grossCapacity));
             var availableHours = Math.Max(0, grossCapacity - confirmedHours);
@@ -97,7 +132,7 @@ public class ResourceFinderService : IResourceFinderService
                 };
             }).ToList();
 
-            var matchScore = CalculateMatchScore(r, query, skillMatches, availableHours, grossCapacity, defaultCalendar);
+            var matchScore = CalculateMatchScore(r, query, skillMatches, availableHours, grossCapacity);
 
             return new ResourceFinderResultDto
             {
@@ -111,6 +146,8 @@ public class ResourceFinderService : IResourceFinderService
                 AvatarUrl = r.AvatarUrl,
                 MatchScore = matchScore,
                 AvailableCapacityHours = Math.Round(availableHours, 1),
+                HasCapacityData = effectiveCalendar is not null
+                    && ResourceWorkingCapacityCalculator.GetWeeklyCapacity(r, capacityCalendar, effectiveCalendar) > 0m,
                 CurrentLoadPercent = grossCapacity > 0 ? Math.Round(confirmedHours / grossCapacity * 100, 1) : 0,
                 EarliestAvailableDate = CalculateEarliestDate(r, resourceAllocs, query.StartDate ?? startDate),
                 ConflictingAllocations = conflictingAllocs,
@@ -124,7 +161,7 @@ public class ResourceFinderService : IResourceFinderService
         return new PagedResult<ResourceFinderResultDto>(results, query.Page, query.PageSize, total);
     }
 
-    private static decimal CalculateMatchScore(Resource resource, ResourceFinderQueryDto query, List<ResourceFinderSkillMatchDto> skillMatches, decimal availableHours, decimal grossCapacity, WorkingCalendar calendar)
+    private static decimal CalculateMatchScore(Resource resource, ResourceFinderQueryDto query, List<ResourceFinderSkillMatchDto> skillMatches, decimal availableHours, decimal grossCapacity)
     {
         decimal score = 50;
 
@@ -157,13 +194,27 @@ public class ResourceFinderService : IResourceFinderService
         return Math.Round(Math.Min(100, score), 1);
     }
 
-    private static decimal CalculateGrossCapacity(DateTime start, DateTime end, WorkingCalendar calendar)
+    private static decimal CalculateGrossCapacity(
+        Resource resource,
+        DateTime start,
+        DateTime end,
+        WorkingCalendar? scheduleCalendar,
+        WorkingCalendar? capacityCalendar,
+        IEnumerable<ResourceCalendar> resourceCalendarEntries)
     {
-        var days = (end - start).Days;
-        var workingDays = days > 7
-            ? (days / 7) * calendar.WorkingDaysPerWeek + Math.Min(days % 7, calendar.WorkingDaysPerWeek)
-            : Math.Min(days, calendar.WorkingDaysPerWeek);
-        return workingDays * calendar.HoursPerDay;
+        if (scheduleCalendar?.HasValidSchedule != true || end.Date <= start.Date) return 0m;
+        var hours = 0m;
+        var exceptionsByDate = resourceCalendarEntries
+            .Where(entry => entry.Date >= start.Date && entry.Date < end.Date)
+            .GroupBy(entry => entry.Date.Date)
+            .ToDictionary(group => group.Key, group => group.OrderByDescending(item => item.UpdatedAt ?? item.CreatedAt).First());
+        for (var date = start.Date; date < end.Date; date = date.AddDays(1))
+        {
+            exceptionsByDate.TryGetValue(date, out var exception);
+            hours += ResourceWorkingCapacityCalculator.GetAvailableDailyCapacity(
+                resource, capacityCalendar, scheduleCalendar, date, exception);
+        }
+        return hours;
     }
 
     private static DateTime? CalculateEarliestDate(Resource resource, List<ResourceAllocation> allocations, DateTime from)

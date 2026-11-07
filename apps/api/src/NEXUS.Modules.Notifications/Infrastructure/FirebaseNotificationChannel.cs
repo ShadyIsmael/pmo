@@ -10,6 +10,7 @@ namespace NEXUS.Modules.Notifications.Infrastructure;
 /// <summary>Firebase SDK boundary. No Firebase types escape into application services.</summary>
 public sealed class FirebaseNotificationChannel : IPushNotificationSender
 {
+    private const string ProductName = "FOPX PM";
     private readonly FirebaseMessagingClient _client;
     private readonly NotificationDeliveryOptions _options;
     private readonly ILogger<FirebaseNotificationChannel> _logger;
@@ -48,7 +49,7 @@ public sealed class FirebaseNotificationChannel : IPushNotificationSender
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(_options.SendTimeout);
-            var messageId = await _client.SendAsync(device.Token, "You have a NEXUS update", "Open NEXUS to review your notification.", data, timeout.Token);
+            var messageId = await _client.SendAsync(device.Token, $"You have a {ProductName} update", $"Open {ProductName} to review your notification.", data, timeout.Token);
             return new PushSendResult(true, ProviderMessageId: messageId);
         }
         catch (FirebaseMessagingException exception)

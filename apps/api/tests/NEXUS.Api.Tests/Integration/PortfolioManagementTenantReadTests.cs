@@ -60,7 +60,8 @@ public sealed class PortfolioManagementTenantReadTests : IDisposable
         Assert.Equal(_portfolioA, item.Id);
         Assert.Equal("Tenant A Portfolio", item.Name);
         Assert.Equal("PF-A", item.Code);
-        Assert.Equal("Portfolio Owner A", item.OwnerName);
+        // Owner identity is deliberately unavailable without an authorized management context.
+        Assert.Null(item.OwnerName);
         Assert.Equal("Active", item.Status);
         Assert.Equal("USD", item.Currency);
         Assert.Contains(result.Items, portfolio => portfolio.Id == _portfolioA2);
@@ -165,12 +166,13 @@ public sealed class PortfolioManagementTenantReadTests : IDisposable
     [Fact]
     public async Task Only_active_tenant_system_admin_role_enables_tenant_read_scope()
     {
-        var adminRole = new Role { Id = Guid.NewGuid(), TenantId = _tenantA, Name = "admin", IsSystem = true, CreatedBy = "test" };
+        var adminRole = new Role { Id = Guid.NewGuid(), TenantId = _tenantA, Name = "admin", IsSystem = true, CreatedBy = "System" };
+        adminRole.AssignSystemRoleKey(Role.TenantAdminSystemRoleKey, _tenantA);
         _db.Roles.Add(adminRole);
         _db.UserRoles.Add(new UserRole { TenantId = _tenantA, UserId = _ownerA, RoleId = adminRole.Id, CreatedBy = "test" });
         _db.SaveChanges();
 
-        var resolver = new ManagementScopeResolver(_db);
+        var resolver = new ManagementScopeResolver(_db, new NEXUS.Modules.Identity.Infrastructure.UserEffectivePermissionService(_db));
 
         Assert.True(await resolver.IsTenantAdministratorAsync(_ownerA, _tenantA));
         Assert.False(await resolver.IsTenantAdministratorAsync(_ownerB, _tenantA));

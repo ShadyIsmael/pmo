@@ -8,6 +8,9 @@ public interface IPlanAssignmentService
     /// <summary>Creates an assignment in a plan's active Working version.</summary>
     Task<Result<PlanAssignmentDto>> CreateAsync(Guid planId, CreatePlanAssignmentDto dto, string userId, CancellationToken cancellationToken = default);
 
+    /// <summary>Validates and creates multiple assignments for one activity atomically.</summary>
+    Task<Result<IReadOnlyList<PlanAssignmentDto>>> CreateManyAsync(Guid planId, CreatePlanAssignmentsBatchDto dto, string userId, CancellationToken cancellationToken = default);
+
     /// <summary>Updates an assignment in a plan's active Working version.</summary>
     Task<Result<PlanAssignmentDto>> UpdateAsync(Guid planId, Guid assignmentId, UpdatePlanAssignmentDto dto, string userId, CancellationToken cancellationToken = default);
 

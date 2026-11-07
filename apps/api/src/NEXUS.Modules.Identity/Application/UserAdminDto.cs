@@ -9,8 +9,6 @@ public class UserAdminDto
     public string FirstName { get; set; } = string.Empty;
     public string LastName { get; set; } = string.Empty;
     public string FullName { get; set; } = string.Empty;
-    public string? JobTitle { get; set; }
-    public string? Phone { get; set; }
     public bool IsActive { get; set; }
     public AuthenticationSource AuthenticationSource { get; set; }
     public bool MustChangePassword { get; set; }
@@ -26,8 +24,6 @@ public class CreateUserDto
     public AuthenticationSource AuthenticationSource { get; set; } = AuthenticationSource.Local;
     public string FirstName { get; set; } = string.Empty;
     public string LastName { get; set; } = string.Empty;
-    public string? JobTitle { get; set; }
-    public string? Phone { get; set; }
     public bool IsActive { get; set; } = true;
     public List<string> Roles { get; set; } = new();
 }
@@ -37,8 +33,6 @@ public class UpdateUserDto
     public string Email { get; set; } = string.Empty;
     public string FirstName { get; set; } = string.Empty;
     public string LastName { get; set; } = string.Empty;
-    public string? JobTitle { get; set; }
-    public string? Phone { get; set; }
     public bool IsActive { get; set; }
     public List<string> Roles { get; set; } = new();
 }

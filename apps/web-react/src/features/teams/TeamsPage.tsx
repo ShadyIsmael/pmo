@@ -97,8 +97,8 @@ export function TeamMembersPanel({ teamId, open, canEdit }: { teamId: string; op
 export function TeamRowActions({ team }: { team: TeamDto }) {
   const { t } = useI18n();
   const { user } = useAuth();
-  const canEdit = Boolean(user && (user.permissions.includes(Permissions.Team.Edit) || user.permissions.includes(Permissions.Team.Manage)));
-  const canDelete = Boolean(user && (user.permissions.includes(Permissions.Team.Delete) || user.permissions.includes(Permissions.Team.Manage)));
+  const canEdit = Boolean(user && (user.permissions.includes(Permissions.Team.Edit) || user.permissions.includes(Permissions.Team.Edit)));
+  const canDelete = Boolean(user && (user.permissions.includes(Permissions.Team.Delete) || user.permissions.includes(Permissions.Team.Edit)));
   const [editOpen, setEditOpen] = React.useState(false);
   const [membersOpen, setMembersOpen] = React.useState(false);
   const [dialog, setDialog] = React.useState<"deactivate" | "reactivate" | "delete" | null>(null);
@@ -169,7 +169,7 @@ export function TeamsPage() {
   const { t } = useI18n();
   const { user, status } = useAuth();
   const canView = Boolean(user && hasPermission(user.permissions, Permissions.Team.View));
-  const canCreate = Boolean(user && (user.permissions.includes(Permissions.Team.Create) || user.permissions.includes(Permissions.Team.Manage)));
+  const canCreate = Boolean(user && (user.permissions.includes(Permissions.Team.Create) || user.permissions.includes(Permissions.Team.Edit)));
   const [page, setPage] = React.useState(1);
   const [search, setSearch] = React.useState("");
   const [departmentId, setDepartmentId] = React.useState("");

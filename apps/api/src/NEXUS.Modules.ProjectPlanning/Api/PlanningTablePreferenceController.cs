@@ -21,7 +21,7 @@ public sealed class PlanningTablePreferenceController : ControllerBase
         return result.IsSuccess ? Ok(result.Value) : Error(result.Error);
     }
 
-    [Authorize(Policy = "Planning.Manage")]
+    [Authorize(Policy = "Planning.Edit")]
     [HttpPut]
     public async Task<IActionResult> Save(Guid projectId, Guid planId, SavePlanningTablePreferenceDto dto, CancellationToken cancellationToken)
     {
@@ -29,7 +29,7 @@ public sealed class PlanningTablePreferenceController : ControllerBase
         return result.IsSuccess ? Ok(result.Value) : Error(result.Error);
     }
 
-    [Authorize(Policy = "Planning.Manage")]
+    [Authorize(Policy = "Planning.Edit")]
     [HttpDelete]
     public async Task<IActionResult> Reset(Guid projectId, Guid planId, CancellationToken cancellationToken)
     {
@@ -38,5 +38,5 @@ public sealed class PlanningTablePreferenceController : ControllerBase
     }
 
     private string UserId() => User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
-    private IActionResult Error(NEXUS.SharedKernel.Error? error) => error?.StatusCode switch { 404 => NotFound(new { error = error.Message }), 409 => Conflict(new { error = error.Message }), _ => BadRequest(new { error = error?.Message }) };
+    private IActionResult Error(NEXUS.SharedKernel.Error? error) => error?.StatusCode switch { 403 => Forbid(), 404 => NotFound(new { error = error.Message }), 409 => Conflict(new { error = error.Message }), _ => BadRequest(new { error = error?.Message }) };
 }

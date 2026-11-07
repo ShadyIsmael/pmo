@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, useLocation } from "react-router-dom";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "../i18n/messages";
@@ -27,7 +27,7 @@ const page = {
 };
 
 function renderPage(fetchMock: ReturnType<typeof vi.fn>) {
-  setTokens("a", "r");
+  setTokens("a");
   vi.stubGlobal("fetch", fetchMock);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   return render(
@@ -46,6 +46,40 @@ function renderPage(fetchMock: ReturnType<typeof vi.fn>) {
   );
 }
 
+function renderProjectCreatePageWithManagerLookup(managerLookupStatus = 200, managers: Array<{ id: string; fullName: string }> = []) {
+  const fetchMock = vi.fn().mockImplementation((input: string, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes("/api/auth/me")) {
+      return Promise.resolve(new Response(JSON.stringify({ id: "u", email: "a@b.c", firstName: "A", lastName: "B", fullName: "A B", roles: [], permissions: ["Project.View", "Project.Create"] }), { status: 200 }));
+    }
+    if (url.includes("/api/me/perspectives")) {
+      return Promise.resolve(new Response(JSON.stringify({ availablePerspectives: [], scope: { portfolioIds: [], programIds: [], projectIds: [] } }), { status: 200 }));
+    }
+    if (url.includes("/api/users/workflow-lookups/projects/managers")) {
+      const status = managerLookupStatus;
+      const body = status === 403 ? { title: "Forbidden", status: 403 } : managers;
+      return Promise.resolve(new Response(JSON.stringify(body), { status }));
+    }
+    if (url.includes("/api/users/workflow-lookups/projects")) {
+      const status = 200;
+      const body: unknown[] = [];
+      return Promise.resolve(new Response(JSON.stringify(body), { status }));
+    }
+    if (url.includes("/api/currencies")) {
+      return Promise.resolve(new Response(JSON.stringify([{ id: "usd", code: "USD", name: "US Dollar", symbol: "$", exchangeRate: 1, isBase: true }]), { status: 200 }));
+    }
+    if (url.includes("/api/organization/units")) return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+    if (url.includes("/api/portfolios")) return Promise.resolve(new Response(JSON.stringify({ items: [] }), { status: 200 }));
+    if (url.includes("/api/programs")) return Promise.resolve(new Response(JSON.stringify({ items: [] }), { status: 200 }));
+    if (url.includes("/api/projects") && init?.method === "POST") {
+      return Promise.resolve(new Response(JSON.stringify({ id: "test-project", publicId: "test-project-public" }), { status: 201 }));
+    }
+    if (url.includes("/api/projects")) return Promise.resolve(new Response(JSON.stringify(page), { status: 200 }));
+    return Promise.resolve(new Response("null", { status: 200 }));
+  });
+  renderPage(fetchMock);
+  return fetchMock;
+}
 describe("projects list polish", () => {
   it("keeps semantic status badges on colored text without tinted backgrounds", () => {
     render(<><Badge status="Active">Active</Badge><Badge variant="warning">Pending</Badge><Badge variant="destructive">Rejected</Badge></>);
@@ -60,7 +94,7 @@ describe("projects list polish", () => {
   it("filters by status tab client-side without refetching", async () => {
     const fetchMock = vi.fn().mockImplementation((input: string) => {
       if (input.includes("/api/auth/me")) {
-        return Promise.resolve(new Response(JSON.stringify({ id: "u", email: "a@b.c", firstName: "A", lastName: "B", fullName: "A B", roles: [], permissions: ["projects.read", "Project.Create"] }), { status: 200 }));
+        return Promise.resolve(new Response(JSON.stringify({ id: "u", email: "a@b.c", firstName: "A", lastName: "B", fullName: "A B", roles: [], permissions: ["Project.View", "Project.Create"] }), { status: 200 }));
       }
       if (input.includes("/api/me/perspectives")) {
         return Promise.resolve(new Response(JSON.stringify({ availablePerspectives: [], scope: { portfolioIds: [], programIds: [], projectIds: [] } }), { status: 200 }));
@@ -82,36 +116,37 @@ describe("projects list polish", () => {
   it("matches source status badges and defers the advanced-search lookup until expanded", async () => {
     const fetchMock = vi.fn().mockImplementation((input: string) => {
       if (input.includes("/api/auth/me")) {
-        return Promise.resolve(new Response(JSON.stringify({ id: "u", email: "a@b.c", firstName: "A", lastName: "B", fullName: "A B", roles: [], permissions: ["projects.read"] }), { status: 200 }));
+        return Promise.resolve(new Response(JSON.stringify({ id: "u", email: "a@b.c", firstName: "A", lastName: "B", fullName: "A B", roles: [], permissions: ["Project.View"] }), { status: 200 }));
       }
       if (input.includes("/api/me/perspectives")) {
         return Promise.resolve(new Response(JSON.stringify({ availablePerspectives: [], scope: { portfolioIds: [], programIds: [], projectIds: [] } }), { status: 200 }));
       }
       if (input.includes("/api/projects")) return Promise.resolve(new Response(JSON.stringify(page), { status: 200 }));
-      if (input.includes("/api/users/lookup")) return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+      if (input.includes("/api/users/workflow-lookups/projects/managers")) return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+      if (input.includes("/api/users/workflow-lookups/projects")) return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
       if (input.includes("/api/portfolios")) return Promise.resolve(new Response(JSON.stringify({ items: [] }), { status: 200 }));
       return Promise.resolve(new Response("null", { status: 200 }));
     });
     renderPage(fetchMock);
 
     await waitFor(() => expect(screen.getByRole("link", { name: /Healthy Project/ })).toBeInTheDocument());
-    expect(screen.queryByRole("button", { name: /^Create$/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^(Create|إنشاء)$/ })).not.toBeInTheDocument();
     const projectRow = screen.getByRole("link", { name: /Healthy Project/ });
     expect(within(projectRow).getByText("Active")).toHaveClass("bg-transparent", "text-success");
     expect(within(projectRow).getByText("Active")).not.toHaveClass("bg-success/10");
-    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/users/lookup"))).toBe(false);
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/users/workflow-lookups/projects"))).toBe(false);
 
     const advancedSearchTrigger = await screen.findByRole("button", { name: /Advanced Search/ });
     expect(advancedSearchTrigger).toHaveAttribute("tabindex", "0");
     fireEvent.keyDown(advancedSearchTrigger, { key: "Enter" });
-    expect(await screen.findAllByPlaceholderText("Min")).toHaveLength(3);
-    await waitFor(() => expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/users/lookup") && String(input).includes("project.manager"))).toBe(true));
+    expect(await screen.findAllByPlaceholderText("Min")).toHaveLength(2);
+    await waitFor(() => expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/users/workflow-lookups/projects/managers"))).toBe(true));
   });
 
   it("uses active Working plan progress in both registry views and does not fall back to stale project progress", async () => {
     const fetchMock = vi.fn().mockImplementation((input: string) => {
       if (input.includes("/api/auth/me")) {
-        return Promise.resolve(new Response(JSON.stringify({ id: "u", email: "a@b.c", firstName: "A", lastName: "B", fullName: "A B", roles: [], permissions: ["projects.read"] }), { status: 200 }));
+        return Promise.resolve(new Response(JSON.stringify({ id: "u", email: "a@b.c", firstName: "A", lastName: "B", fullName: "A B", roles: [], permissions: ["Project.View"] }), { status: 200 }));
       }
       if (input.includes("/api/me/perspectives")) {
         return Promise.resolve(new Response(JSON.stringify({ availablePerspectives: [], scope: { portfolioIds: [], programIds: [], projectIds: [] } }), { status: 200 }));
@@ -134,18 +169,21 @@ describe("projects list polish", () => {
     expect(within(projectCard).queryByText("40%")).not.toBeInTheDocument();
   });
 
-  it("creates a project with API currency inheritance and selected manager, then opens the created project", async () => {
+  it("creates a Project with an eligible System User who has no Resource, then opens the created Project", async () => {
     const user = userEvent.setup();
     const fetchMock = vi.fn().mockImplementation((input: string, init?: RequestInit) => {
       const url = String(input);
       if (url.includes("/api/auth/me")) {
-        return Promise.resolve(new Response(JSON.stringify({ id: "u", email: "a@b.c", firstName: "A", lastName: "B", fullName: "A B", roles: [], permissions: ["projects.read", "Project.Create"] }), { status: 200 }));
+        return Promise.resolve(new Response(JSON.stringify({ id: "u", email: "a@b.c", firstName: "A", lastName: "B", fullName: "A B", roles: [], permissions: ["Project.View", "Project.Create"] }), { status: 200 }));
       }
       if (url.includes("/api/me/perspectives")) {
         return Promise.resolve(new Response(JSON.stringify({ availablePerspectives: [], scope: { portfolioIds: [], programIds: [], projectIds: [] } }), { status: 200 }));
       }
-      if (url.includes("/api/users/lookup")) {
-        return Promise.resolve(new Response(JSON.stringify([{ id: "manager-1", fullName: "Project Manager", email: "manager@example.com" }]), { status: 200 }));
+      if (url.includes("/api/users/workflow-lookups/projects/managers")) {
+        return Promise.resolve(new Response(JSON.stringify([{ id: "manager-1", fullName: "Project Manager" }]), { status: 200 }));
+      }
+      if (url.includes("/api/users/workflow-lookups/projects")) {
+        return Promise.resolve(new Response(JSON.stringify([{ id: "manager-1", fullName: "Project Manager" }]), { status: 200 }));
       }
       if (url.includes("/api/currencies")) {
         return Promise.resolve(new Response(JSON.stringify([
@@ -172,15 +210,14 @@ describe("projects list polish", () => {
     });
     renderPage(fetchMock);
 
-    fireEvent.click(await screen.findByRole("button", { name: /^Create$/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /^(Create|إنشاء)$/ }));
     const sheet = await screen.findByRole("dialog", { name: "New Project" });
     fireEvent.change(within(sheet).getByPlaceholderText("Name"), { target: { value: "Created Project" } });
     await waitFor(() => expect(within(sheet).getByText("USD — US Dollar ($)")).toBeInTheDocument());
     expect(within(sheet).getByPlaceholderText("Name")).toHaveValue("Created Project");
 
     fireEvent.click(within(sheet).getAllByRole("combobox")[0]);
-    fireEvent.click(await screen.findByRole("option", { name: /Project Manager · manager@example\.com/ }));
-    expect(within(sheet).getByText("Project Manager · manager@example.com")).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("option", { name: "Project Manager" }));
     fireEvent.click(within(sheet).getAllByRole("combobox")[2]);
     fireEvent.click(await screen.findByRole("option", { name: "Portfolio One" }));
     expect(within(sheet).getByText("GBP — British Pound (£)")).toBeInTheDocument();
@@ -195,6 +232,83 @@ describe("projects list polish", () => {
     const createCall = fetchMock.mock.calls.find(([input, init]) => String(input).includes("/api/projects") && init?.method === "POST");
     const payload = JSON.parse(String(createCall?.[1]?.body));
     expect(payload).toMatchObject({ name: "Created Project", projectManagerId: "manager-1", portfolioId: "portfolio-1", programId: "program-1", currency: "JPY" });
+    expect(payload).not.toHaveProperty("resourceId");
     await waitFor(() => expect(screen.getByTestId("current-path")).toHaveTextContent("/projects/created-project-public"));
+  });
+
+  it("shows the Resource-independent empty state in English and Arabic", async () => {
+    renderProjectCreatePageWithManagerLookup(200, []);
+    fireEvent.click(await screen.findByRole("button", { name: /^(Create|إنشاء)$/ }));
+    expect(await screen.findByText("Project Managers are selected from eligible active System Users. A Resource profile or Project Team membership is not required.")).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("combobox")[0]);
+    expect(await screen.findByText("No eligible active Project Managers found.")).toBeInTheDocument();
+
+    cleanup();
+    window.localStorage.setItem("nexus-locale", "ar");
+    renderProjectCreatePageWithManagerLookup(200, []);
+    fireEvent.click(await screen.findByRole("button", { name: /^(Create|إنشاء)$/ }));
+    expect(await screen.findByText("يُختار مديرو المشروعات من مستخدمي النظام النشطين المستوفين لشروط الأهلية. لا يلزم وجود سجل مورد أو عضوية في فريق المشروع.")).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("combobox")[0]);
+    expect(await screen.findByText("لم يتم العثور على مديري مشروعات نشطين مؤهلين.")).toBeInTheDocument();
+  });
+
+  it("shows a localized authorization message when Project Manager candidates are forbidden", async () => {
+    renderProjectCreatePageWithManagerLookup(403);
+    fireEvent.click(await screen.findByRole("button", { name: /^(Create|إنشاء)$/ }));
+    expect(await screen.findByText("You do not have permission to load Project Manager candidates. Ask an administrator to review your user lookup access.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
+
+    cleanup();
+    window.localStorage.setItem("nexus-locale", "ar");
+    renderProjectCreatePageWithManagerLookup(403);
+    fireEvent.click(await screen.findByRole("button", { name: /^(Create|إنشاء)$/ }));
+    expect(await screen.findByText("ليست لديك صلاحية تحميل قائمة مرشحي مديري المشروعات. اطلب من المسؤول مراجعة صلاحية البحث عن المستخدمين.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "إعادة المحاولة" })).not.toBeInTheDocument();
+  });
+
+  it("allows Project creation without selecting an initial manager", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn().mockImplementation((input: string, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/api/auth/me")) {
+        return Promise.resolve(new Response(JSON.stringify({ id: "u", email: "a@b.c", firstName: "A", lastName: "B", fullName: "A B", roles: [], permissions: ["Project.View", "Project.Create"] }), { status: 200 }));
+      }
+      if (url.includes("/api/me/perspectives")) {
+        return Promise.resolve(new Response(JSON.stringify({ availablePerspectives: [], scope: { portfolioIds: [], programIds: [], projectIds: [] } }), { status: 200 }));
+      }
+      if (url.includes("/api/users/workflow-lookups/projects/managers")) {
+        return Promise.resolve(new Response(JSON.stringify([{ id: "manager-1", fullName: "Project Manager" }]), { status: 200 }));
+      }
+      if (url.includes("/api/users/workflow-lookups/projects")) {
+        return Promise.resolve(new Response(JSON.stringify([{ id: "manager-1", fullName: "Project Manager" }]), { status: 200 }));
+      }
+      if (url.includes("/api/currencies")) {
+        return Promise.resolve(new Response(JSON.stringify([
+          { id: "eur", code: "EUR", name: "Euro", symbol: "€", exchangeRate: 0.9, isBase: false },
+          { id: "usd", code: "USD", name: "US Dollar", symbol: "$", exchangeRate: 1, isBase: true },
+        ]), { status: 200 }));
+      }
+      if (url.includes("/api/organization/units")) return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+      if (url.includes("/api/portfolios")) return Promise.resolve(new Response(JSON.stringify({ items: [] }), { status: 200 }));
+      if (url.includes("/api/programs")) return Promise.resolve(new Response(JSON.stringify({ items: [] }), { status: 200 }));
+      if (url.includes("/api/projects") && init?.method === "POST") {
+        return Promise.resolve(new Response(JSON.stringify({ id: "unassigned-project", publicId: "unassigned-project-public" }), { status: 201 }));
+      }
+      if (url.includes("/api/projects")) return Promise.resolve(new Response(JSON.stringify(page), { status: 200 }));
+      return Promise.resolve(new Response("null", { status: 200 }));
+    });
+    renderPage(fetchMock);
+
+    fireEvent.click(await screen.findByRole("button", { name: /^(Create|إنشاء)$/ }));
+    const sheet = await screen.findByRole("dialog", { name: "New Project" });
+    fireEvent.change(within(sheet).getByPlaceholderText("Name"), { target: { value: "Unassigned Project" } });
+    await waitFor(() => expect(within(sheet).getByText(/USD.*US Dollar.*\$/)).toBeInTheDocument());
+    await user.click(within(sheet).getByRole("button", { name: "New Project" }));
+
+    await waitFor(() => expect(fetchMock.mock.calls.some(([input, init]) => String(input).includes("/api/projects") && init?.method === "POST")).toBe(true));
+    const createCall = fetchMock.mock.calls.find(([input, init]) => String(input).includes("/api/projects") && init?.method === "POST");
+    const payload = JSON.parse(String(createCall?.[1]?.body));
+    expect(payload).toMatchObject({ name: "Unassigned Project", currency: "USD" });
+    expect(payload).not.toHaveProperty("projectManagerId");
   });
 });

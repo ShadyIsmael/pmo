@@ -29,8 +29,10 @@ public sealed class CommitmentService : ICommitmentService
 
     public async Task<Result<PurchaseCommitmentDto>> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var commitment = await _context.Set<PurchaseCommitment>()
-            .AsNoTracking()
+        var accessError = FinancePermissionGuard.Require(_httpContextAccessor, "Commitment.View");
+        if (accessError is not null) return Result<PurchaseCommitmentDto>.Failure(accessError);
+        var commitment = await ApplyManagementScope(_context.Set<PurchaseCommitment>().AsNoTracking()
+            .Where(item => item.TenantId == CurrentTenant()))
             .FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
         return commitment is null
             ? Result<PurchaseCommitmentDto>.Failure(Error.NotFound("Commitment not found"))
@@ -42,7 +44,10 @@ public sealed class CommitmentService : ICommitmentService
     {
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 200);
-        var query = ApplyManagementScope(_context.Set<PurchaseCommitment>().AsNoTracking().Where(c => !c.IsDeleted));
+        if (FinancePermissionGuard.Require(_httpContextAccessor, "Commitment.View") is not null)
+            return new PagedResult<PurchaseCommitmentDto>(Array.Empty<PurchaseCommitmentDto>(), page, pageSize, 0);
+        var query = ApplyManagementScope(_context.Set<PurchaseCommitment>().AsNoTracking()
+            .Where(c => c.TenantId == CurrentTenant() && !c.IsDeleted));
         if (projectId.HasValue) query = query.Where(c => c.ProjectId == projectId);
         var total = await query.CountAsync(cancellationToken);
         var items = await query
@@ -56,6 +61,10 @@ public sealed class CommitmentService : ICommitmentService
     public async Task<Result<PurchaseCommitmentDto>> CreateAsync(
         CreateCommitmentDto dto, string userId, CancellationToken cancellationToken = default)
     {
+        var accessError = FinancePermissionGuard.Require(_httpContextAccessor, "Commitment.Create");
+        if (accessError is not null) return Result<PurchaseCommitmentDto>.Failure(accessError);
+        if (!CanAccessProject(dto.ProjectId))
+            return Result<PurchaseCommitmentDto>.Failure(Error.Forbidden("The commitment is outside the actor's current project scope."));
         await using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
         if (dto.ProjectId == Guid.Empty)
             return Result<PurchaseCommitmentDto>.Failure(Error.Validation("ProjectId is required"));
@@ -71,11 +80,13 @@ public sealed class CommitmentService : ICommitmentService
             return Result<PurchaseCommitmentDto>.Failure(Error.NotFound("Project not found"));
 
         if (dto.BudgetId.HasValue && !await _context.Set<Budget>().AnyAsync(
-                budget => budget.Id == dto.BudgetId.Value && budget.ProjectId == dto.ProjectId && !budget.IsDeleted,
+                budget => budget.Id == dto.BudgetId.Value && budget.TenantId == CurrentTenant() && budget.ProjectId == dto.ProjectId && !budget.IsDeleted,
                 cancellationToken))
             return Result<PurchaseCommitmentDto>.Failure(Error.NotFound("Budget not found for this project"));
 
-        var currency = (projectRef.Currency ?? "GBP").Trim().ToUpperInvariant();
+        var currency = projectRef.Currency?.Trim().ToUpperInvariant();
+        if (string.IsNullOrWhiteSpace(currency) || currency.Length != 3 || currency.Any(character => character is < 'A' or > 'Z'))
+            return Result<PurchaseCommitmentDto>.Failure(Error.Validation("The project must have a valid configured currency before a commitment can be created."));
 
         var capacityError = await BudgetAuthority.ValidateCommitmentAsync(_context, _projectLookup, dto.ProjectId, null, dto.Amount, cancellationToken);
         if (capacityError is not null) return Result<PurchaseCommitmentDto>.Failure(capacityError);
@@ -97,28 +108,36 @@ public sealed class CommitmentService : ICommitmentService
         };
 
         _context.Set<PurchaseCommitment>().Add(commitment);
+        await AuditAsync("PurchaseCommitment", commitment.Id, "Create", userId, null, dto, cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
-        await AuditAsync("PurchaseCommitment", commitment.Id, "Create", userId, null, dto, cancellationToken);
 
         return Result<PurchaseCommitmentDto>.Success(commitment.ToDto());
     }
 
     private IQueryable<PurchaseCommitment> ApplyManagementScope(IQueryable<PurchaseCommitment> query)
     {
-        if (_managementContext is null) return query;
-        var projectIds = _managementContext.Current?.Scope.ProjectIds.ToArray();
-        if (projectIds is null) return query.Where(_ => false);
-        return query.Where(item => item.ProjectId.HasValue
-            ? projectIds.Contains(item.ProjectId.Value)
-            : !item.BudgetId.HasValue);
+        var management = _managementContext?.Current;
+        if (management is null || management.TenantId != CurrentTenant() || management.Scope is null)
+            return query.Where(_ => false);
+        var projectIds = management.Scope.ProjectIds.ToArray();
+        return query.Where(item => item.ProjectId.HasValue && projectIds.Contains(item.ProjectId.Value));
+    }
+
+    private bool CanAccessProject(Guid projectId)
+    {
+        var management = _managementContext?.Current;
+        return management is not null && management.TenantId == CurrentTenant() && management.Scope is not null
+            && management.Scope.ProjectIds.Contains(projectId);
     }
 
     public async Task<Result<PurchaseCommitmentDto>> UpdateAsync(
         Guid id, UpdateCommitmentDto dto, string userId, CancellationToken cancellationToken = default)
     {
+        var accessError = FinancePermissionGuard.Require(_httpContextAccessor, "Commitment.Edit");
+        if (accessError is not null) return Result<PurchaseCommitmentDto>.Failure(accessError);
         await using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
-        var commitment = await _context.Set<PurchaseCommitment>()
+        var commitment = await ApplyManagementScope(_context.Set<PurchaseCommitment>().Where(item => item.TenantId == CurrentTenant()))
             .FirstOrDefaultAsync(c => c.Id == id && !c.IsDeleted, cancellationToken);
         if (commitment is null)
             return Result<PurchaseCommitmentDto>.Failure(Error.NotFound("Commitment not found"));
@@ -152,9 +171,9 @@ public sealed class CommitmentService : ICommitmentService
         commitment.UpdatedAt = DateTime.UtcNow;
         commitment.RowVersion = NewVersion();
 
+        await AuditAsync("PurchaseCommitment", commitment.Id, "Update", userId, original, dto, cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
-        await AuditAsync("PurchaseCommitment", commitment.Id, "Update", userId, original, dto, cancellationToken);
 
         return Result<PurchaseCommitmentDto>.Success(commitment.ToDto());
     }
@@ -162,7 +181,9 @@ public sealed class CommitmentService : ICommitmentService
     public async Task<Result> CloseAsync(
         Guid id, byte[] rowVersion, string userId, CancellationToken cancellationToken = default)
     {
-        var commitment = await _context.Set<PurchaseCommitment>()
+        var accessError = FinancePermissionGuard.Require(_httpContextAccessor, "Commitment.Close");
+        if (accessError is not null) return Result.Failure(accessError);
+        var commitment = await ApplyManagementScope(_context.Set<PurchaseCommitment>().Where(item => item.TenantId == CurrentTenant()))
             .FirstOrDefaultAsync(c => c.Id == id && !c.IsDeleted, cancellationToken);
         if (commitment is null)
             return Result.Failure(Error.NotFound("Commitment not found"));
@@ -179,15 +200,17 @@ public sealed class CommitmentService : ICommitmentService
         commitment.UpdatedAt = DateTime.UtcNow;
         commitment.RowVersion = NewVersion();
 
-        await _context.SaveChangesAsync(cancellationToken);
         await AuditAsync("PurchaseCommitment", commitment.Id, "Close", userId, original, "Closed", cancellationToken);
+        await _context.SaveChangesAsync(cancellationToken);
         return Result.Success();
     }
 
     public async Task<Result> CancelAsync(
         Guid id, byte[] rowVersion, string userId, CancellationToken cancellationToken = default)
     {
-        var commitment = await _context.Set<PurchaseCommitment>()
+        var accessError = FinancePermissionGuard.Require(_httpContextAccessor, "Commitment.Cancel");
+        if (accessError is not null) return Result.Failure(accessError);
+        var commitment = await ApplyManagementScope(_context.Set<PurchaseCommitment>().Where(item => item.TenantId == CurrentTenant()))
             .FirstOrDefaultAsync(c => c.Id == id && !c.IsDeleted, cancellationToken);
         if (commitment is null)
             return Result.Failure(Error.NotFound("Commitment not found"));
@@ -204,15 +227,17 @@ public sealed class CommitmentService : ICommitmentService
         commitment.UpdatedAt = DateTime.UtcNow;
         commitment.RowVersion = NewVersion();
 
-        await _context.SaveChangesAsync(cancellationToken);
         await AuditAsync("PurchaseCommitment", commitment.Id, "Cancel", userId, original, "Cancelled", cancellationToken);
+        await _context.SaveChangesAsync(cancellationToken);
         return Result.Success();
     }
 
     public async Task<Result> DeleteAsync(
         Guid id, byte[] rowVersion, string userId, CancellationToken cancellationToken = default)
     {
-        var commitment = await _context.Set<PurchaseCommitment>()
+        var accessError = FinancePermissionGuard.Require(_httpContextAccessor, "Commitment.Delete");
+        if (accessError is not null) return Result.Failure(accessError);
+        var commitment = await ApplyManagementScope(_context.Set<PurchaseCommitment>().Where(item => item.TenantId == CurrentTenant()))
             .FirstOrDefaultAsync(c => c.Id == id && !c.IsDeleted, cancellationToken);
         if (commitment is null)
             return Result.Failure(Error.NotFound("Commitment not found"));
@@ -223,13 +248,14 @@ public sealed class CommitmentService : ICommitmentService
         if (!MatchesVersion(commitment.RowVersion, rowVersion))
             return Result.Failure(Error.Conflict("Commitment was changed by another user"));
 
+        var original = JsonSerializer.Serialize(commitment.ToDto());
+        await AuditAsync("PurchaseCommitment", commitment.Id, "Delete", userId, original, null, cancellationToken);
         commitment.IsDeleted = true;
         commitment.UpdatedBy = userId;
         commitment.UpdatedAt = DateTime.UtcNow;
         commitment.RowVersion = NewVersion();
 
         await _context.SaveChangesAsync(cancellationToken);
-        await AuditAsync("PurchaseCommitment", commitment.Id, "Delete", userId, null, null, cancellationToken);
         return Result.Success();
     }
 
@@ -257,16 +283,10 @@ public sealed class CommitmentService : ICommitmentService
     private async Task AuditAsync(string type, Guid id, string action, string userId,
         string? original, object? values, CancellationToken cancellationToken)
     {
-        await _auditService.LogAsync(new AuditEntry
-        {
-            EntityType = type,
-            EntityId = id,
-            Action = action,
-            UserId = Guid.TryParse(userId, out var parsed) ? parsed : null,
-            OriginalValues = original,
-            NewValues = values is null ? null : JsonSerializer.Serialize(values),
-            Timestamp = DateTime.UtcNow,
-            CreatedBy = userId
-        }, cancellationToken);
+        var actorName = _httpContextAccessor.HttpContext?.User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value
+            ?? _httpContextAccessor.HttpContext?.User.FindFirst("name")?.Value;
+        var result = await _auditService.AppendAsync(FinancialAuditEntryFactory.ForCurrentRecord(
+            _context, type, id, action, userId, actorName, original, values), cancellationToken);
+        if (result.IsFailure) throw new InvalidOperationException(result.Error?.Message ?? "Financial audit append failed.");
     }
 }

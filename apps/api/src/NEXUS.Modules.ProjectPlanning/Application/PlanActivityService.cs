@@ -922,12 +922,14 @@ public class PlanActivityService : IPlanActivityService
     private Guid GetCurrentTenantId()
     {
         var tenantId = _httpContextAccessor.HttpContext?.User.FindFirst("tenantId")?.Value;
-        if (!string.IsNullOrWhiteSpace(tenantId) && Guid.TryParse(tenantId, out var parsed))
+        if (_httpContextAccessor.HttpContext?.User.Identity?.IsAuthenticated == true
+            && Guid.TryParse(tenantId, out var parsed)
+            && parsed != Guid.Empty)
         {
             return parsed;
         }
 
-        return TenantConstants.DemoTenantId;
+        throw new InvalidOperationException("A trusted tenant context is required for project planning operations.");
     }
 
     private static Guid? TryParseGuid(string value) => GuidHelper.TryParse(value);

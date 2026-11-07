@@ -12,15 +12,19 @@ import { RichTextContent, RichTextEditor } from "@components/ui/rich-text-editor
 import { useFullWorkItem, useFullWorkItemActivity, useFullWorkItemAssignees, useFullWorkItemCommentMutation, useFullWorkItemComments, useFullWorkItemMutations, useFullWorkItemWorkflow } from "@api/workItemsFull";
 import type { WorkItemStatusDto } from "@api/workItems";
 import { useI18n } from "@i18n/messages";
+import { WorkItemStatusTrack } from "./WorkItemStatusTrack";
 
 function LoadingState({ label }: { label: string }) { return <p className="py-8 text-center text-sm text-muted-foreground">{label}</p>; }
 
-export function WorkItemDetailsSideSheetFull({ id, open, onOpenChange, canEdit, statuses }: {
+export function WorkItemDetailsSideSheetFull({ id, open, onOpenChange, canEdit, statuses, statusesLoading = false, statusesError = false, onRetryStatuses }: {
   id?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   canEdit: boolean;
   statuses: readonly WorkItemStatusDto[];
+  statusesLoading?: boolean;
+  statusesError?: boolean;
+  onRetryStatuses?: () => void;
 }) {
   const { t, locale, formatDate } = useI18n();
   const itemQuery = useFullWorkItem(id, open);
@@ -41,6 +45,14 @@ export function WorkItemDetailsSideSheetFull({ id, open, onOpenChange, canEdit, 
   const status = statuses.find((candidate) => candidate.code === item?.status);
   const deadline = item?.type === "Issue" ? item.targetResolutionDate ?? item.dueDate : item?.dueDate;
   const currentTarget = item?.assignedResourceId ? `resource:${item.assignedResourceId}` : item?.assignedTeamId ? `team:${item.assignedTeamId}` : "";
+  const eligibleAssignees = assigneesQuery.data ?? [];
+  const currentTargetIsEligible = eligibleAssignees.some((candidate) => `${candidate.targetType === "Resource" ? "resource" : "team"}:${candidate.targetId}` === currentTarget);
+  const assigneeOptions = [
+    { value: "", label: t("workItems.unassigned") },
+    ...(currentTarget && !currentTargetIsEligible ? [{ value: currentTarget, label: item?.assignedTeamName ?? item?.assignedResourceName ?? t("common.notAvailable") }] : []),
+    ...eligibleAssignees.map((candidate) => ({ value: `${candidate.targetType === "Resource" ? "resource" : "team"}:${candidate.targetId}`, label: `${candidate.name} · ${candidate.targetType === "Resource" ? t("workItems.resourceTarget") : t("workItems.teamTarget")}` })),
+  ];
+  const assigneeScopeUnavailable = Boolean(item?.projectId && !item.projectPublicId);
   const commentItems = commentsQuery.data?.items ?? [];
   const rootComments = commentItems.filter((entry) => !entry.parentCommentId);
   const repliesByComment = commentItems.reduce<Record<string, typeof commentItems>>((grouped, entry) => {
@@ -112,9 +124,21 @@ export function WorkItemDetailsSideSheetFull({ id, open, onOpenChange, canEdit, 
           </TabsList>
           <TabsContent value="details" className="space-y-4">
             <Card className="border-border/70 shadow-sm"><CardHeader className="border-b bg-muted/20 px-4 py-3"><CardTitle className="text-sm">{t("workItems.detailPrimaryFields")}</CardTitle></CardHeader><CardContent className="grid gap-4 p-4 sm:grid-cols-2">
-              <div className="space-y-2"><span className="text-xs text-muted-foreground">{t("workItems.currentState")}</span><p className="text-sm font-semibold">{locale === "ar" ? status?.nameAr ?? item.status : status?.nameEn ?? item.status}</p>{workflow.isLoading ? <p className="text-xs text-muted-foreground">{t("common.loading")}</p> : workflow.availableTransitions.length ? <div className="flex flex-wrap gap-2">{workflow.availableTransitions.map((option) => <Button key={option.code} type="button" size="sm" variant="outline" disabled={!canEdit || !option.canExecute || workflow.execute.isPending} onClick={() => void changeStatus(option.code)}>{locale === "ar" ? option.nameAr : option.nameEn}</Button>)}</div> : <p className="text-xs text-muted-foreground">{t("workItems.noTransitions")}</p>}</div>
+              <div className="space-y-2"><span className="text-xs text-muted-foreground">{t("workItems.currentState")}</span><WorkItemStatusTrack
+                statuses={statuses}
+                currentStateCode={workflow.currentState ?? item.status}
+                currentStateNameEn={workflow.data?.currentStateNameEn}
+                currentStateNameAr={workflow.data?.currentStateNameAr}
+                transitions={workflow.availableTransitions}
+                canTransition={canEdit}
+                transitionPending={workflow.execute.isPending}
+                loading={workflow.isLoading || statusesLoading}
+                error={statusesError}
+                onRetry={onRetryStatuses}
+                onTransition={(code) => void changeStatus(code)}
+              /></div>
               <Field label={t("common.priority")} value={t(`workItems.priority${item.priority}`)} />
-              <div className="space-y-1"><span className="text-xs text-muted-foreground">{t("workItems.assignee")}</span>{canEdit && item.projectId ? <SearchableSelect aria-label={t("workItems.assignee")} options={[{ value: "", label: t("workItems.unassigned") }, ...(currentTarget && !(assigneesQuery.data ?? []).some((candidate) => `${candidate.targetType === "Resource" ? "resource" : "team"}:${candidate.targetId}` === currentTarget) ? [{ value: currentTarget, label: item.assignedTeamName ?? item.assignedResourceName ?? t("common.notAvailable") }] : []), ...(assigneesQuery.data ?? []).map((candidate) => ({ value: `${candidate.targetType === "Resource" ? "resource" : "team"}:${candidate.targetId}`, label: `${candidate.name} · ${candidate.targetType === "Resource" ? t("workItems.resourceTarget") : t("workItems.teamTarget")}` }))]} value={currentTarget} onValueChange={(value) => void changeAssignee(value)} placeholder={t("workItems.unassigned")} searchPlaceholder={t("workItems.searchAssignees")} emptyText={t("workItems.noEligibleProjectPeople")} loadingText={t("common.loading")} loading={assigneesQuery.isLoading} disabled={mutations.update.isPending} /> : <p className="flex items-center gap-1.5 text-sm font-medium"><UserRound className="h-3.5 w-3.5" />{item.assignedTeamName ?? item.assignedResourceName ?? t("workItems.unassigned")}</p>}{canEdit && !item.projectId ? <p className="text-xs text-muted-foreground">{t("workItems.selectProjectFirst")}</p> : null}</div>
+              <div className="space-y-1"><span className="text-xs text-muted-foreground">{t("workItems.assignee")}</span>{canEdit && item.projectId ? <SearchableSelect aria-label={t("workItems.assignee")} options={assigneeOptions} value={currentTarget} onValueChange={(value) => void changeAssignee(value)} placeholder={t("workItems.unassigned")} searchPlaceholder={t("workItems.searchAssignees")} emptyText={t(assigneesQuery.isError ? "workItems.assigneesLoadError" : "workItems.noEligibleProjectPeople")} loadingText={t("common.loading")} loading={assigneesQuery.isLoading} disabled={mutations.update.isPending} /> : <p className="flex items-center gap-1.5 text-sm font-medium"><UserRound className="h-3.5 w-3.5" />{item.assignedTeamName ?? item.assignedResourceName ?? t("workItems.unassigned")}</p>}{canEdit && !item.projectId ? <p className="text-xs text-muted-foreground">{t("workItems.selectProjectFirst")}</p> : null}{canEdit && item.projectId && assigneesQuery.isError ? <div role="alert" className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs text-destructive">{t("workItems.assigneesLoadError")}</p><Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => void assigneesQuery.refetch()}>{t("common.retry")}</Button></div> : null}{canEdit && assigneeScopeUnavailable ? <p role="alert" className="text-xs text-destructive">{t("workItems.assigneesScopeUnavailable")}</p> : null}{canEdit && item.projectId && !assigneeScopeUnavailable && assigneesQuery.isSuccess && eligibleAssignees.length === 0 && !currentTarget ? <p className="text-xs text-muted-foreground">{t("workItems.noEligibleProjectPeople")}</p> : null}</div>
               <Field label={t(item.type === "Issue" ? "workItems.targetResolutionDate" : "workItems.deadline")} value={deadline ? formatDate(deadline) : t("common.notAvailable")} icon={<CalendarDays className="h-3.5 w-3.5" />} />
             </CardContent></Card>
             <Card className="border-border/70 shadow-sm"><CardHeader className="border-b bg-muted/20 px-4 py-3"><CardTitle className="text-sm">{item.type === "Issue" ? t("workItems.issueDetails") : t("workItems.taskDetails")}</CardTitle></CardHeader><CardContent className="grid gap-4 p-4 sm:grid-cols-2">

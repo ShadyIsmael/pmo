@@ -31,6 +31,7 @@ public sealed class ProjectPeopleController : ControllerBase
     public async Task<IActionResult> Add(Guid projectId, [FromBody] CreateProjectPersonDto dto, CancellationToken cancellationToken)
     {
         if (!await CanManageAsync(dto.RelationshipType)) return Forbid();
+        if (dto.TeamId.HasValue && !(await _authorization.AuthorizeAsync(User, "Team.View")).Succeeded) return Forbid();
         var result = await _service.AddAsync(projectId, dto, ActorId(), cancellationToken);
         return result.IsFailure ? Map(result.Error!) : Ok(result.Value);
     }
@@ -39,6 +40,8 @@ public sealed class ProjectPeopleController : ControllerBase
     public async Task<IActionResult> Update(Guid projectId, Guid personId, [FromBody] UpdateProjectPersonDto dto, CancellationToken cancellationToken)
     {
         if (!await CanManageAsync(dto.RelationshipType ?? dto.Source)) return Forbid();
+        if ((dto.TeamId.HasValue || await _service.IsTeamGroupAssignmentAsync(projectId, personId, cancellationToken))
+            && !(await _authorization.AuthorizeAsync(User, "Team.View")).Succeeded) return Forbid();
         var result = await _service.UpdateAsync(projectId, personId, dto, ActorId(), cancellationToken);
         return result.IsFailure ? Map(result.Error!) : Ok(result.Value);
     }
@@ -47,6 +50,8 @@ public sealed class ProjectPeopleController : ControllerBase
     public async Task<IActionResult> Remove(Guid projectId, Guid personId, [FromBody] RemoveProjectPersonDto dto, CancellationToken cancellationToken)
     {
         if (!await CanManageAsync(dto.Source)) return Forbid();
+        if ((dto.TeamId.HasValue || await _service.IsTeamGroupAssignmentAsync(projectId, personId, cancellationToken))
+            && !(await _authorization.AuthorizeAsync(User, "Team.View")).Succeeded) return Forbid();
         byte[]? rowVersion = null;
         if (!string.IsNullOrWhiteSpace(dto.RowVersion))
         {
@@ -65,13 +70,22 @@ public sealed class ProjectPeopleController : ControllerBase
         return result.IsFailure ? Map(result.Error!) : NoContent();
     }
 
+    /// <summary>
+    /// Team membership is a resourcing action (Resource.Assign). Sponsors and other
+    /// governance stakeholders are not: they change project accountability, so they require
+    /// the dedicated stakeholder permission instead of the allocation permission.
+    /// </summary>
     private async Task<bool> CanManageAsync(string? relationship)
     {
-        var resource = await _authorization.AuthorizeAsync(User, "Resource.Assign");
-        var stakeholders = await _authorization.AuthorizeAsync(User, "Stakeholders.Manage");
-        return string.Equals(relationship, ProjectRelationshipType.TeamMember, StringComparison.OrdinalIgnoreCase)
-            ? resource.Succeeded
-            : resource.Succeeded || stakeholders.Succeeded;
+        if (string.Equals(relationship, ProjectRelationshipType.TeamMember, StringComparison.OrdinalIgnoreCase))
+            return (await _authorization.AuthorizeAsync(User, "Resource.Assign")).Succeeded;
+
+        if (string.Equals(relationship, ProjectRelationshipType.Sponsor, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(relationship, ProjectRelationshipType.Stakeholder, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(relationship, ProjectRelationshipType.Other, StringComparison.OrdinalIgnoreCase))
+            return (await _authorization.AuthorizeAsync(User, "Stakeholders.Manage")).Succeeded;
+
+        return false;
     }
 
     private string ActorId() => User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
@@ -88,5 +102,6 @@ public sealed class ProjectPeopleController : ControllerBase
 public sealed class RemoveProjectPersonDto
 {
     public string Source { get; set; } = string.Empty;
+    public Guid? TeamId { get; set; }
     public string? RowVersion { get; set; }
 }

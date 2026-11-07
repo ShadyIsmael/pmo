@@ -13,31 +13,32 @@ namespace NEXUS.Api.Tests.Unit;
 public sealed class ProjectStatusReportWorkflowTests
 {
     [Fact]
-    public void Accepts_only_the_complete_report_workflow_graph()
+    public void Accepts_only_the_direct_draft_to_published_workflow_graph()
     {
         var version = CreateVersion();
 
         Assert.True(ProjectStatusReportWorkflow.ValidateWorkflowVersion(version).IsSuccess);
 
-        version.Transitions.Add(new WorkflowTransition
-        {
-            Code = "SKIP_REVIEW",
-            FromState = version.States.Single(state => state.Code == "Draft"),
-            ToState = version.States.Single(state => state.Code == "Published"),
-            IsActive = true
-        });
+        version.States.Add(new WorkflowState { Code = "Generated", IsActive = true });
 
         Assert.True(ProjectStatusReportWorkflow.ValidateWorkflowVersion(version).IsFailure);
     }
 
     [Fact]
-    public async Task Generate_transition_requires_a_persisted_snapshot_fact()
+    public void Recognizes_the_legacy_graph_for_safe_versioning()
+    {
+        Assert.True(ProjectStatusReportWorkflow.IsLegacyWorkflowVersion(CreateLegacyVersion()));
+        Assert.False(ProjectStatusReportWorkflow.IsLegacyWorkflowVersion(CreateVersion()));
+    }
+
+    [Fact]
+    public async Task Direct_publish_requires_configured_report_sections()
     {
         using var db = new DbContext(new DbContextOptionsBuilder().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
-        var adapter = CreateAdapter(db, "StatusReport.Generate");
-        var transition = CreateTransitionContext(adapter, "GENERATE", "Draft", "Generated", new Dictionary<string, object?>
+        var adapter = CreateAdapter(db, "StatusReport.Publish");
+        var transition = CreateTransitionContext(adapter, "PUBLISH", "Draft", "Published", new Dictionary<string, object?>
         {
-            ["HasGeneratedSnapshot"] = false
+            ["HasConfiguredSections"] = false
         });
 
         var result = await adapter.ValidateTransitionAsync(transition);
@@ -47,22 +48,19 @@ public sealed class ProjectStatusReportWorkflowTests
     }
 
     [Fact]
-    public async Task Report_author_cannot_approve_their_own_snapshot()
+    public async Task Direct_publish_requires_explicit_permission_claim()
     {
         using var db = new DbContext(new DbContextOptionsBuilder().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
-        var authorId = Guid.NewGuid();
-        var adapter = CreateAdapter(db, "StatusReport.Approve");
-        var facts = new Dictionary<string, object?>
+        var adapter = CreateAdapter(db, "StatusReport.Edit");
+        var transition = CreateTransitionContext(adapter, "PUBLISH", "Draft", "Published", new Dictionary<string, object?>
         {
-            ["HasGeneratedSnapshot"] = true,
-            ["PreparedByUserId"] = authorId
-        };
+            ["HasConfiguredSections"] = true
+        });
 
-        var selfApproval = CreateTransitionContext(adapter, "APPROVE", "Submitted", "Approved", facts, authorId.ToString());
-        var otherReviewer = CreateTransitionContext(adapter, "APPROVE", "Submitted", "Approved", facts, Guid.NewGuid().ToString());
+        var result = await adapter.ValidateTransitionAsync(transition);
 
-        Assert.True((await adapter.ValidateTransitionAsync(selfApproval)).IsFailure);
-        Assert.True((await adapter.ValidateTransitionAsync(otherReviewer)).IsSuccess);
+        Assert.True(result.IsFailure);
+        Assert.Equal(403, result.Error!.StatusCode);
     }
 
     [Fact]
@@ -72,9 +70,9 @@ public sealed class ProjectStatusReportWorkflowTests
         var identity = new ClaimsIdentity([new Claim(ClaimTypes.Role, "SystemAdministrator")], "unit-test");
         var accessor = new HttpContextAccessor { HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(identity) } };
         var adapter = new ProjectStatusReportWorkflowAdapter(db, accessor, Mock.Of<IManagementContextAccessor>());
-        var transition = CreateTransitionContext(adapter, "SUBMIT", "Generated", "Submitted", new Dictionary<string, object?>
+        var transition = CreateTransitionContext(adapter, "PUBLISH", "Draft", "Published", new Dictionary<string, object?>
         {
-            ["HasGeneratedSnapshot"] = true
+            ["HasConfiguredSections"] = true
         });
 
         var result = await adapter.ValidateTransitionAsync(transition);
@@ -133,7 +131,7 @@ public sealed class ProjectStatusReportWorkflowTests
     {
         var version = new WorkflowDefinitionVersion();
         var states = new Dictionary<string, WorkflowState>(StringComparer.OrdinalIgnoreCase);
-        foreach (var code in new[] { "Draft", "Generated", "Submitted", "Approved", "Returned", "Published" })
+        foreach (var code in new[] { "Draft", "Published" })
         {
             var state = new WorkflowState
             {
@@ -148,12 +146,7 @@ public sealed class ProjectStatusReportWorkflowTests
 
         foreach (var (code, from, to) in new[]
         {
-            ("GENERATE", "Draft", "Generated"),
-            ("SUBMIT", "Generated", "Submitted"),
-            ("APPROVE", "Submitted", "Approved"),
-            ("RETURN", "Submitted", "Returned"),
-            ("REOPEN", "Returned", "Draft"),
-            ("PUBLISH", "Approved", "Published")
+            ("PUBLISH", "Draft", "Published")
         })
         {
             version.Transitions.Add(new WorkflowTransition
@@ -163,6 +156,31 @@ public sealed class ProjectStatusReportWorkflowTests
                 ToState = states[to],
                 IsActive = true
             });
+        }
+        return version;
+    }
+
+    private static WorkflowDefinitionVersion CreateLegacyVersion()
+    {
+        var version = new WorkflowDefinitionVersion();
+        var states = new Dictionary<string, WorkflowState>(StringComparer.OrdinalIgnoreCase);
+        foreach (var code in new[] { "Draft", "Generated", "Submitted", "Approved", "Returned", "Published" })
+        {
+            var state = new WorkflowState { Code = code, IsInitial = code == "Draft", IsFinal = code == "Published", IsActive = true };
+            states.Add(code, state);
+            version.States.Add(state);
+        }
+        foreach (var (code, from, to) in new[]
+        {
+            ("GENERATE", "Draft", "Generated"),
+            ("SUBMIT", "Generated", "Submitted"),
+            ("APPROVE", "Submitted", "Approved"),
+            ("RETURN", "Submitted", "Returned"),
+            ("REOPEN", "Returned", "Draft"),
+            ("PUBLISH", "Approved", "Published")
+        })
+        {
+            version.Transitions.Add(new WorkflowTransition { Code = code, FromState = states[from], ToState = states[to], IsActive = true });
         }
         return version;
     }

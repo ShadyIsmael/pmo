@@ -8,7 +8,7 @@ import { SideSheet, SideSheetBody, SideSheetFooter } from "@components/ui/SideSh
 import { Skeleton } from "@components/ui/Skeleton";
 import { useI18n } from "@i18n/messages";
 import { useCostProfiles, useCreateCostProfile, useResourceReferenceData, type ResourceDto } from "./api/resources";
-import { useCurrencies } from "@features/administration/api/admin";
+import { useWorkflowCurrencyLookup } from "@features/projects/lib/project-lookups";
 
 interface ResourceCostProfilesSheetProps {
   open: boolean;
@@ -45,9 +45,10 @@ export function ResourceCostProfilesSheet({ open, resource, canView, canManage, 
   const { t, formatCurrency, formatDate } = useI18n();
   const resourceId = resource?.id ?? "";
   const profilesQuery = useCostProfiles(resourceId, open && canView && Boolean(resourceId));
-  const currenciesQuery = useCurrencies(open && canView && canManage);
+  const currenciesQuery = useWorkflowCurrencyLookup(open && canView && canManage);
   const referenceDataQuery = useResourceReferenceData(open && canView && canManage);
   const createMutation = useCreateCostProfile();
+  const resetCreateMutation = createMutation.reset;
   const [form, setForm] = React.useState<CostProfileForm>(emptyForm);
   const [formError, setFormError] = React.useState<string | null>(null);
 
@@ -55,8 +56,8 @@ export function ResourceCostProfilesSheet({ open, resource, canView, canManage, 
     if (!open) return;
     setForm(emptyForm());
     setFormError(null);
-    createMutation.reset();
-  }, [open, resourceId]);
+    resetCreateMutation();
+  }, [open, resourceId, resetCreateMutation]);
 
   React.useEffect(() => {
     if (!open || !canManage || form.currency || !currenciesQuery.data?.length) return;
@@ -70,7 +71,7 @@ export function ResourceCostProfilesSheet({ open, resource, canView, canManage, 
 
   const close = () => {
     setFormError(null);
-    createMutation.reset();
+    resetCreateMutation();
     onOpenChange(false);
   };
 

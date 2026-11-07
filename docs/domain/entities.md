@@ -24,7 +24,7 @@ All entities inherit from `BaseEntity` which provides: `Id` (Guid), `TenantId`, 
 | Attribute | Detail |
 |-----------|--------|
 | **Table** | `Roles` |
-| **Key Properties** | Name, Description, Category, IsSystem |
+| **Key Properties** | Name, Description, Category, IsSystem, SystemRoleKey (immutable set-once trusted system identity; `tenant.admin` identifies the protected Tenant Admin) |
 | **Relationships** | HasMany UserRoles, HasMany Permissions |
 | **Value Objects** | None |
 | **MT/SD/AU** | Yes / Yes / Yes |
@@ -109,7 +109,7 @@ All entities inherit from `BaseEntity` which provides: `Id` (Guid), `TenantId`, 
 ### Program
 | Table: `Programs` |
 | Key Properties: Name, Code, Description, PortfolioId, Status, ProgramManagerId, StartDate, EndDate, Budget, ActualSpend, Health, Priority |
-| Relationships: BelongsTo Portfolio |
+| Relationships: BelongsTo exactly one Portfolio (required, same tenant; required EF foreign key) |
 
 ### StrategicObjective
 | Table: `StrategicObjectives` |
@@ -134,7 +134,7 @@ All entities inherit from `BaseEntity` which provides: `Id` (Guid), `TenantId`, 
 ### Project
 | Table: `Projects` |
 | Key Properties: Name, Code, Description, ProgramId, Status, Priority, Category, ProjectManagerId, PortfolioId, StartDate, EndDate, ActualStartDate, ActualEndDate, Budget, ActualCost, PlannedValue, EarnedValue, CostVariance, ScheduleVariance, Progress, Health, Phase, RiskRating, BusinessCase |
-| Relationships: HasMany Members, Phases, Stakeholders, Milestones, Deliverables, Baselines, StatusReports |
+| Relationships: May belong to a Program within its Portfolio, or directly to a Portfolio with no Program; the current EF model keeps these parent IDs as nullable scalar columns and the Project service enforces same-tenant and hierarchy consistency. Also has many Members, Phases, Stakeholders, Milestones, Deliverables, Baselines, and StatusReports |
 
 ### ProjectPlanDraft
 | Table: `ProjectPlanDrafts` |

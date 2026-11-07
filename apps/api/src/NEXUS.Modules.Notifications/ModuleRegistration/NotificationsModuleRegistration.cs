@@ -9,12 +9,19 @@ public static class NotificationsModuleRegistration
     public static IServiceCollection AddNotificationsModule(this IServiceCollection services)
     {
         services.AddOptions<FirebaseOptions>().BindConfiguration("Firebase");
+        services.AddOptions<SmtpDestinationPolicyOptions>()
+            .BindConfiguration("EmailNotifications:DestinationPolicy");
         services.AddOptions<NotificationDeliveryOptions>()
             .BindConfiguration("NotificationDelivery")
             .Validate(options => IsValid(options), "Notification delivery settings are invalid.")
             .ValidateOnStart();
         services.AddScoped<INotificationService, NotificationService>();
         services.AddScoped<IDeviceTokenService, DeviceTokenService>();
+        services.AddScoped<IEmailNotificationSender, SmtpEmailNotificationChannel>();
+        services.AddSingleton<ISmtpDestinationPolicy, SmtpDestinationPolicy>();
+        services.AddScoped<ISmtpEmailNotificationTransport, SmtpEmailNotificationTransport>();
+        services.AddScoped<IEmailNotificationTestOperations, SmtpEmailNotificationTestOperations>();
+        services.AddScoped<IEmailNotificationSettingsService, EmailNotificationSettingsService>();
         services.AddSingleton<FirebaseMessagingClient>();
         services.AddScoped<IPushNotificationSender, FirebaseNotificationChannel>();
         services.AddScoped<NotificationDeliveryProcessor>();
@@ -27,4 +34,5 @@ public static class NotificationsModuleRegistration
         try { options.Validate(); return true; }
         catch (InvalidOperationException) { return false; }
     }
+
 }

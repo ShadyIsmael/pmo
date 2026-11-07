@@ -44,14 +44,14 @@ public class ResourceController : ControllerBase
     }
 
     [HttpGet("base-calendars")]
-    [Authorize(Policy = "Resource.View")]
+    [Authorize(Policy = "WorkflowLookup.Resource.BaseCalendars")]
     public async Task<IActionResult> GetBaseCalendars(CancellationToken cancellationToken)
     {
         return Ok(await _resourceService.GetBaseCalendarsAsync(cancellationToken));
     }
 
     [HttpGet("reference-data")]
-    [Authorize(Policy = "Resource.View")]
+    [Authorize(Policy = "WorkflowLookup.Resource.ReferenceData")]
     public async Task<IActionResult> GetReferenceData(CancellationToken cancellationToken)
     {
         return Ok(await _resourceService.GetReferenceDataAsync(cancellationToken));
@@ -63,12 +63,19 @@ public class ResourceController : ControllerBase
     {
         var validation = await _createValidator.ValidateAsync(dto, cancellationToken);
         if (!validation.IsValid)
-            return ValidationProblem(new ValidationProblemDetails(validation.Errors
+        {
+            var problem = new ValidationProblemDetails(validation.Errors
                 .GroupBy(error => error.PropertyName)
                 .ToDictionary(group => group.Key, group => group.Select(error => error.ErrorMessage).Distinct().ToArray()))
             {
-                Status = StatusCodes.Status400BadRequest
-            });
+                Status = StatusCodes.Status400BadRequest,
+                Title = "Validation failed",
+                Detail = string.Join(" ", validation.Errors.Select(error => error.ErrorMessage).Distinct())
+            };
+            problem.Extensions["code"] = "VALIDATION_ERROR";
+            problem.Extensions["traceId"] = HttpContext.TraceIdentifier;
+            return BadRequest(problem);
+        }
 
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
         var result = await _resourceService.CreateAsync(dto, userId, cancellationToken);
@@ -82,12 +89,19 @@ public class ResourceController : ControllerBase
     {
         var validation = await _updateValidator.ValidateAsync(dto, cancellationToken);
         if (!validation.IsValid)
-            return ValidationProblem(new ValidationProblemDetails(validation.Errors
+        {
+            var problem = new ValidationProblemDetails(validation.Errors
                 .GroupBy(error => error.PropertyName)
                 .ToDictionary(group => group.Key, group => group.Select(error => error.ErrorMessage).Distinct().ToArray()))
             {
-                Status = StatusCodes.Status400BadRequest
-            });
+                Status = StatusCodes.Status400BadRequest,
+                Title = "Validation failed",
+                Detail = string.Join(" ", validation.Errors.Select(error => error.ErrorMessage).Distinct())
+            };
+            problem.Extensions["code"] = "VALIDATION_ERROR";
+            problem.Extensions["traceId"] = HttpContext.TraceIdentifier;
+            return BadRequest(problem);
+        }
 
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
         var result = await _resourceService.UpdateAsync(id, dto, userId, cancellationToken);
@@ -101,13 +115,20 @@ public class ResourceController : ControllerBase
         if (error.StatusCode == StatusCodes.Status409Conflict) return Conflict(new { error = error.Message });
         if (error.FieldName is not null)
         {
-            return ValidationProblem(new ValidationProblemDetails(new Dictionary<string, string[]>
+            var problem = new ValidationProblemDetails(new Dictionary<string, string[]>
             {
                 [error.FieldName] = [error.Message]
             })
             {
-                Status = StatusCodes.Status400BadRequest
-            });
+                Status = error.StatusCode,
+                Title = "Validation failed",
+                Detail = error.Message
+            };
+            problem.Extensions["code"] = error.Code;
+            problem.Extensions["traceId"] = HttpContext.TraceIdentifier;
+            return error.StatusCode == StatusCodes.Status400BadRequest
+                ? BadRequest(problem)
+                : new ObjectResult(problem) { StatusCode = error.StatusCode };
         }
         return BadRequest(new { error = error.Message });
     }

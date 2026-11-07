@@ -12,7 +12,7 @@ NEXUS PMO is a comprehensive project portfolio management (PPM) platform designe
 
 NEXUS PMO follows a **Modular Monolith** architecture with **Clean Architecture** and **Domain-Driven Design (DDD)** principles. The system is composed of 19 backend modules, each with its own domain, application, and API layers, all compiled into a single deployment unit with strict module boundaries.
 
-- **Frontend:** Next.js 14 (App Router), TypeScript, Tailwind CSS, shadcn/ui
+- **Frontend:** React 18, Vite 6, React Router 6, TypeScript, Tailwind CSS, shadcn/ui
 - **Backend:** .NET 10 LTS, ASP.NET Core, Entity Framework Core, MediatR
 - **Database:** PostgreSQL 16, Redis 7 (caching/queues)
 - **Communication:** RESTful API, JWT authentication, domain events via MediatR
@@ -38,7 +38,7 @@ cd pmo
 
 # 2. Install frontend dependencies
 npm install
-cd apps/web && npm install && cd ../..
+npm --prefix apps/web-react ci
 
 # 3. Restore .NET packages
 cd apps/api && dotnet restore && cd ../..
@@ -46,9 +46,9 @@ cd apps/api && dotnet restore && cd ../..
 # 4. Start infrastructure
 docker compose up -d postgres redis
 
-# 5. Run database migrations (auto-applied on first run)
-#    The API auto-creates the database schema and seeds demo data
-#    when running in Development mode.
+# 5. Apply database migrations through scripts/database/ef-database-gate.ps1
+#    after verifying the Development target and reviewing the generated SQL.
+#    API startup does not migrate or seed by default in Development.
 
 # 6. Start the API
 npm run dev:api
@@ -57,24 +57,13 @@ npm run dev:api
 npm run dev:web
 
 # 8. Open browser
-#    Frontend: http://localhost:3000
+#    Frontend: http://localhost:4100
 #    API Swagger: http://localhost:5000/swagger
 ```
 
-### Demo Accounts
+### Development Administrator Bootstrap
 
-After seeding, the following demo accounts are available:
-
-| Role | Email | Password |
-|------|-------|----------|
-| Executive | executive@nexuspmo.local | Demo123! |
-| Portfolio Manager | portfolio.manager@nexuspmo.local | Demo123! |
-| Project Manager | project.manager@nexuspmo.local | Demo123! |
-| Team Member | team.member@nexuspmo.local | Demo123! |
-| PMO Administrator | pmo.admin@nexuspmo.local | Demo123! |
-| Finance Controller | finance.controller@nexuspmo.local | Demo123! |
-| Resource Manager | resource.manager@nexuspmo.local | Demo123! |
-| System Administrator | admin@nexuspmo.local | Demo123! |
+Explicit Development seeding creates the protected tenant Admin role and the `admin@nexus.com` account. It does not create shared-password demo users. Set `NEXUS_ADMIN_BOOTSTRAP_PASSWORD` through a secure Development secret source before the first seed; the value must contain at least 12 characters. The configured temporary-password expiry defaults to 24 hours, and the seeded account must change its password at first login. Ordinary seed reruns preserve the existing Admin hash and password-change/expiry state; standalone seed operations require the ordinary verified-backup gate. The only no-backup seed is the mandatory immediate seed step of an explicitly Product Owner-authorized reset of Development `Shady/NexusPmo`, after exact environment/server/database verification. For temporary UAT access, `Security:LocalPasswords:DevelopmentAdminTemporaryPasswordBypassEnabled` is false by default and can be enabled only for the seeded Admin in Development; it does not change stored credentials or grants and is ignored in Production. Set it back to false after UAT. An expired bootstrap credential can also be recovered through the local Development-only interactive recovery command, which requires an independently verified backup and uses the application password hasher. No administrator password is stored in source control.
 
 ---
 
@@ -132,7 +121,7 @@ The sidebar provides access to all major areas:
 | Plugin | Status | Description |
 |--------|--------|-------------|
 | Jira Integration | Placeholder | Bi-directional sync with Jira |
-| Microsoft Project | Placeholder | MPP import/export |
+| Microsoft Project | Partial | MPP import is implemented in the Project Planning adapter; MPP export is not available |
 | Internal Ticketing | Placeholder | Internal helpdesk ticketing system |
 | Test Management | Placeholder | Test case management and execution |
 | Mobile Workspace | Placeholder | Native mobile application |
@@ -144,7 +133,7 @@ The sidebar provides access to all major areas:
 ## Technology Stack
 
 ### Frontend
-- **Framework:** Next.js 14 (App Router)
+- **Framework:** React 18 with Vite 6 and React Router 6
 - **Language:** TypeScript 5
 - **UI Library:** React 18
 - **Component System:** shadcn/ui (Radix UI primitives)
@@ -153,8 +142,8 @@ The sidebar provides access to all major areas:
 - **Forms:** React Hook Form + Zod
 - **Tables:** TanStack React Table
 - **Charts:** Recharts
-- **Internationalization:** next-intl (English + Arabic)
-- **Theme:** next-themes (dark/light mode)
+- **Internationalization:** English and Arabic React message catalogs
+- **Theme:** shared React theme configuration
 - **HTTP Client:** Fetch API (wrapped)
 
 ### Backend
@@ -204,14 +193,14 @@ C:\Projects\pmo
 │   │       ├── NEXUS.Modules.Integrations/
 │   │       ├── NEXUS.Modules.PluginManagement/
 │   │       └── NEXUS.Modules.AIPlanning/
-│   ├── web/                          # Next.js 14 frontend
+│   ├── web-react/                          # React + Vite frontend
 │   │   └── src/
-│   │       ├── app/                  # App Router pages
+│   │       ├── routes/                  # React Router configuration
 │   │       ├── components/           # Shared components
 │   │       │   ├── layout/           # Shell (Sidebar, Header, etc.)
 │   │       │   └── ui/              # shadcn/ui primitives
 │   │       ├── lib/                  # Utilities, navigation, permissions
-│   │       └── messages/             # i18n translations
+│   │       └── i18n/             # English and Arabic message catalogs
 │   └── mobile-placeholder/           # Future mobile app
 ├── modules/                          # Module documentation/interfaces
 ├── plugins/                          # Plugin source code
@@ -264,27 +253,27 @@ Services:
 - **PostgreSQL 16** on port 5432
 - **Redis 7** on port 6379
 - **NEXUS API** on port 5000
-- **NEXUS Web** on port 3000
+- **NEXUS React/Vite SPA** on Docker host port 4000; local Vite uses 4100
 - **Background Worker** (internal)
 
 ---
 
 ## Environment Configuration
 
-### Frontend (`apps/web/.env.local`)
+### Frontend (`apps/web-react/.env.local`)
 ```env
-NEXT_PUBLIC_API_URL=http://localhost:5000/api
+VITE_API_URL=http://localhost:5000
 ```
 
 ### API (`apps/api/src/NEXUS.Api/appsettings.json`)
 ```json
 {
   "ConnectionStrings": {
-    "PostgreSQL": "Host=localhost;Port=5432;Database=nexus_pmo;Username=nexus;Password=nexus_dev_2024",
+    "PostgreSQL": "Host=localhost;Port=5432;Database=nexus_pmo;Username=nexus;Password=<set via environment>",
     "SqlServer": "Server=.;Database=NEXUS_PMO;Trusted_Connection=True;TrustServerCertificate=True"
   },
   "Jwt": {
-    "Secret": "NEXUS-Demo-Secret-Key-Minimum-16-Chars!",
+    "Secret": "<not stored in source; supply through Jwt__Secret>",
     "Issuer": "NEXUS",
     "Audience": "NEXUS-API"
   },
