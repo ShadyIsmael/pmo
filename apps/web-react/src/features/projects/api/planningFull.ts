@@ -22,7 +22,8 @@ export interface PlanSchedulingAnalysisDto { planVersionId: string; hasCycle: bo
 export interface PlanScheduledActivityStateDto { activityId: string; startDate?: string; endDate?: string; duration: number; }
 export interface PlanSchedulingExplanationDto { activityId: string; schedulingMode: PlanSchedulingMode; constraintType: PlanConstraintType; constraintDate?: string; deadline?: string; effectiveCalendarId?: string; calendarOverride: boolean; start?: string; finish?: string; duration: number; totalSlack?: number; freeSlack?: number; critical: boolean; deadlineExceeded: boolean; hasPredecessors: boolean; hasSuccessors: boolean; reasons: { code: string; relatedActivityId?: string; dependencyType?: PlanDependencyType; lagDays?: number; workingDays?: number; constraintType?: PlanConstraintType }[]; issues: { code: string; message: string; activityId: string; relatedActivityId?: string }[]; }
 export interface PlanAssignmentDto { id: string; planVersionId: string; activityId: string; resourceId: string; resourceName?: string; assignedWorkHours?: number; allocationPct?: number; hoursPerWeek?: number; plannedHours?: number; startDate?: string; endDate?: string; rowVersion: string; }
-export interface PlanAssignmentCapacityDto { resourceId: string; startDate: string; endDate: string; projectAllocationPercentage: number; resourceCapacityHoursPerWeek: number; projectCapacityHoursPerWeek: number; projectCapacityHours: number; assignedWorkHours: number; remainingAssignableHours: number; }
+export interface PlanAssignmentCapacityDto { resourceId: string; startDate: string; endDate: string; membershipStartDate?: string; membershipEndDate?: string; isScheduleWithinMembership?: boolean; projectAllocationPercentage: number; resourceCapacityHoursPerWeek: number; projectCapacityHoursPerWeek: number; projectCapacityHours: number; assignedWorkHours: number; remainingAssignableHours: number; }
+export interface CreatePlanAssignmentsBatchInput { activityId: string; assignments: Array<{ resourceId: string; assignedWorkHours: number; startDate?: string; endDate?: string; projectRoleId?: string }>; }
 export interface PlanCalendarDto { id: string; projectId: string; planVersionId: string; name: string; description?: string; templateId?: string; isDefault: boolean; effectiveFrom?: string; effectiveTo?: string; dayRules: { dayOfWeek: number | string; isWorkingDay: boolean; startTime?: string; endTime?: string; breakStartTime?: string; breakEndTime?: string }[]; holidays: { name: string; description?: string; date: string; endDate?: string; isRecurring: boolean }[]; rowVersion: string; }
 export interface ResourceLookupDto { id: string; name: string; jobTitle?: string; isActive: boolean; }
 export interface PlanImportStatisticsDto { tasks: number; milestones: number; wbsLevels: number; dependencies: number; resources: number; assignments: number; calendars: number; actualDates: number; }
@@ -113,6 +114,7 @@ export const planningApiFull = {
   updateDependency: (projectId: string, planId: string, id: string, body: unknown) => api.put<PlanDependencyDto>(endpoints.planning.dependency(projectId, planId, id), body),
   deleteDependency: (projectId: string, planId: string, id: string, rowVersion: string) => api.delete<void>(`${endpoints.planning.dependency(projectId, planId, id)}?rowVersion=${encodeURIComponent(rowVersion)}`),
   createAssignment: (projectId: string, planId: string, body: unknown) => api.post<PlanAssignmentDto>(endpoints.planning.assignments(projectId, planId), body),
+  createAssignmentsBatch: (projectId: string, planId: string, body: CreatePlanAssignmentsBatchInput) => api.post<PlanAssignmentDto[]>(`${endpoints.planning.assignments(projectId, planId)}/batch`, body),
   updateAssignment: (projectId: string, planId: string, id: string, body: unknown) => api.put<PlanAssignmentDto>(endpoints.planning.assignment(projectId, planId, id), body),
   deleteAssignment: (projectId: string, planId: string, id: string, rowVersion: string) => api.delete<void>(`${endpoints.planning.assignment(projectId, planId, id)}?rowVersion=${encodeURIComponent(rowVersion)}`),
   createCalendar: (projectId: string, planId: string, body: unknown) => api.post<PlanCalendarDto>(endpoints.planning.calendars(projectId, planId), body),
@@ -198,6 +200,14 @@ export function usePlanningFullMutations(projectId: string, planId?: string) {
     undoGridCommand: useMutation({ mutationFn: (commandId: string) => planningApiFull.undoGridCommand(projectId, planId!, commandId), onSuccess: invalidate }),
     redoGridCommand: useMutation({ mutationFn: (commandId: string) => planningApiFull.redoGridCommand(projectId, planId!, commandId), onSuccess: invalidate }),
     createAssignment: useMutation({ mutationFn: (body: unknown) => planningApiFull.createAssignment(projectId, planId!, body), onSuccess: invalidate }),
+    createAssignmentsBatch: useMutation({
+      mutationFn: (body: CreatePlanAssignmentsBatchInput) => planningApiFull.createAssignmentsBatch(projectId, planId!, body),
+      onSuccess: () => {
+        invalidate();
+        void client.invalidateQueries({ queryKey: ["projects", "overview", projectId] });
+        void client.invalidateQueries({ queryKey: ["projects", "team-capacity", projectId] });
+      },
+    }),
     updateAssignment: useMutation({ mutationFn: ({ id, body }: { id: string; body: unknown }) => planningApiFull.updateAssignment(projectId, planId!, id, body), onSuccess: invalidate }),
     deleteAssignment: useMutation({ mutationFn: ({ id, rowVersion }: { id: string; rowVersion: string }) => planningApiFull.deleteAssignment(projectId, planId!, id, rowVersion), onSuccess: invalidate }),
     createCalendar: useMutation({ mutationFn: (body: unknown) => planningApiFull.createCalendar(projectId, planId!, body), onSuccess: invalidate }),

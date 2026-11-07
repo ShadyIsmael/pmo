@@ -1,5 +1,7 @@
+using System.Data;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using NEXUS.Modules.Identity.Application;
 using NEXUS.Modules.Identity.Domain;
 using NEXUS.Modules.Portfolio.Domain;
 using NEXUS.SharedKernel;
@@ -10,12 +12,20 @@ namespace NEXUS.Modules.Portfolio.Application;
 
 public sealed class ProgramService : IProgramService
 {
-    private static readonly Guid DemoTenant = Guid.Parse("11111111-1111-1111-1111-111111111111");
     private readonly DbContext _db;
     private readonly IHttpContextAccessor _http;
     private readonly IManagementContextAccessor? _managementContext;
+    private readonly IManagementScopeResolver? _managementScopeResolver;
+    private readonly IUserEffectivePermissionService? _effectivePermissions;
 
-    public ProgramService(DbContext db, IHttpContextAccessor http, IManagementContextAccessor? managementContext = null) { _db = db; _http = http; _managementContext = managementContext; }
+    public ProgramService(DbContext db, IHttpContextAccessor http, IManagementContextAccessor? managementContext = null, IManagementScopeResolver? managementScopeResolver = null, IUserEffectivePermissionService? effectivePermissions = null)
+    {
+        _db = db;
+        _http = http;
+        _managementContext = managementContext;
+        _managementScopeResolver = managementScopeResolver;
+        _effectivePermissions = effectivePermissions;
+    }
 
     public async Task<Result<ProgramDto>> GetByIdAsync(Guid id, CancellationToken ct = default)
     {
@@ -43,11 +53,143 @@ public sealed class ProgramService : IProgramService
         return new PagedResult<ProgramDto>(items, page, pageSize, total);
     }
 
+    public async Task<PagedResult<ProgramLookupDto>> GetProjectLookupAsync(int page, int pageSize, string? search, string? status, Guid? portfolioId, CancellationToken ct = default)
+    {
+        page = Math.Max(page, 1);
+        pageSize = Math.Clamp(pageSize, 1, 200);
+        var tenantId = TenantId();
+        var context = _managementContext?.Current;
+        if (context is not null && context.TenantId != tenantId)
+            return new PagedResult<ProgramLookupDto>(Array.Empty<ProgramLookupDto>(), page, pageSize, 0);
+
+        var query = InScope(_db.Set<Entity>().AsNoTracking().Where(item => item.TenantId == tenantId));
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim();
+            query = query.Where(item => item.Name.Contains(term) || (item.Code != null && item.Code.Contains(term)));
+        }
+        if (!string.IsNullOrWhiteSpace(status)) query = query.Where(item => item.Status == status);
+        if (portfolioId.HasValue) query = query.Where(item => item.PortfolioId == portfolioId.Value);
+
+        var total = await query.CountAsync(ct);
+        var items = await query
+            .OrderByDescending(item => item.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(item => new ProgramLookupDto
+            {
+                Id = item.Id,
+                Name = item.Name,
+                PortfolioId = item.PortfolioId,
+                Currency = item.Currency
+            })
+            .ToListAsync(ct);
+        return new PagedResult<ProgramLookupDto>(items, page, pageSize, total);
+    }
+
+    public async Task<Result<IReadOnlyList<ProgramPortfolioLookupDto>>> GetEligiblePortfoliosForCreationAsync(CancellationToken ct = default)
+    {
+        var context = _managementContext?.Current;
+        if (context is null)
+            return Result<IReadOnlyList<ProgramPortfolioLookupDto>>.Failure(Error.Unauthorized("A valid tenant management context is required."));
+        if (context.EffectiveReadOnly)
+            return Result<IReadOnlyList<ProgramPortfolioLookupDto>>.Failure(Error.Forbidden("Program creation is unavailable in a read-only management context."));
+        if (_managementScopeResolver is null)
+            return Result<IReadOnlyList<ProgramPortfolioLookupDto>>.Failure(Error.Forbidden("Portfolio assignment scope is unavailable."));
+
+        var creationScope = await GetProgramPortfolioAssignmentScopeAsync(context, ct);
+        if (creationScope is null)
+            return Result<IReadOnlyList<ProgramPortfolioLookupDto>>.Failure(Error.Forbidden("Portfolio creation scope is unavailable."));
+
+        var permissions = _effectivePermissions is null
+            ? new HashSet<string>(StringComparer.Ordinal)
+            : await _effectivePermissions.GetEffectivePermissionsAsync(context.UserId, context.TenantId, ct);
+        if (!permissions.Contains("Program.Create"))
+            return Result<IReadOnlyList<ProgramPortfolioLookupDto>>.Failure(Error.Forbidden(
+                "Program creation permission is required."));
+        var hasCreateAcross = permissions.Contains("Program.CreateAcrossPortfolios");
+
+        if (creationScope.NativePortfolioIds.Count == 0 && !hasCreateAcross)
+            return Result<IReadOnlyList<ProgramPortfolioLookupDto>>.Success(Array.Empty<ProgramPortfolioLookupDto>());
+
+        var query = _db.Set<Portfolio.Domain.Portfolio>()
+            .AsNoTracking()
+            .Where(item => item.TenantId == context.TenantId && !item.IsDeleted && item.Status == "Active");
+        query = query.Where(item => creationScope.NativePortfolioIds.Contains(item.Id)
+            || (hasCreateAcross && item.OrganizationId.HasValue
+                && creationScope.OrganizationIds.Contains(item.OrganizationId.Value)));
+
+        var portfolios = await query
+            .OrderBy(item => item.Name)
+            .ThenBy(item => item.Code)
+            .Select(item => new ProgramPortfolioLookupDto
+            {
+                Id = item.Id,
+                Name = item.Name,
+                Code = item.Code,
+                Status = item.Status,
+                Currency = item.Currency
+            })
+            .ToListAsync(ct);
+
+        return Result<IReadOnlyList<ProgramPortfolioLookupDto>>.Success(portfolios);
+    }
+
+    public async Task<Result<IReadOnlyList<ProgramPortfolioLookupDto>>> GetEligiblePortfoliosForEditingAsync(CancellationToken ct = default)
+    {
+        var context = _managementContext?.Current;
+        if (context is null)
+            return Result<IReadOnlyList<ProgramPortfolioLookupDto>>.Failure(Error.Unauthorized("A valid tenant management context is required."));
+        if (context.EffectiveReadOnly)
+            return Result<IReadOnlyList<ProgramPortfolioLookupDto>>.Failure(Error.Forbidden("Program editing is unavailable in a read-only management context."));
+        if (_managementScopeResolver is null)
+            return Result<IReadOnlyList<ProgramPortfolioLookupDto>>.Failure(Error.Forbidden("Portfolio assignment scope is unavailable."));
+
+        var permissions = _effectivePermissions is null
+            ? new HashSet<string>(StringComparer.Ordinal)
+            : await _effectivePermissions.GetEffectivePermissionsAsync(context.UserId, context.TenantId, ct);
+        if (!permissions.Contains("Program.Edit"))
+            return Result<IReadOnlyList<ProgramPortfolioLookupDto>>.Failure(Error.Forbidden("Program edit permission is required."));
+
+        var assignmentScope = await GetProgramPortfolioAssignmentScopeAsync(context, ct);
+        if (assignmentScope is null)
+            return Result<IReadOnlyList<ProgramPortfolioLookupDto>>.Failure(Error.Forbidden("Portfolio assignment scope is unavailable."));
+        if (assignmentScope.NativePortfolioIds.Count == 0)
+            return Result<IReadOnlyList<ProgramPortfolioLookupDto>>.Success(Array.Empty<ProgramPortfolioLookupDto>());
+
+        var portfolios = await _db.Set<Portfolio.Domain.Portfolio>()
+            .AsNoTracking()
+            .Where(item => item.TenantId == context.TenantId
+                && !item.IsDeleted
+                && item.Status == "Active"
+                && assignmentScope.NativePortfolioIds.Contains(item.Id))
+            .OrderBy(item => item.Name)
+            .ThenBy(item => item.Code)
+            .Select(item => new ProgramPortfolioLookupDto
+            {
+                Id = item.Id,
+                Name = item.Name,
+                Code = item.Code,
+                Status = item.Status,
+                Currency = item.Currency
+            })
+            .ToListAsync(ct);
+
+        return Result<IReadOnlyList<ProgramPortfolioLookupDto>>.Success(portfolios);
+    }
+
     public async Task<Result<ProgramDto>> CreateAsync(SaveProgramDto dto, string userId, CancellationToken ct = default)
     {
+        var tenantId = TenantId();
+        if (tenantId == Guid.Empty || !HasManagementScope(tenantId))
+            return Result<ProgramDto>.Failure(Error.Forbidden("A valid tenant management context is required."));
+        if (dto.ProgramManagerId.HasValue && !CanAssignInitialProgramManager())
+            return Result<ProgramDto>.Failure(Error.Forbidden("Handover.AdminInitiate is required to assign an initial Program Manager."));
         var validation = Validate(dto); if (validation is not null) return Result<ProgramDto>.Failure(validation);
+        if (!await CanCreateProgramInPortfolioAsync(dto.PortfolioId, ct)) return Result<ProgramDto>.Failure(Error.NotFound("Portfolio not found"));
         if (!await IsValidPortfolioAsync(dto.PortfolioId, ct)) return Result<ProgramDto>.Failure(Error.Validation("Invalid Portfolio"));
-        if (dto.ProgramManagerId.HasValue && !await IsActiveUserAsync(dto.ProgramManagerId.Value, ct)) return Result<ProgramDto>.Failure(Error.Validation("Program Manager must be an active user"));
+        if (!await IsActivePortfolioAsync(dto.PortfolioId, ct)) return Result<ProgramDto>.Failure(Error.Validation("A Program must be assigned to an active Portfolio"));
+        if (dto.ProgramManagerId.HasValue && !await IsEligibleProgramManagerAsync(dto.ProgramManagerId.Value, ct)) return Result<ProgramDto>.Failure(Error.Validation("Select an eligible active Program Manager in this tenant."));
         if (await IsDuplicateCodeAsync(dto.Name, null, ct)) return Result<ProgramDto>.Failure(Error.Validation("A program with this name already exists"));
 
         var code = await NextCodeAsync(ct);
@@ -55,44 +197,56 @@ public sealed class ProgramService : IProgramService
         var portfolio = await _db.Set<Portfolio.Domain.Portfolio>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == dto.PortfolioId, ct);
         var currency = !string.IsNullOrWhiteSpace(dto.Currency)
             ? dto.Currency.Trim().ToUpperInvariant()
-            : (portfolio?.Currency ?? "USD");
-        if (!await IsValidCurrencyAsync(currency, ct)) return Result<ProgramDto>.Failure(Error.Validation("Currency must be an active configured currency"));
+            : (portfolio?.Currency ?? string.Empty);
+        if (string.IsNullOrWhiteSpace(currency) || currency.Length != 3 || currency.Any(character => character is < 'A' or > 'Z') || !await IsValidCurrencyAsync(currency, ct)) return Result<ProgramDto>.Failure(Error.Validation("Currency must be an active configured 3-letter currency code"));
 
-        var entity = new Entity
+        for (var attempt = 0; attempt < 3; attempt++)
         {
-            TenantId = TenantId(),
-            Name = dto.Name.Trim(),
-            Code = code,
-            Description = dto.Description?.Trim(),
-            PortfolioId = dto.PortfolioId,
-            ProgramManagerId = dto.ProgramManagerId,
-            Status = dto.Status,
-            StartDate = dto.StartDate,
-            EndDate = dto.EndDate,
-            Currency = currency,
-            Budget = dto.Budget,
-            Health = dto.Health,
-            CreatedBy = userId
-        };
-        _db.Set<Entity>().Add(entity);
-        await _db.SaveChangesAsync(ct);
-
-        if (dto.ProgramManagerId.HasValue)
-        {
-            var assignment = new ProgramManagerAssignment
+            await using var transaction = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+            try
             {
-                TenantId = TenantId(),
-                ProgramId = entity.Id,
-                ProgramManagerId = dto.ProgramManagerId.Value,
-                StartDate = DateTime.UtcNow,
-                IsCurrent = true,
-                CreatedBy = userId
-            };
-            _db.Set<ProgramManagerAssignment>().Add(assignment);
-            await _db.SaveChangesAsync(ct);
-        }
+                var attemptCode = attempt == 0 ? code : await NextCodeAsync(ct);
+                var entity = new Entity
+                {
+                    TenantId = tenantId,
+                    Name = dto.Name.Trim(),
+                    Code = attemptCode,
+                    Description = dto.Description?.Trim(),
+                    PortfolioId = dto.PortfolioId,
+                    ProgramManagerId = dto.ProgramManagerId,
+                    Status = dto.Status,
+                    Currency = currency,
+                    CreatedBy = userId
+                };
+                _db.Set<Entity>().Add(entity);
+                await _db.SaveChangesAsync(ct);
 
-        return Result<ProgramDto>.Success(await MapAsync(entity, ct));
+                if (dto.ProgramManagerId.HasValue)
+                {
+                    var assignment = new ProgramManagerAssignment
+                    {
+                        TenantId = tenantId,
+                        ProgramId = entity.Id,
+                        ProgramManagerId = dto.ProgramManagerId.Value,
+                        StartDate = DateTime.UtcNow,
+                        IsCurrent = true,
+                        CreatedBy = userId
+                    };
+                    _db.Set<ProgramManagerAssignment>().Add(assignment);
+                    await _db.SaveChangesAsync(ct);
+                }
+
+                await transaction.CommitAsync(ct);
+                return Result<ProgramDto>.Success(await MapAsync(entity, ct));
+            }
+            catch (DbUpdateException)
+            {
+                await transaction.RollbackAsync(ct);
+                _db.ChangeTracker.Clear();
+                if (attempt == 2) throw;
+            }
+        }
+        return Result<ProgramDto>.Failure(Error.Conflict("Program creation conflicted; retry exhausted"));
     }
 
     public async Task<Result<ProgramDto>> UpdateAsync(Guid id, SaveProgramDto dto, string userId, CancellationToken ct = default)
@@ -102,9 +256,16 @@ public sealed class ProgramService : IProgramService
         if (entity is null) return Result<ProgramDto>.Failure(Error.NotFound("Program not found"));
         if (entity.ProgramManagerId.HasValue && entity.ProgramManagerId != dto.ProgramManagerId)
             return Result<ProgramDto>.Failure(Error.Validation("Program Manager changes must use the governed handover process"));
+        if (!entity.ProgramManagerId.HasValue && dto.ProgramManagerId.HasValue && !CanAssignInitialProgramManager())
+            return Result<ProgramDto>.Failure(Error.Forbidden("Handover.AdminInitiate is required to assign an initial Program Manager."));
         if (!await IsValidPortfolioAsync(dto.PortfolioId, ct)) return Result<ProgramDto>.Failure(Error.Validation("Invalid Portfolio"));
-        if (entity.PortfolioId != dto.PortfolioId && await HasProjectsAsync(id, ct)) return Result<ProgramDto>.Failure(Error.Validation("A Program with Projects cannot be moved to another Portfolio"));
-        if (dto.ProgramManagerId.HasValue && !await IsActiveUserAsync(dto.ProgramManagerId.Value, ct)) return Result<ProgramDto>.Failure(Error.Validation("Program Manager must be an active user"));
+        if (entity.PortfolioId != dto.PortfolioId)
+        {
+            if (!await CanAssignPortfolioAsync(dto.PortfolioId, ct)) return Result<ProgramDto>.Failure(Error.NotFound("Portfolio not found"));
+            if (!await IsActivePortfolioAsync(dto.PortfolioId, ct)) return Result<ProgramDto>.Failure(Error.Validation("A Program can only be moved to an active Portfolio"));
+            if (await HasProjectsAsync(id, ct)) return Result<ProgramDto>.Failure(Error.Validation("A Program with Projects cannot be moved to another Portfolio"));
+        }
+        if (dto.ProgramManagerId.HasValue && dto.ProgramManagerId != entity.ProgramManagerId && !await IsEligibleProgramManagerAsync(dto.ProgramManagerId.Value, ct)) return Result<ProgramDto>.Failure(Error.Validation("Select an eligible active Program Manager in this tenant."));
 
         if (dto.RowVersion.Length > 0) _db.Entry(entity).Property(x => x.RowVersion).OriginalValue = dto.RowVersion;
 
@@ -112,16 +273,12 @@ public sealed class ProgramService : IProgramService
         entity.Description = dto.Description?.Trim();
         entity.PortfolioId = dto.PortfolioId;
         entity.Status = dto.Status;
-        entity.StartDate = dto.StartDate;
-        entity.EndDate = dto.EndDate;
         if (!string.IsNullOrWhiteSpace(dto.Currency))
         {
             var currency = dto.Currency.Trim().ToUpperInvariant();
             if (!await IsValidCurrencyAsync(currency, ct)) return Result<ProgramDto>.Failure(Error.Validation("Currency must be an active configured currency"));
             entity.Currency = currency;
         }
-        entity.Budget = dto.Budget;
-        entity.Health = dto.Health;
         entity.UpdatedBy = userId;
 
         if (entity.ProgramManagerId != dto.ProgramManagerId)
@@ -142,7 +299,7 @@ public sealed class ProgramService : IProgramService
             {
                 var newAssignment = new ProgramManagerAssignment
                 {
-                    TenantId = TenantId(),
+                    TenantId = entity.TenantId,
                     ProgramId = id,
                     ProgramManagerId = dto.ProgramManagerId.Value,
                     StartDate = DateTime.UtcNow,
@@ -165,7 +322,7 @@ public sealed class ProgramService : IProgramService
 
     private async Task<Result> SetStatusAsync(Guid id, string status, string userId, bool requireArchived, CancellationToken ct)
     {
-        var entity = await _db.Set<Entity>().FirstOrDefaultAsync(x => x.Id == id, ct);
+        var entity = await InScope(_db.Set<Entity>()).FirstOrDefaultAsync(x => x.Id == id, ct);
         if (entity is null) return Result.Failure(Error.NotFound("Program not found"));
         if (requireArchived && entity.Status != "Archived") return Result.Failure(Error.Validation("Only archived programs can be reactivated"));
         entity.Status = status; entity.UpdatedBy = userId; await _db.SaveChangesAsync(ct); return Result.Success();
@@ -173,17 +330,94 @@ public sealed class ProgramService : IProgramService
 
     private async Task<string> NextCodeAsync(CancellationToken ct)
     {
-        var codes = await _db.Set<Entity>().Where(x => x.Code != null).Select(x => x.Code!).ToListAsync(ct);
+        var tenantId = TenantId();
+        if (tenantId == Guid.Empty) return "PGM-0001";
+        var codes = await _db.Set<Entity>().Where(x => x.TenantId == tenantId && x.Code != null).Select(x => x.Code!).ToListAsync(ct);
         var next = codes.Select(x => x.StartsWith("PGM-", StringComparison.OrdinalIgnoreCase) && int.TryParse(x[4..], out var n) ? n : 0).DefaultIfEmpty(0).Max() + 1;
         return $"PGM-{next:0000}";
     }
 
-    private async Task<bool> IsValidPortfolioAsync(Guid id, CancellationToken ct) => id != Guid.Empty && await _db.Set<Portfolio.Domain.Portfolio>().AnyAsync(x => x.Id == id && x.TenantId == TenantId() && !x.IsDeleted, ct);
+    private async Task<bool> IsValidPortfolioAsync(Guid id, CancellationToken ct)
+    {
+        var tenantId = TenantId();
+        return tenantId != Guid.Empty && id != Guid.Empty
+            && await _db.Set<Portfolio.Domain.Portfolio>().AnyAsync(x => x.Id == id && x.TenantId == tenantId && !x.IsDeleted, ct);
+    }
+
+    private async Task<bool> IsActivePortfolioAsync(Guid id, CancellationToken ct)
+    {
+        var tenantId = TenantId();
+        return tenantId != Guid.Empty && id != Guid.Empty
+            && await _db.Set<Portfolio.Domain.Portfolio>().AnyAsync(x => x.Id == id && x.TenantId == tenantId && !x.IsDeleted && x.Status == "Active", ct);
+    }
+    private async Task<bool> CanAssignPortfolioAsync(Guid id, CancellationToken ct)
+    {
+        var context = _managementContext?.Current;
+        if (context is null) return false;
+        if (context.EffectiveReadOnly) return false;
+        if (_managementScopeResolver is not null)
+            return await _managementScopeResolver.CanAccessPortfolioAsync(context.UserId, context.TenantId, id, ct);
+
+        // Preserve the strict existing fallback for hosts that do not register
+        // the resolver; API requests use the native assignment resolver above.
+        return context.SelectedPerspective == ManagementPerspective.PortfolioManager
+            && context.Scope.PortfolioIds.Contains(id);
+    }
+
+    private async Task<bool> CanCreateProgramInPortfolioAsync(Guid id, CancellationToken ct)
+    {
+        var context = _managementContext?.Current;
+        if (context is null || context.EffectiveReadOnly || id == Guid.Empty) return false;
+
+        var creationScope = await GetProgramPortfolioAssignmentScopeAsync(context, ct);
+        if (creationScope is not null && creationScope.NativePortfolioIds.Contains(id))
+        {
+            if (_effectivePermissions is null) return false;
+            var nativePermissions = await _effectivePermissions.GetEffectivePermissionsAsync(context.UserId, context.TenantId, ct);
+            return nativePermissions.Contains("Program.Create");
+        }
+
+        // Exceptional path: explicit permission Program.CreateAcrossPortfolios
+        if (_effectivePermissions is not null)
+        {
+            var permissions = await _effectivePermissions.GetEffectivePermissionsAsync(context.UserId, context.TenantId, ct);
+            if (permissions.Contains("Program.Create")
+                && permissions.Contains("Program.CreateAcrossPortfolios")
+                && permissions.Contains("Portfolio.View"))
+            {
+                var portfolio = await _db.Set<Portfolio.Domain.Portfolio>().AsNoTracking()
+                    .FirstOrDefaultAsync(x => x.Id == id && x.TenantId == context.TenantId && !x.IsDeleted && x.Status == "Active", ct);
+                  return portfolio is not null
+                      && portfolio.OrganizationId.HasValue
+                      && creationScope.OrganizationIds.Contains(portfolio.OrganizationId.Value);
+            }
+        }
+
+        return false;
+    }
+
+    private async Task<ProgramPortfolioAssignmentScope?> GetProgramPortfolioAssignmentScopeAsync(ManagementContext context, CancellationToken ct)
+    {
+        if (_managementScopeResolver is null) return null;
+        // Resolve native Portfolio Manager assignments independently of a selected
+        // Program or Project context so perspective changes do not drop valid options.
+        var snapshot = await _managementScopeResolver.GetPerspectiveSnapshotAsync(
+            context.UserId,
+            context.TenantId,
+            cancellationToken: ct);
+        var portfolioIds = snapshot.AvailablePerspectives
+            .Where(item => item.Perspective == ManagementPerspective.PortfolioManager && item.IsNative)
+            .SelectMany(item => item.Contexts)
+            .Select(item => item.Id)
+            .ToHashSet();
+        return new ProgramPortfolioAssignmentScope(portfolioIds, snapshot.Scope.OrganizationIds.ToHashSet());
+    }
     private async Task<bool> HasProjectsAsync(Guid programId, CancellationToken ct)
     {
         var connection = _db.Database.GetDbConnection();
         if (connection.State != System.Data.ConnectionState.Open) await connection.OpenAsync(ct);
-        using var command = connection.CreateCommand(); command.CommandText = "SELECT COUNT(*) FROM Projects WHERE ProgramId = @pid AND IsDeleted = 0";
+        using var command = connection.CreateCommand(); command.CommandText = "SELECT COUNT(*) FROM Projects WHERE TenantId = @tenant AND ProgramId = @pid AND IsDeleted = 0";
+        var tenant = command.CreateParameter(); tenant.ParameterName = "@tenant"; tenant.Value = TenantId(); command.Parameters.Add(tenant);
         var parameter = command.CreateParameter(); parameter.ParameterName = "@pid"; parameter.Value = programId; command.Parameters.Add(parameter);
         return Convert.ToInt32(await command.ExecuteScalarAsync(ct)) > 0;
     }
@@ -197,26 +431,46 @@ public sealed class ProgramService : IProgramService
         var tenant = command.CreateParameter(); tenant.ParameterName = "@tenant"; tenant.Value = TenantId(); command.Parameters.Add(tenant);
         return Convert.ToInt32(await command.ExecuteScalarAsync(ct)) > 0;
     }
-    private async Task<bool> IsActiveUserAsync(Guid id, CancellationToken ct) => id != Guid.Empty && await _db.Set<User>().AnyAsync(x => x.Id == id && x.IsActive, ct);
+    private async Task<bool> IsEligibleProgramManagerAsync(Guid id, CancellationToken ct)
+    {
+        var tenantId = TenantId();
+        if (tenantId == Guid.Empty || id == Guid.Empty || _effectivePermissions is null) return false;
+
+        var isActiveSameTenantUser = await _db.Set<User>().AnyAsync(user =>
+            user.Id == id && user.TenantId == tenantId && user.IsActive && !user.IsDeleted
+            && user.UserRoles.Any(userRole => userRole.TenantId == tenantId && !userRole.IsDeleted
+                && userRole.Role.TenantId == tenantId && !userRole.Role.IsDeleted
+                && userRole.Role.Category == "Management"), ct);
+        if (!isActiveSameTenantUser) return false;
+
+        var permissions = await _effectivePermissions.GetEffectivePermissionsAsync(id, tenantId, ct);
+        return permissions.Contains("Program.View") && permissions.Contains("Handover.Approve");
+    }
+
     private async Task<bool> IsDuplicateCodeAsync(string name, Guid? excludeId, CancellationToken ct)
     {
         var normalizedName = name.Trim().ToLowerInvariant();
-        return await _db.Set<Entity>().AnyAsync(x => x.Name.ToLower() == normalizedName && !x.IsDeleted && (!excludeId.HasValue || x.Id != excludeId.Value), ct);
+        var tenantId = TenantId();
+        return tenantId != Guid.Empty && await _db.Set<Entity>().AnyAsync(x => x.TenantId == tenantId && x.Name.ToLower() == normalizedName && !x.IsDeleted && (!excludeId.HasValue || x.Id != excludeId.Value), ct);
     }
 
     private async Task<ProgramDto> MapAsync(Entity entity, CancellationToken ct)
     {
-        var portfolio = entity.PortfolioId != Guid.Empty ? await _db.Set<Portfolio.Domain.Portfolio>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == entity.PortfolioId, ct) : null;
+        var portfolio = entity.PortfolioId != Guid.Empty ? await _db.Set<Portfolio.Domain.Portfolio>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == entity.PortfolioId && x.TenantId == entity.TenantId, ct) : null;
         var effectiveCurrency = string.IsNullOrWhiteSpace(entity.Currency) ? (portfolio?.Currency ?? "") : entity.Currency;
         User? manager = null;
-        if (entity.ProgramManagerId.HasValue) manager = await _db.Set<User>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == entity.ProgramManagerId.Value, ct);
+        if (entity.ProgramManagerId.HasValue) manager = await _db.Set<User>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == entity.ProgramManagerId.Value && x.TenantId == entity.TenantId, ct);
         var projectCount = 0;
         try
         {
             var cmd = _db.Database.GetDbConnection();
             if (cmd.State != System.Data.ConnectionState.Open) await cmd.OpenAsync(ct);
             using var command = cmd.CreateCommand();
-            command.CommandText = "SELECT COUNT(*) FROM Projects WHERE ProgramId = @pid AND IsDeleted = 0";
+            command.CommandText = "SELECT COUNT(*) FROM Projects WHERE TenantId = @tenant AND ProgramId = @pid AND IsDeleted = 0";
+            var tenantParam = command.CreateParameter();
+            tenantParam.ParameterName = "@tenant";
+            tenantParam.Value = entity.TenantId;
+            command.Parameters.Add(tenantParam);
             var pidParam = command.CreateParameter();
             pidParam.ParameterName = "@pid";
             pidParam.Value = entity.Id;
@@ -226,18 +480,10 @@ public sealed class ProgramService : IProgramService
         }
         catch { /* projects table may not have ProgramId column in all environments */ }
 
-        const string projectsSql = "SELECT p.Id, p.Name, p.Code, p.Status, p.Currency, p.Budget, p.ActualCost, COALESCE((SELECT SUM(b.ForecastAmount) FROM Budgets b WHERE b.ProjectId = p.Id AND b.TenantId = {0} AND b.IsDeleted = 0), 0) AS Forecast FROM Projects p WHERE p.TenantId = {0} AND p.ProgramId = {1} AND p.IsDeleted = 0";
-        var projects = await _db.Database.SqlQueryRaw<ProgramProjectRow>(projectsSql, entity.TenantId, entity.Id).Select(x => new ProgramProjectDto { Id = x.Id, Name = x.Name, Code = x.Code, Status = x.Status, Currency = x.Currency, Budget = x.Budget, Forecast = x.Forecast, ActualCost = x.ActualCost }).ToListAsync(ct);
-        var byCurrency = projects.GroupBy(x => x.Currency, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(g => g.Key, g => new ProgramCurrencyFinancialSummary
-            {
-                Currency = g.Key,
-                IsBaseCurrency = string.Equals(g.Key, effectiveCurrency, StringComparison.OrdinalIgnoreCase),
-                ProjectCount = g.Count(),
-                Budget = g.Sum(x => x.Budget ?? 0),
-                Forecast = g.Sum(x => x.Forecast ?? 0),
-                ActualCost = g.Sum(x => x.ActualCost ?? 0)
-            }, StringComparer.OrdinalIgnoreCase);
+        const string projectsSql = "SELECT p.Id, p.Name, p.Code, p.Status, p.Currency FROM Projects p WHERE p.TenantId = {0} AND p.ProgramId = {1} AND p.IsDeleted = 0";
+        var projects = await _db.Database.SqlQueryRaw<ProgramProjectRow>(projectsSql, entity.TenantId, entity.Id)
+            .Select(x => new ProgramProjectDto { Id = x.Id, Name = x.Name, Code = x.Code, Status = x.Status, Currency = x.Currency })
+            .ToListAsync(ct);
         return new ProgramDto
         {
             Id = entity.Id,
@@ -253,12 +499,9 @@ public sealed class ProgramService : IProgramService
             ProgramManagerEmail = manager?.Email,
             StartDate = entity.StartDate,
             EndDate = entity.EndDate,
-            Budget = entity.Budget,
-            ActualSpend = entity.ActualSpend,
             Health = entity.Health,
             ProjectCount = projectCount,
             Projects = projects,
-            ByCurrency = byCurrency,
             CreatedAt = entity.CreatedAt,
             UpdatedAt = entity.UpdatedAt,
             CreatedBy = entity.CreatedBy,
@@ -270,15 +513,46 @@ public sealed class ProgramService : IProgramService
     private static Error? Validate(SaveProgramDto dto) =>
         string.IsNullOrWhiteSpace(dto.Name) || dto.Name.Trim().Length > 300 ? Error.Validation("Name is required and limited to 300 characters")
         : dto.PortfolioId == Guid.Empty ? Error.Validation("Portfolio is required")
-        : dto.StartDate.HasValue && dto.EndDate.HasValue && dto.EndDate.Value < dto.StartDate.Value ? Error.Validation("End Date must not be before Start Date")
         : dto.Status is not ("Active" or "Planning" or "On Hold" or "Completed" or "Archived") ? Error.Validation("Status must be Active, Planning, On Hold, Completed, or Archived")
         : null;
 
-    private Guid TenantId() { var value = _http.HttpContext?.User.FindFirst("tenantId")?.Value; return Guid.TryParse(value, out var id) ? id : DemoTenant; }
+    private bool CanAssignInitialProgramManager() =>
+        _http.HttpContext?.User.HasClaim("permission", "Handover.AdminInitiate") == true;
+    private Guid TenantId()
+    {
+        var httpContext = _http.HttpContext;
+        if (httpContext is not null)
+        {
+            if (httpContext.User.Identity?.IsAuthenticated != true) return Guid.Empty;
+            var claim = httpContext.User.FindFirst("tenantId")?.Value;
+            return Guid.TryParse(claim, out var id) && id != Guid.Empty ? id : Guid.Empty;
+        }
+
+        return TrustedTenantExecutionContext.CurrentTenantId ?? Guid.Empty;
+    }
+
+    private bool HasManagementScope(Guid tenantId)
+    {
+        if (_http.HttpContext is null) return TrustedTenantExecutionContext.CurrentTenantId == tenantId;
+        var context = _managementContext?.Current;
+        return context is not null && context.TenantId == tenantId;
+    }
+
     private IQueryable<Entity> InScope(IQueryable<Entity> query)
     {
-        var scope = _managementContext?.Current?.Scope;
-        return scope is null ? query : query.Where(x => scope.ProgramIds.Contains(x.Id));
+        var tenantId = TenantId();
+        if (tenantId == Guid.Empty) return query.Where(_ => false);
+
+        query = query.Where(x => x.TenantId == tenantId);
+        if (_http.HttpContext is null)
+            return TrustedTenantExecutionContext.CurrentTenantId == tenantId ? query : query.Where(_ => false);
+
+        var context = _managementContext?.Current;
+        if (context is null || context.TenantId != tenantId) return query.Where(_ => false);
+        if (context.CanReadAllTenantPortfolioProgramData || context.HasTenantAdministratorPortfolioWriteScope)
+            return query;
+        return query.Where(x => context.Scope.ProgramIds.Contains(x.Id));
     }
-    private sealed class ProgramProjectRow { public Guid Id { get; set; } public string Name { get; set; } = ""; public string Code { get; set; } = ""; public string Status { get; set; } = ""; public string Currency { get; set; } = ""; public decimal? Budget { get; set; } public decimal? Forecast { get; set; } public decimal? ActualCost { get; set; } }
+    private sealed record ProgramPortfolioAssignmentScope(HashSet<Guid> NativePortfolioIds, HashSet<Guid> OrganizationIds);
+    private sealed class ProgramProjectRow { public Guid Id { get; set; } public string Name { get; set; } = ""; public string Code { get; set; } = ""; public string Status { get; set; } = ""; public string Currency { get; set; } = ""; }
 }

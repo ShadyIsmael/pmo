@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { I18nProvider } from "../i18n/messages";
+import { ApiError } from "../api/client";
 import { ResourcesListPage } from "../features/resources/ResourcesListPage";
 
 const mocks = vi.hoisted(() => ({
@@ -8,21 +9,24 @@ const mocks = vi.hoisted(() => ({
   canMutate: true,
   effectiveReadOnly: false,
   useResources: vi.fn(), useResource: vi.fn(), useBaseCalendars: vi.fn(), useCreateResource: vi.fn(), useUpdateResource: vi.fn(), useDeleteResource: vi.fn(), useCostProfiles: vi.fn(), useCreateCostProfile: vi.fn(),
-  useResourceReferenceData: vi.fn(),
+  useResourceReferenceData: vi.fn(), useResourceVendorLookup: vi.fn(),
   useUsers: vi.fn(), useUnits: vi.fn(), useVendors: vi.fn(), useFinder: vi.fn(), useSkills: vi.fn(),
 }));
 
 vi.mock("../features/resources/api/resources", () => ({
   useResources: mocks.useResources, useResource: mocks.useResource, useBaseCalendars: mocks.useBaseCalendars,
   useResourceReferenceData: mocks.useResourceReferenceData,
+  useResourceVendorLookup: mocks.useResourceVendorLookup,
   useCreateResource: mocks.useCreateResource, useUpdateResource: mocks.useUpdateResource, useDeleteResource: mocks.useDeleteResource,
   useCostProfiles: mocks.useCostProfiles, useCreateCostProfile: mocks.useCreateCostProfile,
   useResourceFinder: mocks.useFinder, useResourceSkills: mocks.useSkills,
 }));
-vi.mock("../features/organization/api/organization", () => ({ useOrganizationUnits: mocks.useUnits }));
-vi.mock("../features/projects/lib/project-lookups", () => ({ useUserLookup: mocks.useUsers }));
+vi.mock("../features/projects/lib/project-lookups", () => ({
+  useResourceWorkflowUserLookup: mocks.useUsers,
+  useResourceUnitLookup: mocks.useUnits,
+  useWorkflowCurrencyLookup: () => ({ data: [{ id: "currency-gbp", code: "GBP", name: "Pound Sterling", symbol: "£", isBase: true }], isLoading: false, isError: false, refetch: vi.fn() }),
+}));
 vi.mock("../features/vendors/api/vendors", () => ({ useVendors: mocks.useVendors }));
-vi.mock("../features/administration/api/admin", () => ({ useCurrencies: () => ({ data: [{ id: "currency-gbp", code: "GBP", name: "Pound Sterling", symbol: "£", exchangeRate: 1, isBase: true }], isLoading: false, isError: false, refetch: vi.fn() }) }));
 vi.mock("@auth/AuthProvider", () => ({ useAuth: () => ({ user: { permissions: mocks.permissions } }) }));
 vi.mock("@api/management", () => ({ useManagement: () => ({ canMutate: mocks.canMutate, effectiveReadOnly: mocks.effectiveReadOnly }) }));
 
@@ -46,7 +50,8 @@ describe("resource directory React parity", () => {
     mocks.useResource.mockReset().mockReturnValue({ data: resource, isLoading: false, isError: false, refetch: vi.fn() });
     mocks.useBaseCalendars.mockReset().mockReturnValue({ data: [{ id: "calendar-1", name: "Standard", isDefault: true }] });
     mocks.useResourceReferenceData.mockReset().mockReturnValue({ data: { resourceTypes: [{ code: "Staff", nameEn: "Staff", nameAr: "موظف", displayOrder: 1, isDefault: true, requiresVendor: false }, { code: "Vendor", nameEn: "Vendor", nameAr: "مورد", displayOrder: 2, isDefault: false, requiresVendor: true }], seniorityLevels: [{ code: "Senior", nameEn: "Senior", nameAr: "خبير", displayOrder: 3 }], compensationTypes: ["Hourly", "Weekly", "Monthly"] }, isLoading: false, isError: false, refetch: vi.fn() });
-    mocks.useUsers.mockReset().mockReturnValue({ data: [{ id: "user-1", fullName: "Alex Admin", email: "admin@nexus.com" }] });
+    mocks.useResourceVendorLookup.mockReset().mockReturnValue({ data: { items: [{ id: "vendor-1", name: "Vendor One", isActive: true }] }, isLoading: false, isError: false, refetch: vi.fn() });
+    mocks.useUsers.mockReset().mockReturnValue({ data: [{ id: "user-1", fullName: "Alex Admin", email: "alex.admin@example.com" }], isLoading: false, isError: false, refetch: vi.fn() });
     mocks.useUnits.mockReset().mockReturnValue({ data: [{ id: "unit-1", name: "Technology", code: "TECH", isActive: true }] });
     mocks.useVendors.mockReset().mockReturnValue({ data: { items: [{ id: "vendor-1", name: "Vendor One", isActive: true }] } });
     mocks.useFinder.mockReset().mockReturnValue({ data: { items: [finderItem], totalCount: 1 }, isLoading: false, isError: false });
@@ -68,10 +73,49 @@ describe("resource directory React parity", () => {
     expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
   });
 
+  it("allows Resource.Create users to open the form without loading or exposing the directory", () => {
+    mocks.permissions = ["Resource.Create"];
+    mocks.useResources.mockReturnValue({ data: undefined, isLoading: false, isError: false });
+    renderPage();
+
+    expect(screen.getByRole("button", { name: "Add Resource" })).toBeInTheDocument();
+    expect(screen.queryByText("morgan@example.com")).not.toBeInTheDocument();
+    expect(mocks.useResources).toHaveBeenCalledWith(expect.anything(), false);
+    fireEvent.click(screen.getByRole("button", { name: "Add Resource" }));
+    expect(screen.getByRole("dialog", { name: "Create Resource" })).toBeInTheDocument();
+  });
+
+  it("shows and retries failed Resource form lookups", () => {
+    const retryCalendars = vi.fn();
+    const retryReferenceData = vi.fn();
+    const retryVendors = vi.fn();
+    mocks.useBaseCalendars.mockReturnValue({ data: undefined, isLoading: false, isError: true, refetch: retryCalendars });
+    mocks.useResourceReferenceData.mockReturnValue({ data: { resourceTypes: [{ code: "Staff", nameEn: "Staff", nameAr: "موظف", displayOrder: 1, isDefault: true, requiresVendor: false }, { code: "Vendor", nameEn: "Vendor", nameAr: "مورد", displayOrder: 2, isDefault: false, requiresVendor: true }], seniorityLevels: [], compensationTypes: [] }, isLoading: false, isError: true, refetch: retryReferenceData });
+    mocks.useResourceVendorLookup.mockReturnValue({ data: undefined, isLoading: false, isError: true, refetch: retryVendors });
+    mocks.permissions = ["Resource.Create"];
+    mocks.useResources.mockReturnValue({ data: undefined, isLoading: false, isError: false });
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Add Resource" }));
+    const sheet = screen.getByRole("dialog", { name: "Create Resource" });
+    fireEvent.click(within(sheet).getByLabelText("Resource Type"));
+    fireEvent.click(screen.getByRole("option", { name: "Vendor" }));
+
+    expect(within(sheet).getByText("Base calendar options could not be loaded.")).toBeInTheDocument();
+    expect(within(sheet).getByText("Resource options could not be loaded.")).toBeInTheDocument();
+    expect(within(sheet).getByText("Vendor options could not be loaded.")).toBeInTheDocument();
+    const retryButtons = within(sheet).getAllByRole("button", { name: "Retry" });
+    fireEvent.click(retryButtons[0]);
+    fireEvent.click(retryButtons[1]);
+    fireEvent.click(retryButtons[2]);
+    expect(retryCalendars).toHaveBeenCalledOnce();
+    expect(retryReferenceData).toHaveBeenCalledOnce();
+    expect(retryVendors).toHaveBeenCalledOnce();
+  });
+
   it("filters the API list by the selected linked system user", () => {
     renderPage();
     fireEvent.click(screen.getByRole("button", { name: "System User" }));
-    fireEvent.click(screen.getByRole("option", { name: "Alex Admin · admin@nexus.com" }));
+    fireEvent.click(screen.getByRole("option", { name: "Alex Admin" }));
     expect(mocks.useResources).toHaveBeenCalledWith(expect.objectContaining({ userId: "user-1", page: 1 }), true);
   });
 
@@ -125,7 +169,28 @@ describe("resource directory React parity", () => {
     expect(within(sheet).getByLabelText("Base calendar")).toBeInTheDocument();
     expect(within(sheet).queryByLabelText("Employee ID")).not.toBeInTheDocument();
     expect(within(sheet).queryByLabelText("Employment Type")).not.toBeInTheDocument();
-    expect(within(sheet).getByLabelText("Name")).toBeRequired();
+    expect(within(sheet).getByLabelText("Name")).not.toBeRequired();
+    expect(within(sheet).getByLabelText("Resource hours / day")).toHaveAttribute("aria-required", "true");
+  });
+
+  it("searches eligible Staff users by email and displays linked identity read-only", () => {
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Add Resource" }));
+    const sheet = screen.getByRole("dialog", { name: "Create Resource" });
+
+    const name = within(sheet).getByLabelText("Name");
+    const email = within(sheet).getByLabelText("Email");
+    const phone = within(sheet).getByLabelText("Phone");
+    expect(name).toHaveAttribute("readonly");
+    expect(email).toHaveAttribute("readonly");
+    expect(phone).not.toHaveAttribute("readonly");
+
+    fireEvent.click(within(sheet).getByRole("combobox", { name: "System User" }));
+    fireEvent.change(screen.getByPlaceholderText("Search active users by name or email"), { target: { value: "alex.admin@example.com" } });
+    fireEvent.click(screen.getByRole("option", { name: "Alex Admin · alex.admin@example.com" }));
+
+    expect(name).toHaveValue("Alex Admin");
+    expect(email).toHaveValue("alex.admin@example.com");
   });
 
   it("opens Edit Resource without exposing persisted HR-only fields", () => {
@@ -134,7 +199,11 @@ describe("resource directory React parity", () => {
     fireEvent.click(screen.getByRole("button", { name: "Edit Resource" }));
     const sheet = screen.getByRole("dialog", { name: "Edit Resource" });
 
-    expect(within(sheet).getByLabelText("Name")).toHaveValue("Morgan Resource");
+    expect(within(sheet).getByLabelText("Name")).toHaveValue("Alex Admin");
+    expect(within(sheet).getByLabelText("Name")).toHaveAttribute("readonly");
+    expect(within(sheet).getByLabelText("Email")).toHaveValue("alex.admin@example.com");
+    expect(within(sheet).getByLabelText("Email")).toHaveAttribute("readonly");
+    expect(within(sheet).getByLabelText("Phone")).not.toHaveAttribute("readonly");
     expect(within(sheet).queryByLabelText("Employee ID")).not.toBeInTheDocument();
     expect(within(sheet).queryByLabelText("Employment Type")).not.toBeInTheDocument();
   });
@@ -147,7 +216,8 @@ describe("resource directory React parity", () => {
     const sheet = screen.getByRole("dialog", { name: "إنشاء مورد" });
     expect(document.documentElement.dir).toBe("rtl");
     expect(within(sheet).getByRole("heading", { name: "معلومات المورد" })).toBeInTheDocument();
-    expect(within(sheet).getByLabelText("الاسم")).toBeRequired();
+    expect(within(sheet).getByLabelText("الاسم")).not.toBeRequired();
+    expect(within(sheet).getByLabelText("ساعات المورد / اليوم")).toHaveAttribute("aria-required", "true");
     expect(within(sheet).getAllByText("اختياري").length).toBeGreaterThan(0);
     expect(within(sheet).queryByLabelText("معرف الموظف")).not.toBeInTheDocument();
     expect(within(sheet).queryByLabelText("نوع التوظيف")).not.toBeInTheDocument();
@@ -159,7 +229,9 @@ describe("resource directory React parity", () => {
     const { rerender } = renderPage();
     fireEvent.click(screen.getByRole("button", { name: "Add Resource" }));
     const sheet = screen.getByRole("dialog", { name: "Create Resource" });
-    fireEvent.change(within(sheet).getByLabelText("Name"), { target: { value: "New Resource" } });
+    fireEvent.click(within(sheet).getByRole("combobox", { name: "System User" }));
+    fireEvent.click(screen.getByRole("option", { name: "Alex Admin · alex.admin@example.com" }));
+    fireEvent.change(within(sheet).getByLabelText("Resource hours / day"), { target: { value: "8" } });
     fireEvent.click(within(sheet).getByRole("button", { name: "Create" }));
     expect(createMutation.mutate).toHaveBeenCalledTimes(1);
 
@@ -168,6 +240,26 @@ describe("resource directory React parity", () => {
 
     expect(within(sheet).getByRole("alert")).toHaveTextContent("The resource could not be saved.");
     expect(screen.getAllByRole("alert")).toHaveLength(1);
+  });
+
+  it("shows calendar API validation on the calendar field without a generic form summary", () => {
+    const createMutation = {
+      mutate: vi.fn(),
+      reset: vi.fn(),
+      isPending: false,
+      error: new ApiError(400, "Validation failed", "RESOURCE_WORKING_CALENDAR_DEFAULT_MISSING", {
+        errors: { BaseCalendarId: ["No calendar is configured."] },
+      }),
+    };
+    mocks.useCreateResource.mockReturnValue(createMutation);
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Add Resource" }));
+    const sheet = screen.getByRole("dialog", { name: "Create Resource" });
+
+    expect(within(sheet).getByText(/No configured tenant Standard working calendar is available/)).toBeInTheDocument();
+    expect(within(sheet).queryByText("Validation failed")).not.toBeInTheDocument();
+    expect(within(sheet).getByRole("button", { name: "Base calendar" })).toHaveAttribute("aria-invalid", "true");
+    expect(within(sheet).getByLabelText("Resource hours / day")).not.toHaveAttribute("aria-invalid", "true");
   });
 
   it("surfaces a failed resource deactivation after closing its confirmation dialog", async () => {
@@ -201,6 +293,10 @@ describe("resource directory React parity", () => {
     expect(within(sheet).getByLabelText("Vendor")).toBeInTheDocument();
     expect(within(sheet).queryByLabelText("Employee ID")).not.toBeInTheDocument();
     expect(within(sheet).queryByLabelText("System User")).not.toBeInTheDocument();
+    expect(within(sheet).getByLabelText("Name")).toBeRequired();
+    expect(within(sheet).getByLabelText("Name")).not.toHaveAttribute("readonly");
+    expect(within(sheet).getByLabelText("Email")).not.toHaveAttribute("readonly");
+    expect(within(sheet).getByLabelText("Phone")).not.toHaveAttribute("readonly");
   });
 
   it("searches live resource matches by role and exposes the availability filters", () => {

@@ -12,11 +12,11 @@ public sealed record PlanMilestoneLookupItem(
     decimal? Progress);
 
 /// <summary>
-/// Provides the milestones of the project's active working plan (the same
-/// version rendered by the Project Plan workspace) so that overview surfaces
-/// reflect the plan of record instead of the legacy unversioned Milestones table.
+/// Provides the next upcoming, incomplete milestones from the active Working
+/// version of the project's default plan. Plan content remains tenant filtered
+/// and is scoped to the requested project.
 /// </summary>
 public interface IProjectPlanMilestoneLookup
 {
-    Task<IReadOnlyList<PlanMilestoneLookupItem>> GetAsync(Guid projectId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<PlanMilestoneLookupItem>> GetUpcomingAsync(Guid projectId, DateTime statusDate, CancellationToken cancellationToken = default);
 }

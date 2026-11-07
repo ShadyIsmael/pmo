@@ -1,0 +1,148 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="fde7cbcb-cdf7-4d4d-a4b7-dd6b9fec8f44" name="shady@SHADY 2026-11-05 18:25:08" runUser="SHADY\shady" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-11-05T18:25:08.3144592+02:00" queuing="2026-11-05T18:25:08.3144602+02:00" start="2026-11-05T18:25:06.9456336+02:00" finish="2026-11-05T18:25:11.5964785+02:00" />
+  <TestSettings name="default" id="57ce9dd4-c962-46cd-b015-ce6400b411c7">
+    <Deployment runDeploymentRoot="shady_SHADY_2026-11-05_18_25_08" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="d3be76bc-e591-46cd-93e5-5048b186d1fc" testId="ebdb4af7-73a5-12c4-0a47-88ae723cf95a" testName="NEXUS.Modules.Approvals.Tests.P003SecurityRegressionTests.Delegate_ToIneligibleTarget_ReturnsForbidden" computerName="SHADY" duration="00:00:00.4702251" startTime="2026-11-05T18:25:10.2809439+02:00" endTime="2026-11-05T18:25:10.7514401+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="d3be76bc-e591-46cd-93e5-5048b186d1fc" />
+    <UnitTestResult executionId="d306c28a-b9a0-4db9-8625-de1ec202ca6d" testId="c5e6227d-fc3b-f484-7c7c-4e3c4ea12744" testName="NEXUS.Modules.Approvals.Tests.ApprovalRequestDomainTests.Approve_ByWrongUser_Throws" computerName="SHADY" duration="00:00:00.0003765" startTime="2026-11-05T18:25:08.2697171+02:00" endTime="2026-11-05T18:25:08.2698924+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="d306c28a-b9a0-4db9-8625-de1ec202ca6d" />
+    <UnitTestResult executionId="6e35bbfe-4d4d-4e70-8828-761133efdafe" testId="33d6807a-8736-ae1d-ed92-3bc9fc38ad71" testName="NEXUS.Modules.Approvals.Tests.ApprovalRequestDomainTests.Delegate_FromApproved_Throws" computerName="SHADY" duration="00:00:00.0110831" startTime="2026-11-05T18:25:08.1634480+02:00" endTime="2026-11-05T18:25:08.1921845+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="6e35bbfe-4d4d-4e70-8828-761133efdafe" />
+    <UnitTestResult executionId="dc375b05-90a3-4668-9917-b177e9f59d3f" testId="f2139dd0-df92-5ee0-dd7c-00609ceba905" testName="NEXUS.Modules.Approvals.Tests.P003SecurityRegressionTests.AuditFailure_AbortsMutation" computerName="SHADY" duration="00:00:00.0653659" startTime="2026-11-05T18:25:11.1025556+02:00" endTime="2026-11-05T18:25:11.1671572+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="dc375b05-90a3-4668-9917-b177e9f59d3f" />
+    <UnitTestResult executionId="ecb0cc7f-6c91-4d9d-8c88-f5d9457bb130" testId="e5601f88-fb64-d9e6-446e-557f369a72f7" testName="NEXUS.Modules.Approvals.Tests.P003SecurityRegressionTests.Delegate_ToSameTenantActiveEligibleTarget_Succeeds" computerName="SHADY" duration="00:00:00.3497012" startTime="2026-11-05T18:25:10.7525970+02:00" endTime="2026-11-05T18:25:11.1014225+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="ecb0cc7f-6c91-4d9d-8c88-f5d9457bb130" />
+    <UnitTestResult executionId="efb435ac-6364-4b2b-9dc7-70bac10d3ae5" testId="6a217f52-d583-14c2-32cf-1f97211bd4a9" testName="NEXUS.Modules.Approvals.Tests.ApprovalRequestDomainTests.Submit_FromNonDraft_Throws" computerName="SHADY" duration="00:00:00.0003824" startTime="2026-11-05T18:25:08.2154031+02:00" endTime="2026-11-05T18:25:08.2154518+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="efb435ac-6364-4b2b-9dc7-70bac10d3ae5" />
+    <UnitTestResult executionId="3da5cac5-7aad-4f36-90f4-c5cb644ab1bc" testId="55a11b09-659d-4526-be3f-8b4033332ac1" testName="NEXUS.Modules.Approvals.Tests.ApprovalRequestDomainTests.Approve_FromDraft_Throws" computerName="SHADY" duration="00:00:00.0011712" startTime="2026-11-05T18:25:08.2132836+02:00" endTime="2026-11-05T18:25:08.2136964+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="3da5cac5-7aad-4f36-90f4-c5cb644ab1bc" />
+    <UnitTestResult executionId="495a397e-9184-4781-b183-6ee0abaa6bb9" testId="0d6ae1a0-3eb2-fbd4-3084-b7b42e168204" testName="NEXUS.Modules.Approvals.Tests.P003SecurityRegressionTests.Approve_ByRequester_Rejected" computerName="SHADY" duration="00:00:02.1059009" startTime="2026-11-05T18:25:08.1611641+02:00" endTime="2026-11-05T18:25:10.2793745+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="495a397e-9184-4781-b183-6ee0abaa6bb9" />
+    <UnitTestResult executionId="409860eb-d1c8-45b7-be1a-c3e95e47bed3" testId="0f1a8c48-aa53-163c-bc24-1f65beac1620" testName="NEXUS.Modules.Approvals.Tests.ApprovalRequestDomainTests.Cancel_FromApproved_Throws" computerName="SHADY" duration="00:00:00.0005231" startTime="2026-11-05T18:25:08.2708826+02:00" endTime="2026-11-05T18:25:08.2710438+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="409860eb-d1c8-45b7-be1a-c3e95e47bed3" />
+    <UnitTestResult executionId="79e1c6f7-6fea-4c99-9d14-f6b255952474" testId="b27602ae-0bab-7038-f9c1-1d47b4cf3b98" testName="NEXUS.Modules.Approvals.Tests.ApprovalRequestDomainTests.Submit_FromDraft_SetsSubmitted" computerName="SHADY" duration="00:00:00.0037582" startTime="2026-11-05T18:25:08.2145710+02:00" endTime="2026-11-05T18:25:08.2146315+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="79e1c6f7-6fea-4c99-9d14-f6b255952474" />
+    <UnitTestResult executionId="3b8300f2-79f5-481b-8fb6-d9eba28f3584" testId="753291e6-88f0-2f3f-7e93-a24b98be1ea5" testName="NEXUS.Modules.Approvals.Tests.ApprovalRequestDomainTests.Reject_RequiresComment" computerName="SHADY" duration="00:00:00.0004184" startTime="2026-11-05T18:25:08.2682589+02:00" endTime="2026-11-05T18:25:08.2685185+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="3b8300f2-79f5-481b-8fb6-d9eba28f3584" />
+    <UnitTestResult executionId="80456d46-69f3-40c9-a6d4-9cf22dcf430d" testId="8d1786c4-84b6-a4f8-c1a8-98344ffae28b" testName="NEXUS.Modules.Approvals.Tests.ApprovalServiceMutationTests.Submit_SetsSubmittedStatus" computerName="SHADY" duration="00:00:00.6250063" startTime="2026-11-05T18:25:10.2806461+02:00" endTime="2026-11-05T18:25:10.9049048+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="80456d46-69f3-40c9-a6d4-9cf22dcf430d" />
+    <UnitTestResult executionId="f89ca726-e622-4a65-9f7e-0dfabc0f7dca" testId="055ce95b-dc82-e3bc-7b1f-aa764ac29caf" testName="NEXUS.Modules.Approvals.Tests.P003SecurityRegressionTests.ConcurrencyConflict_ReturnsControlled409" computerName="SHADY" duration="00:00:00.0016522" startTime="2026-11-05T18:25:11.1681980+02:00" endTime="2026-11-05T18:25:11.1690292+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="f89ca726-e622-4a65-9f7e-0dfabc0f7dca" />
+    <UnitTestResult executionId="0ba4bbfb-32e8-40ff-9f71-b07995cbd7ac" testId="7e81230d-bb40-a4ee-3288-25ac107f390f" testName="NEXUS.Modules.Approvals.Tests.ApprovalRequestDomainTests.Approve_FromSubmitted_ByAssignee_SetsApproved" computerName="SHADY" duration="00:00:00.0004718" startTime="2026-11-05T18:25:08.2703400+02:00" endTime="2026-11-05T18:25:08.2705113+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="0ba4bbfb-32e8-40ff-9f71-b07995cbd7ac" />
+    <UnitTestResult executionId="18f1e784-993e-4da6-8f8b-0429ce847e1b" testId="cb989e24-3c7d-a4f0-0d7f-18d14d8b55ec" testName="NEXUS.Modules.Approvals.Tests.P003SecurityRegressionTests.GetById_WithoutViewPermission_ReturnsForbidden" computerName="SHADY" duration="00:00:00.0758492" startTime="2026-11-05T18:25:11.1698693+02:00" endTime="2026-11-05T18:25:11.2453931+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="18f1e784-993e-4da6-8f8b-0429ce847e1b" />
+    <UnitTestResult executionId="f2357ade-2471-4485-a623-30b07e1287ea" testId="9f94335f-460b-5c57-b394-f8492d4ef076" testName="NEXUS.Modules.Approvals.Tests.ApprovalServiceMutationTests.Submit_ByNonRequester_ReturnsForbidden" computerName="SHADY" duration="00:00:02.1058453" startTime="2026-11-05T18:25:08.1635256+02:00" endTime="2026-11-05T18:25:10.2796499+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="f2357ade-2471-4485-a623-30b07e1287ea" />
+    <UnitTestResult executionId="3702aef8-148c-49d9-866f-844213f0cdda" testId="55962c45-7360-aa4f-5c1f-ce15a901b037" testName="NEXUS.Modules.Approvals.Tests.ApprovalRequestDomainTests.Cancel_FromDraft_SetsCancelled" computerName="SHADY" duration="00:00:00.0005561" startTime="2026-11-05T18:25:08.2152430+02:00" endTime="2026-11-05T18:25:08.2152918+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="3702aef8-148c-49d9-866f-844213f0cdda" />
+    <UnitTestResult executionId="45ecf27f-9146-4bbe-9be8-704f8a4b9a19" testId="52fbc266-ec3f-1374-ff75-816906fa18b8" testName="NEXUS.Modules.Approvals.Tests.ApprovalRequestDomainTests.Delegate_ChangesCurrentApprover" computerName="SHADY" duration="00:00:00.0049724" startTime="2026-11-05T18:25:08.2150407+02:00" endTime="2026-11-05T18:25:08.2151045+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="45ecf27f-9146-4bbe-9be8-704f8a4b9a19" />
+    <UnitTestResult executionId="35e5afd4-fc08-4e14-999a-3998fa1db6b3" testId="98803b15-b151-fba8-a975-13ce39b689d2" testName="NEXUS.Modules.Approvals.Tests.ApprovalRequestDomainTests.Reject_WithComment_SetsRejected" computerName="SHADY" duration="00:00:00.0065009" startTime="2026-11-05T18:25:08.2148174+02:00" endTime="2026-11-05T18:25:08.2148680+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="35e5afd4-fc08-4e14-999a-3998fa1db6b3" />
+    <UnitTestResult executionId="ccdf431d-8a0c-4c99-9294-0e11ed03dc92" testId="cddfd98e-75fe-b7c2-3060-c372720ed7f5" testName="NEXUS.Modules.Approvals.Tests.P003SecurityRegressionTests.NoTenant_ReturnsForbidden" computerName="SHADY" duration="00:00:00.0754478" startTime="2026-11-05T18:25:11.2463618+02:00" endTime="2026-11-05T18:25:11.3216002+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="ccdf431d-8a0c-4c99-9294-0e11ed03dc92" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="NEXUS.Modules.Approvals.Tests.ApprovalRequestDomainTests.Reject_RequiresComment" storage="c:\projects\pmo\apps\api\tests\nexus.modules.approvals.tests\bin\debug\net10.0\nexus.modules.approvals.tests.dll" id="753291e6-88f0-2f3f-7e93-a24b98be1ea5">
+      <Execution id="3b8300f2-79f5-481b-8fb6-d9eba28f3584" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Modules.Approvals.Tests\bin\Debug\net10.0\NEXUS.Modules.Approvals.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Modules.Approvals.Tests.ApprovalRequestDomainTests" name="Reject_RequiresComment" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Modules.Approvals.Tests.ApprovalRequestDomainTests.Reject_WithComment_SetsRejected" storage="c:\projects\pmo\apps\api\tests\nexus.modules.approvals.tests\bin\debug\net10.0\nexus.modules.approvals.tests.dll" id="98803b15-b151-fba8-a975-13ce39b689d2">
+      <Execution id="35e5afd4-fc08-4e14-999a-3998fa1db6b3" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Modules.Approvals.Tests\bin\Debug\net10.0\NEXUS.Modules.Approvals.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Modules.Approvals.Tests.ApprovalRequestDomainTests" name="Reject_WithComment_SetsRejected" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Modules.Approvals.Tests.P003SecurityRegressionTests.AuditFailure_AbortsMutation" storage="c:\projects\pmo\apps\api\tests\nexus.modules.approvals.tests\bin\debug\net10.0\nexus.modules.approvals.tests.dll" id="f2139dd0-df92-5ee0-dd7c-00609ceba905">
+      <Execution id="dc375b05-90a3-4668-9917-b177e9f59d3f" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Modules.Approvals.Tests\bin\Debug\net10.0\NEXUS.Modules.Approvals.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Modules.Approvals.Tests.P003SecurityRegressionTests" name="AuditFailure_AbortsMutation" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Modules.Approvals.Tests.ApprovalRequestDomainTests.Approve_ByWrongUser_Throws" storage="c:\projects\pmo\apps\api\tests\nexus.modules.approvals.tests\bin\debug\net10.0\nexus.modules.approvals.tests.dll" id="c5e6227d-fc3b-f484-7c7c-4e3c4ea12744">
+      <Execution id="d306c28a-b9a0-4db9-8625-de1ec202ca6d" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Modules.Approvals.Tests\bin\Debug\net10.0\NEXUS.Modules.Approvals.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Modules.Approvals.Tests.ApprovalRequestDomainTests" name="Approve_ByWrongUser_Throws" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Modules.Approvals.Tests.P003SecurityRegressionTests.NoTenant_ReturnsForbidden" storage="c:\projects\pmo\apps\api\tests\nexus.modules.approvals.tests\bin\debug\net10.0\nexus.modules.approvals.tests.dll" id="cddfd98e-75fe-b7c2-3060-c372720ed7f5">
+      <Execution id="ccdf431d-8a0c-4c99-9294-0e11ed03dc92" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Modules.Approvals.Tests\bin\Debug\net10.0\NEXUS.Modules.Approvals.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Modules.Approvals.Tests.P003SecurityRegressionTests" name="NoTenant_ReturnsForbidden" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Modules.Approvals.Tests.ApprovalServiceMutationTests.Submit_SetsSubmittedStatus" storage="c:\projects\pmo\apps\api\tests\nexus.modules.approvals.tests\bin\debug\net10.0\nexus.modules.approvals.tests.dll" id="8d1786c4-84b6-a4f8-c1a8-98344ffae28b">
+      <Execution id="80456d46-69f3-40c9-a6d4-9cf22dcf430d" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Modules.Approvals.Tests\bin\Debug\net10.0\NEXUS.Modules.Approvals.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Modules.Approvals.Tests.ApprovalServiceMutationTests" name="Submit_SetsSubmittedStatus" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Modules.Approvals.Tests.ApprovalRequestDomainTests.Cancel_FromDraft_SetsCancelled" storage="c:\projects\pmo\apps\api\tests\nexus.modules.approvals.tests\bin\debug\net10.0\nexus.modules.approvals.tests.dll" id="55962c45-7360-aa4f-5c1f-ce15a901b037">
+      <Execution id="3702aef8-148c-49d9-866f-844213f0cdda" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Modules.Approvals.Tests\bin\Debug\net10.0\NEXUS.Modules.Approvals.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Modules.Approvals.Tests.ApprovalRequestDomainTests" name="Cancel_FromDraft_SetsCancelled" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Modules.Approvals.Tests.ApprovalRequestDomainTests.Delegate_ChangesCurrentApprover" storage="c:\projects\pmo\apps\api\tests\nexus.modules.approvals.tests\bin\debug\net10.0\nexus.modules.approvals.tests.dll" id="52fbc266-ec3f-1374-ff75-816906fa18b8">
+      <Execution id="45ecf27f-9146-4bbe-9be8-704f8a4b9a19" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Modules.Approvals.Tests\bin\Debug\net10.0\NEXUS.Modules.Approvals.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Modules.Approvals.Tests.ApprovalRequestDomainTests" name="Delegate_ChangesCurrentApprover" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Modules.Approvals.Tests.ApprovalRequestDomainTests.Approve_FromSubmitted_ByAssignee_SetsApproved" storage="c:\projects\pmo\apps\api\tests\nexus.modules.approvals.tests\bin\debug\net10.0\nexus.modules.approvals.tests.dll" id="7e81230d-bb40-a4ee-3288-25ac107f390f">
+      <Execution id="0ba4bbfb-32e8-40ff-9f71-b07995cbd7ac" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Modules.Approvals.Tests\bin\Debug\net10.0\NEXUS.Modules.Approvals.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Modules.Approvals.Tests.ApprovalRequestDomainTests" name="Approve_FromSubmitted_ByAssignee_SetsApproved" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Modules.Approvals.Tests.ApprovalRequestDomainTests.Approve_FromDraft_Throws" storage="c:\projects\pmo\apps\api\tests\nexus.modules.approvals.tests\bin\debug\net10.0\nexus.modules.approvals.tests.dll" id="55a11b09-659d-4526-be3f-8b4033332ac1">
+      <Execution id="3da5cac5-7aad-4f36-90f4-c5cb644ab1bc" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Modules.Approvals.Tests\bin\Debug\net10.0\NEXUS.Modules.Approvals.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Modules.Approvals.Tests.ApprovalRequestDomainTests" name="Approve_FromDraft_Throws" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Modules.Approvals.Tests.P003SecurityRegressionTests.Delegate_ToIneligibleTarget_ReturnsForbidden" storage="c:\projects\pmo\apps\api\tests\nexus.modules.approvals.tests\bin\debug\net10.0\nexus.modules.approvals.tests.dll" id="ebdb4af7-73a5-12c4-0a47-88ae723cf95a">
+      <Execution id="d3be76bc-e591-46cd-93e5-5048b186d1fc" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Modules.Approvals.Tests\bin\Debug\net10.0\NEXUS.Modules.Approvals.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Modules.Approvals.Tests.P003SecurityRegressionTests" name="Delegate_ToIneligibleTarget_ReturnsForbidden" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Modules.Approvals.Tests.P003SecurityRegressionTests.GetById_WithoutViewPermission_ReturnsForbidden" storage="c:\projects\pmo\apps\api\tests\nexus.modules.approvals.tests\bin\debug\net10.0\nexus.modules.approvals.tests.dll" id="cb989e24-3c7d-a4f0-0d7f-18d14d8b55ec">
+      <Execution id="18f1e784-993e-4da6-8f8b-0429ce847e1b" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Modules.Approvals.Tests\bin\Debug\net10.0\NEXUS.Modules.Approvals.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Modules.Approvals.Tests.P003SecurityRegressionTests" name="GetById_WithoutViewPermission_ReturnsForbidden" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Modules.Approvals.Tests.ApprovalRequestDomainTests.Submit_FromDraft_SetsSubmitted" storage="c:\projects\pmo\apps\api\tests\nexus.modules.approvals.tests\bin\debug\net10.0\nexus.modules.approvals.tests.dll" id="b27602ae-0bab-7038-f9c1-1d47b4cf3b98">
+      <Execution id="79e1c6f7-6fea-4c99-9d14-f6b255952474" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Modules.Approvals.Tests\bin\Debug\net10.0\NEXUS.Modules.Approvals.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Modules.Approvals.Tests.ApprovalRequestDomainTests" name="Submit_FromDraft_SetsSubmitted" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Modules.Approvals.Tests.P003SecurityRegressionTests.ConcurrencyConflict_ReturnsControlled409" storage="c:\projects\pmo\apps\api\tests\nexus.modules.approvals.tests\bin\debug\net10.0\nexus.modules.approvals.tests.dll" id="055ce95b-dc82-e3bc-7b1f-aa764ac29caf">
+      <Execution id="f89ca726-e622-4a65-9f7e-0dfabc0f7dca" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Modules.Approvals.Tests\bin\Debug\net10.0\NEXUS.Modules.Approvals.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Modules.Approvals.Tests.P003SecurityRegressionTests" name="ConcurrencyConflict_ReturnsControlled409" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Modules.Approvals.Tests.P003SecurityRegressionTests.Approve_ByRequester_Rejected" storage="c:\projects\pmo\apps\api\tests\nexus.modules.approvals.tests\bin\debug\net10.0\nexus.modules.approvals.tests.dll" id="0d6ae1a0-3eb2-fbd4-3084-b7b42e168204">
+      <Execution id="495a397e-9184-4781-b183-6ee0abaa6bb9" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Modules.Approvals.Tests\bin\Debug\net10.0\NEXUS.Modules.Approvals.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Modules.Approvals.Tests.P003SecurityRegressionTests" name="Approve_ByRequester_Rejected" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Modules.Approvals.Tests.ApprovalRequestDomainTests.Delegate_FromApproved_Throws" storage="c:\projects\pmo\apps\api\tests\nexus.modules.approvals.tests\bin\debug\net10.0\nexus.modules.approvals.tests.dll" id="33d6807a-8736-ae1d-ed92-3bc9fc38ad71">
+      <Execution id="6e35bbfe-4d4d-4e70-8828-761133efdafe" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Modules.Approvals.Tests\bin\Debug\net10.0\NEXUS.Modules.Approvals.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Modules.Approvals.Tests.ApprovalRequestDomainTests" name="Delegate_FromApproved_Throws" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Modules.Approvals.Tests.P003SecurityRegressionTests.Delegate_ToSameTenantActiveEligibleTarget_Succeeds" storage="c:\projects\pmo\apps\api\tests\nexus.modules.approvals.tests\bin\debug\net10.0\nexus.modules.approvals.tests.dll" id="e5601f88-fb64-d9e6-446e-557f369a72f7">
+      <Execution id="ecb0cc7f-6c91-4d9d-8c88-f5d9457bb130" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Modules.Approvals.Tests\bin\Debug\net10.0\NEXUS.Modules.Approvals.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Modules.Approvals.Tests.P003SecurityRegressionTests" name="Delegate_ToSameTenantActiveEligibleTarget_Succeeds" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Modules.Approvals.Tests.ApprovalRequestDomainTests.Cancel_FromApproved_Throws" storage="c:\projects\pmo\apps\api\tests\nexus.modules.approvals.tests\bin\debug\net10.0\nexus.modules.approvals.tests.dll" id="0f1a8c48-aa53-163c-bc24-1f65beac1620">
+      <Execution id="409860eb-d1c8-45b7-be1a-c3e95e47bed3" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Modules.Approvals.Tests\bin\Debug\net10.0\NEXUS.Modules.Approvals.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Modules.Approvals.Tests.ApprovalRequestDomainTests" name="Cancel_FromApproved_Throws" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Modules.Approvals.Tests.ApprovalRequestDomainTests.Submit_FromNonDraft_Throws" storage="c:\projects\pmo\apps\api\tests\nexus.modules.approvals.tests\bin\debug\net10.0\nexus.modules.approvals.tests.dll" id="6a217f52-d583-14c2-32cf-1f97211bd4a9">
+      <Execution id="efb435ac-6364-4b2b-9dc7-70bac10d3ae5" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Modules.Approvals.Tests\bin\Debug\net10.0\NEXUS.Modules.Approvals.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Modules.Approvals.Tests.ApprovalRequestDomainTests" name="Submit_FromNonDraft_Throws" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Modules.Approvals.Tests.ApprovalServiceMutationTests.Submit_ByNonRequester_ReturnsForbidden" storage="c:\projects\pmo\apps\api\tests\nexus.modules.approvals.tests\bin\debug\net10.0\nexus.modules.approvals.tests.dll" id="9f94335f-460b-5c57-b394-f8492d4ef076">
+      <Execution id="f2357ade-2471-4485-a623-30b07e1287ea" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Modules.Approvals.Tests\bin\Debug\net10.0\NEXUS.Modules.Approvals.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Modules.Approvals.Tests.ApprovalServiceMutationTests" name="Submit_ByNonRequester_ReturnsForbidden" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="ebdb4af7-73a5-12c4-0a47-88ae723cf95a" executionId="d3be76bc-e591-46cd-93e5-5048b186d1fc" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="c5e6227d-fc3b-f484-7c7c-4e3c4ea12744" executionId="d306c28a-b9a0-4db9-8625-de1ec202ca6d" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="33d6807a-8736-ae1d-ed92-3bc9fc38ad71" executionId="6e35bbfe-4d4d-4e70-8828-761133efdafe" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="f2139dd0-df92-5ee0-dd7c-00609ceba905" executionId="dc375b05-90a3-4668-9917-b177e9f59d3f" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="e5601f88-fb64-d9e6-446e-557f369a72f7" executionId="ecb0cc7f-6c91-4d9d-8c88-f5d9457bb130" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="6a217f52-d583-14c2-32cf-1f97211bd4a9" executionId="efb435ac-6364-4b2b-9dc7-70bac10d3ae5" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="55a11b09-659d-4526-be3f-8b4033332ac1" executionId="3da5cac5-7aad-4f36-90f4-c5cb644ab1bc" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="0d6ae1a0-3eb2-fbd4-3084-b7b42e168204" executionId="495a397e-9184-4781-b183-6ee0abaa6bb9" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="0f1a8c48-aa53-163c-bc24-1f65beac1620" executionId="409860eb-d1c8-45b7-be1a-c3e95e47bed3" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="b27602ae-0bab-7038-f9c1-1d47b4cf3b98" executionId="79e1c6f7-6fea-4c99-9d14-f6b255952474" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="753291e6-88f0-2f3f-7e93-a24b98be1ea5" executionId="3b8300f2-79f5-481b-8fb6-d9eba28f3584" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="8d1786c4-84b6-a4f8-c1a8-98344ffae28b" executionId="80456d46-69f3-40c9-a6d4-9cf22dcf430d" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="055ce95b-dc82-e3bc-7b1f-aa764ac29caf" executionId="f89ca726-e622-4a65-9f7e-0dfabc0f7dca" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="7e81230d-bb40-a4ee-3288-25ac107f390f" executionId="0ba4bbfb-32e8-40ff-9f71-b07995cbd7ac" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="cb989e24-3c7d-a4f0-0d7f-18d14d8b55ec" executionId="18f1e784-993e-4da6-8f8b-0429ce847e1b" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="9f94335f-460b-5c57-b394-f8492d4ef076" executionId="f2357ade-2471-4485-a623-30b07e1287ea" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="55962c45-7360-aa4f-5c1f-ce15a901b037" executionId="3702aef8-148c-49d9-866f-844213f0cdda" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="52fbc266-ec3f-1374-ff75-816906fa18b8" executionId="45ecf27f-9146-4bbe-9be8-704f8a4b9a19" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="98803b15-b151-fba8-a975-13ce39b689d2" executionId="35e5afd4-fc08-4e14-999a-3998fa1db6b3" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="cddfd98e-75fe-b7c2-3060-c372720ed7f5" executionId="ccdf431d-8a0c-4c99-9294-0e11ed03dc92" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Completed">
+    <Counters total="20" executed="20" passed="20" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.0.0+e341b939fe (64-bit .NET 10.0.10)&#xD;
+[xUnit.net 00:00:00.14]   Discovering: NEXUS.Modules.Approvals.Tests&#xD;
+[xUnit.net 00:00:00.20]   Discovered:  NEXUS.Modules.Approvals.Tests&#xD;
+[xUnit.net 00:00:00.24]   Starting:    NEXUS.Modules.Approvals.Tests&#xD;
+[xUnit.net 00:00:03.46]   Finished:    NEXUS.Modules.Approvals.Tests&#xD;
+</StdOut>
+    </Output>
+  </ResultSummary>
+</TestRun>

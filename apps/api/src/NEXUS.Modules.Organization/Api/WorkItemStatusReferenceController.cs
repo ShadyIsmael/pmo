@@ -18,14 +18,14 @@ public sealed class WorkItemStatusReferenceController : ControllerBase
     }
 
     [HttpGet]
-    [Authorize(Policy = "WorkItemStatus.View")]
+    [Authorize(Policy = "ReferenceData.View")]
     public async Task<IActionResult> Get([FromQuery] bool includeInactive = true, CancellationToken cancellationToken = default)
     {
         return Ok(await _service.GetAsync(includeInactive, cancellationToken));
     }
 
     [HttpPost]
-    [Authorize(Policy = "WorkItemStatus.Manage")]
+    [Authorize(Policy = "ReferenceData.Create")]
     public async Task<IActionResult> Create([FromBody] SaveWorkItemStatusRequest request, CancellationToken cancellationToken)
     {
         var result = await _service.CreateAsync(request, ActorId(), cancellationToken);
@@ -33,11 +33,19 @@ public sealed class WorkItemStatusReferenceController : ControllerBase
     }
 
     [HttpPut("{id:guid}")]
-    [Authorize(Policy = "WorkItemStatus.Manage")]
+    [Authorize(Policy = "ReferenceData.Edit")]
     public async Task<IActionResult> Update(Guid id, [FromBody] SaveWorkItemStatusRequest request, CancellationToken cancellationToken)
     {
         var result = await _service.UpdateAsync(id, request, ActorId(), cancellationToken);
         return result.IsFailure ? StatusCode(result.Error!.StatusCode, result.Error) : Ok(result.Value);
+    }
+
+    [HttpPut("{id:guid}/deactivate")]
+    [Authorize(Policy = "ReferenceData.Delete")]
+    public async Task<IActionResult> Deactivate(Guid id, CancellationToken cancellationToken)
+    {
+        var result = await _service.DeactivateAsync(id, ActorId(), cancellationToken);
+        return result.IsFailure ? StatusCode(result.Error!.StatusCode, result.Error) : NoContent();
     }
 
     private string ActorId() => User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "System";

@@ -18,7 +18,7 @@ function createQueryClient() {
 describe("project reporting configuration query", () => {
   beforeEach(() => {
     window.localStorage.clear();
-    setTokens("test-access-token", "test-refresh-token");
+    setTokens("test-access-token");
   });
 
   afterEach(() => {

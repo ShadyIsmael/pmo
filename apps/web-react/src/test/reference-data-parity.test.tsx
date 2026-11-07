@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "../i18n/messages";
+import { ApiError } from "../api/client";
 import { VendorCategoriesPage } from "../features/administration/VendorCategoriesPage";
 import { ProjectRolesPage } from "../features/administration/ProjectRolesPage";
 import { WorkItemStatusesPage } from "../features/administration/WorkItemStatusesPage";
@@ -15,6 +16,8 @@ const mocks = vi.hoisted(() => ({
   updateHook: vi.fn(),
   create: vi.fn(),
   update: vi.fn(),
+  deactivateCategory: vi.fn(),
+  deactivateCategoryHook: vi.fn(),
   refetch: vi.fn(),
   projectRoles: vi.fn(),
   projectRoleNextCode: vi.fn(),
@@ -27,8 +30,10 @@ const mocks = vi.hoisted(() => ({
   statuses: vi.fn(),
   createStatus: vi.fn(),
   updateStatus: vi.fn(),
+  deactivateStatus: vi.fn(),
   createStatusHook: vi.fn(),
   updateStatusHook: vi.fn(),
+  deactivateStatusHook: vi.fn(),
 }));
 
 vi.mock("@auth/AuthProvider", () => ({ useAuth: mocks.useAuth }));
@@ -40,9 +45,11 @@ vi.mock("../features/administration/api/admin", () => ({
   useVendorCategories: mocks.categories,
   useCreateVendorCategory: mocks.createHook,
   useUpdateVendorCategory: mocks.updateHook,
+  useDeactivateVendorCategory: mocks.deactivateCategoryHook,
   useWorkItemStatuses: mocks.statuses,
   useCreateWorkItemStatus: mocks.createStatusHook,
   useUpdateWorkItemStatus: mocks.updateStatusHook,
+  useDeactivateWorkItemStatus: mocks.deactivateStatusHook,
 }));
 vi.mock("../features/resources/api/resources", () => ({
   useProjectRoles: mocks.projectRoles,
@@ -71,13 +78,13 @@ function renderPage(path = "/administration/reference-data/vendor-categories") {
   return render(<I18nProvider><MemoryRouter initialEntries={[path]}><VendorCategoriesPage /></MemoryRouter></I18nProvider>);
 }
 
-function renderProjectRolesPage(permissions = ["settings.read", "Resource.Manage"]) {
+function renderProjectRolesPage(permissions = ["Settings.View", "ReferenceData.View", "ReferenceData.Create", "ReferenceData.Edit", "ReferenceData.Delete"]) {
   window.localStorage.setItem("nexus-locale", "en");
   mocks.useAuth.mockReturnValue({ user: { id: "admin-1", permissions }, status: "authenticated" });
   return render(<I18nProvider><MemoryRouter initialEntries={["/administration/reference-data/project-roles"]}><ProjectRolesPage /></MemoryRouter></I18nProvider>);
 }
 
-function renderWorkItemStatusesPage(permissions = ["settings.read", "settings.write"]) {
+function renderWorkItemStatusesPage(permissions = ["Settings.View", "ReferenceData.View", "ReferenceData.Create", "ReferenceData.Edit", "ReferenceData.Delete"]) {
   window.localStorage.setItem("nexus-locale", "en");
   mocks.useAuth.mockReturnValue({ user: { id: "admin-1", permissions }, status: "authenticated" });
   return render(<I18nProvider><MemoryRouter initialEntries={["/administration/reference-data/work-item-statuses"]}><WorkItemStatusesPage /></MemoryRouter></I18nProvider>);
@@ -85,13 +92,15 @@ function renderWorkItemStatusesPage(permissions = ["settings.read", "settings.wr
 
 describe("Vendor Categories source parity", () => {
   beforeEach(() => {
-    mocks.useAuth.mockReset().mockReturnValue({ user: { id: "admin-1", permissions: ["settings.read", "settings.write"] }, status: "authenticated" });
+    mocks.useAuth.mockReset().mockReturnValue({ user: { id: "admin-1", permissions: ["Settings.View", "ReferenceData.View", "ReferenceData.Create", "ReferenceData.Edit", "ReferenceData.Delete"] }, status: "authenticated" });
     mocks.categories.mockReset().mockReturnValue({ data: initialCategories, isLoading: false, isError: false, refetch: mocks.refetch });
     mocks.create.mockReset().mockResolvedValue(undefined);
     mocks.update.mockReset().mockResolvedValue(undefined);
     mocks.refetch.mockReset();
     mocks.createHook.mockReturnValue({ mutateAsync: mocks.create, isPending: false });
     mocks.updateHook.mockReturnValue({ mutateAsync: mocks.update, isPending: false });
+    mocks.deactivateCategory.mockReset().mockResolvedValue(undefined);
+    mocks.deactivateCategoryHook.mockReturnValue({ mutateAsync: mocks.deactivateCategory, isPending: false });
     mocks.projectRoles.mockReturnValue({ data: initialProjectRoles, isLoading: false, isError: false, refetch: mocks.refetch });
     mocks.projectRoleNextCode.mockImplementation((enabled: boolean) => enabled
       ? { data: { code: "PROJROLE-000001" }, isLoading: false }
@@ -105,8 +114,10 @@ describe("Vendor Categories source parity", () => {
     mocks.statuses.mockReturnValue({ data: initialStatuses, isLoading: false, isError: false, refetch: mocks.refetch });
     mocks.createStatus.mockReset().mockResolvedValue(undefined);
     mocks.updateStatus.mockReset().mockResolvedValue(undefined);
+    mocks.deactivateStatus.mockReset().mockResolvedValue(undefined);
     mocks.createStatusHook.mockReturnValue({ mutateAsync: mocks.createStatus, isPending: false });
     mocks.updateStatusHook.mockReturnValue({ mutateAsync: mocks.updateStatus, isPending: false });
+    mocks.deactivateStatusHook.mockReturnValue({ mutateAsync: mocks.deactivateStatus, isPending: false });
     vi.stubGlobal("confirm", vi.fn().mockReturnValue(true));
   });
 
@@ -119,8 +130,8 @@ describe("Vendor Categories source parity", () => {
     expect(screen.getByRole("link", { name: /Currencies/ })).toHaveAttribute("href", "/administration/currencies");
   });
 
-  it("sorts by display order, uses semantic text-only status colors, and hides management actions without Settings.Write", () => {
-    mocks.useAuth.mockReturnValue({ user: { id: "reader-1", permissions: ["settings.read"] }, status: "authenticated" });
+  it("sorts by display order, uses semantic text-only status colors, and hides management actions without a mutation permission", () => {
+    mocks.useAuth.mockReturnValue({ user: { id: "reader-1", permissions: ["Settings.View"] }, status: "authenticated" });
     renderPage();
 
     const rows = screen.getAllByRole("row");
@@ -156,7 +167,7 @@ describe("Vendor Categories source parity", () => {
   });
 
   it("maps duplicate create errors to localized feedback without closing the sheet", async () => {
-    mocks.create.mockRejectedValue(new Error("A category with this code already exists"));
+    mocks.create.mockRejectedValue(new ApiError(409, "A category with this code already exists", "CONFLICT"));
     renderPage();
     fireEvent.click(screen.getByRole("button", { name: "Add category" }));
     const sheet = screen.getByRole("dialog", { name: "Add category" });
@@ -195,8 +206,8 @@ describe("Vendor Categories source parity", () => {
     expect(mocks.refetch).toHaveBeenCalledOnce();
   });
 
-  it("lists project roles in order with text-only status and gates management by Resource.Manage", () => {
-    renderProjectRolesPage(["settings.read"]);
+  it("lists project roles in order with text-only status and gates management by granular Reference Data permissions", () => {
+    renderProjectRolesPage(["Settings.View"]);
 
     const rows = screen.getAllByRole("row");
     expect(within(rows[1]).getByText("PM")).toBeInTheDocument();
@@ -205,6 +216,15 @@ describe("Vendor Categories source parity", () => {
     expect(within(rows[2]).getByText("Inactive")).toHaveClass("text-muted-foreground");
     expect(screen.queryByRole("button", { name: "Add Role" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
+  });
+
+  it("shows only the operation granted to an ordinary Reference Data role", () => {
+    mocks.useAuth.mockReturnValue({ user: { id: "creator-1", permissions: ["Settings.View", "ReferenceData.View", "ReferenceData.Create"] }, status: "authenticated" });
+    renderPage();
+
+    expect(screen.getByRole("button", { name: "Add category" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Edit category" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Deactivate" })).not.toBeInTheDocument();
   });
 
   it("creates a role in a side sheet and leaves untouched generated codes to the server", async () => {
@@ -258,8 +278,8 @@ describe("Vendor Categories source parity", () => {
     expect(mocks.updateProjectRole).toHaveBeenNthCalledWith(2, { id: "role-2", body: expect.objectContaining({ displayOrder: 10 }) });
   });
 
-  it("shows status summaries, filters by status and search, and respects Settings.Write", () => {
-    renderWorkItemStatusesPage(["settings.read"]);
+  it("shows status summaries, filters by status and search, and respects the ReferenceData mutation capabilities", () => {
+    renderWorkItemStatusesPage(["Settings.View"]);
     expect(screen.getByText("Total statuses")).toBeInTheDocument();
     expect(screen.getByText("Default status")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Add status" })).not.toBeInTheDocument();
@@ -290,7 +310,7 @@ describe("Vendor Categories source parity", () => {
   });
 
   it("keeps codes immutable on edit and translates a protected-status update error", async () => {
-    mocks.updateStatus.mockRejectedValue(new Error("A status currently used by work items cannot be deactivated"));
+    mocks.updateStatus.mockRejectedValue(new ApiError(409, "A status currently used by work items cannot be deactivated", "CONFLICT"));
     renderWorkItemStatusesPage();
     const row = screen.getAllByRole("row")[1];
     fireEvent.click(within(row).getByRole("button", { name: "Edit status Open" }));
@@ -309,7 +329,7 @@ describe("Vendor Categories source parity", () => {
     await waitFor(() => expect(mocks.updateStatus).toHaveBeenCalledWith({ id: "status-3", input: expect.objectContaining({ isDefault: true }) }));
 
     fireEvent.click(within(screen.getAllByRole("row")[1]).getByRole("button", { name: "Deactivate" }));
-    await waitFor(() => expect(mocks.updateStatus).toHaveBeenCalledWith({ id: "status-1", input: expect.objectContaining({ isActive: false, isDefault: false }) }));
+    await waitFor(() => expect(mocks.deactivateStatus).toHaveBeenCalledWith("status-1"));
     fireEvent.click(within(screen.getAllByRole("row")[2]).getByRole("button", { name: "Activate" }));
     await waitFor(() => expect(mocks.updateStatus).toHaveBeenCalledWith({ id: "status-2", input: expect.objectContaining({ isActive: true }) }));
 

@@ -49,12 +49,31 @@ public sealed class RiskWorkflowAdapter : IWorkflowEntityAdapter
     public async Task<Result> AuthorizeAsync(WorkflowExecutionContext context, Guid entityId, CancellationToken cancellationToken = default)
     {
         var principal = _httpContextAccessor.HttpContext?.User;
-        if (principal?.Identity?.IsAuthenticated != true || !principal.Claims.Any(claim => claim.Type == "permission" && (claim.Value is "Risk.View" or "Risk.Edit" or "Risk.Mitigate")) && !principal.IsInRole("SystemAdministrator"))
+        if (principal?.Identity?.IsAuthenticated != true || !HasReadPermission(principal))
             return Result.Failure(Error.Forbidden("Risk access is required."));
         return await FindAccessibleAsync(entityId, context, cancellationToken) is null
             ? Result.Failure(WorkflowErrors.EntityNotAccessible(EntityType, entityId))
             : Result.Success();
     }
+
+    /// <summary>
+    /// Moving a risk between workflow states is a write operation. Read access
+    /// (<c>Risk.View</c>) must never be sufficient, so the transition gate requires the
+    /// dedicated mitigation permission that the risk UI also uses.
+    /// </summary>
+    public async Task<Result> AuthorizeTransitionAsync(WorkflowTransitionContext context, CancellationToken cancellationToken = default)
+    {
+        var principal = _httpContextAccessor.HttpContext?.User;
+        if (principal?.Identity?.IsAuthenticated != true) return Result.Failure(Error.Unauthorized("An authenticated user is required."));
+        if (!principal.HasClaim("permission", "Risk.Mitigate"))
+            return Result.Failure(Error.Forbidden("Risk mitigation permission is required for workflow transitions."));
+        return await FindAccessibleAsync(context.EntityId, context.Execution, cancellationToken) is null
+            ? Result.Failure(WorkflowErrors.EntityNotAccessible(EntityType, context.EntityId))
+            : Result.Success();
+    }
+
+    private static bool HasReadPermission(System.Security.Claims.ClaimsPrincipal principal) =>
+        principal.Claims.Any(claim => claim.Type == "permission" && claim.Value is "Risk.View" or "Risk.Edit" or "Risk.Mitigate");
 
     public Task<Result> ValidateTransitionAsync(WorkflowTransitionContext context, CancellationToken cancellationToken = default)
     {
@@ -81,9 +100,10 @@ public sealed class RiskWorkflowAdapter : IWorkflowEntityAdapter
         var query = _context.Set<Risk>().AsQueryable();
         if (!tracked) query = query.AsNoTracking();
         var risk = await query.FirstOrDefaultAsync(item => item.Id == id && !item.IsDeleted, cancellationToken);
-        if (risk is null || (context.TenantId != Guid.Empty && risk.TenantId != context.TenantId)) return null;
+        if (risk is null || context.TenantId == Guid.Empty || risk.TenantId != context.TenantId) return null;
+        // An empty project scope means "no project assignments", never "all projects".
         var projectIds = _managementContext.Current?.Scope.ProjectIds;
-        return projectIds is not null && projectIds.Count > 0 && !projectIds.Contains(risk.ProjectId) ? null : risk;
+        return projectIds is not null && projectIds.Contains(risk.ProjectId) ? risk : null;
     }
 }
 

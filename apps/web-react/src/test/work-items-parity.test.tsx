@@ -7,7 +7,7 @@ import { useManagement } from "../api/management";
 import { useWorkItemStatuses } from "../api/workItems";
 import { useFullWorkItem, useFullWorkItemActivity, useFullWorkItemAssignees, useFullWorkItemCommentMutation, useFullWorkItemComments, useFullWorkItemInsights, useFullWorkItemMutations, useFullWorkItemWorkflow, useFullWorkItems, type WorkItemDto } from "../api/workItemsFull";
 import { useProjects } from "../features/projects/api/projects";
-import { useUserLookup } from "../features/projects/lib/project-lookups";
+import { useWorkItemWorkflowUserLookup } from "../features/projects/lib/project-lookups";
 import { I18nProvider } from "../i18n/messages";
 import { WorkItemsPageFull } from "../features/delivery/WorkItemPages";
 
@@ -15,7 +15,7 @@ vi.mock("../auth/AuthProvider", () => ({ useAuth: vi.fn() }));
 vi.mock("../api/management", () => ({ useManagement: vi.fn() }));
 vi.mock("../api/workItems", () => ({ useWorkItemStatuses: vi.fn() }));
 vi.mock("../features/projects/api/projects", () => ({ useProjects: vi.fn() }));
-vi.mock("../features/projects/lib/project-lookups", () => ({ useUserLookup: vi.fn() }));
+vi.mock("../features/projects/lib/project-lookups", () => ({ useWorkItemWorkflowUserLookup: vi.fn() }));
 vi.mock("../api/workItemsFull", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/workItemsFull")>();
   return { ...actual, useFullWorkItems: vi.fn(), useFullWorkItemInsights: vi.fn(), useFullWorkItem: vi.fn(), useFullWorkItemActivity: vi.fn(), useFullWorkItemAssignees: vi.fn(), useFullWorkItemCommentMutation: vi.fn(), useFullWorkItemComments: vi.fn(), useFullWorkItemMutations: vi.fn(), useFullWorkItemWorkflow: vi.fn() };
@@ -25,7 +25,7 @@ const useAuthMock = vi.mocked(useAuth);
 const useManagementMock = vi.mocked(useManagement);
 const useStatusesMock = vi.mocked(useWorkItemStatuses);
 const useProjectsMock = vi.mocked(useProjects);
-const useUsersMock = vi.mocked(useUserLookup);
+const useUsersMock = vi.mocked(useWorkItemWorkflowUserLookup);
 const useItemsMock = vi.mocked(useFullWorkItems);
 const useInsightsMock = vi.mocked(useFullWorkItemInsights);
 const useDetailMock = vi.mocked(useFullWorkItem);
@@ -58,9 +58,9 @@ describe("Work Items feature and design parity", () => {
     executeTransition.mockReset().mockResolvedValue({ success: true });
     useAuthMock.mockReturnValue({ user: { id: "user-1", permissions: ["WorkItem.View", "WorkItem.Create", "WorkItem.Edit"] } } as unknown as ReturnType<typeof useAuth>);
     useManagementMock.mockReturnValue({ canMutate: true, effectiveReadOnly: false } as unknown as ReturnType<typeof useManagement>);
-    useStatusesMock.mockReturnValue({ data: [{ id: "status-open", code: "Open", nameEn: "Open", nameAr: "مفتوح", displayOrder: 1, isActive: true, isTerminal: false }] } as unknown as ReturnType<typeof useWorkItemStatuses>);
+    useStatusesMock.mockReturnValue({ data: [{ id: "status-open", code: "Open", nameEn: "Open", nameAr: "مفتوح", displayOrder: 1, isActive: true, isTerminal: false }, { id: "status-in-progress", code: "InProgress", nameEn: "In progress", nameAr: "In progress", displayOrder: 2, isActive: true, isTerminal: false }] } as unknown as ReturnType<typeof useWorkItemStatuses>);
     useProjectsMock.mockReturnValue({ data: { items: [{ id: "project-1", publicId: "public-project-1", name: "Core Platform", code: "PRJ-1" }] } } as unknown as ReturnType<typeof useProjects>);
-    useUsersMock.mockReturnValue({ data: [] } as unknown as ReturnType<typeof useUserLookup>);
+    useUsersMock.mockReturnValue({ data: [] } as unknown as ReturnType<typeof useWorkItemWorkflowUserLookup>);
     useItemsMock.mockReturnValue({ data: { items: [makeWorkItem()], totalCount: 1, totalPages: 1 }, isLoading: false, isError: false } as unknown as ReturnType<typeof useFullWorkItems>);
     useInsightsMock.mockReturnValue({ data: { total: 8, open: 5, overdue: 2, unassigned: 1, dueThisWeek: 3, byStatus: [{ key: "Open", count: 5 }], byPriority: [{ key: "High", count: 3 }] }, isLoading: false, isError: false, refetch: vi.fn() } as unknown as ReturnType<typeof useFullWorkItemInsights>);
     useDetailMock.mockReturnValue({ data: makeWorkItem(), isLoading: false, isError: false } as unknown as ReturnType<typeof useFullWorkItem>);
@@ -130,6 +130,18 @@ describe("Work Items feature and design parity", () => {
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Create work item" })).not.toBeInTheDocument());
   });
 
+  it("shows a retryable error when assignee filter options fail to load", async () => {
+    const retryUsers = vi.fn();
+    useUsersMock.mockReturnValue({ data: [], isError: true, isLoading: false, refetch: retryUsers } as unknown as ReturnType<typeof useWorkItemWorkflowUserLookup>);
+    renderWorkItems();
+
+    fireEvent.click(screen.getByRole("button", { name: /More filters/ }));
+    const filtersSheet = await screen.findByRole("dialog", { name: "Advanced filters" });
+    expect(within(filtersSheet).getByText("Assignee options could not be loaded.")).toBeInTheDocument();
+    fireEvent.click(within(filtersSheet).getByRole("button", { name: "Retry" }));
+    expect(retryUsers).toHaveBeenCalledOnce();
+  });
+
   it("shows a localized severity selector without free-text severity or resolution for Issues", async () => {
     window.localStorage.setItem("nexus-locale", "ar");
     renderWorkItems();
@@ -164,7 +176,7 @@ describe("Work Items feature and design parity", () => {
     expect(await screen.findByRole("dialog", { name: "Prepare release" })).toBeInTheDocument();
     expect(screen.getByText("Confirm the release checklist.")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Open full details" })).toHaveAttribute("href", "/work-items/task-1");
-    fireEvent.click(screen.getByRole("button", { name: "Start work" }));
+    fireEvent.click(screen.getByRole("button", { name: "In progress" }));
     await waitFor(() => expect(executeTransition).toHaveBeenCalledWith({ transitionCode: "StartWork" }));
 
     fireEvent.click(within(screen.getByRole("dialog", { name: "Prepare release" })).getByRole("combobox", { name: "Assignee" }));
@@ -184,7 +196,7 @@ describe("Work Items feature and design parity", () => {
     renderWorkItems();
     fireEvent.click(screen.getByRole("button", { name: "Prepare release" }));
     expect(await screen.findByRole("dialog", { name: "Prepare release" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Start work" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "In progress" })).toBeDisabled();
     expect(within(screen.getByRole("dialog", { name: "Prepare release" })).queryByRole("combobox", { name: "Assignee" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Create work item" })).toBeDisabled();
   });

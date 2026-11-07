@@ -30,7 +30,7 @@ public class PlanAssignmentController : ControllerBase
         return ToActionResult(result, value => Ok(value));
     }
 
-    [Authorize(Policy = "Planning.Manage")]
+    [Authorize(Policy = "Planning.Edit")]
     [HttpPost]
     public async Task<IActionResult> Create(Guid projectId, Guid planId, [FromBody] CreatePlanAssignmentDto dto, CancellationToken cancellationToken)
     {
@@ -38,7 +38,15 @@ public class PlanAssignmentController : ControllerBase
         return ToActionResult(result, value => CreatedAtAction(nameof(GetByPlan), new { projectId, planId }, value));
     }
 
-    [Authorize(Policy = "Planning.Manage")]
+    [Authorize(Policy = "Planning.Edit")]
+    [HttpPost("batch")]
+    public async Task<IActionResult> CreateMany(Guid projectId, Guid planId, [FromBody] CreatePlanAssignmentsBatchDto dto, CancellationToken cancellationToken)
+    {
+        var result = await _assignmentService.CreateManyAsync(planId, dto, UserId(), cancellationToken);
+        return ToActionResult(result, value => CreatedAtAction(nameof(GetByPlan), new { projectId, planId }, value));
+    }
+
+    [Authorize(Policy = "Planning.Edit")]
     [HttpPut("{assignmentId:guid}")]
     public async Task<IActionResult> Update(Guid projectId, Guid planId, Guid assignmentId, [FromBody] UpdatePlanAssignmentDto dto, CancellationToken cancellationToken)
     {
@@ -46,7 +54,7 @@ public class PlanAssignmentController : ControllerBase
         return ToActionResult(result, value => Ok(value));
     }
 
-    [Authorize(Policy = "Planning.Manage")]
+    [Authorize(Policy = "Planning.Edit")]
     [HttpDelete("{assignmentId:guid}")]
     public async Task<IActionResult> Delete(Guid projectId, Guid planId, Guid assignmentId, [FromQuery] byte[] rowVersion, CancellationToken cancellationToken)
     {

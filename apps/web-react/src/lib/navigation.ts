@@ -1,6 +1,6 @@
 import {
   Home, FolderKanban, Layers3, LayoutGrid, CalendarDays, ListTodo, SquareCheck, CircleAlert,
-  Users, UsersRound, Building2, BarChart3, Coins, Receipt, TrendingUp, TriangleAlert,
+  Users, UsersRound, Building2, BarChart3, Coins, TriangleAlert,
   FileText, Settings2, ShieldCheck, BriefcaseBusiness, BadgeCheck, ClipboardCheck,
   GitBranch, ListFilter, Plug, Shield, Workflow as WorkflowIcon, User as UserIcon,
   type LucideIcon,
@@ -18,6 +18,8 @@ export interface NavItem {
   items?: NavItem[];
   requiredPermission?: string;
   requiredAnyPermission?: string[];
+  requiredPlatformAccess?: boolean;
+  requiredOrganizationAccess?: boolean;
   requiredPlugin?: string;
   readiness?: NavigationReadiness;
   match?: NavigationMatch;
@@ -43,18 +45,22 @@ export interface AdministrationCategory {
   labelKey: string;
   icon: LucideIcon;
   requiredPermissions: string[];
+  requiredPlatformAccess?: boolean;
+  requiredOrganizationAccess?: boolean;
 }
 
 export const administrationCategoryConfig: AdministrationCategory[] = [
-  { id: "organization", href: "/administration/organization", labelKey: "nav.organization", icon: Building2, requiredPermissions: [Permissions.Settings.Read] },
-  { id: "access", href: "/administration/access", labelKey: "nav.accessSecurity", icon: Shield, requiredPermissions: [Permissions.Users.Read, Permissions.Users.Write] },
-  { id: "reference-data", href: "/administration/reference-data", labelKey: "nav.referenceData", icon: ListFilter, requiredPermissions: [Permissions.Settings.Read] },
-  { id: "platform-settings", href: "/administration/settings", labelKey: "nav.platformSettings", icon: Settings2, requiredPermissions: [Permissions.Settings.Read] },
-  { id: "integrations", href: "/administration/integrations", labelKey: "nav.integrations", icon: Plug, requiredPermissions: [Permissions.Settings.Read, ...DirectoryAccessPermissions] },
-  { id: "governance", href: "/administration/governance", labelKey: "nav.governance", icon: GitBranch, requiredPermissions: [Permissions.Settings.Read, Permissions.Workflow.View, Permissions.AssignmentRecovery.View, Permissions.AssignmentRecovery.Initiate, Permissions.AssignmentRecovery.Manage] },
+  { id: "organization", href: "/administration/organization", labelKey: "nav.organization", icon: Building2, requiredPermissions: [Permissions.Settings.View] },
+  { id: "tenant-settings", href: "/administration/tenant-settings", labelKey: "nav.tenantSettings", icon: Settings2, requiredPermissions: [Permissions.Settings.View] },
+  { id: "organization-settings", href: "/administration/organization-settings", labelKey: "nav.organizationSettings", icon: Building2, requiredPermissions: [Permissions.Settings.View], requiredOrganizationAccess: true },
+  { id: "access", href: "/administration/access", labelKey: "nav.accessSecurity", icon: Shield, requiredPermissions: [Permissions.Users.View, Permissions.Users.ManageAccounts, Permissions.Users.SetStatus, Permissions.Users.AssignRoles, Permissions.Users.ManageOverrides, Permissions.Roles.View, Permissions.Roles.Create, Permissions.Roles.EditDetails, Permissions.Roles.ConfigurePermissions, Permissions.Roles.Delete] },
+  { id: "reference-data", href: "/administration/reference-data", labelKey: "nav.referenceData", icon: ListFilter, requiredPermissions: [Permissions.ReferenceData.View] },
+  { id: "platform-settings", href: "/administration/settings", labelKey: "nav.platformSettings", icon: Settings2, requiredPermissions: [], requiredPlatformAccess: true },
+  { id: "integrations", href: "/administration/integrations", labelKey: "nav.integrations", icon: Plug, requiredPermissions: [Permissions.Settings.View, ...DirectoryAccessPermissions] },
+  { id: "governance", href: "/administration/governance", labelKey: "nav.governance", icon: GitBranch, requiredPermissions: [Permissions.Settings.View, Permissions.Workflow.View, Permissions.AssignmentRecovery.View, Permissions.AssignmentRecovery.Initiate, Permissions.AssignmentRecovery.Manage] },
 ];
 
-/** Single source of truth for enterprise navigation — mirrors Next.js navigationConfig. */
+/** Single source of truth for enterprise navigation. */
 export const navigationConfig: NavSection[] = [
   {
     id: "home",
@@ -62,7 +68,7 @@ export const navigationConfig: NavSection[] = [
     icon: Home,
     order: 10,
     items: [
-      item({ id: "home", labelKey: "nav.home", href: "/home", icon: Home, match: "exact" }),
+      item({ id: "home", labelKey: "nav.home", href: "/home", icon: Home, match: "exact", requiredPermission: Permissions.Dashboard.View }),
       item({ id: "my-work", labelKey: "nav.myWork", href: "/my-work", icon: ClipboardCheck }),
       item({ id: "approvals", labelKey: "nav.approvals", href: "/my-work/approvals", icon: BadgeCheck }),
     ],
@@ -73,7 +79,7 @@ export const navigationConfig: NavSection[] = [
     icon: BriefcaseBusiness,
     order: 20,
     items: [
-      item({ id: "projects", labelKey: "nav.projects", href: "/projects", icon: FolderKanban, requiredPermission: Permissions.Projects.Read }),
+      item({ id: "projects", labelKey: "nav.projects", href: "/projects", icon: FolderKanban, requiredPermission: Permissions.Project.View }),
       item({ id: "programs", labelKey: "nav.programs", href: "/portfolios/programs", icon: Layers3, requiredPermission: Permissions.Program.View }),
       item({ id: "portfolios", labelKey: "nav.portfolios", href: "/portfolios", icon: LayoutGrid, requiredPermission: Permissions.Portfolio.View }),
       item({ id: "meetings", labelKey: "nav.meetings", href: "/meetings", icon: CalendarDays, requiredPermission: Permissions.Meeting.View }),
@@ -87,7 +93,7 @@ export const navigationConfig: NavSection[] = [
     items: [
       item({ id: "work-items", labelKey: "nav.workItems", href: "/work-items", icon: ListTodo, requiredPermission: Permissions.WorkItem.View }),
       item({ id: "my-tasks", labelKey: "nav.tasks", href: "/my-work/tasks", icon: SquareCheck, requiredPermission: Permissions.WorkItem.View }),
-      item({ id: "issues", labelKey: "nav.issues", href: "/risks-issues/issues", icon: CircleAlert, requiredPermission: Permissions.WorkItem.View }),
+      item({ id: "issues", labelKey: "nav.issues", href: "/risks-issues/issues", icon: CircleAlert, requiredPermission: Permissions.Issue.View }),
     ],
   },
   {
@@ -101,18 +107,6 @@ export const navigationConfig: NavSection[] = [
       item({ id: "cost-utilization", labelKey: "nav.costUtilization", href: "/resources/cost-utilization", icon: Coins, requiredPermission: Permissions.Resources.View }),
       item({ id: "vendors", labelKey: "nav.vendors", href: "/resources/vendors", icon: Building2, requiredPermission: Permissions.Resources.View }),
       item({ id: "teams", labelKey: "nav.teams", href: "/resources/teams", icon: Users, requiredPermission: Permissions.Team.View }),
-    ],
-  },
-  {
-    id: "financial-management",
-    labelKey: "nav.sections.financialManagement",
-    icon: Coins,
-    order: 50,
-    items: [
-      item({ id: "financial-overview", labelKey: "nav.financialOverview", href: "/costs", icon: BarChart3, requiredPermission: Permissions.Finances.Read }),
-      item({ id: "budget-allocations", labelKey: "nav.budgets", href: "/costs/budgets", icon: Coins, requiredPermission: Permissions.Finances.Read }),
-      item({ id: "actual-costs", labelKey: "nav.actuals", href: "/costs/actuals", icon: Receipt, requiredPermission: Permissions.Finances.Read }),
-      item({ id: "forecasts", labelKey: "nav.forecasts", href: "/costs/forecasts", icon: TrendingUp, requiredPermission: Permissions.Finances.Read }),
     ],
   },
   {
@@ -141,8 +135,16 @@ export const navigationConfig: NavSection[] = [
     labelKey: "nav.sections.administration",
     icon: Settings2,
     order: 80,
-    items: administrationCategoryConfig.map(({ id, href, labelKey, icon, requiredPermissions }) =>
-      item({ id, href, labelKey, icon, requiredAnyPermission: requiredPermissions })
+    items: administrationCategoryConfig.map(({ id, href, labelKey, icon, requiredPermissions, requiredPlatformAccess, requiredOrganizationAccess }) =>
+      item({
+        id,
+        href,
+        labelKey,
+        icon,
+        requiredAnyPermission: requiredPermissions.length > 0 ? requiredPermissions : undefined,
+        requiredPlatformAccess,
+        requiredOrganizationAccess,
+      })
     ),
   },
 ];
@@ -157,13 +159,15 @@ export const deferredNavigation = [
   { id: "global-commitments", labelKey: "nav.commitments", reason: "Commitments are currently project-context financials." },
 ];
 
-export function filterSections(sections: NavSection[], permissions: string[]): NavSection[] {
+export function filterSections(sections: NavSection[], permissions: string[], canReadPlatform = false, canReadOrganizations = false): NavSection[] {
   // If no permissions loaded yet (still bootstrapping), show unrestricted items so shell never looks empty.
   return sections
     .map((section) => {
       const visibleItems = section.items.filter((navItem) => {
         if (navItem.requiredPermission && !permissions.includes(navItem.requiredPermission)) return false;
         if (navItem.requiredAnyPermission && !navItem.requiredAnyPermission.some((p) => permissions.includes(p))) return false;
+        if (navItem.requiredPlatformAccess && !canReadPlatform) return false;
+        if (navItem.requiredOrganizationAccess && !canReadOrganizations) return false;
         return true;
       });
       if (visibleItems.length === 0) return null;

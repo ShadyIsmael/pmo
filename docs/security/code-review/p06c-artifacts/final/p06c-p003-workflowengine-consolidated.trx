@@ -1,0 +1,35 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="95f3c6a6-309f-485f-b0b7-2acfedb485ae" name="shady@SHADY 2026-11-06 18:15:46" runUser="SHADY\shady" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-11-06T18:15:46.6420495+02:00" queuing="2026-11-06T18:15:46.6420502+02:00" start="2026-11-06T18:15:44.4889196+02:00" finish="2026-11-06T18:15:46.6528890+02:00" />
+  <TestSettings name="default" id="699e2738-b863-4feb-beab-6e3509116cf2">
+    <Deployment runDeploymentRoot="shady_SHADY_2026-11-06_18_15_46" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="ec3fa6e4-7366-4f16-9c57-f68850684839" testId="0edd7bce-6997-6942-c75b-14fbe8c54a96" testName="NEXUS.Modules.WorkflowEngine.Tests.AuditProjectionActionHandlerTests.ExecuteAsync_WritesAuditEntry" computerName="SHADY" duration="00:00:00.2834439" startTime="2026-11-06T18:15:46.0094797+02:00" endTime="2026-11-06T18:15:46.3075485+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="ec3fa6e4-7366-4f16-9c57-f68850684839" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="NEXUS.Modules.WorkflowEngine.Tests.AuditProjectionActionHandlerTests.ExecuteAsync_WritesAuditEntry" storage="c:\projects\pmo\apps\api\tests\nexus.modules.workflowengine.tests\bin\debug\net10.0\nexus.modules.workflowengine.tests.dll" id="0edd7bce-6997-6942-c75b-14fbe8c54a96">
+      <Execution id="ec3fa6e4-7366-4f16-9c57-f68850684839" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Modules.WorkflowEngine.Tests\bin\Debug\net10.0\NEXUS.Modules.WorkflowEngine.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Modules.WorkflowEngine.Tests.AuditProjectionActionHandlerTests" name="ExecuteAsync_WritesAuditEntry" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="0edd7bce-6997-6942-c75b-14fbe8c54a96" executionId="ec3fa6e4-7366-4f16-9c57-f68850684839" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Completed">
+    <Counters total="1" executed="1" passed="1" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>Logging TestHost Diagnostics in file: C:\Projects\pmo\docs\security\code-review\p06c-artifacts\final\p06c-p003-workflowengine-consolidated.diag.host.26-11-06_18-15-44_56555_5.log&#xD;
+[xUnit.net 00:00:00.01] xUnit.net VSTest Adapter v3.0.0+e341b939fe (64-bit .NET 10.0.10)&#xD;
+[xUnit.net 00:00:00.18]   Discovering: NEXUS.Modules.WorkflowEngine.Tests&#xD;
+[xUnit.net 00:00:00.27]   Discovered:  NEXUS.Modules.WorkflowEngine.Tests&#xD;
+[xUnit.net 00:00:00.31]   Starting:    NEXUS.Modules.WorkflowEngine.Tests&#xD;
+[xUnit.net 00:00:00.67]   Finished:    NEXUS.Modules.WorkflowEngine.Tests&#xD;
+</StdOut>
+    </Output>
+  </ResultSummary>
+</TestRun>

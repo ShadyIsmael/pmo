@@ -10,6 +10,8 @@ export interface CostUtilizationFilter {
   vendorId?: string;
   projectRoleId?: string;
   departmentId?: string;
+  teamId?: string;
+  planActivityId?: string;
 }
 
 export interface CostUtilizationMetric {
@@ -48,6 +50,11 @@ export interface CostUtilizationResource {
   metrics: CostUtilizationMetric;
 }
 
+export interface CostUtilizationDepartmentOption {
+  departmentId: string;
+  name: string;
+}
+
 export interface CostUtilizationAttribution {
   id?: string;
   projectPublicId?: string;
@@ -70,6 +77,17 @@ export interface CostUtilizationDaily extends CostUtilizationMetric {
   resourceId: string;
   resourceName: string;
   workDate: string;
+  activities?: CostUtilizationActivity[];
+}
+
+export interface CostUtilizationActivity {
+  planActivityId?: string;
+  activityName?: string;
+  workItemTitles: string[];
+  projectId?: string;
+  projectName?: string;
+  plannedHours: number;
+  actualHours: number;
 }
 
 export interface CostUtilizationReport {
@@ -79,6 +97,7 @@ export interface CostUtilizationReport {
   operational: CostUtilizationMetric;
   byCurrency: CostUtilizationMetric[];
   resources: CostUtilizationResource[];
+  departments?: CostUtilizationDepartmentOption[];
   projects: CostUtilizationAttribution[];
   vendors: CostUtilizationAttribution[];
   roles: CostUtilizationAttribution[];
@@ -95,13 +114,25 @@ function toParams(filter: CostUtilizationFilter): Record<string, string | undefi
     vendorId: filter.vendorId,
     projectRoleId: filter.projectRoleId,
     departmentId: filter.departmentId,
+    teamId: filter.teamId,
+    planActivityId: filter.planActivityId,
   };
 }
 
-export function useCostUtilization(filter: CostUtilizationFilter = {}) {
+export function useCostUtilization(filter: CostUtilizationFilter = {}, enabled = true) {
   return useQuery({
     queryKey: ["resource-analytics", "cost-utilization", filter],
     queryFn: () => api.get<CostUtilizationReport>(endpoints.resourceAnalytics.costUtilization, toParams(filter)),
     staleTime: 30_000,
+    enabled,
+  });
+}
+
+export function useCostUtilizationExportData(filter: CostUtilizationFilter = {}, enabled = true) {
+  return useQuery({
+    queryKey: ["resource-analytics", "cost-utilization-export-data", filter],
+    queryFn: () => api.get<CostUtilizationReport>(endpoints.resourceAnalytics.costUtilizationExportData, toParams(filter)),
+    staleTime: 30_000,
+    enabled,
   });
 }

@@ -1,6 +1,8 @@
 using System.Data;
 using System.Text.Json;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using NEXUS.Api.Middleware;
 using NEXUS.Api.PortfolioManagement;
 using NEXUS.Api.ProgramManagement;
 using NEXUS.Modules.Audit.Domain;
@@ -21,6 +23,7 @@ namespace NEXUS.Api.Governance;
 public sealed class AssignmentRecoveryService
 {
     private const string Pending = "Pending";
+    private const string ApprovedScheduled = "ApprovedScheduled";
     private const string Accepted = "Accepted";
     private const string Rejected = "Rejected";
     private readonly AppDbContext _db;
@@ -50,17 +53,17 @@ public sealed class AssignmentRecoveryService
         Guid tenantId, Guid actorId, string entityType, string? search, string? filter,
         int page, int pageSize, CancellationToken cancellationToken)
     {
-        await EnsureAnyPermissionAsync(actorId, tenantId, cancellationToken,
-            AssignmentRecoveryPermissions.View, AssignmentRecoveryPermissions.Initiate, AssignmentRecoveryPermissions.Manage);
+        await EnsurePermissionAsync(actorId, tenantId, AssignmentRecoveryPermissions.View, cancellationToken);
+        var effectivePermissions = await _effectivePermissions.GetEffectivePermissionsAsync(actorId, tenantId, cancellationToken);
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 100);
         filter = NormalizeFilter(filter);
         var term = search?.Trim();
         var (items, total) = entityType.ToLowerInvariant() switch
         {
-            "project" or "projects" => await GetProjectPageAsync(tenantId, term, filter, page, pageSize, cancellationToken),
-            "program" or "programs" => await GetProgramPageAsync(tenantId, term, filter, page, pageSize, cancellationToken),
-            "portfolio" or "portfolios" => await GetPortfolioPageAsync(tenantId, term, filter, page, pageSize, cancellationToken),
+            "project" or "projects" => await GetProjectPageAsync(tenantId, actorId, effectivePermissions, term, filter, page, pageSize, cancellationToken),
+            "program" or "programs" => await GetProgramPageAsync(tenantId, actorId, effectivePermissions, term, filter, page, pageSize, cancellationToken),
+            "portfolio" or "portfolios" => await GetPortfolioPageAsync(tenantId, actorId, effectivePermissions, term, filter, page, pageSize, cancellationToken),
             _ => throw new AssignmentRecoveryException(400, "Select Projects, Programs, or Portfolios.")
         };
 
@@ -111,6 +114,36 @@ public sealed class AssignmentRecoveryService
         }
     }
 
+    public async Task<InitialProjectManagerSummaryDto> GetInitialProjectManagerSummaryAsync(
+        Guid tenantId, Guid actorId, Guid projectPublicId, CancellationToken cancellationToken)
+    {
+        await EnsurePermissionAsync(actorId, tenantId, AssignmentRecoveryPermissions.Initiate, cancellationToken);
+        await EnsurePermissionAsync(actorId, tenantId, "Handover.AdminInitiate", cancellationToken);
+
+        var summary = await _db.Projects.AsNoTracking()
+            .Where(project => project.TenantId == tenantId
+                && project.PublicId == projectPublicId
+                && !project.IsDeleted)
+            .Select(project => new InitialProjectManagerSummaryDto
+            {
+                PublicId = project.PublicId,
+                Name = project.Name,
+                Code = project.Code,
+                Description = project.Description,
+                StartDate = project.StartDate,
+                EndDate = project.EndDate,
+                SponsorName = _db.Users.AsNoTracking()
+                    .Where(user => user.Id == project.SponsorId
+                        && user.TenantId == tenantId
+                        && !user.IsDeleted)
+                    .Select(user => user.FirstName + " " + user.LastName)
+                    .FirstOrDefault()
+            })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return summary ?? throw NotFound();
+    }
+
     public async Task<IReadOnlyList<AssignmentRecoveryCandidateDto>> GetSponsorCandidatesAsync(
         Guid tenantId, Guid actorId, CancellationToken cancellationToken)
     {
@@ -118,7 +151,17 @@ public sealed class AssignmentRecoveryService
         return await _db.Users.AsNoTracking()
             .Where(x => x.TenantId == tenantId && x.IsActive && !x.IsDeleted)
             .OrderBy(x => x.FirstName).ThenBy(x => x.LastName)
-            .Select(x => new AssignmentRecoveryCandidateDto { UserId = x.Id, FullName = x.FirstName + " " + x.LastName, Email = x.Email, JobTitle = x.JobTitle })
+            .Select(x => new AssignmentRecoveryCandidateDto
+            {
+                UserId = x.Id,
+                FullName = x.FirstName + " " + x.LastName,
+                Email = x.Email,
+                JobTitle = _db.Resources.AsNoTracking()
+                    .Where(resource => resource.UserId == x.Id && resource.TenantId == tenantId && resource.IsActive && !resource.IsDeleted)
+                    .OrderByDescending(resource => resource.UpdatedAt ?? resource.CreatedAt)
+                    .Select(resource => resource.JobTitle)
+                    .FirstOrDefault()
+            })
             .ToListAsync(cancellationToken);
     }
 
@@ -137,9 +180,9 @@ public sealed class AssignmentRecoveryService
             case "project":
             {
                 var entity = await _db.Projects.AsNoTracking().FirstOrDefaultAsync(x => x.TenantId == tenantId && x.PublicId == publicId && !x.IsDeleted, cancellationToken) ?? throw NotFound();
-                if (entity.ProjectManagerId.HasValue) throw new AssignmentRecoveryException(409, "This Project already has a manager. Use administrative handover instead.");
-                if (await _db.ProjectManagerAssignments.IgnoreQueryFilters().AnyAsync(x => x.TenantId == tenantId && x.ProjectId == entity.Id && x.IsCurrent, cancellationToken))
-                    throw new AssignmentRecoveryException(409, "The Project has an active manager-history record that needs reconciliation first.");
+                if (entity.ProjectManagerId.HasValue) throw Conflict("PROJECT_ALREADY_ASSIGNED", "This project already has a manager. Use administrative handover instead.");
+                if (await _db.ProjectManagerAssignments.IgnoreQueryFilters().AnyAsync(x => x.TenantId == tenantId && x.ProjectId == entity.Id && x.IsCurrent && !x.IsDeleted, cancellationToken))
+                    throw Conflict("PROJECT_ASSIGNMENT_RECONCILIATION_REQUIRED", "This project has a current manager assignment record that needs reconciliation before a handover can be started.");
                 var result = await _projectHandovers.CreateInitialAssignmentAsync(entity.Id, new CreateProjectHandoverRequestDto
                 {
                     NewProjectManagerId = input.ManagerId, EffectiveHandoverDate = input.EffectiveDate, Reason = input.Reason, Notes = input.Notes
@@ -150,9 +193,9 @@ public sealed class AssignmentRecoveryService
             case "program":
             {
                 var entity = await _db.Programs.AsNoTracking().FirstOrDefaultAsync(x => x.TenantId == tenantId && x.PublicId == publicId && !x.IsDeleted, cancellationToken) ?? throw NotFound();
-                if (entity.ProgramManagerId.HasValue) throw new AssignmentRecoveryException(409, "This Program already has a manager. Use administrative handover instead.");
-                if (await _db.ProgramManagerAssignments.IgnoreQueryFilters().AnyAsync(x => x.TenantId == tenantId && x.ProgramId == entity.Id && x.IsCurrent, cancellationToken))
-                    throw new AssignmentRecoveryException(409, "The Program has an active manager-history record that needs reconciliation first.");
+                if (entity.ProgramManagerId.HasValue) throw Conflict("PROGRAM_ALREADY_ASSIGNED", "This program already has a manager. Use administrative handover instead.");
+                if (await _db.ProgramManagerAssignments.IgnoreQueryFilters().AnyAsync(x => x.TenantId == tenantId && x.ProgramId == entity.Id && x.IsCurrent && !x.IsDeleted, cancellationToken))
+                    throw Conflict("PROGRAM_ASSIGNMENT_RECONCILIATION_REQUIRED", "This program has a current manager assignment record that needs reconciliation before a handover can be started.");
                 var result = await _managerHandovers.CreateInitialProgramAssignmentAsync(entity.Id, ToManagerInput(input), actorId, cancellationToken);
                 if (result.IsFailure) throw FromError(result.Error);
                 return MapCreated("Program", entity.PublicId, entity.Name, result.Value!);
@@ -160,9 +203,9 @@ public sealed class AssignmentRecoveryService
             case "portfolio":
             {
                 var entity = await _db.Portfolios.AsNoTracking().FirstOrDefaultAsync(x => x.TenantId == tenantId && x.PublicId == publicId && !x.IsDeleted, cancellationToken) ?? throw NotFound();
-                if (entity.OwnerId.HasValue) throw new AssignmentRecoveryException(409, "This Portfolio already has a manager. Use administrative handover instead.");
-                if (await _db.PortfolioManagerAssignments.IgnoreQueryFilters().AnyAsync(x => x.TenantId == tenantId && x.PortfolioId == entity.Id && x.IsCurrent, cancellationToken))
-                    throw new AssignmentRecoveryException(409, "The Portfolio has an active manager-history record that needs reconciliation first.");
+                if (entity.OwnerId.HasValue) throw Conflict("PORTFOLIO_ALREADY_ASSIGNED", "This portfolio already has a manager. Use administrative handover instead.");
+                if (await _db.PortfolioManagerAssignments.IgnoreQueryFilters().AnyAsync(x => x.TenantId == tenantId && x.PortfolioId == entity.Id && x.IsCurrent && !x.IsDeleted, cancellationToken))
+                    throw Conflict("PORTFOLIO_ASSIGNMENT_RECONCILIATION_REQUIRED", "This portfolio has a current manager assignment record that needs reconciliation before a handover can be started.");
                 var result = await _managerHandovers.CreateInitialPortfolioAssignmentAsync(entity.Id, ToManagerInput(input), actorId, cancellationToken);
                 if (result.IsFailure) throw FromError(result.Error);
                 return MapCreated("Portfolio", entity.PublicId, entity.Name, result.Value!);
@@ -309,7 +352,7 @@ public sealed class AssignmentRecoveryService
                         HandoverDate = today, HandoverReason = "Administrative assignment recovery reconciliation",
                         CreatedBy = actorId.ToString()
                     });
-                    await _projectManagerSync.SynchronizeAsync(entity, Guid.Empty, resolvedManagerId.Value, today, actorId.ToString(), cancellationToken);
+                    await _projectManagerSync.SynchronizeAsync(entity, null, resolvedManagerId.Value, today, actorId.ToString(), cancellationToken);
                 }
                 AddRecoveryAudit(tenantId, entity.Id, "Project", entity.PublicId, actor, actorId, priorManagerId == Guid.Empty ? null : priorManagerId, resolvedManagerId, "Manager governance reference reconciled.");
                 result = new AssignmentRecoveryReconciledDto { EntityType = "Project", EntityPublicId = entity.PublicId, ManagerAssignmentState = resolvedManagerId.HasValue ? "Active" : "Unassigned", Message = "Project manager references and team projection were reconciled." };
@@ -370,8 +413,7 @@ public sealed class AssignmentRecoveryService
     public async Task<AssignmentRecoveryHistoryDto> GetHistoryAsync(
         Guid tenantId, Guid actorId, string entityType, Guid publicId, CancellationToken cancellationToken)
     {
-        await EnsureAnyPermissionAsync(actorId, tenantId, cancellationToken,
-            AssignmentRecoveryPermissions.View, AssignmentRecoveryPermissions.Initiate, AssignmentRecoveryPermissions.Manage);
+        await EnsurePermissionAsync(actorId, tenantId, AssignmentRecoveryPermissions.View, cancellationToken);
         var items = new List<AssignmentRecoveryHistoryItemDto>();
         switch (entityType.ToLowerInvariant())
         {
@@ -405,7 +447,7 @@ public sealed class AssignmentRecoveryService
         return new AssignmentRecoveryHistoryDto { Items = items.OrderByDescending(x => x.RequestedAt ?? x.EffectiveDate).ToArray() };
     }
 
-    private async Task<(IReadOnlyList<AssignmentRecoveryItemDto>, int)> GetProjectPageAsync(Guid tenantId, string? search, string filter, int page, int pageSize, CancellationToken ct)
+    private async Task<(IReadOnlyList<AssignmentRecoveryItemDto>, int)> GetProjectPageAsync(Guid tenantId, Guid actorId, IReadOnlySet<string> effectivePermissions, string? search, string filter, int page, int pageSize, CancellationToken ct)
     {
         var query = _db.Projects.AsNoTracking().Where(x => x.TenantId == tenantId && !x.IsDeleted);
         if (!string.IsNullOrWhiteSpace(search)) query = query.Where(x => x.Name.Contains(search) || x.Code.Contains(search));
@@ -433,10 +475,10 @@ public sealed class AssignmentRecoveryService
                 ParentPortfolioName = _db.Portfolios.Where(p => p.Id == x.PortfolioId && p.TenantId == tenantId && !p.IsDeleted).Select(p => p.Name).FirstOrDefault(),
                 CreatedAt = x.CreatedAt, UpdatedAt = x.UpdatedAt
             }).ToListAsync(ct);
-        return (await MaterializeRowsAsync(tenantId, rows, "Project", ct), total);
+        return (await MaterializeRowsAsync(tenantId, actorId, effectivePermissions, rows, "Project", ct), total);
     }
 
-    private async Task<(IReadOnlyList<AssignmentRecoveryItemDto>, int)> GetProgramPageAsync(Guid tenantId, string? search, string filter, int page, int pageSize, CancellationToken ct)
+    private async Task<(IReadOnlyList<AssignmentRecoveryItemDto>, int)> GetProgramPageAsync(Guid tenantId, Guid actorId, IReadOnlySet<string> effectivePermissions, string? search, string filter, int page, int pageSize, CancellationToken ct)
     {
         var query = _db.Programs.AsNoTracking().Where(x => x.TenantId == tenantId && !x.IsDeleted);
         if (!string.IsNullOrWhiteSpace(search)) query = query.Where(x => x.Name.Contains(search) || (x.Code != null && x.Code.Contains(search)));
@@ -462,10 +504,10 @@ public sealed class AssignmentRecoveryService
                 ParentPortfolioName = _db.Portfolios.Where(p => p.Id == x.PortfolioId && p.TenantId == tenantId && !p.IsDeleted).Select(p => p.Name).FirstOrDefault(),
                 CreatedAt = x.CreatedAt, UpdatedAt = x.UpdatedAt
             }).ToListAsync(ct);
-        return (await MaterializeRowsAsync(tenantId, rows, "Program", ct), total);
+        return (await MaterializeRowsAsync(tenantId, actorId, effectivePermissions, rows, "Program", ct), total);
     }
 
-    private async Task<(IReadOnlyList<AssignmentRecoveryItemDto>, int)> GetPortfolioPageAsync(Guid tenantId, string? search, string filter, int page, int pageSize, CancellationToken ct)
+    private async Task<(IReadOnlyList<AssignmentRecoveryItemDto>, int)> GetPortfolioPageAsync(Guid tenantId, Guid actorId, IReadOnlySet<string> effectivePermissions, string? search, string filter, int page, int pageSize, CancellationToken ct)
     {
         var query = _db.Portfolios.AsNoTracking().Where(x => x.TenantId == tenantId && !x.IsDeleted);
         if (!string.IsNullOrWhiteSpace(search)) query = query.Where(x => x.Name.Contains(search) || (x.Code != null && x.Code.Contains(search)));
@@ -488,21 +530,24 @@ public sealed class AssignmentRecoveryService
                 Id = x.Id, PublicId = x.PublicId, Type = "Portfolio", Name = x.Name, Code = x.Code,
                 ManagerId = x.OwnerId, CreatedAt = x.CreatedAt, UpdatedAt = x.UpdatedAt
             }).ToListAsync(ct);
-        return (await MaterializeRowsAsync(tenantId, rows, "Portfolio", ct), total);
+        return (await MaterializeRowsAsync(tenantId, actorId, effectivePermissions, rows, "Portfolio", ct), total);
     }
 
-    private async Task<IReadOnlyList<AssignmentRecoveryItemDto>> MaterializeRowsAsync(Guid tenantId, List<RecoverySource> rows, string type, CancellationToken ct)
+    private async Task<IReadOnlyList<AssignmentRecoveryItemDto>> MaterializeRowsAsync(Guid tenantId, Guid actorId, IReadOnlySet<string> effectivePermissions, List<RecoverySource> rows, string type, CancellationToken ct)
     {
         if (rows.Count == 0) return Array.Empty<AssignmentRecoveryItemDto>();
         var entityIds = rows.Select(x => x.Id).ToArray();
         var requestRows = type switch
         {
-            "Project" => (await _db.ProjectHandoverRequests.AsNoTracking().Where(x => x.TenantId == tenantId && entityIds.Contains(x.ProjectId) && !x.IsDeleted).OrderByDescending(x => x.RequestedAt).ToListAsync(ct))
-                .GroupBy(x => x.ProjectId).Select(g => new RecoveryRequestSource(g.Key, g.First().Status, g.First().InitiationType, g.First().CurrentProjectManagerId, g.First().NewProjectManagerId, g.First().RequestedBy, g.First().RequestedAt, g.First().RespondedAt, g.First().RejectionReason)).ToDictionary(x => x.EntityId),
-            "Program" => (await _db.ProgramHandoverRequests.AsNoTracking().Where(x => x.TenantId == tenantId && entityIds.Contains(x.ProgramId) && !x.IsDeleted).OrderByDescending(x => x.RequestedAt).ToListAsync(ct))
-                .GroupBy(x => x.ProgramId).Select(g => new RecoveryRequestSource(g.Key, g.First().Status, g.First().InitiationType, g.First().CurrentProgramManagerId, g.First().NewProgramManagerId, g.First().RequestedBy, g.First().RequestedAt, g.First().RespondedAt, g.First().RejectionReason)).ToDictionary(x => x.EntityId),
-            _ => (await _db.PortfolioHandoverRequests.AsNoTracking().Where(x => x.TenantId == tenantId && entityIds.Contains(x.PortfolioId) && !x.IsDeleted).OrderByDescending(x => x.RequestedAt).ToListAsync(ct))
-                .GroupBy(x => x.PortfolioId).Select(g => new RecoveryRequestSource(g.Key, g.First().Status, g.First().InitiationType, g.First().CurrentPortfolioManagerId, g.First().NewPortfolioManagerId, g.First().RequestedBy, g.First().RequestedAt, g.First().RespondedAt, g.First().RejectionReason)).ToDictionary(x => x.EntityId)
+            "Project" => (await _db.ProjectHandoverRequests.AsNoTracking().Where(x => x.TenantId == tenantId && entityIds.Contains(x.ProjectId) && !x.IsDeleted)
+                    .OrderByDescending(x => x.Status == Pending || x.Status == ApprovedScheduled).ThenByDescending(x => x.RequestedAt).ToListAsync(ct))
+                .GroupBy(x => x.ProjectId).Select(g => new RecoveryRequestSource(g.Key, g.First().Id, g.First().Status, g.First().InitiationType, g.First().CurrentProjectManagerId, g.First().NewProjectManagerId, g.First().RequestedBy, g.First().RequestedAt, g.First().RespondedAt, g.First().RejectionReason)).ToDictionary(x => x.EntityId),
+            "Program" => (await _db.ProgramHandoverRequests.AsNoTracking().Where(x => x.TenantId == tenantId && entityIds.Contains(x.ProgramId) && !x.IsDeleted)
+                    .OrderByDescending(x => x.Status == Pending || x.Status == ApprovedScheduled).ThenByDescending(x => x.RequestedAt).ToListAsync(ct))
+                .GroupBy(x => x.ProgramId).Select(g => new RecoveryRequestSource(g.Key, g.First().Id, g.First().Status, g.First().InitiationType, g.First().CurrentProgramManagerId, g.First().NewProgramManagerId, g.First().RequestedBy, g.First().RequestedAt, g.First().RespondedAt, g.First().RejectionReason)).ToDictionary(x => x.EntityId),
+            _ => (await _db.PortfolioHandoverRequests.AsNoTracking().Where(x => x.TenantId == tenantId && entityIds.Contains(x.PortfolioId) && !x.IsDeleted)
+                    .OrderByDescending(x => x.Status == Pending || x.Status == ApprovedScheduled).ThenByDescending(x => x.RequestedAt).ToListAsync(ct))
+                .GroupBy(x => x.PortfolioId).Select(g => new RecoveryRequestSource(g.Key, g.First().Id, g.First().Status, g.First().InitiationType, g.First().CurrentPortfolioManagerId, g.First().NewPortfolioManagerId, g.First().RequestedBy, g.First().RequestedAt, g.First().RespondedAt, g.First().RejectionReason)).ToDictionary(x => x.EntityId)
         };
         var assignmentRows = type switch
         {
@@ -511,7 +556,7 @@ public sealed class AssignmentRecoveryService
             _ => (await _db.PortfolioManagerAssignments.AsNoTracking().Where(x => x.TenantId == tenantId && entityIds.Contains(x.PortfolioId) && x.IsCurrent && !x.IsDeleted).Select(x => new { x.PortfolioId, x.PortfolioManagerId }).ToListAsync(ct)).ToDictionary(x => x.PortfolioId, x => (Guid?)x.PortfolioManagerId)
         };
         var userIds = rows.SelectMany(x => new Guid?[] { x.ManagerId, x.SponsorId })
-            .Concat(requestRows.Values.SelectMany(x => new Guid?[] { x.ProposedManagerId, x.InitiatedBy }))
+            .Concat(requestRows.Values.SelectMany(x => new Guid?[] { x.ProposedManagerId, x.RequestedBy }))
             .Where(x => x.HasValue).Select(x => x!.Value).Distinct().ToArray();
         var users = await _db.Users.AsNoTracking().Where(x => x.TenantId == tenantId && userIds.Contains(x.Id) && !x.IsDeleted)
             .ToDictionaryAsync(x => x.Id, ct);
@@ -531,8 +576,15 @@ public sealed class AssignmentRecoveryService
                 ParentProgramName = row.ParentProgramName, ParentPortfolioName = row.ParentPortfolioName,
                 MissingParentHierarchy = type == "Project" && !row.ParentProgramId.HasValue && !row.ParentPortfolioId.HasValue,
                 AssignmentRequestStatus = request?.Status, AssignmentInitiationType = request?.InitiationType,
+                RequestId = request?.RequestId,
+                CanViewExistingRequest = request is not null && effectivePermissions.Contains("Handover.View")
+                    && (request.RequestedBy == actorId || request.ProposedManagerId == actorId),
+                CanReviewExistingRequest = request is not null && request.Status == Pending && request.ProposedManagerId == actorId
+                    && effectivePermissions.Contains("Handover.Approve"),
+                IsInitiatedByCurrentUser = request?.RequestedBy == actorId,
+                IsAssignedToCurrentUser = request?.ProposedManagerId == actorId,
                 ProposedManagerId = request?.ProposedManagerId, ProposedManagerName = request is not null && users.TryGetValue(request.ProposedManagerId, out var proposed) ? proposed.FullName : null,
-                InitiatedByName = request is not null && users.TryGetValue(request.InitiatedBy, out var initiator) ? initiator.FullName : null,
+                InitiatedByName = request is not null && users.TryGetValue(request.RequestedBy, out var initiator) ? initiator.FullName : null,
                 AssignmentRequestedAt = request?.RequestedAt, AssignmentRespondedAt = request?.RespondedAt, RejectionReason = request?.RejectionReason,
                 CreatedAt = row.CreatedAt, UpdatedAt = row.UpdatedAt
             };
@@ -689,7 +741,9 @@ public sealed class AssignmentRecoveryService
 
     private static AssignmentRecoveryException NotFound() => new(404, "The requested entity is not available in the authenticated tenant.");
     private static AssignmentRecoveryException ReconcileFirst(string type) => new(409, $"The {type} manager reference and active assignment history do not match. Reconcile the governance record before initiating a handover.");
-    private static AssignmentRecoveryException FromError(Error? error) => new(error?.StatusCode ?? 400, error?.Message ?? "The manager assignment could not be created.");
+    private static AssignmentRecoveryException Conflict(string code, string message) =>
+        new(new Error(code, message, StatusCodes.Status409Conflict));
+    private static AssignmentRecoveryException FromError(Error? error) => new(error ?? new Error("ASSIGNMENT_RECOVERY_FAILED", "The manager assignment could not be created."));
     private static CreateManagerHandoverRequestDto ToManagerInput(CreateRecoveryAssignmentDto input) => new() { NewManagerId = input.ManagerId, EffectiveHandoverDate = input.EffectiveDate, Reason = input.Reason, Notes = input.Notes };
     private static RecoveryAssignmentCreatedDto MapCreated(string entityType, Guid publicId, string entityName, ManagerHandoverRequestDto request) => new()
     {
@@ -714,12 +768,20 @@ public sealed class AssignmentRecoveryService
         public DateTime CreatedAt { get; init; }
         public DateTime? UpdatedAt { get; init; }
     }
-    private sealed record RecoveryRequestSource(Guid EntityId, string Status, string InitiationType, Guid? PreviousManagerId, Guid ProposedManagerId, Guid InitiatedBy, DateTime RequestedAt, DateTime? RespondedAt, string? RejectionReason);
+    private sealed record RecoveryRequestSource(Guid EntityId, Guid RequestId, string Status, string InitiationType, Guid? PreviousManagerId, Guid ProposedManagerId, Guid RequestedBy, DateTime RequestedAt, DateTime? RespondedAt, string? RejectionReason);
     private sealed record AssignmentHistoryRow(Guid Id, Guid ManagerId, Guid? PreviousManagerId, DateTime StartDate, DateTime? EndDate, bool IsCurrent, string? Reason, string? Notes, string CreatedBy);
     private sealed record RequestHistoryRow(string Status, Guid? PreviousManagerId, Guid ManagerId, Guid RequestedBy, DateTime RequestedAt, DateTime EffectiveDate, DateTime? RespondedAt, string Reason, string? Notes, string? RejectionReason, string InitiationType);
 }
 
-public sealed class AssignmentRecoveryException(int statusCode, string message) : Exception(message)
+public sealed class AssignmentRecoveryException : Exception
 {
-    public int StatusCode { get; } = statusCode;
+    public Error Error { get; }
+    public int StatusCode => Error.StatusCode;
+
+    public AssignmentRecoveryException(int statusCode, string message)
+        : this(new Error(ApiProblemDetails.CodeForStatus(statusCode), message, statusCode))
+    {
+    }
+
+    public AssignmentRecoveryException(Error error) : base(error.Message) => Error = error;
 }

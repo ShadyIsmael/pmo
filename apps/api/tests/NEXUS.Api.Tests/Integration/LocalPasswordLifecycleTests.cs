@@ -1,11 +1,14 @@
 using System.Security.Claims;
 using System.IdentityModel.Tokens.Jwt;
+using System.Security.Cryptography;
 using System.Text.Json;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Moq;
 using NEXUS.Modules.Audit.Application;
@@ -13,6 +16,8 @@ using NEXUS.Modules.Audit.Domain;
 using NEXUS.Modules.Identity.Application;
 using NEXUS.Modules.Identity.Domain;
 using NEXUS.Modules.Identity.Infrastructure;
+using NEXUS.Api.Development;
+using NEXUS.Persistence;
 using NEXUS.SharedKernel;
 using Xunit;
 
@@ -47,18 +52,37 @@ public sealed class LocalPasswordLifecycleTests : IAsyncLifetime
     [Fact]
     public async Task Create_local_user_generates_hashed_one_time_temporary_password_and_safe_audit()
     {
-        var service = CreateUserService();
+        var actor = new User
+        {
+            TenantId = _tenantId,
+            Email = "admin@example.test",
+            FirstName = "Admin",
+            LastName = "Actor",
+            CreatedBy = "test"
+        };
+        var role = new Role { TenantId = _tenantId, Name = "admin", IsSystem = true, CreatedBy = "System" };
+        role.AssignSystemRoleKey(Role.TenantAdminSystemRoleKey, _tenantId);
+        var usersView = new Permission { TenantId = _tenantId, Name = "Users.View", Resource = "Users", Action = "View", CreatedBy = "test" };
+        var manageAccounts = new Permission { TenantId = _tenantId, Name = "Users.ManageAccounts", Resource = "Users", Action = "ManageAccounts", CreatedBy = "test" };
+        role.Permissions.Add(usersView);
+        role.Permissions.Add(manageAccounts);
+        actor.UserRoles.Add(new UserRole { TenantId = _tenantId, Role = role, CreatedBy = "test" });
+        _context.Users.Add(actor);
+        _context.Roles.Add(role);
+        await _context.SaveChangesAsync();
+
+        var service = CreateUserService(actor.Id);
         var result = await service.CreateAsync(new CreateUserDto
         {
             Email = "local@example.test",
             FirstName = "Local",
             LastName = "User",
             Roles = []
-        }, Guid.NewGuid().ToString());
+        }, actor.Id.ToString());
 
         Assert.True(result.IsSuccess);
         var temporaryPassword = Assert.IsType<string>(result.Value!.TemporaryPassword);
-        var user = await _context.Users.SingleAsync();
+        var user = await _context.Users.SingleAsync(candidate => candidate.Email == "local@example.test");
         Assert.Equal(AuthenticationSource.Local, user.AuthenticationSource);
         Assert.True(user.MustChangePassword);
         Assert.InRange(user.TemporaryPasswordExpiresAt!.Value, DateTime.UtcNow.AddHours(5.9), DateTime.UtcNow.AddHours(6.1));
@@ -95,6 +119,52 @@ public sealed class LocalPasswordLifecycleTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Login_without_an_existing_session_creates_a_new_session()
+    {
+        var user = AddLocalUser("new-session-login@example.test", "Permanent!234567");
+        await _context.SaveChangesAsync();
+        Assert.Empty(await _context.UserSessions.ToListAsync());
+
+        var result = await CreateAuthService().LoginAsync(
+            new LoginCommand(user.Email, "Permanent!234567", _tenantId.ToString()));
+
+        Assert.True(result.IsSuccess);
+        Assert.Single(await _context.UserSessions.ToListAsync());
+    }
+
+    [Fact]
+    public async Task Initial_password_middleware_skips_explicitly_anonymous_endpoints()
+    {
+        var continued = false;
+        var context = new DefaultHttpContext
+        {
+            User = new ClaimsPrincipal(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.NameIdentifier, Guid.NewGuid().ToString()),
+                new Claim("tenantId", _tenantId.ToString())
+            ], "test"))
+        };
+        context.SetEndpoint(new Endpoint(
+            null,
+            new EndpointMetadataCollection(new AllowAnonymousAttribute()),
+            "POST /api/auth/login"));
+
+        var middleware = new InitialPasswordEnforcementMiddleware(_ =>
+        {
+            continued = true;
+            return Task.CompletedTask;
+        });
+        await middleware.InvokeAsync(
+            context,
+            _context,
+            CreateEnvironment("Development"),
+            CreatePasswordPolicyMonitor(() => _policy));
+
+        Assert.True(continued);
+        Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+    }
+
+    [Fact]
     public async Task Expired_temporary_password_is_rejected_at_login()
     {
         var user = AddLocalUser("expired@example.test", "Temporary!234567");
@@ -107,6 +177,282 @@ public sealed class LocalPasswordLifecycleTests : IAsyncLifetime
         Assert.True(result.IsFailure);
         Assert.Equal("TEMPORARY_PASSWORD_EXPIRED", result.Error!.Code);
         Assert.Empty(await _context.UserSessions.ToListAsync());
+    }
+
+    [Fact]
+    public async Task Bootstrap_temporary_password_with_missing_expiry_is_rejected_at_login()
+    {
+        var temporaryPassword = GenerateTestPassword();
+        var user = AddLocalUser("expired-bootstrap@example.test", temporaryPassword);
+        user.MustChangePassword = true;
+        user.TemporaryPasswordExpiresAt = null;
+        await _context.SaveChangesAsync();
+
+        var result = await CreateAuthService().LoginAsync(
+            new LoginCommand(user.Email, temporaryPassword, _tenantId.ToString()));
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("TEMPORARY_PASSWORD_EXPIRED", result.Error!.Code);
+        Assert.Empty(await _context.UserSessions.ToListAsync());
+    }
+
+    [Fact]
+    public async Task Development_admin_bypass_is_scoped_runtime_only_and_reverts_when_disabled()
+    {
+        Assert.False(new LocalPasswordPolicyOptions().DevelopmentAdminTemporaryPasswordBypassEnabled);
+
+        var password = GenerateTestPassword();
+        var role = new Role
+        {
+            TenantId = SeededDevelopmentAdmin.TenantId,
+            Name = "admin",
+            IsSystem = true,
+            CreatedBy = "test"
+        };
+        role.AssignSystemRoleKey(Role.TenantAdminSystemRoleKey, SeededDevelopmentAdmin.TenantId);
+        var existingPermission = new Permission
+        {
+            TenantId = SeededDevelopmentAdmin.TenantId,
+            Name = "Project.View",
+            Resource = "Project",
+            Action = "View",
+            CreatedBy = "test"
+        };
+        role.Permissions.Add(existingPermission);
+        var admin = new User
+        {
+            Id = SeededDevelopmentAdmin.UserId,
+            TenantId = SeededDevelopmentAdmin.TenantId,
+            Email = SeededDevelopmentAdmin.Email,
+            FirstName = "Alex",
+            LastName = "Admin",
+            AuthenticationSource = AuthenticationSource.Local,
+            PasswordHash = string.Empty,
+            MustChangePassword = true,
+            TemporaryPasswordExpiresAt = DateTime.UtcNow.AddMinutes(-2),
+            PasswordChangedAt = DateTime.UtcNow,
+            IsActive = true,
+            CreatedBy = "test"
+        };
+        admin.PasswordHash = _hasher.HashPassword(admin, password);
+        admin.UserRoles.Add(new UserRole { TenantId = SeededDevelopmentAdmin.TenantId, Role = role, CreatedBy = "test" });
+
+        var otherPassword = GenerateTestPassword();
+        var otherUser = AddLocalUser("other@example.test", otherPassword);
+        otherUser.TenantId = SeededDevelopmentAdmin.TenantId;
+        otherUser.MustChangePassword = true;
+        otherUser.TemporaryPasswordExpiresAt = DateTime.UtcNow.AddMinutes(-2);
+        otherUser.PasswordChangedAt = DateTime.UtcNow;
+
+        _context.Roles.Add(role);
+        _context.Permissions.Add(existingPermission);
+        _context.Users.Add(admin);
+        await _context.SaveChangesAsync();
+        var persistedExpiry = admin.TemporaryPasswordExpiresAt;
+        var persistedHash = admin.PasswordHash;
+        var policy = new LocalPasswordPolicyOptions
+        {
+            TemporaryPasswordExpiryHours = 6,
+            MinimumLength = 12,
+            MaximumLength = 64,
+            DevelopmentAdminTemporaryPasswordBypassEnabled = true
+        };
+        var optionsMonitor = CreatePasswordPolicyMonitor(() => policy);
+        var developmentEnvironment = CreateEnvironment(Environments.Development);
+        var auth = CreateAuthService(policy, developmentEnvironment, optionsMonitor);
+
+        var wrongPasswordLogin = await auth.LoginAsync(new LoginCommand(
+            SeededDevelopmentAdmin.Email,
+            "incorrect-password",
+            SeededDevelopmentAdmin.TenantId.ToString()));
+        Assert.True(wrongPasswordLogin.IsFailure);
+
+        var adminLogin = await auth.LoginAsync(new LoginCommand(
+            SeededDevelopmentAdmin.Email,
+            password,
+            SeededDevelopmentAdmin.TenantId.ToString()));
+
+        Assert.True(adminLogin.IsSuccess);
+        Assert.False(adminLogin.Value!.PasswordChangeRequired);
+        Assert.False(adminLogin.Value.User.MustChangePassword);
+        Assert.Contains(adminLogin.Value.User.Roles, item => item.Name == "admin");
+        Assert.Contains("Project.View", adminLogin.Value.User.Permissions);
+        Assert.Single(await _context.UserRoles.ToListAsync());
+        Assert.Single(await _context.Permissions.ToListAsync());
+        Assert.True(admin.MustChangePassword);
+        Assert.Equal(persistedExpiry, admin.TemporaryPasswordExpiresAt);
+        Assert.Equal(persistedHash, admin.PasswordHash);
+
+        var refreshedLogin = await auth.RefreshAsync(adminLogin.Value.RefreshToken);
+        Assert.True(refreshedLogin.IsSuccess);
+        Assert.False(refreshedLogin.Value!.PasswordChangeRequired);
+        Assert.False(refreshedLogin.Value.User.MustChangePassword);
+
+        var currentUser = await auth.GetCurrentUserAsync(admin.Id, admin.TenantId);
+        Assert.True(currentUser.IsSuccess);
+        Assert.False(currentUser.Value!.MustChangePassword);
+        Assert.Contains(currentUser.Value.Roles, item => item.Name == "admin");
+
+        var (allowedStatus, _, continued) = await InvokeEnforcementAsync(
+            admin,
+            "/api/projects",
+            "GET",
+            policy,
+            Environments.Development);
+        Assert.Equal(StatusCodes.Status200OK, allowedStatus);
+        Assert.True(continued);
+
+        var otherLogin = await auth.LoginAsync(new LoginCommand(
+            otherUser.Email,
+            otherPassword,
+            SeededDevelopmentAdmin.TenantId.ToString()));
+        Assert.True(otherLogin.IsFailure);
+        Assert.Equal("TEMPORARY_PASSWORD_EXPIRED", otherLogin.Error!.Code);
+
+        policy.DevelopmentAdminTemporaryPasswordBypassEnabled = false;
+        var disabledLogin = await auth.LoginAsync(new LoginCommand(
+            SeededDevelopmentAdmin.Email,
+            password,
+            SeededDevelopmentAdmin.TenantId.ToString()));
+        Assert.True(disabledLogin.IsFailure);
+        Assert.Equal("TEMPORARY_PASSWORD_EXPIRED", disabledLogin.Error!.Code);
+
+        var (blockedStatus, blockedBody, blockedContinued) = await InvokeEnforcementAsync(
+            admin,
+            "/api/projects",
+            "GET",
+            policy,
+            Environments.Development);
+        Assert.Equal(StatusCodes.Status403Forbidden, blockedStatus);
+        Assert.False(blockedContinued);
+        Assert.Equal("TEMPORARY_PASSWORD_EXPIRED", JsonDocument.Parse(blockedBody).RootElement.GetProperty("code").GetString());
+        Assert.True(admin.MustChangePassword);
+        Assert.Equal(persistedExpiry, admin.TemporaryPasswordExpiresAt);
+        Assert.Equal(persistedHash, admin.PasswordHash);
+    }
+
+    [Fact]
+    public async Task Development_admin_bypass_setting_is_ignored_in_production()
+    {
+        var password = GenerateTestPassword();
+        var admin = new User
+        {
+            Id = SeededDevelopmentAdmin.UserId,
+            TenantId = SeededDevelopmentAdmin.TenantId,
+            Email = SeededDevelopmentAdmin.Email,
+            AuthenticationSource = AuthenticationSource.Local,
+            IsActive = true,
+            MustChangePassword = true,
+            TemporaryPasswordExpiresAt = null,
+            PasswordChangedAt = DateTime.UtcNow,
+            CreatedBy = "test"
+        };
+        admin.PasswordHash = _hasher.HashPassword(admin, password);
+        _context.Users.Add(admin);
+        await _context.SaveChangesAsync();
+
+        var policy = new LocalPasswordPolicyOptions { DevelopmentAdminTemporaryPasswordBypassEnabled = true };
+        var productionAuth = CreateAuthService(policy, CreateEnvironment(Environments.Production));
+        var result = await productionAuth.LoginAsync(new LoginCommand(
+            SeededDevelopmentAdmin.Email,
+            password,
+            SeededDevelopmentAdmin.TenantId.ToString()));
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("TEMPORARY_PASSWORD_EXPIRED", result.Error!.Code);
+        Assert.Empty(await _context.UserSessions.ToListAsync());
+
+        var (statusCode, body, continued) = await InvokeEnforcementAsync(
+            admin,
+            "/api/projects",
+            "GET",
+            policy,
+            Environments.Production);
+        Assert.Equal(StatusCodes.Status403Forbidden, statusCode);
+        Assert.False(continued);
+        Assert.Equal("TEMPORARY_PASSWORD_EXPIRED", JsonDocument.Parse(body).RootElement.GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task Development_admin_recovery_sets_hashed_expiring_temporary_password_and_verifies_first_login_flow()
+    {
+        var temporaryPassword = GenerateTestPassword();
+        var permanentPassword = GenerateTestPassword();
+        var adminRole = new Role { TenantId = SeedDataProvider.TenantId, Name = "admin", IsSystem = true, CreatedBy = "test" };
+        adminRole.AssignSystemRoleKey(Role.TenantAdminSystemRoleKey, SeedDataProvider.TenantId);
+        var admin = new User
+        {
+            TenantId = SeedDataProvider.TenantId,
+            Email = "admin@nexus.com",
+            FirstName = "Alex",
+            LastName = "Admin",
+            PasswordHash = _hasher.HashPassword(new User(), GenerateTestPassword()),
+            MustChangePassword = true,
+            TemporaryPasswordExpiresAt = DateTime.UtcNow.AddMinutes(-1),
+            IsActive = true,
+            CreatedBy = "test"
+        };
+        admin.UserRoles.Add(new UserRole { TenantId = SeedDataProvider.TenantId, Role = adminRole, CreatedBy = "test" });
+        _context.Roles.Add(adminRole);
+        _context.Users.Add(admin);
+        var existingSession = new UserSession
+        {
+            TenantId = SeedDataProvider.TenantId,
+            UserId = admin.Id,
+            Token = "old-session-token",
+            RefreshToken = "old-refresh-hash",
+            ExpiresAt = DateTime.UtcNow.AddDays(1),
+            CreatedBy = "test"
+        };
+        _context.UserSessions.Add(existingSession);
+        await _context.SaveChangesAsync();
+
+        var environment = new Mock<IHostEnvironment>();
+        environment.SetupGet(host => host.EnvironmentName).Returns(Environments.Development);
+        var recovery = new DevelopmentAdminPasswordRecoveryService(
+            _context,
+            _hasher,
+            Options.Create(_policy),
+            environment.Object);
+
+        var expiry = await recovery.RecoverTemporaryPasswordAsync(temporaryPassword);
+
+        var savedAdmin = await _context.Users.SingleAsync(user => user.Email == "admin@nexus.com");
+        Assert.True(savedAdmin.MustChangePassword);
+        Assert.InRange(expiry, DateTime.UtcNow.AddHours(5.9), DateTime.UtcNow.AddHours(6.1));
+        Assert.Equal(expiry, savedAdmin.TemporaryPasswordExpiresAt);
+        Assert.Equal(PasswordVerificationResult.Success,
+            _hasher.VerifyHashedPassword(savedAdmin, savedAdmin.PasswordHash!, temporaryPassword));
+        Assert.Equal(PasswordVerificationResult.Failed,
+            _hasher.VerifyHashedPassword(savedAdmin, savedAdmin.PasswordHash!, "not-the-recovered-password"));
+        Assert.NotNull((await _context.UserSessions.SingleAsync()).RevokedAt);
+        Assert.Equal(adminRole.Id, (await _context.UserRoles.SingleAsync()).RoleId);
+        var recoveryAudit = await _context.AuditEntries.SingleAsync();
+        Assert.Equal("DevelopmentAdminTemporaryPasswordRecovered", recoveryAudit.Action);
+        Assert.DoesNotContain(temporaryPassword, recoveryAudit.Changes, StringComparison.Ordinal);
+        Assert.DoesNotContain(temporaryPassword, recoveryAudit.NewValues, StringComparison.Ordinal);
+
+        var auth = CreateAuthService();
+        var temporaryLogin = await auth.LoginAsync(new LoginCommand(
+            "admin@nexus.com", temporaryPassword, SeedDataProvider.TenantId.ToString()));
+        Assert.True(temporaryLogin.IsSuccess);
+        Assert.True(temporaryLogin.Value!.PasswordChangeRequired);
+        Assert.True(temporaryLogin.Value.User.MustChangePassword);
+        Assert.Empty(temporaryLogin.Value.User.Permissions);
+        Assert.Empty(temporaryLogin.Value.User.Roles);
+
+        var changed = await auth.ChangeInitialPasswordAsync(
+            admin.Id,
+            SeedDataProvider.TenantId,
+            new ChangeInitialPasswordCommand(temporaryPassword, permanentPassword));
+        Assert.True(changed.IsSuccess);
+
+        var permanentLogin = await auth.LoginAsync(new LoginCommand(
+            "admin@nexus.com", permanentPassword, SeedDataProvider.TenantId.ToString()));
+        Assert.True(permanentLogin.IsSuccess);
+        Assert.False(permanentLogin.Value!.PasswordChangeRequired);
+        Assert.False(permanentLogin.Value.User.MustChangePassword);
+        Assert.Null(permanentLogin.Value.User.TemporaryPasswordExpiresAt);
     }
 
     [Fact]
@@ -134,6 +480,12 @@ public sealed class LocalPasswordLifecycleTests : IAsyncLifetime
         Assert.Equal("FirstPasswordChanged", audit.Action);
         Assert.DoesNotContain("NewPermanent!234567", audit.Changes, StringComparison.Ordinal);
         Assert.DoesNotContain("NewPermanent!234567", audit.NewValues, StringComparison.Ordinal);
+
+        var relogin = await CreateAuthService().LoginAsync(
+            new LoginCommand("change@example.test", "NewPermanent!234567", _tenantId.ToString()));
+        Assert.True(relogin.IsSuccess);
+        Assert.False(relogin.Value!.PasswordChangeRequired);
+        Assert.False(relogin.Value.User.MustChangePassword);
     }
 
     [Fact]
@@ -162,19 +514,26 @@ public sealed class LocalPasswordLifecycleTests : IAsyncLifetime
         Assert.Equal("TEMPORARY_PASSWORD_EXPIRED", JsonDocument.Parse(expiredBody).RootElement.GetProperty("code").GetString());
     }
 
-    private UserAdministrationService CreateUserService()
+    private UserAdministrationService CreateUserService(Guid actorId)
     {
         var http = new HttpContextAccessor
         {
             HttpContext = new DefaultHttpContext
             {
-                User = new ClaimsPrincipal(new ClaimsIdentity([new Claim("tenantId", _tenantId.ToString())], "test"))
+                User = new ClaimsPrincipal(new ClaimsIdentity(
+                [
+                    new Claim(ClaimTypes.NameIdentifier, actorId.ToString()),
+                    new Claim("tenantId", _tenantId.ToString())
+                ], "test"))
             }
         };
         return new UserAdministrationService(_context, _hasher, http, new UserEffectivePermissionService(_context), _audit.Object, Options.Create(_policy));
     }
 
-    private DemoAuthService CreateAuthService()
+    private DemoAuthService CreateAuthService(
+        LocalPasswordPolicyOptions? policy = null,
+        IHostEnvironment? environment = null,
+        IOptionsMonitor<LocalPasswordPolicyOptions>? optionsMonitor = null)
     {
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
@@ -182,7 +541,29 @@ public sealed class LocalPasswordLifecycleTests : IAsyncLifetime
             ["Jwt:Issuer"] = "NEXUS",
             ["Jwt:Audience"] = "NEXUS-API"
         }).Build();
-        return new DemoAuthService(_context, configuration, _hasher, new UserEffectivePermissionService(_context), _audit.Object, Options.Create(_policy));
+        var selectedPolicy = policy ?? _policy;
+        return new DemoAuthService(
+            _context,
+            configuration,
+            _hasher,
+            new UserEffectivePermissionService(_context),
+            _audit.Object,
+            optionsMonitor ?? CreatePasswordPolicyMonitor(() => selectedPolicy),
+            environment ?? CreateEnvironment(Environments.Development));
+    }
+
+    private static IOptionsMonitor<LocalPasswordPolicyOptions> CreatePasswordPolicyMonitor(Func<LocalPasswordPolicyOptions> currentValue)
+    {
+        var monitor = new Mock<IOptionsMonitor<LocalPasswordPolicyOptions>>();
+        monitor.SetupGet(options => options.CurrentValue).Returns(() => currentValue());
+        return monitor.Object;
+    }
+
+    private static IHostEnvironment CreateEnvironment(string environmentName)
+    {
+        var environment = new Mock<IHostEnvironment>();
+        environment.SetupGet(host => host.EnvironmentName).Returns(environmentName);
+        return environment.Object;
     }
 
     private User AddLocalUser(string email, string password)
@@ -203,7 +584,15 @@ public sealed class LocalPasswordLifecycleTests : IAsyncLifetime
         return user;
     }
 
-    private async Task<(int StatusCode, string Body, bool Continued)> InvokeEnforcementAsync(User user, string path, string method)
+    private static string GenerateTestPassword() =>
+        Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
+
+    private async Task<(int StatusCode, string Body, bool Continued)> InvokeEnforcementAsync(
+        User user,
+        string path,
+        string method,
+        LocalPasswordPolicyOptions? policy = null,
+        string environmentName = "Development")
     {
         var continued = false;
         var middleware = new InitialPasswordEnforcementMiddleware(_ => { continued = true; return Task.CompletedTask; });
@@ -217,7 +606,11 @@ public sealed class LocalPasswordLifecycleTests : IAsyncLifetime
         ], "test"));
         await using var responseBody = new MemoryStream();
         context.Response.Body = responseBody;
-        await middleware.InvokeAsync(context, _context);
+        await middleware.InvokeAsync(
+            context,
+            _context,
+            CreateEnvironment(environmentName),
+            CreatePasswordPolicyMonitor(() => policy ?? _policy));
         responseBody.Position = 0;
         using var reader = new StreamReader(responseBody);
         return (context.Response.StatusCode, await reader.ReadToEndAsync(), continued);

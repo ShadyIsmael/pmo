@@ -1,0 +1,126 @@
+# Code Review Remediation 06A — Final Risk Remediation (P0-01…P0-05)
+
+**Repository:** `C:\Projects\pmo`  
+**Date:** 2026-11-05  
+**Execution mode:** **MANDATORY MULTI-AGENT (parallel subagents used).** Main agent orchestrated, assigned non-overlapping ownership, verified targeted builds/typecheck, and reconciled reports 01–05.  
+**Status:** **P0-06A SOURCE REMEDIATION IN PROGRESS — REMAINING SOURCE RISKS REDUCED; SEVERAL ITEMS EXPLICITLY BLOCKED/RESIDUAL WITH EVIDENCE. NO DB WRITES, NO MIGRATIONS APPLIED, NO PRODUCTION CHANGES, NO BROWSER UAT, NO FULL TEST RUNS. P0-06B NOT STARTED.**
+
+## Mandatory preparation (completed)
+- Read `C:\Projects\pmo\AGENTS.md` and remediation reports 01–05 under `docs/security/code-review/`.
+- No separate original `CODE-REVIEW-REPORT*` / non-remediation code-review report file was found under `docs/**` or repo-wide (searched). Reconciliation is based on remediation reports 01–05, source state, and targeted verification.
+- Skills discovered/read and actively applied where relevant: repo `.kilo/skills/frontend-data-integrity/SKILL.md` (authoritative data, no unapproved currency fallbacks, no fake operational data/localization regressions), repo `.agents/skills/security-audit` and global `secure-coding-standards`/`universal-software-engineering` principles (fail-closed auth/tenant boundaries, bounded verification, preserve concurrent work), repo `.agents/skills/codeql` and `semgrep` read for context but **not executed** (no new scan in this remediation pass), and EF/DB workflow constraints from `AGENTS.md` (no DB writes/migration apply; migration proposals only).
+- Preserved all concurrent/uncommitted changes. The worktree is heavily dirty (many pre-existing modified/untracked files outside P0-06A scope); only explicitly listed P0-06A files were changed by subagents A/B.
+
+## Actual subagent execution
+
+| Agent | Mode | Ownership / contribution |
+|---|---|---|
+| **Main (orchestrator)** | foreground | Preparation, skill/report discovery, launched 4 parallel `general` subagents (A–D), verified targeted builds/typecheck, investigated CS0535/test-project state, preserved concurrent changes, produced this consolidated report. |
+| **A — Integration & Authentication Security** | parallel subagent (`general`, completed) | Assessed Integration secrets plaintext, DTO/log exposure, localStorage/CSP/HSTS/Production config. Implemented ASP.NET Data Protection–based integration secret protection infrastructure (backward-compatible read path, fail-closed unreadable protected values, no secret exposure). Added EF config documentation for secret columns (no migration). Added 2 targeted security test source files. |
+| **B — Financial & Schema Integrity** | parallel subagent (`general`, completed) | Removed unsafe currency fabrication in touched runtime/reporting/DTO/domain paths (`GBP`/`USD` defaults/fallbacks) while preserving governance/ceiling/currency validation. Confirmed D1 `Pending` reservation semantics remain consistent in inspected authoritative paths (no source defect fixed). Reconciled Portfolio/Program config intent vs snapshot/schema; prepared actionable migration proposal (no migration created/applied). |
+| **C — Tenant & Governance Security** | parallel subagent (`general`, completed) | Rechecked P0-01 boundaries (ProjectPlanning, Documents, AI history, last-admin/protected-admin signals). **No source fixes applied.** Reported backend test-project compilation/environment limitations prevented producing targeted compile evidence in that run; findings require follow-up verification. Main agent performed targeted source checks (see dispositions). |
+| **D — Regression & Release Readiness** | parallel subagent (`general`, completed) | Reconciled 01–05 against current source. Confirmed web-react TS typecheck passes (from app directory). Identified NEXUS.Api.Tests build inconclusive in-session and missing `.csproj` wiring for untracked module test dirs (`NEXUS.Modules.Approvals.Tests`, `WorkflowEngine.Tests`, `WorkItems.Tests`). Reviewed CI/docker-compose/security config. Added **no new tests** (existing P0 tests already present; remaining gaps are runtime/DB/integration or project-wiring). |
+
+## 1) Complete findings register (Fixed / Verified / Open / Blocked)
+
+| ID | Area | Finding / risk | Disposition | Evidence / notes |
+|---|---|---|---|---|
+| 06A-A1 | Integrations secrets at rest | `IntegrationConnection.ApiKey/ApiSecret` and `IntegrationWebhook.Secret` stored as plaintext in schema/model (baseline columns `nvarchar(max)`). Read DTOs already avoided exposure (`HasApiKey/HasApiSecret` only). No active secret create/update controller path found for `IntegrationConnection`; `IntegrationWebhook.Secret` has no app read/write/use path found. | **Fixed (source infrastructure, partial)** | A added `IIntegrationSecretProtector` + `IntegrationSecretProtector` (ASP.NET Data Protection, `NEXUSINTDP1:` prefix), DI registration, `IntegrationService` uses protector for `HasConfiguredSecret` and fail-closed unprotect behavior; legacy plaintext readable for compatibility without exposure. **Not fixed:** existing plaintext rows, Production key-ring config, secret rotation/re-encryption, no migration applied. |
+| 06A-A2 | Integration secret exposure (API/DTO/log/audit) | Risk of credential leakage in responses/logs/audits. | **Verified (source)** | `IntegrationService` maps/projects safe DTO fields only; no secret values returned. Existing regression intent: `IntegrationConnectionDto` has no secret properties. Directory secret resolver reads server-side config references (not UI credentials). No Integrations-module secret logging found in reviewed source paths. |
+| 06A-A3 | Web auth token storage (F-08) | `apps/web-react/src/api/client.ts` persists access/refresh/session tokens in `localStorage` (`nexus_access_token`, `nexus_refresh_token`, `nexus_auth_session_id`). XSS-sensitive. | **Open / Blocked (broader redesign)** | **No fix applied.** Safe remediation requires backend HttpOnly/SameSite/Secure refresh cookie + CSRF/session contract changes and coordinated client/auth flow updates. Out of P0-06A non-redesign scope. |
+| 06A-A4 | CSP / security headers / HTTPS/HSTS / forwarded headers | P0-02/05 added API headers/middleware and nginx SPA headers; Production config still has operational dependencies. | **Verified (source) + Open (ops/deployment)** | API `Program.cs` uses forwarded headers, `UseHsts()`/`UseHttpsRedirection()` in non-Development, `SecurityHeadersMiddleware`. `nginx.conf` has `X-Content-Type-Options`, `X-Frame-Options DENY`, `Referrer-Policy`, `Permissions-Policy`, CSP (`script-src 'self'`, `style-src 'self' 'unsafe-inline'`, `connect-src 'self'`, `frame-ancestors 'none'`), no HSTS/301 for local HTTP. **Residual:** `style-src 'unsafe-inline'`; `Cors:AllowedOrigins` empty by default (safe-default, must be configured per env); `AllowedHosts "*"` remains deployment override requirement (P0-02). |
+| 06A-A5 | IntegrationSecret protector compile integration | D noted prior CS0535 for `IIntegrationSecretProtector.IsProtected`; A’s final code includes `IsProtected` on interface/impl and NoOp path in current `IntegrationService`. | **Verified (targeted compile)** | `dotnet build .../NEXUS.Modules.Integrations.csproj -c Debug --nologo -v q` → **Succeeded, 0 warnings, 0 errors**. |
+| 06A-B1 | Unsafe GBP/USD financial defaults (runtime/calculation/reporting/contracts touched) | Silent fabrication/fallback risk in touched defaults. | **Fixed (source, scoped)** | B changed: `IProjectReferenceLookup.ProjectReference.Currency` default `GBP`→`""`; `PortfolioManagementService` removed `USD` normalization fallback; Portfolio/Program domain/app/DTO currency defaults/fallbacks tightened to require valid 3-letter currency where applicable; CostManagement domain/DTO currency defaults `GBP`→`""`; services/workflows continue to enforce authoritative/project/configured currency and ceiling rules. **Residual:** other modules not mass-changed (e.g., ProjectManagement domain/DTO/snapshot GBP defaults noted by B) — coordinate contract-aware follow-up. |
+| 06A-B2 | Authoritative financial ceiling/currency governance | Risk of bypassing `Project.Budget` lifetime ceiling or currency-mixing. | **Verified (source inspection by B; not runtime-verified)** | B reported no regression: `BudgetAuthority` uses authoritative ceiling (`Project.CurrentApprovedProjectBudget`) and normalized currency; annual-budget/payment-obligation/commitment/payment-request workflows enforce currency/ceiling/fiscal association. No DB/runtime verification performed. |
+| 06A-B3 | D1 Pending reservation semantics across consumers | Submitted `Pending` must reserve availability to prevent over-submission; approved-only settlement/funding-transfer integrity must remain. | **Verified (source) — no defect fixed** | `PaymentRequestWorkflowPolicy.ReservesBudget` = `Approved || Pending` with reconciling comment. B confirmed consistency in inspected authoritative paths (annual-budget capacity, payment-request allocation/availability). Runtime/consumer/UI/report verification remains pending (P0-04 residual). |
+| 06A-B4 | Program uniqueness, RowVersion, code-generation concurrency | Schema/model drift: `ProgramConfiguration` defines `(TenantId,Code)` unique filtered index and `IsRowVersion()`; snapshot/physical model context indicates `Programs` rowversion/length/index drift (per B). `NextCodeAsync` uses max-scan + serializable create/retry but DB unique guard may be absent until migrated. | **Open / Blocked (migration authorization + reviewed SQL + target verification)** | **No migration created/applied.** Actionable proposal provided by B. Blockers: duplicate/NULL-code preflight, rowversion type conversion review, dirty EF model/snapshot state, authorized Development target verification/backup rules as applicable, no Production. |
+| 06A-B5 | Portfolio uniqueness/RowVersion | Portfolio config/snapshot showed rowversion + unique tenant/code patterns aligned (B). | **Verified (source-level)** | No source change required; runtime/schema still subject to migration-history/physical-schema verification in authorized environment. |
+| 06A-C1 | ProjectPlanning writes / missing tenant on save / route ownership | P0-01 concern: planning writes must be tenant/project scoped and fail closed. | **Verified (source; partial confidence)** | Planning controllers require auth + `Planning.View/Edit` policies. `ProjectResourceScopeMiddleware` is registered and contains project/plan nested ownership handling (including `plans`/`plan-imports` and plan-content ownership checks) and 404 fail-closed behavior for missing management context/resource ownership. `PlanService.CreateAsync` requires trusted tenant (`GetCurrentTenantId`) and stamps `TenantId`. Full cross-tenant runtime verification blocked. |
+| 06A-C2 | Foreign-project document uploads / tenant on save | P0-01 concern: documents must not be linkable/uploaded across foreign projects/tenants. | **Verified (source; partial confidence)** | `DocumentService` requires trusted management context with matching user/tenant, validates project in scope (`CanUseProject`), validates category exists in tenant-scoped query context, stamps trusted `TenantId` on documents/versions, uses `AccessibleQuery` fail-closed when context missing. `DocumentController` also checks project scope for paged query. Runtime negative cases still pending. |
+| 06A-C3 | Last-admin / protected Admin protection | P0-01 governance risk: cannot remove last effective tenant admin; Active Deny/protected Admin preserved. | **Verified (existing source signals; not fully regression-tested this pass)** | Identity code contains protections: `UserAdministrationService` / `RoleAdministrationService` reject changes that would remove last effective tenant administrator (`Conflict`), protected-admin policy/catalog infrastructure exists (`ProtectedTenantAdminPolicy`, `ApprovalDelegationEligibilityLookup` uses protected baseline), P0-01 tests/suites exist. **No new fix applied.** Runtime/targeted test execution deferred. |
+| 06A-C4 | AI History tenant/user isolation | P0-01 remediated AI planning history scoping; entities have no Project/Org association. | **Verified (source)** | `AIPlanningService` requires trusted tenant+user (`TryGetTrustedRequestIdentity`), scopes reads by `TenantId && RequestedBy == userId`, stamps `TenantId`/`RequestedBy` on request/response creation. **Policy residual (P0-01):** requester-only history vs shared tenant/team access is a Product Owner decision; legacy ownerless rows (if any) would be hidden — unknown without DB inspection. |
+| 06A-D1 | P0-01…05 remediation reconciliation completeness | Need consolidated truth for P0-06A. | **Fixed (documentation reconciliation)** | D reconciled 01–05 and this report consolidates A–D with main-agent verification. Claims limited to source evidence/targeted checks; runtime/DB/UAT/test execution not overclaimed. |
+| 06A-D2 | Test-project compilation defects / wiring | Targeted tests/build evidence needed for readiness; P0-03 module test dirs contain `.cs` but no `.csproj`. | **Open / Blocked** | `NEXUS.Modules.Approvals.Tests`, `NEXUS.Modules.WorkflowEngine.Tests`, `NEXUS.Modules.WorkItems.Tests` have source files but `MSB1009 Project file does not exist` — **not wired**. `NEXUS.Api.Tests` targeted build was **inconclusive** in this session (timeout/possible file locks from running processes; prior P0-04 reported MSB3021/3027 copy locks). IntegrationSecret tests added by A are not discoverable via `--no-build --list-tests` in current built output — project rebuild needed in clean environment. |
+| 06A-D3 | Web-react TypeScript typecheck (pending from 05) | Must run and report evidence. | **Verified (pass)** | Command (from app dir): `Set-Location C:\Projects\pmo\apps\web-react; npx tsc -b --pretty false`; key output: `EXIT:0` (no TS errors). Earlier `npm --prefix` invocation from repo root misresolved path in this shell environment (`ENOENT ... C:\Projects\apps\web-react\package.json`) — environment artifact, not TS failure. |
+| 06A-D4 | CI/security configuration (no deployment) | PR validation and compose security posture. | **Verified (review) + Open (hardening backlog)** | `.github/workflows/pr-validation.yml`: PR→main, `contents: read`, web-react Node 20 + `ci`/`typecheck`/`lint:web`/`apps/web-react test`/`i18n:parity`/`i18n:used-keys`; API uses `global.json` and builds `apps/api/NEXUS.slnx -c Release --no-restore`; no deploy/production secrets. **Risks/gaps:** no .NET tests, no CodeQL/Semgrep/secret-scan workflow, no Docker/nginx runtime validation in CI. Compose: requires `NEXUS_DB_PASSWORD`/`NEXUS_JWT_SECRET`; SQL/Redis bound to `127.0.0.1`; base Production; API published `5000:5000`; dev override enables Development/demo and bind-mounts source — never for production. |
+
+## 2) Actual source fixes and changed files
+
+### Subagent A — Integration/auth (in working tree)
+- `apps/api/src/NEXUS.Modules.Integrations/Infrastructure/IntegrationSecretProtector.cs` *(new)* — Data Protection secret protector (`IIntegrationSecretProtector`, prefix, legacy plaintext compatibility, fail-closed unprotect).
+- `apps/api/src/NEXUS.Modules.Integrations/Application/IntegrationService.cs` *(modified)* — uses protector for `HasConfiguredSecret`; safe DTO mapping/projection; includes NoOp protector fallback with `IsProtected`.
+- `apps/api/src/NEXUS.Modules.Integrations/ModuleRegistration/IntegrationsModuleRegistration.cs` *(modified)* — registers Data Protection + `IIntegrationSecretProtector`.
+- `apps/api/src/NEXUS.Modules.Integrations/NEXUS.Modules.Integrations.csproj` *(modified)* — `InternalsVisibleTo` for `NEXUS.Api.Tests`.
+- `apps/api/src/NEXUS.Persistence/Configurations/IntegrationConfiguration.cs` *(new)* — EF config documents protected secret column max lengths/indexes; **migration not created/applied**.
+- `apps/api/tests/NEXUS.Api.Tests/Security/IntegrationSecretProtectorTests.cs` *(new, untracked)*.
+- `apps/api/tests/NEXUS.Api.Tests/Security/IntegrationSecretProjectionTests.cs` *(new, untracked)*.
+
+### Subagent B — Financial/schema defaults (in working tree)
+- `apps/api/src/NEXUS.SharedKernel/IProjectReferenceLookup.cs`
+- `apps/api/src/NEXUS.Api/PortfolioManagement/PortfolioManagementService.cs`
+- `apps/api/src/NEXUS.Modules.Portfolio/Domain/Portfolio.cs`
+- `apps/api/src/NEXUS.Modules.Portfolio/Domain/Program.cs`
+- `apps/api/src/NEXUS.Modules.Portfolio/Application/PortfolioDtos.cs`
+- `apps/api/src/NEXUS.Modules.Portfolio/Application/PortfolioService.cs`
+- `apps/api/src/NEXUS.Modules.Portfolio/Application/ProgramDtos.cs`
+- `apps/api/src/NEXUS.Modules.Portfolio/Application/ProgramService.cs`
+- `apps/api/src/NEXUS.Modules.CostManagement/Domain/Budget.cs`
+- `apps/api/src/NEXUS.Modules.CostManagement/Domain/CostEntry.cs`
+- `apps/api/src/NEXUS.Modules.CostManagement/Domain/Invoice.cs`
+- `apps/api/src/NEXUS.Modules.CostManagement/Domain/PurchaseCommitment.cs`
+- `apps/api/src/NEXUS.Modules.CostManagement/Domain/PaymentObligation.cs` *(new, untracked; B reported existence in working tree/context — verify before commit)*
+- `apps/api/src/NEXUS.Modules.CostManagement/Application/DTOs/CostManagementDtos.cs`
+
+### Subagents C/D/Main
+- **C:** no source fixes.
+- **D:** no source fixes/tests added.
+- **Main:** created this report only: `docs/security/code-review/CODE-REVIEW-REMEDIATION-06A-FINAL-RISKS.md`.
+
+### Important concurrent-change note
+`git diff/status` shows additional modified/untracked files outside this list (including Integrations directory/infrastructure files, Portfolio controllers, payment/annual-budget domain/config files, web-react files, etc.). These were **not modified by main agent** and must be preserved/reviewed separately.
+
+## 3) Secrets and financial/schema dispositions
+
+### Secrets
+- **Disposition:** **Partially fixed in source; operationally blocked.** Integration secret values are no longer intended to be readable in API projections; protector infrastructure exists for encrypt-on-write/unprotect-on-read with fail-closed behavior. Existing stored plaintext (if any) remains until an **explicitly authorized, reviewed data migration/re-encryption runbook** is executed. `IntegrationWebhook.Secret` currently unused in app paths but modeled/configured — any future use must protect/unprotect.
+- **Dependencies/approvals:** Production Data Protection key-ring (durable/shared, protected), key-rotation/failure runbook, reviewed migration for column metadata/length constraints if desired, authorized data re-encryption (DB write) in approved environment, and decision on whether to add audited secret-rotation endpoints (not implemented).
+
+### Financial/schema
+- **Disposition:** **Improved in scoped source paths; schema enforcement blocked.** Currency fabrication removed/blocked in touched paths; D1 Pending reservation semantics preserved by source inspection. Program/Portfolio concurrency/uniqueness intent exists in EF config but **physical schema alignment requires reviewed migration(s)** and authorized apply; `EntityCodeSequences` not adopted. No migrations created/applied.
+- **Dependencies/approvals:** EF workflow per `AGENTS.md` (read docs, identify context/startup/target, repeatable tooling, reviewed SQL, independently verified Development target), duplicate/NULL `Program.Code` preflight, explicit authorization, backup rules as applicable, and runtime/integration verification of D1 consumers and duplicate-code races.
+
+## 4) Tests added and compilation/typecheck evidence
+
+### Tests added (P0-06A)
+- `apps/api/tests/NEXUS.Api.Tests/Security/IntegrationSecretProtectorTests.cs` *(A, untracked)*
+- `apps/api/tests/NEXUS.Api.Tests/Security/IntegrationSecretProjectionTests.cs` *(A, untracked)*
+- No tests added by B/C/D/Main.
+
+### Compilation/typecheck evidence
+| Check | Exact command | Key result |
+|---|---|---|
+| Integrations module (A changes) | `dotnet build "C:\Projects\pmo\apps\api\src\NEXUS.Modules.Integrations\NEXUS.Modules.Integrations.csproj" -c Debug --nologo -v q` | **PASS** — `Build succeeded. 0 Warning(s) 0 Error(s)` (2.37–2.65s observed) |
+| Portfolio module (B changes) | `dotnet build "C:\Projects\pmo\apps\api\src\NEXUS.Modules.Portfolio\NEXUS.Modules.Portfolio.csproj" -c Debug --nologo -v q` | **PASS** — `Build succeeded. 0 Warning(s) 0 Error(s)` |
+| CostManagement module (B changes) | `dotnet build "C:\Projects\pmo\apps\api\src\NEXUS.Modules.CostManagement\NEXUS.Modules.CostManagement.csproj" -c Debug --nologo -v q` | **PASS** — `Build succeeded. 0 Warning(s) 0 Error(s)` |
+| web-react TypeScript typecheck | `Set-Location "C:\Projects\pmo\apps\web-react"; npx tsc -b --pretty false; "EXIT:$LASTEXITCODE"` | **PASS** — `EXIT:0` |
+| NEXUS.Api.Tests targeted build | `dotnet build "C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\NEXUS.Api.Tests.csproj" -c Debug --no-restore --nologo -v q` | **INCONCLUSIVE** this session (no final result captured before timeout; prior reports show MSB3021/3027 file-lock/copy risks). Re-run in clean shell/process state. |
+| P0-03 module test projects | `dotnet build .../NEXUS.Modules.{Approvals,WorkflowEngine,WorkItems}.Tests.csproj ...` | **BLOCKED** — `MSB1009: Project file does not exist` for each; source files exist untracked but projects not wired. |
+| IntegrationSecret tests discovery (no execution) | `dotnet test "C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\NEXUS.Api.Tests.csproj" --list-tests --filter "FullyQualifiedName~IntegrationSecret" --no-build -v q` | **NO MATCHES in current built output** — `The following Tests are available:` (empty). New test files exist in source tree but `--no-build` output does not include them; rebuild required. A reported earlier targeted test pass in its own run context; main agent did **not** execute tests and cannot claim pass/fail from this command. |
+
+## 5) Required approvals or infrastructure changes
+- **Integration secrets:** Product Owner/security approval + infrastructure for ASP.NET Data Protection key ring (persistent, protected, multi-instance-safe if applicable); approved reviewed migration/re-encryption job for existing plaintext secrets; secret-rotation runbook; decision on exposing audited secret management operations.
+- **Database/schema:** explicit authorization for any reviewed EF migration creation/apply in independently verified Development target; follow `AGENTS.md` backup rules (no-backup exception only for exact PO-authorized disposable Dev reset workflow). Program schema/data preflight required.
+- **Web auth (F-08):** approved auth redesign (HttpOnly refresh cookie, CSRF protection, cache/header policy) — not implementable safely as frontend-only/local change.
+- **Deployment/config:** Production `Cors:AllowedOrigins`, `AllowedHosts` override, TLS termination/proxy trust review, CSP tightening plan (`'unsafe-inline'` styles), compose `docker-compose.override.yml` must never be used in Production.
+
+## 6) Remaining release blockers
+1. **F-08 localStorage token storage** unresolved (XSS-sensitive auth/session material).
+2. **Integration secrets at rest** not fully remediated for existing data/environments (plaintext legacy rows possible; no key-ring/rotation/re-encryption evidence).
+3. **Program uniqueness/rowversion physical schema drift** — no reviewed migration created/applied; duplicate-code race protection not fully guaranteed at DB level.
+4. **Targeted/full automated test execution deferred to P0-06B** (per instruction). `NEXUS.Api.Tests` compile state inconclusive in this session; IntegrationSecret tests not present in `--no-build` discovery; module test projects missing `.csproj` wiring.
+5. **Runtime/DB/UAT verification blocked/deferred:** no independently verified Development API/SQL target, no migration-history/physical-schema verification, no authenticated cross-tenant negatives, no D1 consumer/runtime verification, no browser UAT.
+6. **Residual P0 items carried forward:** plugin execution fail-closed/no sandbox; `AllowedHosts "*"` override required; CSP `style-src 'unsafe-inline'`; CI lacks .NET tests/security scans; AI history policy/legacy ownerless rows decision (P0-01).
+
+## 7) Skills applied and actual subagent contributions
+- **Skills applied:** `AGENTS.md` (EF/DB, frontend-data-integrity, permission-first, preserve concurrent work), `.kilo/skills/frontend-data-integrity/SKILL.md`, `.agents/skills/security-audit`, `.agents/skills/codeql` (read), `.agents/skills/semgrep` (read), global secure-coding/universal-engineering/documentation-first principles; targeted repo conventions (Vitest/TS for web-react, .NET module builds).
+- **Subagent contributions:** A implemented integration secret protection infrastructure + 2 test sources and documented auth/CSP/localStorage residuals; B fixed scoped currency-default/fallback risks, verified D1/ceiling semantics by inspection, and produced Program migration proposal; C performed boundary review but produced no source fixes and reported environment limits; D reconciled 01–05, ran/reported typecheck path evidence, reviewed CI/security config, and identified test-project wiring/build blockers. **Main agent** performed integration, targeted compile/typecheck verification, and final factual reporting. No P0-06B actions started.

@@ -2,7 +2,9 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using NEXUS.Modules.Audit.Domain;
+using NEXUS.Modules.Identity.Application;
 using NEXUS.Modules.Identity.Domain;
+using NEXUS.Modules.Identity.Infrastructure;
 using NEXUS.Modules.Integrations.Domain;
 using NEXUS.Modules.Organization.Domain;
 using NEXUS.Modules.ResourceManagement.Domain;
@@ -62,6 +64,14 @@ public sealed partial class DirectoryIntegrationService
             if (item.ItemType == "Group" && item.Action == "Deactivate" && groups.Truncated)
                 throw BadRequest("DIRECTORY_SYNC_INCOMPLETE_SCOPE", "Group deactivation is blocked because the directory query reached its configured record limit. Increase or narrow the scope, then preview again.");
         }
+
+        var changesUserAuthorization = selected.Any(item => item.ItemType == "User" && item.Action is "Update" or "Deactivate");
+        await using var tenantAdminMutation = changesUserAuthorization
+            ? await TenantAdminMutationGuard.AcquireAsync(_context, tenantId, cancellationToken)
+            : null;
+        var hadEffectiveTenantAdmin = tenantAdminMutation is not null
+            && await tenantAdminMutation.HasEffectiveTenantAdminAsync(_effectivePermissions, tenantId, cancellationToken);
+        var rejectedLastAdminMutation = false;
 
         var policy = await _context.Set<DirectoryProvisioningPolicy>()
             .FirstOrDefaultAsync(item => item.TenantId == tenantId && item.DirectoryConnectionId == connectionId && !item.IsDeleted, cancellationToken)
@@ -140,15 +150,35 @@ public sealed partial class DirectoryIntegrationService
                 await _context.SaveChangesAsync(cancellationToken);
             }
 
+            if (hadEffectiveTenantAdmin && tenantAdminMutation is not null
+                && !await tenantAdminMutation.HasEffectiveTenantAdminAsync(_effectivePermissions, tenantId, cancellationToken))
+            {
+                rejectedLastAdminMutation = true;
+                await tenantAdminMutation.RollbackAsync(cancellationToken);
+                _context.ChangeTracker.Clear();
+                throw BadRequest("TENANT_LAST_ADMIN_PROTECTED", "Directory synchronization cannot remove the last effective tenant administrator.");
+            }
+
             run.Status = "Completed";
             run.CompletedAt = DateTime.UtcNow;
             run.UpdatedBy = actorId.ToString("D");
             AddAudit(tenantId, actorId, "DirectorySyncCompleted", "DirectorySyncRun", run.Id, null,
                 new { run.DirectoryConnectionId, run.Status, run.UsersFetched, run.UsersCreated, run.UsersUpdated, run.UsersDeactivated, run.UsersSkipped, run.GroupsCreated, run.GroupsUpdated, run.GroupsDeactivated });
             await _context.SaveChangesAsync(cancellationToken);
+            if (tenantAdminMutation is not null)
+                await tenantAdminMutation.CommitAsync(cancellationToken);
         }
         catch
         {
+            if (rejectedLastAdminMutation)
+            {
+                _context.ChangeTracker.Clear();
+                AddAudit(tenantId, actorId, "DirectorySyncRejectedLastAdmin", "DirectorySyncRun", run.Id, null,
+                    new { run.DirectoryConnectionId, run.UsersDeactivated, run.UsersUpdated });
+                await _context.SaveChangesAsync(CancellationToken.None);
+                throw;
+            }
+
             run.Status = "Failed";
             run.CompletedAt = DateTime.UtcNow;
             run.Failures++;
@@ -267,7 +297,6 @@ public sealed partial class DirectoryIntegrationService
                 Email = mappedEmail,
                 FirstName = firstName.Trim(),
                 LastName = lastName.Trim(),
-                JobTitle = ReadMappedValue(source, mappings, "jobTitle") ?? source.JobTitle,
                 IsActive = source.IsEnabled,
                 // No directory password is imported. This high-entropy value is discarded after hashing;
                 // account access must be established through the existing password-reset/SSO process.
@@ -325,6 +354,7 @@ public sealed partial class DirectoryIntegrationService
 
         var resources = await _context.Set<Resource>().Where(resource => resource.TenantId == tenantId && resource.UserId == user.Id && !resource.IsDeleted).ToListAsync(cancellationToken);
         Resource? resource = resources.OrderByDescending(item => item.IsActive).FirstOrDefault();
+        var mappedJobTitle = HasMappedField(mappings, "jobTitle") ? ReadMappedValue(source, mappings, "jobTitle") : source.JobTitle;
         var createdResource = false;
         if (resource is null && policy.CreateResource)
         {
@@ -335,9 +365,9 @@ public sealed partial class DirectoryIntegrationService
                 UserId = user.Id,
                 Name = user.FullName,
                 EmployeeId = ReadMappedValue(source, mappings, "employeeId"),
-                JobTitle = user.JobTitle,
+                JobTitle = mappedJobTitle,
                 Email = user.Email,
-                Type = "Employee",
+                Type = ResourceTypeConstants.Staff,
                 Status = source.IsEnabled ? "Active" : "Inactive",
                 EmploymentType = policy.DefaultEmploymentType,
                 Seniority = policy.DefaultSeniority,
@@ -351,7 +381,8 @@ public sealed partial class DirectoryIntegrationService
         {
             resource.Name = user.FullName;
             resource.Email = user.Email;
-            resource.JobTitle = user.JobTitle;
+            if (mappings.Any(mapping => mapping.TargetField == "jobTitle" && mapping.UpdatePolicy != DirectoryUpdatePolicies.Ignore))
+                resource.JobTitle = mappedJobTitle;
             if (mappings.Any(mapping => mapping.TargetField == "employeeId" && mapping.UpdatePolicy != DirectoryUpdatePolicies.Ignore))
                 resource.EmployeeId = ReadMappedValue(source, mappings, "employeeId");
             if (synchronizeAccountStatus)
@@ -393,7 +424,6 @@ public sealed partial class DirectoryIntegrationService
                 case "firstName": user.FirstName = value; break;
                 case "lastName": user.LastName = value; break;
                 case "email": user.Email = value; break;
-                case "jobTitle": user.JobTitle = value; break;
                 case "organizationalUnit":
                 case "manager":
                 case "username":
@@ -423,6 +453,16 @@ public sealed partial class DirectoryIntegrationService
         var desired = mappings.Where(mapping => mapping.RoleId.HasValue && externalGroupIds.Contains(mapping.ExternalGroupId, StringComparer.OrdinalIgnoreCase))
             .Select(mapping => (mapping.ExternalGroupId, RoleId: mapping.RoleId!.Value))
             .Distinct().ToArray();
+        var desiredRoleIds = desired.Select(item => item.RoleId).Distinct().ToArray();
+        var mappedRoles = await _context.Set<Role>()
+            .IgnoreQueryFilters()
+            .Where(role => role.TenantId == tenantId && desiredRoleIds.Contains(role.Id) && !role.IsDeleted)
+            .ToListAsync(cancellationToken);
+        if (mappedRoles.Count != desiredRoleIds.Length)
+            throw BadRequest("DIRECTORY_ROLE_INVALID", "A mapped NEXUS role is no longer active in the current tenant. Refresh the role mappings.");
+        if (mappedRoles.Any(ProtectedTenantAdminPolicy.IsProtectedSystemAdminRole))
+            throw BadRequest("DIRECTORY_SYSTEM_ADMIN_ASSIGNMENT_BLOCKED", "The protected system Admin role cannot be assigned by directory synchronization.");
+
         var grants = await _context.Set<DirectoryRoleGrant>()
             .Where(grant => grant.TenantId == tenantId && grant.DirectoryConnectionId == connectionId && grant.UserId == userId && !grant.IsDeleted)
             .ToListAsync(cancellationToken);
@@ -458,9 +498,6 @@ public sealed partial class DirectoryIntegrationService
         foreach (var desiredGrant in desired)
         {
             if (grants.Any(grant => !grant.IsDeleted && grant.RoleId == desiredGrant.RoleId && string.Equals(grant.ExternalGroupId, desiredGrant.ExternalGroupId, StringComparison.OrdinalIgnoreCase))) continue;
-            if (!await _context.Set<Role>().AnyAsync(role => role.TenantId == tenantId && role.Id == desiredGrant.RoleId && !role.IsDeleted, cancellationToken))
-                throw BadRequest("DIRECTORY_ROLE_INVALID", "A mapped NEXUS role is no longer active in the current tenant. Refresh the role mappings.");
-
             var assignment = assignments.FirstOrDefault(item => item.RoleId == desiredGrant.RoleId && !item.IsDeleted);
             if (assignment is null)
             {

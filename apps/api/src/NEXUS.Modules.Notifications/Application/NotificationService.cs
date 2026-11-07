@@ -9,15 +9,18 @@ public class NotificationService : INotificationService
 {
     private readonly DbContext _context;
     private readonly IPushNotificationSender _pushSender;
+    private readonly IEmailNotificationSender? _emailSender;
     private readonly NotificationDeliveryOptions _deliveryOptions;
 
     public NotificationService(
         DbContext context,
         IPushNotificationSender pushSender,
-        IOptions<NotificationDeliveryOptions> deliveryOptions)
+        IOptions<NotificationDeliveryOptions> deliveryOptions,
+        IEmailNotificationSender? emailSender = null)
     {
         _context = context;
         _pushSender = pushSender;
+        _emailSender = emailSender;
         _deliveryOptions = deliveryOptions.Value;
     }
 
@@ -73,7 +76,8 @@ public class NotificationService : INotificationService
                 NotificationPreferenceDefaults.InAppEnabled(type),
                 NotificationPreferenceDefaults.PushEnabled(type),
                 NotificationPreferenceDefaults.EmailEnabled(type))).ToArray();
-        return new NotificationPreferencesResponse(items, _pushSender.IsConfigured, false);
+        var emailAvailable = await IsEmailAvailableAsync(tenantId, organizationId: null, cancellationToken);
+        return new NotificationPreferencesResponse(items, _pushSender.IsConfigured, emailAvailable);
     }
 
     public async Task<Result> UpdatePreferencesAsync(Guid tenantId, Guid userId, UpdateNotificationPreferencesRequest request, CancellationToken cancellationToken = default)
@@ -107,7 +111,6 @@ public class NotificationService : INotificationService
             preference.IsDeleted = false;
             preference.InAppEnabled = value.InAppEnabled;
             preference.PushEnabled = value.PushEnabled;
-            // Email is stored for future delivery, but no email delivery is created in this phase.
             preference.EmailEnabled = value.EmailEnabled;
             preference.UpdatedBy = userId.ToString();
         }
@@ -115,20 +118,88 @@ public class NotificationService : INotificationService
         return Result.Success();
     }
 
-    public async Task<Result> SendAsync(Notification notification, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyDictionary<Guid, NotificationChannelEligibility>> GetChannelEligibilityAsync(
+        Guid tenantId,
+        IReadOnlyCollection<Guid> userIds,
+        string type,
+        CancellationToken cancellationToken = default,
+        Guid? organizationId = null)
+    {
+        var ids = userIds.Where(id => id != Guid.Empty).Distinct().ToArray();
+        if (ids.Length == 0) return new Dictionary<Guid, NotificationChannelEligibility>();
+
+        var emailAvailable = await IsEmailAvailableAsync(tenantId, organizationId, cancellationToken);
+
+        var saved = await _context.Set<NotificationPreference>().IgnoreQueryFilters().AsNoTracking()
+            .Where(item => item.TenantId == tenantId && ids.Contains(item.UserId) && item.Type == type && !item.IsDeleted)
+            .ToDictionaryAsync(item => item.UserId, cancellationToken);
+
+        return ids.ToDictionary(userId => userId, userId => saved.TryGetValue(userId, out var preference)
+            ? new NotificationChannelEligibility(preference.InAppEnabled, preference.PushEnabled, preference.EmailEnabled, _pushSender.IsConfigured, emailAvailable)
+            : new NotificationChannelEligibility(
+                NotificationPreferenceDefaults.InAppEnabled(type),
+                NotificationPreferenceDefaults.PushEnabled(type),
+                NotificationPreferenceDefaults.EmailEnabled(type),
+                _pushSender.IsConfigured,
+                emailAvailable));
+    }
+
+    public async Task<Result<bool>> SendIdempotentAsync(Notification notification, bool allowPush, bool allowEmail, CancellationToken cancellationToken = default)
+    {
+        if (notification.Id == Guid.Empty || !notification.UserId.HasValue)
+            return Result<bool>.Failure(Error.Validation("An idempotent notification requires a stable ID and an authenticated recipient."));
+
+        var existing = await FindExistingAsync(notification.TenantId, notification.Id, cancellationToken);
+        if (existing is not null) return Matches(existing, notification)
+            ? Result<bool>.Success(false)
+            : Result<bool>.Failure(Error.Conflict("The idempotency key was already used for different notification content."));
+
+        try
+        {
+            var queued = await SendAsync(notification, allowPush, allowEmail, cancellationToken);
+            return queued.IsSuccess ? Result<bool>.Success(true) : Result<bool>.Failure(queued.Error ?? Error.Validation("Notification could not be queued."));
+        }
+        catch (DbUpdateException)
+        {
+            // A concurrent retry can win the notification primary-key insert. Detach only this
+            // request's Added rows, then treat an identical persisted row as an idempotent retry.
+            foreach (var entry in _context.ChangeTracker.Entries<NotificationDelivery>()
+                         .Where(entry => entry.State == EntityState.Added && entry.Entity.NotificationId == notification.Id).ToArray())
+                entry.State = EntityState.Detached;
+            foreach (var entry in _context.ChangeTracker.Entries<Notification>()
+                         .Where(entry => entry.State == EntityState.Added && entry.Entity.Id == notification.Id).ToArray())
+                entry.State = EntityState.Detached;
+
+            existing = await FindExistingAsync(notification.TenantId, notification.Id, cancellationToken);
+            if (existing is not null && Matches(existing, notification)) return Result<bool>.Success(false);
+            throw;
+        }
+    }
+
+    public Task<Result> SendAsync(Notification notification, CancellationToken cancellationToken = default) =>
+        SendAsync(notification, allowPush: true, allowEmail: true, cancellationToken: cancellationToken);
+
+    private async Task<Result> SendAsync(Notification notification, bool allowPush, bool allowEmail, CancellationToken cancellationToken)
     {
         NotificationPreference? preference = null;
         if (notification.UserId.HasValue)
         {
-            preference = await _context.Set<NotificationPreference>().SingleOrDefaultAsync(item =>
-                item.TenantId == notification.TenantId && item.UserId == notification.UserId.Value && item.Type == notification.Type, cancellationToken);
+            preference = await _context.Set<NotificationPreference>()
+                .IgnoreQueryFilters()
+                .SingleOrDefaultAsync(item =>
+                    item.TenantId == notification.TenantId
+                    && item.UserId == notification.UserId.Value
+                    && item.Type == notification.Type
+                    && !item.IsDeleted,
+                    cancellationToken);
         }
 
         notification.IsInAppVisible = !notification.UserId.HasValue
             ? false
-            : preference?.InAppEnabled ?? NotificationPreferenceDefaults.InAppEnabled(notification.Type);
+            : notification.IsInAppVisible && (preference?.InAppEnabled ?? NotificationPreferenceDefaults.InAppEnabled(notification.Type));
         _context.Set<Notification>().Add(notification);
         if (notification.UserId.HasValue
+            && allowPush
             && (preference?.PushEnabled ?? NotificationPreferenceDefaults.PushEnabled(notification.Type))
             && _pushSender.IsConfigured)
         {
@@ -143,6 +214,23 @@ public class NotificationService : INotificationService
                 CreatedBy = "NotificationService",
             });
         }
+        if (notification.UserId.HasValue
+            && allowEmail
+            && _emailSender is not null
+            && (preference?.EmailEnabled ?? NotificationPreferenceDefaults.EmailEnabled(notification.Type))
+            && await IsEmailAvailableAsync(notification.TenantId, notification.OrganizationId, cancellationToken))
+        {
+            _context.Set<NotificationDelivery>().Add(new NotificationDelivery
+            {
+                TenantId = notification.TenantId,
+                NotificationId = notification.Id,
+                Channel = NotificationDeliveryChannel.Email,
+                Status = NotificationDeliveryStatus.Pending,
+                MaxAttempts = _deliveryOptions.MaxAttempts,
+                NextAttemptAt = DateTime.UtcNow,
+                CreatedBy = "NotificationService",
+            });
+        }
 
         // EF saves the canonical row and its delivery intent in one database transaction.
         // Provider calls happen later in the hosted dispatcher.
@@ -150,4 +238,38 @@ public class NotificationService : INotificationService
 
         return Result.Success();
     }
+
+    private Task<Notification?> FindExistingAsync(Guid tenantId, Guid id, CancellationToken cancellationToken) =>
+        _context.Set<Notification>().IgnoreQueryFilters().AsNoTracking()
+            .SingleOrDefaultAsync(item => item.Id == id && item.TenantId == tenantId && !item.IsDeleted, cancellationToken);
+
+    private async Task<bool> IsEmailAvailableAsync(Guid tenantId, Guid? organizationId, CancellationToken cancellationToken)
+    {
+        if (_emailSender is null) return false;
+        try
+        {
+            return await _emailSender.IsConfiguredAsync(tenantId, organizationId, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            // Email profile lookup must not prevent the durable in-app notification from being saved.
+            return false;
+        }
+    }
+
+    private static bool Matches(Notification existing, Notification requested) =>
+        existing.TenantId == requested.TenantId
+        && existing.OrganizationId == requested.OrganizationId
+        && existing.UserId == requested.UserId
+        && existing.Type == requested.Type
+        && existing.Title == requested.Title
+        && existing.Body == requested.Body
+        && existing.ReferenceType == requested.ReferenceType
+        && existing.ReferenceId == requested.ReferenceId
+        && existing.ReferencePublicId == requested.ReferencePublicId
+        && existing.CreatedBy == requested.CreatedBy;
 }

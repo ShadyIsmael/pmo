@@ -11,13 +11,13 @@ import { ProjectOverviewTab } from "../features/projects/ProjectOverviewTab";
 import { ProjectChangeTrackerTab } from "../features/projects/ProjectGovernanceTabs";
 import { setTokens } from "../api/client";
 
-const adminUser = { id: "admin", email: "admin@nexus.com", firstName: "Alex", lastName: "Admin", fullName: "Alex Admin", roles: [{ id: "r1", name: "Administrator" }], permissions: ["projects.read", "Project.View", "Project.Create", "Project.Edit", "Project.Delete", "ChangeRequest.Manage", "Handover.Manage", "Resource.Assign", "finances.read", "finances.write", "Stakeholders.Read", "Stakeholders.Manage"] };
+const adminUser = { id: "admin", email: "admin@nexus.com", firstName: "Alex", lastName: "Admin", fullName: "Alex Admin", roles: [{ id: "r1", name: "Administrator" }], permissions: ["Project.View", "Project.View", "Project.Create", "Project.Edit", "Project.Delete", "ChangeRequest.Manage", "Handover.Manage", "Resource.Assign", "ProjectFinance.View", "ProjectAnnualBudget.View", "ProjectPaymentRequest.View", "ProjectSettlement.View", "ProjectAnnualBudgetClosing.View", "Stakeholders.Read", "Stakeholders.Manage"] };
 
 adminUser.permissions.push("ChangeRequest.View");
 
 const projectPublicId = "00000000-0000-4000-8000-000000000001";
 const shell = {
-  id: "p1", publicId: projectPublicId, code: "P1", name: "Project 1", status: "Active", priority: "High", phase: "Execution",
+  id: "p1", publicId: projectPublicId, code: "P1", name: "Project 1", status: "Active", priority: "High", phase: "Execution", projectManagerId: "manager-1",
   health: "Green", currency: "USD", progress: 40, plannedValue: 100, earnedValue: 80,
   members: [], projectManagerName: "A Lead", businessCase: "BC", notes: "N",
 };
@@ -45,7 +45,7 @@ const overview = {
 
 describe("detail freeze repro", () => {
   it("renders full overview with EVM + milestones without hanging", async () => {
-    setTokens("a", "r");
+    setTokens("a");
     const changeRequests: Array<Record<string, unknown>> = [];
     const fetchMock = vi.fn().mockImplementation((input: string, init?: RequestInit) => {
       if (input.includes("/api/auth/me")) {
@@ -131,6 +131,15 @@ describe("detail freeze repro", () => {
     expect(shellCalls).toBeLessThanOrEqual(2);
 
     const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Actions" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Edit" }));
+    const editSheet = await screen.findByRole("dialog", { name: "Edit Project" });
+    const currentManager = within(editSheet).getByLabelText("Current Project Manager");
+    expect(currentManager).toHaveValue("A Lead");
+    expect(currentManager).toHaveAttribute("readonly");
+    expect(within(editSheet).queryByRole("combobox", { name: "Project Manager" })).not.toBeInTheDocument();
+    expect(within(editSheet).getByRole("button", { name: "Handover" })).toBeInTheDocument();
+
     await user.click(screen.getByRole("tab", { name: "Change Tracker" }));
     expect(screen.queryByRole("button", { name: /^Change Request$/ })).not.toBeInTheDocument();
     expect(await screen.findByText("No change requests", { exact: true })).toBeInTheDocument();
@@ -194,4 +203,46 @@ describe("detail freeze repro", () => {
 
     await new Promise((r) => setTimeout(r, 2000));
   }, 30000);
+
+  it("keeps the manager read-only and hides Handover in Edit when the user is not authorized", async () => {
+    setTokens("a");
+    const editor = { ...adminUser, permissions: ["Project.View", "Project.Edit"] };
+    const fetchMock = vi.fn().mockImplementation((input: string) => {
+      if (input.includes("/api/auth/me")) return Promise.resolve(new Response(JSON.stringify(editor), { status: 200 }));
+      if (input.includes("/api/me/perspectives")) return Promise.resolve(new Response(JSON.stringify({ nativePerspectives: [], availablePerspectives: [], defaultPerspective: null, canViewAs: false, scope: { portfolioIds: [], programIds: [], projectIds: [] } }), { status: 200 }));
+      if (input.includes(`/api/projects/${projectPublicId}/shell`)) return Promise.resolve(new Response(JSON.stringify(shell), { status: 200 }));
+      return Promise.resolve(new Response("null", { status: 200 }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    function Bridge({ children }: { children: React.ReactNode }) {
+      const { user } = useAuth();
+      return <ManagementProvider user={user}>{children}</ManagementProvider>;
+    }
+    render(
+      <QueryClientProvider client={client}>
+        <I18nProvider>
+          <AuthProvider>
+            <Bridge>
+              <MemoryRouter initialEntries={[`/projects/${projectPublicId}`]}>
+                <Routes><Route path="/projects/:id" element={<ProjectDetailPage />} /></Routes>
+              </MemoryRouter>
+            </Bridge>
+          </AuthProvider>
+        </I18nProvider>
+      </QueryClientProvider>
+    );
+
+    await screen.findByRole("heading", { name: "Project 1" });
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Actions" }));
+    expect(screen.queryByRole("menuitem", { name: "Handover" })).not.toBeInTheDocument();
+    await user.click(await screen.findByRole("menuitem", { name: "Edit" }));
+    const editSheet = await screen.findByRole("dialog", { name: "Edit Project" });
+    const currentManager = within(editSheet).getByLabelText("Current Project Manager");
+    expect(currentManager).toHaveValue("A Lead");
+    expect(currentManager).toHaveAttribute("readonly");
+    expect(within(editSheet).queryByRole("combobox", { name: "Project Manager" })).not.toBeInTheDocument();
+    expect(within(editSheet).queryByRole("button", { name: "Handover" })).not.toBeInTheDocument();
+  });
 });

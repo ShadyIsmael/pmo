@@ -16,13 +16,13 @@ describe("Directory Integration permission access", () => {
 
   it("allows a narrowly-scoped mapping permission to open the directory integration without broad Settings access", async () => {
     const permission = Permissions.Directory.ManageMappings;
-    expect(DirectoryAccessPermissions).toContain(permission);
-    setTokens("access", "refresh");
+    expect(DirectoryAccessPermissions).toContain(Permissions.Directory.View);
+    setTokens("access");
     const fetchMock = vi.fn().mockImplementation((input: string) => {
       const url = String(input);
       if (url.includes("/api/auth/me")) {
         return Promise.resolve(new Response(JSON.stringify({
-          id: "user-1", tenantId: "tenant-1", email: "user@example.test", firstName: "Test", lastName: "User", fullName: "Test User", roles: [], permissions: [permission],
+          id: "user-1", tenantId: "tenant-1", email: "user@example.test", firstName: "Test", lastName: "User", fullName: "Test User", roles: [], permissions: [Permissions.Directory.View, permission],
         }), { status: 200 }));
       }
       if (url.includes("/api/directory-integrations/connections")) return Promise.resolve(new Response("[]", { status: 200 }));

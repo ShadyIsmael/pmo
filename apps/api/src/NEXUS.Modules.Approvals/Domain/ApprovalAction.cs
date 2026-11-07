@@ -7,6 +7,11 @@ public class ApprovalAction : BaseEntity
     public Guid ApprovalRequestId { get; set; }
     public ApprovalRequest ApprovalRequest { get; set; } = null!;
     public Guid ApproverId { get; set; }
+    /// <summary>
+    /// Optional link to the immutable project payment-request assignment that
+    /// produced this decision. Null remains valid for historical/generic actions.
+    /// </summary>
+    public Guid? ApproverAssignmentId { get; set; }
     public string Action { get; set; } = string.Empty;
     public string? Comments { get; set; }
     public DateTime ActionedAt { get; set; } = DateTime.UtcNow;

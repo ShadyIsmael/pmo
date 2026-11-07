@@ -9,7 +9,7 @@ import { useAuth } from "@auth/AuthProvider";
 import { HoursThisWeekWidget } from "./HoursThisWeekWidget";
 import { OverdueTasksWidget } from "./OverdueTasksWidget";
 import { UpcomingMeetingsWidget } from "./UpcomingMeetingsWidget";
-import { dashboardMeetingsQueryParams, dashboardWidgetNeedsWorkItems, formatDashboardMoney, getDashboardApprovalAccess, scopeDashboardProjects, scopeDashboardRecordsByProject, scopeDashboardResources, shouldLoadDashboardManagementOverview, summarizeDashboardResourceCapacity } from "./dashboard-widget-utils";
+import { dashboardMeetingsQueryParams, dashboardWidgetNeedsWorkItems, formatDashboardMoney, getDashboardApprovalAccess, hasDashboardResourceReadAccess, scopeDashboardProjects, scopeDashboardRecordsByProject, scopeDashboardResources, shouldLoadDashboardManagementOverview, summarizeDashboardResourceCapacity } from "./dashboard-widget-utils";
 import { Permissions } from "@lib/permissions";
 import { Button } from "@components/ui/Button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@components/ui/Card";
@@ -32,7 +32,7 @@ import { useRisks, type RiskDto } from "@features/risks/api/risks";
 import { useNotifications, type NotificationListItem } from "@api/notifications";
 import { usePortfolioManagementOverview, useProgramManagementOverview } from "@features/delivery/api/delivery";
 import { type ManagementPerspective } from "@lib/perspective";
-import { getApprovalReviewPath } from "@lib/approval-navigation";
+import { getApprovalReviewPath, getManagerHandoverApprovalReviewType } from "@lib/approval-navigation";
 import {
   usePendingHandoverRequestsForMe,
   usePendingManagerHandovers,
@@ -94,17 +94,17 @@ const dashboardWidgetCatalog: Omit<WidgetDefinition, "supportedPOVs">[] = [
   { type: "forecast-variance", titleKey: "dashboard.costVariance", descriptionKey: "dashboard.groupedByCurrency", category: "Overview", defaultTitle: "Cost Variance" },
   { type: "overdue-tasks", titleKey: "dashboard.overdueTasks", descriptionKey: "dashboard.noWork", category: "My Work", defaultTitle: "Overdue Tasks" },
   { type: "projects-by-status", titleKey: "dashboard.projectsByStatus", descriptionKey: "dashboard.projectsByStatus", category: "Projects", defaultTitle: "Projects by Status" },
-  { type: "resource-utilization", titleKey: "dashboard.resourceUtilization", descriptionKey: "dashboard.resourceUtilization", category: "Resources", defaultTitle: "Resource Utilization" },
+ { type: "resource-utilization", titleKey: "dashboard.resourceUtilization", descriptionKey: "dashboard.resourceUtilization", category: "Resources", defaultTitle: "Resource Utilization", requiredAnyPermissions: [Permissions.Resources.View] },
   { type: "risk-trend", titleKey: "dashboard.riskDistributionWidget", descriptionKey: "dashboard.riskLevelsOnly", category: "Risks", defaultTitle: "Risk Distribution" },
   { type: "tasks-by-status", titleKey: "dashboard.tasksByStatus", descriptionKey: "dashboard.tasksByStatus", category: "My Work", defaultTitle: "Work Items by Status" },
-  { type: "resource-capacity", titleKey: "dashboard.resourceCapacity", descriptionKey: "dashboard.resourceCapacity", category: "Resources", defaultTitle: "Resource Capacity" },
-  { type: "overallocated-resources", titleKey: "dashboard.overallocatedResources", descriptionKey: "dashboard.overallocatedResources", category: "Resources", defaultTitle: "Overallocated Resources" },
+ { type: "resource-capacity", titleKey: "dashboard.resourceCapacity", descriptionKey: "dashboard.resourceCapacity", category: "Resources", defaultTitle: "Resource Capacity", requiredAnyPermissions: [Permissions.Resources.View] },
+ { type: "overallocated-resources", titleKey: "dashboard.overallocatedResources", descriptionKey: "dashboard.overallocatedResources", category: "Resources", defaultTitle: "Overallocated Resources", requiredAnyPermissions: [Permissions.Resources.View] },
   { type: "planned-vs-actual", titleKey: "dashboard.plannedVsActual", descriptionKey: "dashboard.plannedVsActual", category: "Timesheets", defaultTitle: "Planned vs Actual Work" },
   { type: "cost-variance", titleKey: "dashboard.projectCostComparisonWidget", descriptionKey: "dashboard.groupedByCurrency", category: "Costs", defaultTitle: "Project Cost Comparison" },
   { type: "risk-heat-map", titleKey: "dashboard.riskHeatMap", descriptionKey: "dashboard.riskLevelsOnly", category: "Risks", defaultTitle: "Risk Level Distribution" },
   { type: "status-report-freshness", titleKey: "dashboard.statusReportFreshness", descriptionKey: "dashboard.noDataDescription", category: "Overview", defaultTitle: "Status Report Freshness" },
   { type: "my-timesheet-status", titleKey: "dashboard.myTimesheetStatus", descriptionKey: "dashboard.sourceUnavailable", category: "Timesheets", defaultTitle: "My Timesheet Status" },
-  { type: "hours-this-week", titleKey: "dashboard.hoursThisWeek", descriptionKey: "dashboard.hoursThisWeekDescription", category: "Timesheets", defaultTitle: "Hours This Week", requiredAnyPermissions: ["TimeTracking.ViewOwn", "TimeTracking.ManageOwn", "TimeTracking.ViewTeam", "TimeTracking.ManageTeam"] },
+  { type: "hours-this-week", titleKey: "dashboard.hoursThisWeek", descriptionKey: "dashboard.hoursThisWeekDescription", category: "Timesheets", defaultTitle: "Hours This Week", requiredAnyPermissions: ["TimeTracking.ViewOwn", "TimeTracking.ViewTeam"] },
   { type: "missing-timesheets", titleKey: "dashboard.missingTimesheets", descriptionKey: "dashboard.sourceUnavailable", category: "Timesheets", defaultTitle: "Missing Timesheets" },
   { type: "timesheet-approval-inbox", titleKey: "dashboard.timesheetApprovalInbox", descriptionKey: "dashboard.sourceUnavailable", category: "Timesheets", defaultTitle: "Timesheet Approval Inbox" },
   { type: "jira-sync", titleKey: "dashboard.jiraSync", descriptionKey: "dashboard.sourceUnavailable", category: "Integrations", defaultTitle: "Jira Sync" },
@@ -330,6 +330,7 @@ function useDashboardState(initialPov: DashboardPointOfView, owner?: { id: strin
 }
 
 function VisibleWidget({ children, className, style }: { children: React.ReactNode; className?: string; style?: React.CSSProperties }) {
+  const { t } = useI18n();
   const ref = React.useRef<HTMLDivElement>(null);
   const [visible, setVisible] = React.useState(false);
   React.useEffect(() => {
@@ -339,15 +340,16 @@ function VisibleWidget({ children, className, style }: { children: React.ReactNo
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
-  return <div ref={ref} className={`min-h-[10rem] ${className ?? ""}`} style={style}>{visible ? children : <div className="h-full min-h-[10rem] animate-pulse rounded-lg bg-muted/30" aria-label="Loading widget" />}</div>;
+  return <div ref={ref} className={`min-h-[10rem] ${className ?? ""}`} style={style}>{visible ? children : <div className="h-full min-h-[10rem] animate-pulse rounded-lg bg-muted/30" aria-label={t("common.loading")} />}</div>;
 }
 
 type DashboardApprovals = { handovers: readonly HandoverRequestDto[]; managerHandovers: readonly ManagerHandoverRequestDto[]; projectChanges: readonly PendingProjectChangeApprovalDto[] };
 type StatusReportFreshness = { currentCount: number; staleCount: number; missingCount: number };
 
 function DashboardWidgetContent({ type, summary, workItems, meetings, projects, capacity, resources, risks, notifications, approvals, statusReports, permissions, maxRecords }: { type: WidgetType; summary?: HomeSummary; workItems?: readonly WorkItemDto[]; meetings?: readonly MeetingListDto[]; projects?: readonly ProjectSummaryDto[]; capacity?: CapacityMatrixDto; resources?: readonly ResourceDto[]; risks?: readonly RiskDto[]; notifications?: readonly NotificationListItem[]; approvals?: DashboardApprovals; statusReports?: StatusReportFreshness; permissions: readonly string[]; maxRecords: number }) {
-  const { t, locale } = useI18n();
+  const { t, locale, formatDate } = useI18n();
   if (unavailableWidgetTypes.has(type)) return <div className="flex min-h-32 items-center justify-center text-center text-sm text-muted-foreground">{t("dashboard.notAvailable")}</div>;
+  if (["resource-utilization", "resource-capacity", "overallocated-resources"].includes(type) && !hasDashboardResourceReadAccess(permissions)) return <div className="flex min-h-32 items-center justify-center text-center text-sm text-muted-foreground">{t("dashboard.notAvailable")}</div>;
   if (type === "pending-approvals" && !getDashboardApprovalAccess(permissions).any) return <div className="flex min-h-32 items-center justify-center text-center text-sm text-muted-foreground">{t("dashboard.notAvailable")}</div>;
   if (type === "hours-this-week") return <HoursThisWeekWidget permissions={permissions} />;
   if (type === "overdue-tasks") return <OverdueTasksWidget workItems={workItems ?? []} />;
@@ -356,12 +358,15 @@ function DashboardWidgetContent({ type, summary, workItems, meetings, projects, 
   }
   if (type === "recent-notifications") {
     const items = (notifications ?? []).slice(0, maxRecords);
-    return items.length ? <div className="space-y-1.5">{items.map((notification) => <Link key={notification.id} to="/notifications" className="block rounded px-2 py-1.5 text-xs hover:bg-muted/50"><div className="flex items-center gap-2"><span className={`h-2 w-2 shrink-0 rounded-full ${notification.isRead ? "bg-muted-foreground/30" : "bg-primary"}`} /><span className="min-w-0 flex-1 truncate font-medium">{notification.title}</span><span className="shrink-0 text-muted-foreground">{new Date(notification.sentAt).toLocaleDateString()}</span></div>{notification.body ? <p className="mt-0.5 truncate ps-4 text-muted-foreground">{notification.body}</p> : null}</Link>)}</div> : <div className="flex min-h-32 items-center justify-center text-sm text-muted-foreground">{t("dashboard.noData")}</div>;
+    return items.length ? <div className="space-y-1.5">{items.map((notification) => <Link key={notification.id} to="/notifications" className="block rounded px-2 py-1.5 text-xs hover:bg-muted/50"><div className="flex items-center gap-2"><span className={`h-2 w-2 shrink-0 rounded-full ${notification.isRead ? "bg-muted-foreground/30" : "bg-primary"}`} /><span className="min-w-0 flex-1 truncate font-medium">{notification.title}</span><span className="shrink-0 text-muted-foreground">{formatDate(notification.sentAt)}</span></div>{notification.body ? <p className="mt-0.5 truncate ps-4 text-muted-foreground">{notification.body}</p> : null}</Link>)}</div> : <div className="flex min-h-32 items-center justify-center text-sm text-muted-foreground">{t("dashboard.noData")}</div>;
   }
   if (type === "pending-approvals") {
     const rows = [
       ...(approvals?.handovers ?? []).map((item) => ({ id: `project-${item.id}`, label: t("approvals.handoverRequest"), name: item.projectName, path: getApprovalReviewPath("project-handover", item.id) })),
-      ...(approvals?.managerHandovers ?? []).map((item) => ({ id: `${item.entityType}-${item.id}`, label: `${item.entityType} ${t("approvals.handoverRequest")}`, name: item.entityName, path: getApprovalReviewPath(item.entityType === "Program" ? "program-handover" : "portfolio-handover", item.id) })),
+      ...(approvals?.managerHandovers ?? []).flatMap((item) => {
+        const reviewType = getManagerHandoverApprovalReviewType(item.entityType);
+        return reviewType ? [{ id: `${item.entityType}-${item.id}`, label: `${item.entityType} ${t("approvals.handoverRequest")}`, name: item.entityName, path: getApprovalReviewPath(reviewType, item.id) }] : [];
+      }),
       ...(approvals?.projectChanges ?? []).map((item) => ({ id: `change-${item.id}`, label: t("approvals.changeRequest"), name: item.projectName, path: getApprovalReviewPath("change-request", item.id) })),
     ].slice(0, maxRecords);
     return rows.length ? <div className="space-y-1.5">{rows.map((row) => <Link key={row.id} to={row.path} className="flex items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-muted/50"><span className="h-2 w-2 shrink-0 rounded-full bg-warning" /><span className="min-w-0 flex-1 truncate font-medium">{row.name}</span><span className="shrink-0 text-muted-foreground">{row.label}</span></Link>)}</div> : <div className="flex min-h-32 items-center justify-center text-sm text-muted-foreground">{t("dashboard.noData")}</div>;
@@ -369,7 +374,7 @@ function DashboardWidgetContent({ type, summary, workItems, meetings, projects, 
   if (type === "my-work" || type === "my-todo" || type === "upcoming-milestones") {
     const today = new Date().toISOString().slice(0, 10);
     const items = [...(workItems ?? [])].filter((item) => { const open = item.status.toLowerCase() !== "completed"; if (type === "upcoming-milestones") return open && Boolean(item.dueDate && item.dueDate.slice(0, 10) >= today); return open; }).sort((left, right) => { if (type === "upcoming-milestones") return new Date(left.dueDate ?? "9999-12-31").getTime() - new Date(right.dueDate ?? "9999-12-31").getTime(); return new Date(right.updatedAt ?? right.createdAt).getTime() - new Date(left.updatedAt ?? left.createdAt).getTime(); }).slice(0, maxRecords);
-    return items.length ? <div className="space-y-1.5">{items.map((item) => <Link key={item.id} to={`/work-items/${encodeURIComponent(item.id)}`} className="flex items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-muted/50"><span className="h-3.5 w-3.5 shrink-0 rounded border border-muted-foreground/40" /><span className="min-w-0 flex-1 truncate font-medium">{item.title}</span><span className="shrink-0 rounded bg-muted px-1 py-0.5 text-[10px]">{item.priority}</span>{item.dueDate ? <span className="shrink-0 text-muted-foreground">{item.dueDate.slice(0, 10)}</span> : null}</Link>)}</div> : <div className="flex min-h-32 items-center justify-center text-sm text-muted-foreground">{t(type === "upcoming-milestones" ? "dashboard.noMilestones" : "dashboard.noWork")}</div>;
+    return items.length ? <div className="space-y-1.5">{items.map((item) => <Link key={item.id} to={`/work-items/${encodeURIComponent(item.id)}`} className="flex items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-muted/50"><span className="h-3.5 w-3.5 shrink-0 rounded border border-muted-foreground/40" /><span className="min-w-0 flex-1 truncate font-medium">{item.title}</span><span className="shrink-0 rounded bg-muted px-1 py-0.5 text-[10px]">{t(`workItems.priority${item.priority}`)}</span>{item.dueDate ? <span className="shrink-0 text-muted-foreground">{formatDate(item.dueDate)}</span> : null}</Link>)}</div> : <div className="flex min-h-32 items-center justify-center text-sm text-muted-foreground">{t(type === "upcoming-milestones" ? "dashboard.noMilestones" : "dashboard.noWork")}</div>;
   }
   if (type === "upcoming-meetings") return <UpcomingMeetingsWidget meetings={meetings ?? []} maxRecords={maxRecords} />;
   if (type === "projects-by-status") {
@@ -378,7 +383,8 @@ function DashboardWidgetContent({ type, summary, workItems, meetings, projects, 
     return <div className="space-y-1.5">{Object.entries(counts).map(([status, count]) => <div key={status} className="flex items-center gap-2 px-2 py-0.5 text-xs"><span className="h-2 w-2 rounded-full bg-primary" /><span className="flex-1">{status || t("dashboard.unknown")}</span><span className="font-medium tabular-nums">{count}</span></div>)}{!Object.keys(counts).length ? <div className="flex min-h-32 items-center justify-center text-sm text-muted-foreground">{t("dashboard.noData")}</div> : null}</div>;
   }
   if (type === "resource-utilization") {
-    const utilization = capacity?.summary.overallUtilizationPercent ?? 0;
+    if (!capacity) return <div className="flex min-h-32 items-center justify-center text-center text-sm text-muted-foreground">{t("dashboard.notAvailable")}</div>;
+    const utilization = capacity.summary.overallUtilizationPercent;
     return <div className="flex min-h-32 flex-col items-center justify-center"><div className="relative h-24 w-24"><svg className="h-24 w-24 -rotate-90" viewBox="0 0 100 100"><circle cx="50" cy="50" r="42" fill="none" stroke="currentColor" className="text-muted" strokeWidth="8" /><circle cx="50" cy="50" r="42" fill="none" stroke="currentColor" className="text-primary" strokeWidth="8" strokeDasharray={`${2 * Math.PI * 42}`} strokeDashoffset={`${2 * Math.PI * 42 * (1 - Math.min(utilization, 100) / 100)}`} strokeLinecap="round" /></svg><span className="absolute inset-0 flex items-center justify-center text-2xl font-bold">{Math.round(utilization)}%</span></div><span className="mt-1 text-xs text-muted-foreground">{t("dashboard.resourceUtilization")}</span></div>;
   }
   if (type === "risk-trend" || type === "risk-heat-map") {
@@ -517,15 +523,17 @@ function DashboardWidgetData({ widget, filters, title, editMode, index, total, o
   const needsNotifications = widget.type === "recent-notifications";
   const needsApprovals = widget.type === "pending-approvals";
   const needsProjects = widget.type === "projects-by-status" || widget.type === "cost-variance";
-  const needsCapacity = widget.type === "resource-utilization";
-  const needsResources = widget.type === "resource-capacity" || widget.type === "overallocated-resources";
+  const hasResourceReadAccess = hasDashboardResourceReadAccess(user?.permissions ?? []);
+  const needsCapacity = widget.type === "resource-utilization" && hasResourceReadAccess;
+  const needsResources = (widget.type === "resource-capacity" || widget.type === "overallocated-resources") && hasResourceReadAccess;
   const needsRisks = widget.type === "risk-trend" || widget.type === "risk-heat-map";
   const needsWorkItems = dashboardWidgetNeedsWorkItems(widget.type);
   const needsMeetingProjectScope = widget.type === "upcoming-meetings";
   const needsProjectScope = needsProjects || needsRisks || needsWorkItems || needsMeetingProjectScope;
   const hasManagedProjectScope = context?.perspective === "PortfolioManager" || context?.perspective === "ProgramManager";
   const needsManagedProjectScope = needsProjectScope && hasManagedProjectScope;
-  const needsManagementOverview = shouldLoadDashboardManagementOverview(widget.type, context?.perspective) || needsManagedProjectScope;
+  const isResourceManagementWidget = widget.type === "resource-capacity" || widget.type === "overallocated-resources";
+  const needsManagementOverview = (shouldLoadDashboardManagementOverview(widget.type, context?.perspective) && (!isResourceManagementWidget || hasResourceReadAccess)) || needsManagedProjectScope;
   const query = useHomeSummary(dashboardSummaryFilters(filters), shouldLoadDashboardHomeSummary(widget.type));
   const workItems = useFullWorkItems({ page: 1, pageSize: 200, myWork: widget.type === "my-work" || widget.type === "my-todo" ? true : undefined, sortBy: "dueDate", projectId: filters.projectId }, needsWorkItems);
   const meetings = useFullMeetings(dashboardMeetingsQueryParams(filters.projectId), widget.type === "upcoming-meetings");

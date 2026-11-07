@@ -4,7 +4,11 @@ import { Counter, Rate, Trend } from 'k6/metrics';
 
 const BASE_URL = (__ENV.BASE_URL || 'http://localhost:5000').replace(/\/$/, '');
 const TENANT_ID = __ENV.TENANT_ID || '11111111-1111-1111-1111-111111111111';
-const DEFAULT_PASSWORD = __ENV.K6_PASSWORD || 'Demo123!';
+// No default credential: supply the seeded demo password explicitly.
+const DEFAULT_PASSWORD = __ENV.K6_PASSWORD;
+if (!DEFAULT_PASSWORD) {
+  throw new Error('K6_PASSWORD must be set to the seeded development password before running this test.');
+}
 const THINK_MIN_SECONDS = Number(__ENV.THINK_MIN_SECONDS || 1);
 const THINK_MAX_SECONDS = Number(__ENV.THINK_MAX_SECONDS || 3);
 

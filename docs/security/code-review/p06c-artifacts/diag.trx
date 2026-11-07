@@ -1,0 +1,42 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="d147892b-08df-43b4-8280-285aea8facb6" name="shady@SHADY 2026-11-05 18:57:48" runUser="SHADY\shady" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-11-05T18:57:48.1363565+02:00" queuing="2026-11-05T18:57:48.1363572+02:00" start="2026-11-05T18:57:47.1602697+02:00" finish="2026-11-05T18:57:48.1437286+02:00" />
+  <TestSettings name="default" id="796b500d-7410-4a48-8744-44478b1e610c">
+    <Deployment runDeploymentRoot="shady_SHADY_2026-11-05_18_57_48" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="d93813a2-4c4d-4d71-a2b8-dc6185dfb33c" testId="27077867-60d7-f87f-7f0f-074a156e7770" testName="NEXUS.Api.Tests.Security.DiagCatalog.List" computerName="SHADY" duration="00:00:00.0156228" startTime="2026-11-05T18:57:47.9841926+02:00" endTime="2026-11-05T18:57:48.0083913+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="d93813a2-4c4d-4d71-a2b8-dc6185dfb33c" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="NEXUS.Api.Tests.Security.DiagCatalog.List" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="27077867-60d7-f87f-7f0f-074a156e7770">
+      <Execution id="d93813a2-4c4d-4d71-a2b8-dc6185dfb33c" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.DiagCatalog" name="List" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="27077867-60d7-f87f-7f0f-074a156e7770" executionId="d93813a2-4c4d-4d71-a2b8-dc6185dfb33c" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Completed">
+    <Counters total="1" executed="1" passed="1" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.0.0+e341b939fe (64-bit .NET 10.0.10)&#xD;
+[xUnit.net 00:00:00.09]   Discovering: NEXUS.Api.Tests&#xD;
+[xUnit.net 00:00:00.24]   Discovered:  NEXUS.Api.Tests&#xD;
+[xUnit.net 00:00:00.27]   Starting:    NEXUS.Api.Tests&#xD;
+FAILING: ChangeRequest.Approve deps=[]&#xD;
+FAILING: CostUtilization.Export deps=[Resource.View]&#xD;
+FAILING: ProjectAnnualBudget.Approve deps=[]&#xD;
+FAILING: ProjectPaymentReversal.Approve deps=[]&#xD;
+FAILING: ProjectPaymentRequest.Approve deps=[]&#xD;
+FAILING: ProjectFinancialCeiling.ApproveChange deps=[ChangeRequest.Approve]&#xD;
+FAILING: ApprovalRequest.Approve deps=[]&#xD;
+FAILING: ApprovalRequest.Reject deps=[]&#xD;
+[xUnit.net 00:00:00.33]   Finished:    NEXUS.Api.Tests&#xD;
+</StdOut>
+    </Output>
+  </ResultSummary>
+</TestRun>

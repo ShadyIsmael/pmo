@@ -18,6 +18,16 @@ public static class WorkItemWorkflow
 {
     public const string EntityType = "WorkItem";
     public const string DefinitionCode = "WORKITEM_STANDARD";
+
+    /// <summary>
+    /// Status codes the compatibility workflow generator marks as final
+    /// (<c>IsFinal = true</c>) when it creates a new <c>WORKITEM_STANDARD</c>
+    /// version. Used only by <see cref="WorkItemWorkflowProvisioningService"/>;
+    /// runtime terminal detection always reads the published workflow
+    /// <c>IsFinal</c> flags, and existing published versions are never rewritten
+    /// at runtime (re-publishing them is an explicit Product Owner decision).
+    /// </summary>
+    public static readonly string[] CompatibilityTerminalStatusCodes = { "Done", "Cancelled" };
 }
 
 public sealed record WorkItemWorkflowProvisioningResult(
@@ -144,9 +154,11 @@ public sealed class WorkItemWorkflowProvisioningService : IWorkItemWorkflowProvi
                 NameAr = status.NameAr,
                 DisplayOrder = status.DisplayOrder,
                 IsInitial = status.IsDefault,
-                // Existing WorkItems allow reopening Done/Cancelled items. The
-                // compatibility version therefore keeps every state reopenable.
-                IsFinal = false,
+                // Terminal statuses are marked final so published IsFinal
+                // definitions drive terminal detection (P0-03-12). Reopening
+                // stays possible through the REOPEN_ transitions generated
+                // below instead of by clearing IsFinal on every state.
+                IsFinal = IsCompatibilityTerminalStatus(status.Code),
                 IsActive = true,
                 CreatedBy = actor
             };
@@ -156,13 +168,19 @@ public sealed class WorkItemWorkflowProvisioningService : IWorkItemWorkflowProvi
 
         foreach (var from in statuses)
         {
+            var fromIsTerminal = IsCompatibilityTerminalStatus(from.Code);
             foreach (var to in statuses.Where(candidate => !string.Equals(candidate.Code, from.Code, StringComparison.OrdinalIgnoreCase)))
             {
+                // Terminal states only get reopen transitions into non-terminal
+                // states; transitions between two terminal states are never
+                // generated. Non-terminal states keep the existing all-to-all
+                // MOVE_ transitions, including moves into terminal states.
+                if (fromIsTerminal && IsCompatibilityTerminalStatus(to.Code)) continue;
                 var transition = new WorkflowTransition
                 {
                     TenantId = tenantId,
                     WorkflowDefinitionVersionId = version.Id,
-                    Code = BuildTransitionCode(from.Code, to.Code),
+                    Code = fromIsTerminal ? BuildReopenTransitionCode(from.Code, to.Code) : BuildTransitionCode(from.Code, to.Code),
                     NameEn = BuildTransitionNameEn(to.NameEn),
                     NameAr = BuildTransitionNameAr(to.NameAr),
                     FromStateId = stateByCode[from.Code].Id,
@@ -311,9 +329,22 @@ public sealed class WorkItemWorkflowProvisioningService : IWorkItemWorkflowProvi
         return Result<WorkItemWorkflowOnboardingReport>.Success(new WorkItemWorkflowOnboardingReport(created, exceptions));
     }
 
-    private Guid CurrentTenantId() => Guid.TryParse(_httpContextAccessor.HttpContext?.User.FindFirstValue("tenantId"), out var tenantId)
-        ? tenantId
-        : TenantConstants.DemoTenantId;
+    private Guid CurrentTenantId()
+    {
+        var httpContext = _httpContextAccessor.HttpContext;
+        if (httpContext is not null)
+        {
+            return httpContext.User.Identity?.IsAuthenticated == true
+                && Guid.TryParse(httpContext.User.FindFirstValue("tenantId"), out var tenantId)
+                && tenantId != Guid.Empty
+                    ? tenantId
+                    : throw new InvalidOperationException("An authenticated tenant context is required.");
+        }
+
+        return TrustedTenantExecutionContext.CurrentTenantId is { } trustedTenantId && trustedTenantId != Guid.Empty
+            ? trustedTenantId
+            : throw new InvalidOperationException("A trusted tenant execution context is required.");
+    }
 
     private static string BuildTransitionCode(string fromCode, string toCode)
     {
@@ -322,6 +353,25 @@ public sealed class WorkItemWorkflowProvisioningService : IWorkItemWorkflowProvi
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(normalized)))[..12];
         return $"MOVE_{NormalizeCode(fromCode)[..Math.Min(35, NormalizeCode(fromCode).Length)]}_TO_{hash}";
     }
+
+    /// <summary>
+    /// Builds the reopen transition code used when leaving a terminal state. The
+    /// code must be unique per (from, to) pair — the WorkflowTransitions unique
+    /// index on (TenantId, WorkflowDefinitionVersionId, Code) and the definition
+    /// validator both reject duplicate codes, and several terminal states reopen
+    /// into the same non-terminal targets. The <c>REOPEN_</c> prefix is what
+    /// <c>WorkflowExecutionService</c> keys on to permit leaving a final state.
+    /// </summary>
+    private static string BuildReopenTransitionCode(string fromCode, string toCode)
+    {
+        var normalized = $"REOPEN_{NormalizeCode(fromCode)}_TO_{NormalizeCode(toCode)}";
+        if (normalized.Length <= 100) return normalized;
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(normalized)))[..12];
+        return $"REOPEN_{hash}";
+    }
+
+    private static bool IsCompatibilityTerminalStatus(string code) =>
+        WorkItemWorkflow.CompatibilityTerminalStatusCodes.Contains(code, StringComparer.OrdinalIgnoreCase);
 
     private static string NormalizeCode(string value) => new(value.Select(character => char.IsLetterOrDigit(character) ? char.ToUpperInvariant(character) : '_').ToArray());
     private static string BuildTransitionNameEn(string target) => $"Move to {target}";
@@ -376,6 +426,21 @@ public sealed class WorkItemWorkflowAdapter : IWorkflowEntityAdapter
             : Result.Success();
     }
 
+    /// <summary>
+    /// Status transitions are writes: <c>WorkItem.View</c> must not be enough to move a
+    /// task or issue through its workflow.
+    /// </summary>
+    public async Task<Result> AuthorizeTransitionAsync(WorkflowTransitionContext context, CancellationToken cancellationToken = default)
+    {
+        var principal = _httpContextAccessor.HttpContext?.User;
+        if (principal?.Identity?.IsAuthenticated != true) return Result.Failure(Error.Unauthorized("An authenticated user is required."));
+        if (!principal.HasClaim("permission", "WorkItem.Edit"))
+            return Result.Failure(Error.Forbidden("Work Item edit permission is required for workflow transitions."));
+        return await FindAccessibleAsync(context.EntityId, context.Execution, cancellationToken) is null
+            ? Result.Failure(WorkflowErrors.EntityNotAccessible(EntityType, context.EntityId))
+            : Result.Success();
+    }
+
     public async Task<Result> ValidateTransitionAsync(WorkflowTransitionContext context, CancellationToken cancellationToken = default)
     {
         var status = await _statusLookup.FindAsync(context.ToState.Code, cancellationToken);
@@ -422,9 +487,9 @@ public sealed class WorkItemWorkflowAdapter : IWorkflowEntityAdapter
         if (!tracked) query = query.AsNoTracking();
         var item = await query.FirstOrDefaultAsync(candidate => candidate.Id == entityId && !candidate.IsDeleted, cancellationToken);
         if (item is null) return null;
-        if (context.TenantId != Guid.Empty && item.TenantId != context.TenantId) return null;
+        if (context.TenantId == Guid.Empty || item.TenantId != context.TenantId) return null;
         var projectIds = _managementContext.Current?.Scope.ProjectIds;
-        if (projectIds is not null && (!item.ProjectId.HasValue || !projectIds.Contains(item.ProjectId.Value))) return null;
+        if (projectIds is null || !item.ProjectId.HasValue || !projectIds.Contains(item.ProjectId.Value)) return null;
         return item;
     }
 
@@ -434,8 +499,7 @@ public sealed class WorkItemWorkflowAdapter : IWorkflowEntityAdapter
         if (principal is null || principal.Identity?.IsAuthenticated != true) return false;
         return principal.HasClaim("permission", "WorkItem.View")
             || principal.HasClaim("permission", "WorkItem.Edit")
-            || principal.HasClaim("permission", "WorkItem.Delete")
-            || principal.IsInRole("SystemAdministrator");
+            || principal.HasClaim("permission", "WorkItem.Delete");
     }
 }
 

@@ -55,7 +55,7 @@ public class WorkItemController : ControllerBase
         return result.IsSuccess ? Ok(result.Value) : ToActionResult(result.Error);
     }
 
-    [Authorize(Policy = "WorkItem.View")]
+    [Authorize(Policy = "WorkItem.Edit")]
     [HttpPost("{id:guid}/comments")]
     public async Task<IActionResult> AddComment(Guid id, [FromBody] CreateWorkItemCommentDto dto, CancellationToken cancellationToken)
     {
@@ -71,7 +71,7 @@ public class WorkItemController : ControllerBase
         return result.IsSuccess ? Ok(result.Value) : ToActionResult(result.Error);
     }
 
-    [Authorize(Policy = "WorkItem.View")]
+    [Authorize(Policy = "WorkItem.Edit")]
     [HttpPost("{id:guid}/attachments")]
     [Consumes("multipart/form-data")]
     public async Task<IActionResult> AddAttachments(Guid id, [FromForm] List<IFormFile> files, CancellationToken cancellationToken)
@@ -89,7 +89,7 @@ public class WorkItemController : ControllerBase
         return File(result.Value!.Content, result.Value.ContentType, result.Value.FileName, enableRangeProcessing: true);
     }
 
-    [Authorize(Policy = "WorkItem.View")]
+    [Authorize(Policy = "WorkItem.Edit")]
     [HttpDelete("{id:guid}/attachments/{attachmentId:guid}")]
     public async Task<IActionResult> DeleteAttachment(Guid id, Guid attachmentId, CancellationToken cancellationToken)
     {

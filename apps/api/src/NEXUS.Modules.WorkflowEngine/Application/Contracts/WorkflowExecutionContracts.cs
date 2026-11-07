@@ -144,6 +144,26 @@ public sealed record WorkflowDomainStateMismatch(
     string DomainStateNameEn,
     string DomainStateNameAr);
 
+/// <summary>
+/// Transition-code conventions shared by workflow execution and availability
+/// queries.
+/// </summary>
+public static class WorkflowTransitionCodes
+{
+    /// <summary>
+    /// Prefix identifying a transition that reopens a workflow instance from a
+    /// final state. <c>WorkflowExecutionService</c> permits leaving a final
+    /// state only for transition codes carrying this prefix; every other
+    /// transition out of a final state is rejected with
+    /// <see cref="WorkflowErrors.FinalStateCannotTransition"/>. All other
+    /// checks (FromState match, expected state/row version, guards and adapter
+    /// authorization) still apply to reopen transitions. The WorkItem
+    /// compatibility workflow generates these codes as
+    /// <c>REOPEN_&lt;FROM&gt;_TO_&lt;TO&gt;</c>.
+    /// </summary>
+    public const string ReopenPrefix = "REOPEN_";
+}
+
 public static class WorkflowErrors
 {
     private static Error Business(string code, string message, int statusCode = 400) =>

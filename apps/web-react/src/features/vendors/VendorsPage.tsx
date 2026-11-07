@@ -28,7 +28,8 @@ const vendorSchema = z.object({
   contractEnd: z.string().optional(),
 });
 
-type VendorForm = z.infer<typeof vendorSchema>;
+type VendorFormInput = z.input<typeof vendorSchema>;
+type VendorForm = z.output<typeof vendorSchema>;
 
 function normalizeVendorForm(values: VendorForm): VendorForm {
   return {
@@ -39,11 +40,11 @@ function normalizeVendorForm(values: VendorForm): VendorForm {
   };
 }
 
-function VendorFormFields({ defaultValues, onSubmit, pending, error, code, submitLabel }: { defaultValues?: Partial<VendorForm>; onSubmit: (v: VendorForm) => void; pending: boolean; error?: unknown; code?: string; submitLabel: string }) {
+function VendorFormFields({ defaultValues, onSubmit, pending, error, code, submitLabel }: { defaultValues?: Partial<VendorFormInput>; onSubmit: (v: VendorForm) => void; pending: boolean; error?: unknown; code?: string; submitLabel: string }) {
   const { t, locale } = useI18n();
   const categories = useVendorCategories(true);
   const availableCategories = (categories.data ?? []).filter((category) => category.isActive || category.id === defaultValues?.vendorCategoryId);
-  const { control, register, handleSubmit, formState: { errors } } = useForm<VendorForm>({
+  const { control, register, handleSubmit, formState: { errors } } = useForm<VendorFormInput, unknown, VendorForm>({
     resolver: zodResolver(vendorSchema),
     defaultValues: { name: "", contactName: "", contactEmail: "", contactPhone: "", vendorCategoryId: "", ...defaultValues },
   });
@@ -101,8 +102,8 @@ function VendorRowActions({ vendor }: { vendor: VendorDto }) {
   const { t } = useI18n();
   const { user } = useAuth();
   const perms = user?.permissions ?? [];
-  const canEdit = hasAnyPermission(perms, [Permissions.Resources.Edit, Permissions.Resources.Manage]);
-  const canDelete = hasAnyPermission(perms, [Permissions.Resources.Delete, Permissions.Resources.Manage]);
+  const canEdit = hasAnyPermission(perms, [Permissions.Resources.Edit]);
+  const canDelete = hasAnyPermission(perms, [Permissions.Resources.Delete]);
   const [editOpen, setEditOpen] = React.useState(false);
   const [dialog, setDialog] = React.useState<"deactivate" | "reactivate" | "delete" | null>(null);
   const deactivate = useDeactivateVendor();
@@ -174,7 +175,7 @@ export function VendorsPage() {
   const { t, locale } = useI18n();
   const { user, status: authStatus } = useAuth();
   const canView = Boolean(user && hasPermission(user.permissions, Permissions.Resources.View));
-  const canCreate = hasAnyPermission(user?.permissions ?? [], [Permissions.Resources.Create, Permissions.Resources.Manage]);
+  const canCreate = hasAnyPermission(user?.permissions ?? [], [Permissions.Resources.Create]);
   const [search, setSearch] = React.useState("");
   const [categoryId, setCategoryId] = React.useState("");
   const [status, setStatus] = React.useState<"all" | "active" | "inactive">("all");

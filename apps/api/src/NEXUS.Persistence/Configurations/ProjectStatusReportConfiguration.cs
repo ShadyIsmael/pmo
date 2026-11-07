@@ -33,6 +33,8 @@ public class ProjectStatusReportConfiguration : IEntityTypeConfiguration<Project
         builder.Property(x => x.KeyAchievements).HasMaxLength(4000);
         builder.Property(x => x.ChallengesConcerns).HasMaxLength(4000);
         builder.Property(x => x.NextPeriodPriorities).HasMaxLength(4000);
+        builder.Property(x => x.ActionsNeeded).HasMaxLength(4000);
+        builder.Property(x => x.SupportNeeded).HasMaxLength(4000);
         builder.Property(x => x.RowVersion).IsRowVersion();
 
         builder.HasOne(x => x.Project)

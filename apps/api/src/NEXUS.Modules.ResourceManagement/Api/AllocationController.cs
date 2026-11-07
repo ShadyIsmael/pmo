@@ -96,7 +96,7 @@ public class AllocationController : ControllerBase
     }
 
     [HttpDelete("{id:guid}")]
-    [Authorize(Policy = "Resource.Manage")]
+    [Authorize(Policy = "Resource.Assign")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";

@@ -5,29 +5,29 @@
   "description": "NEXUS PMO - Enterprise Project Portfolio Management Platform",
   "scripts": {
     "dev": "npm run dev:web",
-    "dev:web": "cd apps/web && npm run dev",
+    "dev:web": "npm --prefix apps/web-react run dev",
     "dev:api": "cd apps/api && dotnet run",
-    "build:web": "cd apps/web && npm run build",
+    "build:web": "npm --prefix apps/web-react run build",
     "build:api": "cd apps/api && dotnet build",
     "lint": "npm run lint:web",
-    "lint:web": "cd apps/web && npm run lint",
-    "i18n:parity": "node scripts/i18n/check-parity.mjs",
-    "i18n:used-keys": "node scripts/i18n/check-used-keys.mjs",
+    "lint:web": "npm --prefix apps/web-react run lint",
+    "i18n:parity": "npm run i18n:react:parity",
+    "i18n:used-keys": "npm run i18n:react:used-keys",
     "i18n:react:parity": "node scripts/i18n/check-react-parity.mjs",
     "i18n:react:used-keys": "node scripts/i18n/check-react-used-keys.mjs",
-    "typecheck": "cd apps/web && npm run typecheck",
+    "typecheck": "npm --prefix apps/web-react run typecheck",
     "test": "npm run test:web && npm run test:api",
-    "test:web": "cd apps/web && npm run test",
+    "test:web": "npm --prefix apps/web-react run test",
     "test:api": "cd apps/api && dotnet test",
     "seed": "cd apps/api && dotnet run -- seed",
     "docker:up": "docker-compose up -d",
     "docker:down": "docker-compose down",
     "clean": "npm run clean:web && npm run clean:api",
-    "clean:web": "cd apps/web && npm run clean",
+    "clean:web": "node scripts/clean-web.mjs",
     "clean:api": "cd apps/api && dotnet clean"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.23.4"
   },
   "dependencies": {
     "typescript": "^7.0.2"

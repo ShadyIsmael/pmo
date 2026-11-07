@@ -20,8 +20,8 @@ export const workflowKeys = {
   project: (projectId: string) => ["workflows", "project", projectId] as const,
 };
 
-export function useWorkflowDefinitions(params: Record<string, string | undefined> = {}) {
-  return useQuery({ queryKey: workflowKeys.definitions(params), queryFn: () => api.get<WorkflowDefinitionListItem[]>(endpoints.workflows.root, params), staleTime: 15_000 });
+export function useWorkflowDefinitions(params: Record<string, string | undefined> = {}, enabled = true) {
+  return useQuery({ queryKey: workflowKeys.definitions(params), queryFn: () => api.get<WorkflowDefinitionListItem[]>(endpoints.workflows.root, params), enabled, staleTime: 15_000 });
 }
 export function useWorkflowDefinition(id?: string) {
   return useQuery({ queryKey: workflowKeys.definition(id ?? ""), queryFn: () => api.get<WorkflowDefinitionDetails>(endpoints.workflows.definition(id!)), enabled: Boolean(id), staleTime: 10_000 });
@@ -29,11 +29,11 @@ export function useWorkflowDefinition(id?: string) {
 export function useWorkflowVersion(id?: string) {
   return useQuery({ queryKey: workflowKeys.version(id ?? ""), queryFn: () => api.get<WorkflowVersionDetails>(endpoints.workflows.version(id!)), enabled: Boolean(id), staleTime: 5_000 });
 }
-export function useProjectWorkflowSettings(projectId?: string) {
+export function useProjectWorkflowSettings(projectId?: string, enabled = true) {
   return useQuery({
     queryKey: workflowKeys.project(projectId ?? ""),
     queryFn: () => api.get<ProjectWorkflowSettings>(endpoints.projects.workflows(projectId!)),
-    enabled: Boolean(projectId),
+    enabled: Boolean(projectId) && enabled,
     staleTime: 10_000,
   });
 }

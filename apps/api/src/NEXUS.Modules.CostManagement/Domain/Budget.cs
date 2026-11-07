@@ -14,7 +14,7 @@ public class Budget : BaseEntity
     public decimal ActualAmount { get; set; }
     public decimal CommittedAmount { get; set; }
     public decimal ForecastAmount { get; set; }
-    public string Currency { get; set; } = "GBP";
+    public string Currency { get; set; } = string.Empty;
     public int FiscalYear { get; set; }
     public int? FiscalQuarter { get; set; }
     public string Status { get; set; } = string.Empty;

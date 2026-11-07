@@ -100,6 +100,7 @@ public sealed class PlanVersionService : IPlanVersionService
         string userId,
         CancellationToken cancellationToken = default)
     {
+        _ = GetCurrentTenantId();
         var plan = await GetPlanAsync(planId, cancellationToken);
         if (plan is null) return Result.Failure(Error.NotFound("Plan not found"));
 
@@ -578,7 +579,7 @@ public sealed class PlanVersionService : IPlanVersionService
             EntityType = "PlanVersion",
             EntityId = version.Id,
             Action = action,
-            TenantId = GetCurrentTenantId(),
+            TenantId = version.TenantId,
             UserId = Guid.TryParse(userId, out var userIdValue) ? userIdValue : null,
             OriginalValues = original is null ? null : System.Text.Json.JsonSerializer.Serialize(original),
             NewValues = current is null ? null : System.Text.Json.JsonSerializer.Serialize(current),
@@ -589,6 +590,13 @@ public sealed class PlanVersionService : IPlanVersionService
     private Guid GetCurrentTenantId()
     {
         var tenantClaim = _httpContextAccessor.HttpContext?.User.FindFirst("tenantId")?.Value;
-        return Guid.TryParse(tenantClaim, out var tenantId) ? tenantId : TenantConstants.DemoTenantId;
+        if (_httpContextAccessor.HttpContext?.User.Identity?.IsAuthenticated == true
+            && Guid.TryParse(tenantClaim, out var tenantId)
+            && tenantId != Guid.Empty)
+        {
+            return tenantId;
+        }
+
+        throw new InvalidOperationException("A trusted tenant context is required for project planning operations.");
     }
 }

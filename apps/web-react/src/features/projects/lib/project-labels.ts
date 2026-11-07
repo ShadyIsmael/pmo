@@ -1,6 +1,15 @@
 import { useI18n } from "@i18n/messages";
 import { ProjectHealthHelper, ProjectPriorityHelper, ProjectStatusHelper } from "@lib/enums";
 
+export function getEvmReasonTranslationCandidates(reason: string): string[] {
+  const value = reason.trim();
+  if (!value) return [];
+
+  const camelCase = value.toLowerCase().replace(/[_\s-]+([a-z0-9])/g, (_, character: string) => character.toUpperCase());
+  const alias = camelCase === "evmDataIncomplete" ? "dataIncomplete" : undefined;
+  return [...new Set([value, camelCase, alias].filter((candidate): candidate is string => Boolean(candidate)))];
+}
+
 export function useProjectEnumLabels() {
   const { t } = useI18n();
 

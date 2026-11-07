@@ -5,7 +5,7 @@ describe("management scope request context", () => {
   it("preserves perspective, read-only mode, and selected project headers", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
-    setTokens("access", "refresh");
+    setTokens("access");
     setManagementRequestContext({ perspective: "ProjectManager", viewMode: "ReadOnlyViewAs", projectId: "project-1" });
     await api.get("/api/home/summary");
     const headers = new Headers(fetchMock.mock.calls[0][1].headers);

@@ -1,6 +1,8 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using NEXUS.Modules.Audit.Application;
+using NEXUS.Modules.Audit.Domain;
 using NEXUS.Modules.Organization.Domain;
 using NEXUS.Modules.WorkflowEngine.Domain;
 using NEXUS.SharedKernel;
@@ -24,6 +26,7 @@ public interface IWorkItemStatusReferenceService
     Task<IReadOnlyList<WorkItemStatusReference>> GetAsync(bool includeInactive = true, CancellationToken cancellationToken = default);
     Task<Result<WorkItemStatusReference>> CreateAsync(SaveWorkItemStatusRequest request, string userId, CancellationToken cancellationToken = default);
     Task<Result<WorkItemStatusReference>> UpdateAsync(Guid id, SaveWorkItemStatusRequest request, string userId, CancellationToken cancellationToken = default);
+    Task<Result> DeactivateAsync(Guid id, string userId, CancellationToken cancellationToken = default);
 }
 
 public sealed class WorkItemStatusReferenceService : IWorkItemStatusReferenceService
@@ -31,15 +34,18 @@ public sealed class WorkItemStatusReferenceService : IWorkItemStatusReferenceSer
     private readonly DbContext _context;
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly IWorkItemStatusUsageLookup _usageLookup;
+    private readonly IAuditService _auditService;
 
     public WorkItemStatusReferenceService(
         DbContext context,
         IHttpContextAccessor httpContextAccessor,
-        IWorkItemStatusUsageLookup usageLookup)
+        IWorkItemStatusUsageLookup usageLookup,
+        IAuditService auditService)
     {
         _context = context;
         _httpContextAccessor = httpContextAccessor;
         _usageLookup = usageLookup;
+        _auditService = auditService;
     }
 
     public async Task<IReadOnlyList<WorkItemStatusReference>> GetAsync(bool includeInactive = true, CancellationToken cancellationToken = default)
@@ -83,6 +89,7 @@ public sealed class WorkItemStatusReferenceService : IWorkItemStatusReferenceSer
         if (status.IsDefault) await ClearDefaultsAsync(tenantId, null, cancellationToken);
         _context.Set<Lookup>().Add(status);
         await _context.SaveChangesAsync(cancellationToken);
+        await WriteAuditAsync(status, "CreateWorkItemStatus", userId, cancellationToken);
         return Result<WorkItemStatusReference>.Success(ToReference(status));
     }
 
@@ -93,6 +100,8 @@ public sealed class WorkItemStatusReferenceService : IWorkItemStatusReferenceSer
 
         var status = await _context.Set<Lookup>().FirstOrDefaultAsync(lookup => lookup.Id == id && lookup.Category == ReferenceDataCategories.WorkItemStatus && !lookup.IsDeleted, cancellationToken);
         if (status is null) return Result<WorkItemStatusReference>.Failure(Error.NotFound("Work item status not found"));
+        if (status.IsActive && !request.IsActive)
+            return Result<WorkItemStatusReference>.Failure(Error.Conflict("Use the Deactivate operation for work item statuses."));
 
         var duplicate = await _context.Set<Lookup>().IgnoreQueryFilters().AnyAsync(lookup => lookup.Id != id && lookup.TenantId == status.TenantId && lookup.Category == ReferenceDataCategories.WorkItemStatus && !lookup.IsDeleted && lookup.Code == code, cancellationToken);
         if (duplicate) return Result<WorkItemStatusReference>.Failure(Error.Conflict("A work item status with this code already exists"));
@@ -128,8 +137,51 @@ public sealed class WorkItemStatusReferenceService : IWorkItemStatusReferenceSer
         if (status.IsDefault) await ClearDefaultsAsync(status.TenantId, status.Id, cancellationToken);
         else if (!status.IsActive) status.IsDefault = false;
         await _context.SaveChangesAsync(cancellationToken);
+        await WriteAuditAsync(status, "UpdateWorkItemStatus", userId, cancellationToken);
         return Result<WorkItemStatusReference>.Success(ToReference(status));
     }
+
+    public async Task<Result> DeactivateAsync(Guid id, string userId, CancellationToken cancellationToken = default)
+    {
+        var status = await _context.Set<Lookup>().FirstOrDefaultAsync(lookup => lookup.Id == id
+            && lookup.TenantId == GetCurrentTenantId() && lookup.Category == ReferenceDataCategories.WorkItemStatus
+            && lookup.IsActive && !lookup.IsDeleted, cancellationToken);
+        if (status is null) return Result.Failure(Error.NotFound("Work item status not found"));
+
+        if (await _usageLookup.IsCodeUsedAsync(status.Code, cancellationToken))
+            return Result.Failure(Error.Conflict("A status currently used by work items cannot be deactivated"));
+        var isUsedByPublishedWorkflow = await _context.Set<WorkflowDefinitionVersion>()
+            .AnyAsync(version => version.TenantId == status.TenantId
+                && version.LifecycleStatus == WorkflowDefinitionVersionLifecycleStatus.Published
+                && !version.IsDeleted
+                && version.WorkflowDefinition.EntityType == "WorkItem"
+                && version.WorkflowDefinition.ActivePublishedVersionId == version.Id
+                && version.States.Any(state => state.Code == status.Code && state.IsActive && !state.IsDeleted), cancellationToken);
+        if (isUsedByPublishedWorkflow)
+            return Result.Failure(Error.Conflict("A status used by the published Work Item workflow cannot be deactivated"));
+        if (await _context.Set<Lookup>().CountAsync(lookup => lookup.TenantId == status.TenantId
+            && lookup.Category == ReferenceDataCategories.WorkItemStatus && lookup.IsActive && !lookup.IsDeleted, cancellationToken) <= 1)
+            return Result.Failure(Error.Validation("At least one active work item status is required"));
+
+        status.IsActive = false;
+        status.IsDefault = false;
+        status.UpdatedBy = userId;
+        await _context.SaveChangesAsync(cancellationToken);
+        await WriteAuditAsync(status, "DeactivateWorkItemStatus", userId, cancellationToken);
+        return Result.Success();
+    }
+
+    private Task WriteAuditAsync(Lookup status, string action, string userId, CancellationToken cancellationToken) =>
+        _auditService.LogAsync(new AuditEntry
+        {
+            TenantId = status.TenantId,
+            EntityType = "Lookup",
+            EntityId = status.Id,
+            Action = action,
+            UserId = Guid.TryParse(userId, out var userIdValue) ? userIdValue : Guid.Empty,
+            Timestamp = DateTime.UtcNow,
+            CreatedBy = userId
+        }, cancellationToken);
 
     private async Task ClearDefaultsAsync(Guid tenantId, Guid? exceptId, CancellationToken cancellationToken)
     {
@@ -137,7 +189,9 @@ public sealed class WorkItemStatusReferenceService : IWorkItemStatusReferenceSer
         foreach (var status in defaults) status.IsDefault = false;
     }
 
-    private Guid GetCurrentTenantId() => Guid.TryParse(_httpContextAccessor.HttpContext?.User.FindFirst("tenantId")?.Value, out var tenantId) ? tenantId : TenantConstants.DemoTenantId;
+    private Guid GetCurrentTenantId() => Guid.TryParse(_httpContextAccessor.HttpContext?.User.FindFirst("tenantId")?.Value, out var tenantId) && tenantId != Guid.Empty
+        ? tenantId
+        : throw new InvalidOperationException("A trusted tenant context is required.");
 
     private static Error? Validate(SaveWorkItemStatusRequest request, out string code, out string nameEn, out string nameAr, out string? color)
     {

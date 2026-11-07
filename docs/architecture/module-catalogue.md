@@ -37,7 +37,7 @@ NEXUS PMO consists of 19 backend modules, each organized in Clean Architecture l
 | `POST /api/auth/login` | `Api/AuthController.cs` | Yes |
 | `GET /api/auth/me` | `Api/AuthController.cs` | Yes |
 | `POST /api/auth/logout` | `Api/AuthController.cs` | Yes |
-| `POST /api/auth/switch-role` | `Api/AuthController.cs` | Yes |
+| `POST /api/auth/switch-role` | `Api/AuthController.cs` | Compatibility route; returns current-user state and does not switch roles |
 
 ### Events
 - `UserLoggedIn`, `UserRoleChanged` (documented in module-catalogue.md, not verified as code implementations)
@@ -370,35 +370,49 @@ NEXUS PMO consists of 19 backend modules, each organized in Clean Architecture l
 |-----------|--------|
 | **Namespace** | `NEXUS.Modules.Meetings` |
 | **Business responsibility** | Meeting scheduling, agendas, participants, minutes, action items; virtual/in-person/hybrid |
-| **Maturity** | Implemented |
-| **Evidence** | `AppDbContext.cs:93-97` (5 DbSets), `SeedDataProvider.cs:485-503` (22 meetings seeded), `MeetingController.cs`, `Program.cs:108` (`AddMeetingsModule()`) |
+| **Maturity** | Partial: core lifecycle, workspace, scoped action-to-Work-Item links, and shared email reminder integration are implemented; migration `20261028084103_AddMeetingActionWorkItemLink` is not applied, SMTP configuration and owner verification remain pending, and external-recipient authorization is not granted |
+| **Evidence** | `AppDbContext.cs:154-163` (10 DbSets), `SeedDataProvider.cs` (meeting seed data), `MeetingController.cs`, `MeetingReminderScheduler.cs`, `Program.cs` (`AddMeetingsModule()`) |
 
 ### Domain Entities
 | Entity | DbSet | Verified |
 |--------|-------|----------|
-| Meeting | `Meetings` | `AppDbContext.cs:93` |
-| MeetingAgenda | `MeetingAgendas` | `AppDbContext.cs:94` |
-| MeetingParticipant | `MeetingParticipants` | `AppDbContext.cs:95` |
-| MeetingMinutes | `MeetingMinutes` | `AppDbContext.cs:96` |
-| MeetingAction | `MeetingActions` | `AppDbContext.cs:97` |
+| Meeting | `Meetings` | `AppDbContext.cs:154` |
+| MeetingAgenda | `MeetingAgendas` | `AppDbContext.cs:155` |
+| MeetingParticipant | `MeetingParticipants` | `AppDbContext.cs:156` |
+| MeetingMinutes | `MeetingMinutes` | `AppDbContext.cs:157` |
+| MeetingMinutesComment | `MeetingMinutesComments` | `AppDbContext.cs:158` |
+| MeetingMinutesChecklistItem | `MeetingMinutesChecklistItems` | `AppDbContext.cs:159` |
+| MeetingMinutesAttachment | `MeetingMinutesAttachments` | `AppDbContext.cs:160` |
+| MeetingReminderDispatch | `MeetingReminderDispatches` | `AppDbContext.cs:161` |
+| MeetingMinutesWorkItemLink | `MeetingMinutesWorkItemLinks` | `AppDbContext.cs:162` |
+| MeetingAction | `MeetingActions` | `AppDbContext.cs:163` |
+
+`MeetingAction.WorkItemId` is an optional same-tenant, same-project reference to an existing Task or Issue. Work Item creation and workflow remain owned by the Work Items module. The nullable column, index, and `SET NULL` foreign key are represented by migration `20261028084103_AddMeetingActionWorkItemLink`; the snapshot is surgically updated, and the migration has not been applied or validated against a database.
 
 ### Application Services
 | Service | File | Verified |
 |---------|------|----------|
-| `IMeetingService` | `Application/IMeetingService.cs` | Yes |
-| `MeetingService` | `Application/MeetingService.cs` | Yes |
+| `IMeetingService` | `Application/IMeetingService.cs` | Implemented; current changes untested |
+| `MeetingService` | `Application/MeetingService.cs` | Implemented; current changes untested |
+| `IMeetingWorkspaceService` | `Application/IMeetingWorkspaceService.cs` | Implemented; untested |
+| `MeetingWorkspaceService` | `Application/MeetingWorkspaceService.cs` | Implemented; untested |
 
 ### API Endpoints
 | Endpoint | Controller File | Verified |
 |----------|----------------|----------|
-| `GET/POST/PUT/DELETE /api/meetings` | `MeetingController.cs` | Yes |
-| `GET /api/meetings/{id}/actions` | `MeetingController.cs` | Yes |
+| `GET/POST/PUT/DELETE /api/meetings` | `MeetingController.cs` | Implemented; current changes untested |
+| `GET/POST/PUT/DELETE /api/meetings/{id}/agenda` | `MeetingController.cs` | Implemented; untested |
+| `GET /api/meetings/{id}/participants` and attendance updates | `MeetingController.cs` | Implemented; untested |
+| `GET/POST/PUT/DELETE /api/meetings/{id}/actions` | `MeetingController.cs` | Implemented; untested |
+| `POST/DELETE /api/meetings/{id}/actions/{itemId}/work-item` | `MeetingController.cs` | Implemented; untested (link requires `Meeting.Manage` and `WorkItem.View`; unlink requires `Meeting.Manage`) |
+| Minutes, comments, checklist, attachments, and Work Item link endpoints | `MeetingController.cs` | Yes |
 
 ### Dependencies
 - Project Management (project reference)
 - Identity (organizer, participants)
+- Work Items (scoped reference lookup and creation through the existing Work Items API)
 
-Meeting participants support either an active internal user (`UserId`) or an external email (`Email`); attendee resolution, email normalization, duplicate checks, and soft-delete synchronization are enforced by `MeetingService`.
+Meeting participants support either an active internal user (`UserId`) or an external email (`Email`); attendee resolution, email normalization, duplicate checks, and soft-delete synchronization are enforced by `MeetingService`. Internal meeting reminders use recipient email preferences through the shared notification channel. External attendee reminder email is not enabled pending recipient-policy authorization. See [`docs/modules/MEETINGS.md`](../modules/MEETINGS.md) for delivery and verification limits.
 
 ---
 
@@ -484,9 +498,9 @@ Meeting participants support either an active internal user (`UserId`) or an ext
 | Attribute | Detail |
 |-----------|--------|
 | **Namespace** | `NEXUS.Modules.Notifications` |
-| **Business responsibility** | Canonical in-app notifications, user channel preferences, durable asynchronous Push delivery, templates and digests (Email deferred) |
-| **Maturity** | In-app and Push delivery foundation implemented; Firebase runtime delivery requires deployment configuration and browser consent |
-| **Evidence** | `AppDbContext.cs` notification DbSets, `NotificationController.cs`, `NotificationDeliveryProcessor.cs`, `NotificationDeliveryWorker.cs`, `FirebaseNotificationChannel.cs`, `NotificationsModuleRegistration.cs` |
+| **Business responsibility** | Canonical in-app notifications, user channel preferences, durable asynchronous Push and Email delivery, templates, and digests |
+| **Maturity** | In-App, Push, and shared SMTP Email delivery implemented; Firebase/SMTP runtime delivery requires deployment configuration, and current Meetings changes remain unverified |
+| **Evidence** | `AppDbContext.cs` notification DbSets, `NotificationController.cs`, `NotificationDeliveryProcessor.cs`, `NotificationDeliveryWorker.cs`, `FirebaseNotificationChannel.cs`, `SmtpEmailNotificationChannel.cs`, `NotificationsModuleRegistration.cs` |
 
 ### Domain Entities
 | Entity | DbSet | Verified |
@@ -502,10 +516,11 @@ Meeting participants support either an active internal user (`UserId`) or an ext
 ### Application Services
 | Service | File | Verified |
 |---------|------|----------|
-| `INotificationService` | `Application/INotificationService.cs` | Yes |
-| `NotificationService` | `Application/NotificationService.cs` | Yes |
+| `INotificationService` | `Application/INotificationService.cs` | Implemented; email changes untested |
+| `NotificationService` | `Application/NotificationService.cs` | Implemented; email changes untested |
 | `IPushNotificationSender` | `Application/PushNotificationSender.cs` | Yes (Firebase provider boundary) |
-| `NotificationDeliveryProcessor` | `Infrastructure/NotificationDeliveryProcessor.cs` | Yes (claim, per-device send, retry and result tracking) |
+| `IEmailNotificationSender` | `Application/EmailNotificationSender.cs` | Implemented; untested (shared SMTP provider boundary) |
+| `NotificationDeliveryProcessor` | `Infrastructure/NotificationDeliveryProcessor.cs` | Push path present; email changes untested |
 | `NotificationDeliveryWorker` | `Infrastructure/NotificationDeliveryWorker.cs` | Yes (bounded background polling) |
 
 ### API Endpoints
@@ -517,7 +532,7 @@ Meeting participants support either an active internal user (`UserId`) or an ext
 | `GET/PUT /api/notifications/preferences` | `NotificationController.cs` | Yes (authenticated user only) |
 | `POST/DELETE /api/notifications/devices` | `NotificationController.cs` | Yes (authenticated tenant/user ownership) |
 
-Supported event types are project handover, program handover, and portfolio handover. Preferences default to In-App on and Push off. No Email provider or delivery is active.
+Supported event types include Project/Program/Portfolio handover, Project Change Request, payment due/overdue, and Meeting Reminder. Preferences default to In-App on, Push off, and Email off. Email is delivered only when the shared SMTP provider is configured and the recipient has enabled Email for that event. See [`docs/integrations/email-notifications.md`](../integrations/email-notifications.md).
 
 ### Dependencies
 - Identity (user reference)
@@ -599,29 +614,35 @@ Supported event types are project handover, program handover, and portfolio hand
 | Attribute | Detail |
 |-----------|--------|
 | **Namespace** | `NEXUS.Modules.Audit` |
-| **Business responsibility** | Immutable audit trail, entity change tracking, activity log |
+| **Business responsibility** | Immutable audit trail, entity change tracking, project-scoped audit workspace, activity log |
 | **Maturity** | Implemented |
-| **Evidence** | `AppDbContext.cs:126-127` (2 DbSets), `AuditController.cs`, `Program.cs:114` (`AddAuditModule()`) |
+| **Evidence** | `AppDbContext.cs:196-197` (2 DbSets), `AuditController.cs`, `ProjectAuditController.cs`, `Program.cs` (`AddAuditModule()`) |
 
 ### Domain Entities
 | Entity | DbSet | Verified |
 |--------|-------|----------|
-| AuditEntry | `AuditEntries` | `AppDbContext.cs:126` |
-| AuditActivity | `AuditActivities` | `AppDbContext.cs:127` |
+| AuditEntry | `AuditEntries` | `AppDbContext.cs:196` |
+| AuditActivity | `AuditActivities` | `AppDbContext.cs:197` |
 
 ### Application Services
 | Service | File | Verified |
 |---------|------|----------|
 | `IAuditService` | `Application/IAuditService.cs` | Yes |
 | `AuditService` | `Application/AuditService.cs` | Yes |
+| `IProjectAuditScopeProvider` | `Application/IProjectAuditScopeProvider.cs` (implementation `NEXUS.Persistence/Audit/ProjectAuditScopeProvider.cs`) | Yes |
+| `AuditFieldRedactor` | `Application/AuditFieldRedactor.cs` | Yes |
 
 ### API Endpoints
 | Endpoint | Controller File | Verified |
 |----------|----------------|----------|
-| `GET /api/audit-log` | `AuditController.cs` | Yes |
+| `GET /api/audit` | `AuditController.cs` | Yes |
+| `GET /api/projects/{projectId}/audit` | `ProjectAuditController.cs` | Yes |
+| `GET /api/projects/{projectId}/audit/facets` | `ProjectAuditController.cs` | Yes |
 
 ### Dependencies
-- SharedKernel (IAuditable interface)
+- SharedKernel (BaseEntity, IAuditable interface)
+- Persistence (scope provider, append-only guard in `SaveChangesAsync`)
+- Documentation: `docs/modules/AUDIT-TRAIL.md`
 
 ---
 
@@ -741,7 +762,7 @@ Supported event types are project handover, program handover, and portfolio hand
 | 7 | Cost Management | 6 | 2 (Budget, Cost) | 4 | Implemented |
 | 8 | Risk Management | 7 (3 legacy) | 1 (Risk) | 2 | Implemented |
 | 9 | Issue Management | 3 | 1 (Issue) | 2 | Implemented |
-| 10 | Meetings | 5 | 1 (Meeting) | 2 | Implemented |
+| 10 | Meetings | 10 | 1 (Meeting) | 2 | Partial |
 | 11 | Workflow Engine | 8 | 1 (Workflow) | 4 | Partial |
 | 12 | Approvals | 3 | 1 (Approval) | 2 | Implemented |
 | 13 | Notifications | 4 | 1 (Notification) | 3 | Implemented |

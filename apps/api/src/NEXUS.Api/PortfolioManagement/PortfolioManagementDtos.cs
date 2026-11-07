@@ -14,7 +14,6 @@ public sealed class PortfolioManagementListItemDto
     public int TotalProjectCount { get; init; }
     public int ProjectsRequiringAttention { get; init; }
     public int ProgramsRequiringAttention { get; init; }
-    public string FinancialIndicator { get; init; } = "Unavailable";
     public string RiskIndicator { get; init; } = "Clear";
     public string ReportingIndicator { get; init; } = "Missing";
 }
@@ -24,7 +23,6 @@ public sealed class PortfolioManagementOverviewDto
     public PortfolioManagementIdentityDto Portfolio { get; init; } = new();
     public PortfolioStructureSummaryDto Summary { get; init; } = new();
     public PortfolioDeliverySummaryDto Delivery { get; init; } = new();
-    public PortfolioFinancialSummaryDto Financials { get; init; } = new();
     public PortfolioRiskSummaryDto Risks { get; init; } = new();
     public PortfolioIssueSummaryDto Issues { get; init; } = new();
     public PortfolioResourceSummaryDto Resources { get; init; } = new();
@@ -92,7 +90,6 @@ public sealed class PortfolioProgramDto
     public int ProjectCount { get; init; }
     public int ProjectsAtRisk { get; init; }
     public string DeliveryIndicator { get; init; } = "Unknown";
-    public string FinancialIndicator { get; init; } = "Unavailable";
     public string RiskIndicator { get; init; } = "Clear";
     public string ReportingIndicator { get; init; } = "Missing";
 }
@@ -114,7 +111,6 @@ public sealed class PortfolioProjectDto
     public decimal Progress { get; init; }
     public string ScheduleCondition { get; init; } = "Unknown";
     public string Currency { get; init; } = string.Empty;
-    public string FinancialCondition { get; init; } = "Unavailable";
     public string RiskCondition { get; init; } = "Clear";
     public string StatusReportFreshness { get; init; } = "Missing";
     public DateTime? LatestStatusReportDate { get; init; }
@@ -134,43 +130,6 @@ public sealed class PortfolioDeliverySummaryDto
     public int OnTrackMilestones { get; init; }
     public int CompletedMilestones { get; init; }
     public IReadOnlyDictionary<string, int> ProjectProgressDistribution { get; init; } = new Dictionary<string, int>();
-}
-
-public sealed class PortfolioFinancialSummaryDto
-{
-    public string BaseCurrency { get; init; } = string.Empty;
-    public bool HasMixedCurrencies { get; init; }
-    public IReadOnlyList<PortfolioFinancialCurrencyGroupDto> Groups { get; init; } = [];
-}
-
-public sealed class PortfolioFinancialCurrencyGroupDto
-{
-    public string Currency { get; init; } = string.Empty;
-    public bool IsBaseCurrency { get; init; }
-    public int ProjectCount { get; init; }
-    public decimal Budget { get; init; }
-    public decimal Allocated { get; init; }
-    public decimal Actual { get; init; }
-    public decimal Committed { get; init; }
-    public decimal Forecast { get; init; }
-    public decimal Remaining { get; init; }
-    public decimal Variance { get; init; }
-    public IReadOnlyList<PortfolioFinancialContributionDto> Contributions { get; init; } = [];
-}
-
-public sealed class PortfolioFinancialContributionDto
-{
-    public Guid ProjectId { get; init; }
-    public Guid ProjectPublicId { get; init; }
-    public string ProjectName { get; init; } = string.Empty;
-    public Guid? ProgramId { get; init; }
-    public string? ProgramName { get; init; }
-    public bool IsDirectProject { get; init; }
-    public decimal Budget { get; init; }
-    public decimal Allocated { get; init; }
-    public decimal Actual { get; init; }
-    public decimal Committed { get; init; }
-    public decimal Forecast { get; init; }
 }
 
 public sealed class PortfolioRiskSummaryDto

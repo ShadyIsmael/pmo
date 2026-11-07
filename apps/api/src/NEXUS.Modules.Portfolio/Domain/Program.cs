@@ -14,7 +14,7 @@ public class Program : BaseEntity
     public Guid? ProgramManagerId { get; set; }
     public DateTime? StartDate { get; set; }
     public DateTime? EndDate { get; set; }
-    public string Currency { get; set; } = "USD";
+    public string Currency { get; set; } = string.Empty;
     public decimal? Budget { get; set; }
     public decimal? ActualSpend { get; set; }
     public string? Health { get; set; }

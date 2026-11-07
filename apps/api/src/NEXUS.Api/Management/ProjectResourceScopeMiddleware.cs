@@ -6,6 +6,7 @@ using NEXUS.Modules.IssueManagement.Domain;
 using NEXUS.Modules.Meetings.Domain;
 using NEXUS.Modules.ProjectManagement.Domain;
 using NEXUS.Modules.ProjectPlanning.Domain;
+using NEXUS.Modules.ResourceManagement.Domain;
 using NEXUS.Modules.RiskManagement.Domain;
 using NEXUS.Modules.WorkItems.Domain;
 using NEXUS.Persistence;
@@ -125,7 +126,7 @@ public sealed class ProjectResourceScopeMiddleware
         if (!contentType.StartsWith("application/json", StringComparison.OrdinalIgnoreCase)
             && !contentType.StartsWith("multipart/form-data", StringComparison.OrdinalIgnoreCase)
             && !contentType.StartsWith("application/x-www-form-urlencoded", StringComparison.OrdinalIgnoreCase)) return false;
-        return path[1].ToLowerInvariant() is "budgets" or "costs" or "commitments" or "budget-revisions" or "work-items" or "documents" or "time-entries" or "meetings" or "risks" or "issues";
+        return path[1].ToLowerInvariant() is "budgets" or "costs" or "commitments" or "budget-revisions" or "work-items" or "documents" or "time-entries" or "meetings" or "risks" or "issues" or "allocations" or "payment-obligations" or "resource-finder";
     }
 
     private static bool IsNestedProjectResource(IReadOnlyList<string> path)
@@ -398,6 +399,25 @@ public sealed class ProjectResourceScopeMiddleware
             && path[6].Equals("versions", StringComparison.OrdinalIgnoreCase))
             return true;
 
+        // Capacity is a plan-owned collection action, not an assignment detail
+        // route. The project and plan ownership checks have already run above;
+        // there is intentionally no assignmentId route value to resolve here.
+        if (path.Count == 7
+            && path[5].Equals("assignments", StringComparison.OrdinalIgnoreCase)
+            && path[6].Equals("capacity", StringComparison.OrdinalIgnoreCase)
+            && HttpMethods.IsGet(context.Request.Method)
+            && context.Request.RouteValues["assignmentId"] is null)
+            return true;
+
+        // Batch creation has no assignmentId route value. The project and plan
+        // ownership checks above are the parent-resource authorization boundary.
+        if (path.Count == 7
+            && path[5].Equals("assignments", StringComparison.OrdinalIgnoreCase)
+            && path[6].Equals("batch", StringComparison.OrdinalIgnoreCase)
+            && HttpMethods.IsPost(context.Request.Method)
+            && context.Request.RouteValues["assignmentId"] is null)
+            return true;
+
         var childRoute = path[5].ToLowerInvariant() switch
         {
             "activities" => ("activityId", (Func<Guid, Task<Guid?>>)(async id => await db.Set<PlanActivity>().IgnoreQueryFilters().AsNoTracking()
@@ -449,7 +469,7 @@ public sealed class ProjectResourceScopeMiddleware
         {
             "budgets" or "costs" or "commitments" or "budget-revisions" or "baselines" or "milestones" or "risks"
                 or "time-entries" or "work-items" or "documents" or "meetings" or "issues"
-                or "project-change-requests" => id,
+                or "project-change-requests" or "allocations" or "payment-obligations" => id,
             _ => null
         };
     }
@@ -471,8 +491,24 @@ public sealed class ProjectResourceScopeMiddleware
             "meetings" => await db.Set<Meeting>().IgnoreQueryFilters().AsNoTracking().Where(item => item.Id == id && item.TenantId == tenantId && !item.IsDeleted).Select(item => new ResourceOwner(item.ProjectId, null)).FirstOrDefaultAsync(cancellationToken),
             "issues" => await db.Set<Issue>().IgnoreQueryFilters().AsNoTracking().Where(item => item.Id == id && item.TenantId == tenantId && !item.IsDeleted).Select(item => new ResourceOwner(item.ProjectId, null)).FirstOrDefaultAsync(cancellationToken),
             "project-change-requests" => await db.Set<ProjectChangeRequest>().IgnoreQueryFilters().AsNoTracking().Where(item => item.Id == id && item.TenantId == tenantId && !item.IsDeleted).Select(item => new ResourceOwner(item.ProjectId, null)).FirstOrDefaultAsync(cancellationToken),
+            "allocations" => await ResolveAllocationOwnerAsync(db, id, tenantId, cancellationToken),
+            "payment-obligations" => await db.Set<PaymentObligation>().IgnoreQueryFilters().AsNoTracking().Where(item => item.Id == id && item.TenantId == tenantId && !item.IsDeleted).Select(item => new ResourceOwner(item.ProjectId, null)).FirstOrDefaultAsync(cancellationToken),
             _ => new ResourceOwner(null, null)
         };
+    }
+
+    /// <summary>
+    /// Allocations may be project-linked or purely resource-level. A resource-level allocation
+    /// has no project owner, so it is only addressable when the caller can already see that
+    /// resource; anything else falls closed.
+    /// </summary>
+    private static async Task<ResourceOwner?> ResolveAllocationOwnerAsync(AppDbContext db, Guid id, Guid tenantId, CancellationToken cancellationToken)
+    {
+        var allocation = await db.Set<ResourceAllocation>().IgnoreQueryFilters().AsNoTracking()
+            .Where(item => item.Id == id && item.TenantId == tenantId && !item.IsDeleted)
+            .Select(item => new { item.ProjectId })
+            .FirstOrDefaultAsync(cancellationToken);
+        return allocation is null ? null : new ResourceOwner(allocation.ProjectId, null);
     }
 
     private static async Task<ResourceOwner?> ResolveBudgetOwnerAsync(AppDbContext db, Guid budgetId, Guid tenantId, CancellationToken cancellationToken) =>

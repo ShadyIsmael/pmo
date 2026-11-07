@@ -1,11 +1,13 @@
 import * as React from "react";
 import { Link } from "react-router-dom";
-import { ArrowDown, ArrowUp, Check, Info, ListFilter, Loader2, Pencil, Plus, Power, Search, ShieldCheck, Star, X, type LucideIcon } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, Check, Info, ListFilter, Loader2, Pencil, Plus, Power, Search, ShieldCheck, Star, X, type LucideIcon } from "lucide-react";
 import { PageHeader } from "@components/layout/PageHeader";
 import { Button } from "@components/ui/Button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@components/ui/Card";
 import { Input } from "@components/ui/Input";
 import { Label } from "@components/ui/Label";
+import { ApiFieldError } from "@components/ui/ApiFieldError";
+import { ApiError, getApiFieldError } from "@api/client";
 import { SideSheet, SideSheetBody, SideSheetFooter } from "@components/ui/SideSheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@components/ui/Table";
 import { useAuth } from "@auth/AuthProvider";
@@ -15,6 +17,7 @@ import { hasPermission, Permissions } from "@lib/permissions";
 import { getStatusTextClass } from "@lib/status-presentation";
 import {
   useCreateWorkItemStatus,
+  useDeactivateWorkItemStatus,
   useUpdateWorkItemStatus,
   useWorkItemStatuses,
   type SaveWorkItemStatusInput,
@@ -37,6 +40,19 @@ const COLOR_CLASSES: Record<WorkItemStatusColor, { swatch: string; text: string 
 
 type StatusForm = SaveWorkItemStatusInput;
 const EMPTY_FORM: StatusForm = { code: "", nameEn: "", nameAr: "", displayOrder: 10, isActive: true, color: "blue", isDefault: false };
+function generateStatusCode(_nameEn: string, existingCodes: string[]): string {
+  const usedCodes = new Set(existingCodes.map((code) => code.trim().toUpperCase()));
+  const numbers = existingCodes
+    .map((code) => /^ST-(\d+)$/.exec(code.trim().toUpperCase()))
+    .filter((match): match is RegExpExecArray => Boolean(match))
+    .map((match) => Number(match[1]));
+  let next = numbers.length ? Math.max(...numbers) + 1 : 0;
+  for (;;) {
+    const code = `ST-${String(next).padStart(3, "0")}`;
+    if (!usedCodes.has(code)) return code;
+    next += 1;
+  }
+}
 
 function colorOf(value?: string): WorkItemStatusColor {
   return WORK_ITEM_STATUS_COLORS.find((color) => color === value) ?? "slate";
@@ -62,6 +78,7 @@ function saveError(error: unknown, t: (key: string) => string): string {
   if (message.includes("active work item status")) return t("administration.workItemStatuses.errors.finalActive");
   if (message.includes("default") && message.includes("active")) return t("administration.workItemStatuses.errors.invalidDefault");
   if (message.includes("already exists") || message.includes("duplicate")) return t("administration.workItemStatuses.errors.conflict");
+  if (error instanceof ApiError) return error.message;
   return t("administration.workItemStatuses.errors.unknown");
 }
 
@@ -73,14 +90,19 @@ export function WorkItemStatusesPage() {
   const { t, locale } = useI18n();
   const confirm = useConfirm();
   const { user } = useAuth();
-  const canManage = Boolean(user && hasPermission(user.permissions, Permissions.Settings.Write));
+  const canCreate = Boolean(user && hasPermission(user.permissions, Permissions.ReferenceData.Create));
+  const canEdit = Boolean(user && hasPermission(user.permissions, Permissions.ReferenceData.Edit));
+  const canDelete = Boolean(user && hasPermission(user.permissions, Permissions.ReferenceData.Delete));
   const statusesQuery = useWorkItemStatuses(true);
   const createMutation = useCreateWorkItemStatus();
+  const deactivateMutation = useDeactivateWorkItemStatus();
   const updateMutation = useUpdateWorkItemStatus();
   const [sheetOpen, setSheetOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<WorkItemStatusDto | null>(null);
   const [form, setForm] = React.useState<StatusForm>(EMPTY_FORM);
+  const [codeEdited, setCodeEdited] = React.useState(false);
   const [formError, setFormError] = React.useState<string | null>(null);
+  const [apiError, setApiError] = React.useState<unknown>(null);
   const [actionError, setActionError] = React.useState<string | null>(null);
   const [pendingAction, setPendingAction] = React.useState<string | null>(null);
   const [search, setSearch] = React.useState("");
@@ -102,20 +124,24 @@ export function WorkItemStatusesPage() {
   const inactiveCount = statuses.length - activeCount;
   const defaultStatus = statuses.find((status) => status.isDefault);
   const defaultStatusName = defaultStatus ? (locale === "ar" ? defaultStatus.nameAr : defaultStatus.nameEn) : "—";
-  const isSaving = createMutation.isPending || updateMutation.isPending;
+  const isSaving = createMutation.isPending || deactivateMutation.isPending || updateMutation.isPending;
 
   function openCreate() {
     setEditing(null);
-    setForm({ ...EMPTY_FORM, displayOrder: (statuses.at(-1)?.displayOrder ?? 0) + 10 });
+    setCodeEdited(false);
+    setForm({ ...EMPTY_FORM, code: generateStatusCode("", statuses.map((status) => status.code)), displayOrder: (statuses.at(-1)?.displayOrder ?? 0) + 10 });
     setFormError(null);
+    setApiError(null);
     setActionError(null);
     setSheetOpen(true);
   }
 
   function openEdit(status: WorkItemStatusDto) {
     setEditing(status);
+    setCodeEdited(false);
     setForm(requestFor(status));
     setFormError(null);
+    setApiError(null);
     setActionError(null);
     setSheetOpen(true);
   }
@@ -125,6 +151,7 @@ export function WorkItemStatusesPage() {
     if (!open) {
       setEditing(null);
       setFormError(null);
+      setApiError(null);
     }
   }
 
@@ -132,20 +159,31 @@ export function WorkItemStatusesPage() {
     setForm((current) => ({ ...current, [key]: value }));
   }
 
+  function updateEnglishName(value: string) {
+    setForm((current) => ({
+      ...current,
+      nameEn: value,
+      code: editing || codeEdited ? current.code : generateStatusCode(value, statuses.map((status) => status.code)),
+    }));
+  }
+
   async function save(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (editing ? !canEdit : !canCreate) return;
     if (!editing && !form.code.trim()) return setFormError(t("administration.workItemStatuses.validation.codeRequired"));
     if (!form.nameEn.trim()) return setFormError(t("administration.workItemStatuses.validation.nameEnRequired"));
     if (!form.nameAr.trim()) return setFormError(t("administration.workItemStatuses.validation.nameArRequired"));
     if (!Number.isInteger(form.displayOrder) || form.displayOrder < 0) return setFormError(t("administration.workItemStatuses.validation.orderRequired"));
 
     setFormError(null);
+    setApiError(null);
     const body = { ...form, code: form.code.trim(), nameEn: form.nameEn.trim(), nameAr: form.nameAr.trim(), color: colorOf(form.color) };
     try {
       if (editing) await updateMutation.mutateAsync({ id: editing.id, input: body });
       else await createMutation.mutateAsync(body);
       closeSheet(false);
     } catch (error) {
+      setApiError(error);
       setFormError(saveError(error, t));
     }
   }
@@ -163,16 +201,28 @@ export function WorkItemStatusesPage() {
   }
 
   async function toggleActive(status: WorkItemStatusDto) {
-    if (status.isActive && !await confirm({ description: t("administration.workItemStatuses.deactivateConfirm", { name: locale === "ar" ? status.nameAr : status.nameEn }), destructive: true })) return;
-    await updateStatus(status, { isActive: !status.isActive, isDefault: status.isActive ? false : status.isDefault }, `active-${status.id}`);
+    if (status.isActive) {
+      if (!canDelete || !await confirm({ description: t("administration.workItemStatuses.deactivateConfirm", { name: locale === "ar" ? status.nameAr : status.nameEn }), destructive: true })) return;
+      const actionId = `active-${status.id}`;
+      setActionError(null);
+      setPendingAction(actionId);
+      try { await deactivateMutation.mutateAsync(status.id); }
+      catch (error) { setActionError(saveError(error, t)); }
+      finally { setPendingAction(null); }
+      return;
+    }
+    if (!canEdit) return;
+    await updateStatus(status, { isActive: true }, `active-${status.id}`);
   }
 
   async function setDefault(status: WorkItemStatusDto) {
+    if (!canEdit) return;
     if (!status.isActive || status.isDefault) return;
     await updateStatus(status, { isDefault: true }, `default-${status.id}`);
   }
 
   async function moveStatus(status: WorkItemStatusDto, direction: -1 | 1) {
+    if (!canEdit) return;
     const index = statuses.findIndex((candidate) => candidate.id === status.id);
     const neighbor = statuses[index + direction];
     if (!neighbor) return;
@@ -188,19 +238,16 @@ export function WorkItemStatusesPage() {
     }
   }
 
-  const tabs = [
-    { to: "/administration/reference-data/work-item-statuses", label: t("administration.workItemStatuses.tabs.workItemStatuses"), active: true },
-    { to: "/administration/currencies", label: t("administration.workItemStatuses.tabs.currencies"), active: false },
-    { to: "/administration/reference-data/vendor-categories", label: t("administration.workItemStatuses.tabs.vendorCategories"), active: false },
-  ];
-
   return (
     <div className="space-y-6 pb-8">
-      <PageHeader title={t("administration.workItemStatuses.title")} description={t("administration.workItemStatuses.description")} actions={canManage ? <Button size="sm" onClick={openCreate}><Plus className="me-2 h-4 w-4" />{t("administration.workItemStatuses.add")}</Button> : undefined} />
-      <nav role="tablist" aria-label={t("administration.workItemStatuses.referenceDataTitle")} className="flex w-fit max-w-full flex-wrap gap-1 rounded-xl border bg-muted/20 p-1">
-        {tabs.map((tab) => <Link key={tab.to} to={tab.to} role="tab" aria-selected={tab.active} className={`rounded-lg px-3 py-2 text-sm transition-colors ${tab.active ? "bg-background font-medium text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>{tab.active ? <ListFilter className="me-1.5 inline h-3.5 w-3.5 text-primary" aria-hidden="true" /> : null}{tab.label}</Link>)}
-      </nav>
-
+      <PageHeader title={t("administration.workItemStatuses.title")} description={t("administration.workItemStatuses.description")} actions={
+        <div className="flex items-center gap-2">
+          <Button asChild size="sm" variant="outline" className="whitespace-nowrap text-xs inline-flex items-center gap-1.5">
+            <Link to="/administration/reference-data"><ArrowLeft className="me-2 h-4 w-4 rtl:rotate-180" />{t("administration.areas.referenceData.back")}</Link>
+          </Button>
+          {canCreate ? <Button size="sm" onClick={openCreate}><Plus className="me-2 h-4 w-4" />{t("administration.workItemStatuses.add")}</Button> : null}
+        </div>
+      } />
       <Card className="overflow-hidden border-primary/15 bg-gradient-to-br from-primary/[0.06] via-background to-background shadow-none"><CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
         <div className="flex items-start gap-3"><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><ListFilter className="h-5 w-5" /></div><div><p className="text-sm font-semibold">{t("administration.workItemStatuses.overviewTitle")}</p><p className="mt-1 max-w-2xl text-sm text-muted-foreground">{t("administration.workItemStatuses.overviewDescription")}</p></div></div>
         <div className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground"><ShieldCheck className="h-4 w-4 text-success" /><span>{t("administration.workItemStatuses.protectedTitle")}</span></div>
@@ -226,7 +273,7 @@ export function WorkItemStatusesPage() {
           {actionError ? <div role="alert" className="flex items-start gap-2 rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-2.5 text-sm text-destructive"><Info className="mt-0.5 h-4 w-4 shrink-0" /><span>{actionError}</span></div> : null}
           {statusesQuery.isLoading ? <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">{t("administration.workItemStatuses.loading")}</div> : statusesQuery.isError ? <div className="flex flex-col items-center gap-3 rounded-lg border border-destructive/20 bg-destructive/[0.03] p-10 text-center"><p role="alert" className="text-sm text-destructive">{t("administration.workItemStatuses.error")}</p><Button type="button" size="sm" variant="outline" onClick={() => void statusesQuery.refetch()}>{t("administration.workItemStatuses.retry")}</Button></div> : (
             <Table>
-              <TableHeader><TableRow><TableHead className="min-w-56">{t("administration.workItemStatuses.nameEn")}</TableHead><TableHead>{t("administration.workItemStatuses.code")}</TableHead><TableHead>{t("administration.workItemStatuses.color")}</TableHead><TableHead className="text-center">{t("administration.workItemStatuses.displayOrder")}</TableHead><TableHead>{t("administration.workItemStatuses.default")}</TableHead><TableHead>{t("administration.workItemStatuses.active")}</TableHead>{canManage ? <TableHead className="text-end">{t("administration.workItemStatuses.actions")}</TableHead> : null}</TableRow></TableHeader>
+              <TableHeader><TableRow><TableHead className="min-w-56">{t("administration.workItemStatuses.nameEn")}</TableHead><TableHead>{t("administration.workItemStatuses.code")}</TableHead><TableHead>{t("administration.workItemStatuses.color")}</TableHead><TableHead className="text-center">{t("administration.workItemStatuses.displayOrder")}</TableHead><TableHead>{t("administration.workItemStatuses.default")}</TableHead><TableHead>{t("administration.workItemStatuses.active")}</TableHead>{canEdit || canDelete ? <TableHead className="text-end">{t("administration.workItemStatuses.actions")}</TableHead> : null}</TableRow></TableHeader>
               <TableBody>
                 {visibleStatuses.length ? visibleStatuses.map((status) => {
                   const statusIndex = statuses.findIndex((candidate) => candidate.id === status.id);
@@ -240,15 +287,15 @@ export function WorkItemStatusesPage() {
                     <TableCell className="text-center tabular-nums text-muted-foreground">{status.displayOrder}</TableCell>
                     <TableCell>{status.isDefault ? <span className="inline-flex items-center gap-1.5 text-xs font-medium text-primary"><Check className="h-3.5 w-3.5" />{t("administration.workItemStatuses.default")}</span> : <span className="text-muted-foreground">—</span>}</TableCell>
                     <TableCell><span className={`text-xs font-medium ${getStatusTextClass(status.isActive ? "Active" : "Inactive")}`}>{status.isActive ? t("administration.workItemStatuses.active") : t("administration.workItemStatuses.inactive")}</span></TableCell>
-                    {canManage ? <TableCell><div className="flex items-center justify-end gap-0.5">
-                      <Button type="button" size="icon" variant="ghost" onClick={() => openEdit(status)} aria-label={`${t("administration.workItemStatuses.edit")} ${status.nameEn}`} title={t("administration.workItemStatuses.edit")} disabled={Boolean(pendingAction)}><Pencil className="h-3.5 w-3.5" /></Button>
+                    {canEdit || canDelete ? <TableCell><div className="flex items-center justify-end gap-0.5">
+                      {canEdit ? <><Button type="button" size="icon" variant="ghost" onClick={() => openEdit(status)} aria-label={`${t("administration.workItemStatuses.edit")} ${status.nameEn}`} title={t("administration.workItemStatuses.edit")} disabled={Boolean(pendingAction)}><Pencil className="h-3.5 w-3.5" /></Button>
                       <Button type="button" size="icon" variant="ghost" disabled={rowBusy || !status.isActive || status.isDefault} onClick={() => void setDefault(status)} aria-label={t("administration.workItemStatuses.setDefault")} title={t("administration.workItemStatuses.setDefault")}><Star className={`h-3.5 w-3.5 ${status.isDefault ? "fill-current" : ""}`} /></Button>
                       <Button type="button" size="icon" variant="ghost" disabled={rowBusy || statusIndex === 0} onClick={() => void moveStatus(status, -1)} aria-label={t("administration.workItemStatuses.moveUp")} title={t("administration.workItemStatuses.moveUp")}><ArrowUp className="h-3.5 w-3.5" /></Button>
-                      <Button type="button" size="icon" variant="ghost" disabled={rowBusy || statusIndex === statuses.length - 1} onClick={() => void moveStatus(status, 1)} aria-label={t("administration.workItemStatuses.moveDown")} title={t("administration.workItemStatuses.moveDown")}><ArrowDown className="h-3.5 w-3.5" /></Button>
-                      <Button type="button" size="sm" variant="ghost" className="ms-1 h-8 gap-1.5 text-xs" disabled={rowBusy} onClick={() => void toggleActive(status)}><Power className={`h-3.5 w-3.5 ${status.isActive ? "text-destructive" : "text-success"}`} />{status.isActive ? t("administration.workItemStatuses.deactivate") : t("administration.workItemStatuses.activate")}</Button>
+                      <Button type="button" size="icon" variant="ghost" disabled={rowBusy || statusIndex === statuses.length - 1} onClick={() => void moveStatus(status, 1)} aria-label={t("administration.workItemStatuses.moveDown")} title={t("administration.workItemStatuses.moveDown")}><ArrowDown className="h-3.5 w-3.5" /></Button></> : null}
+                      {(status.isActive ? canDelete : canEdit) ? <Button type="button" size="sm" variant="ghost" className="ms-1 h-8 gap-1.5 text-xs" disabled={rowBusy} onClick={() => void toggleActive(status)}><Power className={`h-3.5 w-3.5 ${status.isActive ? "text-destructive" : "text-success"}`} />{status.isActive ? t("administration.workItemStatuses.deactivate") : t("administration.workItemStatuses.activate")}</Button> : null}
                     </div></TableCell> : null}
                   </TableRow>;
-                }) : <TableRow><TableCell colSpan={canManage ? 7 : 6} className="h-32 text-center"><div className="flex flex-col items-center gap-2"><Search className="h-6 w-6 text-muted-foreground" /><p className="text-sm text-muted-foreground">{search || viewFilter !== "all" ? t("administration.workItemStatuses.noFilteredStatuses") : t("administration.workItemStatuses.empty")}</p>{search || viewFilter !== "all" ? <Button type="button" size="sm" variant="outline" onClick={() => { setSearch(""); setViewFilter("all"); }}>{t("administration.workItemStatuses.clearFilters")}</Button> : null}</div></TableCell></TableRow>}
+                }) : <TableRow><TableCell colSpan={canEdit || canDelete ? 7 : 6} className="h-32 text-center"><div className="flex flex-col items-center gap-2"><Search className="h-6 w-6 text-muted-foreground" /><p className="text-sm text-muted-foreground">{search || viewFilter !== "all" ? t("administration.workItemStatuses.noFilteredStatuses") : t("administration.workItemStatuses.empty")}</p>{search || viewFilter !== "all" ? <Button type="button" size="sm" variant="outline" onClick={() => { setSearch(""); setViewFilter("all"); }}>{t("administration.workItemStatuses.clearFilters")}</Button> : null}</div></TableCell></TableRow>}
               </TableBody>
             </Table>
           )}
@@ -262,10 +309,10 @@ export function WorkItemStatusesPage() {
             {formError ? <div role="alert" className="flex items-start gap-2 rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-2.5 text-sm text-destructive"><Info className="mt-0.5 h-4 w-4 shrink-0" /><span>{formError}</span></div> : null}
             <section className="space-y-4"><div><h2 className="text-sm font-semibold">{t("administration.workItemStatuses.formBasics")}</h2><p className="mt-1 text-xs text-muted-foreground">{t("administration.workItemStatuses.description")}</p></div>
               <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2"><Label htmlFor="work-item-status-name-en">{t("administration.workItemStatuses.nameEn")}</Label><Input id="work-item-status-name-en" value={form.nameEn} onChange={(event) => updateForm("nameEn", event.target.value)} required /></div>
-                <div className="space-y-2"><Label htmlFor="work-item-status-name-ar">{t("administration.workItemStatuses.nameAr")}</Label><Input id="work-item-status-name-ar" dir="rtl" value={form.nameAr} onChange={(event) => updateForm("nameAr", event.target.value)} required /></div>
-                <div className="space-y-2"><Label htmlFor="work-item-status-code">{t("administration.workItemStatuses.code")}</Label><Input id="work-item-status-code" value={form.code} onChange={(event) => updateForm("code", event.target.value)} disabled={Boolean(editing)} required={!editing} aria-describedby={editing ? "work-item-status-code-hint" : undefined} />{editing ? <p id="work-item-status-code-hint" className="text-xs text-muted-foreground">{t("administration.workItemStatuses.codeHint")}</p> : null}</div>
-                <div className="space-y-2"><Label htmlFor="work-item-status-order">{t("administration.workItemStatuses.displayOrder")}</Label><Input id="work-item-status-order" type="number" min="0" step="1" value={form.displayOrder} onChange={(event) => updateForm("displayOrder", Number(event.target.value))} required /><p className="text-xs text-muted-foreground">{t("administration.workItemStatuses.orderHint")}</p></div>
+                <div className="space-y-2"><Label htmlFor="work-item-status-name-en">{t("administration.workItemStatuses.nameEn")}</Label><Input id="work-item-status-name-en" value={form.nameEn} aria-invalid={Boolean(getApiFieldError(apiError, "nameEn"))} aria-describedby={getApiFieldError(apiError, "nameEn") ? "work-item-status-name-en-error" : undefined} onChange={(event) => updateEnglishName(event.target.value)} required /><ApiFieldError id="work-item-status-name-en-error" error={apiError} fieldName="nameEn" /></div>
+                <div className="space-y-2"><Label htmlFor="work-item-status-name-ar">{t("administration.workItemStatuses.nameAr")}</Label><Input id="work-item-status-name-ar" dir="rtl" value={form.nameAr} aria-invalid={Boolean(getApiFieldError(apiError, "nameAr"))} aria-describedby={getApiFieldError(apiError, "nameAr") ? "work-item-status-name-ar-error" : undefined} onChange={(event) => updateForm("nameAr", event.target.value)} required /><ApiFieldError id="work-item-status-name-ar-error" error={apiError} fieldName="nameAr" /></div>
+                <div className="space-y-2"><Label htmlFor="work-item-status-code">{t("administration.workItemStatuses.code")}</Label><Input id="work-item-status-code" value={form.code} onChange={(event) => { updateForm("code", event.target.value); setCodeEdited(true); }} disabled required={!editing} aria-invalid={Boolean(getApiFieldError(apiError, "code"))} aria-describedby={getApiFieldError(apiError, "code") ? "work-item-status-code-error work-item-status-code-hint" : "work-item-status-code-hint"} /><ApiFieldError id="work-item-status-code-error" error={apiError} fieldName="code" /><p id="work-item-status-code-hint" className="text-xs text-muted-foreground">{t(editing ? "administration.workItemStatuses.codeHint" : "administration.workItemStatuses.codeGeneratedHint")}</p></div>
+                <div className="space-y-2"><Label htmlFor="work-item-status-order">{t("administration.workItemStatuses.displayOrder")}</Label><Input id="work-item-status-order" type="number" min="0" step="1" value={form.displayOrder} aria-invalid={Boolean(getApiFieldError(apiError, "displayOrder"))} aria-describedby={getApiFieldError(apiError, "displayOrder") ? "work-item-status-order-error" : undefined} onChange={(event) => updateForm("displayOrder", Number(event.target.value))} required /><ApiFieldError id="work-item-status-order-error" error={apiError} fieldName="displayOrder" /><p className="text-xs text-muted-foreground">{t("administration.workItemStatuses.orderHint")}</p></div>
               </div>
             </section>
             <section className="space-y-4 rounded-xl border bg-muted/20 p-4"><div><h2 className="text-sm font-semibold">{t("administration.workItemStatuses.statusPreview")}</h2><p className="mt-1 text-xs text-muted-foreground">{t("administration.workItemStatuses.colorPreview")}</p></div>
@@ -274,12 +321,12 @@ export function WorkItemStatusesPage() {
             </section>
             <section className="space-y-4"><div><h2 className="text-sm font-semibold">{t("administration.workItemStatuses.formBehavior")}</h2><p className="mt-1 text-xs text-muted-foreground">{t("administration.workItemStatuses.protectedDescription")}</p></div>
               <div className="space-y-3">
-                <label htmlFor="work-item-status-active" className="flex cursor-pointer items-start gap-3 rounded-lg border p-3"><input id="work-item-status-active" type="checkbox" checked={form.isActive} onChange={(event) => { updateForm("isActive", event.target.checked); if (!event.target.checked) updateForm("isDefault", false); }} className="mt-1 h-4 w-4 accent-primary" /><span><span className="block text-sm font-medium">{t("administration.workItemStatuses.active")}</span><span className="mt-1 block text-xs text-muted-foreground">{t("administration.workItemStatuses.activeHint")}</span></span></label>
+                <label htmlFor="work-item-status-active" className={`flex items-start gap-3 rounded-lg border p-3 ${editing?.isActive && !canDelete ? "opacity-60" : "cursor-pointer"}`}><input id="work-item-status-active" type="checkbox" checked={form.isActive} disabled={Boolean(editing?.isActive && !canDelete)} onChange={(event) => { updateForm("isActive", event.target.checked); if (!event.target.checked) updateForm("isDefault", false); }} className="mt-1 h-4 w-4 accent-primary" /><span><span className="block text-sm font-medium">{t("administration.workItemStatuses.active")}</span><span className="mt-1 block text-xs text-muted-foreground">{t("administration.workItemStatuses.activeHint")}</span></span></label>
                 <label htmlFor="work-item-status-default" className={`flex items-start gap-3 rounded-lg border p-3 ${form.isActive ? "cursor-pointer" : "opacity-60"}`}><input id="work-item-status-default" type="checkbox" checked={form.isDefault} onChange={(event) => updateForm("isDefault", event.target.checked)} disabled={!form.isActive} className="mt-1 h-4 w-4 accent-primary" /><span><span className="block text-sm font-medium">{t("administration.workItemStatuses.default")}</span><span className="mt-1 block text-xs text-muted-foreground">{t("administration.workItemStatuses.defaultHint")}</span></span></label>
               </div>
             </section>
           </SideSheetBody>
-          <SideSheetFooter><Button type="button" variant="outline" onClick={() => closeSheet(false)} disabled={isSaving}>{t("administration.workItemStatuses.cancel")}</Button><Button type="submit" disabled={isSaving}>{isSaving ? <><Loader2 className="me-2 h-4 w-4 animate-spin" />{t("administration.workItemStatuses.saving")}</> : t("administration.workItemStatuses.save")}</Button></SideSheetFooter>
+          <SideSheetFooter><Button type="button" variant="outline" onClick={() => closeSheet(false)} disabled={isSaving}>{t("administration.workItemStatuses.cancel")}</Button><Button type="submit" disabled={isSaving || (editing ? !canEdit : !canCreate)}>{isSaving ? <><Loader2 className="me-2 h-4 w-4 animate-spin" />{t("administration.workItemStatuses.saving")}</> : t("administration.workItemStatuses.save")}</Button></SideSheetFooter>
         </form>
       </SideSheet>
     </div>

@@ -14,12 +14,14 @@ public class NotificationController : ControllerBase
     private readonly INotificationService _notificationService;
     private readonly IDeviceTokenService _deviceTokenService;
     private readonly IProjectPublicIdLookup? _projectPublicIdLookup;
+    private readonly IMeetingPublicIdLookup? _meetingPublicIdLookup;
 
-    public NotificationController(INotificationService notificationService, IDeviceTokenService deviceTokenService, IProjectPublicIdLookup? projectPublicIdLookup = null)
+    public NotificationController(INotificationService notificationService, IDeviceTokenService deviceTokenService, IProjectPublicIdLookup? projectPublicIdLookup = null, IMeetingPublicIdLookup? meetingPublicIdLookup = null)
     {
         _notificationService = notificationService;
         _deviceTokenService = deviceTokenService;
         _projectPublicIdLookup = projectPublicIdLookup;
+        _meetingPublicIdLookup = meetingPublicIdLookup;
     }
 
     [HttpGet]
@@ -33,9 +35,32 @@ public class NotificationController : ControllerBase
         foreach (var notification in result.Items)
         {
             var projectReference = string.Equals(notification.ReferenceType, "Project", StringComparison.OrdinalIgnoreCase);
+            var meetingReference = string.Equals(notification.ReferenceType, "Meeting", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(notification.ReferenceType, "MeetingMinutesComment", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(notification.ReferenceType, "MeetingMinutesCommentReply", StringComparison.OrdinalIgnoreCase)
+                || IsMeetingNotificationType(notification.Type);
+            var riskActionFollowUpReference = string.Equals(notification.Type, "RiskActionFollowUpDue", StringComparison.Ordinal)
+                && string.Equals(notification.ReferenceType, "RiskActionFollowUpDue", StringComparison.Ordinal);
             Guid? referencePublicId = null;
             if (projectReference && notification.ReferenceId.HasValue && _projectPublicIdLookup is not null)
                 referencePublicId = await _projectPublicIdLookup.FindPublicIdAsync(notification.ReferenceId.Value, tenantId, cancellationToken);
+            else if (meetingReference && notification.ReferenceId.HasValue && _meetingPublicIdLookup is not null)
+                referencePublicId = notification.ReferencePublicId;
+            else if (riskActionFollowUpReference && notification.ReferenceId.HasValue)
+                // Risk Action follow-up producers persist only the Action's public identifier in this reference field.
+                referencePublicId = notification.ReferenceId.Value;
+            var referenceId = projectReference || riskActionFollowUpReference ? null : notification.ReferenceId;
+            if (meetingReference)
+            {
+                var resolvedMeetingPublicId = notification.ReferenceId.HasValue && _meetingPublicIdLookup is not null
+                    ? await _meetingPublicIdLookup.FindPublicIdAsync(notification.ReferenceId.Value, tenantId, cancellationToken)
+                    : null;
+                // Older Meeting notifications stored the database ID in ReferenceId. Resolve both old
+                // and new records to a safe public identifier; never expose an unresolved internal ID.
+                referenceId = resolvedMeetingPublicId;
+                if (resolvedMeetingPublicId is null) referencePublicId = null;
+            }
+
             items.Add(new NotificationListItemDto(
                 notification.Id,
                 notification.Title,
@@ -44,8 +69,8 @@ public class NotificationController : ControllerBase
                 notification.IsRead,
                 notification.ReadAt,
                 notification.SentAt,
-                notification.ReferenceType,
-                projectReference ? null : notification.ReferenceId,
+                meetingReference ? "Meeting" : notification.ReferenceType,
+                referenceId,
                 referencePublicId));
         }
         return Ok(new PagedResult<NotificationListItemDto>(items, result.Page, result.PageSize, result.TotalCount));
@@ -120,6 +145,11 @@ public class NotificationController : ControllerBase
         var hasTenant = Guid.TryParse(User.FindFirstValue("tenantId"), out tenantId);
         return hasUser && hasTenant;
     }
+
+    private static bool IsMeetingNotificationType(string type) => type is
+        "MeetingReminder" or "MeetingInvitation" or "MeetingStarted" or
+        "MeetingMinutesPublished" or "MeetingMinutesComment" or
+        "MeetingMinutesCommentReply" or "MeetingMinutesShared" or "MeetingCompleted";
 
     private sealed record NotificationListItemDto(
         Guid Id,

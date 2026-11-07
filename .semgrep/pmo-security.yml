@@ -1,0 +1,329 @@
+rules:
+  - id: pmo-react-no-next-framework-imports
+    languages:
+      - typescript
+      - javascript
+    severity: ERROR
+    message: >-
+      The React/Vite frontend must not depend on the discontinued Next.js framework or its
+      packages. Keep frontend imports within the supported React application.
+    metadata:
+      category: security
+      confidence: HIGH
+      technology:
+        - react
+    paths:
+      include:
+        - apps/web-react/src/**
+      exclude:
+        - apps/web-react/src/test/**
+        - "**/*.test.*"
+        - "**/*.spec.*"
+    pattern-regex: '(?i)\b(?:from\s+|import\s*|require\s*\()\s*["''](?:next|@next/)[^"'']*["'']'
+
+  - id: pmo-browser-auth-token-storage
+    languages:
+      - typescript
+      - javascript
+    severity: ERROR
+    message: >-
+      Keep JWT access and refresh tokens out of browser-readable storage. Use the approved
+      cookie/session flow and keep bearer material in memory.
+    metadata:
+      category: security
+      cwe: "CWE-922: Insecure Storage of Sensitive Information"
+      confidence: HIGH
+      technology:
+        - react
+    paths:
+      include:
+        - apps/web-react/src/**
+      exclude:
+        - apps/web-react/src/test/**
+        - "**/*.test.*"
+        - "**/*.spec.*"
+    pattern-either:
+      - pattern: window.localStorage.setItem(ACCESS_TOKEN_KEY, ...)
+      - pattern: window.localStorage.setItem(REFRESH_TOKEN_KEY, ...)
+      - pattern: window.localStorage.getItem(ACCESS_TOKEN_KEY)
+      - pattern: window.localStorage.getItem(REFRESH_TOKEN_KEY)
+      - pattern: readStorage(ACCESS_TOKEN_KEY)
+      - pattern: readStorage(REFRESH_TOKEN_KEY)
+      - pattern: window.sessionStorage.setItem(ACCESS_TOKEN_KEY, ...)
+      - pattern: window.sessionStorage.setItem(REFRESH_TOKEN_KEY, ...)
+      - pattern: window.sessionStorage.getItem(ACCESS_TOKEN_KEY)
+      - pattern: window.sessionStorage.getItem(REFRESH_TOKEN_KEY)
+      - pattern: window.localStorage.setItem("nexus_access_token", ...)
+      - pattern: window.localStorage.setItem("nexus_refresh_token", ...)
+      - pattern: window.localStorage.getItem("nexus_access_token")
+      - pattern: window.localStorage.getItem("nexus_refresh_token")
+
+  - id: pmo-react-raw-html-sink
+    languages:
+      - typescript
+      - javascript
+    severity: ERROR
+    message: >-
+      Do not introduce a React raw-HTML sink without an explicit reviewed sanitizer boundary.
+      Render text or structured nodes where possible.
+    metadata:
+      category: security
+      cwe: "CWE-79: Cross-site Scripting"
+      confidence: HIGH
+      technology:
+        - react
+    paths:
+      include:
+        - apps/web-react/src/**
+      exclude:
+        - apps/web-react/src/test/**
+        - "**/*.test.*"
+        - "**/*.spec.*"
+    pattern-either:
+      - patterns:
+          - pattern: dangerouslySetInnerHTML={{__html: $HTML}}
+          # The current rich-text renderer uses this reviewed sanitizer; its behavior is covered by rich-text-editor tests.
+          - pattern-not: dangerouslySetInnerHTML={{__html: sanitizeRichText($INPUT)}}
+      - pattern: document.write($HTML)
+      - pattern: $NODE.insertAdjacentHTML($POSITION, $HTML)
+
+  - id: pmo-tenant-id-from-client-header
+    languages:
+      - csharp
+    severity: ERROR
+    message: >-
+      Do not derive tenant identity from a client-controlled request header. Resolve it from
+      authenticated claims or the validated management-scope resolver and fail closed.
+    metadata:
+      category: security
+      cwe: "CWE-639: Authorization Bypass Through User-Controlled Key"
+      confidence: HIGH
+      technology:
+        - aspnet
+    paths:
+      include:
+        - apps/api/src/**
+    pattern-either:
+      - pattern: $REQUEST.Headers["X-Tenant-Id"]
+      - pattern: $REQUEST.Headers["X-Tenant-ID"]
+      - pattern: $REQUEST.Headers["TenantId"]
+      - pattern: $REQUEST.Headers["tenantId"]
+      - pattern-regex: '(?i)\.Headers\s*\[\s*["''](?:x-tenant-id|tenantid)["'']\s*\]'
+
+  - id: pmo-tenant-default-fallback
+    languages:
+      - csharp
+    severity: ERROR
+    message: >-
+      Do not fill a missing tenant identity from a shared/default tenant. Require an
+      authenticated tenant context or reject the request.
+    metadata:
+      category: security
+      cwe: "CWE-639: Authorization Bypass Through User-Controlled Key"
+      confidence: HIGH
+      technology:
+        - aspnet
+    paths:
+      include:
+        - apps/api/src/**
+    patterns:
+      - pattern-either:
+          - pattern: $INPUT.TenantId ?? SeedDataProvider.TenantId
+          - pattern: $INPUT.TenantId ?? NEXUS.Persistence.SeedDataProvider.TenantId
+
+  - id: pmo-named-tenant-default-fallback
+    languages:
+      - csharp
+    severity: ERROR
+    message: >-
+      A tenant identity may not fall back to a shared/default tenant value. Resolve it from
+      authenticated claims or the validated management-scope resolver and fail closed.
+    metadata:
+      category: security
+      cwe: "CWE-639: Authorization Bypass Through User-Controlled Key"
+      confidence: MEDIUM
+      technology:
+        - aspnet
+    paths:
+      include:
+        - apps/api/src/**
+    patterns:
+      - pattern: $TENANT ?? $DEFAULT_TENANT
+      - metavariable-regex:
+          metavariable: $TENANT
+          regex: "(?i).*tenant(?:id)?$"
+      - metavariable-regex:
+          metavariable: $DEFAULT_TENANT
+          regex: "(?i).*(default.*tenant|tenant.*default|seed.*tenant).*"
+
+  - id: pmo-integration-secret-identity-protection
+    languages:
+      - csharp
+    severity: ERROR
+    message: >-
+      Integration secret protection must never return plaintext unchanged. Remove no-op
+      protectors and fail closed when protection is unavailable.
+    metadata:
+      category: security
+      cwe: "CWE-311: Missing Encryption of Sensitive Data"
+      confidence: HIGH
+      technology:
+        - aspnet
+    paths:
+      include:
+        - apps/api/src/NEXUS.Modules.Integrations/**/*.cs
+    pattern-either:
+      - pattern: public string? Protect(string? $SECRET) => $SECRET;
+      - pattern: public string Protect(string $SECRET) => $SECRET;
+      - pattern: |
+          public string? Protect(string? $SECRET)
+          {
+            ...
+            return $SECRET;
+            ...
+          }
+      - pattern: |
+          public string Protect(string $SECRET)
+          {
+            ...
+            return $SECRET;
+            ...
+          }
+
+  - id: pmo-integration-secret-api-contract
+    languages:
+      - csharp
+    severity: ERROR
+    message: >-
+      Integration API contracts must expose secret presence/status only, never the secret
+      value itself.
+    metadata:
+      category: security
+      cwe: "CWE-200: Exposure of Sensitive Information to Unauthorized Actor"
+      confidence: HIGH
+      technology:
+        - aspnet
+    paths:
+      include:
+        - apps/api/src/NEXUS.Modules.Integrations/Application/**/*Dto.cs
+    pattern-either:
+      - pattern: public string? ApiKey { get; set; }
+      - pattern: public string? ApiSecret { get; set; }
+      - pattern: public string? Secret { get; set; }
+
+  - id: pmo-integration-secret-logging
+    languages:
+      - csharp
+    severity: ERROR
+    message: >-
+      Do not log IntegrationConnection or IntegrationWebhook secret values. Log only a
+      boolean configured state or a non-sensitive identifier.
+    metadata:
+      category: security
+      cwe: "CWE-532: Insertion of Sensitive Information into Log File"
+      confidence: HIGH
+      technology:
+        - aspnet
+    paths:
+      include:
+        - apps/api/src/NEXUS.Modules.Integrations/**/*.cs
+      exclude:
+        - "**/*.test.cs"
+        - "**/*Tests.cs"
+    patterns:
+      - pattern: $LOGGER.$LOGMETHOD(..., $SECRET, ...)
+      - metavariable-regex:
+          metavariable: $LOGMETHOD
+          regex: "^Log(Trace|Debug|Information|Warning|Error|Critical)$"
+      - metavariable-regex:
+          metavariable: $SECRET
+          regex: "(?i).*(?:\\.ApiKey|\\.ApiSecret|\\.Secret)$"
+
+  - id: pmo-integration-secret-persistence-bypass
+    languages:
+      - csharp
+    severity: ERROR
+    message: >-
+      Do not write IntegrationConnection or IntegrationWebhook secret properties directly.
+      Persist them through the IntegrationSecretProtectionInterceptor so plaintext cannot
+      bypass encryption.
+    metadata:
+      category: security
+      cwe: "CWE-311: Missing Encryption of Sensitive Data"
+      confidence: HIGH
+      technology:
+        - aspnet
+        - efcore
+    paths:
+      include:
+        - apps/api/src/NEXUS.Modules.Integrations/**/*.cs
+      exclude:
+        - apps/api/src/NEXUS.Modules.Integrations/Infrastructure/IntegrationSecretProtectionInterceptor.cs
+        - "**/*.test.cs"
+        - "**/*Tests.cs"
+    pattern-either:
+      - pattern: $ENTITY.ApiKey = $VALUE;
+      - pattern: $ENTITY.ApiSecret = $VALUE;
+      - pattern: $ENTITY.Secret = $VALUE;
+      - pattern: $BUILDER.SetProperty($ENTITY => $ENTITY.ApiKey, $VALUE)
+      - pattern: $BUILDER.SetProperty($ENTITY => $ENTITY.ApiSecret, $VALUE)
+      - pattern: $BUILDER.SetProperty($ENTITY => $ENTITY.Secret, $VALUE)
+      - pattern-regex: '(?is)\bnew\s+(?:[A-Za-z_]\w*\.)*(?:IntegrationConnection|IntegrationWebhook)\b[^;{}]*\{[^{}]*\b(?:ApiKey|ApiSecret|Secret)\s*='
+      - pattern-regex: '(?is)\bExecuteSql(?:Raw|Interpolated)(?:Async)?\s*\([^;]*\b(?:ApiKey|ApiSecret|Secret)\b'
+
+  - id: pmo-minimal-api-requires-policy
+    languages:
+      - csharp
+    severity: ERROR
+    message: >-
+      Minimal API endpoints must declare a permission policy with RequireAuthorization(policy)
+      or explicitly opt into AllowAnonymous after review.
+    metadata:
+      category: security
+      cwe: "CWE-862: Missing Authorization"
+      confidence: MEDIUM
+      technology:
+        - aspnet
+    paths:
+      include:
+        - apps/api/src/**
+    patterns:
+      - pattern-either:
+          - pattern: $APP.MapGet(...)
+          - pattern: $APP.MapPost(...)
+          - pattern: $APP.MapPut(...)
+          - pattern: $APP.MapPatch(...)
+          - pattern: $APP.MapDelete(...)
+          - pattern: $APP.MapMethods(...)
+      - pattern-not-inside: $APP.MapGet(...).RequireAuthorization($POLICY)
+      - pattern-not-inside: $APP.MapPost(...).RequireAuthorization($POLICY)
+      - pattern-not-inside: $APP.MapPut(...).RequireAuthorization($POLICY)
+      - pattern-not-inside: $APP.MapPatch(...).RequireAuthorization($POLICY)
+      - pattern-not-inside: $APP.MapDelete(...).RequireAuthorization($POLICY)
+      - pattern-not-inside: $APP.MapMethods(...).RequireAuthorization($POLICY)
+      - pattern-not-inside: $APP.MapGet(...).AllowAnonymous()
+      - pattern-not-inside: $APP.MapPost(...).AllowAnonymous()
+      - pattern-not-inside: $APP.MapPut(...).AllowAnonymous()
+      - pattern-not-inside: $APP.MapPatch(...).AllowAnonymous()
+      - pattern-not-inside: $APP.MapDelete(...).AllowAnonymous()
+      - pattern-not-inside: $APP.MapMethods(...).AllowAnonymous()
+
+  - id: pmo-role-name-authorization
+    languages:
+      - csharp
+    severity: ERROR
+    message: >-
+      Do not authorize application access by role names. Use the canonical permission
+      policy and preserve tenant-scoped protected Admin behavior.
+    metadata:
+      category: security
+      cwe: "CWE-862: Missing Authorization"
+      confidence: HIGH
+      technology:
+        - aspnet
+    paths:
+      include:
+        - apps/api/src/**
+    pattern-either:
+      - pattern: $PRINCIPAL.IsInRole(...)
+      - pattern: [Authorize(Roles = $ROLES)]

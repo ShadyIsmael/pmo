@@ -15,21 +15,59 @@ public sealed class WorkItemAssigneeLookup : IWorkItemAssigneeLookup
 
     public async Task<IReadOnlyList<WorkItemAssigneeReference>> GetEligibleAsync(Guid projectId, CancellationToken cancellationToken = default)
     {
-        var candidates = await (
+        var today = DateTime.UtcNow.Date;
+        var directCandidates = await (
             from member in _context.Set<ProjectMember>().AsNoTracking()
-            join resource in _context.Set<Resource>().AsNoTracking() on member.ResourceId equals resource.Id
-            join user in _context.Set<User>().AsNoTracking() on resource.UserId equals user.Id
+            join resource in _context.Set<Resource>().AsNoTracking() on member.ResourceId equals (Guid?)resource.Id
+            join user in _context.Set<User>().AsNoTracking()
+                on resource.UserId equals (Guid?)user.Id into linkedUsers
+            from user in linkedUsers.DefaultIfEmpty()
             where member.ProjectId == projectId
                 && member.Status == "Active"
-                && resource.IsActive
-                && resource.Status == "Active"
-                && resource.UserId.HasValue
-                && user.IsActive
+                && !member.IsDeleted
+                && member.ResourceId.HasValue
+                && member.StartDate.Date <= today && member.EndDate.Date >= today
+                && resource.IsActive && !resource.IsDeleted
+                // Work Items are assigned to tenant-scoped Resources, not system User IDs.
+                // An unlinked Resource can still be an eligible project assignee; when a
+                // Resource is linked to a system account, keep inactive/missing accounts out.
+                && (!resource.UserId.HasValue
+                    || resource.UserId.Value == Guid.Empty
+                    || (user != null && user.IsActive))
             orderby resource.Name
-            select new WorkItemAssigneeReference(resource.Id, resource.Name, resource.Email, resource.JobTitle)
+            select new WorkItemAssigneeReference(
+                resource.Id,
+                resource.Name,
+                resource.UserId.HasValue && resource.UserId.Value != Guid.Empty && user != null ? resource.Email : null,
+                resource.JobTitle)
         ).ToListAsync(cancellationToken);
 
-        return candidates
+        var groupCandidates = await (
+            from assignment in _context.Set<ProjectMember>().AsNoTracking()
+            join teamMember in _context.Set<TeamMember>().AsNoTracking() on assignment.TeamId equals teamMember.TeamId
+            join team in _context.Set<Team>().AsNoTracking() on teamMember.TeamId equals team.Id
+            join resource in _context.Set<Resource>().AsNoTracking() on teamMember.ResourceId equals resource.Id
+            join user in _context.Set<User>().AsNoTracking()
+                on resource.UserId equals (Guid?)user.Id into linkedUsers
+            from user in linkedUsers.DefaultIfEmpty()
+            where assignment.ProjectId == projectId && assignment.Status == "Active"
+                && assignment.TeamId.HasValue && !assignment.IsDeleted
+                && assignment.StartDate.Date <= today && assignment.EndDate.Date >= today
+                && team.IsActive && !team.IsDeleted
+                && teamMember.IsActive && !teamMember.IsDeleted
+                && teamMember.EffectiveFrom.Date <= today
+                && (!teamMember.EffectiveTo.HasValue || teamMember.EffectiveTo.GetValueOrDefault().Date >= today)
+                && resource.IsActive && !resource.IsDeleted
+                && (!resource.UserId.HasValue || resource.UserId.GetValueOrDefault() == Guid.Empty || (user != null && user.IsActive))
+            orderby resource.Name
+            select new WorkItemAssigneeReference(
+                resource.Id,
+                resource.Name,
+                resource.UserId.HasValue && resource.UserId.GetValueOrDefault() != Guid.Empty && user != null ? resource.Email : null,
+                resource.JobTitle)
+        ).ToListAsync(cancellationToken);
+
+        return directCandidates.Concat(groupCandidates)
             .GroupBy(candidate => candidate.ResourceId)
             .Select(group => group.First())
             .ToList();

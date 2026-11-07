@@ -101,11 +101,12 @@ export function useTeams(filter: TeamFilterParams = {}, enabled = true) {
   });
 }
 
-export function useActiveTeams() {
+export function useActiveTeams(enabled = true) {
   return useQuery({
     queryKey: teamKeys.lookup(true),
     queryFn: () => api.get<TeamLookupDto[]>("/api/teams/lookup", { activeOnly: true }),
     staleTime: 60_000,
+    enabled,
   });
 }
 

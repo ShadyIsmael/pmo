@@ -4,12 +4,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "../i18n/messages";
 import { ProjectOverviewTab } from "../features/projects/ProjectOverviewTab";
 
+vi.mock("../auth/AuthProvider", () => ({ useAuth: () => ({ user: { id: "user-1", permissions: [] } }) }));
+
 const fixtures = vi.hoisted(() => ({
   query: { isLoading: true, isError: false, data: undefined, refetch: vi.fn() },
 }));
 
 vi.mock("../features/projects/api/projects", () => ({
   useProjectOverview: () => fixtures.query,
+  useProjectTeamCapacity: () => ({ isLoading: false, isError: false, data: undefined }),
 }));
 
 const project = {

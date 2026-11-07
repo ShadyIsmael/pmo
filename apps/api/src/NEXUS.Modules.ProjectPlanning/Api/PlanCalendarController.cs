@@ -31,7 +31,7 @@ public class PlanCalendarController : ControllerBase
         return result.IsSuccess ? Ok(result.Value) : ErrorResult(result.Error);
     }
 
-    [Authorize(Policy = "Planning.Manage")]
+    [Authorize(Policy = "Planning.Edit")]
     [HttpPost]
     public async Task<IActionResult> Create(Guid projectId, Guid planId, [FromBody] CreatePlanCalendarDto dto, CancellationToken cancellationToken)
     {
@@ -39,7 +39,7 @@ public class PlanCalendarController : ControllerBase
         return result.IsSuccess ? CreatedAtAction(nameof(GetByPlan), new { projectId, planId }, result.Value) : ErrorResult(result.Error);
     }
 
-    [Authorize(Policy = "Planning.Manage")]
+    [Authorize(Policy = "Planning.Edit")]
     [HttpPut("{calendarId:guid}")]
     public async Task<IActionResult> Update(Guid projectId, Guid planId, Guid calendarId, [FromBody] UpdatePlanCalendarDto dto, CancellationToken cancellationToken)
     {
@@ -47,7 +47,7 @@ public class PlanCalendarController : ControllerBase
         return result.IsSuccess ? Ok(result.Value) : ErrorResult(result.Error);
     }
 
-    [Authorize(Policy = "Planning.Manage")]
+    [Authorize(Policy = "Planning.Edit")]
     [HttpDelete("{calendarId:guid}")]
     public async Task<IActionResult> Delete(Guid projectId, Guid planId, Guid calendarId, [FromQuery] byte[] rowVersion, CancellationToken cancellationToken)
     {

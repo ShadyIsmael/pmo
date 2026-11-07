@@ -6,7 +6,7 @@ namespace NEXUS.Modules.PluginManagement.Api;
 
 [ApiController]
 [Route("api/plugins")]
-[Authorize]
+[Authorize(Policy = "Plugin.View")]
 public class PluginController : ControllerBase
 {
     private readonly IPluginRegistry _pluginRegistry;

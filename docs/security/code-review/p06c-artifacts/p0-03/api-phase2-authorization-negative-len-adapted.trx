@@ -1,0 +1,167 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="eea8bbff-4288-4d28-a07d-6b9fe0f64092" name="shady@SHADY 2026-11-05 19:44:57" runUser="SHADY\shady" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-11-05T19:44:57.8364931+02:00" queuing="2026-11-05T19:44:57.8364936+02:00" start="2026-11-05T19:44:53.3133840+02:00" finish="2026-11-05T19:45:03.7677037+02:00" />
+  <TestSettings name="default" id="a43acee4-f37a-498b-83a6-70b769105ee5">
+    <Deployment runDeploymentRoot="shady_SHADY_2026-11-05_19_44_57" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="fe9392de-f33d-4e8c-a8d7-bb9dab8a9e69" testId="de40fd3e-ce35-a9c5-521a-db47e939803d" testName="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests.Payment_settlement_is_not_possible_on_an_out_of_scope_project" computerName="SHADY" duration="00:00:00.3708585" startTime="2026-11-05T19:44:59.8289983+02:00" endTime="2026-11-05T19:45:00.1996192+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="fe9392de-f33d-4e8c-a8d7-bb9dab8a9e69" />
+    <UnitTestResult executionId="92d9df4f-b5a4-4cec-a5b6-5fd9ad352f7d" testId="b6285d7d-61b6-7f89-7c8d-c22cb8bf395c" testName="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests.Stakeholder_invitation_requires_explicit_participation_consent" computerName="SHADY" duration="00:00:00.1561934" startTime="2026-11-05T19:45:02.2476034+02:00" endTime="2026-11-05T19:45:02.4035901+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="92d9df4f-b5a4-4cec-a5b6-5fd9ad352f7d" />
+    <UnitTestResult executionId="e16845ea-ec72-406f-8e05-9425be17d1ed" testId="671ebd14-687b-dce4-eb28-e1234240e2c5" testName="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests.External_stakeholder_acceptance_records_consent_without_creating_a_user" computerName="SHADY" duration="00:00:00.2852340" startTime="2026-11-05T19:45:03.1772603+02:00" endTime="2026-11-05T19:45:03.4624816+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="e16845ea-ec72-406f-8e05-9425be17d1ed" />
+    <UnitTestResult executionId="1c435c5c-64a9-4a07-b205-02ffbc2bcee0" testId="ec0bc0b7-2889-0d7e-1f17-3514c56f6f64" testName="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests.Accepted_external_stakeholder_can_withdraw_selected_email_consent_without_project_access" computerName="SHADY" duration="00:00:00.6555827" startTime="2026-11-05T19:45:00.2000541+02:00" endTime="2026-11-05T19:45:00.8555042+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="1c435c5c-64a9-4a07-b205-02ffbc2bcee0" />
+    <UnitTestResult executionId="699edb6e-6b8e-4dbb-bdb6-d9b2759b4d00" testId="feba10fb-1420-0072-6b2b-8a882e9cbee5" testName="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests.Risk_transition_is_denied_when_the_project_is_outside_the_scope" computerName="SHADY" duration="00:00:00.1473254" startTime="2026-11-05T19:45:01.6678433+02:00" endTime="2026-11-05T19:45:01.8147706+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="699edb6e-6b8e-4dbb-bdb6-d9b2759b4d00" />
+    <UnitTestResult executionId="02daefe2-d8a0-451e-99fb-ec893168c625" testId="f0f16ca4-0a00-128e-1052-4e47182f39fe" testName="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests.Empty_project_scope_hides_project_allocations_instead_of_falling_open" computerName="SHADY" duration="00:00:00.6828160" startTime="2026-11-05T19:44:57.8208973+02:00" endTime="2026-11-05T19:44:58.4903913+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="02daefe2-d8a0-451e-99fb-ec893168c625" />
+    <UnitTestResult executionId="f224dbb3-db1e-42a3-a3c5-1d599ad7f9a4" testId="ca10e9d8-b22a-b4cb-36f2-30ed94f8f063" testName="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests.Risk_transition_requires_the_mitigation_permission_not_view_access" computerName="SHADY" duration="00:00:00.4124688" startTime="2026-11-05T19:44:59.4160265+02:00" endTime="2026-11-05T19:44:59.8285500+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="f224dbb3-db1e-42a3-a3c5-1d599ad7f9a4" />
+    <UnitTestResult executionId="83fef4d5-4d4b-4746-b088-2b90bc13b4e7" testId="9e540f04-b599-17ac-d8e1-36631a07e95e" testName="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests.Role_directory_requires_a_users_read_permission" computerName="SHADY" duration="00:00:00.1962652" startTime="2026-11-05T19:45:02.4039751+02:00" endTime="2026-11-05T19:45:02.6109385+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="83fef4d5-4d4b-4746-b088-2b90bc13b4e7">
+      <Output>
+        <ErrorInfo>
+          <Message>Assert.Contains() Failure: Item not found in collection&#xD;
+Collection: ["Roles.View"]&#xD;
+Not found:  "Users.Read"</Message>
+          <StackTrace>   at NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests.Role_directory_requires_a_users_read_permission() in C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Security\Phase2AuthorizationNegativeTests.cs:line 360&#xD;
+   at System.RuntimeMethodHandle.InvokeMethod(ObjectHandleOnStack target, Void** arguments, ObjectHandleOnStack sig, BOOL isConstructor, ObjectHandleOnStack result)&#xD;
+   at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)&#xD;
+   at System.Reflection.RuntimeMethodInfo.Invoke(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="2bcce05d-fd78-44c1-9dd1-a7ab89a81e2b" testId="bd201fa8-96d5-a5dc-ba06-cc2bbbee69ad" testName="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests.Approval_requests_are_visible_only_to_the_requester_and_approvers" computerName="SHADY" duration="00:00:00.3839850" startTime="2026-11-05T19:45:02.7929765+02:00" endTime="2026-11-05T19:45:03.1768866+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="2bcce05d-fd78-44c1-9dd1-a7ab89a81e2b" />
+    <UnitTestResult executionId="5d874c25-4668-4af7-a313-b54693c3b544" testId="677a6f49-3974-1527-6bdd-3fbcd2a19c4d" testName="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests.Allocation_reads_are_limited_to_the_callers_project_scope" computerName="SHADY" duration="00:00:00.2693800" startTime="2026-11-05T19:45:01.3980943+02:00" endTime="2026-11-05T19:45:01.6673585+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="5d874c25-4668-4af7-a313-b54693c3b544" />
+    <UnitTestResult executionId="1128b55b-a878-42f7-ae3f-229177bb3966" testId="06b3f109-ecdf-ded2-c36d-69a7d151f838" testName="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests.System_administrator_role_without_work_item_permissions_cannot_read_or_transition_work_items" computerName="SHADY" duration="00:00:00.3903916" startTime="2026-11-05T19:45:00.8558785+02:00" endTime="2026-11-05T19:45:01.2461104+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="1128b55b-a878-42f7-ae3f-229177bb3966" />
+    <UnitTestResult executionId="2b9f233f-a625-4942-bbce-f350f060339f" testId="53184b6b-703f-ae78-94dc-363f927c80b7" testName="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests.System_administrator_role_without_cost_rate_permission_does_not_expose_capacity_rates" computerName="SHADY" duration="00:00:03.7578526" startTime="2026-11-05T19:44:54.0388944+02:00" endTime="2026-11-05T19:44:57.8061658+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="2b9f233f-a625-4942-bbce-f350f060339f" />
+    <UnitTestResult executionId="e567fc02-84a2-41e7-802c-88b1bbf54ecf" testId="864a769f-ffdc-940f-dc5d-8f575f7e9ac0" testName="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests.Work_item_comments_and_attachments_require_the_edit_policy" computerName="SHADY" duration="00:00:00.1948693" startTime="2026-11-05T19:45:03.4632136+02:00" endTime="2026-11-05T19:45:03.6574717+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="e567fc02-84a2-41e7-802c-88b1bbf54ecf" />
+    <UnitTestResult executionId="737d29e4-4f74-4176-a8de-8b78a2fc28d4" testId="e7fbafe9-eea6-44d3-b3af-f11377ceb08e" testName="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests.Audit_service_clamps_paging_so_the_whole_tenant_log_cannot_be_streamed" computerName="SHADY" duration="00:00:00.2305453" startTime="2026-11-05T19:45:02.0166580+02:00" endTime="2026-11-05T19:45:02.2471926+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="737d29e4-4f74-4176-a8de-8b78a2fc28d4" />
+    <UnitTestResult executionId="8f87c525-ed86-4a70-b655-0e1c6f7a6289" testId="be831eb2-a2fd-baaf-628b-a790c2fae7ef" testName="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests.Budget_revision_approval_requires_its_canonical_action_permission" computerName="SHADY" duration="00:00:00.6172993" startTime="2026-11-05T19:44:58.4912883+02:00" endTime="2026-11-05T19:44:59.1079376+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="8f87c525-ed86-4a70-b655-0e1c6f7a6289" />
+    <UnitTestResult executionId="e65265fd-b416-4aee-bb34-6cf501220aec" testId="07a038b8-e98a-e34c-0c4a-e69e1f187448" testName="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests.Allocation_writes_cannot_target_an_out_of_scope_project" computerName="SHADY" duration="00:00:00.2014382" startTime="2026-11-05T19:45:01.8150163+02:00" endTime="2026-11-05T19:45:02.0163688+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="e65265fd-b416-4aee-bb34-6cf501220aec" />
+    <UnitTestResult executionId="de72c274-192c-4ae5-91ed-9dfc23d45fa8" testId="0df685b4-f5cc-4113-7227-8cb5f571ccd6" testName="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests.Capacity_matrix_keeps_cost_rates_for_callers_holding_the_cost_rate_permission" computerName="SHADY" duration="00:00:00.1513597" startTime="2026-11-05T19:45:01.2464522+02:00" endTime="2026-11-05T19:45:01.3977393+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="de72c274-192c-4ae5-91ed-9dfc23d45fa8" />
+    <UnitTestResult executionId="81c5e4fd-66d2-4d82-a4cc-20723d9a7080" testId="97abd3ff-a8da-eac4-09b9-1a9190ce2155" testName="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests.Capacity_matrix_redacts_cost_rates_without_a_cost_rate_permission" computerName="SHADY" duration="00:00:00.1823726" startTime="2026-11-05T19:45:02.6230943+02:00" endTime="2026-11-05T19:45:02.7926762+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="81c5e4fd-66d2-4d82-a4cc-20723d9a7080" />
+    <UnitTestResult executionId="286fa220-f7ce-4b47-9f5d-3da1910eae47" testId="4c5f7380-ced1-9ab2-97f9-ea806aeae091" testName="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests.Audit_endpoint_requires_the_audit_view_policy" computerName="SHADY" duration="00:00:00.3077191" startTime="2026-11-05T19:44:59.1082635+02:00" endTime="2026-11-05T19:44:59.4158217+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="286fa220-f7ce-4b47-9f5d-3da1910eae47" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests.Stakeholder_invitation_requires_explicit_participation_consent" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="b6285d7d-61b6-7f89-7c8d-c22cb8bf395c">
+      <Execution id="92d9df4f-b5a4-4cec-a5b6-5fd9ad352f7d" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests" name="Stakeholder_invitation_requires_explicit_participation_consent" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests.Capacity_matrix_redacts_cost_rates_without_a_cost_rate_permission" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="97abd3ff-a8da-eac4-09b9-1a9190ce2155">
+      <Execution id="81c5e4fd-66d2-4d82-a4cc-20723d9a7080" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests" name="Capacity_matrix_redacts_cost_rates_without_a_cost_rate_permission" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests.Audit_service_clamps_paging_so_the_whole_tenant_log_cannot_be_streamed" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="e7fbafe9-eea6-44d3-b3af-f11377ceb08e">
+      <Execution id="737d29e4-4f74-4176-a8de-8b78a2fc28d4" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests" name="Audit_service_clamps_paging_so_the_whole_tenant_log_cannot_be_streamed" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests.Accepted_external_stakeholder_can_withdraw_selected_email_consent_without_project_access" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="ec0bc0b7-2889-0d7e-1f17-3514c56f6f64">
+      <Execution id="1c435c5c-64a9-4a07-b205-02ffbc2bcee0" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests" name="Accepted_external_stakeholder_can_withdraw_selected_email_consent_without_project_access" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests.Risk_transition_requires_the_mitigation_permission_not_view_access" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="ca10e9d8-b22a-b4cb-36f2-30ed94f8f063">
+      <Execution id="f224dbb3-db1e-42a3-a3c5-1d599ad7f9a4" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests" name="Risk_transition_requires_the_mitigation_permission_not_view_access" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests.Payment_settlement_is_not_possible_on_an_out_of_scope_project" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="de40fd3e-ce35-a9c5-521a-db47e939803d">
+      <Execution id="fe9392de-f33d-4e8c-a8d7-bb9dab8a9e69" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests" name="Payment_settlement_is_not_possible_on_an_out_of_scope_project" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests.Audit_endpoint_requires_the_audit_view_policy" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="4c5f7380-ced1-9ab2-97f9-ea806aeae091">
+      <Execution id="286fa220-f7ce-4b47-9f5d-3da1910eae47" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests" name="Audit_endpoint_requires_the_audit_view_policy" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests.Approval_requests_are_visible_only_to_the_requester_and_approvers" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="bd201fa8-96d5-a5dc-ba06-cc2bbbee69ad">
+      <Execution id="2bcce05d-fd78-44c1-9dd1-a7ab89a81e2b" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests" name="Approval_requests_are_visible_only_to_the_requester_and_approvers" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests.Allocation_reads_are_limited_to_the_callers_project_scope" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="677a6f49-3974-1527-6bdd-3fbcd2a19c4d">
+      <Execution id="5d874c25-4668-4af7-a313-b54693c3b544" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests" name="Allocation_reads_are_limited_to_the_callers_project_scope" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests.Empty_project_scope_hides_project_allocations_instead_of_falling_open" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="f0f16ca4-0a00-128e-1052-4e47182f39fe">
+      <Execution id="02daefe2-d8a0-451e-99fb-ec893168c625" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests" name="Empty_project_scope_hides_project_allocations_instead_of_falling_open" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests.External_stakeholder_acceptance_records_consent_without_creating_a_user" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="671ebd14-687b-dce4-eb28-e1234240e2c5">
+      <Execution id="e16845ea-ec72-406f-8e05-9425be17d1ed" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests" name="External_stakeholder_acceptance_records_consent_without_creating_a_user" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests.Capacity_matrix_keeps_cost_rates_for_callers_holding_the_cost_rate_permission" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="0df685b4-f5cc-4113-7227-8cb5f571ccd6">
+      <Execution id="de72c274-192c-4ae5-91ed-9dfc23d45fa8" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests" name="Capacity_matrix_keeps_cost_rates_for_callers_holding_the_cost_rate_permission" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests.System_administrator_role_without_work_item_permissions_cannot_read_or_transition_work_items" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="06b3f109-ecdf-ded2-c36d-69a7d151f838">
+      <Execution id="1128b55b-a878-42f7-ae3f-229177bb3966" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests" name="System_administrator_role_without_work_item_permissions_cannot_read_or_transition_work_items" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests.Budget_revision_approval_requires_its_canonical_action_permission" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="be831eb2-a2fd-baaf-628b-a790c2fae7ef">
+      <Execution id="8f87c525-ed86-4a70-b655-0e1c6f7a6289" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests" name="Budget_revision_approval_requires_its_canonical_action_permission" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests.Allocation_writes_cannot_target_an_out_of_scope_project" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="07a038b8-e98a-e34c-0c4a-e69e1f187448">
+      <Execution id="e65265fd-b416-4aee-bb34-6cf501220aec" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests" name="Allocation_writes_cannot_target_an_out_of_scope_project" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests.Role_directory_requires_a_users_read_permission" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="9e540f04-b599-17ac-d8e1-36631a07e95e">
+      <Execution id="83fef4d5-4d4b-4746-b088-2b90bc13b4e7" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests" name="Role_directory_requires_a_users_read_permission" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests.Risk_transition_is_denied_when_the_project_is_outside_the_scope" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="feba10fb-1420-0072-6b2b-8a882e9cbee5">
+      <Execution id="699edb6e-6b8e-4dbb-bdb6-d9b2759b4d00" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests" name="Risk_transition_is_denied_when_the_project_is_outside_the_scope" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests.Work_item_comments_and_attachments_require_the_edit_policy" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="864a769f-ffdc-940f-dc5d-8f575f7e9ac0">
+      <Execution id="e567fc02-84a2-41e7-802c-88b1bbf54ecf" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests" name="Work_item_comments_and_attachments_require_the_edit_policy" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests.System_administrator_role_without_cost_rate_permission_does_not_expose_capacity_rates" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="53184b6b-703f-ae78-94dc-363f927c80b7">
+      <Execution id="2b9f233f-a625-4942-bbce-f350f060339f" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests" name="System_administrator_role_without_cost_rate_permission_does_not_expose_capacity_rates" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="de40fd3e-ce35-a9c5-521a-db47e939803d" executionId="fe9392de-f33d-4e8c-a8d7-bb9dab8a9e69" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="b6285d7d-61b6-7f89-7c8d-c22cb8bf395c" executionId="92d9df4f-b5a4-4cec-a5b6-5fd9ad352f7d" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="671ebd14-687b-dce4-eb28-e1234240e2c5" executionId="e16845ea-ec72-406f-8e05-9425be17d1ed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="ec0bc0b7-2889-0d7e-1f17-3514c56f6f64" executionId="1c435c5c-64a9-4a07-b205-02ffbc2bcee0" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="feba10fb-1420-0072-6b2b-8a882e9cbee5" executionId="699edb6e-6b8e-4dbb-bdb6-d9b2759b4d00" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="f0f16ca4-0a00-128e-1052-4e47182f39fe" executionId="02daefe2-d8a0-451e-99fb-ec893168c625" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="ca10e9d8-b22a-b4cb-36f2-30ed94f8f063" executionId="f224dbb3-db1e-42a3-a3c5-1d599ad7f9a4" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="9e540f04-b599-17ac-d8e1-36631a07e95e" executionId="83fef4d5-4d4b-4746-b088-2b90bc13b4e7" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="bd201fa8-96d5-a5dc-ba06-cc2bbbee69ad" executionId="2bcce05d-fd78-44c1-9dd1-a7ab89a81e2b" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="677a6f49-3974-1527-6bdd-3fbcd2a19c4d" executionId="5d874c25-4668-4af7-a313-b54693c3b544" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="06b3f109-ecdf-ded2-c36d-69a7d151f838" executionId="1128b55b-a878-42f7-ae3f-229177bb3966" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="53184b6b-703f-ae78-94dc-363f927c80b7" executionId="2b9f233f-a625-4942-bbce-f350f060339f" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="864a769f-ffdc-940f-dc5d-8f575f7e9ac0" executionId="e567fc02-84a2-41e7-802c-88b1bbf54ecf" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="e7fbafe9-eea6-44d3-b3af-f11377ceb08e" executionId="737d29e4-4f74-4176-a8de-8b78a2fc28d4" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="be831eb2-a2fd-baaf-628b-a790c2fae7ef" executionId="8f87c525-ed86-4a70-b655-0e1c6f7a6289" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="07a038b8-e98a-e34c-0c4a-e69e1f187448" executionId="e65265fd-b416-4aee-bb34-6cf501220aec" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="0df685b4-f5cc-4113-7227-8cb5f571ccd6" executionId="de72c274-192c-4ae5-91ed-9dfc23d45fa8" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="97abd3ff-a8da-eac4-09b9-1a9190ce2155" executionId="81c5e4fd-66d2-4d82-a4cc-20723d9a7080" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="4c5f7380-ced1-9ab2-97f9-ea806aeae091" executionId="286fa220-f7ce-4b47-9f5d-3da1910eae47" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Failed">
+    <Counters total="19" executed="19" passed="18" failed="1" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.0.0+e341b939fe (64-bit .NET 10.0.10)&#xD;
+[xUnit.net 00:00:00.09]   Discovering: NEXUS.Api.Tests&#xD;
+[xUnit.net 00:00:00.20]   Discovered:  NEXUS.Api.Tests&#xD;
+[xUnit.net 00:00:00.23]   Starting:    NEXUS.Api.Tests&#xD;
+[xUnit.net 00:00:08.83]       Assert.Contains() Failure: Item not found in collection&#xD;
+[xUnit.net 00:00:08.83]       Collection: ["Roles.View"]&#xD;
+[xUnit.net 00:00:08.83]       Not found:  "Users.Read"&#xD;
+[xUnit.net 00:00:08.83]       Stack Trace:&#xD;
+[xUnit.net 00:00:08.83]         C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Security\Phase2AuthorizationNegativeTests.cs(360,0): at NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests.Role_directory_requires_a_users_read_permission()&#xD;
+[xUnit.net 00:00:08.83]            at System.RuntimeMethodHandle.InvokeMethod(ObjectHandleOnStack target, Void** arguments, ObjectHandleOnStack sig, BOOL isConstructor, ObjectHandleOnStack result)&#xD;
+[xUnit.net 00:00:08.83]            at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)&#xD;
+[xUnit.net 00:00:08.83]            at System.Reflection.RuntimeMethodInfo.Invoke(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)&#xD;
+[xUnit.net 00:00:09.88]   Finished:    NEXUS.Api.Tests&#xD;
+</StdOut>
+    </Output>
+    <RunInfos>
+      <RunInfo computerName="SHADY" outcome="Error" timestamp="2026-11-05T19:45:02.6153434+02:00">
+        <Text>[xUnit.net 00:00:08.82]     NEXUS.Api.Tests.Security.Phase2AuthorizationNegativeTests.Role_directory_requires_a_users_read_permission [FAIL]</Text>
+      </RunInfo>
+    </RunInfos>
+  </ResultSummary>
+</TestRun>

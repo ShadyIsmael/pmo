@@ -26,14 +26,19 @@ public sealed class BudgetService : IBudgetService
 
     public async Task<Result<BudgetDto>> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var budget = await _context.Set<Budget>().FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
+        var accessError = FinancePermissionGuard.Require(_httpContextAccessor, "Budget.View");
+        if (accessError is not null) return Result<BudgetDto>.Failure(accessError);
+        var budget = await ApplyManagementScope(_context.Set<Budget>().Where(item => item.TenantId == CurrentTenant()))
+            .FirstOrDefaultAsync(item => item.Id == id && !item.IsDeleted, cancellationToken);
         return budget is null ? Result<BudgetDto>.Failure(Error.NotFound()) : Result<BudgetDto>.Success(await ToDtoAsync(budget, cancellationToken));
     }
 
     public async Task<PagedResult<BudgetDto>> GetPagedAsync(int page, int pageSize, Guid? projectId = null, Guid? portfolioId = null, bool? hasForecast = null, CancellationToken cancellationToken = default)
     {
         page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 1, 200);
-        var query = ApplyManagementScope(_context.Set<Budget>().AsNoTracking());
+        if (FinancePermissionGuard.Require(_httpContextAccessor, "Budget.View") is not null)
+            return new PagedResult<BudgetDto>(Array.Empty<BudgetDto>(), page, pageSize, 0);
+        var query = ApplyManagementScope(_context.Set<Budget>().AsNoTracking().Where(item => item.TenantId == CurrentTenant() && !item.IsDeleted));
         if (projectId.HasValue) query = query.Where(item => item.ProjectId == projectId);
         if (portfolioId.HasValue) query = query.Where(item => item.PortfolioId == portfolioId);
         if (hasForecast == true) query = query.Where(item => item.ForecastAmount > 0);
@@ -50,6 +55,10 @@ public sealed class BudgetService : IBudgetService
 
     public async Task<Result<BudgetDto>> CreateAsync(CreateBudgetDto dto, string userId, CancellationToken cancellationToken = default)
     {
+        var accessError = FinancePermissionGuard.Require(_httpContextAccessor, "Budget.Create");
+        if (accessError is not null) return Result<BudgetDto>.Failure(accessError);
+        if (!CanAccessProjectOrPortfolio(dto.ProjectId, dto.PortfolioId))
+            return Result<BudgetDto>.Failure(Error.Forbidden("The budget is outside the actor's current project or portfolio scope."));
         await using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
         var validation = await ValidateAsync(dto.ProjectId, dto.Name, dto.Category, dto.PlannedAmount, dto.ApprovedAmount, dto.ForecastAmount, dto.Currency, dto.FiscalYear, dto.FiscalQuarter, dto.StartDate, dto.EndDate, cancellationToken);
         if (validation is not null) return Result<BudgetDto>.Failure(validation);
@@ -63,16 +72,20 @@ public sealed class BudgetService : IBudgetService
             Currency = NormalizeCurrency(dto.Currency), FiscalYear = dto.FiscalYear, FiscalQuarter = dto.FiscalQuarter,
             Status = dto.Status.Trim(), StartDate = dto.StartDate, EndDate = dto.EndDate, RowVersion = NewVersion()
         };
-        _context.Set<Budget>().Add(budget); await _context.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
+        _context.Set<Budget>().Add(budget);
         await AuditAsync("Budget", budget.Id, "Create", userId, null, dto, cancellationToken);
+        await _context.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return Result<BudgetDto>.Success(await ToDtoAsync(budget, cancellationToken));
     }
 
     public async Task<Result<BudgetDto>> UpdateAsync(Guid id, UpdateBudgetDto dto, string userId, CancellationToken cancellationToken = default)
     {
+        var accessError = FinancePermissionGuard.Require(_httpContextAccessor, "Budget.Edit");
+        if (accessError is not null) return Result<BudgetDto>.Failure(accessError);
         await using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
-        var budget = await _context.Set<Budget>().FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
+        var budget = await ApplyManagementScope(_context.Set<Budget>().Where(item => item.TenantId == CurrentTenant()))
+            .FirstOrDefaultAsync(item => item.Id == id && !item.IsDeleted, cancellationToken);
         if (budget is null) return Result<BudgetDto>.Failure(Error.NotFound("Budget not found"));
         if (!MatchesVersion(budget.RowVersion, dto.RowVersion)) return Result<BudgetDto>.Failure(Error.Conflict("Budget was changed by another user"));
         var validation = await ValidateAsync(budget.ProjectId, dto.Name, dto.Category, dto.PlannedAmount, dto.ApprovedAmount, dto.ForecastAmount, dto.Currency, dto.FiscalYear, dto.FiscalQuarter, dto.StartDate, dto.EndDate, cancellationToken);
@@ -88,17 +101,23 @@ public sealed class BudgetService : IBudgetService
         budget.Currency = NormalizeCurrency(dto.Currency); budget.FiscalYear = dto.FiscalYear; budget.FiscalQuarter = dto.FiscalQuarter;
         budget.Status = dto.Status.Trim(); budget.StartDate = dto.StartDate; budget.EndDate = dto.EndDate;
         budget.UpdatedBy = userId; budget.UpdatedAt = DateTime.UtcNow; budget.RowVersion = NewVersion();
-        await _context.SaveChangesAsync(cancellationToken); await transaction.CommitAsync(cancellationToken); await AuditAsync("Budget", budget.Id, "Update", userId, original, dto, cancellationToken);
+        await AuditAsync("Budget", budget.Id, "Update", userId, original, dto, cancellationToken);
+        await _context.SaveChangesAsync(cancellationToken); await transaction.CommitAsync(cancellationToken);
         return Result<BudgetDto>.Success(await ToDtoAsync(budget, cancellationToken));
     }
 
     public async Task<Result> DeleteAsync(Guid id, byte[] rowVersion, string userId, CancellationToken cancellationToken = default)
     {
-        var budget = await _context.Set<Budget>().FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
+        var accessError = FinancePermissionGuard.Require(_httpContextAccessor, "Budget.Delete");
+        if (accessError is not null) return Result.Failure(accessError);
+        var budget = await ApplyManagementScope(_context.Set<Budget>().Where(item => item.TenantId == CurrentTenant()))
+            .FirstOrDefaultAsync(item => item.Id == id && !item.IsDeleted, cancellationToken);
         if (budget is null) return Result.Failure(Error.NotFound("Budget not found"));
         if (!MatchesVersion(budget.RowVersion, rowVersion)) return Result.Failure(Error.Conflict("Budget was changed by another user"));
+        var original = JsonSerializer.Serialize(budget.ToDto());
         budget.IsDeleted = true; budget.UpdatedBy = userId; budget.UpdatedAt = DateTime.UtcNow; budget.RowVersion = NewVersion();
-        await _context.SaveChangesAsync(cancellationToken); await AuditAsync("Budget", budget.Id, "Delete", userId, null, null, cancellationToken); return Result.Success();
+        await AuditAsync("Budget", budget.Id, "Delete", userId, original, null, cancellationToken);
+        await _context.SaveChangesAsync(cancellationToken); return Result.Success();
     }
 
     private async Task<Error?> ValidateAsync(Guid? projectId, string? name, string? category, decimal planned, decimal approved, decimal forecast, string? currency, int fiscalYear, int? quarter, DateTime? start, DateTime? end, CancellationToken cancellationToken)
@@ -129,9 +148,10 @@ public sealed class BudgetService : IBudgetService
 
     private IQueryable<Budget> ApplyManagementScope(IQueryable<Budget> query)
     {
-        if (_managementContext is null) return query;
-        var scope = _managementContext.Current?.Scope;
-        if (scope is null) return query.Where(_ => false);
+        var management = _managementContext?.Current;
+        if (management is null || management.TenantId != CurrentTenant() || management.Scope is null)
+            return query.Where(_ => false);
+        var scope = management.Scope;
         var projectIds = scope.ProjectIds.ToArray();
         var portfolioIds = scope.PortfolioIds.ToArray();
         return query.Where(item =>
@@ -140,9 +160,25 @@ public sealed class BudgetService : IBudgetService
                 : item.PortfolioId.HasValue && portfolioIds.Contains(item.PortfolioId.Value));
     }
 
-    private Guid CurrentTenant() => Guid.TryParse(_httpContextAccessor.HttpContext?.User.FindFirst("tenantId")?.Value, out var tenant) ? tenant : TenantConstants.DemoTenantId;
+    private bool CanAccessProjectOrPortfolio(Guid? projectId, Guid? portfolioId)
+    {
+        var management = _managementContext?.Current;
+        if (management is null || management.TenantId != CurrentTenant() || management.Scope is null) return false;
+        if (projectId.HasValue) return management.Scope.ProjectIds.Contains(projectId.Value);
+        if (portfolioId.HasValue) return management.Scope.PortfolioIds.Contains(portfolioId.Value);
+        return false;
+    }
+
+    private Guid CurrentTenant() => FinancePermissionGuard.TryGetTenantId(_httpContextAccessor.HttpContext?.User, out var tenant) ? tenant : Guid.Empty;
     private static byte[] NewVersion() => Guid.NewGuid().ToByteArray();
     private static bool MatchesVersion(byte[] current, byte[] requested) => requested.Length == 0 || current.Length == 0 || current.SequenceEqual(requested);
-    private static string NormalizeCurrency(string? value) => (value ?? "GBP").Trim().ToUpperInvariant();
-    private async Task AuditAsync(string type, Guid id, string action, string userId, string? original, object? values, CancellationToken cancellationToken) => await _auditService.LogAsync(new AuditEntry { EntityType = type, EntityId = id, Action = action, UserId = Guid.TryParse(userId, out var parsed) ? parsed : null, OriginalValues = original, NewValues = values is null ? null : JsonSerializer.Serialize(values), Timestamp = DateTime.UtcNow, CreatedBy = userId }, cancellationToken);
+    private static string NormalizeCurrency(string? value) => (value ?? string.Empty).Trim().ToUpperInvariant();
+    private string? CurrentUserName => _httpContextAccessor.HttpContext?.User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value
+        ?? _httpContextAccessor.HttpContext?.User.FindFirst("name")?.Value;
+    private async Task AuditAsync(string type, Guid id, string action, string userId, string? original, object? values, CancellationToken cancellationToken)
+    {
+        var result = await _auditService.AppendAsync(FinancialAuditEntryFactory.ForCurrentRecord(
+            _context, type, id, action, userId, CurrentUserName, original, values), cancellationToken);
+        if (result.IsFailure) throw new InvalidOperationException(result.Error?.Message ?? "Financial audit append failed.");
+    }
 }

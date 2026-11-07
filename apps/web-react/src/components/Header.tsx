@@ -4,6 +4,9 @@ import { Bell, Building2, Check, ChevronDown, Eye, Languages, LogOut, Moon, Sear
 import { useAuth } from "@auth/AuthProvider";
 import { useI18n } from "@i18n/messages";
 import { useTheme } from "@theme/ThemeProvider";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@api/client";
+import { endpoints } from "@api/endpoints";
 import { useUnreadNotificationCount } from "@api/notifications";
 import { useManagement } from "@api/management";
 import { MANAGEMENT_PERSPECTIVES } from "@lib/perspective";
@@ -20,7 +23,14 @@ function getInitials(name: string): string {
 function CurrentOrganizationIndicator() {
   const { t } = useI18n();
   const { user, status } = useAuth();
-  const label = user?.tenantId ? `· ${user.tenantId.replace(/-/g, "").slice(0, 8)}` : t("organization.unknownOrganization");
+  const tenantQuery = useQuery({
+    queryKey: ["tenant", "current"],
+    queryFn: () => api.get<{ displayName: string }> (endpoints.tenant.current),
+    enabled: Boolean(user?.tenantId),
+    staleTime: 5 * 60_000,
+  });
+  const displayName = tenantQuery.data?.displayName?.trim();
+  const label = status === "loading" ? "" : displayName || (user?.tenantId ? t("organization.unknownOrganization") : t("organization.unknownOrganization"));
   if (status === "loading") return <span className="h-3.5 w-20 animate-pulse rounded bg-muted" aria-hidden="true" />;
   return (
     <div className="flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-1" aria-label={`${t("organization.currentOrganization")}: ${label}`} title={label}>
@@ -89,7 +99,7 @@ export function Header() {
   React.useEffect(() => setMounted(true), []);
 
   const displayName = user?.fullName ?? "User";
-  const displayRole = user?.roles?.[0]?.name ?? user?.jobTitle ?? "";
+  const displayRole = user?.roles?.[0]?.name ?? "";
   const displayEmail = user?.email ?? "";
   const showGlobalCreate = canMutate && !effectiveReadOnly;
 

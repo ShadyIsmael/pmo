@@ -78,6 +78,8 @@ public static class ProjectMapping
             Id = member.Id,
             ProjectId = member.ProjectId,
             ResourceId = member.ResourceId,
+            TeamId = member.TeamId,
+            MemberType = member.TeamId.HasValue ? "Team" : "Resource",
             Role = member.Role,
             AllocationPercentage = member.AllocationPercentage,
             HoursPerWeek = member.HoursPerWeek,
@@ -131,7 +133,8 @@ public static class ProjectMapping
         if (dto.Status != null) project.Status = dto.Status;
         if (dto.Priority != null) project.Priority = dto.Priority;
         if (dto.Category != null) project.Category = dto.Category;
-        if (dto.ProjectManagerId.HasValue) project.ProjectManagerId = dto.ProjectManagerId;
+        // Project manager ownership is assigned at creation or changed only through the
+        // authorized Handover / Initial Assignment workflows, never through Project update.
         if (dto.ClearSponsor) project.SponsorId = null;
         else if (dto.SponsorId.HasValue) project.SponsorId = dto.SponsorId;
         if (dto.PortfolioId.HasValue) project.PortfolioId = dto.PortfolioId;
@@ -175,6 +178,7 @@ public static class ProjectMapping
         {
             ProjectId = dto.ProjectId,
             ResourceId = dto.ResourceId,
+            TeamId = dto.TeamId,
             Role = dto.Role,
             AllocationPercentage = dto.AllocationPercentage,
             HoursPerWeek = dto.HoursPerWeek,

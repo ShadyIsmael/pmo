@@ -1,8 +1,11 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using NEXUS.Modules.CostManagement.Domain;
 using NEXUS.Modules.Audit.Application;
 using NEXUS.Modules.Audit.Domain;
+using NEXUS.Modules.Identity.Application;
 using NEXUS.Modules.Identity.Domain;
+using NEXUS.Modules.Organization.Application.Settings;
 using NEXUS.Modules.Organization.Domain;
 using NEXUS.Modules.ProjectManagement.Application.DTOs;
 using NEXUS.Modules.ProjectManagement.Application.Mapping;
@@ -27,8 +30,10 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
     private readonly ProjectManagerMembershipSynchronizer _membershipSynchronizer;
     private readonly ProjectSponsorMembershipSynchronizer _sponsorMembershipSynchronizer;
     private readonly IProjectPlanProgressLookup? _planProgressLookup;
+    private readonly IUserEffectivePermissionService? _effectivePermissions;
+    private readonly ITenantFiscalYearService? _tenantFiscalYear;
 
-    public ProjectService(DbContext context, IAuditService auditService, IHttpContextAccessor httpContextAccessor, ProjectManagerMembershipSynchronizer membershipSynchronizer, IManagementContextAccessor? managementContext = null, IProjectPlanProgressLookup? planProgressLookup = null)
+    public ProjectService(DbContext context, IAuditService auditService, IHttpContextAccessor httpContextAccessor, ProjectManagerMembershipSynchronizer membershipSynchronizer, IManagementContextAccessor? managementContext = null, IProjectPlanProgressLookup? planProgressLookup = null, IUserEffectivePermissionService? effectivePermissions = null, ITenantFiscalYearService? tenantFiscalYear = null)
     {
         _context = context;
         _auditService = auditService;
@@ -37,13 +42,15 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
         _sponsorMembershipSynchronizer = new ProjectSponsorMembershipSynchronizer(context);
         _managementContext = managementContext;
         _planProgressLookup = planProgressLookup;
+        _effectivePermissions = effectivePermissions;
+        _tenantFiscalYear = tenantFiscalYear;
     }
 
     public async Task<ProjectReference?> FindAsync(Guid projectId, CancellationToken cancellationToken = default)
     {
         return await InScope(_context.Set<Project>())
             .Where(project => project.Id == projectId)
-            .Select(project => new ProjectReference(project.Id, project.Name, project.Currency, project.Budget, project.PublicId))
+            .Select(project => new ProjectReference(project.Id, project.Name, project.Currency, project.Budget, project.PublicId, project.Code))
             .FirstOrDefaultAsync(cancellationToken);
     }
 
@@ -60,7 +67,7 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
 
     public async Task<IReadOnlyList<ProjectReference>> GetFinancialReferencesAsync(CancellationToken cancellationToken = default)
         => await InScope(_context.Set<Project>().AsNoTracking())
-            .Select(p => new ProjectReference(p.Id, p.Name, p.Currency, p.Budget, p.PublicId)).ToListAsync(cancellationToken);
+            .Select(p => new ProjectReference(p.Id, p.Name, p.Currency, p.Budget, p.PublicId, p.Code)).ToListAsync(cancellationToken);
 
     public async Task<IReadOnlyDictionary<Guid, ProjectReference>> GetReferencesAsync(IEnumerable<Guid> projectIds, CancellationToken cancellationToken = default)
     {
@@ -68,7 +75,7 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
         if (ids.Length == 0) return new Dictionary<Guid, ProjectReference>();
         return await InScope(_context.Set<Project>().AsNoTracking())
             .Where(project => ids.Contains(project.Id))
-            .Select(project => new ProjectReference(project.Id, project.Name, project.Currency, project.Budget, project.PublicId))
+            .Select(project => new ProjectReference(project.Id, project.Name, project.Currency, project.Budget, project.PublicId, project.Code))
             .ToDictionaryAsync(project => project.Id, cancellationToken);
     }
 
@@ -134,9 +141,15 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
                 Budget = p.Budget,
                 ActualCost = p.ActualCost,
                 Currency = p.Currency,
-                ProjectManagerId = p.ProjectManagerId,
+                ProjectManagerId = _context.Set<User>().Any(user =>
+                    user.Id == p.ProjectManagerId && user.TenantId == p.TenantId && user.IsActive && !user.IsDeleted)
+                        ? p.ProjectManagerId
+                        : null,
                 ProjectManagerName = _context.Set<User>()
-                    .Where(user => user.Id == p.ProjectManagerId)
+                    .Where(user => user.Id == p.ProjectManagerId
+                        && user.TenantId == p.TenantId
+                        && user.IsActive
+                        && !user.IsDeleted)
                     .Select(user => user.FullName)
                     .FirstOrDefault(),
                 WorkingCalendarId = p.WorkingCalendarId
@@ -161,9 +174,20 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
 
     public async Task<Result<ProjectDto>> CreateAsync(CreateProjectDto dto, string userId, CancellationToken cancellationToken = default)
     {
-        if (!dto.ProjectManagerId.HasValue)
+        var tenantId = GetCurrentTenantId();
+        if (tenantId == Guid.Empty || !HasManagementScope(tenantId))
+            return Result<ProjectDto>.Failure(Error.Forbidden("A valid tenant management context is required."));
+
+        if (dto.InitialAnnualBudgetAmount.HasValue
+            && (dto.InitialAnnualBudgetAmount.Value < 0m
+                || dto.InitialAnnualBudgetAmount.Value > 999999999999999.9999m
+                || decimal.Round(dto.InitialAnnualBudgetAmount.Value, 4) != dto.InitialAnnualBudgetAmount.Value))
+            return Result<ProjectDto>.Failure(Error.Validation("Initial Annual Budget must be non-negative and use at most four decimal places."));
+        var initialProjectManagerId = dto.ProjectManagerId;
+        if (initialProjectManagerId.HasValue
+            && !await IsEligibleProjectManagerAsync(initialProjectManagerId.Value, tenantId, cancellationToken))
         {
-            return Result<ProjectDto>.Failure(Error.Validation("A project manager is required"));
+            return Result<ProjectDto>.Failure(Error.Validation("The Project Manager must be an active same-tenant user with an active Management-category role and effective Handover.Approve permission."));
         }
 
         var normalizedCode = dto.Code?.Trim();
@@ -182,33 +206,144 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
         project.Currency = hierarchy.Currency!;
         project.PortfolioId = hierarchy.PortfolioId;
         project.Code = finalCode;
-        project.TenantId = GetCurrentTenantId();
-        project.ProjectManagerId = dto.ProjectManagerId.Value;
+        project.TenantId = tenantId;
+        project.ProjectManagerId = initialProjectManagerId;
+
+        ProjectAnnualBudget? initialAnnualBudget = null;
+        if (dto.InitialAnnualBudgetAmount.HasValue)
+        {
+            if (!project.Budget.HasValue)
+                return Result<ProjectDto>.Failure(Error.Validation("Set the Project lifetime financial ceiling before preparing an Initial Annual Budget."));
+            if (dto.InitialAnnualBudgetAmount.Value > project.Budget.Value)
+                return Result<ProjectDto>.Failure(Error.Validation("The Initial Annual Budget cannot exceed the Project lifetime financial ceiling."));
+            if (_effectivePermissions is null || _tenantFiscalYear is null || !Guid.TryParse(userId, out var financeActorId))
+                return Result<ProjectDto>.Failure(Error.Forbidden("ProjectAnnualBudget.Create and the tenant Fiscal Year configuration are required to prepare an Initial Annual Budget."));
+            var financePermissions = await _effectivePermissions.GetEffectivePermissionsAsync(financeActorId, project.TenantId, cancellationToken);
+            if (!financePermissions.Contains("ProjectAnnualBudget.Create"))
+                return Result<ProjectDto>.Failure(Error.Forbidden("ProjectAnnualBudget.Create is required to prepare an Initial Annual Budget during Project creation."));
+            var fiscalYear = await _tenantFiscalYear.ResolveForTimestampAsync(project.TenantId, DateTimeOffset.UtcNow, cancellationToken);
+            var now = DateTime.UtcNow;
+            initialAnnualBudget = new ProjectAnnualBudget
+            {
+                TenantId = project.TenantId,
+                ProjectId = project.Id,
+                FiscalYear = fiscalYear.FiscalYear,
+                FiscalYearStartDate = fiscalYear.StartDate,
+                FiscalYearEndDate = fiscalYear.EndDate,
+                FinancialReference = MakeInitialAnnualBudgetReference(project.Code, fiscalYear.FiscalYear),
+                Currency = project.Currency.Trim().ToUpperInvariant(),
+                NewApprovedFunding = dto.InitialAnnualBudgetAmount.Value,
+                ApprovedCarryForward = 0m,
+                ApprovedAdjustments = 0m,
+                Status = ProjectAnnualBudgetStatuses.Draft,
+                CreatedAt = now,
+                CreatedBy = userId
+            };
+        }
 
         var sponsorError = await _sponsorMembershipSynchronizer.ValidateAssignmentAsync(project.SponsorId, project.TenantId, cancellationToken);
         if (sponsorError is not null) return Result<ProjectDto>.Failure(sponsorError);
 
-        // Set default WorkingCalendarId if not provided
-        if (!project.WorkingCalendarId.HasValue)
+        if (project.WorkingCalendarId.HasValue)
+        {
+            var selectedCalendar = await _context.Set<WorkingCalendar>()
+                .Include(calendar => calendar.DayRules)
+                .Where(calendar => calendar.TenantId == project.TenantId
+                    && calendar.Id == project.WorkingCalendarId.Value && !calendar.IsDeleted)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (selectedCalendar?.HasValidSchedule != true)
+                return Result<ProjectDto>.Failure(Error.Validation("The selected project calendar is unavailable or has no valid working schedule."));
+        }
+        else
         {
             var defaultCalendar = await _context.Set<WorkingCalendar>()
-                .Where(c => c.TenantId == project.TenantId && c.IsDefault && !c.IsDeleted)
+                .Include(calendar => calendar.DayRules)
+                .Where(calendar => calendar.TenantId == project.TenantId && calendar.IsDefault && !calendar.IsDeleted)
                 .FirstOrDefaultAsync(cancellationToken);
-            project.WorkingCalendarId = defaultCalendar?.Id;
+            project.WorkingCalendarId = defaultCalendar?.HasValidSchedule == true ? defaultCalendar.Id : null;
         }
+
+        await using var createTransaction = initialAnnualBudget is null
+            ? null
+            : await _context.Database.BeginTransactionAsync(cancellationToken);
 
         _context.Set<Project>().Add(project);
         await _sponsorMembershipSynchronizer.SynchronizeAsync(project, null, project.SponsorId, userId, cancellationToken);
 
-        _context.Set<ProjectManagerAssignment>().Add(new ProjectManagerAssignment
+        if (initialProjectManagerId.HasValue)
         {
-            TenantId = project.TenantId,
-            ProjectId = project.Id,
-            ProjectManagerId = dto.ProjectManagerId.Value,
-            StartDate = project.StartDate ?? DateTime.UtcNow.Date,
-            IsCurrent = true,
-            CreatedBy = userId
-        });
+            var managerStartDate = project.StartDate ?? DateTime.UtcNow.Date;
+            _context.Set<ProjectManagerAssignment>().Add(new ProjectManagerAssignment
+            {
+                TenantId = project.TenantId,
+                ProjectId = project.Id,
+                ProjectManagerId = initialProjectManagerId.Value,
+                StartDate = managerStartDate,
+                IsCurrent = true,
+                CreatedBy = userId
+            });
+            await _membershipSynchronizer.SynchronizeAsync(
+                project, null, initialProjectManagerId.Value, managerStartDate, userId, cancellationToken);
+        }
+
+        if (project.Budget.HasValue)
+        {
+            var budgetRecordedAt = DateTime.UtcNow;
+            await _auditService.AppendAsync(new AuditEntry
+            {
+                ProjectId = project.Id,
+                TenantId = project.TenantId,
+                EntityType = "ProjectBudget",
+                EntityId = project.Id,
+                Action = "LifetimeCeilingRecorded",
+                UserId = TryParseGuid(userId),
+                UserName = CurrentUserName,
+                Timestamp = budgetRecordedAt,
+                Description = $"Initial approved Project lifetime financial ceiling recorded for {project.Code}",
+                Changes = JsonSerializer.Serialize(new
+                {
+                    financialReference = new { from = (string?)null, to = project.Code },
+                    amount = new { from = (decimal?)null, to = project.Budget.Value },
+                    currency = new { from = (string?)null, to = project.Currency }
+                }),
+                OriginalValues = JsonSerializer.Serialize(new { financialReference = (string?)null, amount = (decimal?)null, currency = (string?)null }),
+                NewValues = JsonSerializer.Serialize(new { financialReference = project.Code, amount = project.Budget.Value, currency = project.Currency }),
+                CreatedBy = userId
+            }, cancellationToken);
+        }
+
+        if (initialAnnualBudget is not null)
+        {
+            _context.Set<ProjectAnnualBudget>().Add(initialAnnualBudget);
+            await _auditService.AppendAsync(new AuditEntry
+            {
+                ProjectId = project.Id,
+                TenantId = project.TenantId,
+                EntityType = "ProjectAnnualBudget",
+                EntityId = initialAnnualBudget.Id,
+                Action = "InitialDraftCreated",
+                UserId = TryParseGuid(userId),
+                UserName = CurrentUserName,
+                Timestamp = DateTime.UtcNow,
+                Description = $"Initial Draft Annual Budget prepared for FY {initialAnnualBudget.FiscalYear} for {project.Code}; it is not approved for spending.",
+                Changes = JsonSerializer.Serialize(new
+                {
+                    fiscalYear = new { from = (int?)null, to = initialAnnualBudget.FiscalYear },
+                    newApprovedFunding = new { from = (decimal?)null, to = initialAnnualBudget.NewApprovedFunding },
+                    currency = new { from = (string?)null, to = initialAnnualBudget.Currency },
+                    status = new { from = (string?)null, to = ProjectAnnualBudgetStatuses.Draft }
+                }),
+                NewValues = JsonSerializer.Serialize(new
+                {
+                    financialReference = initialAnnualBudget.FinancialReference,
+                    fiscalYear = initialAnnualBudget.FiscalYear,
+                    newApprovedFunding = initialAnnualBudget.NewApprovedFunding,
+                    currency = initialAnnualBudget.Currency,
+                    status = ProjectAnnualBudgetStatuses.Draft
+                }),
+                CreatedBy = userId
+            }, cancellationToken);
+        }
 
         await _context.SaveChangesAsync(cancellationToken);
 
@@ -226,6 +361,9 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
             CreatedBy = userId
         }, cancellationToken);
 
+        if (createTransaction is not null)
+            await createTransaction.CommitAsync(cancellationToken);
+
         var resultDto = project.ToDto();
         await ResolveProjectNamesAsync(resultDto, cancellationToken);
         return Result<ProjectDto>.Success(resultDto);
@@ -233,19 +371,46 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
 
     private Guid GetCurrentTenantId()
     {
-        var tenantId = _httpContextAccessor.HttpContext?.User.FindFirst("tenantId")?.Value;
-        if (!string.IsNullOrWhiteSpace(tenantId) && Guid.TryParse(tenantId, out var parsed))
+        var httpContext = _httpContextAccessor.HttpContext;
+        if (httpContext is not null)
         {
-            return parsed;
+            if (httpContext.User.Identity?.IsAuthenticated != true) return Guid.Empty;
+            var tenantId = httpContext.User.FindFirst("tenantId")?.Value;
+            return Guid.TryParse(tenantId, out var parsed) && parsed != Guid.Empty ? parsed : Guid.Empty;
         }
 
-        return TenantConstants.DemoTenantId;
+        return TrustedTenantExecutionContext.CurrentTenantId ?? Guid.Empty;
+    }
+
+    private bool HasManagementScope(Guid tenantId)
+    {
+        if (_httpContextAccessor.HttpContext is null)
+            return TrustedTenantExecutionContext.CurrentTenantId == tenantId;
+
+        var context = _managementContext?.Current;
+        return context is not null && context.TenantId == tenantId;
+    }
+
+    private static string MakeInitialAnnualBudgetReference(string projectCode, int fiscalYear)
+    {
+        var suffix = Guid.NewGuid().ToString("N");
+        var maximumCodeLength = Math.Max(1, 99 - suffix.Length - fiscalYear.ToString().Length - 10);
+        var code = projectCode.Length > maximumCodeLength ? projectCode[..maximumCodeLength] : projectCode;
+        return $"{code}-FY{fiscalYear}-AB-{suffix}";
     }
 
     private IQueryable<Project> InScope(IQueryable<Project> query)
     {
-        var scope = _managementContext?.Current?.Scope;
-        return scope is null ? query : query.Where(project => scope.ProjectIds.Contains(project.Id));
+        var tenantId = GetCurrentTenantId();
+        if (tenantId == Guid.Empty) return query.Where(_ => false);
+
+        query = query.Where(project => project.TenantId == tenantId);
+        if (_httpContextAccessor.HttpContext is null)
+            return TrustedTenantExecutionContext.CurrentTenantId == tenantId ? query : query.Where(_ => false);
+
+        var context = _managementContext?.Current;
+        if (context is null || context.TenantId != tenantId) return query.Where(_ => false);
+        return query.Where(project => context.Scope.ProjectIds.Contains(project.Id));
     }
 
     private static Guid? TryParseGuid(string value)
@@ -322,9 +487,21 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
         var project = await _context.Set<Project>().FirstOrDefaultAsync(p => p.Id == id && !p.IsDeleted, cancellationToken);
         if (project is null) return Result<ProjectDto>.Failure(Error.NotFound("Project not found"));
 
+        if (dto.ProjectManagerIdWasProvided && dto.ProjectManagerId != project.ProjectManagerId)
+        {
+            var assignmentWorkflow = project.ProjectManagerId.HasValue ? "Handover" : "Initial Assignment";
+            return Result<ProjectDto>.Failure(Error.Conflict($"Project Manager changes must use the authorized {assignmentWorkflow} workflow."));
+        }
+        if (dto.Handover is not null)
+            return Result<ProjectDto>.Failure(Error.Conflict("Project Update does not accept Handover data. Use the authorized Handover workflow."));
+
         // Creation is the existing setup/approval boundary; Status is not a draft approval gate.
         if (dto.Budget.HasValue && dto.Budget != project.Budget)
             return Result<ProjectDto>.Failure(Error.Validation("Project budget changes require an approved Project Change Request."));
+        if (dto.Currency is not null
+            && !string.Equals(dto.Currency.Trim(), project.Currency.Trim(), StringComparison.OrdinalIgnoreCase)
+            && await HasFinancialHistoryAsync(project, cancellationToken))
+            return Result<ProjectDto>.Failure(Error.Conflict("Project currency cannot be changed after a financial ceiling or financial records exist. No historical currency conversion is inferred."));
         var hierarchy = await ResolveHierarchyAsync(dto.ProgramId, dto.PortfolioId, dto.Currency, cancellationToken, project);
         if (hierarchy.Error is not null) return Result<ProjectDto>.Failure(hierarchy.Error);
         if (dto.Currency != null && !await IsValidCurrencyAsync(dto.Currency.Trim(), cancellationToken))
@@ -342,140 +519,59 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
         var oldValues = System.Text.Json.JsonSerializer.Serialize(project.ToDto());
         var beforeValues = Snapshot(project);
 
-        var managerChanged = dto.ProjectManagerId.HasValue && dto.ProjectManagerId.Value != project.ProjectManagerId;
-
-        if (!managerChanged)
+        if (dto.WorkingCalendarId.HasValue)
         {
-            dto.UpdateEntity(project, userId);
-            if (hierarchy.PortfolioId.HasValue) project.PortfolioId = hierarchy.PortfolioId;
-            if (sponsorChanged)
-                await _sponsorMembershipSynchronizer.SynchronizeAsync(project, previousSponsorId, project.SponsorId, userId, cancellationToken);
-            await _context.SaveChangesAsync(cancellationToken);
-
-            await _auditService.LogAsync(new AuditEntry
-            {
-                EntityType = "Project",
-                EntityId = project.Id,
-                Action = "Update",
-                TenantId = project.TenantId,
-                UserId = TryParseGuid(userId),
-                UserName = CurrentUserName,
-                Changes = SerializeChanges(BuildChanges(beforeValues, Snapshot(project))),
-                OriginalValues = oldValues,
-                NewValues = System.Text.Json.JsonSerializer.Serialize(dto),
-                Timestamp = DateTime.UtcNow,
-                CreatedBy = userId
-            }, cancellationToken);
-
-            var resultDto = project.ToDto();
-            await ResolveProjectNamesAsync(resultDto, cancellationToken);
-            return Result<ProjectDto>.Success(resultDto);
+            var selectedCalendar = await _context.Set<WorkingCalendar>()
+                .Include(calendar => calendar.DayRules)
+                .Where(calendar => calendar.TenantId == project.TenantId
+                    && calendar.Id == dto.WorkingCalendarId.Value && !calendar.IsDeleted)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (selectedCalendar?.HasValidSchedule != true)
+                return Result<ProjectDto>.Failure(Error.Validation("The selected project calendar is unavailable or has no valid working schedule."));
         }
-
-        var newManagerId = dto.ProjectManagerId!.Value;
-        var previousManagerId = project.ProjectManagerId;
-        if (!previousManagerId.HasValue)
-        {
-            return Result<ProjectDto>.Failure(Error.Validation("Cannot hand over the project manager because the project does not have a current project manager"));
-        }
-
-        var newManager = await _context.Set<User>()
-            .FirstOrDefaultAsync(user => user.Id == newManagerId && !user.IsDeleted, cancellationToken);
-        if (newManager is null)
-            return Result<ProjectDto>.Failure(Error.Validation("The new project manager could not be found"));
-
-        var previousManager = await _context.Set<User>()
-            .FirstOrDefaultAsync(user => user.Id == previousManagerId.Value && !user.IsDeleted, cancellationToken);
-        if (previousManager is null)
-            return Result<ProjectDto>.Failure(Error.Validation("The current project manager could not be found"));
-
-        var currentAssignments = await _context.Set<ProjectManagerAssignment>()
-            .Where(a => a.ProjectId == id && a.IsCurrent && !a.IsDeleted)
-            .OrderByDescending(a => a.StartDate)
-            .ThenByDescending(a => a.CreatedAt)
-            .ToListAsync(cancellationToken);
-        var currentAssignment = currentAssignments.FirstOrDefault();
-
-        var handover = dto.Handover ?? new ProjectHandoverDto();
-        var handoverDate = handover.HandoverDate?.Date;
-        var handoverReason = handover.HandoverReason?.Trim();
-
-        if (!handoverDate.HasValue)
-        {
-            return Result<ProjectDto>.Failure(Error.Validation("Handover date is required when changing the project manager"));
-        }
-        if (string.IsNullOrWhiteSpace(handoverReason))
-        {
-            return Result<ProjectDto>.Failure(Error.Validation("Handover reason is required when changing the project manager"));
-        }
-
-        var currentStartDate = (currentAssignment?.StartDate ?? project.StartDate ?? project.CreatedAt).Date;
-        if (handoverDate.Value < currentStartDate)
-        {
-            return Result<ProjectDto>.Failure(Error.Validation("Handover date cannot be before the current project manager's start date"));
-        }
-
-        await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
 
         dto.UpdateEntity(project, userId);
         if (hierarchy.PortfolioId.HasValue) project.PortfolioId = hierarchy.PortfolioId;
         if (sponsorChanged)
             await _sponsorMembershipSynchronizer.SynchronizeAsync(project, previousSponsorId, project.SponsorId, userId, cancellationToken);
-
-        foreach (var assignment in currentAssignments)
-        {
-            assignment.EndDate = handoverDate;
-            assignment.IsCurrent = false;
-            assignment.UpdatedBy = userId;
-        }
-
-        _context.Set<ProjectManagerAssignment>().Add(new ProjectManagerAssignment
-        {
-            TenantId = project.TenantId,
-            ProjectId = project.Id,
-            ProjectManagerId = newManagerId,
-            StartDate = handoverDate.Value,
-            IsCurrent = true,
-            HandoverFromProjectManagerId = previousManagerId,
-            HandoverDate = handoverDate,
-            HandoverReason = handoverReason,
-            HandoverNotes = handover.HandoverNotes,
-            CreatedBy = userId
-        });
-
-        await _membershipSynchronizer.SynchronizeAsync(project, previousManagerId.Value, newManagerId, handoverDate.Value, userId, cancellationToken);
-
         await _context.SaveChangesAsync(cancellationToken);
 
         await _auditService.LogAsync(new AuditEntry
         {
             EntityType = "Project",
             EntityId = project.Id,
-            Action = "ManagerHandover",
+            Action = "Update",
             TenantId = project.TenantId,
             UserId = TryParseGuid(userId),
             UserName = CurrentUserName,
-            Changes = JsonSerializer.Serialize(new { projectManager = new { from = previousManager.FullName, to = newManager.FullName } }),
+            Changes = SerializeChanges(BuildChanges(beforeValues, Snapshot(project))),
             OriginalValues = oldValues,
-            NewValues = System.Text.Json.JsonSerializer.Serialize(new
-            {
-                dto.ProjectManagerId,
-                ProjectManagerName = newManager.FullName,
-                PreviousProjectManagerId = previousManagerId,
-                PreviousProjectManagerName = previousManager.FullName,
-                HandoverDate = handoverDate,
-                HandoverReason = handoverReason,
-                HandoverNotes = handover.HandoverNotes
-            }),
+            NewValues = System.Text.Json.JsonSerializer.Serialize(dto),
             Timestamp = DateTime.UtcNow,
             CreatedBy = userId
         }, cancellationToken);
 
-        await transaction.CommitAsync(cancellationToken);
+        var resultDto = project.ToDto();
+        await ResolveProjectNamesAsync(resultDto, cancellationToken);
+        return Result<ProjectDto>.Success(resultDto);
+    }
 
-        var updatedDto = project.ToDto();
-        await ResolveProjectNamesAsync(updatedDto, cancellationToken);
-        return Result<ProjectDto>.Success(updatedDto);
+    private async Task<bool> IsEligibleProjectManagerAsync(Guid candidateId, Guid tenantId, CancellationToken cancellationToken)
+    {
+        var isActiveTenantUser = await _context.Set<User>().AsNoTracking()
+            .AnyAsync(user => user.Id == candidateId && user.TenantId == tenantId && user.IsActive && !user.IsDeleted, cancellationToken);
+        if (!isActiveTenantUser || _effectivePermissions is null)
+            return false;
+
+        var hasProjectManagerRole = await _context.Set<UserRole>().AsNoTracking()
+            .AnyAsync(userRole => userRole.UserId == candidateId && userRole.TenantId == tenantId && !userRole.IsDeleted
+                && _context.Set<Role>().Any(role => role.Id == userRole.RoleId && role.TenantId == tenantId
+                    && !role.IsDeleted && role.Category == "Management"), cancellationToken);
+        if (!hasProjectManagerRole)
+            return false;
+
+        var permissions = await _effectivePermissions.GetEffectivePermissionsAsync(candidateId, tenantId, cancellationToken);
+        return permissions.Contains("Handover.Approve");
     }
 
     public async Task<Result<IReadOnlyList<ProjectManagerHistoryDto>>> GetManagerHistoryAsync(Guid projectId, CancellationToken cancellationToken = default)
@@ -528,13 +624,18 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
         if (userIds.Count > 0)
         {
             users = await _context.Set<User>()
-                .Where(u => userIds.Contains(u.Id))
+                .Where(u => userIds.Contains(u.Id) && u.TenantId == dto.TenantId && u.IsActive && !u.IsDeleted)
                 .ToDictionaryAsync(u => u.Id, cancellationToken);
         }
 
         if (dto.ProjectManagerId.HasValue && users.TryGetValue(dto.ProjectManagerId.Value, out var manager))
         {
             dto.ProjectManagerName = manager.FullName;
+        }
+        else
+        {
+            dto.ProjectManagerId = null;
+            dto.ProjectManagerName = null;
         }
 
         if (dto.SponsorId.HasValue && users.TryGetValue(dto.SponsorId.Value, out var sponsor))
@@ -558,6 +659,7 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
     private async Task<(Error? Error, Guid? PortfolioId, string? Currency)> ResolveHierarchyAsync(Guid? programId, Guid? portfolioId, string? requestedCurrency, CancellationToken ct, Project? existing = null)
     {
         var tenant = GetCurrentTenantId();
+        if (tenant == Guid.Empty) return (Error.Unauthorized("A valid tenant context is required."), null, null);
         programId ??= existing?.ProgramId;
         portfolioId ??= existing?.PortfolioId;
         Guid? resolvedPortfolio = portfolioId;
@@ -566,6 +668,12 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
             var program = await _context.Set<ProgramEntity>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == programId.Value && !x.IsDeleted, ct);
             if (program is null || program.TenantId != tenant) return (Error.Validation("Program must exist in the current tenant"), null, null);
             if (portfolioId.HasValue && portfolioId.Value != program.PortfolioId) return (Error.Validation("Project Portfolio must match the selected Program Portfolio"), null, null);
+            var programPortfolioExists = await _context.Set<PortfolioEntity>().AsNoTracking()
+                .AnyAsync(x => x.Id == program.PortfolioId && x.TenantId == tenant && !x.IsDeleted, ct);
+            if (!programPortfolioExists) return (Error.Validation("Program Portfolio must exist in the current tenant"), null, null);
+            var hierarchyChanged = existing is null || existing.ProgramId != program.Id || existing.PortfolioId != program.PortfolioId;
+            if (hierarchyChanged && !HasHierarchyAssignmentScope(program.Id, program.PortfolioId))
+                return (Error.NotFound(), null, null);
             resolvedPortfolio = program.PortfolioId;
             var currency = string.IsNullOrWhiteSpace(requestedCurrency) ? (existing?.Currency ?? program.Currency) : requestedCurrency.Trim().ToUpperInvariant();
             if (!await IsValidCurrencyAsync(currency, ct)) return (Error.Validation("Currency must be an active configured currency"), null, null);
@@ -575,14 +683,71 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
         {
             var portfolio = await _context.Set<PortfolioEntity>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == portfolioId.Value && !x.IsDeleted, ct);
             if (portfolio is null || portfolio.TenantId != tenant) return (Error.Validation("Portfolio must exist in the current tenant"), null, null);
+            var hierarchyChanged = existing is null || existing.ProgramId.HasValue || existing.PortfolioId != portfolio.Id;
+            if (hierarchyChanged && !HasHierarchyAssignmentScope(null, portfolio.Id))
+                return (Error.NotFound(), null, null);
             var currency = string.IsNullOrWhiteSpace(requestedCurrency) ? (existing?.Currency ?? portfolio.Currency) : requestedCurrency.Trim().ToUpperInvariant();
             if (!await IsValidCurrencyAsync(currency, ct)) return (Error.Validation("Currency must be an active configured currency"), null, null);
             return (null, portfolioId, currency);
         }
         if (existing is not null && string.IsNullOrWhiteSpace(requestedCurrency)) return (null, existing.PortfolioId, existing.Currency);
+        var currentManagementContext = _managementContext?.Current;
+        if (existing is null && _httpContextAccessor.HttpContext is not null && currentManagementContext is null)
+            return (Error.NotFound(), null, null);
+        if (existing is null && currentManagementContext is not null
+            && currentManagementContext.SelectedPerspective is (ManagementPerspective.PortfolioManager or ManagementPerspective.ProgramManager)
+            && !programId.HasValue && !portfolioId.HasValue)
+            return (Error.Validation("A Project created in Portfolio or Program scope must be assigned to an in-scope Program or Portfolio"), null, null);
+        if (existing is null && _managementContext?.Current?.SelectedProjectId.HasValue == true)
+            return (Error.NotFound(), null, null);
         var standaloneCurrency = requestedCurrency?.Trim().ToUpperInvariant();
         if (string.IsNullOrWhiteSpace(standaloneCurrency) || !await IsValidCurrencyAsync(standaloneCurrency, ct)) return (Error.Validation("Currency is required and must be an active configured currency"), null, null);
         return (null, existing?.PortfolioId, standaloneCurrency);
+    }
+
+    private bool HasHierarchyAssignmentScope(Guid? programId, Guid? portfolioId)
+    {
+        var context = _managementContext?.Current;
+        if (context is null) return _httpContextAccessor.HttpContext is null;
+        if (programId.HasValue)
+        {
+            return context.SelectedPerspective is (ManagementPerspective.ProgramManager or ManagementPerspective.PortfolioManager)
+                && context.Scope.ProgramIds.Contains(programId.Value);
+        }
+        if (portfolioId.HasValue)
+        {
+            return context.SelectedPerspective == ManagementPerspective.PortfolioManager
+                && context.Scope.PortfolioIds.Contains(portfolioId.Value);
+        }
+        return true;
+    }
+
+    private async Task<bool> HasFinancialHistoryAsync(Project project, CancellationToken cancellationToken)
+    {
+        if (project.Budget.HasValue)
+            return true;
+
+        var tenantId = project.TenantId;
+        var projectId = project.Id;
+        if (await _context.Set<AuditEntry>().IgnoreQueryFilters().AnyAsync(entry =>
+                entry.TenantId == tenantId && !entry.IsDeleted && entry.EntityType == "ProjectBudget"
+                && (entry.ProjectId == projectId || entry.EntityId == projectId), cancellationToken))
+            return true;
+
+        return await _context.Set<ProjectAnnualBudget>().IgnoreQueryFilters().AnyAsync(item =>
+                   item.TenantId == tenantId && item.ProjectId == projectId && !item.IsDeleted, cancellationToken)
+            || await _context.Set<Budget>().IgnoreQueryFilters().AnyAsync(item =>
+                   item.TenantId == tenantId && item.ProjectId == projectId && !item.IsDeleted, cancellationToken)
+            || await _context.Set<CostEntry>().IgnoreQueryFilters().AnyAsync(item =>
+                   item.TenantId == tenantId && item.ProjectId == projectId && !item.IsDeleted, cancellationToken)
+            || await _context.Set<PurchaseCommitment>().IgnoreQueryFilters().AnyAsync(item =>
+                   item.TenantId == tenantId && item.ProjectId == projectId && !item.IsDeleted, cancellationToken)
+            || await _context.Set<PaymentObligation>().IgnoreQueryFilters().AnyAsync(item =>
+                   item.TenantId == tenantId && item.ProjectId == projectId && !item.IsDeleted, cancellationToken)
+            || await _context.Set<PaymentSettlement>().IgnoreQueryFilters().AnyAsync(item =>
+                   item.TenantId == tenantId && item.ProjectId == projectId && !item.IsDeleted, cancellationToken)
+            || await _context.Set<ProjectPaymentRequestDetail>().IgnoreQueryFilters().AnyAsync(item =>
+                   item.TenantId == tenantId && item.ProjectId == projectId, cancellationToken);
     }
 
     private async Task<bool> IsValidCurrencyAsync(string code, CancellationToken ct) => await _context.Set<Currency>().AnyAsync(x => x.Code == code.ToUpper() && !x.IsDeleted, ct);
@@ -682,33 +847,37 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
             .OrderBy(m => m.Role)
             .ToListAsync(cancellationToken);
 
-        var memberDtos = new List<ProjectMemberDto>();
-        foreach (var member in members)
+        var resourceIds = members.Where(member => member.ResourceId.HasValue).Select(member => member.ResourceId!.Value).Distinct().ToArray();
+        var teamIds = members.Where(member => member.TeamId.HasValue).Select(member => member.TeamId!.Value).Distinct().ToArray();
+        var resources = await _context.Set<Resource>().AsNoTracking()
+            .Where(resource => resourceIds.Contains(resource.Id) && !resource.IsDeleted)
+            .ToDictionaryAsync(resource => resource.Id, cancellationToken);
+        var teams = await _context.Set<Team>().AsNoTracking()
+            .Where(team => teamIds.Contains(team.Id) && !team.IsDeleted)
+            .ToDictionaryAsync(team => team.Id, cancellationToken);
+        var memberDtos = members.Select(member =>
         {
-            var resource = await _context.Set<Resource>().FirstOrDefaultAsync(r => r.Id == member.ResourceId && !r.IsDeleted, cancellationToken);
-            memberDtos.Add(new ProjectMemberDto
+            var dto = member.ToDto();
+            if (member.ResourceId is Guid resourceId && resources.TryGetValue(resourceId, out var resource))
             {
-                Id = member.Id,
-                ProjectId = member.ProjectId,
-                ResourceId = member.ResourceId,
-                ResourceName = resource?.Name ?? "Unknown",
-                ResourceJobTitle = resource?.JobTitle,
-                Role = member.Role,
-                AllocationPercentage = member.AllocationPercentage,
-                HoursPerWeek = null,
-                StartDate = member.StartDate,
-                EndDate = member.EndDate,
-                Status = member.Status,
-                CalendarPolicy = member.CalendarPolicy,
-                IsBillable = member.IsBillable,
-                Notes = ProjectSponsorMembershipSynchronizer.IsManagedMembership(member) ? null : member.Notes,
-                CreatedAt = member.CreatedAt,
-                UpdatedAt = member.UpdatedAt
-            });
-        }
+                dto.ResourceName = resource.Name;
+                dto.ResourceJobTitle = resource.JobTitle;
+            }
+            if (member.TeamId is Guid teamId && teams.TryGetValue(teamId, out var team))
+            {
+                dto.TeamName = team.Name;
+                dto.ResourceName = team.Name;
+            }
+            if (ProjectSponsorMembershipSynchronizer.IsManagedMembership(member)) dto.Notes = null;
+            return dto;
+        }).ToList();
 
         return Result<IReadOnlyList<ProjectMemberDto>>.Success(memberDtos);
     }
+
+    public Task<bool> IsTeamGroupAssignmentAsync(Guid projectId, Guid memberId, CancellationToken cancellationToken = default) =>
+        _context.Set<ProjectMember>().AsNoTracking().AnyAsync(member => member.Id == memberId
+            && member.ProjectId == projectId && member.TeamId.HasValue && !member.IsDeleted, cancellationToken);
 
     public async Task<Result<ProjectMemberDto>> AddTeamMemberAsync(Guid projectId, CreateProjectMemberDto dto, string userId, CancellationToken cancellationToken = default)
     {
@@ -721,19 +890,32 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
         var project = await _context.Set<Project>().FirstOrDefaultAsync(p => p.Id == projectId && !p.IsDeleted, cancellationToken);
         if (project is null) return Result<ProjectMemberDto>.Failure(Error.NotFound("Project not found"));
 
-        var resource = await _context.Set<Resource>().FirstOrDefaultAsync(r => r.Id == dto.ResourceId && !r.IsDeleted, cancellationToken);
-        if (resource is null) return Result<ProjectMemberDto>.Failure(Error.NotFound("Resource not found"));
-        if (!resource.IsActive) return Result<ProjectMemberDto>.Failure(Error.Validation("Resource is not active"));
-
-        var conflicts = await CheckResourceConflictsInternalAsync(dto.ResourceId, dto.StartDate, dto.EndDate, dto.AllocationPercentage, null, cancellationToken);
-        if (conflicts.Count > 0)
+        Resource? resource = null;
+        Team? team = null;
+        if (dto.ResourceId.HasValue)
         {
-            var conflictDetails = conflicts.Select(c => $"{c.ProjectName ?? "Unknown"} ({c.AllocationPercentage}%)");
-            return Result<ProjectMemberDto>.Failure(Error.Validation(
-                $"Resource over-allocation detected: total would exceed 100%. Conflicting allocations: {string.Join(", ", conflictDetails)}"));
+            resource = await _context.Set<Resource>().FirstOrDefaultAsync(r => r.Id == dto.ResourceId.Value && !r.IsDeleted, cancellationToken);
+            if (resource is null) return Result<ProjectMemberDto>.Failure(Error.NotFound("Resource not found"));
+            if (!resource.IsActive) return Result<ProjectMemberDto>.Failure(Error.Validation("Resource is not active"));
+            var conflicts = await CheckResourceConflictsInternalAsync(resource.Id, dto.StartDate, dto.EndDate, dto.AllocationPercentage, null, cancellationToken, projectId);
+            if (conflicts.Count > 0) return ResourceAllocationConflict(conflicts);
         }
+        else if (dto.TeamId.HasValue)
+        {
+            team = await _context.Set<Team>().FirstOrDefaultAsync(item => item.Id == dto.TeamId.Value && !item.IsDeleted, cancellationToken);
+            if (team is null) return Result<ProjectMemberDto>.Failure(Error.NotFound("Team not found"));
+            if (!team.IsActive || team.TenantId != project.TenantId)
+                return Result<ProjectMemberDto>.Failure(Error.Validation("The Team must be active in the same tenant as the project"));
+            var conflicts = await CheckTeamGroupConflictsInternalAsync(team.Id, projectId, dto.StartDate, dto.EndDate, dto.AllocationPercentage, null, cancellationToken);
+            if (conflicts.Count > 0) return ResourceAllocationConflict(conflicts);
+        }
+        else return Result<ProjectMemberDto>.Failure(Error.Validation("Choose exactly one Resource or Team"));
 
         var member = dto.ToEntity(userId);
+        // Membership rows must carry the owning project's tenant: the global tenant
+        // query filter hides rows with an empty TenantId, which previously made the
+        // new member invisible to team reads, scope resolution, and conflict checks.
+        member.TenantId = project.TenantId;
         // Project membership records dedication only. Weekly resource capacity is
         // derived from the resource calendar, never supplied as task work here.
         member.HoursPerWeek = null;
@@ -748,15 +930,16 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
             TenantId = member.TenantId,
             UserId = TryParseGuid(userId),
             UserName = CurrentUserName,
-            Changes = JsonSerializer.Serialize(new { resource = resource.Name, role = member.Role, allocationPercentage = member.AllocationPercentage }),
+            Changes = JsonSerializer.Serialize(new { resource = resource?.Name, team = team?.Name, role = member.Role, allocationPercentage = member.AllocationPercentage }),
             NewValues = System.Text.Json.JsonSerializer.Serialize(dto),
             Timestamp = DateTime.UtcNow,
             CreatedBy = userId
         }, cancellationToken);
 
         var resultDto = member.ToDto();
-        resultDto.ResourceName = resource.Name;
-        resultDto.ResourceJobTitle = resource.JobTitle;
+        resultDto.ResourceName = resource?.Name ?? team?.Name ?? string.Empty;
+        resultDto.ResourceJobTitle = resource?.JobTitle;
+        resultDto.TeamName = team?.Name;
         return Result<ProjectMemberDto>.Success(resultDto);
     }
 
@@ -780,13 +963,10 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
         if (endDate.Date < startDate.Date)
             return Result<ProjectMemberDto>.Failure(Error.Validation("Project team end date cannot be earlier than its start date."));
 
-        var conflicts = await CheckResourceConflictsInternalAsync(member.ResourceId, startDate, endDate, allocationPercentage, memberId, cancellationToken);
-        if (conflicts.Count > 0)
-        {
-            var conflictDetails = conflicts.Select(c => $"{c.ProjectName ?? "Unknown"} ({c.AllocationPercentage}%)");
-            return Result<ProjectMemberDto>.Failure(Error.Validation(
-                $"Resource over-allocation detected: total would exceed 100%. Conflicting allocations: {string.Join(", ", conflictDetails)}"));
-        }
+        var conflicts = member.ResourceId.HasValue
+            ? await CheckResourceConflictsInternalAsync(member.ResourceId.Value, startDate, endDate, allocationPercentage, memberId, cancellationToken, projectId)
+            : await CheckTeamGroupConflictsInternalAsync(member.TeamId!.Value, projectId, startDate, endDate, allocationPercentage, memberId, cancellationToken);
+        if (conflicts.Count > 0) return ResourceAllocationConflict(conflicts);
 
         var beforeMemberValues = Snapshot(member);
         dto.UpdateEntity(member, userId);
@@ -807,10 +987,16 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
             CreatedBy = userId
         }, cancellationToken);
 
-        var resource = await _context.Set<Resource>().FirstOrDefaultAsync(r => r.Id == member.ResourceId && !r.IsDeleted, cancellationToken);
+        var resource = member.ResourceId.HasValue
+            ? await _context.Set<Resource>().FirstOrDefaultAsync(r => r.Id == member.ResourceId.Value && !r.IsDeleted, cancellationToken)
+            : null;
+        var team = member.TeamId.HasValue
+            ? await _context.Set<Team>().FirstOrDefaultAsync(item => item.Id == member.TeamId.Value && !item.IsDeleted, cancellationToken)
+            : null;
         var resultDto = member.ToDto();
-        resultDto.ResourceName = resource?.Name ?? "Unknown";
+        resultDto.ResourceName = resource?.Name ?? team?.Name ?? string.Empty;
         resultDto.ResourceJobTitle = resource?.JobTitle;
+        resultDto.TeamName = team?.Name;
         return Result<ProjectMemberDto>.Success(resultDto);
     }
 
@@ -849,59 +1035,86 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
             .Where(project => project.Id == member.ProjectId && project.TenantId == member.TenantId && !project.IsDeleted)
             .Select(project => project.SponsorId)
             .FirstOrDefaultAsync(cancellationToken);
-        return projectSponsorId.HasValue && await _context.Set<Resource>().AsNoTracking()
-            .AnyAsync(resource => resource.Id == member.ResourceId && resource.TenantId == member.TenantId
+        return member.ResourceId.HasValue && projectSponsorId.HasValue && await _context.Set<Resource>().AsNoTracking()
+            .AnyAsync(resource => resource.Id == member.ResourceId.Value && resource.TenantId == member.TenantId
                 && resource.UserId == projectSponsorId.Value && !resource.IsDeleted, cancellationToken);
     }
 
-    public async Task<Result<List<ProjectTeamMemberAllocationDto>>> CheckResourceConflictsAsync(Guid resourceId, DateTime startDate, DateTime endDate, decimal allocationPercentage, Guid? excludeMemberId, CancellationToken cancellationToken = default)
+    public async Task<Result<List<ProjectTeamMemberAllocationDto>>> CheckResourceConflictsAsync(Guid resourceId, DateTime startDate, DateTime endDate, decimal allocationPercentage, Guid? excludeMemberId, CancellationToken cancellationToken = default, Guid? projectId = null)
     {
-        var conflicts = await CheckResourceConflictsInternalAsync(resourceId, startDate, endDate, allocationPercentage, excludeMemberId, cancellationToken);
+        var conflicts = await CheckResourceConflictsInternalAsync(resourceId, startDate, endDate, allocationPercentage, excludeMemberId, cancellationToken, projectId);
         return Result<List<ProjectTeamMemberAllocationDto>>.Success(conflicts);
     }
 
-    private async Task<List<ProjectTeamMemberAllocationDto>> CheckResourceConflictsInternalAsync(Guid resourceId, DateTime startDate, DateTime endDate, decimal allocationPercentage, Guid? excludeMemberId, CancellationToken cancellationToken)
+    private async Task<List<ProjectTeamMemberAllocationDto>> CheckResourceConflictsInternalAsync(Guid resourceId, DateTime startDate, DateTime endDate, decimal allocationPercentage, Guid? excludeMemberId, CancellationToken cancellationToken, Guid? projectId = null)
     {
         var requestedStart = startDate.Date;
         var requestedEnd = endDate.Date;
-        var query = _context.Set<ProjectMember>()
-            .Include(m => m.Project)
-            .Where(m => m.ResourceId == resourceId && m.Status == "Active" && !m.IsDeleted);
+        var resource = await _context.Set<Resource>().AsNoTracking()
+            .FirstOrDefaultAsync(item => item.Id == resourceId && item.IsActive && !item.IsDeleted, cancellationToken);
+        if (resource is null) return new List<ProjectTeamMemberAllocationDto>();
 
-        if (excludeMemberId.HasValue)
-            query = query.Where(m => m.Id != excludeMemberId.Value);
-
-        var overlapping = await query
-            .Where(m => m.StartDate.Date <= requestedEnd && m.EndDate.Date >= requestedStart)
+        var activeTeamMemberships = await _context.Set<TeamMember>().AsNoTracking()
+            .Where(member => member.ResourceId == resourceId && member.IsActive && !member.IsDeleted
+                && member.EffectiveFrom.Date <= requestedEnd
+                && (!member.EffectiveTo.HasValue || member.EffectiveTo.Value.Date >= requestedStart))
+            .Select(member => new { member.TeamId, member.EffectiveFrom, member.EffectiveTo })
             .ToListAsync(cancellationToken);
+        var candidateTeamIds = activeTeamMemberships.Select(member => member.TeamId).Distinct().ToArray();
+        var activeTeamIds = await _context.Set<Team>().AsNoTracking()
+            .Where(team => candidateTeamIds.Contains(team.Id) && team.IsActive && !team.IsDeleted)
+            .Select(team => team.Id)
+            .ToArrayAsync(cancellationToken);
+        var activeTeamIdSet = activeTeamIds.ToHashSet();
+        activeTeamMemberships = activeTeamMemberships.Where(member => activeTeamIdSet.Contains(member.TeamId)).ToList();
 
-        // Membership dates are inclusive. The total changes on the requested
-        // start date or when another membership begins, so evaluate each such
-        // boundary instead of summing commitments from separate periods.
-        var conflictIds = new HashSet<Guid>();
-        var evaluationDates = overlapping
-            .Select(member => member.StartDate.Date)
-            .Where(date => date >= requestedStart && date <= requestedEnd)
-            .Append(requestedStart)
-            .Distinct();
+        var query = _context.Set<ProjectMember>().Include(member => member.Project)
+            .Where(member => member.Status == "Active" && !member.IsDeleted
+                && member.StartDate.Date <= requestedEnd && member.EndDate.Date >= requestedStart
+                && (member.ResourceId == resourceId || (member.TeamId.HasValue && activeTeamIds.Contains(member.TeamId.Value))));
+        if (excludeMemberId.HasValue) query = query.Where(member => member.Id != excludeMemberId.Value);
+        var rows = await query.ToListAsync(cancellationToken);
 
-        foreach (var date in evaluationDates)
+        var commitments = new List<(ProjectMember Member, DateTime Start, DateTime End)>();
+        foreach (var row in rows)
         {
-            var activeAtDate = overlapping.Where(member =>
-                member.StartDate.Date <= date && member.EndDate.Date >= date).ToList();
-            if (activeAtDate.Sum(member => member.AllocationPercentage) + allocationPercentage > 100m)
+            if (row.ResourceId == resourceId)
+                commitments.Add((row, row.StartDate.Date, row.EndDate.Date));
+            else if (row.TeamId is Guid teamId)
             {
-                foreach (var member in activeAtDate)
-                    conflictIds.Add(member.Id);
+                foreach (var teamMembership in activeTeamMemberships.Where(item => item.TeamId == teamId))
+                {
+                    var from = teamMembership.EffectiveFrom.Date > row.StartDate.Date ? teamMembership.EffectiveFrom.Date : row.StartDate.Date;
+                    var to = teamMembership.EffectiveTo.HasValue && teamMembership.EffectiveTo.Value.Date < row.EndDate.Date
+                        ? teamMembership.EffectiveTo.Value.Date : row.EndDate.Date;
+                    if (from <= to) commitments.Add((row, from, to));
+                }
             }
         }
 
-        return overlapping.Where(member => conflictIds.Contains(member.Id))
+        var evaluationDates = commitments.Select(item => item.Start).Where(date => date >= requestedStart && date <= requestedEnd)
+            .Append(requestedStart).Distinct().ToArray();
+        var conflictIds = new HashSet<Guid>();
+        foreach (var date in evaluationDates)
+        {
+            var activeAtDate = commitments.Where(item => item.Start <= date && item.End >= date).ToList();
+            var projectTotals = activeAtDate.GroupBy(item => item.Member.ProjectId)
+                .ToDictionary(group => group.Key, group => group.Max(item => item.Member.AllocationPercentage));
+            if (projectId.HasValue)
+                projectTotals[projectId.Value] = Math.Max(projectTotals.GetValueOrDefault(projectId.Value), allocationPercentage);
+            else
+                projectTotals[Guid.Empty] = allocationPercentage;
+            if (projectTotals.Values.Sum() > 100m)
+                foreach (var item in activeAtDate) conflictIds.Add(item.Member.Id);
+        }
+
+        return commitments.Select(item => item.Member).DistinctBy(member => member.Id)
+            .Where(member => conflictIds.Contains(member.Id))
             .Select(member => new ProjectTeamMemberAllocationDto
             {
                 AllocationId = member.Id,
-                ResourceId = member.ResourceId,
-                ResourceName = member.Project?.Name ?? "Unknown",
+                ResourceId = resourceId,
+                ResourceName = resource.Name,
                 ProjectName = member.Project?.Name ?? "Unknown",
                 Role = member.Role,
                 AllocationPercentage = member.AllocationPercentage,
@@ -911,7 +1124,30 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
                 Status = member.Status,
                 IsBillable = member.IsBillable,
                 Notes = ProjectSponsorMembershipSynchronizer.IsManagedMembership(member) ? null : member.Notes
-            })
-            .ToList();
+            }).ToList();
+    }
+
+    private async Task<List<ProjectTeamMemberAllocationDto>> CheckTeamGroupConflictsInternalAsync(
+        Guid teamId, Guid projectId, DateTime startDate, DateTime endDate, decimal allocationPercentage,
+        Guid? excludeMemberId, CancellationToken cancellationToken)
+    {
+        var resourceIds = await _context.Set<TeamMember>().AsNoTracking()
+            .Where(member => member.TeamId == teamId && member.IsActive && !member.IsDeleted
+                && member.EffectiveFrom.Date <= endDate.Date
+                && (!member.EffectiveTo.HasValue || member.EffectiveTo.Value.Date >= startDate.Date))
+            .Join(_context.Set<Resource>().AsNoTracking().Where(resource => resource.IsActive && !resource.IsDeleted),
+                membership => membership.ResourceId, resource => resource.Id, (membership, resource) => resource.Id)
+            .Distinct().ToListAsync(cancellationToken);
+        var conflicts = new List<ProjectTeamMemberAllocationDto>();
+        foreach (var resourceId in resourceIds)
+            conflicts.AddRange(await CheckResourceConflictsInternalAsync(resourceId, startDate, endDate, allocationPercentage, excludeMemberId, cancellationToken, projectId));
+        return conflicts.DistinctBy(conflict => new { conflict.ResourceId, conflict.AllocationId }).ToList();
+    }
+
+    private static Result<ProjectMemberDto> ResourceAllocationConflict(IReadOnlyCollection<ProjectTeamMemberAllocationDto> conflicts)
+    {
+        var detail = conflicts.Select(conflict => $"{conflict.ResourceName ?? "Unknown"}: {conflict.ProjectName ?? "Unknown"} ({conflict.AllocationPercentage}%)");
+        return Result<ProjectMemberDto>.Failure(Error.Validation(
+            $"Resource over-allocation detected: total would exceed 100%. Conflicting allocations: {string.Join(", ", detail)}"));
     }
 }

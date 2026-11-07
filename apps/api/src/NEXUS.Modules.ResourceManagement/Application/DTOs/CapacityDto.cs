@@ -107,6 +107,7 @@ public class ResourceAvailabilityDto
     public string? JobTitle { get; set; }
     public string? DepartmentName { get; set; }
     public decimal WeeklyCapacityHours { get; set; }
+    public bool HasCapacityData { get; set; }
     public decimal CurrentUtilization { get; set; }
     public decimal AvailableCapacityHours { get; set; }
     public DateTime? EarliestAvailableDate { get; set; }

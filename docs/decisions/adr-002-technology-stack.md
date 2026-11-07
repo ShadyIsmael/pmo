@@ -1,8 +1,8 @@
 # ADR-002: Technology Stack
 
-**Status:** Accepted  
-**Date:** 2025-01-15  
-**Author:** Architecture Team  
+> Historical record: Next.js references below describe the retired frontend and are kept only to preserve the original decision or implementation history. The supported frontend is apps/web-react (React, Vite, and React Router); these references are not build, deployment, agent, or audit targets.
+
+**Status:** Accepted (amended in parts)  \n**Date:** 2025-01-15  \n**Author:** Architecture Team  
 
 ---
 
@@ -26,7 +26,7 @@ Select the technology stack for NEXUS PMO that balances developer productivity, 
 
 | Technology | Decision | Justification |
 |------------|----------|--------------|
-| **Framework** | Next.js 14 (App Router) | Server Components reduce client bundle, excellent SSR/SSG, file-based routing, mature ecosystem |
+| **Framework** | React 18 + Vite + React Router (`apps/web-react`) | Supported frontend per ADR-009; SPA with route-based code splitting |
 | **Language** | TypeScript 5 | Type safety across frontend and backend (shared types), reduced runtime errors, excellent tooling |
 | **UI Library** | React 18 | Largest ecosystem, concurrent features, server components support |
 | **Component System** | shadcn/ui + Radix Primitives | Accessible, unstyled primitives with full Tailwind control; smaller bundle than MUI; consistent with Tailwind ecosystem |
@@ -42,10 +42,10 @@ Select the technology stack for NEXUS PMO that balances developer productivity, 
 
 | Technology | Decision | Justification |
 |------------|----------|--------------|
-| **Runtime** | .NET 8 | LTS support, excellent performance, mature ecosystem, native AOT option |
+| **Runtime** | .NET 10 LTS | LTS support, excellent performance, mature ecosystem |
 | **Framework** | ASP.NET Core 8 | Minimal API, middleware pipeline, dependency injection, excellent OpenAPI support |
 | **ORM** | Entity Framework Core 8 | Mature, LINQ provider, migrations, global query filters for multi-tenancy/soft delete |
-| **Database** | PostgreSQL 16 | JSON support, full-text search, excellent EF Core provider (Npgsql), strong ACID compliance, lower TCO than SQL Server |
+| **Database** | SQL Server 2022 | Strong EF Core provider, ACID compliance, tenant-scoped shared database |
 | **Caching** | Redis 7 | Distributed caching, pub/sub for real-time features, session storage, rate limiting |
 | **Authentication** | JWT Bearer (Microsoft.AspNetCore.Authentication.JwtBearer) | Stateless, scalable, standard, good library support |
 | **CQRS/Events** | MediatR | Decouples request/response pipeline, domain event handling pipeline behaviors for cross-cutting concerns (logging, validation) |
@@ -67,8 +67,7 @@ Select the technology stack for NEXUS PMO that balances developer productivity, 
 ### Positive
 - **TypeScript across stack** -- shared types package (`@nexus-pmo/shared-types`) ensures frontend/backend contract alignment
 - **Tailwind + shadcn/ui** -- rapid UI development with consistent design tokens, minimal CSS bloat
-- **Next.js App Router** -- natural code splitting, streaming SSR, SEO support
-- **EF Core + PostgreSQL** -- global query filters for multi-tenancy and soft delete at DB level
+- **React + Vite (apps/web-react)** -- supported frontend per ADR-009\n- **EF Core + SQL Server 2022** -- global query filters for multi-tenancy and soft delete at DB level
 - **JWT** -- stateless auth suitable for API-first and mobile clients
 - **MediatR** -- pipeline behaviors for cross-cutting concerns without polluting business logic
 
@@ -84,7 +83,7 @@ Select the technology stack for NEXUS PMO that balances developer productivity, 
 
 | Alternative | Reason for Rejection |
 |-------------|---------------------|
-| React + Vite (SPA) | No SSR, SEO challenges, larger initial bundle; Next.js provides better DX |
+| React + Vite (SPA) | Superseded: now the supported frontend (apps/web-react) per ADR-009 |
 | Angular | Heavier framework, steeper learning curve, less flexible styling |
 | Vue.js | Smaller ecosystem for enterprise tooling, fewer UI component libraries |
 | MySQL | Weaker EF Core support, fewer advanced features compared to PostgreSQL |

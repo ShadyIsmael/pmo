@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using NEXUS.Modules.AIPlanning.Application;
 
@@ -14,6 +15,7 @@ public class AIPlanningController : ControllerBase
         _aiPlanningService = aiPlanningService;
     }
 
+    [Authorize(Policy = "Planning.Edit")]
     [HttpPost("generate")]
     public async Task<IActionResult> GeneratePlan([FromBody] PlanGenerationCommand command, CancellationToken cancellationToken)
     {
@@ -22,6 +24,7 @@ public class AIPlanningController : ControllerBase
         return Ok(result.Value);
     }
 
+    [Authorize(Policy = "Planning.View")]
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
     {
@@ -30,6 +33,7 @@ public class AIPlanningController : ControllerBase
         return Ok(result.Value);
     }
 
+    [Authorize(Policy = "Planning.View")]
     [HttpGet]
     public async Task<IActionResult> GetPaged([FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken cancellationToken = default)
     {

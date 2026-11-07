@@ -1,15 +1,18 @@
 import { Link } from "react-router-dom";
-import { Coins, ListFilter, Tag, UsersRound, ArrowUpRight, Pencil, Plus, Trash2 } from "lucide-react";
+import { Coins, ListFilter, Tag, UsersRound, ArrowLeft, ArrowUpRight, Pencil, Plus, Trash2 } from "lucide-react";
 import { PageHeader } from "@components/layout/PageHeader";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@components/ui/Card";
 import { Button } from "@components/ui/Button";
 import { useConfirm } from "@components/ui/ConfirmProvider";
 import { Input } from "@components/ui/Input";
 import { Label } from "@components/ui/Label";
+import { ApiFieldError } from "@components/ui/ApiFieldError";
+import { ApiError, getApiFieldError } from "@api/client";
 import { useI18n } from "@i18n/messages";
-import { useCurrencies, useCreateCurrency, useUpdateCurrency, useDeleteCurrency, usePlatformSettings, useSavePlatformSettings, type CurrencyDto, type SaveCurrencyInput } from "./api/admin";
+import { useCurrencies, useCreateCurrency, useUpdateCurrency, useDeleteCurrency, type CurrencyDto, type SaveCurrencyInput } from "./api/admin";
 import { useAuth } from "@auth/AuthProvider";
 import { DirectoryAccessPermissions, hasAnyPermission, hasPermission, Permissions } from "@lib/permissions";
+import { brand } from "@lib/brand";
 import * as React from "react";
 
 export function ReferenceDataPage() {
@@ -38,19 +41,23 @@ export function ReferenceDataPage() {
 
 export function PlatformSettingsPage() {
   const { t } = useI18n();
-  const settings = usePlatformSettings(true);
-  const save = useSavePlatformSettings();
-  const [appName, setAppName] = React.useState("");
-  React.useEffect(() => {
-    if (settings.data?.["app.name"]) setAppName(settings.data["app.name"]);
-  }, [settings.data]);
   return (
     <div className="space-y-6">
       <PageHeader title={t("administration.settings.title")} description={t("administration.settings.description")} />
-      <Card><CardHeader><CardTitle>{t("administration.settings.general")}</CardTitle></CardHeader>
-        <CardContent className="space-y-3">
-          <div className="space-y-1.5"><Label>{t("administration.settings.appName")}</Label><Input value={appName} onChange={(e) => setAppName(e.target.value)} /></div>
-          <Button disabled={save.isPending} onClick={() => save.mutate({ "app.name": appName })}>{t("common.save")}</Button>
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("administration.settings.generalTitle")}</CardTitle>
+          <CardDescription>{t("administration.settings.officialIdentityDescription")}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <dl className="grid gap-x-8 gap-y-5 sm:grid-cols-2">
+            <div className="space-y-1"><dt className="text-sm text-muted-foreground">{t("administration.settings.parentCompany")}</dt><dd className="text-sm font-medium">{brand.company.name}</dd></div>
+            <div className="space-y-1"><dt className="text-sm text-muted-foreground">{t("administration.settings.product")}</dt><dd className="text-sm font-medium">{brand.product.name}</dd></div>
+            <div className="space-y-1"><dt className="text-sm text-muted-foreground">{t("administration.settings.fullProductName")}</dt><dd className="text-sm font-medium">{brand.product.fullName}</dd></div>
+            <div className="space-y-1"><dt className="text-sm text-muted-foreground">{t("administration.settings.tagline")}</dt><dd className="text-sm font-medium">{brand.product.tagline}</dd></div>
+            <div className="space-y-1"><dt className="text-sm text-muted-foreground">{t("administration.settings.productDescription")}</dt><dd className="text-sm font-medium">{brand.product.description}</dd></div>
+            <div className="space-y-1"><dt className="text-sm text-muted-foreground">{t("administration.settings.intendedDomain")}</dt><dd className="text-sm font-medium">{brand.product.intendedDomain}</dd></div>
+          </dl>
         </CardContent>
       </Card>
     </div>
@@ -102,7 +109,9 @@ export function CurrenciesPage() {
   const { t } = useI18n();
   const confirm = useConfirm();
   const { user } = useAuth();
-  const canManage = Boolean(user && hasPermission(user.permissions, Permissions.Settings.Write));
+  const canCreate = Boolean(user && hasPermission(user.permissions, Permissions.ReferenceData.Create));
+  const canEdit = Boolean(user && hasPermission(user.permissions, Permissions.ReferenceData.Edit));
+  const canDelete = Boolean(user && hasPermission(user.permissions, Permissions.ReferenceData.Delete));
   const query = useCurrencies(true);
   const create = useCreateCurrency();
   const update = useUpdateCurrency();
@@ -111,6 +120,7 @@ export function CurrenciesPage() {
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [draft, setDraft] = React.useState<SaveCurrencyInput>({ code: "", name: "", symbol: "", isBase: false });
   const [formError, setFormError] = React.useState<string | null>(null);
+  const [apiError, setApiError] = React.useState<unknown>(null);
   const [actionError, setActionError] = React.useState<string | null>(null);
   const submitInFlight = React.useRef(false);
   const isSaving = create.isPending || update.isPending;
@@ -121,6 +131,7 @@ export function CurrenciesPage() {
     setEditingId(null);
     setDraft({ code: "", name: "", symbol: "", isBase: false });
     setFormError(null);
+    setApiError(null);
     setActionError(null);
   }
   function beginEdit(currency: CurrencyDto) {
@@ -128,6 +139,7 @@ export function CurrenciesPage() {
     setEditingId(currency.id);
     setDraft({ code: currency.code, name: currency.name, symbol: currency.symbol, isBase: currency.isBase });
     setFormError(null);
+    setApiError(null);
     setActionError(null);
   }
   function cancelEdit() {
@@ -135,52 +147,55 @@ export function CurrenciesPage() {
     setEditingId(null);
     setDraft({ code: "", name: "", symbol: "", isBase: false });
     setFormError(null);
+    setApiError(null);
   }
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!canManage || submitInFlight.current) return;
+    if ((editingId ? !canEdit : !canCreate) || submitInFlight.current) return;
     submitInFlight.current = true;
     setFormError(null);
+    setApiError(null);
     const input = { ...draft, code: draft.code.trim().toUpperCase(), name: draft.name.trim(), symbol: draft.symbol.trim() };
     try {
       if (editingId) await update.mutateAsync({ id: editingId, input });
       else await create.mutateAsync(input);
       cancelEdit();
     } catch (error) {
-      setFormError(error instanceof Error ? error.message : t("administration.currencies.saveError"));
+      setApiError(error);
+      setFormError(error instanceof ApiError ? error.message : t("administration.currencies.saveError"));
     } finally {
       submitInFlight.current = false;
     }
   }
   async function handleDelete(currency: CurrencyDto) {
-    if (currency.isBase || !canManage || !await confirm({ description: t("administration.currencies.deleteConfirm", { code: currency.code }), destructive: true })) return;
+    if (currency.isBase || !canDelete || !await confirm({ description: t("administration.currencies.deleteConfirm", { code: currency.code }), destructive: true })) return;
     setActionError(null);
     try {
       await remove.mutateAsync(currency.id);
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : t("administration.currencies.deleteError"));
+      setActionError(error instanceof ApiError ? error.message : t("administration.currencies.deleteError"));
     }
   }
 
   return (
     <div className="space-y-6">
-      <PageHeader title={t("administration.currencies.title")} description={t("administration.currencies.description")} actions={canManage ? <Button size="sm" onClick={beginCreate}><Plus className="me-2 h-4 w-4" />{t("administration.currencies.add")}</Button> : undefined} />
+      <PageHeader title={t("administration.currencies.title")} description={t("administration.currencies.description")} actions={<div className="flex items-center gap-2"><Button asChild size="sm" variant="outline" className="whitespace-nowrap text-xs inline-flex items-center gap-1.5"><Link to="/administration/reference-data"><ArrowLeft className="me-2 h-4 w-4 rtl:rotate-180" />{t("administration.areas.referenceData.back")}</Link></Button>{canCreate ? <Button size="sm" onClick={beginCreate}><Plus className="me-2 h-4 w-4" />{t("administration.currencies.add")}</Button> : undefined}</div>} />
       {isFormOpen ? <Card>
         <CardHeader><CardTitle className="text-base">{editingId ? t("administration.currencies.edit") : t("administration.currencies.add")}</CardTitle><CardDescription>{t("administration.currencies.formDescription")}</CardDescription></CardHeader>
         <CardContent><form className="grid gap-4 md:grid-cols-4" onSubmit={(event) => void handleSubmit(event)}>
-          <div className="space-y-2"><Label htmlFor="currency-code">{t("administration.currencies.code")}</Label><Input id="currency-code" value={draft.code} maxLength={3} onChange={(event) => setDraft((current) => ({ ...current, code: event.target.value.toUpperCase() }))} required /></div>
-          <div className="space-y-2"><Label htmlFor="currency-name">{t("administration.currencies.name")}</Label><Input id="currency-name" value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} required /></div>
-          <div className="space-y-2"><Label htmlFor="currency-symbol">{t("administration.currencies.symbol")}</Label><Input id="currency-symbol" value={draft.symbol} onChange={(event) => setDraft((current) => ({ ...current, symbol: event.target.value }))} required /></div>
+          <div className="space-y-2"><Label htmlFor="currency-code">{t("administration.currencies.code")}</Label><Input id="currency-code" value={draft.code} maxLength={3} aria-invalid={Boolean(getApiFieldError(apiError, "code"))} aria-describedby={getApiFieldError(apiError, "code") ? "currency-code-error" : undefined} onChange={(event) => setDraft((current) => ({ ...current, code: event.target.value.toUpperCase() }))} required /><ApiFieldError id="currency-code-error" error={apiError} fieldName="code" /></div>
+          <div className="space-y-2"><Label htmlFor="currency-name">{t("administration.currencies.name")}</Label><Input id="currency-name" value={draft.name} aria-invalid={Boolean(getApiFieldError(apiError, "name"))} aria-describedby={getApiFieldError(apiError, "name") ? "currency-name-error" : undefined} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} required /><ApiFieldError id="currency-name-error" error={apiError} fieldName="name" /></div>
+          <div className="space-y-2"><Label htmlFor="currency-symbol">{t("administration.currencies.symbol")}</Label><Input id="currency-symbol" value={draft.symbol} aria-invalid={Boolean(getApiFieldError(apiError, "symbol"))} aria-describedby={getApiFieldError(apiError, "symbol") ? "currency-symbol-error" : undefined} onChange={(event) => setDraft((current) => ({ ...current, symbol: event.target.value }))} required /><ApiFieldError id="currency-symbol-error" error={apiError} fieldName="symbol" /></div>
           <label htmlFor="currency-base" className="flex items-center gap-3 pt-7"><input id="currency-base" type="checkbox" checked={draft.isBase} onChange={(event) => setDraft((current) => ({ ...current, isBase: event.target.checked }))} className="h-4 w-4 accent-primary" /><span className="text-sm">{t("administration.currencies.baseCurrency")}</span></label>
           {formError ? <p role="alert" className="text-sm text-destructive md:col-span-4">{formError}</p> : null}
-          <div className="flex gap-2 md:col-span-4"><Button type="submit" disabled={isSaving}>{isSaving ? t("administration.currencies.saving") : t("administration.currencies.save")}</Button><Button type="button" variant="outline" onClick={cancelEdit} disabled={isSaving}>{t("administration.currencies.cancel")}</Button></div>
+          <div className="flex gap-2 md:col-span-4"><Button type="submit" disabled={isSaving || (editingId ? !canEdit : !canCreate)}>{isSaving ? t("administration.currencies.saving") : t("administration.currencies.save")}</Button><Button type="button" variant="outline" onClick={cancelEdit} disabled={isSaving}>{t("administration.currencies.cancel")}</Button></div>
         </form></CardContent>
       </Card> : null}
       <Card><CardHeader><CardTitle className="text-base">{t("administration.currencies.listTitle")}</CardTitle></CardHeader><CardContent>
         {actionError ? <p role="alert" className="mb-3 text-sm text-destructive">{actionError}</p> : null}
         {query.isLoading ? <div className="py-8 text-center text-sm text-muted-foreground">{t("common.loading")}</div> : query.isError ? <div className="flex flex-col items-center gap-3 py-8 text-center"><p role="alert" className="text-sm text-destructive">{t("common.errorLoading")}</p><Button type="button" size="sm" variant="outline" onClick={() => void query.refetch()}>{t("administration.workItemStatuses.retry")}</Button></div> : currencies.length > 0 ? <div className="space-y-2">{currencies.map((currency) => <div key={currency.id} className="flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-center gap-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-muted text-sm font-semibold"><Coins className="h-4 w-4" /></div><div className="min-w-0"><p className="truncate text-sm font-medium">{currency.code} · {currency.name}</p><p className="mt-1 text-xs text-muted-foreground">{currency.symbol}{currency.isBase ? ` · ${t("administration.currencies.baseCurrency")}` : ""}</p></div></div>
-          {canManage ? <div className="flex items-center gap-2"><Button type="button" size="sm" variant="outline" onClick={() => beginEdit(currency)} disabled={isSaving || remove.isPending}><Pencil className="me-1.5 h-3.5 w-3.5" />{t("administration.currencies.edit")}</Button><Button type="button" size="icon" variant="ghost" disabled={currency.isBase || remove.isPending} onClick={() => void handleDelete(currency)} aria-label={`${t("administration.currencies.delete")} ${currency.code}`} title={t("administration.currencies.delete")}><Trash2 className="h-4 w-4 text-destructive" /></Button></div> : null}
+          {canEdit || canDelete ? <div className="flex items-center gap-2">{canEdit ? <Button type="button" size="sm" variant="outline" onClick={() => beginEdit(currency)} disabled={isSaving || remove.isPending}><Pencil className="me-1.5 h-3.5 w-3.5" />{t("administration.currencies.edit")}</Button> : null}{canDelete ? <Button type="button" size="icon" variant="ghost" disabled={currency.isBase || remove.isPending} onClick={() => void handleDelete(currency)} aria-label={`${t("administration.currencies.delete")} ${currency.code}`} title={t("administration.currencies.delete")}><Trash2 className="h-4 w-4 text-destructive" /></Button> : null}</div> : null}
         </div>)}</div> : <p className="py-8 text-center text-sm text-muted-foreground">{t("administration.currencies.empty")}</p>}
       </CardContent></Card>
     </div>

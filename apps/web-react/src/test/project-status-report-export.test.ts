@@ -2,6 +2,8 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { buildProjectStatusReportDocument, buildProjectStatusReportWorkbook, exportProjectStatusReportPdf, projectStatusReportExcelFilename, projectStatusReportPdfFilename } from "@lib/export/project-status-report-export";
+import { formatCurrencyValue } from "@lib/formatting/currency";
+import arMessages from "../i18n/messages/ar.json";
 import type { ProjectStatusReportDto } from "@features/projects/api/projects";
 
 const report: ProjectStatusReportDto = {
@@ -63,9 +65,9 @@ describe("project status report PDF document", () => {
     expect(document.rtl).toBe(true);
     const serialized = JSON.stringify(document);
     expect(serialized).toContain("تقرير حالة المشروع");
-    expect(serialized).toContain("أداء الخطط");
-    expect(serialized).toContain("$100,000.00");
-    const reportDate = serialized.match(/تاريخ التقرير: ([^"]+)/)?.[1];
+    expect(serialized).toContain(arMessages.projects.reporting.sections.planPerformance);
+    expect(serialized).toContain(formatCurrencyValue(100000, "USD", "ar", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+    const reportDate = new Intl.DateTimeFormat("ar-EG-u-nu-latn", { dateStyle: "medium", timeZone: "UTC" }).format(new Date(report.reportDate));
     expect(reportDate).toContain("30");
     expect(reportDate).toContain("2026");
     expect(reportDate).not.toMatch(/[٠-٩]/);

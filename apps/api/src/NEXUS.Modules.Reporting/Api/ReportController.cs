@@ -6,7 +6,7 @@ namespace NEXUS.Modules.Reporting.Api;
 
 [ApiController]
 [Route("api/reports")]
-[Authorize]
+[Authorize(Policy = "Report.View")]
 public class ReportController : ControllerBase
 {
     private readonly IReportService _reportService;

@@ -25,6 +25,7 @@ export type MeetingDraftError =
   | "endRequired"
   | "organizerRequired"
   | "emailInvalid"
+  | "meetingLinkInvalid"
   | "displayNameTooLong"
   | "duplicateAttendees"
   | "endAfterStart";
@@ -94,11 +95,19 @@ export function validateMeetingDraft(draft: MeetingDraft): MeetingDraftError | n
   const end = new Date(draft.endTime).getTime();
   if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return "endAfterStart";
   if (!draft.organizerId) return "organizerRequired";
+  if (draft.meetingLink.trim()) {
+    try {
+      const meetingUrl = new URL(draft.meetingLink.trim());
+      if ((meetingUrl.protocol !== "http:" && meetingUrl.protocol !== "https:") || !meetingUrl.hostname) return "meetingLinkInvalid";
+    } catch {
+      return "meetingLinkInvalid";
+    }
+  }
 
   const attendeeKeys = new Set<string>();
   for (const attendee of draft.attendees) {
     const email = attendee.email.trim();
-    if (!isValidMeetingEmail(email)) return "emailInvalid";
+    if (!attendee.userId && !isValidMeetingEmail(email)) return "emailInvalid";
     if ((attendee.displayName?.length ?? 0) > 200) return "displayNameTooLong";
     const key = attendee.userId ? `user:${attendee.userId}` : `email:${email.toLocaleLowerCase()}`;
     if (attendeeKeys.has(key)) return "duplicateAttendees";

@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using NEXUS.Modules.Notifications.Domain;
+using NEXUS.Modules.Organization.Domain;
 
 namespace NEXUS.Persistence.Configurations;
 
@@ -11,6 +12,10 @@ public sealed class NotificationConfiguration : IEntityTypeConfiguration<Notific
         builder.ToTable("Notifications");
         // Existing persisted notifications remain visible in the Notification Center.
         builder.Property(item => item.IsInAppVisible).HasDefaultValue(true);
+        builder.HasOne<Organization>().WithMany()
+            .HasForeignKey(item => new { item.TenantId, item.OrganizationId })
+            .HasPrincipalKey(organization => new { organization.TenantId, organization.Id })
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }
 

@@ -8,7 +8,6 @@ const tabs = [
   { id: "resource" as const, label: "Resource" },
   { id: "project" as const, label: "Project" },
   { id: "view" as const, label: "View" },
-  { id: "format" as const, label: "Format" },
   { id: "report" as const, label: "Report" },
 ];
 

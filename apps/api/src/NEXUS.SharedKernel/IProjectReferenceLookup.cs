@@ -1,6 +1,6 @@
 namespace NEXUS.SharedKernel;
 
-public sealed record ProjectReference(Guid Id, string Name, string Currency = "GBP", decimal? CurrentApprovedProjectBudget = null, Guid PublicId = default);
+public sealed record ProjectReference(Guid Id, string Name, string Currency = "", decimal? CurrentApprovedProjectBudget = null, Guid PublicId = default, string? Code = null);
 
 public interface IProjectReferenceLookup
 {

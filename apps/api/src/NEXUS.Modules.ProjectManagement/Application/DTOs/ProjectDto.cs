@@ -1,4 +1,5 @@
 using NEXUS.Modules.ProjectManagement.Domain;
+using System.Text.Json.Serialization;
 
 namespace NEXUS.Modules.ProjectManagement.Application.DTOs;
 
@@ -51,7 +52,10 @@ public class ProjectMemberDto
 {
     public Guid Id { get; set; }
     public Guid ProjectId { get; set; }
-    public Guid ResourceId { get; set; }
+    public Guid? ResourceId { get; set; }
+    public Guid? TeamId { get; set; }
+    public string? TeamName { get; set; }
+    public string MemberType { get; set; } = "Resource";
     public string ResourceName { get; set; } = string.Empty;
     public string? ResourceJobTitle { get; set; }
     public string Role { get; set; } = string.Empty;
@@ -83,6 +87,8 @@ public class CreateProjectDto
     public DateTime? StartDate { get; set; }
     public DateTime? EndDate { get; set; }
     public decimal? Budget { get; set; }
+    /// <summary>Optional initial Draft allocation for the tenant's current Fiscal Year. It is never approved during Project creation.</summary>
+    public decimal? InitialAnnualBudgetAmount { get; set; }
     public string? Currency { get; set; }
     public string? BusinessCase { get; set; }
     public string? Notes { get; set; }
@@ -92,6 +98,8 @@ public class CreateProjectDto
 
 public class UpdateProjectDto
 {
+    private Guid? _projectManagerId;
+
     public string? Name { get; set; }
     public string? Code { get; set; }
     public string? Description { get; set; }
@@ -99,7 +107,17 @@ public class UpdateProjectDto
     public string? Status { get; set; }
     public string? Priority { get; set; }
     public string? Category { get; set; }
-    public Guid? ProjectManagerId { get; set; }
+    public Guid? ProjectManagerId
+    {
+        get => _projectManagerId;
+        set
+        {
+            _projectManagerId = value;
+            ProjectManagerIdWasProvided = true;
+        }
+    }
+    [JsonIgnore]
+    public bool ProjectManagerIdWasProvided { get; private set; }
     public Guid? SponsorId { get; set; }
     public bool ClearSponsor { get; set; }
     public Guid? PortfolioId { get; set; }
@@ -147,7 +165,9 @@ public class ProjectManagerHistoryDto
 public class CreateProjectMemberDto
 {
     public Guid ProjectId { get; set; }
-    public Guid ResourceId { get; set; }
+    public Guid? ResourceId { get; set; }
+    public Guid? TeamId { get; set; }
+    public string? TeamName { get; set; }
     public string Role { get; set; } = string.Empty;
     public decimal AllocationPercentage { get; set; }
     public decimal? HoursPerWeek { get; set; }

@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "../i18n/messages";
 import arMessages from "../i18n/messages/ar.json";
+import { formatDateTime } from "../lib/utils";
 import { ProjectMembersTab } from "../features/projects/ProjectMembersTab";
 
 const fixtures = vi.hoisted(() => ({
@@ -31,12 +32,13 @@ const fixtures = vi.hoisted(() => ({
     { id: "role-secondary", code: "ANALYST", nameEn: "Business Analyst", nameAr: "محلل أعمال", isActive: true, displayOrder: 2 },
   ],
   updatePerson: vi.fn(),
+  addPerson: vi.fn(),
   peopleQuery: vi.fn(),
   peopleQueryError: false,
   refetchPeople: vi.fn(),
   resourceQueries: vi.fn(),
-  permissions: ["Resource.Assign", "Stakeholders.Read", "Stakeholders.Manage"] as string[],
-  invitation: null as null | { status: string; expiresAt: string; invitationUrl: string },
+  permissions: ["Project.View", "Resource.View", "Resource.Assign", "Stakeholders.Read", "Stakeholders.Manage"] as string[],
+  invitation: null as null | { status: string; expiresAt: string; invitationUrl: string; emailDeliveryStatus: string },
   invitationError: null as Error | null,
   sendInvitation: vi.fn(),
   revokeInvitation: vi.fn(),
@@ -47,7 +49,7 @@ vi.mock("@features/projects/api/projects", () => ({
     fixtures.peopleQuery(projectId, enabled);
     return { data: fixtures.people, isLoading: false, isError: fixtures.peopleQueryError, refetch: fixtures.refetchPeople };
   },
-  useAddProjectPerson: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useAddProjectPerson: () => ({ mutateAsync: fixtures.addPerson, isPending: false }),
   useRemoveProjectPerson: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUpdateProjectPerson: () => ({ mutateAsync: fixtures.updatePerson, isPending: false }),
   useClearProjectSponsor: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -59,6 +61,22 @@ vi.mock("@features/resources/api/resources", () => ({
     fixtures.resourceQueries(params, enabled);
     return { data: { items: [] }, isLoading: false };
   },
+  useResourceReferenceData: () => ({ data: undefined, isLoading: true, isError: false, refetch: vi.fn() }),
+}));
+
+vi.mock("@features/resources/api/capacity", () => ({
+  useResourceAvailability: () => ({ data: undefined, isLoading: false, isError: false }),
+}));
+
+vi.mock("@features/teams/api/teams", () => ({
+  useTeams: (_params: unknown, enabled: boolean) => ({
+    data: enabled ? { items: [{ id: "team-1", name: "Delivery Team", code: "TEAM-1", isActive: true, memberCount: 1, members: [] }] } : { items: [] },
+    isLoading: false,
+  }),
+}));
+
+vi.mock("@features/projects/api/project-team-contact", () => ({
+  useProjectTeamContactResource: () => ({ data: undefined, isLoading: false, isError: false, refetch: vi.fn() }),
 }));
 
 vi.mock("@features/administration/api/admin", () => ({
@@ -86,18 +104,19 @@ function ProjectOutlet() {
 describe("project members table parity", () => {
   beforeEach(() => {
     window.localStorage.setItem("nexus-locale", "en");
-    fixtures.permissions = ["Resource.Assign", "Stakeholders.Read", "Stakeholders.Manage"];
+    fixtures.permissions = ["Project.View", "Resource.View", "Resource.Assign", "Stakeholders.Read", "Stakeholders.Manage"];
     fixtures.peopleQuery.mockReset();
     fixtures.peopleQueryError = false;
     fixtures.refetchPeople.mockReset();
     fixtures.resourceQueries.mockReset();
-    Object.assign(fixtures.people[0], { source: "TeamMember", relationshipType: "TeamMember", status: "Active", hasSystemUser: true, email: "alex@example.com" });
+    Object.assign(fixtures.people[0], { resourceId: "resource-1", source: "TeamMember", relationshipType: "TeamMember", role: undefined, status: "Active", hasSystemUser: true, email: "alex@example.com" });
     fixtures.people[0]!.functionalRoles = [];
     fixtures.invitation = null;
     fixtures.invitationError = null;
     fixtures.sendInvitation.mockReset().mockResolvedValue({});
     fixtures.revokeInvitation.mockReset().mockResolvedValue({});
     fixtures.updatePerson.mockReset().mockResolvedValue({});
+    fixtures.addPerson.mockReset().mockResolvedValue({});
   });
 
   it("shows the source relationship, resource, system-user, allocation, status and action columns", () => {
@@ -180,8 +199,8 @@ describe("project members table parity", () => {
     expect(fixtures.peopleQuery).toHaveBeenCalledWith("project-1", false);
   });
 
-  it("allows stakeholder readers to view people without showing management actions", () => {
-    fixtures.permissions = ["Stakeholders.Read"];
+  it("allows Project.View to load people without showing management actions", () => {
+    fixtures.permissions = ["Project.View"];
     render(
       <I18nProvider>
         <MemoryRouter initialEntries={["/projects/project-1/members"]}>
@@ -196,9 +215,178 @@ describe("project members table parity", () => {
 
     expect(screen.getByText("Alex Rivera")).toBeInTheDocument();
     expect(screen.queryByRole("columnheader", { name: "Actions" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "View contact card" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Add person to project" })).not.toBeInTheDocument();
     expect(screen.queryByText("Project People viewing permission is required")).not.toBeInTheDocument();
     expect(fixtures.peopleQuery).toHaveBeenCalledWith("project-1", true);
+  });
+
+  it("does not let Stakeholders.Read substitute for the Project.View API permission", () => {
+    fixtures.permissions = ["Stakeholders.Read"];
+    render(
+      <I18nProvider>
+        <MemoryRouter initialEntries={["/projects/project-1/members"]}>
+          <Routes>
+            <Route path="/projects/:id" element={<ProjectOutlet />}>
+              <Route path="members" element={<ProjectMembersTab />} />
+            </Route>
+          </Routes>
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+
+    expect(screen.getByText("Project People viewing permission is required")).toBeInTheDocument();
+    expect(fixtures.peopleQuery).toHaveBeenCalledWith("project-1", false);
+  });
+
+  it("does not expose stakeholder invitations to Resource assignment permission alone", () => {
+    Object.assign(fixtures.people[0], { source: "Stakeholder", relationshipType: "Stakeholder", hasSystemUser: false, email: "external@example.com" });
+    fixtures.permissions = ["Project.View", "Resource.Assign"];
+    render(
+      <I18nProvider>
+        <MemoryRouter initialEntries={["/projects/project-1/members"]}>
+          <Routes>
+            <Route path="/projects/:id" element={<ProjectOutlet />}>
+              <Route path="members" element={<ProjectMembersTab />} />
+            </Route>
+          </Routes>
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+
+    expect(screen.queryByRole("button", { name: /invite/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("columnheader", { name: "Actions" })).not.toBeInTheDocument();
+  });
+
+  it("does not expose Project Team edits to a stakeholder manager", () => {
+    fixtures.permissions = ["Project.View", "Stakeholders.Manage"];
+    render(
+      <I18nProvider>
+        <MemoryRouter initialEntries={["/projects/project-1/members"]}>
+          <Routes>
+            <Route path="/projects/:id" element={<ProjectOutlet />}>
+              <Route path="members" element={<ProjectMembersTab />} />
+            </Route>
+          </Routes>
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+
+    expect(screen.queryByRole("button", { name: "Edit Project Relationship" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Remove from Project" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Add person to project" })).not.toBeInTheDocument();
+  });
+
+  it("defaults stakeholder managers with Resource.View to stakeholder-only relationships", () => {
+    fixtures.permissions = ["Project.View", "Resource.View", "Stakeholders.Manage"];
+    render(
+      <I18nProvider>
+        <MemoryRouter initialEntries={["/projects/project-1/members"]}>
+          <Routes>
+            <Route path="/projects/:id" element={<ProjectOutlet />}>
+              <Route path="members" element={<ProjectMembersTab />} />
+            </Route>
+          </Routes>
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Add Person" }));
+    const sheet = screen.getByRole("dialog", { name: "Add Person" });
+    const relationshipSelect = sheet.querySelector<HTMLSelectElement>("select");
+    expect(relationshipSelect).toHaveValue("Stakeholder");
+    expect(within(sheet).queryByRole("option", { name: "Team Member" })).not.toBeInTheDocument();
+    expect(within(sheet).getByRole("option", { name: "Stakeholder" })).toBeInTheDocument();
+  });
+
+  it("shows the contact-card action to Resource viewers without granting edit actions", () => {
+    fixtures.permissions = ["Project.View", "Resource.View", "Stakeholders.Read"];
+    render(
+      <I18nProvider>
+        <MemoryRouter initialEntries={["/projects/project-1/members"]}>
+          <Routes>
+            <Route path="/projects/:id" element={<ProjectOutlet />}>
+              <Route path="members" element={<ProjectMembersTab />} />
+            </Route>
+          </Routes>
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+
+    expect(screen.getByRole("button", { name: "View contact card" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Edit Project Relationship" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Remove from Project" })).not.toBeInTheDocument();
+  });
+
+  it("shows the contact card for the project manager, including a manager without a linked Resource", () => {
+    Object.assign(fixtures.people[0], {
+      resourceId: null,
+      source: "Governance",
+      relationshipType: "ProjectManager",
+      role: "ProjectManager",
+      hasSystemUser: true,
+      resourceType: "System User",
+      email: "alex@example.com",
+    });
+    fixtures.permissions = ["Project.View", "Resource.View", "Stakeholders.Read"];
+
+    render(
+      <I18nProvider>
+        <MemoryRouter initialEntries={["/projects/project-1/members"]}>
+          <Routes>
+            <Route path="/projects/:id" element={<ProjectOutlet />}>
+              <Route path="members" element={<ProjectMembersTab />} />
+            </Route>
+          </Routes>
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+
+    const managerRow = screen.getByText("Alex Rivera").closest("tr");
+    expect(managerRow).not.toBeNull();
+    expect(within(managerRow!).getByText("Project Manager")).toBeInTheDocument();
+    expect(within(managerRow!).getByText("System User")).toBeInTheDocument();
+    expect(within(managerRow!).getByText("Yes")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "View contact card" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Contact card" });
+    expect(within(dialog).getByText("Alex Rivera")).toBeInTheDocument();
+    expect(within(dialog).getByRole("link", { name: "alex@example.com" })).toHaveAttribute("href", "mailto:alex@example.com");
+    expect(within(dialog).getByText("No Resource profile is linked to this project person, so administrative and vendor details are unavailable.")).toBeInTheDocument();
+    expect(within(dialog).getByText("System user")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Edit Project Relationship" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Remove from Project" })).not.toBeInTheDocument();
+  });
+
+  it("shows the sponsor contact card without offering a sponsor deletion action", () => {
+    Object.assign(fixtures.people[0], {
+      resourceId: "resource-sponsor",
+      source: "Governance",
+      relationshipType: "Sponsor",
+      role: "Sponsor",
+      hasSystemUser: true,
+      email: "alex@example.com",
+    });
+    fixtures.permissions = ["Project.View", "Resource.View", "Stakeholders.Read", "Stakeholders.Manage"];
+
+    render(
+      <I18nProvider>
+        <MemoryRouter initialEntries={["/projects/project-1/members"]}>
+          <Routes>
+            <Route path="/projects/:id" element={<ProjectOutlet />}>
+              <Route path="members" element={<ProjectMembersTab />} />
+            </Route>
+          </Routes>
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+
+    const sponsorRow = screen.getByText("Alex Rivera").closest("tr");
+    expect(within(sponsorRow!).getByRole("button", { name: "View contact card" })).toBeInTheDocument();
+    expect(within(sponsorRow!).queryByRole("button", { name: "Remove Sponsor relationship" })).not.toBeInTheDocument();
+    expect(within(sponsorRow!).queryByRole("button", { name: "Remove from Project" })).not.toBeInTheDocument();
+    expect(within(sponsorRow!).queryByRole("button", { name: "Edit Project Relationship" })).not.toBeInTheDocument();
   });
 
   it("shows a retry action when project people fail to load", () => {
@@ -234,7 +422,8 @@ describe("project members table parity", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Add Person" }));
-    fireEvent.click(screen.getAllByRole("combobox")[0]!);
+    const sheet = screen.getByRole("dialog", { name: "Add Person" });
+    fireEvent.click(sheet.querySelector<HTMLButtonElement>('button[role="combobox"]')!);
     fireEvent.change(screen.getByPlaceholderText("Search Resource Management..."), { target: { value: "Morgan" } });
 
     await waitFor(() => expect(fixtures.resourceQueries).toHaveBeenLastCalledWith(
@@ -259,9 +448,62 @@ describe("project members table parity", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add Person" }));
 
     const sheet = screen.getByRole("dialog", { name: "Add Person" });
-    expect(within(sheet).getByText("Assign existing Resources to project relationships.")).toBeInTheDocument();
+    expect(within(sheet).getByText("Assign existing Resources or reusable Teams to project relationships.")).toBeInTheDocument();
     fireEvent.click(within(sheet).getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("dialog", { name: "Add Person" })).not.toBeInTheDocument();
+  });
+
+  it("adds a reusable Team as a project group when the actor can view Teams", async () => {
+    fixtures.permissions = ["Project.View", "Resource.View", "Resource.Assign", "Team.View", "Stakeholders.Read", "Stakeholders.Manage"];
+    render(
+      <I18nProvider>
+        <MemoryRouter initialEntries={["/projects/project-1/members"]}>
+          <Routes>
+            <Route path="/projects/:id" element={<ProjectOutlet />}>
+              <Route path="members" element={<ProjectMembersTab />} />
+            </Route>
+          </Routes>
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Add Person" }));
+    const sheet = screen.getByRole("dialog", { name: "Add Person" });
+    fireEvent.change(sheet.querySelectorAll<HTMLSelectElement>("select")[0]!, { target: { value: "team" } });
+    fireEvent.click(sheet.querySelector<HTMLButtonElement>('button[role="combobox"]')!);
+    fireEvent.click(await screen.findByRole("option", { name: "Delivery Team" }));
+    fireEvent.change(within(sheet).getByRole("spinbutton"), { target: { value: "50" } });
+    const dates = sheet.querySelectorAll<HTMLInputElement>('input[placeholder="dd/mm/yyyy"]');
+    fireEvent.change(dates[1]!, { target: { value: "2027-01-01" } });
+    fireEvent.submit(sheet.querySelector("form")!);
+
+    await waitFor(() => expect(fixtures.addPerson).toHaveBeenCalledWith(expect.objectContaining({
+      resourceId: undefined,
+      teamId: "team-1",
+      relationshipType: "TeamMember",
+      allocationPercentage: 50,
+      endDate: "2027-01-01",
+    })));
+  });
+
+  it("does not allow a Team target without Team.View even when the actor can assign Resources", () => {
+    fixtures.permissions = ["Project.View", "Resource.Assign"];
+    render(
+      <I18nProvider>
+        <MemoryRouter initialEntries={["/projects/project-1/members"]}>
+          <Routes>
+            <Route path="/projects/:id" element={<ProjectOutlet />}>
+              <Route path="members" element={<ProjectMembersTab />} />
+            </Route>
+          </Routes>
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Add Person" }));
+    const sheet = screen.getByRole("dialog", { name: "Add Person" });
+    const targetType = sheet.querySelectorAll<HTMLSelectElement>("select")[0]!;
+    expect(targetType.querySelector<HTMLOptionElement>('option[value="team"]')).toBeDisabled();
   });
 
   it("explains what removal changes before confirming it", () => {
@@ -324,7 +566,7 @@ describe("project members table parity", () => {
     fixtures.people[0]!.source = "Stakeholder";
     fixtures.people[0]!.relationshipType = "Stakeholder";
     fixtures.people[0]!.hasSystemUser = false;
-    fixtures.invitation = { status: "Pending", expiresAt, invitationUrl: "https://nexus.test/invite/token" };
+    fixtures.invitation = { status: "Pending", expiresAt, invitationUrl: "https://nexus.test/invite/token", emailDeliveryStatus: "Untracked" };
     window.localStorage.setItem("nexus-locale", "ar");
 
     render(
@@ -340,10 +582,11 @@ describe("project members table parity", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: arMessages.projects.inviteStakeholder }));
 
-    const localizedExpiry = new Intl.DateTimeFormat("ar-EG-u-nu-latn", { dateStyle: "medium", timeStyle: "short" }).format(new Date(expiresAt));
+    const localizedExpiry = formatDateTime(expiresAt, "ar");
     expect(screen.getByText(localizedExpiry)).toBeInTheDocument();
     expect(screen.queryByText(expiresAt)).not.toBeInTheDocument();
     expect(screen.getByText("https://nexus.test/invite/token")).toBeInTheDocument();
+    expect(screen.getByText(`${arMessages.projects.invitationEmailDeliveryStatus.replace("{status}", arMessages.projects.invitationEmailStatusUntracked)}`)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: arMessages.projects.resendInvitation })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: arMessages.projects.revokeInvitation })).toBeInTheDocument();
   });

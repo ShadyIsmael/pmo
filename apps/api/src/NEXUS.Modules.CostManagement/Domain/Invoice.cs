@@ -10,7 +10,7 @@ public class Invoice : BaseEntity
     public decimal Amount { get; set; }
     public decimal? TaxAmount { get; set; }
     public decimal TotalAmount => Amount + (TaxAmount ?? 0);
-    public string Currency { get; set; } = "GBP";
+    public string Currency { get; set; } = string.Empty;
     public DateTime InvoiceDate { get; set; }
     public DateTime? DueDate { get; set; }
     public DateTime? PaidDate { get; set; }

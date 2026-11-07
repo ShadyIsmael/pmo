@@ -17,6 +17,7 @@ import { Activity, Download, GitBranch, LayoutGrid, Maximize2, Search, ZoomIn, Z
 import { Button } from "@components/ui/Button";
 import { Input } from "@components/ui/Input";
 import { useI18n } from "@i18n/messages";
+import { formatNumberValue } from "@lib/formatting/number";
 import { CriticalPathExportDialog } from "./CriticalPathExportDialog";
 import type {
   PlanActivityDto,
@@ -71,7 +72,7 @@ function NetworkCanvas({ projectId, projectName, projectCode, planId, planName, 
   const [exportOpen, setExportOpen] = React.useState(false);
   const [exportSnapshot, setExportSnapshot] = React.useState<CriticalPathExportSnapshot | null>(null);
   const formatWesternNumber = React.useCallback((value: number) =>
-    new Intl.NumberFormat(locale === "ar" ? "ar-SA-u-nu-latn" : "en-US", { maximumFractionDigits: 2 }).format(value), [locale]);
+    formatNumberValue(value, locale, { maximumFractionDigits: 2 }), [locale]);
   const labels = React.useMemo(() => ({
     task: tr("network.task"),
     milestone: tr("network.milestone"),
@@ -237,7 +238,7 @@ function NetworkCanvas({ projectId, projectName, projectCode, planId, planName, 
         maxZoom={2}
         panOnDrag
         zoomOnScroll
-        proOptions={{ hideAttribution: true }}
+        proOptions={{ hideAttribution: false }}
       >
         <Background gap={22} size={1} color="hsl(var(--border))" />
         <Controls position="bottom-right" showInteractive={false} />

@@ -509,7 +509,7 @@ function FlowCanvas({ units, search, status, typeFilter, resourceFilter, searchR
         fitViewOptions={{ padding: 0.16, duration: 180 }}
         minZoom={0.25}
         maxZoom={1.5}
-        proOptions={{ hideAttribution: true }}
+        proOptions={{ hideAttribution: false }}
       >
         <Background gap={22} size={1} />
         <Controls showInteractive={false} />
@@ -524,7 +524,7 @@ export function OrganizationPage() {
   const { t, locale } = useI18n();
   const { user } = useAuth();
   const { canMutate, effectiveReadOnly } = useManagement();
-  const canManage = Boolean(user && hasPermission(user.permissions, Permissions.Settings.Write) && canMutate && !effectiveReadOnly);
+  const canManage = Boolean(user && hasPermission(user.permissions, Permissions.Settings.ManageTenantConfiguration) && canMutate && !effectiveReadOnly);
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = React.useState<OrganizationTab>("structure");
   const [search, setSearch] = React.useState("");

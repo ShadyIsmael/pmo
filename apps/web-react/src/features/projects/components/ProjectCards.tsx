@@ -9,6 +9,7 @@ import { EmptyState, ErrorState } from "@components/ui/StateDisplay";
 import { FolderKanban } from "lucide-react";
 import type { ProjectSummaryDto } from "../api/projects";
 import { HealthDot, getInitials } from "./ProjectTable";
+import { useProjectEnumLabels } from "../lib/project-labels";
 
 interface ProjectCardsProps {
   data: { items: readonly ProjectSummaryDto[]; totalCount: number } | undefined;
@@ -18,7 +19,8 @@ interface ProjectCardsProps {
 }
 
 export function ProjectCards({ data, isLoading, isError, onRetry }: ProjectCardsProps) {
-  const { t, locale, formatCurrency } = useI18n();
+  const { t, locale, formatCurrency, formatNumber } = useI18n();
+  const { statusLabel, healthLabel } = useProjectEnumLabels();
   const navigate = useNavigate();
 
   if (isLoading) {
@@ -70,19 +72,19 @@ export function ProjectCards({ data, isLoading, isError, onRetry }: ProjectCards
                 <p className="truncate font-semibold">{project.name}</p>
                 <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">{project.code}</p>
               </div>
-              <Badge status={project.status}>{project.status}</Badge>
+              <Badge status={project.status}>{statusLabel(project.status)}</Badge>
             </div>
             <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
               <span className="inline-flex min-w-0 items-center gap-1.5">
                 <HealthDot health={project.health} />
-                <span className="truncate">{project.health || "—"}</span>
+                <span className="truncate">{healthLabel(project.health)}</span>
               </span>
               {project.endDate ? <span className="shrink-0 tabular-nums">{formatDate(project.endDate, locale)}</span> : null}
             </div>
             <div className="w-full space-y-1">
               <div className="flex items-center justify-between gap-2 text-xs">
                 <span className="text-muted-foreground">{t("projects.progressSourceWorkingPlan")}</span>
-                <span className="tabular-nums">{project.planProgress == null ? "—" : `${Math.round(project.planProgress)}%`}</span>
+                <span className="tabular-nums">{project.planProgress == null ? "—" : `${formatNumber(Math.round(project.planProgress))}%`}</span>
               </div>
               {project.planProgress != null ? <Progress value={project.planProgress} className="w-full" /> : null}
             </div>

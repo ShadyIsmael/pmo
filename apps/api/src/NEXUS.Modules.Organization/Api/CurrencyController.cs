@@ -18,12 +18,24 @@ public sealed class CurrencyController : ControllerBase
     }
 
     [HttpGet]
+    [Authorize(Policy = "ReferenceData.View")]
     public async Task<IActionResult> GetAll(CancellationToken cancellationToken)
     {
         return Ok(await _currencyService.GetAllAsync(cancellationToken));
     }
 
+    [HttpGet("project-lookup")]
+    [Authorize(Policy = "WorkflowLookup.Project.Currencies")]
+    public async Task<IActionResult> GetProjectLookup(CancellationToken cancellationToken) =>
+        Ok(await _currencyService.GetProjectLookupAsync(cancellationToken));
+
+    [HttpGet("workflow-lookup")]
+    [Authorize(Policy = "WorkflowLookup.Business.Currencies")]
+    public async Task<IActionResult> GetWorkflowLookup(CancellationToken cancellationToken) =>
+        Ok(await _currencyService.GetProjectLookupAsync(cancellationToken));
+
     [HttpGet("{id:guid}")]
+    [Authorize(Policy = "ReferenceData.View")]
     public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
     {
         var result = await _currencyService.GetByIdAsync(id, cancellationToken);
@@ -31,7 +43,7 @@ public sealed class CurrencyController : ControllerBase
     }
 
     [HttpPost]
-    [Authorize(Policy = "Settings.Write")]
+    [Authorize(Policy = "ReferenceData.Create")]
     public async Task<IActionResult> Create([FromBody] SaveCurrencyRequest request, CancellationToken cancellationToken)
     {
         var result = await _currencyService.CreateAsync(request, ActorId(), cancellationToken);
@@ -41,7 +53,7 @@ public sealed class CurrencyController : ControllerBase
     }
 
     [HttpPut("{id:guid}")]
-    [Authorize(Policy = "Settings.Write")]
+    [Authorize(Policy = "ReferenceData.Edit")]
     public async Task<IActionResult> Update(Guid id, [FromBody] SaveCurrencyRequest request, CancellationToken cancellationToken)
     {
         var result = await _currencyService.UpdateAsync(id, request, ActorId(), cancellationToken);
@@ -49,7 +61,7 @@ public sealed class CurrencyController : ControllerBase
     }
 
     [HttpDelete("{id:guid}")]
-    [Authorize(Policy = "Settings.Write")]
+    [Authorize(Policy = "ReferenceData.Delete")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
         var result = await _currencyService.DeleteAsync(id, ActorId(), cancellationToken);

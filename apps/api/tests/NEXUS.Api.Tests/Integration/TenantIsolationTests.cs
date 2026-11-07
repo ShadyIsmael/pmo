@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Moq;
+using NEXUS.Api.Tests.Testing;
 using NEXUS.Modules.Identity.Domain;
 using NEXUS.Modules.ProjectManagement.Domain;
 using NEXUS.Persistence;
@@ -17,6 +18,7 @@ namespace NEXUS.Api.Tests.Integration;
 /// Each test uses fresh random tenant/user/project ids, so results must be
 /// independent of test execution order.
 /// </summary>
+[Collection("Static tenant resolution")]
 public class TenantIsolationTests : IDisposable
 {
     private readonly SqliteConnection _connection;
@@ -38,7 +40,7 @@ public class TenantIsolationTests : IDisposable
         var options = new DbContextOptionsBuilder<AppDbContext>()
             .UseSqlite(_connection)
             .Options;
-        _context = new AppDbContext(options);
+        _context = new SqliteTestAppDbContext(options);
 
         _context.Database.EnsureCreatedAsync().GetAwaiter().GetResult();
         Seed();
@@ -121,7 +123,7 @@ public class TenantIsolationTests : IDisposable
             var seenModel = _context.Model;
             for (var i = 0; i < 5; i++)
             {
-                var ctx = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
+                var ctx = new SqliteTestAppDbContext(new DbContextOptionsBuilder<AppDbContext>()
                     .UseSqlite(_connection)
                     .Options);
                 extraContexts.Add(ctx);

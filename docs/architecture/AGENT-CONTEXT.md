@@ -1,164 +1,137 @@
-# NEXUS PMO — Agent Context File
+# FOPX PM - Agent Context
+
+## Frontend Authority
+
+The sole supported frontend is apps/web-react, built with React 18, Vite 6, and React Router 6. The former Next.js application in apps/web was retired on 2026-10-27 under ADR-009. Do not recreate, build, deploy, or audit apps/web. New frontend work and dependency audits target apps/web-react only. Historical documents may retain Next.js details as records, not current instructions.
 
 ## Mandatory Code-Quality Reading
 
-Before any code change, read and follow [CODE-QUALITY-GUIDELINES.md](CODE-QUALITY-GUIDELINES.md). Treat it and this file as mandatory acceptance criteria. Do not start implementation before reviewing both documents.
-
-Frontend tasks must also read [FRONTEND-ENGINEERING-GUIDELINES.md](FRONTEND-ENGINEERING-GUIDELINES.md). Backend-only tasks must not read it unless directly relevant.
+Before code changes, read CODE-QUALITY-GUIDELINES.md. Frontend tasks must also read FRONTEND-ENGINEERING-GUIDELINES.md.
 
 ## Product
-NEXUS PMO: Enterprise Project Portfolio Management Platform
-Tagline: Plan. Govern. Execute. Optimize.
+
+Parent company: FOPX
+Product: FOPX PM — FOPX Project Management
+Tagline: Plan. Organize. Execute.
 
 ## Portfolio Management Core
-- Real SQL Server portfolio create, list, detail, edit, archive, and reactivate flows are implemented.
-- Portfolio API queries are tenant-isolated, authenticated, audited through base entity fields, validated, searchable, and filterable; portfolio code is unique per tenant.
-- Owner and Sponsor use the real active-user lookup. Portfolio detail resolves their names and displays linked projects through the existing project portfolio filter.
-- The UI uses TanStack Query and the shared FormSheet with NEXUS loading, error, and empty states. Project-manager/resource selectors and seed data remain independent.
+
+- Portfolio create, list, detail, edit, archive, and reactivate use the API and SQL Server.
+- Portfolio queries are tenant-isolated, authenticated, audited, validated, searchable, and filterable.
+- Owner and Sponsor use the active-user lookup; detail resolves their names and linked projects.
+- The UI uses TanStack Query and shared form sheets with standard loading, error, and empty states.
 
 ## Actual Stack
-- Frontend: Next.js 14.2.35, React 18.3, TypeScript 5.5, Tailwind 3.4, shadcn/ui (Radix), TanStack Query 5.50, TanStack Table 8.19, Recharts 2.12, react-hook-form 7.52, zod 3.23, next-intl 3.26, Lucide 0.400, date-fns 3.6
-- Backend: .NET 10 LTS (net10.0 target), ASP.NET Core, EF Core 10, SQL Server (primary)
-- Auth: JWT Bearer (access + refresh) with ASP.NET Core PasswordHasher, refresh-token rotation
-- Cache: Redis (configured)
-- Deploy: Docker Compose (sqlserver:2022, redis:7, api:5000, web:4000)
-- i18n: next-intl, English + Arabic
+
+- Frontend: React 18, Vite 6, React Router 6, TypeScript 5.7, Tailwind 3.4, shadcn/ui, TanStack Query and Table, Recharts, React Hook Form, Zod, Lucide, date-fns.
+- Backend: .NET 10, ASP.NET Core, EF Core 10, SQL Server.
+- Auth: JWT bearer access and refresh tokens with refresh-token rotation.
+- Cache: Redis.
+- Docker Compose: SQL Server, Redis, API on host port 5000, React/Vite SPA on host port 4000, worker.
+- Local Vite development uses port 4100. The React client reads VITE_API_URL and defaults to http://localhost:5000.
+- Localization: English and Arabic message catalogs in the React app.
 
 ## Repository Layout
-apps/
-  web/          - Next.js frontend (port 3000)
-  api/          - .NET solution (22 projects, port 5000)
-  mobile-placeholder/ - empty
-packages/
-  shared-types/ - TypeScript type definitions
-  config/       - App config, navigation, theme, permissions
-  localization/ - English and Arabic locale files
-  api-client/   - TypeScript API client
-docs/           - Architecture, API, domain, decisions, development docs
-plugins/        - 7 plugin manifests (manifest-only, no runtime loading)
-scripts/        - database/, development/
 
-## Backend Module Boundary Rules
-- 22 projects in NEXUS.slnx: 19 modules + Api + Persistence + SharedKernel
-- Each module: Domain/Application/Infrastructure/Api/ModuleRegistration layers
-- Module registrations are IServiceCollection extensions called in Program.cs
-- NO direct cross-module DbContext access - use service interfaces
-- All entities inherit BaseEntity (Id, TenantId, CreatedAt, UpdatedAt, CreatedBy, UpdatedBy, IsDeleted, RowVersion)
-- AppDbContext in NEXUS.Persistence owns ALL entities (single database)
-- Soft delete and tenant query filters are global
+- apps/web-react: only supported browser frontend.
+- apps/api: .NET solution and API.
+- apps/mobile-placeholder: empty placeholder.
+- packages: shared definitions and configuration; inspect before changing a package.
+- docs: architecture, API, domain, decisions, and development guidance.
+- scripts: database and development helpers.
 
 ## Frontend Architecture Rules
-- Pages in: src/app/[locale]/(dashboard)/
-- Layout hierarchy: RootLayout > Providers > LocaleLayout > DashboardLayout > pages
-- "use client" for all interactive pages
-- UI components in src/components/ui/ (shadcn/ui style)
-- Layout components in src/components/layout/
-- Mock data in src/lib/mock-data.ts (used by all pages)
-- Navigation config in src/lib/navigation.ts
-- Permission constants in src/lib/permissions.ts
-- Utils (formatCurrency, formatDate, cn, etc.) in src/lib/utils.ts
-- i18n messages in src/messages/en.json and src/messages/ar.json
+
+- Routes: apps/web-react/src/routes/AppRoutes.tsx.
+- Product screens and feature APIs: apps/web-react/src/features/.
+- Shared API transport and endpoint map: apps/web-react/src/api/.
+- Authentication: apps/web-react/src/auth/.
+- English and Arabic messages: apps/web-react/src/i18n/messages/.
+- Use React Router for navigation and Vite for development and production builds.
+- Keep API access, query keys, permissions, formatting, and locale labels in existing shared React modules.
+- Do not add Next.js, server components, app-router conventions, or NEXT_PUBLIC environment variables.
+
+## Backend Module Boundary Rules
+
+- The solution contains modules plus API, Persistence, and SharedKernel projects.
+- Each module separates Domain, Application, Infrastructure, API, and registration concerns where applicable.
+- Module registrations are service-collection extensions called from Program.cs.
+- Avoid direct cross-module DbContext access; use service interfaces.
+- AppDbContext owns persistence; tenant and soft-delete filters are global where configured.
+- Read relevant database documentation and follow the repository's EF migration and seeding workflow before database or migration work. Verify the exact target and preserve production and data safeguards.
 
 ## Important Contracts
-- BaseEntity: /apps/api/src/NEXUS.SharedKernel/BaseEntity.cs
-- AppDbContext: /apps/api/src/NEXUS.Persistence/AppDbContext.cs (60+ DbSets)
-- Navigation config: /apps/web/src/lib/navigation.ts
-- Permission constants: /apps/web/src/lib/permissions.ts
-- Mock data: /apps/web/src/lib/mock-data.ts
-- API client: /packages/api-client/src/client.ts
+
+- BaseEntity: apps/api/src/NEXUS.SharedKernel/BaseEntity.cs.
+- AppDbContext: apps/api/src/NEXUS.Persistence/AppDbContext.cs.
+- API and persistence ownership remain in apps/api; use module service interfaces for cross-module communication.
+- Frontend navigation and permissions: apps/web-react/src/lib/.
+- Frontend API client and endpoint map: apps/web-react/src/api/.
+- Shared package contracts live under packages/; confirm actual imports before editing.
 
 ## Plugin Rules
-- 7 plugins in /plugins/: microsoft-project, jira-integration, internal-ticketing, test-management, mobile-workspace, enterprise-identity-placeholder, erp-integration-placeholder
-- Plugins are manifest-only (plugin.json) - no runtime plugin loading
-- To add a plugin: create plugin.json + README.md in new directory under /plugins/
-- Plugin IDs follow: nexus.plugin.{name}
 
-## Authorization Rules
-- Demo accounts seeded in Development (8 role accounts + 92 additional users, password "Demo123!")
-- POST /api/auth/login with email/password, POST /api/auth/refresh (refresh-token rotation), POST /api/auth/logout
-- JWT Bearer access token (8h) + opaque refresh token (7d, SHA-256 hashed in UserSession.RefreshToken)
-- Passwords hashed with ASP.NET Core PasswordHasher<User> (Identity V3); legacy BCrypt hashes migrated on reseed
-- Dev-only role switching: POST /api/auth/switch-role
-- Permissions defined in frontend permissions.ts (~80 constants, 15 categories)
-- Backend [Authorize(Policy = "...")] attribute with 5 Resource policies on 6 controllers
-- Permission claims embedded in JWT tokens (`"permission"` claim type)
-- Policies: Resource.View, Resource.Assign, Resource.Manage, Resource.ViewCostRate, Resource.EditCostRate
-- No data-scope authorization implemented
-- Tenant isolation enforced via JWT `tenantId` claim (falls back to demo tenant outside HTTP context)
+- Plugins are manifest-only; no runtime plugin loading is implemented.
+- Add a plugin through its manifest and documentation under plugins/.
+- Plugin IDs follow the nexus.plugin namespace.
 
-## Multi-Tenancy Rules
-- TenantId on ALL entities (via BaseEntity)
-- Global query filter: e => e.TenantId == GetCurrentTenantId() -- resolves `tenantId` JWT claim; outside HTTP context returns demo tenant (11111111-1111-1111-1111-111111111111)
-- To enforce real tenancy: issue per-tenant tokens and add tenant resolution at login
-- Seed data uses single tenant: 11111111-1111-1111-1111-111111111111
+## Authorization and Tenant Scope
 
-## Current Implementation Status
-- Frontend: 57 pages, 25 UI components, 4 layout components - Project Registry and Project Detail now use real APIs (others use embedded mock data)
-- Backend: 19 modules structured with entities/services/controllers - Project Management now has full CRUD + team management with real data
-- Backend: Project Plan Working Draft persistence foundation added (ProjectPlanDraft entity/table, one active draft per tenant+project, RowVersion concurrency); plan editor, CR submission/approval, and baseline promotion are deferred
-- Backend: Initial (first) approved baseline workflow added (ProjectBaselineVersion v1 approved/current + InitialBaseline project snapshot, tenant/audit/concurrency, duplicate rejection); no CR, Working Draft, frontend, or notifications
-- Planning: Project Planning domain designed and finalized as a first-class module (`NEXUS.Modules.ProjectPlanning`): versioned relational model (Plan/PlanVersion with Working+Baseline types, activities incl. zero-duration milestones, WBS adjacency tree, deliverables, dependencies, assignments, calendars w/ tenant templates + project overrides). Every plan row belongs to one PlanVersionId; no unversioned live rows; no JSON payloads. Baseline v1 is snapshotted from the pre-baseline Working version and is immutable; post-baseline edits flow only into a Working version (the working draft). A project may contain multiple plans, each with a first-class PlanType (Execution/Recovery/Tender/Construction/Shutdown/Scenario/Custom) with governing rules (Execution-only Start Project; Recovery requires an existing approved baseline; Scenario isolated until promoted; Custom configurable). Change Requests belong to the Project, not to a Plan; plans are only impacted by a CR. Future capabilities (Monte Carlo, What-if, importers, AI scheduling, resource optimization, critical path) extend Plans/PlanVersions only. See docs/architecture/PROJECT-PLANNING-MODEL.md and ADR-007 (Accepted, governing) and ADR-006 (Accepted, basis). Implementation (module skeleton, migration, services, endpoints, tests) is deferred.
-- Risk Management: Risk workflow v1 is implemented as a project-owned, tenant-scoped Risk aggregate with Identified → ActionRequired → FollowUp → Mitigated → Closed statuses. RiskAction, one-to-one RiskFollowUp, and append-only RiskFollowUpUpdate records provide action ownership, review planning, and progress history. Legacy mitigation-plan/target-date values are migrated into an initial action and removed from the Risk row; legacy snapshot fields remain read-compatible.
-- Authorization: 5 permission policies configured on Resource Management controllers; Project policies added; JWT tokens include permission claims
-- Auth: Real end-to-end flow (login/refresh/logout/me, PasswordHasher, refresh rotation, JWT claims for roles/permissions/tenantId, protected dashboard routes)
-- Plugins: Manifest-only
-- Integrations: All mocked (MockAIProvider, LocalStorageProvider)
-- Database: SQL Server migrations (Database.MigrateAsync)
-- 45 unit tests (Resource Management), InMemory provider, SQL Server integration tests planned
-- No CI/CD
-- Dockerfiles: .NET 10 images, net10.0 projects (consistent)
+- Authentication endpoints include login, refresh, logout, and current-user session validation.
+- Access tokens carry role, permission, and tenant claims; refresh tokens rotate.
+- Use existing authorization policies and frontend permission helpers. Do not infer authorization from UI visibility alone.
+- TenantId is present on persisted tenant-owned entities and tenant query filters are applied where configured.
+- Read docs/modules/AUTHENTICATION-AND-IDENTITY.md and the security architecture before changing authentication, authorization, or tenancy.
 
-## Deferred Capabilities (DO NOT CLAIM AS IMPLEMENTED)
-- Real MPP parsing
-- Real Jira sync
-- Real AI provider calls
-- Native mobile app
-- Active Directory / Entra ID
-- ERP integration
-- Production email/push
-- Full workflow execution engine
-- Data scope authorization
-- Multi-tenant login/registration (tenancy is filtered per request but all users share the demo tenant)
+## Current Implementation References
+
+- Use docs/architecture/ARCHITECTURE-STATUS.md for the current stack and deployment inventory.
+- Project planning behavior and its historical prototype notes are in docs/modules/PROJECT-PLAN-POV.md; only the persisted React/Vite feature is active.
+- Planned payments are documented in docs/modules/FINANCIAL-MANAGEMENT-PLANNED-PAYMENTS.md.
+- Current project status reporting and API contracts are documented in docs/modules/PROJECT-MANAGEMENT-CORE.md and docs/api/endpoints.md.
+- Plugin manifests do not imply a runtime plugin host. Consult module-specific docs before claiming a capability is implemented.
+- No repository CI workflow is configured.
+
+## Deferred Capabilities
+
+Verify current module documentation before claiming these capabilities: native mobile app, real MPP import/export, live Jira or ERP synchronization, production AI provider calls, full workflow execution, data-scope authorization, and multi-tenant user registration.
+
+## Important Paths
+
+- API startup: apps/api/src/NEXUS.Api/Program.cs.
+- EF context: apps/api/src/NEXUS.Persistence/AppDbContext.cs.
+- Frontend API client: apps/web-react/src/api/client.ts.
+- Frontend authentication: apps/web-react/src/auth/AuthProvider.tsx.
+- Frontend routes: apps/web-react/src/routes/AppRoutes.tsx.
+- Frontend navigation and permissions: apps/web-react/src/lib/.
 
 ## Required Validation Commands
-- npm run build (in apps/web)
-- dotnet build (in apps/api)
-- npm run lint (in apps/web)
-- npm run dev (in apps/web) -- starts on port 4000
-- dotnet run (in apps/api/src/NEXUS.Api) -- starts on port 5000
 
-## Important File Paths
-- Architecture doc: docs/architecture/NEXUS-PMO-ARCHITECTURE.md
-- Module catalogue: docs/architecture/MODULE-CATALOGUE.md
-- Agent context: docs/architecture/AGENT-CONTEXT.md (this file)
-- Auth doc: docs/modules/AUTHENTICATION-AND-IDENTITY.md
-- Project Management doc: docs/modules/PROJECT-MANAGEMENT-CORE.md
-- Resource Management doc: docs/modules/RESOURCE-MANAGEMENT-CORE.md
-- Seed data: apps/api/src/NEXUS.Persistence/SeedDataProvider.cs
-- Frontend API client: apps/web/src/lib/api-client.ts
-- Frontend auth state: apps/web/src/lib/auth.tsx
-- Frontend mock data: apps/web/src/lib/mock-data.ts
+- npm --prefix apps/web-react run typecheck
+- npm --prefix apps/web-react run lint
+- npm --prefix apps/web-react run test
+- npm --prefix apps/web-react run build
+- dotnet build apps/api/NEXUS.slnx
 
 ## Mandatory Development Constraints
-1. Read this file and NEXUS-PMO-ARCHITECTURE.md before making changes.
-2. Do NOT rebuild the repository structure.
-3. Do NOT create duplicate modules, pages, or components.
-4. Respect module data ownership - no direct cross-module database access.
-5. Use existing contracts and extension points for new features.
-6. Update this file and NEXUS-PMO-ARCHITECTURE.md after architectural changes.
-7. Update affected Mermaid diagrams.
-8. Update implementation-status matrices.
-9. Add or update ADR files for significant decisions.
-10. Keep the application runnable after every change.
-11. Add regression tests for defect fixes.
-12. Do NOT claim implementation without verifying it.
-13. Do NOT count generated folders (node_modules, .next, bin, obj) as source files.
-14. ALL mock data is in src/lib/mock-data.ts or SeedDataProvider.cs.
-15. Any change affecting architecture, modules, plugins, database ownership, integrations, security, deployment, or major domain relationships MUST update the relevant document in docs/architecture.
 
-## Frontend API Layer Update (1 August 2026)
-- Centralized frontend transport and endpoint construction under `apps/web/src/lib/api/`.
-- Added environment-backed `apps/web/src/lib/config.ts` for API URL, locale, pagination, query freshness, and feature flags.
-- Added shared pagination and normalized API error contracts, including validation fields and status categories.
-- Added domain API modules and query-key factories for projects, portfolios, resources, users, handover, and notifications.
-- Existing `api-client.ts` is now a compatibility re-export; new frontend code should use `@/lib/api`.
+1. Read this file and the relevant module documentation before changes.
+2. Do not rebuild the repository structure or create duplicate modules, pages, or components.
+3. Respect module data ownership; do not access another module's DbContext directly.
+4. Use existing contracts and extension points.
+5. Update relevant architecture documentation and diagrams when architecture changes.
+6. Update implementation-status matrices when affected.
+7. Add or update ADRs for significant decisions.
+8. Keep the application runnable and add focused regression tests for defect fixes.
+9. Do not claim implementation or verification without evidence.
+10. Do not count generated folders such as node_modules, bin, or obj as source files.
+11. Treat mock data as feature-local; prefer the API-backed implementation where one exists.
+12. Update relevant docs for changes affecting architecture, modules, plugins, database ownership, integrations, security, deployment, or major domain relationships.
+
+## Frontend API Layer Update
+
+- Shared transport and endpoint construction live under apps/web-react/src/api/.
+- The client reads VITE_API_URL and defaults to http://localhost:5000.
+- Shared pagination and normalized API error contracts are implemented in the React API boundary.
+- Domain API modules and query-key factories are kept with their React feature areas.
+- Add frontend API behavior to the supported React app only; there is no parallel Next.js implementation.

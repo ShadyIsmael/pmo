@@ -2,12 +2,12 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "../i18n/messages";
-import { useManagedPortfolios, usePortfolioManagementOverview } from "../features/delivery/api/delivery";
+import { useManagedPortfolios } from "../features/delivery/api/delivery";
 import { PortfolioOptimizationPage } from "../features/delivery/PortfolioOptimizationPage";
 
 vi.mock("../features/delivery/api/delivery", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../features/delivery/api/delivery")>();
-  return { ...actual, useManagedPortfolios: vi.fn(), usePortfolioManagementOverview: vi.fn() };
+  return { ...actual, useManagedPortfolios: vi.fn() };
 });
 vi.mock("@auth/AuthProvider", () => ({ useAuth: () => ({ user: { id: "test-user" } }) }));
 vi.mock("@api/management", async (importOriginal) => {
@@ -16,7 +16,6 @@ vi.mock("@api/management", async (importOriginal) => {
 });
 
 const managedPortfoliosMock = vi.mocked(useManagedPortfolios);
-const portfolioOverviewMock = vi.mocked(usePortfolioManagementOverview);
 
 function renderPage() {
   return render(<MemoryRouter><I18nProvider><PortfolioOptimizationPage /></I18nProvider></MemoryRouter>);
@@ -25,14 +24,13 @@ function renderPage() {
 describe("portfolio optimization parity", () => {
   beforeEach(() => {
     managedPortfoliosMock.mockReset();
-    portfolioOverviewMock.mockReset();
     managedPortfoliosMock.mockReturnValue({ data: { items: [] }, isLoading: false, isError: false } as unknown as ReturnType<typeof useManagedPortfolios>);
-    portfolioOverviewMock.mockReturnValue({ data: undefined, isLoading: false, isError: false } as unknown as ReturnType<typeof usePortfolioManagementOverview>);
   });
 
-  it("preserves the source scenario and constraints tabs without fabricating optimizer results", () => {
+  it("preserves the unavailable optimizer tabs without surfacing a legacy forecast total", () => {
     renderPage();
 
+    expect(screen.queryByText("Portfolio Value")).not.toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "What-If Scenarios" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByText("Scenario simulation requires a configured optimization service.")).toBeInTheDocument();
     expect(screen.queryByText("72/100")).not.toBeInTheDocument();

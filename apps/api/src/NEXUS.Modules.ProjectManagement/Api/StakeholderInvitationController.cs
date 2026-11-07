@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using NEXUS.Modules.ProjectManagement.Application;
 using NEXUS.Modules.ProjectManagement.Application.DTOs;
 
@@ -56,18 +57,38 @@ public sealed class StakeholderInvitationAcceptanceController : ControllerBase
     public StakeholderInvitationAcceptanceController(IStakeholderInvitationService service) => _service = service;
 
     [AllowAnonymous]
-    [HttpGet("validate")]
-    public async Task<IActionResult> Validate([FromQuery] string token, CancellationToken cancellationToken)
+    [EnableRateLimiting("auth")]
+    [HttpPost("validate")]
+    public async Task<IActionResult> Validate([FromBody] StakeholderInvitationTokenDto request, CancellationToken cancellationToken)
     {
-        var result = await _service.ValidateAsync(token, cancellationToken);
+        var result = await _service.ValidateAsync(request.Token, cancellationToken);
         return result.IsFailure ? Map(result.Error!) : Ok(result.Value);
     }
 
     [AllowAnonymous]
+    [EnableRateLimiting("auth")]
     [HttpPost("accept")]
-    public async Task<IActionResult> Accept([FromQuery] string token, [FromBody] AcceptStakeholderInvitationDto dto, CancellationToken cancellationToken)
+    public async Task<IActionResult> Accept([FromBody] AcceptStakeholderInvitationDto dto, CancellationToken cancellationToken)
     {
-        var result = await _service.AcceptAsync(token, dto, cancellationToken);
+        var result = await _service.AcceptAsync(dto.Token, dto, cancellationToken);
+        return result.IsFailure ? Map(result.Error!) : Ok(result.Value);
+    }
+
+    [AllowAnonymous]
+    [EnableRateLimiting("auth")]
+    [HttpPost("decline")]
+    public async Task<IActionResult> Decline([FromBody] StakeholderInvitationTokenDto request, CancellationToken cancellationToken)
+    {
+        var result = await _service.DeclineAsync(request.Token, cancellationToken);
+        return result.IsFailure ? Map(result.Error!) : Ok(result.Value);
+    }
+
+    [AllowAnonymous]
+    [EnableRateLimiting("auth")]
+    [HttpPost("withdraw-consent")]
+    public async Task<IActionResult> WithdrawConsent([FromBody] WithdrawStakeholderConsentDto dto, CancellationToken cancellationToken)
+    {
+        var result = await _service.WithdrawConsentAsync(dto.Token, dto, cancellationToken);
         return result.IsFailure ? Map(result.Error!) : Ok(result.Value);
     }
 

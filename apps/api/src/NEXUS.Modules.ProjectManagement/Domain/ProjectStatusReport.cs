@@ -26,6 +26,9 @@ public class ProjectStatusReport : BaseEntity
     public string? ChallengesConcerns { get; set; }
     public string? NextPeriodPriorities { get; set; }
 
+    public string? ActionsNeeded { get; set; }
+    public string? SupportNeeded { get; set; }
+
     public string? ProjectNameSnapshot { get; set; }
     public string? ProjectCodeSnapshot { get; set; }
     public Guid? ProjectManagerIdAtReport { get; set; }
@@ -46,6 +49,11 @@ public class ProjectStatusReport : BaseEntity
     public decimal? CommittedCostAmountSnapshot { get; set; }
     public decimal? ForecastCostAmountSnapshot { get; set; }
     public decimal? CostVarianceAmountSnapshot { get; set; }
+
+    public decimal? ActualPaidSnapshot { get; set; }
+    public decimal? OutstandingPlannedPaymentsSnapshot { get; set; }
+    public decimal? PaymentsDueWithinPeriodSnapshot { get; set; }
+    public decimal? RemainingUnpaidAtPeriodEndSnapshot { get; set; }
 
     public decimal? ScheduleVarianceDaysSnapshot { get; set; }
     public decimal? ScheduleVariancePercentSnapshot { get; set; }

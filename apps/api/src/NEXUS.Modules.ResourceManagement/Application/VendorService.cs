@@ -62,6 +62,27 @@ public class VendorService : IVendorService
         return new PagedResult<VendorDto>(items, page, pageSize, total);
     }
 
+    public async Task<IReadOnlyList<ResourceVendorLookupDto>> GetResourceVendorOptionsAsync(Guid? resourceId = null, CancellationToken cancellationToken = default)
+    {
+        Guid? currentVendorId = null;
+        if (resourceId.HasValue)
+        {
+            currentVendorId = await _context.Set<Resource>()
+                .AsNoTracking()
+                .Where(resource => resource.Id == resourceId.Value && !resource.IsDeleted)
+                .Select(resource => resource.VendorId)
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+
+        return await _context.Set<Vendor>()
+            .AsNoTracking()
+            .Where(vendor => !vendor.IsDeleted
+                && (vendor.IsActive || (currentVendorId.HasValue && vendor.Id == currentVendorId.Value)))
+            .OrderBy(vendor => vendor.Name)
+            .Select(vendor => new ResourceVendorLookupDto(vendor.Id, vendor.Name, vendor.Code, vendor.IsActive))
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<Result<VendorDto>> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var vendor = await _context.Set<Vendor>().FirstOrDefaultAsync(v => v.Id == id && !v.IsDeleted, cancellationToken);
@@ -274,9 +295,9 @@ public class VendorService : IVendorService
     }
 
     private Guid CurrentTenantId() =>
-        Guid.TryParse(_httpContextAccessor?.HttpContext?.User.FindFirstValue("tenantId"), out var tenantId)
+        Guid.TryParse(_httpContextAccessor?.HttpContext?.User.FindFirstValue("tenantId"), out var tenantId) && tenantId != Guid.Empty
             ? tenantId
-            : TenantConstants.DemoTenantId;
+            : throw new InvalidOperationException("A trusted tenant context is required.");
 
     private async Task<Lookup?> FindCategoryAsync(Guid categoryId, CancellationToken cancellationToken)
     {

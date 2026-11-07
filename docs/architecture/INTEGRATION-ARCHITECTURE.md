@@ -59,12 +59,13 @@ Most external-system adapters in NEXUS PMO are interfaces, mock providers, or ma
 
 | Aspect | Detail |
 |--------|--------|
-| **Type** | Plugin (`nexus.plugin.microsoft-project`) |
-| **Status** | Manifest only |
-| **Interface** | MPP file import/export (no MPP parsing library discovered) |
-| **Plugin directory** | `plugins/microsoft-project/` -- `plugin.json` only |
-| **Feature flag** | `microsoftProjectImport` |
-| **Evidence** | `plugins/microsoft-project/plugin.json` |
+| **Type** | Project Planning format adapter |
+| **Status** | MPP import is implemented; export is not provided by this adapter |
+| **Interface** | `IPlanningImportProvider` returns a format-neutral planning import document |
+| **Runtime project** | `apps/api/src/NEXUS.Modules.ProjectPlanning.MppAdapter` |
+| **Parser** | `MPXJ.Net` parses Microsoft Project `.mpp` files and maps supported tasks, dates, dependencies, resources, assignments, and calendars |
+| **Build dependency** | MPXJ.Net uses IKVM/Maven tooling to translate its Java library dependencies when the adapter is built |
+| **EF boundary** | `NEXUS.Persistence` references the format-neutral ProjectPlanning module; the EF design-time project does not reference the MPP adapter |
 
 ### Jira
 
@@ -112,9 +113,12 @@ Most external-system adapters in NEXUS PMO are interfaces, mock providers, or ma
 
 | Aspect | Detail |
 |--------|--------|
-| **Status** | Deferred |
-| **Implementation** | No provider, SMTP client, template renderer, or email worker. Email preferences are stored, but no Email delivery is created or sent. |
-| **Future integration point** | `NotificationDelivery` supports an Email channel; add a provider and dispatcher in a later phase. |
+| **Status** | Implemented in the shared Notifications delivery pipeline; runtime depends on SMTP configuration |
+| **Implementation** | `NotificationService` creates a unique Email `NotificationDelivery` when a recipient has opted in and the provider is configured. `NotificationDeliveryWorker` claims it and `SmtpEmailNotificationChannel` sends it with bounded retries. |
+| **Preferences** | Internal users can opt in per event from Account Notifications. Email defaults off; availability is reported from shared SMTP configuration. The worker rechecks the preference before sending. |
+| **Configuration** | `EmailNotifications:Enabled`, `Host`, `Port`, `UseSsl`, optional paired `UserName`/`Password`, `FromAddress`, and optional `FromName`. Load secrets from the deployment secret manager. |
+| **Limits** | SMTP acknowledgement loss can cause a retry to resend a message. Unique notification/channel deliveries and producer dispatch records prevent duplicate queueing but cannot guarantee exactly-once delivery. Meeting reminder email currently targets opted-in internal users; external attendee email remains disabled pending recipient-policy authorization. |
+| **Operations guide** | [`docs/integrations/email-notifications.md`](../integrations/email-notifications.md) |
 
 ### Push Notifications
 

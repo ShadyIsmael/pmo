@@ -16,6 +16,8 @@ public enum NotificationDeliveryStatus
     RetryScheduled = 4,
     FailedPermanent = 5,
     Cancelled = 6,
+    /// <summary>The provider accepted the email submission; this is not a recipient delivery receipt.</summary>
+    Accepted = 7,
 }
 
 public enum NotificationAttemptStatus
@@ -39,6 +41,7 @@ public sealed class NotificationDelivery : BaseEntity
     public DateTime? LastAttemptAt { get; set; }
     public DateTime? ProcessingStartedAt { get; set; }
     public Guid? LeaseId { get; set; }
+    public DateTime? AcceptedAt { get; set; }
     public DateTime? DeliveredAt { get; set; }
     public string? FailureCategory { get; set; }
     public string? LastError { get; set; }

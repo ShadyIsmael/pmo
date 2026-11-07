@@ -9,6 +9,14 @@ import { useI18n } from "@i18n/messages";
 import { useManagement } from "@api/management";
 import { useApprovalReview, useAcceptHandoverRequest, useRejectHandoverRequest, useAcceptManagerHandover, useRejectManagerHandover, useApproveProjectChangeRequest, useRejectProjectChangeRequest } from "./api/myWork";
 import type { ApprovalReviewType } from "@lib/approval-navigation";
+import { MyWorkTabs } from "./MyWorkTabs";
+
+const approvalReviewTitleKeys: Record<ApprovalReviewType, string> = {
+  "project-handover": "approvals.projectHandoverReviewTitle",
+  "program-handover": "approvals.programHandoverReviewTitle",
+  "portfolio-handover": "approvals.portfolioHandoverReviewTitle",
+  "change-request": "approvals.changeRequestReviewTitle",
+};
 
 export function ApprovalReviewPage({ type }: { type: ApprovalReviewType }) {
   const { id = "" } = useParams();
@@ -28,6 +36,7 @@ export function ApprovalReviewPage({ type }: { type: ApprovalReviewType }) {
   const [decisionError, setDecisionError] = useState<string | null>(null);
 
   const review = reviewQuery.data;
+  const pageTitle = t(approvalReviewTitleKeys[type]);
   const isPending = acceptProjectHandover.isPending || rejectProjectHandover.isPending
     || acceptProgramHandover.isPending || acceptPortfolioHandover.isPending
     || rejectProgramHandover.isPending || rejectPortfolioHandover.isPending
@@ -37,18 +46,26 @@ export function ApprovalReviewPage({ type }: { type: ApprovalReviewType }) {
     if (!review || !id) return;
     setDecisionError(null);
     try {
-      if (type === "project-handover") {
-        if (approve) await acceptProjectHandover.mutateAsync(id);
-        else await rejectProjectHandover.mutateAsync({ requestId: id, rejectionReason: decisionNotes.trim() });
-      } else if (type === "program-handover" || type === "portfolio-handover") {
-        const accept = type === "program-handover" ? acceptProgramHandover : acceptPortfolioHandover;
-        const reject = type === "program-handover" ? rejectProgramHandover : rejectPortfolioHandover;
-        if (approve) await accept.mutateAsync(id);
-        else await reject.mutateAsync({ requestId: id, rejectionReason: decisionNotes.trim() });
-      } else if (approve) {
-        await approveChangeRequest.mutateAsync({ id, dto: {} });
-      } else {
-        await rejectChangeRequest.mutateAsync({ id, decisionNotes: decisionNotes.trim() });
+      switch (type) {
+        case "project-handover":
+          if (approve) await acceptProjectHandover.mutateAsync(id);
+          else await rejectProjectHandover.mutateAsync({ requestId: id, rejectionReason: decisionNotes.trim() });
+          break;
+        case "program-handover":
+        case "portfolio-handover": {
+          const accept = type === "program-handover" ? acceptProgramHandover : acceptPortfolioHandover;
+          const reject = type === "program-handover" ? rejectProgramHandover : rejectPortfolioHandover;
+          if (approve) await accept.mutateAsync(id);
+          else await reject.mutateAsync({ requestId: id, rejectionReason: decisionNotes.trim() });
+          break;
+        }
+        case "change-request":
+          if (approve) await approveChangeRequest.mutateAsync({ id, dto: {} });
+          else await rejectChangeRequest.mutateAsync({ id, decisionNotes: decisionNotes.trim() });
+          break;
+        default:
+          setDecisionError(t("approvals.reviewUnavailable"));
+          return;
       }
       await refreshSnapshot();
       navigate("/my-work/approvals", { replace: true });
@@ -58,24 +75,29 @@ export function ApprovalReviewPage({ type }: { type: ApprovalReviewType }) {
   };
 
   if (reviewQuery.isLoading) {
-    return <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
+    return (
+      <div className="space-y-5">
+        <PageHeader title={pageTitle} />
+        <MyWorkTabs />
+        <div role="status" aria-label={t("common.loading")} className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+      </div>
+    );
   }
 
   if (!review || reviewQuery.isError) {
     return (
       <section className="space-y-4">
+        <PageHeader title={pageTitle} />
+        <MyWorkTabs />
         <Button asChild size="sm" variant="ghost"><Link to="/my-work/approvals"><ArrowLeft className="mr-2 h-4 w-4" />{t("approvals.backToApprovals")}</Link></Button>
         <div role="alert" className="rounded-lg border p-6 text-sm text-muted-foreground">{t("approvals.reviewUnavailable")}</div>
       </section>
     );
   }
 
-  const isRoleAcceptance = type !== "change-request";
-  const approveLabel = isRoleAcceptance ? t("approvals.acceptAssignment") : t("approvals.approve");
-  const titleKey = review.approvalType === "ProjectHandover" ? "approvals.projectHandoverReviewTitle"
-    : review.approvalType === "ProgramHandover" ? "approvals.programHandoverReviewTitle"
-      : review.approvalType === "PortfolioHandover" ? "approvals.portfolioHandoverReviewTitle"
-        : "approvals.changeRequestReviewTitle";
+  const isRoleAcceptance = type === "project-handover" || type === "program-handover" || type === "portfolio-handover";
+  const hasDecisionFlow = isRoleAcceptance || type === "change-request";
+  const approveLabel = isRoleAcceptance ? t("approvals.acceptAssignment") : type === "change-request" ? t("approvals.approve") : t("approvals.reviewUnavailable");
   const businessObjectLabel = review.businessObjectType === "Project" ? t("approvals.businessProject")
     : review.businessObjectType === "Program" ? t("approvals.businessProgram")
       : review.businessObjectType === "Portfolio" ? t("approvals.businessPortfolio") : review.businessObjectType;
@@ -83,7 +105,8 @@ export function ApprovalReviewPage({ type }: { type: ApprovalReviewType }) {
   return (
     <div className="space-y-5">
       <Button asChild size="sm" variant="ghost"><Link to="/my-work/approvals"><ArrowLeft className="mr-2 h-4 w-4" />{t("approvals.backToApprovals")}</Link></Button>
-      <PageHeader title={t(titleKey)} description={`${businessObjectLabel}: ${review.businessObjectName}`} />
+      <PageHeader title={pageTitle} description={`${businessObjectLabel}: ${review.businessObjectName}`} />
+      <MyWorkTabs />
       <section className="rounded-xl border bg-card p-5 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-4">
           <div className="min-w-0">
@@ -111,7 +134,7 @@ export function ApprovalReviewPage({ type }: { type: ApprovalReviewType }) {
         {review.isReadOnly ? <p className="border-t pt-3 text-xs text-muted-foreground">{t("approvals.readOnlyReview")}</p> : null}
       </section>
 
-      {review.canDecide && !effectiveReadOnly ? (
+      {review.canDecide && hasDecisionFlow && !effectiveReadOnly ? (
         <section className="space-y-3 rounded-xl border bg-card p-5">
           {decisionError ? <p role="alert" className="text-sm text-destructive">{decisionError}</p> : null}
           <Textarea value={decisionNotes} onChange={(event) => setDecisionNotes(event.target.value)} rows={3} placeholder={t("approvals.decisionNotesPlaceholder")} aria-label={t("approvals.decisionNotesPlaceholder")} />

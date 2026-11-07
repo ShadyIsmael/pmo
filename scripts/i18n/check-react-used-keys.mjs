@@ -31,6 +31,10 @@ const scopedAliases = new Map([
   [path.join(sourceRoot, "features", "projects", "components", "PlanningCalendarsPanel.tsx"), [["planning.", "projects.planning."]]],
   [path.join(sourceRoot, "features", "projects", "components", "CriticalPathExportDialog.tsx"), [["", "projects.planning.exportDiagram."]]],
 ]);
+// key("x") in this file resolves dynamically to programManager/portfolioManager.financialRollup.x
+const dynamicKeyBases = new Map([
+  [path.join(sourceRoot, "features", "delivery", "FinancialRollupView.tsx"), ["programManager.financialRollup.", "portfolioManager.financialRollup."]],
+]);
 const helperAliases = new Map([
   [path.join(sourceRoot, "features", "projects", "components", "PlanTimelineGantt.tsx"), [["", "projects.planning."]]],
   [path.join(sourceRoot, "features", "projects", "components", "CriticalPathNetworkDiagram.tsx"), [["", "projects.planning."]]],
@@ -38,15 +42,20 @@ const helperAliases = new Map([
 ]);
 for (const file of files(sourceRoot)) {
   const source = fs.readFileSync(file, "utf8");
-  for (const { regex, aliases } of [
+  for (const { regex, aliases, dynamicBases } of [
     { regex: /\bt\(\s*["']([^"']+)["']/g, aliases: scopedAliases.get(file) ?? [] },
     { regex: /\btr\(\s*["']([^"']+)["']/g, aliases: helperAliases.get(file) ?? [] },
     { regex: /\blabelKey\s*:\s*["']([^"']+)["']/g, aliases: scopedAliases.get(file) ?? [] },
     { regex: /\breasonKey\s*=\s*["']([^"']+)["']/g, aliases: scopedAliases.get(file) ?? [] },
     { regex: /\blabelKey\(\s*t\s*,\s*["']([^"']+)["']/g, aliases: scopedAliases.get(file) ?? [] },
-    { regex: /\bkey\(\s*["']([^"']+)["']/g, aliases: scopedAliases.get(file) ?? [] },
+    { regex: /\bkey\(\s*["']([^"']+)["']/g, aliases: scopedAliases.get(file) ?? [], dynamicBases: dynamicKeyBases.get(file) },
   ]) {
     for (const match of source.matchAll(regex)) {
+      const bases = dynamicBases ?? [];
+      if (bases.length) {
+        for (const base of bases) used.add(`${base}${match[1]}`);
+        continue;
+      }
       const alias = aliases.find(([from]) => match[1].startsWith(from));
       used.add(alias ? `${alias[1]}${match[1].slice(alias[0].length)}` : match[1]);
     }
@@ -54,10 +63,11 @@ for (const file of files(sourceRoot)) {
 }
 
 const available = leaves(messages);
-const missing = [...used].filter((key) => !available.has(key)).sort();
+// Ignore dynamic/prefix keys captured from string concatenation (e.g. "foo.bar." + value).
+const missing = [...used].filter((key) => !key.endsWith(".") && !available.has(key)).sort();
 if (missing.length) {
   console.error(`Missing React EN translation keys (${missing.length}):\n${missing.join("\n")}`);
   process.exitCode = 1;
 } else {
-  console.log(`PASS: React used-key validation (${used.size} literal keys)`);
+  console.log(`PASS: React used-key validation (${[...used].filter((key) => !key.endsWith(".")).length} literal keys)`);
 }

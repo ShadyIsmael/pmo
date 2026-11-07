@@ -1,4 +1,4 @@
-<Solution>
+﻿<Solution>
   <Folder Name="/src/">
     <Project Path="src/NEXUS.Api/NEXUS.Api.csproj" />
     <Project Path="src/NEXUS.Modules.AIPlanning/NEXUS.Modules.AIPlanning.csproj" />
@@ -23,5 +23,13 @@
     <Project Path="src/NEXUS.Modules.WorkItems/NEXUS.Modules.WorkItems.csproj" />
     <Project Path="src/NEXUS.Persistence/NEXUS.Persistence.csproj" />
     <Project Path="src/NEXUS.SharedKernel/NEXUS.SharedKernel.csproj" />
+    </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/NEXUS.Api.Tests/NEXUS.Api.Tests.csproj" />
+    <Project Path="tests/NEXUS.Modules.Approvals.Tests/NEXUS.Modules.Approvals.Tests.csproj" />
+    <Project Path="tests/NEXUS.Modules.ResourceManagement.Tests/NEXUS.Modules.ResourceManagement.Tests.csproj" />
+    <Project Path="tests/NEXUS.Modules.WorkflowEngine.Tests/NEXUS.Modules.WorkflowEngine.Tests.csproj" />
+    <Project Path="tests/NEXUS.Modules.WorkItems.Tests/NEXUS.Modules.WorkItems.Tests.csproj" />
   </Folder>
 </Solution>
+

@@ -6,7 +6,7 @@ namespace NEXUS.Modules.Audit.Api;
 
 [ApiController]
 [Route("api/audit")]
-[Authorize]
+[Authorize(Policy = "Audit.View")]
 public class AuditController : ControllerBase
 {
     private readonly IAuditService _auditService;
@@ -19,6 +19,10 @@ public class AuditController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetPaged([FromQuery] int page = 1, [FromQuery] int pageSize = 20, [FromQuery] string? entityType = null, [FromQuery] string? action = null, [FromQuery] Guid? entityId = null, [FromQuery] string? entityIds = null, [FromQuery] string? search = null, CancellationToken cancellationToken = default)
     {
+        // The audit trail is a privileged, potentially high-volume read surface: bound the
+        // window so a single request cannot stream an unbounded slice of the tenant log.
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 100);
         var result = await _auditService.GetPagedAsync(page, pageSize, entityType, action, entityId, ParseEntityIds(entityIds), search, cancellationToken);
         return Ok(result);
     }

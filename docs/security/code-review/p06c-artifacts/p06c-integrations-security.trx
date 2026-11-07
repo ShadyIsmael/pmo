@@ -1,0 +1,225 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="d79d3d58-68cc-4f33-a54d-9ebc98a954fb" name="shady@SHADY 2026-11-05 19:10:19" runUser="SHADY\shady" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-11-05T19:10:19.6372717+02:00" queuing="2026-11-05T19:10:19.6372722+02:00" start="2026-11-05T19:10:17.4819338+02:00" finish="2026-11-05T19:10:26.3156017+02:00" />
+  <TestSettings name="default" id="42355600-3892-4262-a3f9-f4168c55af28">
+    <Deployment runDeploymentRoot="shady_SHADY_2026-11-05_19_10_19" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="9b61d21c-8e96-4753-ab0b-20906b9c56f9" testId="dbb85b69-14e1-9390-9256-ddf373e2f227" testName="NEXUS.Api.Tests.Security.IntegrationSecretProtectorTests.Legacy_plaintext_is_readable_but_not_marked_protected" computerName="SHADY" duration="00:00:00.0607638" startTime="2026-11-05T19:10:18.8442601+02:00" endTime="2026-11-05T19:10:18.8996394+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="9b61d21c-8e96-4753-ab0b-20906b9c56f9" />
+    <UnitTestResult executionId="ee4379a1-85a6-47b8-ba3f-952012d7fdf2" testId="daf6522c-edd1-4008-a366-e0cddb3c4b61" testName="NEXUS.Api.Tests.Security.IntegrationTenantIsolationTests.GetPagedAsync_returns_only_caller_tenant_connections" computerName="SHADY" duration="00:00:00.0010000" startTime="2026-11-05T19:10:25.3192365+02:00" endTime="2026-11-05T19:10:25.7918339+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="ee4379a1-85a6-47b8-ba3f-952012d7fdf2">
+      <Output>
+        <ErrorInfo>
+          <Message>Microsoft.Data.Sqlite.SqliteException : SQLite Error 1: 'near "max": syntax error'.</Message>
+          <StackTrace>   at Microsoft.Data.Sqlite.SqliteException.ThrowExceptionForRC(Int32 rc, sqlite3 db)&#xD;
+   at Microsoft.Data.Sqlite.SqliteCommand.PrepareAndEnumerateStatements()+MoveNext()&#xD;
+   at Microsoft.Data.Sqlite.SqliteCommand.GetStatements()+MoveNext()&#xD;
+   at Microsoft.Data.Sqlite.SqliteDataReader.NextResult()&#xD;
+   at Microsoft.Data.Sqlite.SqliteCommand.ExecuteReader(CommandBehavior behavior)&#xD;
+   at Microsoft.Data.Sqlite.SqliteCommand.ExecuteReader()&#xD;
+   at Microsoft.Data.Sqlite.SqliteCommand.ExecuteNonQuery()&#xD;
+   at Microsoft.EntityFrameworkCore.Storage.RelationalCommand.ExecuteNonQuery(RelationalCommandParameterObject parameterObject)&#xD;
+   at Microsoft.EntityFrameworkCore.Migrations.MigrationCommand.ExecuteNonQuery(IRelationalConnection connection, IReadOnlyDictionary`2 parameterValues)&#xD;
+   at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.Execute(IReadOnlyList`1 migrationCommands, IRelationalConnection connection, MigrationExecutionState executionState, Boolean beginTransaction, Boolean commitTransaction, Nullable`1 isolationLevel)&#xD;
+   at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.&lt;&gt;c.&lt;ExecuteNonQuery&gt;b__3_1(DbContext _, ValueTuple`6 s)&#xD;
+   at Microsoft.EntityFrameworkCore.Storage.NonRetryingExecutionStrategy.Execute[TState,TResult](TState state, Func`3 operation, Func`3 verifySucceeded)&#xD;
+   at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.ExecuteNonQuery(IReadOnlyList`1 migrationCommands, IRelationalConnection connection, MigrationExecutionState executionState, Boolean commitTransaction, Nullable`1 isolationLevel)&#xD;
+   at Microsoft.EntityFrameworkCore.Storage.RelationalDatabaseCreator.CreateTables()&#xD;
+   at Microsoft.EntityFrameworkCore.Storage.RelationalDatabaseCreator.EnsureCreated()&#xD;
+   at Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade.EnsureCreated()&#xD;
+   at NEXUS.Api.Tests.Security.IntegrationTenantIsolationTests..ctor() in C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Security\IntegrationTenantIsolationTests.cs:line 33&#xD;
+   at System.RuntimeType.CreateInstanceDefaultCtor(Boolean publicOnly, Boolean wrapExceptions)</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="034bbd26-7f71-4c07-b02c-457641d6c86f" testId="6afd8ecc-dbe3-5fe9-9786-e1edd7a62952" testName="NEXUS.Api.Tests.Security.IntegrationTenantIsolationTests.GetByIdAsync_returns_not_found_for_other_tenant_connection" computerName="SHADY" duration="00:00:00.0010000" startTime="2026-11-05T19:10:25.7947820+02:00" endTime="2026-11-05T19:10:26.2091114+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="034bbd26-7f71-4c07-b02c-457641d6c86f">
+      <Output>
+        <ErrorInfo>
+          <Message>Microsoft.Data.Sqlite.SqliteException : SQLite Error 1: 'near "max": syntax error'.</Message>
+          <StackTrace>   at Microsoft.Data.Sqlite.SqliteException.ThrowExceptionForRC(Int32 rc, sqlite3 db)&#xD;
+   at Microsoft.Data.Sqlite.SqliteCommand.PrepareAndEnumerateStatements()+MoveNext()&#xD;
+   at Microsoft.Data.Sqlite.SqliteCommand.GetStatements()+MoveNext()&#xD;
+   at Microsoft.Data.Sqlite.SqliteDataReader.NextResult()&#xD;
+   at Microsoft.Data.Sqlite.SqliteCommand.ExecuteReader(CommandBehavior behavior)&#xD;
+   at Microsoft.Data.Sqlite.SqliteCommand.ExecuteReader()&#xD;
+   at Microsoft.Data.Sqlite.SqliteCommand.ExecuteNonQuery()&#xD;
+   at Microsoft.EntityFrameworkCore.Storage.RelationalCommand.ExecuteNonQuery(RelationalCommandParameterObject parameterObject)&#xD;
+   at Microsoft.EntityFrameworkCore.Migrations.MigrationCommand.ExecuteNonQuery(IRelationalConnection connection, IReadOnlyDictionary`2 parameterValues)&#xD;
+   at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.Execute(IReadOnlyList`1 migrationCommands, IRelationalConnection connection, MigrationExecutionState executionState, Boolean beginTransaction, Boolean commitTransaction, Nullable`1 isolationLevel)&#xD;
+   at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.&lt;&gt;c.&lt;ExecuteNonQuery&gt;b__3_1(DbContext _, ValueTuple`6 s)&#xD;
+   at Microsoft.EntityFrameworkCore.Storage.NonRetryingExecutionStrategy.Execute[TState,TResult](TState state, Func`3 operation, Func`3 verifySucceeded)&#xD;
+   at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.ExecuteNonQuery(IReadOnlyList`1 migrationCommands, IRelationalConnection connection, MigrationExecutionState executionState, Boolean commitTransaction, Nullable`1 isolationLevel)&#xD;
+   at Microsoft.EntityFrameworkCore.Storage.RelationalDatabaseCreator.CreateTables()&#xD;
+   at Microsoft.EntityFrameworkCore.Storage.RelationalDatabaseCreator.EnsureCreated()&#xD;
+   at Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade.EnsureCreated()&#xD;
+   at NEXUS.Api.Tests.Security.IntegrationTenantIsolationTests..ctor() in C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Security\IntegrationTenantIsolationTests.cs:line 33&#xD;
+   at System.RuntimeType.CreateInstanceDefaultCtor(Boolean publicOnly, Boolean wrapExceptions)</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="26fc9e66-9405-4a3c-a617-629dc20df67d" testId="ed9c4813-8460-f5af-3cc6-1eb2672d437e" testName="NEXUS.Api.Tests.Security.IntegrationSecretProtectorTests.Unreadable_ciphertext_fails_closed_without_throwing" computerName="SHADY" duration="00:00:00.0714592" startTime="2026-11-05T19:10:18.9000773+02:00" endTime="2026-11-05T19:10:18.9713021+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="26fc9e66-9405-4a3c-a617-629dc20df67d" />
+    <UnitTestResult executionId="2f186454-ec04-44cb-b7f2-072d593eb70e" testId="3f4bbfa5-cc22-f94f-8750-3bd82b79a389" testName="NEXUS.Api.Tests.Security.IntegrationConnectionDtoTests.Response_contract_does_not_declare_credential_properties" computerName="SHADY" duration="00:00:00.0065516" startTime="2026-11-05T19:10:18.8418209+02:00" endTime="2026-11-05T19:10:18.8419368+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="2f186454-ec04-44cb-b7f2-072d593eb70e" />
+    <UnitTestResult executionId="21dddf25-25bb-4939-9333-9b54af1e503f" testId="bbb3e551-6ee9-0510-6d65-79cd48d52bb1" testName="NEXUS.Api.Tests.Security.IntegrationConnectionDtoTests.Serialized_payload_exposes_only_non_secret_fields" computerName="SHADY" duration="00:00:00.2794552" startTime="2026-11-05T19:10:18.5364293+02:00" endTime="2026-11-05T19:10:18.8283145+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="21dddf25-25bb-4939-9333-9b54af1e503f" />
+    <UnitTestResult executionId="9f176a8c-1561-432b-9924-d593cd62664b" testId="2d630424-211e-762d-2134-4a0cf8edbc5a" testName="NEXUS.Api.Tests.Security.IntegrationTenantIsolationTests.GetByIdAsync_returns_own_tenant_connection_without_secret_values" computerName="SHADY" duration="00:00:00.0010000" startTime="2026-11-05T19:10:18.9938247+02:00" endTime="2026-11-05T19:10:25.3060356+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="9f176a8c-1561-432b-9924-d593cd62664b">
+      <Output>
+        <ErrorInfo>
+          <Message>Microsoft.Data.Sqlite.SqliteException : SQLite Error 1: 'near "max": syntax error'.</Message>
+          <StackTrace>   at Microsoft.Data.Sqlite.SqliteException.ThrowExceptionForRC(Int32 rc, sqlite3 db)&#xD;
+   at Microsoft.Data.Sqlite.SqliteCommand.PrepareAndEnumerateStatements()+MoveNext()&#xD;
+   at Microsoft.Data.Sqlite.SqliteCommand.GetStatements()+MoveNext()&#xD;
+   at Microsoft.Data.Sqlite.SqliteDataReader.NextResult()&#xD;
+   at Microsoft.Data.Sqlite.SqliteCommand.ExecuteReader(CommandBehavior behavior)&#xD;
+   at Microsoft.Data.Sqlite.SqliteCommand.ExecuteReader()&#xD;
+   at Microsoft.Data.Sqlite.SqliteCommand.ExecuteNonQuery()&#xD;
+   at Microsoft.EntityFrameworkCore.Storage.RelationalCommand.ExecuteNonQuery(RelationalCommandParameterObject parameterObject)&#xD;
+   at Microsoft.EntityFrameworkCore.Migrations.MigrationCommand.ExecuteNonQuery(IRelationalConnection connection, IReadOnlyDictionary`2 parameterValues)&#xD;
+   at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.Execute(IReadOnlyList`1 migrationCommands, IRelationalConnection connection, MigrationExecutionState executionState, Boolean beginTransaction, Boolean commitTransaction, Nullable`1 isolationLevel)&#xD;
+   at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.&lt;&gt;c.&lt;ExecuteNonQuery&gt;b__3_1(DbContext _, ValueTuple`6 s)&#xD;
+   at Microsoft.EntityFrameworkCore.Storage.NonRetryingExecutionStrategy.Execute[TState,TResult](TState state, Func`3 operation, Func`3 verifySucceeded)&#xD;
+   at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.ExecuteNonQuery(IReadOnlyList`1 migrationCommands, IRelationalConnection connection, MigrationExecutionState executionState, Boolean commitTransaction, Nullable`1 isolationLevel)&#xD;
+   at Microsoft.EntityFrameworkCore.Storage.RelationalDatabaseCreator.CreateTables()&#xD;
+   at Microsoft.EntityFrameworkCore.Storage.RelationalDatabaseCreator.EnsureCreated()&#xD;
+   at Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade.EnsureCreated()&#xD;
+   at NEXUS.Api.Tests.Security.IntegrationTenantIsolationTests..ctor() in C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Security\IntegrationTenantIsolationTests.cs:line 33&#xD;
+   at System.RuntimeType.CreateInstanceDefaultCtor(Boolean publicOnly, Boolean wrapExceptions)</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="87e38eed-a4a4-4218-b7c0-b5685056e00c" testId="b2fd3058-1def-0faf-c84c-ee258b9b4dcd" testName="NEXUS.Api.Tests.Security.IntegrationSecretProtectorTests.Protect_and_unprotect_round_trip_and_marks_ciphertext" computerName="SHADY" duration="00:00:00.0034737" startTime="2026-11-05T19:10:18.9716792+02:00" endTime="2026-11-05T19:10:18.9749142+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="87e38eed-a4a4-4218-b7c0-b5685056e00c" />
+    <UnitTestResult executionId="ea534356-9335-4bba-9832-f070210682a9" testId="9f5a25d7-046a-9a7c-a065-45d0bb6dd4ad" testName="NEXUS.Api.Tests.Security.IntegrationSecretProjectionTests.Dto_serialization_never_contains_secret_properties_even_with_protected_values" computerName="SHADY" duration="00:00:00.0170689" startTime="2026-11-05T19:10:18.9858991+02:00" endTime="2026-11-05T19:10:18.9923188+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="ea534356-9335-4bba-9832-f070210682a9" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="NEXUS.Api.Tests.Security.IntegrationSecretProjectionTests.Dto_serialization_never_contains_secret_properties_even_with_protected_values" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="9f5a25d7-046a-9a7c-a065-45d0bb6dd4ad">
+      <Execution id="ea534356-9335-4bba-9832-f070210682a9" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.IntegrationSecretProjectionTests" name="Dto_serialization_never_contains_secret_properties_even_with_protected_values" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.IntegrationTenantIsolationTests.GetPagedAsync_returns_only_caller_tenant_connections" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="daf6522c-edd1-4008-a366-e0cddb3c4b61">
+      <Execution id="ee4379a1-85a6-47b8-ba3f-952012d7fdf2" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.IntegrationTenantIsolationTests" name="GetPagedAsync_returns_only_caller_tenant_connections" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.IntegrationTenantIsolationTests.GetByIdAsync_returns_not_found_for_other_tenant_connection" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="6afd8ecc-dbe3-5fe9-9786-e1edd7a62952">
+      <Execution id="034bbd26-7f71-4c07-b02c-457641d6c86f" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.IntegrationTenantIsolationTests" name="GetByIdAsync_returns_not_found_for_other_tenant_connection" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.IntegrationSecretProtectorTests.Legacy_plaintext_is_readable_but_not_marked_protected" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="dbb85b69-14e1-9390-9256-ddf373e2f227">
+      <Execution id="9b61d21c-8e96-4753-ab0b-20906b9c56f9" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.IntegrationSecretProtectorTests" name="Legacy_plaintext_is_readable_but_not_marked_protected" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.IntegrationConnectionDtoTests.Serialized_payload_exposes_only_non_secret_fields" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="bbb3e551-6ee9-0510-6d65-79cd48d52bb1">
+      <Execution id="21dddf25-25bb-4939-9333-9b54af1e503f" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.IntegrationConnectionDtoTests" name="Serialized_payload_exposes_only_non_secret_fields" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.IntegrationConnectionDtoTests.Response_contract_does_not_declare_credential_properties" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="3f4bbfa5-cc22-f94f-8750-3bd82b79a389">
+      <Execution id="2f186454-ec04-44cb-b7f2-072d593eb70e" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.IntegrationConnectionDtoTests" name="Response_contract_does_not_declare_credential_properties" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.IntegrationSecretProtectorTests.Protect_and_unprotect_round_trip_and_marks_ciphertext" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="b2fd3058-1def-0faf-c84c-ee258b9b4dcd">
+      <Execution id="87e38eed-a4a4-4218-b7c0-b5685056e00c" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.IntegrationSecretProtectorTests" name="Protect_and_unprotect_round_trip_and_marks_ciphertext" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.IntegrationTenantIsolationTests.GetByIdAsync_returns_own_tenant_connection_without_secret_values" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="2d630424-211e-762d-2134-4a0cf8edbc5a">
+      <Execution id="9f176a8c-1561-432b-9924-d593cd62664b" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.IntegrationTenantIsolationTests" name="GetByIdAsync_returns_own_tenant_connection_without_secret_values" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Security.IntegrationSecretProtectorTests.Unreadable_ciphertext_fails_closed_without_throwing" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="ed9c4813-8460-f5af-3cc6-1eb2672d437e">
+      <Execution id="26fc9e66-9405-4a3c-a617-629dc20df67d" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Security.IntegrationSecretProtectorTests" name="Unreadable_ciphertext_fails_closed_without_throwing" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="dbb85b69-14e1-9390-9256-ddf373e2f227" executionId="9b61d21c-8e96-4753-ab0b-20906b9c56f9" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="daf6522c-edd1-4008-a366-e0cddb3c4b61" executionId="ee4379a1-85a6-47b8-ba3f-952012d7fdf2" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="6afd8ecc-dbe3-5fe9-9786-e1edd7a62952" executionId="034bbd26-7f71-4c07-b02c-457641d6c86f" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="ed9c4813-8460-f5af-3cc6-1eb2672d437e" executionId="26fc9e66-9405-4a3c-a617-629dc20df67d" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="3f4bbfa5-cc22-f94f-8750-3bd82b79a389" executionId="2f186454-ec04-44cb-b7f2-072d593eb70e" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="bbb3e551-6ee9-0510-6d65-79cd48d52bb1" executionId="21dddf25-25bb-4939-9333-9b54af1e503f" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="2d630424-211e-762d-2134-4a0cf8edbc5a" executionId="9f176a8c-1561-432b-9924-d593cd62664b" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="b2fd3058-1def-0faf-c84c-ee258b9b4dcd" executionId="87e38eed-a4a4-4218-b7c0-b5685056e00c" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="9f5a25d7-046a-9a7c-a065-45d0bb6dd4ad" executionId="ea534356-9335-4bba-9832-f070210682a9" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Failed">
+    <Counters total="9" executed="9" passed="6" failed="3" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.0.0+e341b939fe (64-bit .NET 10.0.10)&#xD;
+[xUnit.net 00:00:00.17]   Discovering: NEXUS.Api.Tests&#xD;
+[xUnit.net 00:00:00.34]   Discovered:  NEXUS.Api.Tests&#xD;
+[xUnit.net 00:00:00.37]   Starting:    NEXUS.Api.Tests&#xD;
+[xUnit.net 00:00:07.17]       Microsoft.Data.Sqlite.SqliteException : SQLite Error 1: 'near "max": syntax error'.&#xD;
+[xUnit.net 00:00:07.17]       Stack Trace:&#xD;
+[xUnit.net 00:00:07.18]            at Microsoft.Data.Sqlite.SqliteException.ThrowExceptionForRC(Int32 rc, sqlite3 db)&#xD;
+[xUnit.net 00:00:07.18]            at Microsoft.Data.Sqlite.SqliteCommand.PrepareAndEnumerateStatements()+MoveNext()&#xD;
+[xUnit.net 00:00:07.18]            at Microsoft.Data.Sqlite.SqliteCommand.GetStatements()+MoveNext()&#xD;
+[xUnit.net 00:00:07.18]            at Microsoft.Data.Sqlite.SqliteDataReader.NextResult()&#xD;
+[xUnit.net 00:00:07.18]            at Microsoft.Data.Sqlite.SqliteCommand.ExecuteReader(CommandBehavior behavior)&#xD;
+[xUnit.net 00:00:07.18]            at Microsoft.Data.Sqlite.SqliteCommand.ExecuteReader()&#xD;
+[xUnit.net 00:00:07.18]            at Microsoft.Data.Sqlite.SqliteCommand.ExecuteNonQuery()&#xD;
+[xUnit.net 00:00:07.18]            at Microsoft.EntityFrameworkCore.Storage.RelationalCommand.ExecuteNonQuery(RelationalCommandParameterObject parameterObject)&#xD;
+[xUnit.net 00:00:07.18]            at Microsoft.EntityFrameworkCore.Migrations.MigrationCommand.ExecuteNonQuery(IRelationalConnection connection, IReadOnlyDictionary`2 parameterValues)&#xD;
+[xUnit.net 00:00:07.18]            at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.Execute(IReadOnlyList`1 migrationCommands, IRelationalConnection connection, MigrationExecutionState executionState, Boolean beginTransaction, Boolean commitTransaction, Nullable`1 isolationLevel)&#xD;
+[xUnit.net 00:00:07.18]            at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.&lt;&gt;c.&lt;ExecuteNonQuery&gt;b__3_1(DbContext _, ValueTuple`6 s)&#xD;
+[xUnit.net 00:00:07.18]            at Microsoft.EntityFrameworkCore.Storage.NonRetryingExecutionStrategy.Execute[TState,TResult](TState state, Func`3 operation, Func`3 verifySucceeded)&#xD;
+[xUnit.net 00:00:07.18]            at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.ExecuteNonQuery(IReadOnlyList`1 migrationCommands, IRelationalConnection connection, MigrationExecutionState executionState, Boolean commitTransaction, Nullable`1 isolationLevel)&#xD;
+[xUnit.net 00:00:07.18]            at Microsoft.EntityFrameworkCore.Storage.RelationalDatabaseCreator.CreateTables()&#xD;
+[xUnit.net 00:00:07.18]            at Microsoft.EntityFrameworkCore.Storage.RelationalDatabaseCreator.EnsureCreated()&#xD;
+[xUnit.net 00:00:07.18]            at Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade.EnsureCreated()&#xD;
+[xUnit.net 00:00:07.18]         C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Security\IntegrationTenantIsolationTests.cs(33,0): at NEXUS.Api.Tests.Security.IntegrationTenantIsolationTests..ctor()&#xD;
+[xUnit.net 00:00:07.18]            at System.RuntimeType.CreateInstanceDefaultCtor(Boolean publicOnly, Boolean wrapExceptions)&#xD;
+[xUnit.net 00:00:07.66]       Microsoft.Data.Sqlite.SqliteException : SQLite Error 1: 'near "max": syntax error'.&#xD;
+[xUnit.net 00:00:07.66]       Stack Trace:&#xD;
+[xUnit.net 00:00:07.66]            at Microsoft.Data.Sqlite.SqliteException.ThrowExceptionForRC(Int32 rc, sqlite3 db)&#xD;
+[xUnit.net 00:00:07.66]            at Microsoft.Data.Sqlite.SqliteCommand.PrepareAndEnumerateStatements()+MoveNext()&#xD;
+[xUnit.net 00:00:07.66]            at Microsoft.Data.Sqlite.SqliteCommand.GetStatements()+MoveNext()&#xD;
+[xUnit.net 00:00:07.66]            at Microsoft.Data.Sqlite.SqliteDataReader.NextResult()&#xD;
+[xUnit.net 00:00:07.66]            at Microsoft.Data.Sqlite.SqliteCommand.ExecuteReader(CommandBehavior behavior)&#xD;
+[xUnit.net 00:00:07.66]            at Microsoft.Data.Sqlite.SqliteCommand.ExecuteReader()&#xD;
+[xUnit.net 00:00:07.66]            at Microsoft.Data.Sqlite.SqliteCommand.ExecuteNonQuery()&#xD;
+[xUnit.net 00:00:07.66]            at Microsoft.EntityFrameworkCore.Storage.RelationalCommand.ExecuteNonQuery(RelationalCommandParameterObject parameterObject)&#xD;
+[xUnit.net 00:00:07.66]            at Microsoft.EntityFrameworkCore.Migrations.MigrationCommand.ExecuteNonQuery(IRelationalConnection connection, IReadOnlyDictionary`2 parameterValues)&#xD;
+[xUnit.net 00:00:07.66]            at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.Execute(IReadOnlyList`1 migrationCommands, IRelationalConnection connection, MigrationExecutionState executionState, Boolean beginTransaction, Boolean commitTransaction, Nullable`1 isolationLevel)&#xD;
+[xUnit.net 00:00:07.66]            at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.&lt;&gt;c.&lt;ExecuteNonQuery&gt;b__3_1(DbContext _, ValueTuple`6 s)&#xD;
+[xUnit.net 00:00:07.66]            at Microsoft.EntityFrameworkCore.Storage.NonRetryingExecutionStrategy.Execute[TState,TResult](TState state, Func`3 operation, Func`3 verifySucceeded)&#xD;
+[xUnit.net 00:00:07.66]            at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.ExecuteNonQuery(IReadOnlyList`1 migrationCommands, IRelationalConnection connection, MigrationExecutionState executionState, Boolean commitTransaction, Nullable`1 isolationLevel)&#xD;
+[xUnit.net 00:00:07.66]            at Microsoft.EntityFrameworkCore.Storage.RelationalDatabaseCreator.CreateTables()&#xD;
+[xUnit.net 00:00:07.66]            at Microsoft.EntityFrameworkCore.Storage.RelationalDatabaseCreator.EnsureCreated()&#xD;
+[xUnit.net 00:00:07.66]            at Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade.EnsureCreated()&#xD;
+[xUnit.net 00:00:07.66]         C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Security\IntegrationTenantIsolationTests.cs(33,0): at NEXUS.Api.Tests.Security.IntegrationTenantIsolationTests..ctor()&#xD;
+[xUnit.net 00:00:07.66]            at System.RuntimeType.CreateInstanceDefaultCtor(Boolean publicOnly, Boolean wrapExceptions)&#xD;
+[xUnit.net 00:00:08.07]       Microsoft.Data.Sqlite.SqliteException : SQLite Error 1: 'near "max": syntax error'.&#xD;
+[xUnit.net 00:00:08.07]       Stack Trace:&#xD;
+[xUnit.net 00:00:08.07]            at Microsoft.Data.Sqlite.SqliteException.ThrowExceptionForRC(Int32 rc, sqlite3 db)&#xD;
+[xUnit.net 00:00:08.07]            at Microsoft.Data.Sqlite.SqliteCommand.PrepareAndEnumerateStatements()+MoveNext()&#xD;
+[xUnit.net 00:00:08.07]            at Microsoft.Data.Sqlite.SqliteCommand.GetStatements()+MoveNext()&#xD;
+[xUnit.net 00:00:08.07]            at Microsoft.Data.Sqlite.SqliteDataReader.NextResult()&#xD;
+[xUnit.net 00:00:08.07]            at Microsoft.Data.Sqlite.SqliteCommand.ExecuteReader(CommandBehavior behavior)&#xD;
+[xUnit.net 00:00:08.07]            at Microsoft.Data.Sqlite.SqliteCommand.ExecuteReader()&#xD;
+[xUnit.net 00:00:08.07]            at Microsoft.Data.Sqlite.SqliteCommand.ExecuteNonQuery()&#xD;
+[xUnit.net 00:00:08.07]            at Microsoft.EntityFrameworkCore.Storage.RelationalCommand.ExecuteNonQuery(RelationalCommandParameterObject parameterObject)&#xD;
+[xUnit.net 00:00:08.07]            at Microsoft.EntityFrameworkCore.Migrations.MigrationCommand.ExecuteNonQuery(IRelationalConnection connection, IReadOnlyDictionary`2 parameterValues)&#xD;
+[xUnit.net 00:00:08.07]            at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.Execute(IReadOnlyList`1 migrationCommands, IRelationalConnection connection, MigrationExecutionState executionState, Boolean beginTransaction, Boolean commitTransaction, Nullable`1 isolationLevel)&#xD;
+[xUnit.net 00:00:08.07]            at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.&lt;&gt;c.&lt;ExecuteNonQuery&gt;b__3_1(DbContext _, ValueTuple`6 s)&#xD;
+[xUnit.net 00:00:08.07]            at Microsoft.EntityFrameworkCore.Storage.NonRetryingExecutionStrategy.Execute[TState,TResult](TState state, Func`3 operation, Func`3 verifySucceeded)&#xD;
+[xUnit.net 00:00:08.07]            at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.ExecuteNonQuery(IReadOnlyList`1 migrationCommands, IRelationalConnection connection, MigrationExecutionState executionState, Boolean commitTransaction, Nullable`1 isolationLevel)&#xD;
+[xUnit.net 00:00:08.07]            at Microsoft.EntityFrameworkCore.Storage.RelationalDatabaseCreator.CreateTables()&#xD;
+[xUnit.net 00:00:08.07]            at Microsoft.EntityFrameworkCore.Storage.RelationalDatabaseCreator.EnsureCreated()&#xD;
+[xUnit.net 00:00:08.07]            at Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade.EnsureCreated()&#xD;
+[xUnit.net 00:00:08.07]         C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Security\IntegrationTenantIsolationTests.cs(33,0): at NEXUS.Api.Tests.Security.IntegrationTenantIsolationTests..ctor()&#xD;
+[xUnit.net 00:00:08.07]            at System.RuntimeType.CreateInstanceDefaultCtor(Boolean publicOnly, Boolean wrapExceptions)&#xD;
+[xUnit.net 00:00:08.08]   Finished:    NEXUS.Api.Tests&#xD;
+</StdOut>
+    </Output>
+    <RunInfos>
+      <RunInfo computerName="SHADY" outcome="Error" timestamp="2026-11-05T19:10:25.3105297+02:00">
+        <Text>[xUnit.net 00:00:07.17]     NEXUS.Api.Tests.Security.IntegrationTenantIsolationTests.GetByIdAsync_returns_own_tenant_connection_without_secret_values [FAIL]</Text>
+      </RunInfo>
+      <RunInfo computerName="SHADY" outcome="Error" timestamp="2026-11-05T19:10:25.7927833+02:00">
+        <Text>[xUnit.net 00:00:07.65]     NEXUS.Api.Tests.Security.IntegrationTenantIsolationTests.GetPagedAsync_returns_only_caller_tenant_connections [FAIL]</Text>
+      </RunInfo>
+      <RunInfo computerName="SHADY" outcome="Error" timestamp="2026-11-05T19:10:26.2096900+02:00">
+        <Text>[xUnit.net 00:00:08.07]     NEXUS.Api.Tests.Security.IntegrationTenantIsolationTests.GetByIdAsync_returns_not_found_for_other_tenant_connection [FAIL]</Text>
+      </RunInfo>
+    </RunInfos>
+  </ResultSummary>
+</TestRun>

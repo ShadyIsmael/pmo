@@ -7,7 +7,6 @@ import { RiskCreatePage } from "../features/risks/RiskCreatePage";
 const fixtures = vi.hoisted(() => ({
   project: { id: "project-1", publicId: "public-project-1", code: "PRJ-001", name: "Delivery Project" },
   projects: [{ id: "project-1", publicId: "public-project-1", code: "PRJ-001", name: "Delivery Project" }],
-  resources: [{ id: "resource-1", name: "Resource Owner" }],
   permissions: ["Risk.Create"],
   createRisk: vi.fn(),
 }));
@@ -17,8 +16,8 @@ vi.mock("@features/projects/api/projects", () => ({
   useProjects: () => ({ data: { items: fixtures.projects }, isLoading: false, isError: false }),
 }));
 
-vi.mock("@features/resources/api/resources", () => ({
-  useResources: () => ({ data: { items: fixtures.resources }, isLoading: false, isError: false }),
+vi.mock("@features/projects/lib/project-lookups", () => ({
+  useRiskWorkflowUserLookup: () => ({ data: [{ id: "user-1", fullName: "System User Owner" }], isLoading: false, isError: false }),
 }));
 
 vi.mock("@features/risks/api/risks", () => ({
@@ -60,7 +59,7 @@ describe("risk creation source parity", () => {
     expect(screen.getByRole("link", { name: /Delivery Project \(PRJ-001\)/ })).toHaveAttribute("href", "/projects/public-project-1/risks-issues");
     fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Supplier delay" } });
     fireEvent.change(screen.getByLabelText("Description"), { target: { value: "A supplier may miss the delivery window." } });
-    fireEvent.change(screen.getByLabelText("Risk Owner"), { target: { value: "resource-1" } });
+    fireEvent.change(screen.getByLabelText("System user owner"), { target: { value: "user-1" } });
     fireEvent.change(screen.getByLabelText("Risk Level"), { target: { value: "High" } });
     fireEvent.click(screen.getByRole("checkbox", { name: "Schedule / delay" }));
     fireEvent.change(screen.getByLabelText("Impact description"), { target: { value: "The milestone could slip by two weeks." } });
@@ -71,7 +70,8 @@ describe("risk creation source parity", () => {
       title: "Supplier delay",
       description: "A supplier may miss the delivery window.",
       riskLevel: "High",
-      ownerResourceId: "resource-1",
+      ownerUserId: "user-1",
+      ownerResourceId: undefined,
       impactAssessment: { impactTypes: ["Schedule"], description: "The milestone could slip by two weeks." },
     }));
     expect(await screen.findByTestId("location")).toHaveTextContent("/risks-issues/risks/risk-1?tab=actions&addAction=1&from=project&projectId=project-1");

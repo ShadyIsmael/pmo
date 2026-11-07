@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using NEXUS.Modules.ProjectManagement.Application;
 using NEXUS.Modules.ProjectManagement.Application.DTOs;
+using NEXUS.SharedKernel;
 
 namespace NEXUS.Modules.ProjectManagement.Api;
 
@@ -24,6 +26,18 @@ public class HandoverRequestController : ControllerBase
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
         var result = await _handoverRequestService.GetPendingForMeAsync(userId, cancellationToken);
         if (result.IsFailure) return BadRequest(new { error = result.Error?.Message });
+        return Ok(result.Value);
+    }
+
+    [Authorize(Policy = "Handover.View")]
+    [HttpGet("{id:guid}/details")]
+    public async Task<IActionResult> GetDetails(Guid id, CancellationToken cancellationToken)
+    {
+        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? string.Empty;
+        var result = await _handoverRequestService.GetExistingRequestDetailsAsync(id, userId, cancellationToken);
+        if (result.IsFailure)
+            return StatusCode(result.Error?.StatusCode ?? StatusCodes.Status404NotFound,
+                result.Error ?? Error.NotFound("This handover request is not available to the current user."));
         return Ok(result.Value);
     }
 
@@ -76,7 +90,7 @@ public class HandoverRequestController : ControllerBase
         return Ok(result.Value);
     }
 
-    [Authorize(Policy = "Handover.Initiate")]
+    [Authorize(Policy = "Handover.View")]
     [HttpPost("{id:guid}/cancel")]
     public async Task<IActionResult> Cancel(Guid id, CancellationToken cancellationToken)
     {

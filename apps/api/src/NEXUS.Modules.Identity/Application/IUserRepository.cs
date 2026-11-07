@@ -9,7 +9,10 @@ public interface IUserRepository
     Task<User?> GetWithRolesAsync(Guid id, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<User>> GetAllAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<User>> GetActiveAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<User>> GetActiveInTenantAsync(Guid tenantId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<User>> GetByRoleNameAsync(string roleName, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<User>> GetByRoleNameInTenantAsync(string roleName, Guid tenantId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<User>> GetByRoleCategoryInTenantAsync(string category, Guid tenantId, CancellationToken cancellationToken = default);
     Task AddAsync(User user, CancellationToken cancellationToken = default);
     Task UpdateAsync(User user, CancellationToken cancellationToken = default);
     Task DeleteAsync(User user, CancellationToken cancellationToken = default);

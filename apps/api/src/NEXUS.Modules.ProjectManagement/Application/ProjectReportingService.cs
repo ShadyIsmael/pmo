@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using NEXUS.Modules.Audit.Application;
 using NEXUS.Modules.Audit.Domain;
+using NEXUS.Modules.CostManagement.Domain;
 using NEXUS.Modules.ProjectManagement.Application.DTOs;
 using NEXUS.Modules.ProjectManagement.Domain;
 using NEXUS.Modules.ProjectPlanning.Domain;
@@ -398,6 +399,79 @@ public sealed class ProjectReportingService : IProjectReportingService
             Milestones = milestones,
             CriticalPathMode = "ByPlan",
             CriticalPathUnavailableReason = "UNIFIED_CROSS_PLAN_NETWORK_UNAVAILABLE"
+        });
+    }
+
+    public async Task<Result<ProjectFinancialSummaryDto>> GetFinancialSummaryAsync(
+        Guid projectId,
+        DateTime periodFrom,
+        DateTime periodTo,
+        CancellationToken cancellationToken = default)
+    {
+        var project = await GetProjectAsync(projectId, cancellationToken);
+        if (project is null) return Result<ProjectFinancialSummaryDto>.Failure(Error.NotFound("Project not found"));
+
+        var from = periodFrom.Date;
+        var to = periodTo.Date;
+        var currency = project.Currency;
+
+        var approvedBudget = project.Budget;
+        var budgetStatus = approvedBudget.HasValue && approvedBudget.Value > 0m ? "Approved" : "Not set";
+
+        var obligations = await _context.Set<PaymentObligation>().AsNoTracking()
+            .Where(item => !item.IsDeleted
+                && item.ProjectId == projectId
+                && string.Equals(item.Currency, currency, StringComparison.OrdinalIgnoreCase))
+            .ToListAsync(cancellationToken);
+
+        var obligationIds = obligations.Select(item => item.Id).ToList();
+
+        var settlements = await _context.Set<PaymentSettlement>().AsNoTracking()
+            .Where(item => !item.IsDeleted
+                && item.PaymentObligationId.HasValue
+                && obligationIds.Contains(item.PaymentObligationId.Value)
+                && item.SettlementDate.Date <= to)
+            .ToListAsync(cancellationToken);
+
+        var settledByObligation = settlements
+            .GroupBy(item => item.PaymentObligationId!.Value)
+            .ToDictionary(group => group.Key, group => group.Sum(item => item.Amount));
+
+        decimal settled(PaymentObligation o) => settledByObligation.TryGetValue(o.Id, out var amount) ? amount : 0m;
+
+        var actualPaid = obligations.Sum(item => settled(item));
+
+        var outstandingPlannedPayments = obligations
+            .Select(item => Math.Max(0m, item.Amount - settled(item)))
+            .Where(amount => amount > 0m)
+            .Sum();
+
+        var paymentsDueWithinPeriod = obligations
+            .Where(item => {
+                var outstanding = Math.Max(0m, item.Amount - settled(item));
+                return outstanding > 0m && item.DueDate.Date >= from && item.DueDate.Date <= to;
+            })
+            .Sum(item => Math.Max(0m, item.Amount - settled(item)));
+
+        var remainingUnpaidAtPeriodEnd = obligations
+            .Where(item => {
+                var outstanding = Math.Max(0m, item.Amount - settled(item));
+                return outstanding > 0m && item.DueDate.Date <= to;
+            })
+            .Sum(item => Math.Max(0m, item.Amount - settled(item)));
+
+        return Result<ProjectFinancialSummaryDto>.Success(new ProjectFinancialSummaryDto
+        {
+            ProjectId = projectId,
+            PeriodFrom = from,
+            PeriodTo = to,
+            CurrencyCode = currency,
+            ApprovedBudget = approvedBudget,
+            BudgetStatus = budgetStatus,
+            ActualPaid = actualPaid,
+            OutstandingPlannedPayments = outstandingPlannedPayments,
+            PaymentsDueWithinPeriod = paymentsDueWithinPeriod,
+            RemainingUnpaidAtPeriodEnd = remainingUnpaidAtPeriodEnd,
         });
     }
 

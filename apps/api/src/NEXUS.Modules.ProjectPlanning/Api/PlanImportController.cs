@@ -36,22 +36,22 @@ public sealed class PlanImportController : ControllerBase
     public async Task<IActionResult> GetSession(Guid projectId, Guid sessionId, CancellationToken cancellationToken) =>
         ToActionResult(await _importService.GetSessionAsync(projectId, sessionId, cancellationToken));
 
-    [Authorize(Policy = "Planning.Manage")]
+    [Authorize(Policy = "Planning.Edit")]
     [HttpPatch("sessions/{sessionId:guid}/resources/{sourceResourceId}")]
     public async Task<IActionResult> ResolveResource(Guid projectId, Guid sessionId, string sourceResourceId, [FromBody] PlanImportResourceResolutionDto resolution, CancellationToken cancellationToken) =>
         ToActionResult(await _importService.ResolveResourceAsync(projectId, sessionId, sourceResourceId, resolution, CurrentUserId(), cancellationToken));
 
-    [Authorize(Policy = "Planning.Manage")]
+    [Authorize(Policy = "Planning.Edit")]
     [HttpPatch("sessions/{sessionId:guid}/assignments/{sourceAssignmentId}")]
     public async Task<IActionResult> ResolveAssignment(Guid projectId, Guid sessionId, string sourceAssignmentId, [FromBody] PlanImportAssignmentResolutionDto resolution, CancellationToken cancellationToken) =>
         ToActionResult(await _importService.ResolveAssignmentAsync(projectId, sessionId, sourceAssignmentId, resolution, CurrentUserId(), cancellationToken));
 
-    [Authorize(Policy = "Planning.Manage")]
+    [Authorize(Policy = "Planning.Edit")]
     [HttpPatch("sessions/{sessionId:guid}/calendars/{sourceCalendarId}")]
     public async Task<IActionResult> ResolveCalendar(Guid projectId, Guid sessionId, string sourceCalendarId, [FromBody] PlanImportCalendarResolutionDto resolution, CancellationToken cancellationToken) =>
         ToActionResult(await _importService.ResolveCalendarAsync(projectId, sessionId, sourceCalendarId, resolution, CurrentUserId(), cancellationToken));
 
-    [Authorize(Policy = "Planning.Manage")]
+    [Authorize(Policy = "Planning.Edit")]
     [HttpPost("sessions/{sessionId:guid}/commit")]
     public async Task<IActionResult> Commit(Guid projectId, Guid sessionId, [FromBody] CommitPlanImportDto request, CancellationToken cancellationToken)
     {
@@ -59,7 +59,7 @@ public sealed class PlanImportController : ControllerBase
         return ToActionResult(await _importService.CommitSessionAsync(projectId, sessionId, request, CurrentUserId(), cancellationToken));
     }
 
-    [Authorize(Policy = "Planning.Manage")]
+    [Authorize(Policy = "Planning.Edit")]
     [HttpPost("sessions/{sessionId:guid}/cancel")]
     public async Task<IActionResult> Cancel(Guid projectId, Guid sessionId, CancellationToken cancellationToken) =>
         ToActionResult(await _importService.CancelSessionAsync(projectId, sessionId, CurrentUserId(), cancellationToken));

@@ -24,6 +24,8 @@ public class Project : BaseEntity
     /// <summary>Current approved project budget ceiling. Set at project creation; subsequently changed only by an approved Project Change Request. Never derived from Budget Lines.</summary>
     public decimal? Budget { get; set; }
     public string Currency { get; set; } = "GBP";
+    /// <summary>Project-level routing choice for future financial approvals. This stores configuration only; it does not execute an approval workflow.</summary>
+    public string? FinanceApprovalMode { get; set; }
     public decimal? ActualCost { get; set; }
     public decimal? PlannedValue { get; set; }
     public decimal? EarnedValue { get; set; }

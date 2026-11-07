@@ -12,4 +12,7 @@ public class MeetingAction : BaseEntity
     public DateTime? DueDate { get; set; }
     public DateTime? CompletedDate { get; set; }
     public string Status { get; set; } = string.Empty;
+    public Guid? WorkItemId { get; set; }
+    public Guid? AgendaItemId { get; set; }
+    public MeetingAgenda? AgendaItem { get; set; }
 }

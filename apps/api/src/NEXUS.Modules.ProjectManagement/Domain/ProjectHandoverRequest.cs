@@ -5,14 +5,15 @@ namespace NEXUS.Modules.ProjectManagement.Domain;
 
 /// <summary>
 /// A project manager handover that requires the selected new manager to explicitly accept or
-/// reject before any snapshot or assignment change is applied. Only one pending request is
-/// allowed per project. Accepted, rejected and cancelled requests are immutable.
+/// reject before any snapshot or assignment change is applied. Only one pending or approved
+/// future-dated request is allowed per project. Accepted, rejected and cancelled requests are immutable.
 /// </summary>
 public class ProjectHandoverRequest : BaseEntity
 {
     public static class Statuses
     {
         public const string Pending = "Pending";
+        public const string ApprovedScheduled = "ApprovedScheduled";
         public const string Accepted = "Accepted";
         public const string Rejected = "Rejected";
         public const string Cancelled = "Cancelled";

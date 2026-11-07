@@ -80,7 +80,13 @@ public sealed class WorkflowExecutionService : IWorkflowExecutionService
         if (instance.WorkflowDefinitionVersion.LifecycleStatus == WorkflowDefinitionVersionLifecycleStatus.Draft)
             return Result<WorkflowTransitionResult>.Failure(WorkflowErrors.DraftCannotExecute);
 
-        if (instance.CurrentState.IsFinal)
+        // A final state rejects every transition except explicitly coded
+        // reopens (REOPEN_ prefix). Reopen attempts continue through all the
+        // existing checks below — expected state/row version, transition
+        // lookup, FromState match, snapshot domain state, adapter
+        // authorization and guards — unchanged.
+        if (instance.CurrentState.IsFinal
+            && request.TransitionCode?.StartsWith(WorkflowTransitionCodes.ReopenPrefix, StringComparison.Ordinal) != true)
             return Result<WorkflowTransitionResult>.Failure(WorkflowErrors.FinalStateCannotTransition);
 
         if (request.ExpectedStateCode is not null &&
@@ -116,7 +122,7 @@ public sealed class WorkflowExecutionService : IWorkflowExecutionService
             context with
             {
                 Comment = request.Comment ?? context.Comment,
-                Metadata = request.Metadata ?? context.Metadata,
+                Metadata = MergeTransitionMetadata(context.Metadata, request.Metadata),
                 CorrelationId = request.CorrelationId ?? context.CorrelationId
             },
             request.EntityId,
@@ -125,6 +131,10 @@ public sealed class WorkflowExecutionService : IWorkflowExecutionService
             transition.ToState,
             transition,
             adapter);
+
+        var transitionAuthorization = await adapter.AuthorizeTransitionAsync(transitionContext, cancellationToken);
+        if (transitionAuthorization.IsFailure)
+            return Result<WorkflowTransitionResult>.Failure(transitionAuthorization.Error!);
 
         foreach (var guard in transition.Guards.Where(g => g.IsActive).OrderBy(g => g.ExecutionOrder))
         {
@@ -154,6 +164,12 @@ public sealed class WorkflowExecutionService : IWorkflowExecutionService
             instance.CompletedAt = DateTime.UtcNow;
             instance.IsActive = false;
         }
+        else if (fromState.IsFinal)
+        {
+            // Reopen: moving out of a final state re-activates the instance.
+            instance.IsActive = true;
+            instance.CompletedAt = null;
+        }
 
         var activeActions = transition.Actions.Where(a => a.IsActive).OrderBy(a => a.ExecutionOrder).ToList();
         if (!activeActions.Any(action => string.Equals(action.ActionType, "DomainProjection", StringComparison.OrdinalIgnoreCase)))
@@ -175,6 +191,7 @@ public sealed class WorkflowExecutionService : IWorkflowExecutionService
                 return Result<WorkflowTransitionResult>.Failure(actionResult.Error!);
         }
 
+        var safeRequestMetadata = GetSafeRequestMetadata(request.Metadata);
         var history = new WorkflowTransitionHistory
         {
             TenantId = context.TenantId,
@@ -187,8 +204,8 @@ public sealed class WorkflowExecutionService : IWorkflowExecutionService
             ExecutedAt = DateTime.UtcNow,
             CreatedBy = context.UserId,
             Comment = request.Comment,
-            MetadataJson = request.Metadata is not null && request.Metadata.Count > 0
-                ? JsonSerializer.Serialize(request.Metadata)
+            MetadataJson = safeRequestMetadata.Count > 0
+                ? JsonSerializer.Serialize(safeRequestMetadata)
                 : null,
             CorrelationId = request.CorrelationId ?? context.CorrelationId
         };
@@ -218,9 +235,26 @@ public sealed class WorkflowExecutionService : IWorkflowExecutionService
             })
         };
 
-        await _auditService.AppendAsync(auditEntry, cancellationToken);
+        var auditAppendResult = await _auditService.AppendAsync(auditEntry, cancellationToken);
+        if (auditAppendResult.IsFailure)
+            return Result<WorkflowTransitionResult>.Failure(auditAppendResult.Error!);
 
-        await _context.SaveChangesAsync(cancellationToken);
+        await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return Result<WorkflowTransitionResult>.Failure(WorkflowErrors.ConcurrencyConflict);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
 
         return Result<WorkflowTransitionResult>.Success(new WorkflowTransitionResult(
             true,
@@ -235,4 +269,69 @@ public sealed class WorkflowExecutionService : IWorkflowExecutionService
             null,
             instance.RowVersion));
     }
+
+    private static IReadOnlyDictionary<string, string?> MergeTransitionMetadata(
+        IReadOnlyDictionary<string, string?>? trustedMetadata,
+        IReadOnlyDictionary<string, string?>? requestMetadata)
+    {
+        var merged = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+
+        if (trustedMetadata is not null)
+        {
+            foreach (var (key, value) in trustedMetadata)
+            {
+                if (!IsAuthorizationMetadataKey(key))
+                    merged[key] = value;
+            }
+        }
+
+        if (requestMetadata is not null)
+        {
+            foreach (var (key, value) in requestMetadata)
+            {
+                if (!IsAuthorizationMetadataKey(key))
+                    merged[key] = value;
+            }
+        }
+
+        SetTrustedAuthorizationMetadata("permissions");
+        SetTrustedAuthorizationMetadata("roles");
+
+        return merged;
+
+        void SetTrustedAuthorizationMetadata(string key)
+        {
+            if (trustedMetadata is null)
+                return;
+
+            foreach (var (trustedKey, value) in trustedMetadata)
+            {
+                if (!string.Equals(trustedKey, key, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                merged[key] = value;
+                return;
+            }
+        }
+    }
+
+    private static IReadOnlyDictionary<string, string?> GetSafeRequestMetadata(
+        IReadOnlyDictionary<string, string?>? requestMetadata)
+    {
+        var safeMetadata = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        if (requestMetadata is null)
+            return safeMetadata;
+
+        foreach (var (key, value) in requestMetadata)
+        {
+            if (!IsAuthorizationMetadataKey(key))
+                safeMetadata[key] = value;
+        }
+
+        return safeMetadata;
+    }
+
+    private static bool IsAuthorizationMetadataKey(string key) =>
+        string.Equals(key, "permissions", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(key, "roles", StringComparison.OrdinalIgnoreCase);
 }

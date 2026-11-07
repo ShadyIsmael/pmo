@@ -7,7 +7,8 @@ namespace NEXUS.Modules.ResourceManagement.Domain;
 public enum ResourceType
 {
     Staff = 0,
-    Vendor = 1
+    Vendor = 1,
+    Outsourced = 2
 }
 
 public enum ResourceSeniorityLevel
@@ -23,6 +24,7 @@ public static class ResourceTypeConstants
 {
     public const string Staff = "Staff";
     public const string VendorResource = "VendorResource";
+    public const string Outsourced = "Outsourced";
 
     public static bool IsValid(string? value) => TryGetKnownStoredCode(value, out _);
 
@@ -30,6 +32,7 @@ public static class ResourceTypeConstants
     {
         ResourceType.Staff => Staff,
         ResourceType.Vendor => VendorResource,
+        ResourceType.Outsourced => Outsourced,
         _ => throw new ArgumentOutOfRangeException(nameof(value), value, "Unknown resource type")
     };
 
@@ -40,6 +43,7 @@ public static class ResourceTypeConstants
         if (string.Equals(normalized, VendorResource, StringComparison.OrdinalIgnoreCase) ||
             string.Equals(normalized, nameof(ResourceType.Vendor), StringComparison.OrdinalIgnoreCase))
             return nameof(ResourceType.Vendor);
+        if (string.Equals(normalized, Outsourced, StringComparison.OrdinalIgnoreCase)) return nameof(ResourceType.Outsourced);
 
         // Unknown historical values are returned unchanged for review rather than
         // silently being reclassified as Staff.
@@ -57,6 +61,11 @@ public static class ResourceTypeConstants
             string.Equals(value?.Trim(), nameof(ResourceType.Vendor), StringComparison.OrdinalIgnoreCase))
         {
             storedCode = VendorResource;
+            return true;
+        }
+        if (string.Equals(value?.Trim(), Outsourced, StringComparison.OrdinalIgnoreCase))
+        {
+            storedCode = Outsourced;
             return true;
         }
 

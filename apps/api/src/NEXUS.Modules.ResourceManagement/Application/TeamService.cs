@@ -615,9 +615,9 @@ public class TeamService : ITeamService
     private static byte[] NewRowVersion() => System.Security.Cryptography.RandomNumberGenerator.GetBytes(8);
 
     private Guid CurrentTenantId() =>
-        Guid.TryParse(_httpContextAccessor?.HttpContext?.User.FindFirstValue("tenantId"), out var tenantId)
+        Guid.TryParse(_httpContextAccessor?.HttpContext?.User.FindFirstValue("tenantId"), out var tenantId) && tenantId != Guid.Empty
             ? tenantId
-            : TenantConstants.DemoTenantId;
+            : throw new InvalidOperationException("A trusted tenant context is required.");
 
     private async Task LogAsync(string entityType, Guid entityId, string action, object? payload, string userId, CancellationToken cancellationToken)
     {

@@ -18,11 +18,14 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(u => u.PasswordChangedAt);
         builder.Property(u => u.FirstName).HasMaxLength(100).IsRequired();
         builder.Property(u => u.LastName).HasMaxLength(100).IsRequired();
-        builder.Property(u => u.JobTitle).HasMaxLength(200);
-        builder.Property(u => u.Phone).HasMaxLength(50);
-        builder.Property(u => u.AvatarUrl).HasMaxLength(500);
+        // Legacy columns remain mapped as shadow properties until a separately
+        // approved cleanup migration can verify and preserve any unlinked values.
+        builder.Property<string?>("JobTitle").HasMaxLength(200);
+        builder.Property<string?>("Phone").HasMaxLength(50);
+        builder.Property<string?>("AvatarUrl").HasMaxLength(500);
         builder.HasIndex(u => u.Email).IsUnique();
         builder.HasIndex(u => u.TenantId);
+        builder.HasAlternateKey(u => new { u.TenantId, u.Id });
         builder.Property(u => u.RowVersion).IsRowVersion();
     }
 }

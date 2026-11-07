@@ -31,7 +31,7 @@ public class PlanActivityController : ControllerBase
         return Ok(result.Value);
     }
 
-    [Authorize(Policy = "Planning.Manage")]
+    [Authorize(Policy = "Planning.Edit")]
     [HttpPost]
     public async Task<IActionResult> Create(Guid projectId, Guid planId, [FromBody] CreatePlanActivityDto dto, CancellationToken cancellationToken)
     {
@@ -47,7 +47,7 @@ public class PlanActivityController : ControllerBase
         return CreatedAtAction(nameof(GetByPlan), new { projectId, planId }, result.Value);
     }
 
-    [Authorize(Policy = "Planning.Manage")]
+    [Authorize(Policy = "Planning.Edit")]
     [HttpPut("{activityId:guid}")]
     public async Task<IActionResult> Update(Guid projectId, Guid planId, Guid activityId, [FromBody] UpdatePlanActivityDto dto, CancellationToken cancellationToken)
     {
@@ -63,7 +63,7 @@ public class PlanActivityController : ControllerBase
         return Ok(result.Value);
     }
 
-    [Authorize(Policy = "Planning.Manage")]
+    [Authorize(Policy = "Planning.Edit")]
     [HttpPost("bulk-update")]
     public async Task<IActionResult> BulkUpdate(Guid projectId, Guid planId, [FromBody] BulkUpdatePlanActivitiesDto dto, CancellationToken cancellationToken)
     {
@@ -79,7 +79,7 @@ public class PlanActivityController : ControllerBase
         return Ok(result.Value);
     }
 
-    [Authorize(Policy = "Planning.Manage")]
+    [Authorize(Policy = "Planning.Edit")]
     [HttpPost("{activityId:guid}/move")]
     public async Task<IActionResult> Move(Guid projectId, Guid planId, Guid activityId, [FromBody] MovePlanActivityDto dto, CancellationToken cancellationToken)
     {
@@ -95,7 +95,7 @@ public class PlanActivityController : ControllerBase
         return Ok(result.Value);
     }
 
-    [Authorize(Policy = "Planning.Manage")]
+    [Authorize(Policy = "Planning.Edit")]
     [HttpDelete("{activityId:guid}")]
     public async Task<IActionResult> Delete(Guid projectId, Guid planId, Guid activityId, [FromQuery] byte[] rowVersion, CancellationToken cancellationToken)
     {

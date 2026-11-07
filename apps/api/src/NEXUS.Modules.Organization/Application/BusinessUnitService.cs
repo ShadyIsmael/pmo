@@ -13,22 +13,32 @@ public class BusinessUnitService : IBusinessUnitService
         _context = context;
     }
 
-    public async Task<Result<BusinessUnit>> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
+    public async Task<Result<BusinessUnitResponseDto>> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var bu = await _context.Set<BusinessUnit>()
+            .AsNoTracking()
+            .AsSplitQuery()
             .Include(b => b.Departments)
                 .ThenInclude(d => d.Teams)
             .FirstOrDefaultAsync(b => b.Id == id, cancellationToken);
-        return bu is null ? Result<BusinessUnit>.Failure(Error.NotFound()) : Result<BusinessUnit>.Success(bu);
+        return bu is null
+            ? Result<BusinessUnitResponseDto>.Failure(Error.NotFound())
+            : Result<BusinessUnitResponseDto>.Success(OrganizationResponseMapper.ToResponse(bu, includeTeams: true));
     }
 
-    public async Task<PagedResult<BusinessUnit>> GetByOrganizationAsync(Guid organizationId, int page, int pageSize, CancellationToken cancellationToken = default)
+    public async Task<PagedResult<BusinessUnitResponseDto>> GetByOrganizationAsync(Guid organizationId, int page, int pageSize, CancellationToken cancellationToken = default)
     {
         var query = _context.Set<BusinessUnit>()
+            .AsNoTracking()
             .Where(b => b.OrganizationId == organizationId)
             .Include(b => b.Departments);
         var total = await query.CountAsync(cancellationToken);
-        var items = await query.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(cancellationToken);
-        return new PagedResult<BusinessUnit>(items, page, pageSize, total);
+        var units = await query
+            .OrderBy(unit => unit.Name).ThenBy(unit => unit.Id)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
+        var items = units.Select(unit => OrganizationResponseMapper.ToResponse(unit, includeTeams: false)).ToArray();
+        return new PagedResult<BusinessUnitResponseDto>(items, page, pageSize, total);
     }
 }

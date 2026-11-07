@@ -10,6 +10,7 @@ using NEXUS.Modules.Notifications.Application;
 using NEXUS.Modules.Portfolio.Domain;
 using NEXUS.Modules.ProjectManagement.Application;
 using NEXUS.Modules.ProjectManagement.Domain;
+using NEXUS.Modules.ResourceManagement.Domain;
 using NEXUS.SharedKernel;
 using PortfolioProgram = NEXUS.Modules.Portfolio.Domain.Program;
 using System.Security.Claims;
@@ -31,6 +32,8 @@ public sealed class ProjectHandoverManagerServiceTests : IDisposable
     private static readonly Guid InactiveManagerId = Guid.Parse("10000000-0000-0000-0000-000000000017");
     private static readonly Guid AdminId = Guid.Parse("10000000-0000-0000-0000-000000000018");
     private static readonly Guid NoApproveManagerId = Guid.Parse("10000000-0000-0000-0000-000000000019");
+    private static readonly Guid UnassignedManagementCandidateId = Guid.Parse("10000000-0000-0000-0000-000000000020");
+    private static readonly Guid NonManagementCandidateId = Guid.Parse("10000000-0000-0000-0000-000000000021");
 
     private readonly SqliteConnection _connection = new("Data Source=:memory:");
     private readonly HandoverTestDbContext _context;
@@ -54,7 +57,8 @@ public sealed class ProjectHandoverManagerServiceTests : IDisposable
                 if (userId == CurrentManagerId || userId == ProjectManagerId)
                     return new HashSet<string>(StringComparer.Ordinal) { "Handover.Manage", "Handover.Approve" };
                 if (userId == PortfolioManagerId || userId == ProgramManagerId || userId == BothManagerId
-                    || userId == OtherTenantManagerId || userId == InactiveManagerId)
+                    || userId == OtherTenantManagerId || userId == InactiveManagerId
+                    || userId == UnassignedManagementCandidateId || userId == NonManagementCandidateId)
                     return new HashSet<string>(StringComparer.Ordinal) { "Handover.Approve" };
                 return new HashSet<string>(StringComparer.Ordinal);
             });
@@ -67,7 +71,7 @@ public sealed class ProjectHandoverManagerServiceTests : IDisposable
 
         _service = new ProjectHandoverRequestService(
             _context,
-            new ProjectSnapshotService(_context, _audit.Object, _httpContextAccessor.Object),
+            new ProjectSnapshotService(_context, _audit.Object, _httpContextAccessor.Object, new ProjectManagerMembershipSynchronizer(_context)),
             _notifications.Object,
             _httpContextAccessor.Object,
             _effectivePermissions.Object);
@@ -82,12 +86,14 @@ public sealed class ProjectHandoverManagerServiceTests : IDisposable
 
         Assert.True(result.IsSuccess);
         var managers = result.Value!;
-        Assert.Equal(new[] { BothManagerId, PortfolioManagerId, ProgramManagerId, ProjectManagerId }, managers.Select(manager => manager.Id));
+        Assert.Equal(new[] { BothManagerId, PortfolioManagerId, ProgramManagerId, ProjectManagerId, UnassignedManagementCandidateId }, managers.Select(manager => manager.Id));
         Assert.Equal(new[] { "ProjectManager" }, managers.Single(manager => manager.Id == ProjectManagerId).ManagerTypes);
-        Assert.Equal(new[] { "PortfolioManager" }, managers.Single(manager => manager.Id == PortfolioManagerId).ManagerTypes);
-        Assert.Equal(new[] { "ProgramManager" }, managers.Single(manager => manager.Id == ProgramManagerId).ManagerTypes);
-        Assert.Equal(new[] { "ProjectManager", "ProgramManager" }, managers.Single(manager => manager.Id == BothManagerId).ManagerTypes);
+        Assert.Equal(new[] { "ProjectManager" }, managers.Single(manager => manager.Id == PortfolioManagerId).ManagerTypes);
+        Assert.Equal(new[] { "ProjectManager" }, managers.Single(manager => manager.Id == ProgramManagerId).ManagerTypes);
+        Assert.Equal(new[] { "ProjectManager" }, managers.Single(manager => manager.Id == BothManagerId).ManagerTypes);
+        Assert.Equal(new[] { "ProjectManager" }, managers.Single(manager => manager.Id == UnassignedManagementCandidateId).ManagerTypes);
         Assert.DoesNotContain(managers, manager => manager.Id == CurrentManagerId || manager.Id == OtherTenantManagerId || manager.Id == InactiveManagerId || manager.Id == NoApproveManagerId);
+        Assert.DoesNotContain(managers, manager => manager.Id == NonManagementCandidateId);
     }
 
     [Fact]
@@ -132,7 +138,7 @@ public sealed class ProjectHandoverManagerServiceTests : IDisposable
         var result = await _service.CreateInitialAssignmentAsync(ProjectId, new NEXUS.Modules.ProjectManagement.Application.DTOs.CreateProjectHandoverRequestDto
         {
             NewProjectManagerId = ProjectManagerId,
-            EffectiveHandoverDate = DateTime.UtcNow.Date.AddDays(7),
+            EffectiveHandoverDate = DateTime.UtcNow.Date,
             Reason = "Initial manager assignment"
         }, AdminId.ToString());
 
@@ -152,6 +158,29 @@ public sealed class ProjectHandoverManagerServiceTests : IDisposable
         var assignment = await _context.ProjectManagerAssignments.SingleAsync(item => item.ProjectId == ProjectId && item.IsCurrent);
         Assert.Equal(ProjectManagerId, assignment.ProjectManagerId);
         Assert.Null(assignment.HandoverFromProjectManagerId);
+    }
+
+    [Fact]
+    public async Task AcceptAsync_RequiresIncomingManagerToRetainManagementCategoryRole()
+    {
+        SetTenant(TenantA, AdminId);
+        var created = await _service.CreateAdminInitiatedAsync(ProjectId, new NEXUS.Modules.ProjectManagement.Application.DTOs.CreateProjectHandoverRequestDto
+        {
+            NewProjectManagerId = ProjectManagerId,
+            EffectiveHandoverDate = DateTime.UtcNow.Date,
+            Reason = "Administrative reassignment"
+        }, AdminId.ToString());
+        Assert.True(created.IsSuccess);
+
+        var role = await _context.Roles.SingleAsync(item => item.Name == "delivery.lead");
+        role.Category = "Operation";
+        await _context.SaveChangesAsync();
+
+        var accepted = await _service.AcceptAsync(created.Value!.Id, ProjectManagerId.ToString());
+
+        Assert.True(accepted.IsFailure);
+        Assert.Equal(403, accepted.Error?.StatusCode);
+        Assert.Equal(CurrentManagerId, (await _context.Projects.SingleAsync(item => item.Id == ProjectId)).ProjectManagerId);
     }
 
     [Fact]
@@ -222,17 +251,24 @@ public sealed class ProjectHandoverManagerServiceTests : IDisposable
             NewUser(InactiveManagerId, TenantA, "Inactive", "Manager", isActive: false),
             NewUser(AdminId, TenantA, "Tenant", "Administrator"),
             NewUser(NoApproveManagerId, TenantA, "No", "Approver"),
+            NewUser(UnassignedManagementCandidateId, TenantA, "Unassigned", "Lead"),
+            NewUser(NonManagementCandidateId, TenantA, "Operations", "Lead"),
         };
-        var projectRole = new Role { Id = Guid.NewGuid(), TenantId = TenantA, Name = "project.manager", RowVersion = new byte[8] };
-        var portfolioRole = new Role { Id = Guid.NewGuid(), TenantId = TenantA, Name = "portfolio.manager", RowVersion = new byte[8] };
-        var inactiveRole = new Role { Id = Guid.NewGuid(), TenantId = TenantA, Name = "project.manager", RowVersion = new byte[8] };
+        var managementRole = new Role { Id = Guid.NewGuid(), TenantId = TenantA, Name = "delivery.lead", Category = "Management", RowVersion = new byte[8] };
+        var deletedManagementRole = new Role { Id = Guid.NewGuid(), TenantId = TenantA, Name = "former.lead", Category = "Management", IsDeleted = true, RowVersion = new byte[8] };
+        var nonManagementRole = new Role { Id = Guid.NewGuid(), TenantId = TenantA, Name = "operations.lead", Category = "Operation", RowVersion = new byte[8] };
+        var otherTenantManagementRole = new Role { Id = Guid.NewGuid(), TenantId = TenantB, Name = "delivery.lead", Category = "Management", RowVersion = new byte[8] };
         var projectAssignments = new[]
         {
-            NewUserRole(ProjectManagerId, projectRole.Id),
-            NewUserRole(BothManagerId, projectRole.Id),
-            NewUserRole(PortfolioManagerId, portfolioRole.Id),
-            NewUserRole(InactiveManagerId, inactiveRole.Id),
-            NewUserRole(NoApproveManagerId, projectRole.Id),
+            NewUserRole(ProjectManagerId, managementRole.Id),
+            NewUserRole(BothManagerId, managementRole.Id),
+            NewUserRole(PortfolioManagerId, managementRole.Id),
+            NewUserRole(ProgramManagerId, managementRole.Id),
+            NewUserRole(InactiveManagerId, deletedManagementRole.Id),
+            NewUserRole(NoApproveManagerId, managementRole.Id),
+            NewUserRole(UnassignedManagementCandidateId, managementRole.Id),
+            NewUserRole(NonManagementCandidateId, nonManagementRole.Id),
+            NewUserRole(OtherTenantManagerId, otherTenantManagementRole.Id, TenantB),
         };
         var portfolio = new Portfolio { Id = Guid.NewGuid(), TenantId = TenantA, Name = "Portfolio A", Currency = "USD", RowVersion = new byte[8] };
         var program = new PortfolioProgram { Id = Guid.NewGuid(), TenantId = TenantA, Name = "Program A", PortfolioId = portfolio.Id, ProgramManagerId = ProgramManagerId, RowVersion = new byte[8] };
@@ -244,7 +280,7 @@ public sealed class ProjectHandoverManagerServiceTests : IDisposable
         };
 
         _context.Users.AddRange(users);
-        _context.Roles.AddRange(projectRole, portfolioRole, inactiveRole);
+        _context.Roles.AddRange(managementRole, deletedManagementRole, nonManagementRole, otherTenantManagementRole);
         _context.UserRoles.AddRange(projectAssignments);
         _context.Portfolios.Add(portfolio);
         _context.Programs.Add(program);
@@ -274,10 +310,10 @@ public sealed class ProjectHandoverManagerServiceTests : IDisposable
         RowVersion = new byte[8]
     };
 
-    private static UserRole NewUserRole(Guid userId, Guid roleId) => new()
+    private static UserRole NewUserRole(Guid userId, Guid roleId, Guid? tenantId = null) => new()
     {
         Id = Guid.NewGuid(),
-        TenantId = TenantA,
+        TenantId = tenantId ?? TenantA,
         UserId = userId,
         RoleId = roleId,
         RowVersion = new byte[8]
@@ -307,6 +343,7 @@ public sealed class ProjectHandoverManagerServiceTests : IDisposable
         public DbSet<ProjectStakeholder> ProjectStakeholders => Set<ProjectStakeholder>();
         public DbSet<ProjectHandoverRequest> ProjectHandoverRequests => Set<ProjectHandoverRequest>();
         public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
+        public DbSet<Resource> Resources => Set<Resource>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -339,6 +376,12 @@ public sealed class ProjectHandoverManagerServiceTests : IDisposable
                 .Property(stakeholder => stakeholder.RowVersion)
                 .IsConcurrencyToken()
                 .ValueGeneratedNever();
+            modelBuilder.Entity<Resource>()
+                .Ignore(resource => resource.Vendor)
+                .Ignore(resource => resource.BaseCalendar)
+                .Ignore(resource => resource.Skills)
+                .Ignore(resource => resource.Allocations)
+                .Ignore(resource => resource.CostProfiles);
             modelBuilder.Entity<ProjectManagerAssignment>()
                 .Ignore(assignment => assignment.Project)
                 .Property(assignment => assignment.RowVersion)

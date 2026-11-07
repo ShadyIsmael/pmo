@@ -1,0 +1,12 @@
+{
+  "product": "FOPX PM",
+  "fullName": "FOPX Project Management",
+  "version": "1.0.0",
+  "buildDate": null,
+  "gitCommit": null,
+  "status": "release-candidate",
+  "releaseNotes": "docs/releases/1.0.0.md",
+  "changelog": "CHANGELOG.md",
+  "versioningPolicy": "docs/releases/VERSIONING-POLICY.md",
+  "releaseHistory": "docs/releases/RELEASE-HISTORY.md"
+}

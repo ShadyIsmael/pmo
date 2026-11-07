@@ -152,3 +152,17 @@ public sealed class ProjectPerformanceMilestoneDto
     public decimal? VarianceDays { get; init; }
     public string Status { get; init; } = string.Empty;
 }
+
+public sealed class ProjectFinancialSummaryDto
+{
+    public Guid ProjectId { get; init; }
+    public DateTime PeriodFrom { get; init; }
+    public DateTime PeriodTo { get; init; }
+    public string CurrencyCode { get; init; } = string.Empty;
+    public decimal? ApprovedBudget { get; init; }
+    public string BudgetStatus { get; init; } = string.Empty;
+    public decimal ActualPaid { get; init; }
+    public decimal OutstandingPlannedPayments { get; init; }
+    public decimal PaymentsDueWithinPeriod { get; init; }
+    public decimal RemainingUnpaidAtPeriodEnd { get; init; }
+}

@@ -5,10 +5,10 @@ using NEXUS.SharedKernel;
 namespace NEXUS.Modules.ProjectPlanning.Application;
 
 /// <summary>
-/// Returns the milestones of the same active Working version rendered by the
-/// Project Plan workspace, so overview surfaces (e.g. the project overview
-/// milestone timeline) reflect the plan of record rather than the legacy
-/// unversioned Milestones table.
+/// Returns the five nearest upcoming, incomplete milestones from the same
+/// active Working version the Project Plan workspace selects by default. Plan,
+/// version, and activity queries retain tenant and soft-delete filters and are
+/// restricted to the requested project.
 /// </summary>
 public sealed class ProjectPlanMilestoneLookup : IProjectPlanMilestoneLookup
 {
@@ -19,10 +19,10 @@ public sealed class ProjectPlanMilestoneLookup : IProjectPlanMilestoneLookup
         _context = context;
     }
 
-    public async Task<IReadOnlyList<PlanMilestoneLookupItem>> GetAsync(Guid projectId, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<PlanMilestoneLookupItem>> GetUpcomingAsync(Guid projectId, DateTime statusDate, CancellationToken cancellationToken = default)
     {
         var planId = await _context.Set<Plan>()
-            .Where(plan => plan.ProjectId == projectId && !plan.IsDeleted)
+            .Where(plan => plan.ProjectId == projectId)
             .OrderByDescending(plan => plan.CreatedAt)
             .ThenByDescending(plan => plan.Id)
             .Select(plan => (Guid?)plan.Id)
@@ -33,21 +33,26 @@ public sealed class ProjectPlanMilestoneLookup : IProjectPlanMilestoneLookup
         var workingVersionId = await _context.Set<PlanVersion>()
             .Where(version => version.PlanId == planId.Value
                 && version.Type == PlanVersionType.Working
-                && version.Status == PlanVersionStatus.Active
-                && !version.IsDeleted)
+                && version.Status == PlanVersionStatus.Active)
+            .OrderByDescending(version => version.VersionNumber)
             .Select(version => (Guid?)version.Id)
             .FirstOrDefaultAsync(cancellationToken);
 
         if (!workingVersionId.HasValue) return Array.Empty<PlanMilestoneLookupItem>();
 
+        var statusDay = statusDate.Date;
         return await _context.Set<PlanActivity>()
             .AsNoTracking()
             .Where(activity => activity.PlanVersionId == workingVersionId.Value
                 && activity.Type == PlanActivityType.Milestone
-                && !activity.IsDeleted)
-            .OrderBy(activity => activity.EndDate.HasValue ? 0 : 1)
-            .ThenBy(activity => activity.EndDate)
+                && activity.EndDate.HasValue
+                && activity.EndDate.Value >= statusDay
+                && !activity.ActualFinish.HasValue
+                && (!activity.Progress.HasValue || activity.Progress.Value < 100))
+            .OrderBy(activity => activity.EndDate)
             .ThenBy(activity => activity.Name)
+            .ThenBy(activity => activity.Id)
+            .Take(5)
             .Select(activity => new PlanMilestoneLookupItem(
                 activity.Id,
                 activity.Name,

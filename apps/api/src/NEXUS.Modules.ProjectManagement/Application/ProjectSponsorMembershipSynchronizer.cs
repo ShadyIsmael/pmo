@@ -51,7 +51,7 @@ public sealed class ProjectSponsorMembershipSynchronizer
                 .ToListAsync(cancellationToken);
             var managedRows = await _context.Set<ProjectMember>().Where(member =>
                     member.TenantId == project.TenantId && member.ProjectId == project.Id
-                    && previousResourceIds.Contains(member.ResourceId) && !member.IsDeleted
+                    && member.ResourceId.HasValue && previousResourceIds.Contains(member.ResourceId.Value) && !member.IsDeleted
                     && member.Notes == ManagedMembershipNote)
                 .ToListAsync(cancellationToken);
             foreach (var member in managedRows)

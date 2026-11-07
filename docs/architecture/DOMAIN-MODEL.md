@@ -1,6 +1,6 @@
 # Domain Model
 
-All entities inherit from `BaseEntity` in `NEXUS.SharedKernel` which provides: `Id` (Guid), `TenantId`, `CreatedAt`, `UpdatedAt`, `CreatedBy`, `UpdatedBy`, `IsDeleted`, `RowVersion`.
+Most tenant-owned entities inherit from `BaseEntity` in `NEXUS.SharedKernel`, which provides `Id`, `TenantId`, timestamps, actor fields, soft-delete state, and `RowVersion`. Platform configuration rows are an explicit exception: they have no tenant or owner IDs and are always queried by scope.
 
 ---
 
@@ -8,7 +8,7 @@ All entities inherit from `BaseEntity` in `NEXUS.SharedKernel` which provides: `
 
 | Entity | Table | Key Fields | Module |
 |--------|-------|------------|--------|
-| `Tenant` | (implied via ITenantEntity) | N/A | SharedKernel |
+| `Tenant` | Authenticated `tenantId` context | GUID claim; no persisted Tenant entity/table | Shared context |
 | `User` | Users | Email, PasswordHash, FirstName, LastName, JobTitle, IsActive | Identity |
 | `Role` | Roles | Name, Description, Category, IsSystem | Identity |
 | `Permission` | Permissions | Name (resource.action), Resource, Action | Identity |
@@ -23,7 +23,9 @@ All entities inherit from `BaseEntity` in `NEXUS.SharedKernel` which provides: `
 
 | Entity | Table | Key Fields | Module |
 |--------|-------|------------|--------|
-| `Organization` | Organizations | Name, Code, Description, Email, Website, IsActive | Organization |
+| `Organization` | Organizations | Own Id and TenantId, Name, Code, Description, Email, Website, IsActive | Organization |
+| `ConfigurationSetting` | ConfigurationSettings (migration pending) | Scope, TenantId, OwnerId, SettingKey, typed JSON value, RowVersion | Organization |
+| `OrganizationSettingsGrant` | OrganizationSettingsGrants (migration pending) | TenantId, OrganizationId, UserId, CanRead, CanManage, RowVersion | Organization |
 | `BusinessUnit` | BusinessUnits | Name, Code, OrganizationId, HeadId | Organization |
 | `Department` | Departments | Name, Code, BusinessUnitId, ManagerId | Organization |
 | `Team` | Teams | Name, Code, DepartmentId, LeadId | Organization |
@@ -145,11 +147,11 @@ All entities inherit from `BaseEntity` in `NEXUS.SharedKernel` which provides: `
 
 | Entity | Table | Key Fields | Module |
 |--------|-------|------------|--------|
-| `Meeting` | Meetings | Title, ProjectId, MeetingType (Virtual/InPerson/Hybrid), StartTime, EndTime, Status (Scheduled/Completed/Cancelled), OrganizerId, Location, MeetingLink, RecurrenceRule | Meetings |
-| `MeetingAgenda` | MeetingAgendas | MeetingId, Title, Description, DurationMinutes, Order, OwnerId | Meetings |
+| `Meeting` | Meetings | Title, ProjectId, MeetingType (Virtual/InPerson/Hybrid), scheduled StartTime/EndTime, nullable ActualStartTime/ActualEndTime, Status (Scheduled/InProgress/Completed/Cancelled), OrganizerId, Location, MeetingLink, RecurrenceRule | Meetings |
+| `MeetingAgenda` | MeetingAgendas | MeetingId, Topic, Description, DurationMinutes, SortOrder, OwnerId | Meetings |
 | `MeetingParticipant` | MeetingParticipants | MeetingId, nullable UserId or required Email, optional Name snapshot, Attendance (Pending/Accepted/Declined/Tentative), JoinedAt, LeftAt | Meetings |
 | `MeetingMinutes` | MeetingMinutes | MeetingId, Content, ActionItems JSON, CreatedBy, CreatedAt | Meetings |
-| `MeetingAction` | MeetingActions | MeetingId, Description, OwnerId, DueDate, Status (Open/InProgress/Completed), CompletedAt | Meetings |
+| `MeetingAction` | MeetingActions | MeetingId, Description, OwnerId, DueDate, Status (Open/InProgress/Completed), CompletedAt, nullable WorkItemId and AgendaItemId | Meetings |
 
 **Evidence:** `AppDbContext.cs:93-97`, `SeedDataProvider.cs:485-503` (22 meetings seeded)
 
@@ -227,10 +229,15 @@ All entities inherit from `BaseEntity` in `NEXUS.SharedKernel` which provides: `
 
 | Entity | Table | Key Fields | Module |
 |--------|-------|------------|--------|
-| `AuditEntry` | AuditEntries | EntityType, EntityId, Action, Changes JSON, PerformedBy, PerformedAt, CorrelationId | Audit |
+| `AuditEntry` | AuditEntries | ProjectId, EntityType, EntityId, Action, Changes JSON, ChangedFields, OriginalValues, NewValues, Source, CorrelationId, UserId, UserName, Timestamp | Audit |
 | `AuditActivity` | AuditActivities | UserId, Activity, ResourceType, ResourceId, Details JSON, IpAddress, UserAgent | Audit |
 
-**Evidence:** `AppDbContext.cs:126-127`
+Audit entries are append-only: `AppDbContext.SaveChangesAsync` rejects any `Modified`
+or `Deleted` state for `AuditEntry`/`AuditActivity`. Project-scoped reads combine rows
+carrying `ProjectId` with rows whose entity resolves inside the project scope
+(`IProjectAuditScopeProvider`). See `docs/modules/AUDIT-TRAIL.md`.
+
+**Evidence:** `AppDbContext.cs:196-197`, `NEXUS.Modules.Audit/Domain/AuditEntry.cs`
 
 ---
 
@@ -272,9 +279,12 @@ All entities inherit from `BaseEntity` in `NEXUS.SharedKernel` which provides: `
 
 ## Entity Relationship Diagram (Simplified)
 
+`TenantScope` below is a logical authenticated boundary, not a persisted Tenant entity.
+
 ```mermaid
 erDiagram
-    Tenant ||--o{ User : "has"
+    TenantScope ||--o{ User : "owns"
+    TenantScope ||--o{ Organization : "owns"
     User ||--o{ UserRole : "assigned"
     Role ||--o{ UserRole : "defines"
     Role ||--o{ Permission : "grants"
@@ -328,6 +338,7 @@ erDiagram
     Meeting ||--o{ MeetingParticipant : "participants"
     Meeting ||--o{ MeetingMinutes : "minutes"
     Meeting ||--o{ MeetingAction : "action_items"
+    MeetingAgenda o|--o{ MeetingAction : "action_context"
 
     WorkflowTemplate ||--o{ WorkflowVersion : "versions"
     WorkflowTemplate ||--o{ WorkflowInstance : "instances"

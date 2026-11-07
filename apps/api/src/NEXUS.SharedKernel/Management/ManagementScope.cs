@@ -7,6 +7,8 @@ public sealed record ManagementScope(
     IReadOnlySet<Guid> ProgramIds,
     IReadOnlySet<Guid> ProjectIds)
 {
+    public IReadOnlySet<Guid> OrganizationIds { get; init; } = new HashSet<Guid>();
+
     public static ManagementScope Empty { get; } = new(
         new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>());
 }
@@ -28,7 +30,7 @@ public sealed record ManagementContext(
     public bool CanReadAllTenantPortfolioProgramData { get; init; }
 
     // Grants tenant-wide object scope for the exact Portfolio PUT route only.
-    // The endpoint's Portfolio.Manage policy remains independently required.
+    // The endpoint's Portfolio.Edit policy remains independently required.
     public bool HasTenantAdministratorPortfolioWriteScope { get; init; }
 }
 

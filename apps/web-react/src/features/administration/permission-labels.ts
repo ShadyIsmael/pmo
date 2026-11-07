@@ -1,20 +1,27 @@
-import type { PermissionCatalogItemDto } from "./api/admin";
+import type { Locale } from "@i18n/messages";
+import type { PermissionCatalogItemDto, UserPermissionAssignmentDto } from "./api/admin";
 
-type Translate = (key: string) => string;
+type PermissionLabelSource = PermissionCatalogItemDto | UserPermissionAssignmentDto;
 
-function translatedOrSource(t: Translate, key: string, sourceValue: string): string {
-  const translated = t(key);
-  return translated === key ? sourceValue : translated;
+export function getPermissionResourceLabel(permission: PermissionLabelSource, locale: Locale): string {
+  const label = locale === "ar" ? permission.screenNameAr : permission.screenNameEn;
+  return label ?? permission.resource;
 }
 
-export function getPermissionResourceLabel(permission: PermissionCatalogItemDto, t: Translate): string {
-  return translatedOrSource(t, `administration.permissionLabels.resources.${permission.resource}`, permission.resource);
+export function getPermissionModuleLabel(permission: PermissionCatalogItemDto, locale: Locale): string {
+  return locale === "ar" ? permission.moduleNameAr : permission.moduleNameEn;
 }
 
-export function getPermissionActionLabel(permission: PermissionCatalogItemDto, t: Translate): string {
-  return translatedOrSource(t, `administration.permissionLabels.actions.${permission.action}`, permission.action);
+export function getPermissionActionLabel(permission: PermissionLabelSource, locale: Locale): string {
+  if ("moduleId" in permission) return locale === "ar" ? permission.labelAr : permission.labelEn;
+  return locale === "ar" ? permission.labelAr ?? permission.action : permission.labelEn ?? permission.action;
 }
 
-export function getPermissionDisplayName(permission: PermissionCatalogItemDto, t: Translate): string {
-  return `${getPermissionResourceLabel(permission, t)} · ${getPermissionActionLabel(permission, t)}`;
+export function getPermissionDescription(permission: PermissionLabelSource, locale: Locale): string {
+  if ("moduleId" in permission) return locale === "ar" ? permission.descriptionAr : permission.descriptionEn;
+  return permission.description ?? "";
+}
+
+export function getPermissionDisplayName(permission: PermissionLabelSource, locale: Locale): string {
+  return getPermissionActionLabel(permission, locale);
 }

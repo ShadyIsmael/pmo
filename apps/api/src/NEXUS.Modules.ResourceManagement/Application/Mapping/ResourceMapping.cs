@@ -24,12 +24,13 @@ public static class ResourceMapping
             DateOfJoining = resource.DateOfJoining,
             BusinessUnitId = resource.BusinessUnitId,
             DepartmentId = resource.DepartmentId,
-            TeamId = resource.TeamId,
             LocationId = resource.LocationId,
             VendorId = resource.VendorId,
             VendorName = resource.Vendor?.Name,
             BaseCalendarId = resource.BaseCalendarId,
             BaseCalendarName = resource.BaseCalendar?.Name,
+            HoursPerDay = resource.HoursPerDay,
+            HoursPerWeek = resource.HoursPerWeek,
             Timezone = resource.Timezone,
             UtilizationTarget = resource.UtilizationTarget,
             CurrentUtilization = resource.CurrentUtilization,
@@ -91,10 +92,11 @@ public static class ResourceMapping
             DateOfJoining = dto.DateOfJoining,
             BusinessUnitId = dto.BusinessUnitId,
             DepartmentId = dto.DepartmentId,
-            TeamId = dto.TeamId,
             LocationId = dto.LocationId,
             VendorId = dto.VendorId,
             BaseCalendarId = dto.BaseCalendarId,
+            HoursPerDay = dto.HoursPerDay,
+            HoursPerWeek = dto.HoursPerWeek,
             Timezone = dto.Timezone,
             UtilizationTarget = dto.UtilizationTarget,
             Notes = dto.Notes,
@@ -119,10 +121,13 @@ public static void ApplyUpdate(this Resource resource, UpdateResourceDto dto)
         if (dto.DateOfJoining.HasValue) resource.DateOfJoining = dto.DateOfJoining;
         if (dto.BusinessUnitId.HasValue) resource.BusinessUnitId = dto.BusinessUnitId;
         if (dto.DepartmentId.HasValue) resource.DepartmentId = dto.DepartmentId;
-        if (dto.TeamId.HasValue) resource.TeamId = dto.TeamId;
         if (dto.LocationId.HasValue) resource.LocationId = dto.LocationId;
         if (dto.VendorId.HasValue) resource.VendorId = dto.VendorId;
         if (dto.BaseCalendarId.HasValue) resource.BaseCalendarId = dto.BaseCalendarId;
+        if (dto.ClearHoursPerDay) resource.HoursPerDay = null;
+        else if (dto.HoursPerDay.HasValue) resource.HoursPerDay = dto.HoursPerDay.Value;
+        if (dto.ClearHoursPerWeek) resource.HoursPerWeek = null;
+        else if (dto.HoursPerWeek.HasValue) resource.HoursPerWeek = dto.HoursPerWeek.Value;
         if (dto.Timezone != null) resource.Timezone = dto.Timezone;
         if (dto.UtilizationTarget.HasValue) resource.UtilizationTarget = dto.UtilizationTarget;
         if (dto.Notes != null) resource.Notes = dto.Notes;

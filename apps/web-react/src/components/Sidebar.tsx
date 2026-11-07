@@ -1,12 +1,19 @@
 import { brand, brandCopy } from "@lib/brand";
+import { productVersion } from "@lib/version";
 import * as React from "react";
 import { NavLink, useLocation } from "react-router-dom";
-import { ChevronRight, Search, X, PanelLeft, PanelLeftClose, Menu } from "lucide-react";
+import { ChevronRight, Search, X, PanelLeft, PanelLeftClose, Menu, Info } from "lucide-react";
 import { useI18n } from "@i18n/messages";
 import { navigationConfig, filterSections, normalizePathname, findActiveItem, itemIsActive, type NavItem, type NavSection } from "@lib/navigation";
 import { useAuth } from "@auth/AuthProvider";
+import { useSettingsAccess } from "@features/administration/api/settings";
+import { useOrganizationProfiles } from "@features/administration/api/settings";
+import { SidebarRail } from "./SidebarRail";
+import { cn } from "@lib/utils";
 
 const GROUP_STORAGE_KEY = "nexus_sidebar_groups";
+const COLLAPSED_STORAGE_KEY = "nexus_sidebar_collapsed";
+const DESKTOP_MEDIA_QUERY = "(min-width: 768px)";
 
 function readGroupState(): Record<string, boolean> {
   if (typeof window === "undefined") return {};
@@ -15,6 +22,42 @@ function readGroupState(): Record<string, boolean> {
   } catch {
     return {};
   }
+}
+
+function readCollapsedPreference(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(COLLAPSED_STORAGE_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function persistCollapsedPreference(value: boolean) {
+  try {
+    window.localStorage.setItem(COLLAPSED_STORAGE_KEY, String(value));
+  } catch {
+    // best effort
+  }
+}
+
+/** Collapsed rail styles are desktop-only; the mobile drawer always renders expanded. */
+function useIsDesktopViewport(): boolean {
+  const [isDesktop, setIsDesktop] = React.useState<boolean>(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return true;
+    return window.matchMedia(DESKTOP_MEDIA_QUERY).matches;
+  });
+
+  React.useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    const media = window.matchMedia(DESKTOP_MEDIA_QUERY);
+    const onChange = (event: MediaQueryListEvent) => setIsDesktop(event.matches);
+    setIsDesktop(media.matches);
+    media.addEventListener("change", onChange);
+    return () => media.removeEventListener("change", onChange);
+  }, []);
+
+  return isDesktop;
 }
 
 interface NavSectionViewProps {
@@ -89,12 +132,18 @@ export function Sidebar() {
   const { t, locale } = useI18n();
   const normalizedPathname = React.useMemo(() => normalizePathname(location.pathname), [location.pathname]);
   const permissions = React.useMemo(() => user?.permissions ?? [], [user?.permissions]);
-  const visibleSections = React.useMemo(() => filterSections(navigationConfig, permissions), [permissions]);
+  const settingsAccess = useSettingsAccess();
+  const canReadPlatform = settingsAccess.data?.canReadPlatform === true;
+  const organizationSettingsAccess = useOrganizationProfiles(permissions.includes("Settings.View"));
+  const canReadOrganizations = (organizationSettingsAccess.data?.length ?? 0) > 0;
+  const visibleSections = React.useMemo(() => filterSections(navigationConfig, permissions, canReadPlatform, canReadOrganizations), [permissions, canReadPlatform, canReadOrganizations]);
   const activeItem = React.useMemo(() => visibleSections.reduce<NavItem | null>((found, entry) => found || findActiveItem(entry.items, normalizedPathname), null), [visibleSections, normalizedPathname]);
   const activeSectionId = visibleSections.find(({ items }) => findActiveItem(items, normalizedPathname) === activeItem)?.id;
-  const [collapsed, setCollapsed] = React.useState(false);
+  const isDesktop = useIsDesktopViewport();
+  const [collapsed, setCollapsed] = React.useState<boolean>(readCollapsedPreference);
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const [groupState, setGroupState] = React.useState<Record<string, boolean>>({});
+  const rail = collapsed && isDesktop;
 
   React.useEffect(() => {
     setGroupState(readGroupState());
@@ -127,6 +176,11 @@ export function Sidebar() {
     });
   }
 
+  function updateCollapsed(next: boolean) {
+    setCollapsed(next);
+    persistCollapsedPreference(next);
+  }
+
   const navigate = () => setMobileOpen(false);
   const openSearch = () => window.dispatchEvent(new CustomEvent("nexus:open-global-search"));
 
@@ -150,33 +204,45 @@ export function Sidebar() {
       )}
 
       <aside
+        id="app-sidebar"
         dir={locale === "ar" ? "rtl" : "ltr"}
         className={`
-          nexus-sidebar fixed inset-y-0 start-0 z-50 flex h-screen min-h-0 flex-col border-e border-sidebar-border bg-sidebar text-sidebar-foreground shadow-sidebar transition-[width,transform] duration-200 md:sticky md:top-0 md:z-auto md:h-screen md:max-h-screen md:shrink-0 md:shadow-none
-          ${collapsed ? "md:w-[64px]" : "md:w-[260px]"}
+          nexus-sidebar fixed inset-y-0 start-0 z-50 flex h-screen min-h-0 flex-col border-e border-sidebar-border bg-sidebar text-sidebar-foreground shadow-sidebar transition-[width,transform] duration-200 motion-reduce:transition-none md:sticky md:top-0 md:z-auto md:h-screen md:max-h-screen md:shrink-0 md:shadow-none
+          ${rail ? "md:w-[72px]" : "md:w-[260px]"}
           ${mobileOpen ? "w-[min(88vw,288px)] translate-x-0" : "w-[min(88vw,288px)] ltr:-translate-x-full rtl:translate-x-full md:!translate-x-0"}
         `}
       >
-        <div className={`relative flex h-[56px] shrink-0 items-center border-b border-sidebar-border/60 px-3 ${collapsed && "md:justify-center md:px-2"}`}>
-          <div className={`flex items-center gap-2.5 ${collapsed && "md:hidden"}`}>
-            <div className="relative flex h-8 w-8 items-center justify-center overflow-hidden rounded-lg bg-primary-gradient shadow-primary-sm">
+        <div className={cn("relative flex h-14 shrink-0 items-center border-b border-sidebar-border/60", rail ? "justify-center px-2" : "px-3")}>
+          {rail ? (
+            <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-lg bg-primary-gradient shadow-primary-sm">
               <span className="text-lg font-bold text-white">{brand.product.monogram}</span>
             </div>
-            <div>
-              <div className="text-sm font-bold tracking-tight text-sidebar-foreground">{brand.product.name}</div>
-              <div className="text-[9px] font-medium uppercase tracking-[0.16em] text-sidebar-foreground/40">{brandCopy(locale).tagline}</div>
+          ) : (
+            <div className="flex items-center gap-2.5">
+              <div className="relative flex h-8 w-8 items-center justify-center overflow-hidden rounded-lg bg-primary-gradient shadow-primary-sm">
+                <span className="text-lg font-bold text-white">{brand.product.monogram}</span>
+              </div>
+              <div>
+                <div className="text-sm font-bold tracking-tight text-sidebar-foreground">{brand.product.name}</div>
+                <div className="text-[9px] font-medium uppercase tracking-[0.16em] text-sidebar-foreground/40">{brandCopy(locale).tagline}</div>
+              </div>
             </div>
-          </div>
-          <div className={`hidden h-8 w-8 items-center justify-center overflow-hidden rounded-lg bg-primary-gradient shadow-primary-sm ${collapsed && "md:flex"}`}>
-            <span className="text-lg font-bold text-white">{brand.product.monogram}</span>
-          </div>
+          )}
           <button
             type="button"
             aria-label={collapsed ? t("nav.expandNavigation") : t("nav.collapseNavigation")}
-            onClick={() => setCollapsed((value) => !value)}
-            className="ms-auto hidden h-7 w-7 items-center justify-center rounded-md text-sidebar-foreground/40 transition-colors hover:bg-sidebar-hover hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring md:flex"
+            aria-expanded={!collapsed}
+            aria-controls="app-sidebar"
+            title={collapsed ? t("nav.expandNavigation") : t("nav.collapseNavigation")}
+            onClick={() => updateCollapsed(!collapsed)}
+            className={cn(
+              "hidden items-center justify-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring md:flex",
+              rail
+                ? "absolute -end-3 top-1/2 z-10 h-6 w-6 -translate-y-1/2 rounded-full border border-sidebar-border bg-sidebar text-sidebar-foreground/60 shadow-sm hover:bg-sidebar-hover hover:text-sidebar-foreground"
+                : "ms-auto h-7 w-7 rounded-md text-sidebar-foreground/40 hover:bg-sidebar-hover hover:text-sidebar-foreground"
+            )}
           >
-            {collapsed ? <PanelLeft className="h-3.5 w-3.5" /> : <PanelLeftClose className="h-3.5 w-3.5" />}
+            {collapsed ? <PanelLeft className="h-3.5 w-3.5 rtl:-scale-x-100" /> : <PanelLeftClose className="h-3.5 w-3.5 rtl:-scale-x-100" />}
           </button>
           <button
             type="button"
@@ -188,20 +254,21 @@ export function Sidebar() {
           </button>
         </div>
 
-        <div className={`shrink-0 p-2.5 ${collapsed && "md:p-1.5"}`}>
+        <div className={cn("shrink-0", rail ? "p-1.5" : "p-2.5")}>
           <button
             type="button"
             onClick={openSearch}
             aria-label={t("nav.searchNexus")}
-            className={`
-              group flex h-8 w-full items-center gap-2 rounded-md border border-sidebar-border/50 bg-sidebar-accent/30 px-2 text-start text-[10px] text-sidebar-foreground/50 transition-colors
-              hover:border-sidebar-active/40 hover:bg-sidebar-accent hover:text-sidebar-foreground
-              focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring
-              ${collapsed && "md:justify-center md:px-0"}
-            `}
+            title={t("nav.searchNexus")}
+            className={cn(
+              "group flex items-center rounded-md border border-sidebar-border/50 bg-sidebar-accent/30 text-start text-[10px] text-sidebar-foreground/50 transition-colors",
+              "hover:border-sidebar-active/40 hover:bg-sidebar-accent hover:text-sidebar-foreground",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring",
+              rail ? "mx-auto h-10 w-10 justify-center px-0" : "h-8 w-full gap-2 px-2"
+            )}
           >
             <Search className="h-3.5 w-3.5 shrink-0 text-sidebar-foreground/45 group-hover:text-sidebar-active" />
-            {!collapsed && (
+            {!rail && (
               <>
                 <span className="flex-1 truncate">{t("nav.searchPlaceholder")}</span>
                 <kbd className="hidden rounded border border-sidebar-border/50 bg-sidebar/40 px-1.5 py-0.5 text-[9px] text-sidebar-foreground/40 md:inline">Ctrl K</kbd>
@@ -210,38 +277,50 @@ export function Sidebar() {
           </button>
         </div>
 
-        <ScrollArea className="min-h-0 flex-1 px-2 pb-2 scrollbar-thin">
-          <nav aria-label={t("nav.globalNavigation")} className={`space-y-0.5 ${collapsed && "md:px-0"}`}>
-            {visibleSections.map(({ id, items, labelKey, icon: Icon }) => {
-              const active = activeSectionId === id;
-              const open = groupState[id] ?? active;
-              return (
-                <NavSectionView
-                  key={id}
-                  section={{ id, labelKey, icon: Icon, items: [] }}
-                  items={items}
-                  pathname={normalizedPathname}
-                  active={active}
-                  open={open}
-                  onOpenChange={(value: boolean) => updateGroup(id, value)}
-                  onNavigate={navigate}
-                />
-              );
-            })}
-          </nav>
+        <ScrollArea className={cn("min-h-0 flex-1 pb-2 scrollbar-thin", rail ? "overflow-x-hidden px-0" : "px-2")}>
+          {rail ? (
+            <SidebarRail
+              sections={visibleSections}
+              pathname={normalizedPathname}
+              activeSectionId={activeSectionId}
+              rtl={locale === "ar"}
+              onNavigate={navigate}
+            />
+          ) : (
+            <nav aria-label={t("nav.globalNavigation")} className="space-y-0.5">
+              {visibleSections.map(({ id, items, labelKey, icon: Icon }) => {
+                const active = activeSectionId === id;
+                const open = groupState[id] ?? active;
+                return (
+                  <NavSectionView
+                    key={id}
+                    section={{ id, labelKey, icon: Icon, items: [] }}
+                    items={items}
+                    pathname={normalizedPathname}
+                    active={active}
+                    open={open}
+                    onOpenChange={(value: boolean) => updateGroup(id, value)}
+                    onNavigate={navigate}
+                  />
+                );
+              })}
+            </nav>
+          )}
         </ScrollArea>
 
-        <div className={`shrink-0 border-t border-sidebar-border/60 p-2.5 ${collapsed && "md:p-1.5"}`}>
-          <div className={`flex items-center gap-2 rounded-md bg-sidebar-accent/20 p-2 ${collapsed && "md:justify-center md:bg-transparent md:p-0"}`}>
-            <div className="h-7 w-7 shrink-0 rounded-full bg-primary/15 flex items-center justify-center">
-              <span className="text-[10px] font-semibold text-primary">
-                {user?.fullName?.split(" ").map((p) => p[0]).join("").slice(0, 2).toUpperCase() || "US"}
-              </span>
-            </div>
-            {!collapsed && (
+        <div className={cn("shrink-0 border-t border-sidebar-border/60", rail ? "p-1.5" : "p-2.5")}>
+          <div
+            className={cn(
+              "flex items-center gap-2 rounded-md text-[10px] text-sidebar-foreground/55 transition-colors hover:bg-sidebar-hover hover:text-sidebar-foreground/80",
+              rail ? "justify-center px-0 py-1.5" : "px-1.5 py-1.5"
+            )}
+            title={rail ? `${brand.product.name} ${productVersion.version}` : undefined}
+          >
+            <Info className="h-3.5 w-3.5 shrink-0" />
+            {!rail && (
               <div className="min-w-0">
-                <div className="truncate text-[11px] font-medium text-sidebar-foreground">{user?.fullName || "User"}</div>
-                <div className="truncate text-[9px] text-sidebar-muted/70">{user?.roles?.[0]?.name || user?.jobTitle || brand.product.name}</div>
+                <div className="truncate text-[10px] font-medium uppercase tracking-[0.12em] text-sidebar-foreground/45">Version</div>
+                <div className="truncate font-mono text-[11px] text-sidebar-foreground/70">{productVersion.version}</div>
               </div>
             )}
           </div>

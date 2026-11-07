@@ -1,9 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { z } from "zod";
+import { useManagement } from "@api/management";
 import { api } from "@api/client";
 import { projectKeys } from "@features/projects/api/projects";
 import { invalidateManagerHandoverEntity } from "@features/delivery/api/managerHandovers";
 import type { ManagerHandoverRequestDto } from "@features/delivery/api/managerHandovers";
-import { getApprovalReviewApiPath, type ApprovalReviewType } from "@lib/approval-navigation";
+import { APPROVAL_REVIEW_CONTRACTS, getApprovalReviewApiPath, type ApprovalReviewType } from "@lib/approval-navigation";
+import { MANAGEMENT_PERSPECTIVES } from "@lib/perspective";
 export type { ManagerHandoverRequestDto } from "@features/delivery/api/managerHandovers";
 
 export interface TimeEntryDto {
@@ -170,10 +173,54 @@ export interface ApprovalReviewDto {
   canDecide: boolean;
 }
 
+const approvalReviewDtoSchema = z.looseObject({
+  approvalId: z.string().min(1),
+  approvalType: z.enum(["ProjectHandover", "ProgramHandover", "PortfolioHandover", "ChangeRequest"]),
+  businessObjectType: z.enum(["Project", "Program", "Portfolio"]),
+  businessObjectPublicId: z.string().nullable().optional(),
+  businessObjectName: z.string(),
+  businessObjectCode: z.string().nullable().optional(),
+  businessObjectStatus: z.string().nullable().optional(),
+  title: z.string(),
+  reason: z.string().nullable().optional(),
+  notes: z.string().nullable().optional(),
+  requestedByName: z.string(),
+  requestedAt: z.string().min(1),
+  status: z.string(),
+  effectiveDate: z.string().nullable().optional(),
+  currentAssigneeName: z.string().nullable().optional(),
+  proposedAssigneeName: z.string().nullable().optional(),
+  changeNumber: z.number().int().nullable().optional(),
+  changeType: z.string().nullable().optional(),
+  justification: z.string().nullable().optional(),
+  impact: z.string().nullable().optional(),
+  currentAmount: z.number().nullable().optional(),
+  amountChange: z.number().nullable().optional(),
+  proposedAmount: z.number().nullable().optional(),
+  currency: z.string().nullable().optional(),
+  isReadOnly: z.boolean(),
+  canDecide: z.boolean(),
+});
+
+const managerHandoverRoutingSchema = z.array(z.looseObject({
+  id: z.string().uuid(),
+  entityType: z.enum(["Program", "Portfolio"]),
+})).max(1000);
+
 export function useApprovalReview(type: ApprovalReviewType, approvalId: string) {
   return useQuery({
     queryKey: ["approvalReview", type, approvalId],
-    queryFn: () => api.get<ApprovalReviewDto>(getApprovalReviewApiPath(type, approvalId)),
+    queryFn: async () => {
+      const response = await api.get<unknown>(getApprovalReviewApiPath(type, approvalId));
+      const review = approvalReviewDtoSchema.parse(response);
+      const contract = APPROVAL_REVIEW_CONTRACTS[type];
+      if (review.approvalId.toLowerCase() !== approvalId.toLowerCase()
+        || review.approvalType !== contract.approvalType
+        || review.businessObjectType !== contract.businessObjectType) {
+        throw new Error("Approval review response does not match the requested approval type.");
+      }
+      return review as ApprovalReviewDto;
+    },
     enabled: Boolean(approvalId),
     retry: false,
     staleTime: 0,
@@ -192,7 +239,10 @@ export function usePendingHandoverRequestsForMe(enabled = true) {
 export function usePendingManagerHandovers(enabled = true) {
   return useQuery({
     queryKey: ["managerHandovers", "pendingForMe"],
-    queryFn: () => api.get<ManagerHandoverRequestDto[]>("/api/manager-handovers/pending-for-me"),
+    queryFn: async () => {
+      const response = await api.get<unknown>("/api/manager-handovers/pending-for-me");
+      return managerHandoverRoutingSchema.parse(response) as unknown as ManagerHandoverRequestDto[];
+    },
     enabled,
     staleTime: 15_000,
   });
@@ -209,20 +259,36 @@ export function usePendingProjectChangeRequests(enabled = true) {
 
 export function useAcceptHandoverRequest() {
   const queryClient = useQueryClient();
+  const management = useManagement();
   return useMutation({
     mutationFn: (requestId: string) => api.post<HandoverRequestDto>(`/api/handover-requests/${requestId}/accept`, {}),
-    onSuccess: (request) => Promise.all([
-      queryClient.invalidateQueries({ queryKey: ["projects", "detail", request.projectId], exact: true }),
-      queryClient.invalidateQueries({ queryKey: ["projects", "shell", request.projectId], exact: true }),
-      queryClient.invalidateQueries({ queryKey: ["projects", "overview", request.projectId], exact: true }),
-      queryClient.invalidateQueries({ queryKey: ["projects", "list"] }),
-      queryClient.invalidateQueries({ queryKey: ["projects", "people", request.projectId] }),
-      queryClient.invalidateQueries({ queryKey: ["projects", "team", request.projectId] }),
-      queryClient.invalidateQueries({ queryKey: ["projects", "history", request.projectId] }),
-      queryClient.invalidateQueries({ queryKey: ["projects", "snapshots", request.projectId] }),
-      queryClient.invalidateQueries({ queryKey: ["projects", "handovers", request.projectId] }),
-      queryClient.invalidateQueries({ queryKey: projectKeys.handoverManagers(request.projectId) }),
-    ]),
+    onSuccess: async (request) => {
+      // Acceptance may add a project outside the currently selected PM context.
+      // Drop that single-project context so the refreshed native scope includes
+      // every project assigned to this manager, including future-effective work
+      // once the scheduler applies it.
+      if (management.context?.perspective === MANAGEMENT_PERSPECTIVES.ProjectManager
+        && management.context.viewMode === "Native") {
+        management.setContext({ perspective: MANAGEMENT_PERSPECTIVES.ProjectManager, viewMode: "Native" });
+      }
+      await management.refreshSnapshot();
+
+      // Project endpoints use PublicId in their route/query keys; projectId on
+      // the handover DTO is the internal relationship key.
+      const projectRouteId = request.projectPublicId || request.projectId;
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["projects", "detail", projectRouteId], exact: true }),
+        queryClient.invalidateQueries({ queryKey: ["projects", "shell", projectRouteId], exact: true }),
+        queryClient.invalidateQueries({ queryKey: ["projects", "overview", projectRouteId], exact: true }),
+        queryClient.invalidateQueries({ queryKey: ["projects", "list"] }),
+        queryClient.invalidateQueries({ queryKey: ["projects", "people", projectRouteId] }),
+        queryClient.invalidateQueries({ queryKey: ["projects", "team", projectRouteId] }),
+        queryClient.invalidateQueries({ queryKey: ["projects", "history", projectRouteId] }),
+        queryClient.invalidateQueries({ queryKey: ["projects", "snapshots", projectRouteId] }),
+        queryClient.invalidateQueries({ queryKey: ["projects", "handovers", projectRouteId] }),
+        queryClient.invalidateQueries({ queryKey: projectKeys.handoverManagers(projectRouteId) }),
+      ]);
+    },
     onSettled: () => queryClient.invalidateQueries({ queryKey: ["handovers", "pendingForMe"] }),
   });
 }

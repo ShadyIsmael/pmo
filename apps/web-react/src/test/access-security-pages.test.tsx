@@ -1,8 +1,10 @@
 import * as React from "react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "../i18n/messages";
+import { ApiError } from "../api/client";
 import { AccessPage, AccessUsersPage, UserPermissionsPage } from "../features/administration/AccessPages";
 import { AdministrationLayout } from "../features/administration/AdministrationHub";
 import { RolesPage } from "../features/administration/RolesPage";
@@ -10,27 +12,41 @@ import { RolesPage } from "../features/administration/RolesPage";
 const fixtures = vi.hoisted(() => ({
   users: [{ id: "user-1", email: "maya@example.com", firstName: "Maya", lastName: "Admin", fullName: "Maya Admin", isActive: true, authenticationSource: "Local", mustChangePassword: false, roles: ["Administrator"] }],
   permissions: [
-    { id: "permission-1", name: "projects.read", resource: "projects", action: "read", isRoleGranted: true, overrideEffect: null, isEffective: true },
-    { id: "permission-2", name: "users.write", resource: "users", action: "write", isRoleGranted: false, overrideEffect: null, isEffective: false },
-    { id: "permission-finances-read", name: "finances.read", resource: "finances", action: "read", isRoleGranted: false, overrideEffect: null, isEffective: false },
-  ] as Array<{ id: string; name: string; resource: string; action: string; isRoleGranted: boolean; overrideEffect: "Allow" | "Deny" | null; isEffective: boolean }>,
-  actorPermissions: ["users.read", "users.write", "users.reset-password", "projects.read"] as string[],
-  assignablePermissions: [] as Array<{ id: string; name: string; resource: string; action: string; description?: string }>,
-  roles: [] as Array<{ id: string; name: string; description?: string; category?: string; isSystem: boolean; permissionCount: number; assignedUserCount: number }>,
+    { id: "permission-1", name: "Project.View", resource: "Project", action: "View", labelEn: "View projects", isActive: true, isAssignable: true, isRoleGranted: true, overrideEffect: null, isEffective: true, isProtectedAdminBaseline: false },
+    { id: "permission-2", name: "Legacy.Users.Write", resource: "Legacy.Users", action: "Write", labelEn: "Legacy permission", isActive: false, isAssignable: false, isRoleGranted: false, overrideEffect: null, isEffective: false, isProtectedAdminBaseline: false },
+    { id: "permission-finances-read", name: "ProjectFinance.View", resource: "ProjectFinance", action: "View", labelEn: "Open Project Finance", labelAr: "فتح مساحة إدارة تمويل المشروع", isActive: true, isAssignable: true, isRoleGranted: false, overrideEffect: null, isEffective: false, isProtectedAdminBaseline: false },
+  ] as Array<{ id: string; name: string; resource: string; action: string; labelEn?: string; labelAr?: string; isActive: boolean; isAssignable: boolean; isRoleGranted: boolean; overrideEffect: "Allow" | "Deny" | null; isEffective: boolean; isProtectedAdminBaseline: boolean }>,
+  actorPermissions: ["Users.View", "Users.ManageAccounts", "Users.ResetPassword", "Users.SetStatus", "Users.AssignRoles", "UserPermissions.Manage", "Roles.View", "Project.View"] as string[],
+  assignablePermissions: [] as Array<{ id: string; name: string; resource: string; action: string; description?: string; moduleId?: string; moduleNameEn?: string; moduleNameAr?: string; screenId?: string; screenNameEn?: string; screenNameAr?: string; scope?: "Tenant" | "Organization" | "Portfolio" | "Program" | "Project"; canDelegate?: boolean; level?: "View" | "Action"; labelEn?: string; labelAr?: string; descriptionEn?: string; descriptionAr?: string; sensitivity?: "Low" | "Medium" | "High" | "Critical"; isSensitive?: boolean; isAssignable?: boolean; isMandatoryForSystemAdmin?: boolean; allowedCategories?: string[]; requiredPermissionKeys?: string[]; isActive?: boolean }>,
+  roles: [] as Array<{ id: string; name: string; description?: string; category?: string; isSystem: boolean; isProtectedSystemAdmin?: boolean; permissionCount: number; assignedUserCount: number }>,
   assignableRoles: [] as Array<{ id: string; name: string; description?: string; category?: string; isSystem: boolean; permissionCount: number; assignedUserCount: number }>,
-  selectedRole: null as null | { id: string; name: string; description: string; category: string; isSystem: boolean; permissionCount: number; assignedUserCount: number; permissions: Array<{ id: string; name: string; resource: string; action: string }> },
+  selectedRole: null as null | { id: string; name: string; description: string; category: string; isSystem: boolean; isProtectedSystemAdmin?: boolean; permissionCount: number; assignedUserCount: number; permissions: Array<{ id: string; name: string; resource: string; action: string; moduleId?: string; moduleNameEn?: string; moduleNameAr?: string; screenId?: string; screenNameEn?: string; screenNameAr?: string; scope?: "Tenant" | "Organization" | "Portfolio" | "Program" | "Project"; canDelegate?: boolean; level?: "View" | "Action"; labelEn?: string; labelAr?: string; descriptionEn?: string; descriptionAr?: string; sensitivity?: "Low" | "Medium" | "High" | "Critical"; isSensitive?: boolean; isAssignable?: boolean; isMandatoryForSystemAdmin?: boolean; requiredPermissionKeys?: string[]; isActive?: boolean }> },
   savePermissions: vi.fn(),
   createUser: vi.fn(),
   resetPassword: vi.fn(),
   updateUser: vi.fn(),
   saveRole: vi.fn(),
+  refreshUser: vi.fn(),
   refetch: vi.fn(),
 }));
 
-vi.mock("@auth/AuthProvider", () => ({ useAuth: () => ({ user: { id: "actor-1", permissions: fixtures.actorPermissions } }) }));
+vi.mock("@auth/AuthProvider", () => ({ useAuth: () => ({ user: { id: "actor-1", permissions: fixtures.actorPermissions }, refreshUser: fixtures.refreshUser }) }));
 vi.mock("@api/management", () => ({ useManagement: () => ({ effectiveReadOnly: false, canMutate: true }) }));
 vi.mock("../features/administration/api/admin", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../features/administration/api/admin")>();
+  type CatalogFixture = typeof fixtures.assignablePermissions;
+  let catalogSource: CatalogFixture | null = null;
+  let mappedCatalog: Array<CatalogFixture[number] & { allowedCategories: string[] }> = [];
+  const permissionCatalogForTest = () => {
+    if (catalogSource !== fixtures.assignablePermissions) {
+      catalogSource = fixtures.assignablePermissions;
+      mappedCatalog = catalogSource.map((permission) => ({
+        ...permission,
+        allowedCategories: permission.allowedCategories ?? ["Tenant", "Organization", "Management", "Operation", "Business"],
+      }));
+    }
+    return mappedCatalog;
+  };
   return {
     ...actual,
     useAdminUsers: () => ({ data: { items: fixtures.users, page: 1, pageSize: 25, totalCount: fixtures.users.length, totalPages: 1 }, isLoading: false, isError: false }),
@@ -41,7 +57,7 @@ vi.mock("../features/administration/api/admin", async (importOriginal) => {
     useUserPermissions: () => ({ data: fixtures.permissions, isLoading: false, isError: false, refetch: fixtures.refetch }),
     useSaveUserPermissions: () => ({ mutateAsync: fixtures.savePermissions, isPending: false }),
     useManagedRoles: () => ({ data: fixtures.roles, isLoading: false, isError: false, refetch: fixtures.refetch }),
-    useAssignablePermissions: () => ({ data: fixtures.assignablePermissions, isLoading: false, isError: false, refetch: fixtures.refetch }),
+    usePermissionCatalog: () => ({ data: permissionCatalogForTest(), isLoading: false, isError: false, refetch: fixtures.refetch }),
     useManagedRole: () => ({ data: fixtures.selectedRole, isLoading: false, isFetching: false, isError: false, refetch: fixtures.refetch }),
     useSaveManagedRole: () => ({ mutateAsync: fixtures.saveRole, isPending: false }),
     useDeleteManagedRole: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -53,25 +69,32 @@ function renderWithI18n(element: React.ReactNode) {
   return render(<I18nProvider>{element}</I18nProvider>);
 }
 
+function permissionCheckbox(container: HTMLElement, permissionId: string) {
+  const checkbox = container.querySelector<HTMLInputElement>(`[id="role-permission-${permissionId}"]`);
+  if (!checkbox) throw new Error(`Permission checkbox not found: ${permissionId}`);
+  return checkbox;
+}
+
 describe("Access & Security component pages", () => {
   beforeEach(() => {
     window.localStorage.clear();
     fixtures.users = [{ id: "user-1", email: "maya@example.com", firstName: "Maya", lastName: "Admin", fullName: "Maya Admin", isActive: true, authenticationSource: "Local", mustChangePassword: false, roles: ["Administrator"] }];
     fixtures.permissions = [
-      { id: "permission-1", name: "projects.read", resource: "projects", action: "read", isRoleGranted: true, overrideEffect: null, isEffective: true },
-      { id: "permission-2", name: "users.write", resource: "users", action: "write", isRoleGranted: false, overrideEffect: null, isEffective: false },
-      { id: "permission-finances-read", name: "finances.read", resource: "finances", action: "read", isRoleGranted: false, overrideEffect: null, isEffective: false },
+      { id: "permission-1", name: "Project.View", resource: "Project", action: "View", labelEn: "View projects", isActive: true, isAssignable: true, isRoleGranted: true, overrideEffect: null, isEffective: true, isProtectedAdminBaseline: false },
+      { id: "permission-2", name: "Legacy.Users.Write", resource: "Legacy.Users", action: "Write", labelEn: "Legacy permission", isActive: false, isAssignable: false, isRoleGranted: false, overrideEffect: null, isEffective: false, isProtectedAdminBaseline: false },
+      { id: "permission-finances-read", name: "ProjectFinance.View", resource: "ProjectFinance", action: "View", labelEn: "Open Project Finance", labelAr: "فتح مساحة إدارة تمويل المشروع", isActive: true, isAssignable: true, isRoleGranted: false, overrideEffect: null, isEffective: false, isProtectedAdminBaseline: false },
     ];
     fixtures.roles = [];
     fixtures.assignableRoles = [{ id: "role-1", name: "Administrator", isSystem: true, permissionCount: 2, assignedUserCount: 1 }, { id: "role-2", name: "Project Manager", isSystem: false, permissionCount: 1, assignedUserCount: 0 }];
     fixtures.selectedRole = null;
-    fixtures.actorPermissions = ["users.read", "users.write", "users.reset-password", "projects.read"];
+    fixtures.actorPermissions = ["Users.View", "Users.ManageAccounts", "Users.ResetPassword", "Users.SetStatus", "Users.AssignRoles", "UserPermissions.Manage", "Roles.View", "Project.View"];
     fixtures.assignablePermissions = [];
     fixtures.savePermissions.mockReset();
     fixtures.createUser.mockReset();
     fixtures.resetPassword.mockReset();
     fixtures.updateUser.mockReset();
     fixtures.saveRole.mockReset();
+    fixtures.refreshUser.mockReset().mockResolvedValue(undefined);
   });
 
   it("shows Access & Security components instead of repeating Administration categories", () => {
@@ -82,6 +105,27 @@ describe("Access & Security component pages", () => {
     expect(screen.getByRole("link", { name: /Roles & Permissions/ })).toHaveAttribute("href", "/administration/access/roles");
     expect(screen.queryByText("Organization")).not.toBeInTheDocument();
     expect(screen.queryByText("Reference Data")).not.toBeInTheDocument();
+  });
+
+  it("shows the Roles & Permissions entry to a role-permission administrator", () => {
+    fixtures.actorPermissions = ["Roles.ConfigurePermissions"];
+    renderWithI18n(<MemoryRouter><AccessPage /></MemoryRouter>);
+
+    expect(screen.getByRole("link", { name: /Roles & Permissions/ })).toHaveAttribute("href", "/administration/access/roles");
+  });
+
+  it("does not show the role workspace to Users.View-only accounts", () => {
+    fixtures.actorPermissions = ["Users.View"];
+    renderWithI18n(<MemoryRouter><AccessPage /></MemoryRouter>);
+
+    expect(screen.queryByRole("link", { name: /Roles & Permissions/ })).not.toBeInTheDocument();
+  });
+
+  it("does not show Roles & Permissions for a Users.ManageAccounts-only account", () => {
+    fixtures.actorPermissions = ["Users.ManageAccounts"];
+    renderWithI18n(<MemoryRouter><AccessPage /></MemoryRouter>);
+
+    expect(screen.queryByRole("link", { name: /Roles & Permissions/ })).not.toBeInTheDocument();
   });
 
   it("does not render the side-menu Administration categories a second time above the page", () => {
@@ -112,6 +156,49 @@ describe("Access & Security component pages", () => {
     expect(screen.getByRole("heading", { name: "User directory" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Back to Access & Security" }));
     expect(screen.getByRole("heading", { name: "Access & Security" })).toBeInTheDocument();
+  });
+
+  it("lets role assigners change user roles without granting account edit authority", async () => {
+    fixtures.actorPermissions = ["Users.View", "Users.AssignRoles"];
+    renderWithI18n(<MemoryRouter><AccessUsersPage /></MemoryRouter>);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit Maya Admin" }));
+    expect(screen.getByLabelText("First Name")).toBeDisabled();
+    expect(screen.getByLabelText("Email")).toBeDisabled();
+    expect(screen.getByLabelText("Active")).toBeDisabled();
+
+    fireEvent.click(screen.getByLabelText(/Project Manager/));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(fixtures.updateUser).toHaveBeenCalledWith(expect.objectContaining({
+      userId: "user-1",
+      input: expect.objectContaining({ roles: ["Administrator", "Project Manager"] }),
+    })));
+  });
+
+  it("lets status administrators activate or deactivate accounts without profile edit authority", async () => {
+    fixtures.actorPermissions = ["Users.View", "Users.SetStatus"];
+    renderWithI18n(<MemoryRouter><AccessUsersPage /></MemoryRouter>);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit Maya Admin" }));
+    expect(screen.getByLabelText("First Name")).toBeDisabled();
+    expect(screen.getByLabelText("Email")).toBeDisabled();
+    const active = screen.getByLabelText("Active");
+    expect(active).toBeEnabled();
+    fireEvent.click(active);
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(fixtures.updateUser).toHaveBeenCalledWith(expect.objectContaining({
+      userId: "user-1",
+      input: expect.objectContaining({ isActive: false, roles: ["Administrator"] }),
+    })));
+  });
+
+  it("does not let an account editor change activation status without the status capability", () => {
+    fixtures.actorPermissions = ["Users.View", "Users.ManageAccounts"];
+    renderWithI18n(<MemoryRouter><AccessUsersPage /></MemoryRouter>);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit Maya Admin" }));
+    expect(screen.getByLabelText("First Name")).toBeEnabled();
+    expect(screen.getByLabelText("Active")).toBeDisabled();
   });
 
   it("returns from Roles & Permissions to the Access & Security landing page", () => {
@@ -146,13 +233,13 @@ describe("Access & Security component pages", () => {
 
     const roleGranted = screen.getByText("Granted by a role");
     const effective = screen.getByText("Effective");
-    const override = screen.getByLabelText("Direct override for Projects · Read");
+    const override = screen.getByLabelText("Direct override for View projects");
     expect(roleGranted).toHaveClass("text-info");
     expect(roleGranted.className).not.toMatch(/bg-(success|warning|destructive|info)/);
     expect(effective).toHaveClass("text-success");
     expect(effective.className).not.toMatch(/bg-(success|warning|destructive|info)/);
-    expect(screen.getByLabelText("Direct override for Finances · Read")).toBeDisabled();
-    expect(screen.getByText("Your account does not have this permission to change.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Direct override for Open Project Finance")).toBeDisabled();
+    expect(screen.getByLabelText("Direct override for Open Project Finance").closest(".grid")?.querySelector("p span:last-child")?.textContent).toBe("Your account does not have this permission to change.");
 
     fireEvent.change(override, { target: { value: "Deny" } });
     expect(override).toHaveClass("text-destructive");
@@ -162,18 +249,51 @@ describe("Access & Security component pages", () => {
     expect(override).toHaveClass("text-muted-foreground");
   });
 
-  it("explains in Arabic why financial read cannot be delegated from the current account", () => {
-    window.localStorage.setItem("nexus-locale", "ar");
-    render(<I18nProvider><MemoryRouter initialEntries={["/administration/access/users"]}>
+  it("locks protected Tenant Admin baseline overrides and does not preserve a stored Deny", async () => {
+    fixtures.permissions = [...fixtures.permissions, {
+      id: "permission-admin-protected",
+      name: "Roles.Delete",
+      resource: "Roles",
+      action: "Delete",
+      labelEn: "Delete roles",
+      isActive: true,
+      isAssignable: true,
+      isRoleGranted: false,
+      overrideEffect: "Deny",
+      isEffective: true,
+      isProtectedAdminBaseline: true,
+    }];
+    fixtures.savePermissions.mockResolvedValue(fixtures.permissions);
+
+    renderWithI18n(<MemoryRouter initialEntries={["/administration/access/users"]}>
       <Routes>
         <Route path="/administration/access/users" element={<AccessUsersPage />} />
         <Route path="/administration/access/users/:userId/permissions" element={<UserPermissionsPage />} />
       </Routes>
+    </MemoryRouter>);
+
+    fireEvent.click(screen.getByRole("button", { name: "Manage permissions" }));
+    const protectedOverride = screen.getByLabelText("Direct override for Delete roles");
+    expect(protectedOverride).toBeDisabled();
+    expect(protectedOverride).toHaveValue("Inherit");
+    expect(screen.getByText("This protected tenant Admin permission is always enabled and cannot be overridden.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save permissions" })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save permissions" }));
+    await waitFor(() => expect(fixtures.savePermissions).toHaveBeenCalledWith({ userId: "user-1", overrides: [] }));
+  });
+
+  it("explains in Arabic why financial read cannot be delegated from the current account", () => {
+    window.localStorage.setItem("nexus-locale", "ar");
+    render(<I18nProvider><MemoryRouter initialEntries={[{ pathname: "/administration/access/users/user-1/permissions", state: { userName: "Maya Admin" } }]}>
+      <Routes>
+        <Route path="/administration/access/users/:userId/permissions" element={<UserPermissionsPage />} />
+      </Routes>
     </MemoryRouter></I18nProvider>);
 
-    fireEvent.click(screen.getByRole("button", { name: "إدارة الصلاحيات" }));
-    expect(screen.getByLabelText("التجاوز المباشر للصلاحية الشؤون المالية · قراءة")).toBeDisabled();
-    expect(screen.getByText("حسابك لا يملك هذه الصلاحية لتعديلها.")).toBeInTheDocument();
+    const financeOverride = document.querySelector<HTMLSelectElement>("#user-permission-permission-finances-read");
+    expect(financeOverride).toBeDisabled();
+    expect(financeOverride?.closest(".grid")?.querySelector("p span:last-child")?.textContent).toMatch(/\p{Script=Arabic}/u);
   });
 
   it("requires an administrator with broader access to review existing out-of-scope overrides", () => {
@@ -219,8 +339,6 @@ describe("Access & Security component pages", () => {
       email: "sam@example.com",
       firstName: "Sam",
       lastName: "Taylor",
-      jobTitle: null,
-      phone: null,
       isActive: true,
       roles: ["Project Manager"],
       authenticationSource: "Local",
@@ -246,7 +364,6 @@ describe("Access & Security component pages", () => {
     fireEvent.click(screen.getByRole("button", { name: "Edit Maya Admin" }));
     const sheet = screen.getByRole("dialog", { name: "Edit User" });
     expect(within(sheet).getByLabelText("First Name")).toHaveValue("Maya");
-    fireEvent.change(within(sheet).getByLabelText("Job Title"), { target: { value: "Head of Finance" } });
     fireEvent.click(within(sheet).getByRole("checkbox", { name: "Project Manager" }));
     fireEvent.click(within(sheet).getByRole("button", { name: "Save" }));
 
@@ -256,8 +373,6 @@ describe("Access & Security component pages", () => {
         email: "maya@example.com",
         firstName: "Maya",
         lastName: "Admin",
-        jobTitle: "Head of Finance",
-        phone: null,
         isActive: true,
         roles: ["Administrator", "Project Manager"],
       },
@@ -294,11 +409,12 @@ describe("Access & Security component pages", () => {
   });
 
   it("opens both new-role and edit-role forms in a Side Sheet", () => {
+    fixtures.actorPermissions = ["Roles.View", "Roles.Create", "Roles.ConfigurePermissions"];
     fixtures.roles = [
       { id: "role-1", name: "Analyst", isSystem: false, permissionCount: 1, assignedUserCount: 0 },
       { id: "role-2", name: "System Admin", isSystem: true, permissionCount: 4, assignedUserCount: 1 },
     ];
-    fixtures.selectedRole = { ...fixtures.roles[0], description: "Read-only analyst", category: "Delivery", permissions: [{ id: "permission-1", name: "projects.read", resource: "projects", action: "read" }] };
+    fixtures.selectedRole = { ...fixtures.roles[0], description: "Read-only analyst", category: "Management", permissions: [{ id: "permission-1", name: "Project.View", resource: "Project", action: "View", moduleId: "project-management", moduleNameEn: "Project Management", moduleNameAr: "إدارة المشاريع", screenId: "projects", screenNameEn: "Projects", screenNameAr: "المشاريع", level: "View", labelEn: "View project records", labelAr: "عرض سجلات المشروع" }] };
     renderWithI18n(<MemoryRouter><RolesPage /></MemoryRouter>);
 
     for (const badge of screen.getAllByText("System role")) {
@@ -314,11 +430,673 @@ describe("Access & Security component pages", () => {
     expect(screen.getByRole("dialog", { name: "Edit role" })).toBeInTheDocument();
   });
 
+  it("creates a role from permissions the actor may delegate and preserves selection through search, filters, and collapse", async () => {
+    const user = userEvent.setup();
+    fixtures.actorPermissions = ["Roles.View", "Roles.Create", "Roles.ConfigurePermissions", "Project.View", "Project.Edit"];
+    fixtures.roles = [];
+    fixtures.selectedRole = null;
+    const projectView = {
+      id: "permission-create-project-view",
+      name: "Project.View",
+      resource: "Project",
+      action: "View",
+      moduleId: "project-management",
+      moduleNameEn: "Project Management",
+      moduleNameAr: "إدارة المشاريع",
+      screenId: "projects",
+      screenNameEn: "Projects",
+      screenNameAr: "المشاريع",
+      scope: "Project" as const,
+      level: "View" as const,
+      allowedCategories: ["Management"],
+      labelEn: "View project records",
+      labelAr: "عرض سجلات المشروع",
+      descriptionEn: "Open the project workspace.",
+      descriptionAr: "افتح مساحة المشروع.",
+      sensitivity: "Low" as const,
+      isSensitive: false,
+      canDelegate: true,
+      isAssignable: true,
+      isMandatoryForSystemAdmin: false,
+      requiredPermissionKeys: [],
+      isActive: true,
+    };
+    const projectEdit = {
+      ...projectView,
+      id: "permission-create-project-edit",
+      name: "Project.Edit",
+      action: "Edit",
+      level: "Action" as const,
+      labelEn: "Edit project records",
+      labelAr: "عدّل سجلات المشروع",
+      descriptionEn: "Update project records.",
+      descriptionAr: "حدّث سجلات المشروع.",
+      requiredPermissionKeys: ["Project.View"],
+    };
+    const projectDelete = {
+      ...projectView,
+      id: "permission-create-project-delete",
+      name: "Project.Delete",
+      action: "Delete",
+      level: "Action" as const,
+      labelEn: "Delete project records",
+      labelAr: "احذف سجلات المشروع",
+      descriptionEn: "Delete project records.",
+      descriptionAr: "احذف سجلات المشروع.",
+      sensitivity: "High" as const,
+      isSensitive: true,
+      canDelegate: false,
+      requiredPermissionKeys: ["Project.View"],
+    };
+    fixtures.assignablePermissions = [projectView, projectEdit, projectDelete];
+    fixtures.saveRole.mockResolvedValue({
+      id: "created-project-editor",
+      name: "Project Editor",
+      description: "",
+      category: "Management",
+      isSystem: false,
+      permissionCount: 2,
+      assignedUserCount: 0,
+      permissions: [projectView, projectEdit],
+    });
+
+    renderWithI18n(<MemoryRouter><RolesPage /></MemoryRouter>);
+    await user.click(screen.getByRole("button", { name: "New role" }));
+    const editor = await screen.findByRole("dialog", { name: "New role" });
+    await user.selectOptions(within(editor).getByRole("combobox", { name: "Category" }), "Management");
+    await user.click(within(editor).getByRole("button", { name: /Project Management/ }));
+    await user.click(within(editor).getByRole("button", { name: /Projects/ }));
+
+    const viewCheckbox = permissionCheckbox(editor, "permission-create-project-view");
+    const editCheckbox = permissionCheckbox(editor, "permission-create-project-edit");
+    const deleteCheckbox = permissionCheckbox(editor, "permission-create-project-delete");
+    expect(viewCheckbox).toBeEnabled();
+    expect(editCheckbox).toBeEnabled();
+    expect(deleteCheckbox).toBeDisabled();
+    expect(within(editor).getByText("Your current access does not allow you to grant this permission.")).toBeInTheDocument();
+
+    await user.click(editCheckbox);
+    expect(permissionCheckbox(editor, "permission-create-project-view")).toBeChecked();
+    expect(permissionCheckbox(editor, "permission-create-project-edit")).toBeChecked();
+    expect(within(editor).getByText("2 of 3 active permissions selected")).toBeInTheDocument();
+
+    const search = within(editor).getByRole("textbox", { name: "Search names, keys, and descriptions..." });
+    await user.type(search, "Project.Edit");
+    expect(permissionCheckbox(editor, "permission-create-project-edit")).toBeChecked();
+    expect(permissionCheckbox(editor, "permission-create-project-view")).toBeChecked();
+
+    const moduleToggle = within(editor).getByRole("button", { name: /Project Management/ });
+    await user.click(moduleToggle);
+    expect(moduleToggle).toHaveAttribute("aria-expanded", "false");
+    await user.click(moduleToggle);
+    expect(permissionCheckbox(editor, "permission-create-project-edit")).toBeChecked();
+
+    await user.clear(search);
+    await user.selectOptions(within(editor).getByRole("combobox", { name: "Permission level" }), "Action");
+    expect(permissionCheckbox(editor, "permission-create-project-view")).toBeChecked();
+    expect(permissionCheckbox(editor, "permission-create-project-edit")).toBeChecked();
+    await user.selectOptions(within(editor).getByRole("combobox", { name: "Permission level" }), "all");
+    await user.selectOptions(within(editor).getByRole("combobox", { name: "Grant status" }), "assigned");
+    expect(permissionCheckbox(editor, "permission-create-project-view")).toBeChecked();
+    expect(permissionCheckbox(editor, "permission-create-project-edit")).toBeChecked();
+
+    await user.type(within(editor).getByLabelText("Role name"), "Project Editor");
+    await user.click(within(editor).getByRole("button", { name: "Save role" }));
+    await waitFor(() => expect(fixtures.saveRole).toHaveBeenCalledWith(expect.objectContaining({
+      roleId: null,
+      input: expect.objectContaining({
+        name: "Project Editor",
+        permissionIds: expect.arrayContaining([projectView.id, projectEdit.id]),
+      }),
+    })));
+    const savedInput = fixtures.saveRole.mock.calls[0][0].input;
+    expect(savedInput.permissionIds).toHaveLength(2);
+    expect(savedInput.permissionIds).not.toContain(projectDelete.id);
+    await waitFor(() => expect(fixtures.refreshUser).toHaveBeenCalledTimes(1));
+  });
+
+  it("shows mandatory permissions on the protected tenant Admin role as checked and locked", async () => {
+    const user = userEvent.setup();
+    fixtures.actorPermissions = ["Roles.View", "Roles.ConfigurePermissions"];
+    const roleView = {
+      id: "permission-role-view",
+      name: "Roles.View",
+      resource: "Roles",
+      action: "View",
+      scope: "Tenant" as const,
+      canDelegate: true,
+      moduleId: "administration",
+      moduleNameEn: "Administration",
+      moduleNameAr: "الإدارة",
+      screenId: "roles",
+      screenNameEn: "Roles & Permissions",
+      screenNameAr: "الأدوار والصلاحيات",
+      level: "View" as const,
+      labelEn: "View role permissions",
+      labelAr: "عرض صلاحيات الأدوار",
+      descriptionEn: "View tenant roles and their permissions.",
+      descriptionAr: "عرض أدوار المستأجر وصلاحياتها.",
+      sensitivity: "Low" as const,
+      isSensitive: false,
+      isAssignable: true,
+      isMandatoryForSystemAdmin: true,
+      requiredPermissionKeys: [],
+      isActive: true,
+    };
+    const configureRoles = {
+      ...roleView,
+      id: "permission-role-configure",
+      name: "Roles.ConfigurePermissions",
+      action: "ConfigurePermissions",
+      level: "Action" as const,
+      labelEn: "Configure role permissions",
+      labelAr: "تكوين صلاحيات الأدوار",
+      descriptionEn: "Configure role permission grants.",
+      descriptionAr: "تكوين الصلاحيات الممنوحة للأدوار.",
+      sensitivity: "High" as const,
+      isSensitive: true,
+      requiredPermissionKeys: ["Roles.View"],
+    };
+    const adminRole = {
+      id: "protected-admin-role",
+      name: "System Admin",
+      description: "Protected tenant administrator",
+      category: "Administration",
+      isSystem: true,
+      isProtectedSystemAdmin: true,
+      permissionCount: 0,
+      assignedUserCount: 1,
+      permissions: [],
+    };
+    fixtures.roles = [adminRole];
+    fixtures.selectedRole = adminRole;
+    fixtures.assignablePermissions = [roleView, configureRoles];
+
+    renderWithI18n(<MemoryRouter><RolesPage /></MemoryRouter>);
+
+    await user.click(screen.getByRole("button", { name: /System Admin/ }));
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    const editor = await screen.findByRole("dialog", { name: "Edit role" });
+    await user.click(within(editor).getByRole("button", { name: /Administration 2 of 2 selected/ }));
+    await user.click(within(editor).getByRole("button", { name: /Roles & Permissions/ }));
+    const viewCheckbox = within(editor).getByRole("checkbox", { name: /View role permissions/ });
+    const configureCheckbox = within(editor).getByRole("checkbox", { name: /Configure role permissions/ });
+
+    expect(viewCheckbox).toBeChecked();
+    expect(viewCheckbox).toBeDisabled();
+    expect(configureCheckbox).toBeChecked();
+    expect(configureCheckbox).toBeDisabled();
+    expect(within(editor).getAllByText("Required for System Admin")).toHaveLength(2);
+  });
+
+  it("lets Tenant Administration scope configure role permissions and refreshes effective access after save", async () => {
+    const user = userEvent.setup();
+    fixtures.actorPermissions = ["Roles.ConfigurePermissions"];
+    const projectView = {
+      id: "permission-view",
+      name: "Project.View",
+      resource: "Project",
+      action: "View",
+      moduleId: "project-management",
+      moduleNameEn: "Project Management",
+      moduleNameAr: "تسليم المشاريع",
+      screenId: "projects",
+      screenNameEn: "Projects",
+      screenNameAr: "المشاريع",
+      level: "View" as const,
+      labelEn: "View project data",
+      labelAr: "عرض بيانات المشروع",
+      descriptionEn: "View project data.",
+      descriptionAr: "عرض بيانات المشروع.",
+      sensitivity: "Low" as const,
+      isSensitive: false,
+      scope: "Project" as const,
+      canDelegate: true,
+      isAssignable: true,
+      requiredPermissionKeys: [],
+      isActive: true,
+    };
+    const projectSettingsView = {
+      ...projectView,
+      id: "permission-project-settings-view",
+      name: "ProjectSettings.View",
+      resource: "ProjectSettings",
+      scope: "Tenant" as const,
+      labelEn: "View project records",
+      labelAr: "??? ????? ???????",
+      descriptionEn: "Review project configuration settings.",
+      requiredPermissionKeys: [],
+    };
+    const projectEdit = {
+      ...projectView,
+      id: "permission-edit",
+      name: "Project.Edit",
+      action: "Edit",
+      level: "Action" as const,
+      labelEn: "Edit project data",
+      labelAr: "تعديل بيانات المشروع",
+      requiredPermissionKeys: ["Project.View"],
+    };
+    fixtures.roles = [{ id: "role-tenant", name: "Project Reader", isSystem: false, permissionCount: 1, assignedUserCount: 0 }];
+    fixtures.selectedRole = { ...fixtures.roles[0], description: "", category: "Management", permissions: [projectView] };
+    fixtures.assignablePermissions = [projectView, projectSettingsView, projectEdit];
+    fixtures.saveRole.mockResolvedValue(fixtures.selectedRole);
+
+    renderWithI18n(<MemoryRouter><RolesPage /></MemoryRouter>);
+
+    expect(screen.getByRole("button", { name: "New role" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: /Project Reader/ }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Edit" })).toBeEnabled());
+    expect(screen.getByRole("button", { name: "Delete role" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+
+    const editRole = await screen.findByRole("dialog", { name: "Edit role" });
+    expect(within(editRole).getByLabelText("Role name")).toBeDisabled();
+    await user.click(within(editRole).getByRole("button", { name: /Project Management/ }));
+    await user.click(within(editRole).getByRole("button", { name: /Projects/ }));
+    const editPermission = within(editRole).getByRole("checkbox", { name: /Edit project data/ });
+    expect(editPermission).toBeEnabled();
+    await user.click(editPermission);
+    expect(editPermission).toBeChecked();
+    await user.click(within(editRole).getByRole("button", { name: "Save role" }));
+
+    const confirmation = await screen.findByRole("alertdialog", { name: "Save permission changes?" });
+    await user.click(within(confirmation).getByRole("button", { name: "Save role" }));
+
+    await waitFor(() => expect(fixtures.saveRole).toHaveBeenCalled());
+    await waitFor(() => expect(fixtures.refreshUser).toHaveBeenCalledTimes(1));
+  });
+
+  it("searches role permissions by canonical key and description and explains required permissions", async () => {
+    const user = userEvent.setup();
+    fixtures.actorPermissions = ["Roles.View", "Roles.Create", "Roles.ConfigurePermissions"];
+    const projectView = {
+      id: "permission-project-view",
+      name: "Project.View",
+      resource: "Project",
+      action: "View",
+      moduleId: "project-management",
+      moduleNameEn: "Project Management",
+      moduleNameAr: "إدارة المشاريع",
+      screenId: "projects",
+      screenNameEn: "Projects",
+      screenNameAr: "المشروعات",
+      level: "View" as const,
+      labelEn: "View project records",
+      labelAr: "عرض سجلات المشروع",
+      descriptionEn: "Open the project workspace and review project details.",
+      scope: "Project" as const,
+      canDelegate: true,
+      descriptionAr: "افتح مساحة المشروع وراجع تفاصيل المشروع.",
+      sensitivity: "Low" as const,
+      isSensitive: false,
+      isAssignable: true,
+      isMandatoryForSystemAdmin: false,
+      requiredPermissionKeys: [],
+      isActive: true,
+    };
+    const projectSettingsView = {
+      ...projectView,
+      id: "permission-project-settings-view",
+      name: "ProjectSettings.View",
+      resource: "ProjectSettings",
+      screenId: "project-settings",
+      screenNameEn: "Project Settings",
+      screenNameAr: "إعدادات المشروع",
+      scope: "Tenant" as const,
+      labelEn: "View project records",
+      labelAr: "عرض سجلات المشروع",
+      descriptionEn: "Review project configuration settings.",
+      descriptionAr: "راجع إعدادات تكوين المشروع.",
+    };
+    const projectEdit = {
+      ...projectView,
+      id: "permission-project-edit",
+      name: "Project.Edit",
+      action: "Edit",
+      level: "Action" as const,
+      labelEn: "Edit project records",
+      labelAr: "تعديل سجلات المشروع",
+      descriptionEn: "Change approved project records after validation.",
+      descriptionAr: "غيّر سجلات المشروع المعتمدة بعد التحقق.",
+      requiredPermissionKeys: ["Project.View"],
+    };
+    fixtures.assignablePermissions = [projectView, projectSettingsView, projectEdit];
+
+    renderWithI18n(<MemoryRouter><RolesPage /></MemoryRouter>);
+    await user.click(screen.getByRole("button", { name: "New role" }));
+    const editor = await screen.findByRole("dialog", { name: "New role" });
+    await user.selectOptions(within(editor).getByRole("combobox", { name: "Category" }), "Management");
+    const search = within(editor).getByRole("textbox", { name: "Search names, keys, and descriptions..." });
+
+    await user.type(search, "View project records");
+    const viewPermission = permissionCheckbox(editor, "permission-project-view");
+    const projectSettingsPermission = permissionCheckbox(editor, "permission-project-settings-view");
+    expect(viewPermission).toBeInTheDocument();
+    expect(projectSettingsPermission).toBeInTheDocument();
+    expect(editor.querySelectorAll('[id="role-permission-permission-project-view"]')).toHaveLength(1);
+    expect(editor.querySelectorAll('[id="role-permission-permission-project-settings-view"]')).toHaveLength(1);
+    expect(within(editor).getByText("Project.View")).toBeInTheDocument();
+    expect(within(editor).getByText("ProjectSettings.View")).toBeInTheDocument();
+    expect(within(editor).getAllByText("Project scope").length).toBeGreaterThan(0);
+    expect(within(editor).getAllByText("Tenant scope").length).toBeGreaterThan(0);
+
+    await user.clear(search);
+    await user.type(search, "Project.Edit");
+    const editPermission = within(editor).getByRole("checkbox", { name: /Edit project records/ });
+    const requiredViewPermission = permissionCheckbox(editor, "permission-project-view");
+    expect(editPermission).toBeInTheDocument();
+    expect(requiredViewPermission).toBeInTheDocument();
+    expect(within(editor).getAllByText(/View project records/).length).toBeGreaterThan(1);
+    expect(within(editor).getByText(/Requires:.*View project records/)).toBeInTheDocument();
+    expect(within(editor).getAllByText("Project scope").length).toBeGreaterThan(0);
+
+    await user.click(editPermission);
+    expect(editPermission).toBeChecked();
+    expect(requiredViewPermission).toBeChecked();
+
+    await user.clear(search);
+    await user.type(search, "Edit project records");
+    expect(within(editor).getByRole("checkbox", { name: /Edit project records/ })).toBeChecked();
+
+    await user.clear(search);
+    await user.type(search, "change approved project records");
+    expect(within(editor).getByRole("checkbox", { name: /Edit project records/ })).toBeChecked();
+  });
+
+  it("filters role permissions by module, level, grant state, and sensitivity", async () => {
+    const user = userEvent.setup();
+    fixtures.actorPermissions = ["Roles.View", "Roles.Create", "Roles.ConfigurePermissions"];
+    const projectView = {
+      id: "permission-project-view",
+      name: "Project.View",
+      resource: "Project",
+      action: "View",
+      moduleId: "project-management",
+      moduleNameEn: "Project Management",
+      moduleNameAr: "إدارة المشاريع",
+      screenId: "projects",
+      screenNameEn: "Projects",
+      screenNameAr: "المشروعات",
+      level: "View" as const,
+      allowedCategories: ["Management"],
+      labelEn: "View project records",
+      labelAr: "عرض سجلات المشروع",
+      descriptionEn: "Open the project workspace and review project details.",
+      scope: "Project" as const,
+      canDelegate: true,
+      descriptionAr: "افتح مساحة المشروع وراجع تفاصيل المشروع.",
+      sensitivity: "Low" as const,
+      isSensitive: false,
+      isAssignable: true,
+      isMandatoryForSystemAdmin: false,
+      requiredPermissionKeys: [],
+      isActive: true,
+    };
+    const projectEdit = {
+      ...projectView,
+      id: "permission-project-edit",
+      name: "Project.Edit",
+      action: "Edit",
+      level: "Action" as const,
+      labelEn: "Edit project records",
+      labelAr: "تعديل سجلات المشروع",
+      descriptionEn: "Change approved project records after validation.",
+      descriptionAr: "غيّر سجلات المشروع المعتمدة بعد التحقق.",
+      requiredPermissionKeys: ["Project.View"],
+    };
+    const projectDelete = {
+      ...projectView,
+      id: "permission-project-delete",
+      name: "Project.Delete",
+      action: "Delete",
+      level: "Action" as const,
+      labelEn: "Delete project records",
+      labelAr: "حذف سجلات المشروع",
+      descriptionEn: "Delete project records after required approval.",
+      descriptionAr: "احذف سجلات المشروع بعد الموافقة المطلوبة.",
+      sensitivity: "High" as const,
+      isSensitive: true,
+      canDelegate: false,
+      requiredPermissionKeys: ["Project.View"],
+    };
+    const portfolioView = {
+      ...projectView,
+      id: "permission-portfolio-view",
+      name: "Portfolio.View",
+      resource: "Portfolio",
+      scope: "Portfolio" as const,
+      moduleId: "portfolio-program-management",
+      moduleNameEn: "Portfolio & Program Management",
+      moduleNameAr: "إدارة المحافظ والبرامج",
+      screenId: "portfolios",
+      screenNameEn: "Portfolios",
+      screenNameAr: "المحافظ",
+      labelEn: "View portfolio records",
+      labelAr: "عرض سجلات المحفظة",
+      descriptionEn: "Open a portfolio and review its programs.",
+      descriptionAr: "افتح المحفظة وراجع البرامج التابعة لها.",
+    };
+    fixtures.assignablePermissions = [projectView, projectEdit, projectDelete, portfolioView];
+
+    renderWithI18n(<MemoryRouter><RolesPage /></MemoryRouter>);
+    await user.click(screen.getByRole("button", { name: "New role" }));
+    const editor = await screen.findByRole("dialog", { name: "New role" });
+    await user.selectOptions(within(editor).getByRole("combobox", { name: "Category" }), "Management");
+    const moduleFilter = within(editor).getByRole("combobox", { name: "Module" });
+    const levelFilter = within(editor).getByRole("combobox", { name: "Permission level" });
+    const grantFilter = within(editor).getByRole("combobox", { name: "Grant status" });
+    const sensitivityFilter = within(editor).getByRole("combobox", { name: "Sensitivity" });
+
+    await user.selectOptions(moduleFilter, "project-management");
+    const moduleToggle = within(editor).getByRole("button", { name: /Project Management/ });
+    expect(moduleToggle).toHaveAttribute("aria-expanded", "false");
+    await user.click(moduleToggle);
+    expect(moduleToggle).toHaveAttribute("aria-expanded", "true");
+    const screenToggle = within(editor).getByRole("button", { name: /Projects/ });
+    expect(screenToggle).toHaveAttribute("aria-expanded", "false");
+    await user.click(screenToggle);
+    expect(screenToggle).toHaveAttribute("aria-expanded", "true");
+    expect(within(editor).getByRole("checkbox", { name: /Edit project records/ })).toBeInTheDocument();
+    expect(within(editor).queryByRole("checkbox", { name: /View portfolio records/ })).not.toBeInTheDocument();
+
+    await user.selectOptions(levelFilter, "Action");
+    expect(within(editor).getByRole("checkbox", { name: /View project records/ })).toBeInTheDocument();
+    expect(within(editor).getByText("Required by a matching permission")).toBeInTheDocument();
+    expect(within(editor).getByRole("checkbox", { name: /Edit project records/ })).toBeInTheDocument();
+
+    await user.selectOptions(sensitivityFilter, "High");
+    const deletePermission = within(editor).getByRole("checkbox", { name: /Delete project records/ });
+    expect(deletePermission).toBeInTheDocument();
+    expect(deletePermission).toBeDisabled();
+    expect(within(editor).getByText("Your current access does not allow you to grant this permission.")).toBeInTheDocument();
+    expect(within(editor).queryByRole("checkbox", { name: /Edit project records/ })).not.toBeInTheDocument();
+
+    await user.selectOptions(sensitivityFilter, "all");
+    await user.selectOptions(levelFilter, "all");
+    await user.selectOptions(grantFilter, "unassigned");
+    await user.click(within(editor).getByRole("checkbox", { name: /Edit project records/ }));
+    await user.selectOptions(grantFilter, "assigned");
+    expect(within(editor).getByRole("checkbox", { name: /View project records/ })).toBeChecked();
+    expect(within(editor).getByRole("checkbox", { name: /Edit project records/ })).toBeChecked();
+    expect(within(editor).queryByRole("checkbox", { name: /Delete project records/ })).not.toBeInTheDocument();
+
+    await user.selectOptions(grantFilter, "unassigned");
+    expect(within(editor).queryByRole("checkbox", { name: /Edit project records/ })).not.toBeInTheDocument();
+    expect(within(editor).getByRole("checkbox", { name: /Delete project records/ })).toBeInTheDocument();
+  });
+
+  it("uses the controlled role categories and keeps cross-category View and Action permissions visible", async () => {
+    const user = userEvent.setup();
+    fixtures.actorPermissions = ["Roles.View", "Roles.Create", "Roles.ConfigurePermissions"];
+    const permissionBase = {
+      resource: "Project",
+      moduleId: "project-management",
+      moduleNameEn: "Project Management",
+      moduleNameAr: "إدارة المشاريع",
+      screenId: "projects",
+      screenNameEn: "Projects",
+      screenNameAr: "المشاريع",
+      scope: "Project" as const,
+      canDelegate: true,
+      sensitivity: "Low" as const,
+      isSensitive: false,
+      isAssignable: true,
+      isMandatoryForSystemAdmin: false,
+      isActive: true,
+      requiredPermissionKeys: [] as string[],
+    };
+    const projectView = {
+      ...permissionBase,
+      id: "category-project-view",
+      name: "Project.View",
+      action: "View",
+      level: "View" as const,
+      labelEn: "View project records",
+      labelAr: "عرض سجلات المشروع",
+      descriptionEn: "View project records.",
+      descriptionAr: "عرض سجلات المشروع.",
+      allowedCategories: ["Management", "Operation"],
+    };
+    const managementView = {
+      ...projectView,
+      id: "category-management-view",
+      name: "ProjectAudit.View",
+      labelEn: "View project audit",
+      labelAr: "عرض سجل تدقيق المشروع",
+      allowedCategories: ["Management"],
+    };
+    const managementAction = {
+      ...permissionBase,
+      id: "category-management-action",
+      name: "Project.Approve",
+      action: "Approve",
+      level: "Action" as const,
+      labelEn: "Approve project changes",
+      labelAr: "اعتماد تغييرات المشروع",
+      descriptionEn: "Approve project changes.",
+      descriptionAr: "اعتماد تغييرات المشروع.",
+      requiredPermissionKeys: ["Project.View"],
+      allowedCategories: ["Management"],
+    };
+    const crossCategoryAction = {
+      ...permissionBase,
+      id: "category-cross-action",
+      name: "Project.Edit",
+      action: "Edit",
+      level: "Action" as const,
+      labelEn: "Edit project records",
+      labelAr: "تعديل سجلات المشروع",
+      descriptionEn: "Edit project records.",
+      descriptionAr: "تعديل سجلات المشروع.",
+      requiredPermissionKeys: ["Project.View"],
+      allowedCategories: ["Management", "Operation"],
+    };
+    fixtures.assignablePermissions = [projectView, managementView, managementAction, crossCategoryAction];
+
+    renderWithI18n(<MemoryRouter><RolesPage /></MemoryRouter>);
+    await user.click(screen.getByRole("button", { name: "New role" }));
+    const editor = await screen.findByRole("dialog", { name: "New role" });
+    const category = within(editor).getByRole("combobox", { name: "Category" });
+    expect([...category.querySelectorAll("option")].map((option) => option.value)).toEqual(["", "Tenant", "Organization", "Management", "Operation", "Business"]);
+    await user.selectOptions(category, "Operation");
+    await user.click(within(editor).getByRole("button", { name: /Project Management/ }));
+    await user.click(within(editor).getByRole("button", { name: /Projects/ }));
+
+    expect(permissionCheckbox(editor, projectView.id)).toBeInTheDocument();
+    expect(permissionCheckbox(editor, managementView.id)).toBeDisabled();
+    expect(permissionCheckbox(editor, managementAction.id)).toBeDisabled();
+    expect(permissionCheckbox(editor, crossCategoryAction.id)).toBeEnabled();
+    expect(within(editor).getAllByText("Unavailable for Operation roles. Allowed categories: Management.")).toHaveLength(2);
+  });
+
+  it("preserves existing category-conflicting grants and provides an explicit removal action in Arabic", async () => {
+    const user = userEvent.setup();
+    window.localStorage.setItem("nexus-locale", "ar");
+    fixtures.actorPermissions = ["Roles.View", "Roles.EditDetails", "Roles.ConfigurePermissions"];
+    const permission = {
+      id: "category-existing-approval",
+      name: "Project.Approve",
+      resource: "Project",
+      action: "Approve",
+      moduleId: "project-management",
+      moduleNameEn: "Project Management",
+      moduleNameAr: "إدارة المشاريع",
+      screenId: "projects",
+      screenNameEn: "Projects",
+      screenNameAr: "المشاريع",
+      scope: "Project" as const,
+      level: "Action" as const,
+      labelEn: "Approve project changes",
+      labelAr: "اعتماد تغييرات المشروع",
+      descriptionEn: "Approve project changes.",
+      descriptionAr: "اعتماد تغييرات المشروع.",
+      canDelegate: true,
+      sensitivity: "Medium" as const,
+      isSensitive: false,
+      isAssignable: true,
+      isMandatoryForSystemAdmin: false,
+      requiredPermissionKeys: [],
+      isActive: true,
+      allowedCategories: ["Management"],
+    };
+    const role = {
+      id: "category-role-management",
+      name: "Project Manager",
+      description: "Project manager role",
+      category: "Management",
+      isSystem: false,
+      permissionCount: 1,
+      assignedUserCount: 0,
+      permissions: [permission],
+    };
+    fixtures.roles = [role];
+    fixtures.selectedRole = role;
+    fixtures.assignablePermissions = [permission];
+    fixtures.saveRole.mockRejectedValue(new ApiError(409, "Role category conflict", "ROLE_CATEGORY_PERMISSION_CONFLICT", {
+      error: "Role category conflict",
+      code: "ROLE_CATEGORY_PERMISSION_CONFLICT",
+      fieldName: "category",
+      details: { permissionKeys: ["Project.Approve"], selectedCategory: "Operation" },
+    }));
+
+    render(<I18nProvider><MemoryRouter><RolesPage /></MemoryRouter></I18nProvider>);
+    await user.click(screen.getByRole("button", { name: /Project Manager/ }));
+    await user.click(screen.getByRole("button", { name: "تعديل" }));
+    const editor = await screen.findByRole("dialog", { name: "تعديل الدور" });
+    await user.selectOptions(within(editor).getByRole("combobox", { name: "الفئة" }), "Operation");
+    await user.click(within(editor).getByRole("button", { name: /إدارة المشاريع/ }));
+    const projectsScreenToggle = within(editor).getAllByRole("button", { name: /المشاريع/ })
+      .find((button) => button.getAttribute("aria-expanded") === "false");
+    if (!projectsScreenToggle) throw new Error("Project permissions section did not render");
+    await user.click(projectsScreenToggle);
+
+    const approval = permissionCheckbox(editor, permission.id);
+    expect(approval).toBeChecked();
+    expect(approval).toBeDisabled();
+    expect(within(editor).getByText("هناك 1 صلاحية مسندة خارج فئة هذا الدور. ستظل مسندة حتى تزيلها صراحةً.")).toBeInTheDocument();
+    expect(within(editor).getByText("غير متاحة لأدوار فئة العمليات. الفئات المسموح بها: الإدارة.")).toBeInTheDocument();
+    expect(within(editor).getByRole("button", { name: "إزالة اعتماد تغييرات المشروع من هذا الدور" })).toBeEnabled();
+    await user.click(within(editor).getByRole("button", { name: "حفظ الدور" }));
+    expect(await within(editor).findByRole("alert")).toHaveTextContent(/لا يمكن التغيير من الإدارة إلى العمليات.*المشاريع: اعتماد تغييرات المشروع.*احفظ الإزالات/);
+    await user.click(within(editor).getByRole("button", { name: "إزالة اعتماد تغييرات المشروع من هذا الدور" }));
+    await waitFor(() => expect(approval).not.toBeChecked());
+  });
+
+  it("sets RTL document direction for the Roles & Permissions page in Arabic", async () => {
+    window.localStorage.setItem("nexus-locale", "ar");
+    render(<I18nProvider><MemoryRouter><RolesPage /></MemoryRouter></I18nProvider>);
+
+    await waitFor(() => expect(document.documentElement.dir).toBe("rtl"));
+    expect(screen.getAllByRole("heading").length).toBeGreaterThan(0);
+  });
+
   it("explains why Financials Read is missing from the assignable role catalog", () => {
+    fixtures.actorPermissions = ["Roles.View", "Roles.Create", "Roles.ConfigurePermissions"];
     fixtures.assignablePermissions = [];
     renderWithI18n(<MemoryRouter><RolesPage /></MemoryRouter>);
 
     fireEvent.click(screen.getByRole("button", { name: /New role/ }));
-    expect(screen.getByText("If Finances · Read is missing, your account cannot currently delegate it. Ask a System Administrator who already has it to grant it to your account first.")).toBeInTheDocument();
+    expect(screen.getByText("If View Project Financial Foundation is missing, your account cannot currently delegate it. Ask a System Administrator who already has it to grant it to your account first.")).toBeInTheDocument();
   });
 });

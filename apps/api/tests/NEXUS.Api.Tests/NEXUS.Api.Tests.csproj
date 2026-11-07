@@ -4,6 +4,8 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!-- Keep transitive IKVM Maven imports in the active MSBuild process. -->
+    <IkvmMavenSdkTaskFactory Condition=" '$(MSBuildRuntimeType)' == 'Core' "></IkvmMavenSdkTaskFactory>
 
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
@@ -24,10 +26,14 @@
     <FocusedProjectGovernanceApprovals Condition="'$(FocusedProjectGovernanceApprovals)' == ''">false</FocusedProjectGovernanceApprovals>
     <FocusedAssignmentRecovery Condition="'$(FocusedAssignmentRecovery)' == ''">false</FocusedAssignmentRecovery>
     <FocusedManagementScope Condition="'$(FocusedManagementScope)' == ''">false</FocusedManagementScope>
+    <FocusedPaymentRequestPolicy Condition="'$(FocusedPaymentRequestPolicy)' == ''">false</FocusedPaymentRequestPolicy>
+    <FocusedFiscalYearConfiguration Condition="'$(FocusedFiscalYearConfiguration)' == ''">false</FocusedFiscalYearConfiguration>
+    <FocusedAccountApi Condition="'$(FocusedAccountApi)' == ''">false</FocusedAccountApi>
+    <FocusedMeetingMinutes Condition="'$(FocusedMeetingMinutes)' == ''">false</FocusedMeetingMinutes>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.0.0">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
@@ -49,7 +55,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\NEXUS.Api\NEXUS.Api.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.CostManagement\NEXUS.Modules.CostManagement.csproj" />
     <ProjectReference Include="..\..\src\NEXUS.Modules.Identity\NEXUS.Modules.Identity.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.Integrations\NEXUS.Modules.Integrations.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.PluginManagement\NEXUS.Modules.PluginManagement.csproj" />
     <ProjectReference Include="..\..\src\NEXUS.Modules.RiskManagement\NEXUS.Modules.RiskManagement.csproj" />
     <ProjectReference Include="..\..\src\NEXUS.Modules.ProjectManagement\NEXUS.Modules.ProjectManagement.csproj" />
     <ProjectReference Include="..\..\src\NEXUS.Modules.ProjectPlanning\NEXUS.Modules.ProjectPlanning.csproj" />
@@ -69,6 +78,7 @@
     <Compile Include="Unit\CriticalPathAnalyzerTests.cs" />
     <Compile Include="Unit\PlanActivityBaselineComparisonTests.cs" />
     <ProjectReference Remove="..\..\src\NEXUS.Api\NEXUS.Api.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.ProjectPlanning.MppAdapter\NEXUS.Modules.ProjectPlanning.MppAdapter.csproj" />
     <ProjectReference Remove="..\..\src\NEXUS.Modules.ProjectManagement\NEXUS.Modules.ProjectManagement.csproj" />
     <ProjectReference Remove="..\..\src\NEXUS.Persistence\NEXUS.Persistence.csproj" />
   </ItemGroup>
@@ -181,6 +191,20 @@
     <ProjectReference Include="..\..\src\NEXUS.Modules.Audit\NEXUS.Modules.Audit.csproj" />
   </ItemGroup>
 
+  <!-- Meeting Minutes response-contract tests avoid the unrelated API host graph and any database. -->
+  <ItemGroup Condition="'$(FocusedMeetingMinutes)' == 'true'">
+    <Compile Remove="**\*.cs" />
+    <Compile Include="Unit\MeetingMinutesControllerTests.cs" />
+    <Compile Include="Integration\MeetingMinutesServiceRegressionTests.cs" />
+    <Compile Include="Integration\MeetingNotificationPublisherTests.cs" />
+    <Compile Include="Integration\MeetingNotificationLifecycleAndRescheduleTests.cs" />
+    <Compile Include="Integration\MeetingReminderSchedulerTests.cs" />
+    <Compile Include="Testing\NoOpMeetingNotificationPublisher.cs" />
+    <ProjectReference Remove="@(ProjectReference)" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.Meetings\NEXUS.Modules.Meetings.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Persistence\NEXUS.Persistence.csproj" />
+  </ItemGroup>
+
   <!-- Focused audit search tests avoid unrelated host tests and API project dependencies. -->
   <ItemGroup Condition="'$(FocusedAuditSearch)' == 'true'">
     <Compile Remove="**\*.cs" />
@@ -226,6 +250,7 @@
   <ItemGroup Condition="'$(FocusedNotifications)' == 'true'">
     <Compile Remove="**\*.cs" />
     <Compile Include="Integration\NotificationDeliveryFoundationTests.cs" />
+    <Compile Include="Integration\EmailNotificationIntegrationTests.cs" />
     <ProjectReference Remove="@(ProjectReference)" />
     <ProjectReference Include="..\..\src\NEXUS.Modules.Notifications\NEXUS.Modules.Notifications.csproj" />
   </ItemGroup>
@@ -263,6 +288,32 @@
     <Compile Remove="**\*.cs" />
     <Compile Include="Integration\PortfolioManagementTenantReadTests.cs" />
     <Compile Include="Unit\ManagementContextMiddlewareTests.cs" />
+  </ItemGroup>
+
+  <!-- Payment Request policy tests compile against CostManagement without unrelated API tests. -->
+  <ItemGroup Condition="'$(FocusedPaymentRequestPolicy)' == 'true'">
+    <Compile Remove="**\*.cs" />
+    <Compile Include="Unit\PaymentRequestWorkflowPolicyTests.cs" />
+    <ProjectReference Remove="@(ProjectReference)" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.CostManagement\NEXUS.Modules.CostManagement.csproj" />
+  </ItemGroup>
+
+  <!-- Fiscal-year configuration tests use Organization and Persistence directly and avoid the full API/MPP adapter graph. -->
+  <ItemGroup Condition="'$(FocusedFiscalYearConfiguration)' == 'true'">
+    <Compile Remove="**\*.cs" />
+    <Compile Include="Unit\FiscalYearConfigurationTests.cs" />
+    <ProjectReference Remove="@(ProjectReference)" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.Organization\NEXUS.Modules.Organization.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Persistence\NEXUS.Persistence.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.CostManagement\NEXUS.Modules.CostManagement.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(FocusedAccountApi)' == 'true'">
+    <Compile Remove="**\*.cs" />
+    <Compile Include="Unit\AccountControllerTests.cs" />
+    <ProjectReference Remove="@(ProjectReference)" />
+    <ProjectReference Include="..\..\src\NEXUS.Api\NEXUS.Api.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.Identity\NEXUS.Modules.Identity.csproj" />
   </ItemGroup>
 
 </Project>

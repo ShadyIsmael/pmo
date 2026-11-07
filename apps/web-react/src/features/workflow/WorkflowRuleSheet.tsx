@@ -148,8 +148,8 @@ export function WorkflowRuleSheet({ open, onOpenChange, transition, entityType, 
                   <Label htmlFor="workflow-rule-expected-value">{t("workflows.expectedValue")}</Label>
                   <select id="workflow-rule-expected-value" className="input-field w-full" name="expectedValue" required disabled={!editable || isPending} defaultValue="">
                     <option value="">{t("workflows.selectType")}</option>
-                    <option value="true">true</option>
-                    <option value="false">false</option>
+                    <option value="true">{t("common.yes")}</option>
+                    <option value="false">{t("common.no")}</option>
                   </select>
                 </div>
               ) : (

@@ -17,18 +17,64 @@ public sealed class ManagementContextMiddleware
     private readonly RequestDelegate _next;
     public ManagementContextMiddleware(RequestDelegate next) => _next = next;
 
-    public async Task InvokeAsync(HttpContext httpContext, IManagementScopeResolver resolver, IManagementContextAccessor accessor, ILogger<ManagementContextMiddleware> logger)
+    public async Task InvokeAsync(HttpContext httpContext, IManagementScopeResolver resolver, IManagementContextAccessor accessor, ILogger<ManagementContextMiddleware> logger, IWebHostEnvironment environment)
     {
+        var isProjectShellDiagnostic = environment.IsDevelopment() && IsProjectShellRequest(httpContext.Request.Path);
+        var hasPerspectiveHeader = httpContext.Request.Headers.ContainsKey(PerspectiveHeader);
+        var hasViewModeHeader = httpContext.Request.Headers.ContainsKey(ViewModeHeader);
+        var hasProjectHeader = httpContext.Request.Headers.ContainsKey(ProjectHeader);
+        if (isProjectShellDiagnostic)
+        {
+            logger.LogInformation(
+                "Project Shell management-context processing started. RequestId={RequestId} Authenticated={Authenticated} PerspectiveHeaderPresent={PerspectiveHeaderPresent} ViewModeHeaderPresent={ViewModeHeaderPresent} ProjectIdHeaderPresent={ProjectIdHeaderPresent}",
+                httpContext.TraceIdentifier,
+                httpContext.User.Identity?.IsAuthenticated == true,
+                hasPerspectiveHeader,
+                hasViewModeHeader,
+                hasProjectHeader);
+        }
+
         if (httpContext.User.Identity?.IsAuthenticated != true)
         {
+            if (isProjectShellDiagnostic)
+            {
+                logger.LogInformation(
+                    "Project Shell management-context processing continued without an authenticated principal. RequestId={RequestId} RejectionReason={RejectionReason}",
+                    httpContext.TraceIdentifier,
+                    "EndpointAuthorizationMustRejectUnauthenticatedRequest");
+            }
+
             await _next(httpContext);
             return;
         }
 
-        if (!Guid.TryParse(httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier), out var userId) || !Guid.TryParse(httpContext.User.FindFirstValue("tenantId"), out var tenantId))
+        var userIdResolved = Guid.TryParse(httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier), out var userId) && userId != Guid.Empty;
+        var tenantIdResolved = Guid.TryParse(httpContext.User.FindFirstValue("tenantId"), out var tenantId) && tenantId != Guid.Empty;
+        if (!userIdResolved || !tenantIdResolved)
         {
+            if (isProjectShellDiagnostic)
+            {
+                logger.LogWarning(
+                    "Project Shell management context could not resolve trusted identity claims. RequestId={RequestId} UserIdResolved={UserIdResolved} TenantIdResolved={TenantIdResolved} RejectionReason={RejectionReason}",
+                    httpContext.TraceIdentifier,
+                    userIdResolved,
+                    tenantIdResolved,
+                    "AuthenticatedPrincipalMissingValidUserOrTenantClaim");
+            }
+
             await _next(httpContext);
             return;
+        }
+
+        if (isProjectShellDiagnostic)
+        {
+            logger.LogInformation(
+                "Project Shell trusted identity claims resolved. RequestId={RequestId} UserId={UserId} TenantId={TenantId} UserIdResolved={UserIdResolved} TenantIdResolved={TenantIdResolved}",
+                httpContext.TraceIdentifier,
+                userId,
+                tenantId,
+                userIdResolved,
+                tenantIdResolved);
         }
 
         var rawPerspective = httpContext.Request.Headers[PerspectiveHeader].FirstOrDefault();
@@ -37,15 +83,25 @@ public sealed class ManagementContextMiddleware
         var parsedViewMode = ParseEnum<ManagementViewMode>(rawViewMode);
         if ((!string.IsNullOrWhiteSpace(rawPerspective) && !perspective.HasValue) || (!string.IsNullOrWhiteSpace(rawViewMode) && !parsedViewMode.HasValue))
         {
+            if (isProjectShellDiagnostic)
+            {
+                logger.LogWarning(
+                    "Project Shell management context rejected invalid optional context headers. RequestId={RequestId} UserId={UserId} TenantId={TenantId} PerspectiveHeaderPresent={PerspectiveHeaderPresent} ViewModeHeaderPresent={ViewModeHeaderPresent} RejectionReason={RejectionReason}",
+                    httpContext.TraceIdentifier,
+                    userId,
+                    tenantId,
+                    hasPerspectiveHeader,
+                    hasViewModeHeader,
+                    "InvalidPerspectiveOrViewModeHeader");
+            }
+
             await ForbiddenAsync(httpContext, "The requested perspective or context is not available.");
             return;
         }
         var viewMode = parsedViewMode ?? ManagementViewMode.Native;
         var hasAssignmentRecoveryPermission = viewMode == ManagementViewMode.Native
             && IsAssignmentRecoveryPath(httpContext.Request.Path)
-            && (httpContext.User.HasClaim("permission", AssignmentRecoveryPermissions.View)
-                || httpContext.User.HasClaim("permission", AssignmentRecoveryPermissions.Initiate)
-                || httpContext.User.HasClaim("permission", AssignmentRecoveryPermissions.Manage));
+            && httpContext.User.HasClaim("permission", AssignmentRecoveryPermissions.View);
         var canReadAllTenantPortfolioProgramData = HttpMethods.IsGet(httpContext.Request.Method)
             && viewMode == ManagementViewMode.Native
             && IsTenantAdminPortfolioProgramReadPath(httpContext.Request.Path)
@@ -70,10 +126,23 @@ public sealed class ManagementContextMiddleware
                 return;
             }
 
+            if (isProjectShellDiagnostic)
+            {
+                logger.LogWarning(
+                    "Project Shell management context was rejected before resource-scope evaluation. RequestId={RequestId} UserId={UserId} TenantId={TenantId} RequestedPerspective={RequestedPerspective} EffectiveViewMode={EffectiveViewMode} RejectionReason={RejectionReason}",
+                    httpContext.TraceIdentifier,
+                    userId,
+                    tenantId,
+                    perspective?.ToString(),
+                    viewMode.ToString(),
+                    "RequestedPerspectiveOrReadOnlyContextUnavailable");
+            }
+
             await ForbiddenAsync(httpContext, "The requested perspective or context is not available.");
             return;
         }
 
+        var usedNoAssignmentFallback = context is null;
         if (context is null)
         {
             // No perspective header was sent and the user has no native
@@ -100,6 +169,24 @@ public sealed class ManagementContextMiddleware
         if (context is not null)
         {
             accessor.Set(context);
+            if (isProjectShellDiagnostic)
+            {
+                logger.LogInformation(
+                    "Project Shell management context resolved. RequestId={RequestId} UserId={UserId} TenantId={TenantId} PerspectiveHeaderPresent={PerspectiveHeaderPresent} ViewModeHeaderPresent={ViewModeHeaderPresent} ProjectIdHeaderPresent={ProjectIdHeaderPresent} RequestedPerspective={RequestedPerspective} EffectivePerspective={EffectivePerspective} EffectiveViewMode={EffectiveViewMode} DefaultPerspectiveApplied={DefaultPerspectiveApplied} NoAssignmentFallbackApplied={NoAssignmentFallbackApplied} ScopeProjectCount={ScopeProjectCount}",
+                    httpContext.TraceIdentifier,
+                    userId,
+                    tenantId,
+                    hasPerspectiveHeader,
+                    hasViewModeHeader,
+                    hasProjectHeader,
+                    perspective?.ToString(),
+                    context.SelectedPerspective.ToString(),
+                    context.ViewMode.ToString(),
+                    !perspective.HasValue,
+                    usedNoAssignmentFallback,
+                    context.Scope.ProjectIds.Count);
+            }
+
             if (context.EffectiveReadOnly && IsMutation(httpContext.Request.Method) && !IsSessionEndpoint(httpContext.Request.Path))
             {
                 logger.LogInformation("Blocked mutation in read-only management perspective. UserId={UserId} TenantId={TenantId} Perspective={Perspective} PortfolioId={PortfolioId} ProgramId={ProgramId} ProjectId={ProjectId}", context.UserId, context.TenantId, context.SelectedPerspective, context.SelectedPortfolioId, context.SelectedProgramId, context.SelectedProjectId);
@@ -107,8 +194,34 @@ public sealed class ManagementContextMiddleware
                 return;
             }
 
-            if (!await IsAddressableResourceInScopeAsync(httpContext, resolver, userId, tenantId, context))
+            var isAddressableResourceInScope = await IsAddressableResourceInScopeAsync(httpContext, resolver, userId, tenantId, context);
+            if (!isAddressableResourceInScope)
             {
+                if (isProjectShellDiagnostic)
+                {
+                    var addressedProjectId = ProjectRequestContext.GetInternalProjectId(httpContext);
+                    var addressedPublicId = ProjectRequestContext.GetPublicProjectId(httpContext);
+                    var skipProjectManagementScope = ProjectRequestContext.ShouldSkipManagementScope(httpContext);
+                    var projectIsInManagementScope = addressedProjectId.HasValue && context.Scope.ProjectIds.Contains(addressedProjectId.Value);
+                    logger.LogWarning(
+                        "Project Shell request rejected by management-scope enforcement. RequestId={RequestId} UserId={UserId} TenantId={TenantId} PublicProjectId={PublicProjectId} InternalProjectId={InternalProjectId} ProjectFound={ProjectFound} ManagementScopeContainsProject={ManagementScopeContainsProject} SkipManagementScope={SkipManagementScope} EffectivePerspective={EffectivePerspective} EffectiveViewMode={EffectiveViewMode} RejectionReason={RejectionReason}",
+                        httpContext.TraceIdentifier,
+                        userId,
+                        tenantId,
+                        addressedPublicId,
+                        addressedProjectId,
+                        addressedProjectId.HasValue,
+                        projectIsInManagementScope,
+                        skipProjectManagementScope,
+                        context.SelectedPerspective.ToString(),
+                        context.ViewMode.ToString(),
+                        !addressedProjectId.HasValue
+                            ? "ProjectPublicIdRoutingDidNotResolveInternalProjectId"
+                            : skipProjectManagementScope
+                                ? "ProjectScopeExceptionDidNotAllowRequest"
+                                : "ProjectNotInEffectiveManagementScope");
+                }
+
                 await NotFoundAsync(httpContext);
                 return;
             }
@@ -124,9 +237,7 @@ public sealed class ManagementContextMiddleware
         // native mode; it does not grant access to normal entity routes or ReadOnlyViewAs writes.
         if (context.ViewMode == ManagementViewMode.Native
             && IsAssignmentRecoveryPath(httpContext.Request.Path)
-            && (httpContext.User.HasClaim("permission", AssignmentRecoveryPermissions.View)
-                || httpContext.User.HasClaim("permission", AssignmentRecoveryPermissions.Initiate)
-                || httpContext.User.HasClaim("permission", AssignmentRecoveryPermissions.Manage)))
+            && httpContext.User.HasClaim("permission", AssignmentRecoveryPermissions.View))
             return true;
 
         if (context.CanReadAllTenantPortfolioProgramData
@@ -169,6 +280,10 @@ public sealed class ManagementContextMiddleware
         }
         return true;
     }
+
+    private static bool IsProjectShellRequest(PathString path) =>
+        path.StartsWithSegments("/api/projects", StringComparison.OrdinalIgnoreCase)
+        && path.Value?.EndsWith("/shell", StringComparison.OrdinalIgnoreCase) == true;
 
     private static bool IsMutation(string method) => HttpMethods.IsPost(method) || HttpMethods.IsPut(method) || HttpMethods.IsPatch(method) || HttpMethods.IsDelete(method);
     private static bool IsAssignmentRecoveryPath(PathString path) => path.StartsWithSegments("/api/governance/assignment-recovery");

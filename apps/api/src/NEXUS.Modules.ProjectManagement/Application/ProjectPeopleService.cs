@@ -44,7 +44,7 @@ public sealed class ProjectPeopleService : IProjectPeopleService
         if (project is null) return Result<IReadOnlyList<ProjectPersonDto>>.Failure(Error.NotFound("Project not found"));
 
         var members = await _context.Set<ProjectMember>().AsNoTracking()
-            .Where(m => m.ProjectId == projectId && !m.IsDeleted)
+            .Where(m => m.TenantId == project.TenantId && m.ProjectId == projectId && !m.IsDeleted)
             .OrderBy(m => m.Role).ThenBy(m => m.CreatedAt)
             .ToListAsync(cancellationToken);
 
@@ -58,25 +58,34 @@ public sealed class ProjectPeopleService : IProjectPeopleService
             .Where(l => roleIds.Contains(l.Id) && !l.IsDeleted)
             .ToDictionaryAsync(l => l.Id, cancellationToken);
         var stakeholders = await _context.Set<ProjectStakeholder>().AsNoTracking()
-            .Where(s => s.ProjectId == projectId && !s.IsDeleted)
+            .Where(s => s.TenantId == project.TenantId && s.ProjectId == projectId && !s.IsDeleted)
             .OrderBy(s => s.CreatedAt)
             .ToListAsync(cancellationToken);
 
-        var resourceIds = members.Select(m => m.ResourceId)
+        var resourceIds = members.Where(member => member.ResourceId.HasValue).Select(m => m.ResourceId!.Value)
             .Concat(stakeholders.Where(s => s.ResourceId.HasValue).Select(s => s.ResourceId!.Value))
             .Distinct().ToList();
+        var teamIds = members.Where(member => member.TeamId.HasValue).Select(member => member.TeamId!.Value).Distinct().ToList();
         var userIds = stakeholders.Where(s => !s.ResourceId.HasValue && s.UserId.HasValue).Select(s => s.UserId!.Value)
             .Concat(new[] { project.ProjectManagerId, project.SponsorId }.Where(id => id.HasValue).Select(id => id!.Value))
             .Distinct().ToList();
         var resourceById = await _resources.GetDetailsAsync(resourceIds, cancellationToken);
+        var teamById = await _context.Set<Team>().AsNoTracking()
+            .Where(team => teamIds.Contains(team.Id) && !team.IsDeleted)
+            .ToDictionaryAsync(team => team.Id, cancellationToken);
         var resourceByUser = await _resources.GetDetailsByUserIdsAsync(userIds, cancellationToken);
         var usersById = await _context.Set<User>()
             .AsNoTracking()
-            .Where(user => userIds.Contains(user.Id) && !user.IsDeleted)
+            .Where(user => user.TenantId == project.TenantId && userIds.Contains(user.Id) && user.IsActive && !user.IsDeleted)
             .ToDictionaryAsync(user => user.Id, cancellationToken);
 
         var result = new List<ProjectPersonDto>(members.Count + stakeholders.Count + 2);
-        var managerResourceId = project.ProjectManagerId.HasValue && resourceByUser.TryGetValue(project.ProjectManagerId.Value, out var managerResource)
+        var currentManagerId = project.ProjectManagerId.HasValue && usersById.ContainsKey(project.ProjectManagerId.Value)
+            ? project.ProjectManagerId
+            : null;
+        var managerResourceId = currentManagerId.HasValue &&
+            resourceByUser.TryGetValue(currentManagerId.Value, out var managerResource) &&
+            managerResource.IsActive
             ? managerResource.Id
             : (Guid?)null;
         var sponsorResourceId = project.SponsorId.HasValue && resourceByUser.TryGetValue(project.SponsorId.Value, out var sponsorResource)
@@ -85,8 +94,13 @@ public sealed class ProjectPeopleService : IProjectPeopleService
         result.AddRange(members.Select(member =>
         {
             var active = member.Status == "Active";
-            var isProjectManager = active && managerResourceId == member.ResourceId && IsProjectManagerRole(member.Role);
-            var isSponsor = active && sponsorResourceId == member.ResourceId;
+            var isProjectManager = active && member.ResourceId.HasValue && managerResourceId == member.ResourceId;
+            var isSponsor = active && member.ResourceId.HasValue && sponsorResourceId == member.ResourceId;
+            var additionalRelationships = new List<string>();
+            if (isProjectManager && !IsProjectManagerRole(member.Role))
+                additionalRelationships.Add(ProjectRelationshipType.TeamMember);
+            if (isProjectManager && isSponsor)
+                additionalRelationships.Add(ProjectRelationshipType.Sponsor);
             var memberFunctionalRoles = memberRoles
                 .Where(pmr => pmr.ProjectMemberId == member.Id)
                 .Select(pmr => roleLookup.TryGetValue(pmr.ProjectRoleId, out var role)
@@ -95,27 +109,31 @@ public sealed class ProjectPeopleService : IProjectPeopleService
                 .Where(dto => dto is not null)
                 .Cast<ProjectRoleRefDto>()
                 .ToList();
+            var resource = member.ResourceId.HasValue ? resourceById.GetValueOrDefault(member.ResourceId.Value) : null;
+            var team = member.TeamId.HasValue ? teamById.GetValueOrDefault(member.TeamId.Value) : null;
             return ToMemberDto(
                 member,
-                resourceById.GetValueOrDefault(member.ResourceId),
+                resource,
+                team,
                 isProjectManager ? ProjectRelationshipType.ProjectManager : isSponsor ? ProjectRelationshipType.Sponsor : ProjectRelationshipType.TeamMember,
                 memberFunctionalRoles,
-                isProjectManager && isSponsor ? new[] { ProjectRelationshipType.Sponsor } : Array.Empty<string>());
+                additionalRelationships);
         }));
         result.AddRange(stakeholders.Select(stakeholder => ToStakeholderDto(stakeholder,
             stakeholder.ResourceId.HasValue ? resourceById.GetValueOrDefault(stakeholder.ResourceId.Value) :
             stakeholder.UserId.HasValue ? resourceByUser.GetValueOrDefault(stakeholder.UserId.Value) : null)));
 
-        if (project.ProjectManagerId.HasValue)
+        if (currentManagerId.HasValue)
         {
             var managerBackedByMembership = false;
-            if (resourceByUser.TryGetValue(project.ProjectManagerId.Value, out var manager))
+            if (managerResourceId.HasValue && resourceByUser.TryGetValue(currentManagerId.Value, out var manager))
             {
-                managerBackedByMembership = members.Any(member => member.Status == "Active" && member.ResourceId == manager.Id && IsProjectManagerRole(member.Role));
+                managerBackedByMembership = members.Any(member => member.Status == "Active" && member.ResourceId == manager.Id);
                 if (!managerBackedByMembership)
                     result.Add(ToGovernanceDto(project, manager, ProjectRelationshipType.ProjectManager));
             }
-            if (!managerBackedByMembership && !resourceByUser.ContainsKey(project.ProjectManagerId.Value) && usersById.TryGetValue(project.ProjectManagerId.Value, out var managerUser))
+            if (!managerBackedByMembership && (!managerResourceId.HasValue || !resourceByUser.ContainsKey(currentManagerId.Value)) &&
+                usersById.TryGetValue(currentManagerId.Value, out var managerUser))
                 result.Add(ToGovernanceDto(project, managerUser, ProjectRelationshipType.ProjectManager));
         }
         if (project.SponsorId.HasValue)
@@ -128,25 +146,48 @@ public sealed class ProjectPeopleService : IProjectPeopleService
                 result.Add(ToGovernanceDto(project, sponsorUser, ProjectRelationshipType.Sponsor));
         }
 
+        CoalesceCurrentManagerProjection(result, currentManagerId, managerResourceId);
+
         return Result<IReadOnlyList<ProjectPersonDto>>.Success(result
             .OrderBy(person => person.Name, StringComparer.OrdinalIgnoreCase)
             .ThenBy(person => person.RelationshipType, StringComparer.OrdinalIgnoreCase)
             .ToList());
     }
 
+    public Task<bool> IsTeamGroupAssignmentAsync(Guid projectId, Guid memberId, CancellationToken cancellationToken = default) =>
+        _context.Set<ProjectMember>().AsNoTracking().AnyAsync(member => member.Id == memberId
+            && member.ProjectId == projectId && member.TeamId.HasValue && !member.IsDeleted, cancellationToken);
+
     public async Task<Result<ProjectPersonDto>> AddAsync(Guid projectId, CreateProjectPersonDto dto, string userId, CancellationToken cancellationToken = default)
     {
         var project = await _context.Set<Project>().FirstOrDefaultAsync(p => p.Id == projectId && !p.IsDeleted, cancellationToken);
         if (project is null) return Result<ProjectPersonDto>.Failure(Error.NotFound("Project not found"));
-        if (dto.ResourceId == Guid.Empty) return Result<ProjectPersonDto>.Failure(Error.Validation("An existing Resource is required"));
         if (!ProjectRelationshipType.IsSupported(dto.RelationshipType)) return Result<ProjectPersonDto>.Failure(Error.Validation("Unsupported project relationship"));
 
-        var resource = await _resources.FindAsync(dto.ResourceId, cancellationToken);
-        if (resource is null) return Result<ProjectPersonDto>.Failure(Error.NotFound("Resource not found. Create this person in Resource Management first."));
-        if (!resource.IsActive || string.Equals(resource.Status, "Inactive", StringComparison.OrdinalIgnoreCase))
-            return Result<ProjectPersonDto>.Failure(Error.Validation("The selected Resource is inactive"));
-
         var relationship = dto.RelationshipType.Trim();
+        var isTeamGroup = relationship == ProjectRelationshipType.TeamMember && dto.TeamId.HasValue && !dto.ResourceId.HasValue;
+        if ((relationship == ProjectRelationshipType.TeamMember && dto.ResourceId.HasValue == dto.TeamId.HasValue)
+            || (relationship != ProjectRelationshipType.TeamMember && (!dto.ResourceId.HasValue || dto.TeamId.HasValue)))
+            return Result<ProjectPersonDto>.Failure(Error.Validation("Choose exactly one Resource or Team for a Team Member relationship; other relationships require a Resource."));
+
+        ResourceReference? resource = null;
+        Team? team = null;
+        if (dto.ResourceId.HasValue)
+        {
+            if (dto.ResourceId.Value == Guid.Empty) return Result<ProjectPersonDto>.Failure(Error.Validation("An existing Resource is required"));
+            resource = await _resources.FindAsync(dto.ResourceId.Value, cancellationToken);
+            if (resource is null) return Result<ProjectPersonDto>.Failure(Error.NotFound("Resource not found. Create this person in Resource Management first."));
+            if (!resource.IsActive || string.Equals(resource.Status, "Inactive", StringComparison.OrdinalIgnoreCase))
+                return Result<ProjectPersonDto>.Failure(Error.Validation("The selected Resource is inactive"));
+        }
+        else if (isTeamGroup)
+        {
+            team = await _context.Set<Team>().FirstOrDefaultAsync(item => item.Id == dto.TeamId!.Value && !item.IsDeleted, cancellationToken);
+            if (team is null) return Result<ProjectPersonDto>.Failure(Error.NotFound("Team not found"));
+            if (!team.IsActive || team.TenantId != project.TenantId)
+                return Result<ProjectPersonDto>.Failure(Error.Validation("The Team must be active in the same tenant as the project"));
+        }
+
         if (relationship == ProjectRelationshipType.ProjectManager)
             return Result<ProjectPersonDto>.Failure(Error.Validation("Project Manager changes must use the governed handover flow"));
 
@@ -154,18 +195,24 @@ public sealed class ProjectPeopleService : IProjectPeopleService
         {
             if (!dto.AllocationPercentage.HasValue)
                 return Result<ProjectPersonDto>.Failure(Error.Validation("Project allocation percentage is required for team members."));
-            if (await _context.Set<ProjectMember>().AnyAsync(m => m.ProjectId == projectId && m.ResourceId == dto.ResourceId && !m.IsDeleted && m.Status == "Active", cancellationToken))
-                return Result<ProjectPersonDto>.Failure(Error.Conflict("This Resource is already an active Team Member on the project"));
+            var duplicateMember = await _context.Set<ProjectMember>().AnyAsync(member => member.ProjectId == projectId
+                && member.ResourceId == dto.ResourceId && member.TeamId == dto.TeamId && !member.IsDeleted && member.Status == "Active", cancellationToken);
+            if (duplicateMember) return Result<ProjectPersonDto>.Failure(Error.Conflict(isTeamGroup
+                ? "This Team is already assigned to the project"
+                : "This Resource is already an active Team Member on the project"));
             var startDate = (dto.StartDate ?? project.StartDate ?? DateTime.UtcNow.Date).Date;
             var endDate = (dto.EndDate ?? project.EndDate ?? startDate.AddYears(1)).Date;
             if (endDate <= startDate) return Result<ProjectPersonDto>.Failure(Error.Validation("End date must be after start date"));
             var allocation = dto.AllocationPercentage ?? 0m;
             if (allocation < 0 || allocation > 100) return Result<ProjectPersonDto>.Failure(Error.Validation("Allocation must be between 0 and 100"));
-            var allocationConflict = await ValidateOverallAllocationAsync(dto.ResourceId, startDate, endDate, allocation, null, cancellationToken);
+            var allocationConflict = isTeamGroup
+                ? await ValidateTeamGroupAllocationAsync(dto.TeamId!.Value, projectId, startDate, endDate, allocation, null, cancellationToken)
+                : await ValidateOverallAllocationAsync(dto.ResourceId!.Value, startDate, endDate, allocation, null, cancellationToken, projectId);
             if (allocationConflict is not null) return Result<ProjectPersonDto>.Failure(allocationConflict);
             var reusableMember = await _context.Set<ProjectMember>()
                 .IgnoreQueryFilters()
-                .Where(member => member.TenantId == project.TenantId && member.ProjectId == projectId && member.ResourceId == dto.ResourceId)
+                .Where(member => member.TenantId == project.TenantId && member.ProjectId == projectId
+                    && member.ResourceId == dto.ResourceId && member.TeamId == dto.TeamId)
                 .OrderByDescending(member => member.UpdatedAt ?? member.CreatedAt)
                 .FirstOrDefaultAsync(cancellationToken);
             if (reusableMember is not null)
@@ -184,13 +231,13 @@ public sealed class ProjectPeopleService : IProjectPeopleService
                 await _context.SaveChangesAsync(cancellationToken);
                 await SyncFunctionalRolesAsync(reusableMember.Id, dto.ProjectRoleIds, project.TenantId, userId, cancellationToken);
                 await LogAsync("ProjectMember", reusableMember.Id, "ReAdd", project.TenantId, userId, cancellationToken);
-                return Result<ProjectPersonDto>.Success(ToMemberDto(reusableMember, resource));
+                return Result<ProjectPersonDto>.Success(ToMemberDto(reusableMember, resource, team));
             }
             var calendarPolicy = dto.CalendarPolicy != null && CalendarPolicyConstants.IsValid(dto.CalendarPolicy)
                 ? dto.CalendarPolicy : CalendarPolicyConstants.UseResourceCalendar;
             var member = new ProjectMember
             {
-                TenantId = project.TenantId, ProjectId = projectId, ResourceId = dto.ResourceId,
+                TenantId = project.TenantId, ProjectId = projectId, ResourceId = dto.ResourceId, TeamId = dto.TeamId,
                 Role = Normalize(dto.Role) ?? "Team Member", AllocationPercentage = allocation,
                 HoursPerWeek = null, StartDate = startDate, EndDate = endDate,
                 Status = "Active", IsBillable = dto.IsBillable ?? true, Notes = null,
@@ -200,8 +247,11 @@ public sealed class ProjectPeopleService : IProjectPeopleService
             await _context.SaveChangesAsync(cancellationToken);
             await SyncFunctionalRolesAsync(member.Id, dto.ProjectRoleIds, project.TenantId, userId, cancellationToken);
             await LogAsync("ProjectMember", member.Id, "Create", project.TenantId, userId, cancellationToken);
-            return Result<ProjectPersonDto>.Success(ToMemberDto(member, resource));
+            return Result<ProjectPersonDto>.Success(ToMemberDto(member, resource, team));
         }
+
+        if (resource is null)
+            return Result<ProjectPersonDto>.Failure(Error.Validation("Select an existing Resource for this project relationship."));
 
         if (relationship == ProjectRelationshipType.Sponsor)
         {
@@ -218,8 +268,8 @@ public sealed class ProjectPeopleService : IProjectPeopleService
         }
 
         var stakeholderRelationship = relationship == ProjectRelationshipType.Other ? ProjectRelationshipType.Other : ProjectRelationshipType.Stakeholder;
-        var duplicate = await _context.Set<ProjectStakeholder>().AnyAsync(s => s.ProjectId == projectId && s.ResourceId == dto.ResourceId && !s.IsDeleted && s.Status == ProjectStakeholderStatus.Active && s.RelationshipType == stakeholderRelationship, cancellationToken);
-        if (duplicate) return Result<ProjectPersonDto>.Failure(Error.Conflict("This Resource already has the selected active relationship on the project"));
+        var duplicateStakeholder = await _context.Set<ProjectStakeholder>().AnyAsync(s => s.ProjectId == projectId && s.ResourceId == dto.ResourceId && !s.IsDeleted && s.Status == ProjectStakeholderStatus.Active && s.RelationshipType == stakeholderRelationship, cancellationToken);
+        if (duplicateStakeholder) return Result<ProjectPersonDto>.Failure(Error.Conflict("This Resource already has the selected active relationship on the project"));
         var reusableStakeholder = await _context.Set<ProjectStakeholder>()
             .IgnoreQueryFilters()
             .Where(stakeholder => stakeholder.TenantId == project.TenantId && stakeholder.ProjectId == projectId && stakeholder.ResourceId == dto.ResourceId && stakeholder.RelationshipType == stakeholderRelationship)
@@ -266,7 +316,9 @@ public sealed class ProjectPeopleService : IProjectPeopleService
             if (dto.RelationshipType is not null && dto.RelationshipType != ProjectRelationshipType.TeamMember) return Result<ProjectPersonDto>.Failure(Error.Validation("Change the relationship by removing this assignment and selecting the Resource again"));
             var start = dto.StartDate ?? member.StartDate; var end = dto.EndDate ?? member.EndDate; var allocation = dto.AllocationPercentage ?? member.AllocationPercentage;
             if (end <= start || allocation < 0 || allocation > 100) return Result<ProjectPersonDto>.Failure(Error.Validation("Invalid team member allocation dates or percentage"));
-            var allocationConflict = await ValidateOverallAllocationAsync(member.ResourceId, start, end, allocation, member.Id, cancellationToken);
+            var allocationConflict = member.ResourceId.HasValue
+                ? await ValidateOverallAllocationAsync(member.ResourceId.Value, start, end, allocation, member.Id, cancellationToken, projectId)
+                : await ValidateTeamGroupAllocationAsync(member.TeamId!.Value, projectId, start, end, allocation, member.Id, cancellationToken);
             if (allocationConflict is not null) return Result<ProjectPersonDto>.Failure(allocationConflict);
             if (dto.Role is not null) member.Role = dto.Role.Trim();
             if (dto.AllocationPercentage.HasValue) member.AllocationPercentage = allocation;
@@ -284,8 +336,11 @@ public sealed class ProjectPeopleService : IProjectPeopleService
                 if (project != null)
                     await SyncFunctionalRolesAsync(member.Id, dto.ProjectRoleIds, project.TenantId, userId, cancellationToken);
             }
-            var resource = await _resources.FindAsync(member.ResourceId, cancellationToken);
-            return Result<ProjectPersonDto>.Success(ToMemberDto(member, resource));
+            var resource = member.ResourceId.HasValue ? await _resources.FindAsync(member.ResourceId.Value, cancellationToken) : null;
+            var team = member.TeamId.HasValue
+                ? await _context.Set<Team>().AsNoTracking().FirstOrDefaultAsync(item => item.Id == member.TeamId.Value && !item.IsDeleted, cancellationToken)
+                : null;
+            return Result<ProjectPersonDto>.Success(ToMemberDto(member, resource, team));
         }
 
         var stakeholder = await _context.Set<ProjectStakeholder>().FirstOrDefaultAsync(s => s.Id == personId && s.ProjectId == projectId && !s.IsDeleted, cancellationToken);
@@ -314,16 +369,36 @@ public sealed class ProjectPeopleService : IProjectPeopleService
             var member = await _context.Set<ProjectMember>().FirstOrDefaultAsync(m => m.Id == personId && m.ProjectId == projectId && !m.IsDeleted, cancellationToken);
             if (member is null) return Result<ProjectPersonDto>.Failure(Error.NotFound("Project team member not found"));
 
-            var memberResource = await _resources.FindAsync(member.ResourceId, cancellationToken);
-            if (project.ProjectManagerId.HasValue && memberResource?.UserId == project.ProjectManagerId.Value)
-                return Result<ProjectPersonDto>.Failure(Error.Conflict("This person is the current Project Manager. Complete a Project Handover first."));
-            if (ProjectSponsorMembershipSynchronizer.IsManagedMembership(member)
-                || (project.SponsorId.HasValue && memberResource?.UserId == project.SponsorId.Value))
-                return Result<ProjectPersonDto>.Failure(Error.Conflict("This Project Team relationship is governed by Project Sponsor settings. Change the Sponsor through Project Governance."));
+            var memberResource = member.ResourceId.HasValue ? await _resources.FindAsync(member.ResourceId.Value, cancellationToken) : null;
+            var team = member.TeamId.HasValue
+                ? await _context.Set<Team>().AsNoTracking().FirstOrDefaultAsync(item => item.Id == member.TeamId.Value && !item.IsDeleted, cancellationToken)
+                : null;
+            if (member.ResourceId.HasValue)
+            {
+                if (project.ProjectManagerId.HasValue && memberResource?.UserId == project.ProjectManagerId.Value)
+                    return Result<ProjectPersonDto>.Failure(Error.Conflict("This person is the current Project Manager. Complete a Project Handover first."));
+                if (ProjectSponsorMembershipSynchronizer.IsManagedMembership(member)
+                    || (project.SponsorId.HasValue && memberResource?.UserId == project.SponsorId.Value))
+                    return Result<ProjectPersonDto>.Failure(Error.Conflict("This Project Team relationship is governed by Project Sponsor settings. Change the Sponsor through Project Governance."));
 
-            var blockers = await GetActiveBlockersAsync(projectId, member.ResourceId, memberResource?.UserId, cancellationToken);
-            if (blockers.HasAny)
-                return Result<ProjectPersonDto>.Failure(Error.Conflict(blockers.ToMessage()));
+                var blockers = await GetActiveBlockersAsync(projectId, member.ResourceId.Value, memberResource?.UserId, cancellationToken);
+                if (blockers.HasAny) return Result<ProjectPersonDto>.Failure(Error.Conflict(blockers.ToMessage()));
+            }
+            else if (member.TeamId.HasValue)
+            {
+                var effectiveResourceIds = await _context.Set<TeamMember>().AsNoTracking()
+                    .Where(teamMember => teamMember.TeamId == member.TeamId.Value && teamMember.IsActive && !teamMember.IsDeleted
+                        && teamMember.EffectiveFrom.Date <= DateTime.UtcNow.Date
+                        && (!teamMember.EffectiveTo.HasValue || teamMember.EffectiveTo.Value.Date >= DateTime.UtcNow.Date))
+                    .Join(_context.Set<Resource>().AsNoTracking().Where(resource => resource.IsActive && !resource.IsDeleted),
+                        teamMember => teamMember.ResourceId, resource => resource.Id, (teamMember, resource) => resource.Id)
+                    .Distinct().ToListAsync(cancellationToken);
+                foreach (var resourceId in effectiveResourceIds)
+                {
+                    var blockers = await GetActiveBlockersAsync(projectId, resourceId, null, cancellationToken);
+                    if (blockers.HasAny) return Result<ProjectPersonDto>.Failure(Error.Conflict(blockers.ToMessage()));
+                }
+            }
 
             member.IsDeleted = true;
             member.Status = "Inactive";
@@ -332,9 +407,9 @@ public sealed class ProjectPeopleService : IProjectPeopleService
 
             await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
             await _context.SaveChangesAsync(cancellationToken);
-            await LogRemovalAsync(project, member.Id, member.ResourceId, memberResource?.UserId, memberResource?.Name ?? "Unknown", ProjectRelationshipType.TeamMember, userId, cancellationToken);
+            await LogRemovalAsync(project, member.Id, member.ResourceId, memberResource?.UserId, memberResource?.Name ?? team?.Name ?? "Unknown", ProjectRelationshipType.TeamMember, userId, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
-            return Result<ProjectPersonDto>.Success(ToMemberDto(member, memberResource));
+            return Result<ProjectPersonDto>.Success(ToMemberDto(member, memberResource, team));
         }
 
         if (string.Equals(source, "Governance", StringComparison.OrdinalIgnoreCase))
@@ -495,21 +570,46 @@ public sealed class ProjectPeopleService : IProjectPeopleService
         DateTime endDate,
         decimal allocationPercentage,
         Guid? excludeMemberId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Guid? projectId = null)
     {
         if (_projectService is null) return null;
         var conflicts = await _projectService.CheckResourceConflictsAsync(
-            resourceId, startDate, endDate, allocationPercentage, excludeMemberId, cancellationToken);
+            resourceId, startDate, endDate, allocationPercentage, excludeMemberId, cancellationToken, projectId);
         if (conflicts.IsFailure) return conflicts.Error;
         if (conflicts.Value is { Count: > 0 })
             return Error.Validation("Resource overallocation detected: combined project allocations would exceed 100%.");
         return null;
     }
 
-    private static ProjectPersonDto ToMemberDto(ProjectMember member, ResourceReference? resource, string relationship = ProjectRelationshipType.TeamMember, List<ProjectRoleRefDto>? functionalRoles = null, IReadOnlyList<string>? additionalRelationships = null) => new()
+    private async Task<Error?> ValidateTeamGroupAllocationAsync(
+        Guid teamId, Guid projectId, DateTime startDate, DateTime endDate, decimal allocationPercentage,
+        Guid? excludeMemberId, CancellationToken cancellationToken)
     {
-        Id = member.Id, Source = "TeamMember", ProjectId = member.ProjectId, ResourceId = member.ResourceId,
-        Name = resource?.Name ?? "Unknown", Email = resource?.Email, JobTitle = resource?.JobTitle, ResourceType = resource?.Type ?? "",
+        var team = await _context.Set<Team>().AsNoTracking()
+            .FirstOrDefaultAsync(item => item.Id == teamId && item.IsActive && !item.IsDeleted, cancellationToken);
+        if (team is null) return Error.NotFound("Team not found or inactive");
+
+        var resourceIds = await _context.Set<TeamMember>().AsNoTracking()
+            .Where(member => member.TeamId == teamId && member.IsActive && !member.IsDeleted
+                && member.EffectiveFrom.Date <= endDate.Date
+                && (!member.EffectiveTo.HasValue || member.EffectiveTo.Value.Date >= startDate.Date))
+            .Join(_context.Set<Resource>().AsNoTracking().Where(resource => resource.IsActive && !resource.IsDeleted),
+                member => member.ResourceId, resource => resource.Id, (member, resource) => resource.Id)
+            .Distinct().ToListAsync(cancellationToken);
+        foreach (var resourceId in resourceIds)
+        {
+            var allocationError = await ValidateOverallAllocationAsync(
+                resourceId, startDate, endDate, allocationPercentage, excludeMemberId, cancellationToken, projectId);
+            if (allocationError is not null) return allocationError;
+        }
+        return null;
+    }
+
+    private static ProjectPersonDto ToMemberDto(ProjectMember member, ResourceReference? resource, Team? team = null, string relationship = ProjectRelationshipType.TeamMember, List<ProjectRoleRefDto>? functionalRoles = null, IReadOnlyList<string>? additionalRelationships = null) => new()
+    {
+        Id = member.Id, Source = "TeamMember", ProjectId = member.ProjectId, ResourceId = member.ResourceId, TeamId = member.TeamId, TeamName = team?.Name,
+        Name = resource?.Name ?? team?.Name ?? "Unknown", Email = resource?.Email, JobTitle = resource?.JobTitle, ResourceType = team is not null ? "Team Group" : resource?.Type ?? "",
         UserId = resource?.UserId, RelationshipType = relationship, Status = member.Status,
         AllocationPercentage = member.AllocationPercentage, HoursPerWeek = null, StartDate = member.StartDate, EndDate = member.EndDate,
         IsBillable = member.IsBillable, Role = member.Role, CalendarPolicy = member.CalendarPolicy,
@@ -535,7 +635,7 @@ public sealed class ProjectPeopleService : IProjectPeopleService
     private static ProjectPersonDto ToGovernanceDto(Project project, User user, string relationship) => new()
     {
         Id = StableId(project.Id, relationship), Source = "Governance", ProjectId = project.Id,
-        Name = user.FullName, Email = user.Email, JobTitle = user.JobTitle, ResourceType = "System User",
+        Name = user.FullName, Email = user.Email, JobTitle = null, ResourceType = "System User",
         UserId = user.Id, RelationshipType = relationship, Status = "Active", Role = relationship,
         CreatedAt = project.CreatedAt, UpdatedAt = project.UpdatedAt
     };
@@ -544,6 +644,37 @@ public sealed class ProjectPeopleService : IProjectPeopleService
     {
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes($"{projectId:N}:{relationship}"));
         return new Guid(bytes[..16]);
+    }
+
+    private static void CoalesceCurrentManagerProjection(
+        List<ProjectPersonDto> people,
+        Guid? managerUserId,
+        Guid? managerResourceId)
+    {
+        if (!managerUserId.HasValue) return;
+
+        var managerPeople = people.Where(person => person.Status == "Active" &&
+            (person.UserId == managerUserId || (managerResourceId.HasValue && person.ResourceId == managerResourceId)))
+            .ToList();
+        if (managerPeople.Count < 2) return;
+
+        var manager = managerPeople
+            .OrderByDescending(person => person.RelationshipType == ProjectRelationshipType.ProjectManager)
+            .ThenByDescending(person => person.Source == "TeamMember" && person.ResourceId.HasValue)
+            .ThenBy(person => person.Id)
+            .First();
+        var relationships = new HashSet<string>(manager.AdditionalRelationshipTypes, StringComparer.OrdinalIgnoreCase);
+        foreach (var duplicate in managerPeople.Where(person => person != manager))
+        {
+            if (!string.Equals(duplicate.RelationshipType, manager.RelationshipType, StringComparison.OrdinalIgnoreCase))
+                relationships.Add(duplicate.RelationshipType);
+            foreach (var relationship in duplicate.AdditionalRelationshipTypes)
+                relationships.Add(relationship);
+            people.Remove(duplicate);
+        }
+
+        relationships.Remove(manager.RelationshipType);
+        manager.AdditionalRelationshipTypes = relationships.ToArray();
     }
 
     private static bool IsProjectManagerRole(string? role) =>

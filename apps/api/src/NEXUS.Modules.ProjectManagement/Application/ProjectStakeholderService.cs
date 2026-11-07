@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Security.Cryptography;
+using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using NEXUS.Modules.Audit.Application;
@@ -9,6 +10,7 @@ using NEXUS.Modules.ProjectManagement.Application.DTOs;
 using NEXUS.Modules.ProjectManagement.Domain;
 using NEXUS.SharedKernel;
 using NEXUS.SharedKernel.Helpers;
+using NEXUS.SharedKernel.Management;
 
 namespace NEXUS.Modules.ProjectManagement.Application;
 
@@ -19,18 +21,23 @@ public sealed class ProjectStakeholderService : IProjectStakeholderService
     private readonly IResourceReferenceLookup _resourceLookup;
     private readonly IAuditService _auditService;
     private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly IManagementContextAccessor? _managementContext;
 
-    public ProjectStakeholderService(DbContext context, IUserReferenceLookup userLookup, IResourceReferenceLookup resourceLookup, IAuditService auditService, IHttpContextAccessor httpContextAccessor)
+    public ProjectStakeholderService(DbContext context, IUserReferenceLookup userLookup, IResourceReferenceLookup resourceLookup, IAuditService auditService, IHttpContextAccessor httpContextAccessor, IManagementContextAccessor? managementContext = null)
     {
         _context = context;
         _userLookup = userLookup;
         _resourceLookup = resourceLookup;
         _auditService = auditService;
         _httpContextAccessor = httpContextAccessor;
+        _managementContext = managementContext;
     }
 
     public async Task<Result<IReadOnlyList<ProjectStakeholderDto>>> GetByProjectAsync(Guid projectId, CancellationToken cancellationToken = default)
     {
+        var accessError = RequireProjectAccess(projectId, "Stakeholders.Read");
+        if (accessError is not null)
+            return Result<IReadOnlyList<ProjectStakeholderDto>>.Failure(accessError);
         if (!await ProjectExistsAsync(projectId, cancellationToken))
             return Result<IReadOnlyList<ProjectStakeholderDto>>.Failure(Error.NotFound("Project not found"));
 
@@ -44,6 +51,8 @@ public sealed class ProjectStakeholderService : IProjectStakeholderService
 
     public async Task<Result<ProjectStakeholderDto>> AddInternalAsync(Guid projectId, AddInternalProjectStakeholderDto dto, string userId, CancellationToken cancellationToken = default)
     {
+        var accessError = RequireProjectAccess(projectId, "Stakeholders.Manage", userId, mutation: true);
+        if (accessError is not null) return Result<ProjectStakeholderDto>.Failure(accessError);
         if (!await ProjectExistsAsync(projectId, cancellationToken))
             return Result<ProjectStakeholderDto>.Failure(Error.NotFound("Project not found"));
         if (dto.UserId == Guid.Empty)
@@ -87,6 +96,8 @@ public sealed class ProjectStakeholderService : IProjectStakeholderService
 
     public async Task<Result<ProjectStakeholderDto>> AddContactAsync(Guid projectId, AddContactProjectStakeholderDto dto, string userId, CancellationToken cancellationToken = default)
     {
+        var accessError = RequireProjectAccess(projectId, "Stakeholders.Manage", userId, mutation: true);
+        if (accessError is not null) return Result<ProjectStakeholderDto>.Failure(accessError);
         if (!await ProjectExistsAsync(projectId, cancellationToken))
             return Result<ProjectStakeholderDto>.Failure(Error.NotFound("Project not found"));
         return Result<ProjectStakeholderDto>.Failure(Error.Validation("Project stakeholders must be selected from Resource Management. Create this person in Resource Management first."));
@@ -94,6 +105,8 @@ public sealed class ProjectStakeholderService : IProjectStakeholderService
 
     public async Task<Result<ProjectStakeholderDto>> UpdateAsync(Guid projectId, Guid stakeholderId, UpdateProjectStakeholderDto dto, string userId, CancellationToken cancellationToken = default)
     {
+        var accessError = RequireProjectAccess(projectId, "Stakeholders.Manage", userId, mutation: true);
+        if (accessError is not null) return Result<ProjectStakeholderDto>.Failure(accessError);
         var entity = await FindAsync(projectId, stakeholderId, cancellationToken);
         if (entity is null) return Result<ProjectStakeholderDto>.Failure(Error.NotFound("Stakeholder not found"));
         var versionError = ApplyConcurrency(entity, dto.RowVersion);
@@ -146,6 +159,8 @@ public sealed class ProjectStakeholderService : IProjectStakeholderService
 
     public async Task<Result<ProjectStakeholderDto>> RevokeAsync(Guid projectId, Guid stakeholderId, RevokeProjectStakeholderDto dto, string userId, CancellationToken cancellationToken = default)
     {
+        var accessError = RequireProjectAccess(projectId, "Stakeholders.Manage", userId, mutation: true);
+        if (accessError is not null) return Result<ProjectStakeholderDto>.Failure(accessError);
         var entity = await FindAsync(projectId, stakeholderId, cancellationToken);
         if (entity is null) return Result<ProjectStakeholderDto>.Failure(Error.NotFound("Stakeholder not found"));
         var versionError = ApplyConcurrency(entity, dto.RowVersion);
@@ -162,6 +177,8 @@ public sealed class ProjectStakeholderService : IProjectStakeholderService
 
     public async Task<Result> RemoveAsync(Guid projectId, Guid stakeholderId, byte[]? rowVersion, string userId, CancellationToken cancellationToken = default)
     {
+        var accessError = RequireProjectAccess(projectId, "Stakeholders.Manage", userId, mutation: true);
+        if (accessError is not null) return Result.Failure(accessError);
         var entity = await FindAsync(projectId, stakeholderId, cancellationToken);
         if (entity is null) return Result.Failure(Error.NotFound("Stakeholder not found"));
         var versionError = ApplyConcurrency(entity, rowVersion);
@@ -232,6 +249,29 @@ public sealed class ProjectStakeholderService : IProjectStakeholderService
     private Guid GetCurrentTenantId()
     {
         var value = _httpContextAccessor.HttpContext?.User.FindFirst("tenantId")?.Value;
-        return Guid.TryParse(value, out var tenantId) ? tenantId : TenantConstants.DemoTenantId;
+        return Guid.TryParse(value, out var tenantId) && tenantId != Guid.Empty ? tenantId : Guid.Empty;
+    }
+
+    private NEXUS.SharedKernel.Error? RequireProjectAccess(
+        Guid projectId, string permission, string? actorId = null, bool mutation = false)
+    {
+        var principal = _httpContextAccessor.HttpContext?.User;
+        if (principal?.Identity?.IsAuthenticated != true)
+            return NEXUS.SharedKernel.Error.Unauthorized("An authenticated user is required.");
+        if (!Guid.TryParse(principal.FindFirst("tenantId")?.Value, out var tenantId) || tenantId == Guid.Empty
+            || !Guid.TryParse(principal.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var userId) || userId == Guid.Empty)
+            return NEXUS.SharedKernel.Error.Forbidden("A valid tenant and user identity is required.");
+        if (!principal.HasClaim("permission", permission))
+            return NEXUS.SharedKernel.Error.Forbidden($"The {permission} permission is required.");
+        if (actorId is not null && (!Guid.TryParse(actorId, out var requestedActor) || requestedActor != userId))
+            return NEXUS.SharedKernel.Error.Forbidden("The audit actor must match the authenticated user.");
+
+        var management = _managementContext?.Current;
+        if (management is null || management.TenantId != tenantId || management.UserId != userId
+            || !management.Scope.ProjectIds.Contains(projectId))
+            return NEXUS.SharedKernel.Error.Forbidden("The project is outside the current management scope.");
+        if (mutation && management.EffectiveReadOnly)
+            return NEXUS.SharedKernel.Error.Forbidden("Stakeholder changes are not available in read-only management mode.");
+        return null;
     }
 }

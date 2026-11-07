@@ -89,7 +89,6 @@ public sealed class ProgramManagementService : IProgramManagementService
                 ProjectCount = children.Count,
                 ProjectsRequiringAttention = children.Count(project => ProjectNeedsAttention(project) || (schedulesByProject.TryGetValue(project.Id, out var schedule) && IsDelayed(schedule))),
                 ScheduleIndicator = ScheduleIndicator(children, childSchedules),
-                FinancialIndicator = children.Any(project => project.Budget.HasValue || project.ActualCost.HasValue) ? "Available" : "Unavailable"
             };
         }).ToList();
 
@@ -126,7 +125,6 @@ public sealed class ProgramManagementService : IProgramManagementService
         var allocations = await AllocationRowsAsync(projectIds, cancellationToken);
         var resources = await UserResourceNamesAsync(allocations.Select(item => item.ResourceId), cancellationToken);
         var publishedReports = await PublishedStatusReportsAsync(projectIds, cancellationToken);
-        var financials = await BuildFinancialSummaryAsync(program, projects, cancellationToken);
         var now = DateTime.UtcNow;
 
         var latestReports = publishedReports.GroupBy(report => report.ProjectId)
@@ -159,8 +157,6 @@ public sealed class ProgramManagementService : IProgramManagementService
                 ScheduleCondition = scheduleCondition,
                 ForecastEndDate = schedule?.ForecastEndDate,
                 Currency = project.Currency,
-                Budget = project.Budget,
-                ActualCost = project.ActualCost,
                 RequiresAttention = projectNeedsAttention,
                 OpenRiskCount = openRiskCounts.GetValueOrDefault(project.Id),
                 OpenIssueCount = openIssueCounts.GetValueOrDefault(project.Id),
@@ -218,19 +214,17 @@ public sealed class ProgramManagementService : IProgramManagementService
                 Id = program.Id,
                 Name = program.Name,
                 Code = program.Code,
-                Status = program.Status,
-                Health = program.Health,
+                Status = ComputeProgramStatus(projectViews),
+                Health = ComputeProgramHealth(projectViews),
                 ProgramManagerName = managers.GetValueOrDefault(program.ProgramManagerId ?? Guid.Empty),
                 PortfolioId = program.PortfolioId,
                 PortfolioName = portfolioNames.GetValueOrDefault(program.PortfolioId),
                 Currency = program.Currency,
-                StartDate = program.StartDate,
-                EndDate = program.EndDate,
-                Budget = program.Budget
+                StartDate = projects.Where(item => item.StartDate.HasValue).Select(item => item.StartDate!.Value).OrderBy(item => item).FirstOrDefault(),
+                EndDate = projects.Where(item => item.EndDate.HasValue).Select(item => item.EndDate!.Value).OrderByDescending(item => item).FirstOrDefault(),
             },
             Summary = summary,
             Delivery = delivery,
-            Financials = financials,
             Risks = new ProgramRiskSummaryDto
             {
                 OpenCount = openRisks.Count,
@@ -273,7 +267,7 @@ public sealed class ProgramManagementService : IProgramManagementService
         if (ids.Length == 0) return [];
         return await _db.Set<ProjectEntity>().AsNoTracking()
             .Where(project => project.ProgramId.HasValue && ids.Contains(project.ProgramId.Value))
-            .Select(project => new ProjectRow(project.Id, project.PublicId, project.ProgramId!.Value, project.Name, project.Code, project.Status, project.Health, project.Priority, project.ProjectManagerId, project.StartDate, project.EndDate, project.Progress, project.Currency, project.Budget, project.ActualCost))
+            .Select(project => new ProjectRow(project.Id, project.PublicId, project.ProgramId!.Value, project.Name, project.Code, project.Status, project.Health, project.Priority, project.ProjectManagerId, project.StartDate, project.EndDate, project.Progress, project.Currency))
             .ToListAsync(cancellationToken);
     }
 
@@ -333,87 +327,16 @@ public sealed class ProgramManagementService : IProgramManagementService
             .ToListAsync(cancellationToken);
     }
 
-    private async Task<ProgramFinancialSummaryDto> BuildFinancialSummaryAsync(ProgramEntity program, IReadOnlyList<ProjectRow> projects, CancellationToken cancellationToken)
-    {
-        var projectIds = projects.Select(project => project.Id).ToArray();
-        if (projectIds.Length == 0)
-            return new ProgramFinancialSummaryDto { BaseCurrency = program.Currency };
-
-        var budgets = await _db.Set<Budget>().AsNoTracking()
-            .Where(item => item.ProjectId.HasValue && projectIds.Contains(item.ProjectId.Value))
-            .Select(item => new MoneyRow(item.ProjectId!.Value, item.Currency, item.ApprovedAmount, item.ActualAmount, item.CommittedAmount, item.ForecastAmount))
-            .ToListAsync(cancellationToken);
-        var costs = await _db.Set<CostEntry>().AsNoTracking()
-            .Where(item => item.ProjectId.HasValue && projectIds.Contains(item.ProjectId.Value))
-            .GroupBy(item => new { ProjectId = item.ProjectId!.Value, item.Currency })
-            .Select(group => new MoneyRow(group.Key.ProjectId, group.Key.Currency, 0m, group.Sum(item => item.Amount), 0m, 0m))
-            .ToListAsync(cancellationToken);
-        var commitments = await _db.Set<PurchaseCommitment>().AsNoTracking()
-            .Where(item => item.ProjectId.HasValue && projectIds.Contains(item.ProjectId.Value))
-            .GroupBy(item => new { ProjectId = item.ProjectId!.Value, item.Currency })
-            .Select(group => new MoneyRow(group.Key.ProjectId, group.Key.Currency, 0m, 0m, group.Sum(item => item.Amount), 0m))
-            .ToListAsync(cancellationToken);
-
-        var values = new Dictionary<(Guid ProjectId, string Currency), FinancialAccumulator>();
-        foreach (var project in projects)
-        {
-            var currency = NormalizeCurrency(project.Currency, program.Currency);
-            values[(project.Id, currency)] = new FinancialAccumulator(project.Id, project.PublicId, project.Name, currency, project.Budget ?? 0m, project.ActualCost ?? 0m, 0m, project.Budget ?? 0m);
-        }
-
-        foreach (var group in budgets.GroupBy(item => (item.ProjectId, Currency: NormalizeCurrency(item.Currency, program.Currency))))
-        {
-            var projectName = projects.FirstOrDefault(project => project.Id == group.Key.ProjectId)?.Name ?? "";
-            var project = projects.FirstOrDefault(item => item.Id == group.Key.ProjectId);
-            values[group.Key] = new FinancialAccumulator(group.Key.ProjectId, project?.PublicId ?? Guid.Empty, projectName, group.Key.Currency, group.Sum(item => item.Budget), group.Sum(item => item.Actual), group.Sum(item => item.Committed), group.Sum(item => item.Forecast));
-        }
-        foreach (var group in costs.GroupBy(item => (item.ProjectId, Currency: NormalizeCurrency(item.Currency, program.Currency))))
-        {
-            if (!values.TryGetValue(group.Key, out var value)) continue;
-            if (!budgets.Any(item => item.ProjectId == group.Key.ProjectId && NormalizeCurrency(item.Currency, program.Currency) == group.Key.Currency)) value.Actual = group.Sum(item => item.Actual);
-        }
-        foreach (var group in commitments.GroupBy(item => (item.ProjectId, Currency: NormalizeCurrency(item.Currency, program.Currency))))
-        {
-            if (values.TryGetValue(group.Key, out var value) && !budgets.Any(item => item.ProjectId == group.Key.ProjectId && NormalizeCurrency(item.Currency, program.Currency) == group.Key.Currency)) value.Committed = group.Sum(item => item.Committed);
-        }
-
-        var groups = values.Values.GroupBy(value => value.Currency, StringComparer.OrdinalIgnoreCase)
-            .OrderBy(group => string.Equals(group.Key, program.Currency, StringComparison.OrdinalIgnoreCase) ? 0 : 1)
-            .ThenBy(group => group.Key)
-            .Select(group => new ProgramFinancialCurrencyGroupDto
-            {
-                Currency = group.Key,
-                IsBaseCurrency = string.Equals(group.Key, program.Currency, StringComparison.OrdinalIgnoreCase),
-                Budget = group.Sum(value => value.Budget),
-                Actual = group.Sum(value => value.Actual),
-                Committed = group.Sum(value => value.Committed),
-                Forecast = group.Sum(value => value.Forecast),
-                Remaining = group.Sum(value => value.Budget) - group.Sum(value => value.Actual) - group.Sum(value => value.Committed),
-                Projects = group.OrderByDescending(value => value.Budget).Take(25).Select(value => new ProgramFinancialProjectDto
-                {
-                    ProjectId = value.ProjectId,
-                    ProjectPublicId = value.ProjectPublicId,
-                    ProjectName = value.ProjectName,
-                    Budget = value.Budget,
-                    Actual = value.Actual,
-                    Committed = value.Committed,
-                    Forecast = value.Forecast
-                }).ToList()
-            }).ToList();
-
-        return new ProgramFinancialSummaryDto
-        {
-            BaseCurrency = program.Currency,
-            HasMixedCurrencies = groups.Select(group => group.Currency).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1,
-            Groups = groups
-        };
-    }
 
     private async Task<IReadOnlyDictionary<Guid, string>> UserNamesAsync(IEnumerable<Guid?> ids, CancellationToken cancellationToken)
     {
         var values = ids.Where(id => id.HasValue).Select(id => id!.Value).Distinct().ToArray();
-        if (values.Length == 0) return new Dictionary<Guid, string>();
-        return await _db.Set<User>().AsNoTracking().Where(user => values.Contains(user.Id)).ToDictionaryAsync(user => user.Id, user => user.FullName, cancellationToken);
+        var tenantId = _managementContext.Current?.TenantId;
+        if (values.Length == 0 || !tenantId.HasValue || tenantId.Value == Guid.Empty)
+            return new Dictionary<Guid, string>();
+        return await _db.Set<User>().AsNoTracking()
+            .Where(user => user.TenantId == tenantId.Value && values.Contains(user.Id) && user.IsActive && !user.IsDeleted)
+            .ToDictionaryAsync(user => user.Id, user => user.FullName, cancellationToken);
     }
 
     private async Task<IReadOnlyDictionary<Guid, string>> PortfolioNamesAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken)
@@ -542,8 +465,23 @@ public sealed class ProgramManagementService : IProgramManagementService
         return comparableSchedules.Count == 0 ? "Unknown" : comparableSchedules.Any(IsDelayed) ? "Delayed" : projects.Count > 0 ? "OnTrack" : "Unknown";
     }
     private static string ScheduleCondition(ScheduleRow? schedule) => schedule is null || !schedule.BaselineEndDate.HasValue || !schedule.ForecastEndDate.HasValue ? "Unknown" : IsDelayed(schedule) ? "Delayed" : "OnTrack";
+    private static string ComputeProgramHealth(IReadOnlyList<ProgramProjectManagementDto> projects)
+    {
+        if (projects.Count == 0) return "Unknown";
+        if (projects.Any(p => string.Equals(p.Health, "Red", StringComparison.OrdinalIgnoreCase))) return "Red";
+        if (projects.Any(p => string.Equals(p.Health, "Amber", StringComparison.OrdinalIgnoreCase))) return "Amber";
+        if (projects.Any(p => string.Equals(p.Health, "Green", StringComparison.OrdinalIgnoreCase))) return "Green";
+        return "Unknown";
+    }
+
+    private static string ComputeProgramStatus(IReadOnlyList<ProgramProjectManagementDto> projects)
+    {
+        if (projects.Count == 0) return "Active";
+        if (projects.All(p => string.Equals(p.Status, "Completed", StringComparison.OrdinalIgnoreCase) || string.Equals(p.Status, "Closed", StringComparison.OrdinalIgnoreCase) || string.Equals(p.Status, "Done", StringComparison.OrdinalIgnoreCase))) return "Completed";
+        if (projects.Any(p => string.Equals(p.Status, "OnHold", StringComparison.OrdinalIgnoreCase))) return "On Hold";
+        return "Active";
+    }
     private static string ReportFreshness(DateTime reportDate, DateTime now) => ManagementReportingRules.Freshness(reportDate, now);
-    private static string NormalizeCurrency(string? currency, string fallback) => string.IsNullOrWhiteSpace(currency) ? fallback.ToUpperInvariant() : currency.Trim().ToUpperInvariant();
     private static int RiskRank(RiskLevel level) => level switch { RiskLevel.Critical => 4, RiskLevel.High => 3, RiskLevel.Medium => 2, _ => 1 };
     private static int SeverityRank(string? severity) => severity?.ToLowerInvariant() switch { "critical" => 5, "high" => 4, "major" => 3, "medium" => 2, _ => 1 };
     private static string MilestoneState(MilestoneRow milestone, DateTime now)
@@ -555,7 +493,7 @@ public sealed class ProgramManagementService : IProgramManagementService
     }
     private static int MilestoneSort(MilestoneRow milestone, DateTime now) => MilestoneState(milestone, now) switch { "Overdue" => 0, "DueSoon" => 1, "OnTrack" => 2, _ => 3 };
 
-    private sealed record ProjectRow(Guid Id, Guid PublicId, Guid ProgramId, string Name, string Code, string Status, string Health, string Priority, Guid? ProjectManagerId, DateTime? StartDate, DateTime? EndDate, decimal Progress, string Currency, decimal? Budget, decimal? ActualCost);
+    private sealed record ProjectRow(Guid Id, Guid PublicId, Guid ProgramId, string Name, string Code, string Status, string Health, string Priority, Guid? ProjectManagerId, DateTime? StartDate, DateTime? EndDate, decimal Progress, string Currency);
     private sealed record ScheduleRow(Guid ProjectId, DateTime? BaselineEndDate, DateTime? ForecastEndDate, DateTime UpdatedAt);
     private sealed record MilestoneRow(Guid Id, Guid ProjectId, string Name, DateTime? DueDate, DateTime? CompletedDate, string? Status);
     private sealed record RiskRow(Guid Id, Guid ProjectId, string Title, RiskLevel RiskLevel, RiskStatus Status, DateTime? IdentifiedDate);
@@ -563,17 +501,4 @@ public sealed class ProgramManagementService : IProgramManagementService
     private sealed record ChangeRequestRow(Guid Id, Guid ProjectId, string? Impact);
     private sealed record AllocationRow(Guid ResourceId, Guid ProjectId, decimal AllocationPercentage, decimal? HoursPerWeek);
     private sealed record PublishedReportRow(Guid ProjectId, DateTime ReportDate, string? Health, decimal? Progress);
-    private sealed record MoneyRow(Guid ProjectId, string Currency, decimal Budget, decimal Actual, decimal Committed, decimal Forecast);
-
-    private sealed class FinancialAccumulator(Guid projectId, Guid projectPublicId, string projectName, string currency, decimal budget, decimal actual, decimal committed, decimal forecast)
-    {
-        public Guid ProjectId { get; } = projectId;
-        public Guid ProjectPublicId { get; } = projectPublicId;
-        public string ProjectName { get; } = projectName;
-        public string Currency { get; } = currency;
-        public decimal Budget { get; set; } = budget;
-        public decimal Actual { get; set; } = actual;
-        public decimal Committed { get; set; } = committed;
-        public decimal Forecast { get; set; } = forecast;
-    }
 }

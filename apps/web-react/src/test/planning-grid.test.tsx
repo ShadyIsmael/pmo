@@ -36,7 +36,7 @@ describe("planning grid bulk dependency commands", () => {
     const rows = screen.getAllByTestId("planning-grid-row");
     fireEvent.click(rows[0]!);
     fireEvent.click(rows[1]!, { ctrlKey: true });
-    fireEvent.click(screen.getByText("planning.linkSelected"));
+    fireEvent.click(screen.getByRole("button", { name: "planning.linkSelected" }));
 
     await waitFor(() => expect(mutations.replacePredecessorsBulk.mutateAsync).toHaveBeenCalledWith([
       { activityId: second.id, predecessors: [{ predecessorActivityId: first.id, type: "FinishToStart", lag: 0 }] },
@@ -57,7 +57,7 @@ describe("planning grid bulk dependency commands", () => {
     const rows = screen.getAllByTestId("planning-grid-row");
     fireEvent.click(rows[0]!);
     fireEvent.click(rows[1]!, { ctrlKey: true });
-    fireEvent.click(screen.getByText("planning.unlinkSelected"));
+    fireEvent.click(screen.getByRole("button", { name: "planning.unlinkSelected" }));
 
     await waitFor(() => expect(mutations.replacePredecessorsBulk.mutateAsync).toHaveBeenCalledWith([
       { activityId: second.id, predecessors: [{ predecessorActivityId: external.id, type: "StartToStart", lag: undefined }] },
@@ -149,7 +149,7 @@ describe("planning grid bulk scheduling commands", () => {
     const rows = screen.getAllByTestId("planning-grid-row");
     fireEvent.click(rows[0]!);
     fireEvent.click(rows[1]!, { ctrlKey: true });
-    fireEvent.click(screen.getByText("planning.manualSelected"));
+    fireEvent.click(screen.getByRole("button", { name: "planning.manualSelected" }));
 
     await waitFor(() => expect(mutations.bulkUpdateActivities.mutateAsync).toHaveBeenCalledWith(expect.objectContaining({
       items: expect.arrayContaining([
@@ -168,8 +168,9 @@ describe("planning grid bulk scheduling commands", () => {
     const rows = screen.getAllByTestId("planning-grid-row");
     fireEvent.click(rows[0]!);
     fireEvent.click(rows[1]!, { ctrlKey: true });
-    fireEvent.change(screen.getByRole("combobox", { name: "planning.bulkProgress" }), { target: { value: "50" } });
-    fireEvent.click(screen.getByText("planning.applyProgress"));
+    fireEvent.click(screen.getByLabelText("planning.bulkProgress"));
+    fireEvent.click(within(screen.getByRole("listbox")).getAllByRole("option")[2]!);
+    fireEvent.click(screen.getByRole("button", { name: "planning.applyProgress" }));
 
     await waitFor(() => expect(mutations.bulkUpdateActivities.mutateAsync).toHaveBeenCalledWith(expect.objectContaining({
       items: expect.arrayContaining([
@@ -378,7 +379,7 @@ describe("planning grid row and ribbon behavior", () => {
     const mutations = { ...makeMutations(), updateActivity: { mutateAsync: updateActivity } };
     const task = activity("task-1", "wbs-1");
     const wbs = [wbsNode("wbs-1", task.id, 0)];
-    const props = { projectId: "project-1", planId: "plan-1", wbs, activities: [task], dependencies: [], mutations, editable: true, showBaseline: false, ribbonTab: "format" as const, t, onEdit: vi.fn(), onDelete: vi.fn() };
+    const props = { projectId: "project-1", planId: "plan-1", wbs, activities: [task], dependencies: [], mutations, editable: true, showBaseline: false, ribbonTab: "task" as const, t, onEdit: vi.fn(), onDelete: vi.fn() };
     const { rerender } = renderWithProviders(<PlanningGrid {...props} />);
 
     fireEvent.click(screen.getByText("Task task-1"));
@@ -390,11 +391,11 @@ describe("planning grid row and ribbon behavior", () => {
     expect(screen.getByRole("button", { name: "planning.formatBold" })).toHaveAttribute("aria-pressed", "true");
   });
 
-  it("shares multi-row selection with Format ribbon bulk updates", async () => {
+  it("shares multi-row selection with Task ribbon formatting actions", async () => {
     const first = activity("first", "wbs-first");
     const second = activity("second", "wbs-second");
     const mutations = makeMutations();
-    renderWithProviders(<PlanningGrid projectId="project-1" planId="plan-1" wbs={[wbsNode("wbs-first", first.id, 0), wbsNode("wbs-second", second.id, 1)]} activities={[first, second]} dependencies={[]} mutations={mutations} editable showBaseline={false} ribbonTab="format" t={t} onEdit={vi.fn()} />);
+    renderWithProviders(<PlanningGrid projectId="project-1" planId="plan-1" wbs={[wbsNode("wbs-first", first.id, 0), wbsNode("wbs-second", second.id, 1)]} activities={[first, second]} dependencies={[]} mutations={mutations} editable showBaseline={false} ribbonTab="task" t={t} onEdit={vi.fn()} />);
     const rows = screen.getAllByTestId("planning-grid-row");
     fireEvent.mouseDown(within(rows[0]!).getAllByRole("cell")[3]!);
     fireEvent.mouseDown(within(rows[1]!).getAllByRole("cell")[3]!, { ctrlKey: true });

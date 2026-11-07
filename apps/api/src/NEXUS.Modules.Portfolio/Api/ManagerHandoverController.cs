@@ -28,22 +28,22 @@ public sealed class ManagerHandoverController : ControllerBase
     [Authorize(Policy = "Handover.Approve")]
     [HttpGet("portfolios/{id:guid}/pending-for-me")]
     public async Task<IActionResult> PendingPortfolioForMe(Guid id, CancellationToken ct) => FromResult(await _service.GetPendingPortfolioForMeAsync(id, UserId(), ct));
-    [Authorize(Policy = "Handover.Initiate")]
+    [Authorize(Policy = "Handover.View")]
     [HttpGet("programs/{id:guid}/eligible-managers")]
     public async Task<IActionResult> EligibleProgramManagers(Guid id, CancellationToken ct) => FromResult(await _service.GetEligibleProgramManagersAsync(id, UserId(), ct));
-    [Authorize(Policy = "Handover.Initiate")]
+    [Authorize(Policy = "Handover.View")]
     [HttpGet("portfolios/{id:guid}/eligible-managers")]
     public async Task<IActionResult> EligiblePortfolioManagers(Guid id, CancellationToken ct) => FromResult(await _service.GetEligiblePortfolioManagersAsync(id, UserId(), ct));
-    [Authorize(Policy = "Handover.Capabilities")]
+    [Authorize(Policy = "Handover.View")]
     [HttpGet("programs/{id:guid}/capabilities")]
     public async Task<IActionResult> ProgramCapabilities(Guid id, CancellationToken ct) => FromResult(await _service.GetProgramCapabilitiesAsync(id, UserId(), ct));
-    [Authorize(Policy = "Handover.Capabilities")]
+    [Authorize(Policy = "Handover.View")]
     [HttpGet("portfolios/{id:guid}/capabilities")]
     public async Task<IActionResult> PortfolioCapabilities(Guid id, CancellationToken ct) => FromResult(await _service.GetPortfolioCapabilitiesAsync(id, UserId(), ct));
-    [Authorize(Policy = "Handover.Access")]
+    [Authorize(Policy = "Handover.View")]
     [HttpGet("programs/{id:guid}/requests")]
     public async Task<IActionResult> ProgramRequests(Guid id, CancellationToken ct) => FromResult(await _service.GetProgramRequestsAsync(id, UserId(), ct));
-    [Authorize(Policy = "Handover.Access")]
+    [Authorize(Policy = "Handover.View")]
     [HttpGet("portfolios/{id:guid}/requests")]
     public async Task<IActionResult> PortfolioRequests(Guid id, CancellationToken ct) => FromResult(await _service.GetPortfolioRequestsAsync(id, UserId(), ct));
     [Authorize(Policy = "Handover.Manage")]
@@ -76,22 +76,22 @@ public sealed class ManagerHandoverController : ControllerBase
     [Authorize(Policy = "Handover.Approve")]
     [HttpPost("portfolios/requests/{id:guid}/reject")]
     public async Task<IActionResult> RejectPortfolio(Guid id, RejectManagerHandoverRequestDto dto, CancellationToken ct) => FromResult(await _service.RejectPortfolioAsync(id, dto, UserId(), ct));
-    [Authorize(Policy = "Handover.Initiate")]
+    [Authorize(Policy = "Handover.View")]
     [HttpPost("programs/requests/{id:guid}/cancel")]
     public async Task<IActionResult> CancelProgram(Guid id, CancellationToken ct) => FromResult(await _service.CancelProgramAsync(id, UserId(), ct));
-    [Authorize(Policy = "Handover.Initiate")]
+    [Authorize(Policy = "Handover.View")]
     [HttpPost("portfolios/requests/{id:guid}/cancel")]
     public async Task<IActionResult> CancelPortfolio(Guid id, CancellationToken ct) => FromResult(await _service.CancelPortfolioAsync(id, UserId(), ct));
-    [Authorize(Policy = "Handover.Access")]
+    [Authorize(Policy = "Handover.View")]
     [HttpGet("programs/{id:guid}/history")]
     public async Task<IActionResult> ProgramHistory(Guid id, CancellationToken ct) => FromResult(await _service.GetProgramHistoryAsync(id, UserId(), ct));
-    [Authorize(Policy = "Handover.Access")]
+    [Authorize(Policy = "Handover.View")]
     [HttpGet("portfolios/{id:guid}/history")]
     public async Task<IActionResult> PortfolioHistory(Guid id, CancellationToken ct) => FromResult(await _service.GetPortfolioHistoryAsync(id, UserId(), ct));
-    [Authorize(Policy = "Handover.Access")]
+    [Authorize(Policy = "Handover.View")]
     [HttpGet("programs/{id:guid}/snapshots")]
     public async Task<IActionResult> ProgramSnapshots(Guid id, CancellationToken ct) => FromResult(await _service.GetProgramSnapshotsAsync(id, UserId(), ct));
-    [Authorize(Policy = "Handover.Access")]
+    [Authorize(Policy = "Handover.View")]
     [HttpGet("portfolios/{id:guid}/snapshots")]
     public async Task<IActionResult> PortfolioSnapshots(Guid id, CancellationToken ct) => FromResult(await _service.GetPortfolioSnapshotsAsync(id, UserId(), ct));
 

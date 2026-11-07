@@ -36,11 +36,13 @@ public class IssueService : IIssueService
 
     private IQueryable<Issue> ScopedIssues()
     {
-        var query = _context.Set<Issue>();
-        if (_managementContext is null) return query;
-        var projectIds = _managementContext.Current?.Scope.ProjectIds;
-        return projectIds is null
-            ? query.Where(_ => false)
-            : query.Where(issue => issue.ProjectId.HasValue && projectIds.Contains(issue.ProjectId.Value));
+        var current = _managementContext?.Current;
+        if (current is null || current.TenantId == Guid.Empty || current.Scope.ProjectIds.Count == 0)
+            return _context.Set<Issue>().Where(_ => false);
+
+        var tenantId = current.TenantId;
+        var projectIds = current.Scope.ProjectIds;
+        return _context.Set<Issue>().Where(issue => issue.TenantId == tenantId && !issue.IsDeleted
+            && issue.ProjectId.HasValue && projectIds.Contains(issue.ProjectId.Value));
     }
 }

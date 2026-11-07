@@ -20,6 +20,7 @@ import type { ProjectSummaryDto } from "@features/projects/api/projects";
 import { useFullWorkItemAssignees, useFullWorkItemMutations, useFullWorkItems, workItemsApiFull, type SaveWorkItemDto, type WorkItemDto, type WorkItemPriority } from "@api/workItemsFull";
 import { useWorkItemStatuses, type WorkItemStatusDto } from "@api/workItems";
 import { WorkItemForm } from "@features/delivery/WorkItemForm";
+import { MyWorkTabs } from "./MyWorkTabs";
 
 type TaskFilter = "all" | "inProgress" | "done";
 
@@ -141,6 +142,7 @@ export function MyWorkTasksPage() {
 
   return <div className="space-y-6">
     <PageHeader title={t("nav.myWork")} description={`${t("workItems.myWorkDescription")} · ${counts.all} ${t("workItems.totalTasks")}`} actions={canCreate ? <Button size="sm" onClick={() => setCreateOpen(true)}><Plus className="me-2 h-4 w-4" />{t("workItems.newTask")}</Button> : undefined} />
+    <MyWorkTabs />
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
       <StatCard label={t("workItems.allTasks")} value={counts.all} icon={ListChecks} tone="bg-primary/10 text-primary" />
       <StatCard label={t("workItems.inProgressTasks")} value={counts.inProgress} icon={Clock3} tone="bg-info/10 text-info" />
@@ -172,7 +174,7 @@ export function MyWorkTasksPage() {
       <form onSubmit={(event) => void saveTask(event)} className="flex min-h-0 flex-1 flex-col">
         <SideSheetBody className="space-y-4">
           {createError ? <div role="alert" className="space-y-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"><p>{createError}</p>{createdTaskId ? <Button type="button" size="sm" variant="outline" onClick={() => navigate(`/work-items/${encodeURIComponent(createdTaskId)}`)}>{t("workItems.viewDetails")}</Button> : null}</div> : null}
-          <WorkItemForm draft={draft} onChange={updateDraft} t={t} assignees={assigneesQuery.data ?? []} assigneesLoading={assigneesQuery.isLoading} projects={(projectsQuery.data?.items ?? []) as readonly ProjectSummaryDto[]} allowTypeChange={false} richTextDescription extraContent={<div className="space-y-2">
+          <WorkItemForm draft={draft} onChange={updateDraft} t={t} assignees={assigneesQuery.data ?? []} assigneesLoading={assigneesQuery.isLoading} assigneesError={assigneesQuery.isError} onRetryAssignees={() => { void assigneesQuery.refetch(); }} projects={(projectsQuery.data?.items ?? []) as readonly ProjectSummaryDto[]} allowTypeChange={false} richTextDescription extraContent={<div className="space-y-2">
             <Label>{t("workItems.attachments")}</Label>
             <input ref={fileInput} className="sr-only" type="file" multiple onChange={(event) => { if (event.target.files?.length) setFiles((current) => [...current, ...Array.from(event.target.files ?? [])]); event.target.value = ""; }} />
             <Button type="button" variant="outline" size="sm" onClick={() => fileInput.current?.click()}><Upload className="me-2 h-4 w-4" />{t("workItems.chooseFiles")}</Button>

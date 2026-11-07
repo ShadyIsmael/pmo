@@ -12,7 +12,7 @@ describe("assignment-scoped approval review page", () => {
   it("shows the limited read-only projection and no decision controls when the API disallows action", async () => {
     const review = {
       approvalId: "change-1",
-      approvalType: "ProjectChangeRequest",
+      approvalType: "ChangeRequest",
       businessObjectType: "Project",
       businessObjectName: "Core Banking Modernization",
       businessObjectCode: "PRJ-1001",
@@ -41,9 +41,9 @@ describe("assignment-scoped approval review page", () => {
       </QueryClientProvider>,
     );
 
-    expect(await screen.findByRole("heading", { name: "Change request review" })).toBeInTheDocument();
+    expect(await screen.findByText("Align the approved budget")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Change request review" })).toBeInTheDocument();
     expect(screen.getAllByText(/Core Banking Modernization/)).toHaveLength(2);
-    expect(screen.getByText("Align the approved budget")).toBeInTheDocument();
     expect(screen.getByText(/Approval Review — Read Only/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Reject" })).not.toBeInTheDocument();

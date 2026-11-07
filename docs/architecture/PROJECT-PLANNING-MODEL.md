@@ -318,3 +318,12 @@ and the governing architecture (ADR-007).
 
 _This is a design document only. It is not a claim of implementation, and no
 application code or migrations were produced for it._
+
+## Implementation note - 2026-10-29
+
+The document above records the original planning design and rollout plan. The
+current API includes Microsoft Project `.mpp` import through
+`NEXUS.Modules.ProjectPlanning.MppAdapter`. It implements the existing
+format-neutral `IPlanningImportProvider` contract and keeps MPXJ/IKVM outside
+the ProjectPlanning core and the EF design-time dependency graph. The API host
+registers the adapter; the EF design-time host does not reference it.

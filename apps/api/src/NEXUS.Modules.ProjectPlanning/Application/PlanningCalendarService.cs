@@ -464,7 +464,14 @@ public class PlanningCalendarService : IPlanningCalendarService
     private Guid GetCurrentTenantId()
     {
         var tenantId = _httpContextAccessor.HttpContext?.User.FindFirst("tenantId")?.Value;
-        return Guid.TryParse(tenantId, out var parsed) ? parsed : TenantConstants.DemoTenantId;
+        if (_httpContextAccessor.HttpContext?.User.Identity?.IsAuthenticated == true
+            && Guid.TryParse(tenantId, out var parsed)
+            && parsed != Guid.Empty)
+        {
+            return parsed;
+        }
+
+        throw new InvalidOperationException("A trusted tenant context is required for project planning operations.");
     }
 
     private static Guid? TryParseGuid(string value) => GuidHelper.TryParse(value);

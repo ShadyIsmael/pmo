@@ -23,6 +23,8 @@ public sealed class PlanningTablePreferenceService : IPlanningTablePreferenceSer
 
     public async Task<Result<PlanningTablePreferenceDto>> GetAsync(Guid projectId, Guid planId, string userId, CancellationToken cancellationToken = default)
     {
+        if (!TenantId().HasValue)
+            return Result<PlanningTablePreferenceDto>.Failure(Error.Forbidden("A trusted tenant context is required."));
         var validPlan = await PlanQuery(projectId, planId).AnyAsync(cancellationToken);
         if (!validPlan) return Result<PlanningTablePreferenceDto>.Failure(Error.NotFound("Plan not found"));
         var user = ParseUser(userId);
@@ -33,6 +35,9 @@ public sealed class PlanningTablePreferenceService : IPlanningTablePreferenceSer
 
     public async Task<Result<PlanningTablePreferenceDto>> SaveAsync(Guid projectId, Guid planId, SavePlanningTablePreferenceDto dto, string userId, CancellationToken cancellationToken = default)
     {
+        var tenantId = TenantId();
+        if (!tenantId.HasValue)
+            return Result<PlanningTablePreferenceDto>.Failure(Error.Forbidden("A trusted tenant context is required."));
         var validPlan = await PlanQuery(projectId, planId).AnyAsync(cancellationToken);
         if (!validPlan) return Result<PlanningTablePreferenceDto>.Failure(Error.NotFound("Plan not found"));
         var user = ParseUser(userId);
@@ -44,7 +49,7 @@ public sealed class PlanningTablePreferenceService : IPlanningTablePreferenceSer
 
         if (entity is null)
         {
-            entity = new PlanningTablePreference { TenantId = TenantId(), UserId = user.Value, PlanId = planId, CreatedBy = userId };
+            entity = new PlanningTablePreference { TenantId = tenantId.Value, UserId = user.Value, PlanId = planId, CreatedBy = userId };
             _context.Set<PlanningTablePreference>().Add(entity);
         }
         entity.VisibleColumnsJson = JsonSerializer.Serialize(normalized.VisibleColumns, JsonOptions);
@@ -59,6 +64,8 @@ public sealed class PlanningTablePreferenceService : IPlanningTablePreferenceSer
 
     public async Task<Result> ResetAsync(Guid projectId, Guid planId, string userId, CancellationToken cancellationToken = default)
     {
+        if (!TenantId().HasValue)
+            return Result.Failure(Error.Forbidden("A trusted tenant context is required."));
         var validPlan = await PlanQuery(projectId, planId).AnyAsync(cancellationToken);
         if (!validPlan) return Result.Failure(Error.NotFound("Plan not found"));
         var user = ParseUser(userId);
@@ -76,7 +83,15 @@ public sealed class PlanningTablePreferenceService : IPlanningTablePreferenceSer
     private IQueryable<Plan> PlanQuery(Guid projectId, Guid planId) => _context.Set<Plan>().AsNoTracking().Where(plan => plan.Id == planId && plan.ProjectId == projectId && !plan.IsDeleted);
 
     private static Guid? ParseUser(string value) => Guid.TryParse(value, out var parsed) ? parsed : null;
-    private Guid TenantId() => Guid.TryParse(_httpContextAccessor.HttpContext?.User.FindFirstValue("tenantId"), out var tenant) ? tenant : Guid.Parse("11111111-1111-1111-1111-111111111111");
+    private Guid? TenantId()
+    {
+        var user = _httpContextAccessor.HttpContext?.User;
+        return user?.Identity?.IsAuthenticated == true
+            && Guid.TryParse(user.FindFirstValue("tenantId"), out var tenant)
+            && tenant != Guid.Empty
+                ? tenant
+                : null;
+    }
 
     private static SavePlanningTablePreferenceDto Normalize(SavePlanningTablePreferenceDto dto)
     {

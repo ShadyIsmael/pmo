@@ -4,9 +4,11 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using NEXUS.Modules.Audit.Application;
 using NEXUS.Modules.Audit.Domain;
+using NEXUS.Modules.Organization.Domain;
 using NEXUS.Modules.ProjectManagement.Application.DTOs;
 using NEXUS.Modules.ProjectManagement.Domain;
 using NEXUS.Modules.ProjectPlanning.Domain;
+using NEXUS.Modules.ResourceManagement.Application;
 using NEXUS.Modules.ResourceManagement.Domain;
 using NEXUS.Modules.WorkItems.Domain;
 using NEXUS.SharedKernel;
@@ -16,6 +18,12 @@ namespace NEXUS.Modules.ProjectManagement.Application;
 
 public sealed class TimeEntryService : ITimeEntryService
 {
+    private sealed record TimeEntryReadScope(
+        IReadOnlyList<Guid> OwnResourceIds,
+        HashSet<Guid> ProjectIds,
+        bool CanViewOwn,
+        bool CanViewTeam);
+
     private readonly DbContext _context;
     private readonly IResourceReferenceLookup _resources;
     private readonly IProjectResourcePlanningContextLookup _planning;
@@ -171,16 +179,19 @@ public sealed class TimeEntryService : ITimeEntryService
         return Result<TimeEntryDto>.Success(await MapAsync(entry, cancellationToken));
     }
 
-    public async Task<PagedResult<TimeEntryDto>> ListAsync(TimeEntryFilterDto filter, Guid actorId, Guid tenantId, CancellationToken cancellationToken = default)
+    public async Task<Result<PagedResult<TimeEntryDto>>> ListAsync(TimeEntryFilterDto filter, Guid actorId, Guid tenantId, CancellationToken cancellationToken = default)
     {
-        var query = await BuildAuthorizedQueryAsync(filter, actorId, tenantId, cancellationToken);
+        var scope = await GetReadScopeAsync(actorId, tenantId, cancellationToken);
+        if (!IsFilterInScope(filter, scope))
+            return Result<PagedResult<TimeEntryDto>>.Failure(Error.Forbidden("The requested time entries are outside your permitted scope"));
+        var query = await BuildAuthorizedQueryAsync(filter, actorId, tenantId, cancellationToken, scope);
         var page = Math.Max(1, filter.Page);
         var pageSize = Math.Clamp(filter.PageSize, 1, 200);
         var total = await query.CountAsync(cancellationToken);
         var entries = await query.OrderByDescending(item => item.WorkDate).ThenByDescending(item => item.StartTime)
             .Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(cancellationToken);
         var items = await MapManyAsync(entries, cancellationToken);
-        return new PagedResult<TimeEntryDto>(items, page, pageSize, total);
+        return Result<PagedResult<TimeEntryDto>>.Success(new PagedResult<TimeEntryDto>(items, page, pageSize, total));
     }
 
     public async Task<Result<TimeEntrySummaryDto>> GetSummaryAsync(TimeEntryFilterDto filter, Guid actorId, Guid tenantId, CancellationToken cancellationToken = default)
@@ -190,11 +201,16 @@ public sealed class TimeEntryService : ITimeEntryService
         if (to < from) return Result<TimeEntrySummaryDto>.Failure(Error.Validation("The summary end date must be on or after the start date"));
         filter.From = from;
         filter.To = to;
-        var query = await BuildAuthorizedQueryAsync(filter, actorId, tenantId, cancellationToken);
+        var scope = await GetReadScopeAsync(actorId, tenantId, cancellationToken);
+        if (!IsFilterInScope(filter, scope))
+            return Result<TimeEntrySummaryDto>.Failure(Error.Forbidden("The requested time summary is outside your permitted scope"));
+        var query = await BuildAuthorizedQueryAsync(filter, actorId, tenantId, cancellationToken, scope);
         var entries = await query.AsNoTracking().ToListAsync(cancellationToken);
         var actualHours = entries.Sum(entry => entry.ActualSeconds) / 3600m;
-        var plannedHours = await PlannedHoursAsync(filter, actorId, tenantId, cancellationToken);
-        var capacityHours = filter.ResourceId.HasValue ? await CapacityHoursAsync(filter.ResourceId.Value, from, to, cancellationToken) : 0m;
+        var plannedHours = await PlannedHoursAsync(filter, scope, tenantId, cancellationToken);
+        var capacityHours = filter.ResourceId.HasValue
+            ? await CapacityHoursAsync(filter.ResourceId.Value, filter.ProjectId, tenantId, from, to, cancellationToken)
+            : 0m;
         var summary = new TimeEntrySummaryDto
         {
             From = from,
@@ -215,51 +231,54 @@ public sealed class TimeEntryService : ITimeEntryService
         return Result<TimeEntrySummaryDto>.Success(summary);
     }
 
-    private async Task<IQueryable<TimeEntry>> BuildAuthorizedQueryAsync(TimeEntryFilterDto filter, Guid actorId, Guid tenantId, CancellationToken cancellationToken)
+    private async Task<TimeEntryReadScope> GetReadScopeAsync(Guid actorId, Guid tenantId, CancellationToken cancellationToken)
     {
         var ownResourceIds = await _context.Set<Resource>().Where(resource => resource.TenantId == tenantId && resource.UserId == actorId && !resource.IsDeleted).Select(resource => resource.Id).ToListAsync(cancellationToken);
-        var canViewTeam = HasPermission(TimeTrackingPermissions.ViewTeam) || HasPermission(TimeTrackingPermissions.ManageTeam);
-        var query = _context.Set<TimeEntry>().AsNoTracking().Where(entry => entry.TenantId == tenantId && !entry.IsDeleted);
-
-        ManagementPerspectiveSnapshot? snapshot = null;
+        var canViewOwn = HasPermission(TimeTrackingPermissions.ViewOwn);
+        var canViewTeam = HasPermission(TimeTrackingPermissions.ViewTeam);
+        var projectIds = new HashSet<Guid>();
         if (canViewTeam)
-            snapshot = await _scopeResolver.GetPerspectiveSnapshotAsync(actorId, tenantId, cancellationToken: cancellationToken);
+        {
+            var snapshot = await _scopeResolver.GetPerspectiveSnapshotAsync(actorId, tenantId, cancellationToken: cancellationToken);
+            projectIds = snapshot.Scope.ProjectIds.ToHashSet();
+        }
+        return new TimeEntryReadScope(ownResourceIds, projectIds, canViewOwn, canViewTeam);
+    }
+
+    private async Task<IQueryable<TimeEntry>> BuildAuthorizedQueryAsync(
+        TimeEntryFilterDto filter,
+        Guid actorId,
+        Guid tenantId,
+        CancellationToken cancellationToken,
+        TimeEntryReadScope? readScope = null)
+    {
+        var scope = readScope ?? await GetReadScopeAsync(actorId, tenantId, cancellationToken);
+        var query = _context.Set<TimeEntry>().AsNoTracking().Where(entry => entry.TenantId == tenantId && !entry.IsDeleted);
 
         if (filter.ResourceId.HasValue)
         {
-            if (!ownResourceIds.Contains(filter.ResourceId.Value))
+            var isOwnResource = scope.OwnResourceIds.Contains(filter.ResourceId.Value);
+            if (isOwnResource && scope.CanViewOwn)
             {
-                if (!canViewTeam || (filter.ProjectId.HasValue && snapshot?.Scope.ProjectIds.Contains(filter.ProjectId.Value) != true))
-                    return query.Where(_ => false);
+                query = query.Where(entry => entry.ResourceId == filter.ResourceId.Value);
             }
-            query = query.Where(entry => entry.ResourceId == filter.ResourceId.Value);
-            if (!ownResourceIds.Contains(filter.ResourceId.Value) && !filter.ProjectId.HasValue)
+            else if (!isOwnResource && scope.CanViewTeam && scope.ProjectIds.Count > 0)
             {
-                if (snapshot?.Scope.ProjectIds.Count > 0)
-                    query = query.Where(entry => snapshot.Scope.ProjectIds.Contains(entry.ProjectId));
-                else
-                    query = query.Where(_ => false);
+                query = query.Where(entry => entry.ResourceId == filter.ResourceId.Value
+                    && !scope.OwnResourceIds.Contains(entry.ResourceId)
+                    && scope.ProjectIds.Contains(entry.ProjectId));
             }
-        }
-        else if (!canViewTeam)
-        {
-            query = query.Where(entry => ownResourceIds.Contains(entry.ResourceId));
-        }
-        else if (snapshot?.Scope.ProjectIds.Count > 0)
-        {
-            query = query.Where(entry => ownResourceIds.Contains(entry.ResourceId) || snapshot.Scope.ProjectIds.Contains(entry.ProjectId));
+            else return query.Where(_ => false);
         }
         else
         {
-            query = query.Where(entry => ownResourceIds.Contains(entry.ResourceId));
+            query = query.Where(entry =>
+                (scope.CanViewOwn && scope.OwnResourceIds.Contains(entry.ResourceId))
+                || (scope.CanViewTeam && !scope.OwnResourceIds.Contains(entry.ResourceId)
+                    && scope.ProjectIds.Contains(entry.ProjectId)));
         }
 
-        if (filter.ProjectId.HasValue)
-        {
-            if (canViewTeam && snapshot?.Scope.ProjectIds.Contains(filter.ProjectId.Value) != true)
-                query = query.Where(entry => ownResourceIds.Contains(entry.ResourceId));
-            query = query.Where(entry => entry.ProjectId == filter.ProjectId.Value);
-        }
+        if (filter.ProjectId.HasValue) query = query.Where(entry => entry.ProjectId == filter.ProjectId.Value);
         if (filter.PlanActivityId.HasValue) query = query.Where(entry => entry.PlanActivityId == filter.PlanActivityId.Value);
         if (filter.WorkItemId.HasValue) query = query.Where(entry => entry.WorkItemId == filter.WorkItemId.Value);
         if (filter.ProjectRoleId.HasValue) query = query.Where(entry => entry.ProjectRoleId == filter.ProjectRoleId.Value);
@@ -267,6 +286,23 @@ public sealed class TimeEntryService : ITimeEntryService
         if (filter.To.HasValue) query = query.Where(entry => entry.WorkDate < filter.To.Value.Date.AddDays(1));
         if (!string.IsNullOrWhiteSpace(filter.EntrySource)) query = query.Where(entry => entry.EntrySource == filter.EntrySource);
         return query;
+    }
+
+    private static bool IsFilterInScope(TimeEntryFilterDto filter, TimeEntryReadScope scope)
+    {
+        if (filter.ResourceId.HasValue)
+        {
+            var isOwnResource = scope.OwnResourceIds.Contains(filter.ResourceId.Value);
+            if (isOwnResource) return scope.CanViewOwn;
+            return scope.CanViewTeam && scope.ProjectIds.Count > 0
+                && (!filter.ProjectId.HasValue || scope.ProjectIds.Contains(filter.ProjectId.Value));
+        }
+
+        if (filter.ProjectId.HasValue && !scope.CanViewOwn
+            && (!scope.CanViewTeam || !scope.ProjectIds.Contains(filter.ProjectId.Value)))
+            return false;
+
+        return scope.CanViewOwn || (scope.CanViewTeam && scope.ProjectIds.Count > 0);
     }
 
     private async Task<Result> ValidateReferencesAsync(Guid resourceId, Guid projectId, DateTime workDate, Guid? activityId, Guid? workItemId, Guid? projectRoleId, Guid actorId, Guid tenantId, bool mutation, CancellationToken cancellationToken)
@@ -279,7 +315,27 @@ public sealed class TimeEntryService : ITimeEntryService
         var access = mutation ? await CanMutateAsync(resourceId, projectId, actorId, tenantId, cancellationToken) : await CanReadAsync(resourceId, projectId, actorId, tenantId, cancellationToken);
         if (access.IsFailure) return access;
         var workDay = workDate.Date;
-        var member = await _context.Set<ProjectMember>().AnyAsync(item => item.TenantId == tenantId && item.ProjectId == projectId && item.ResourceId == resourceId && !item.IsDeleted && item.Status == "Active" && item.StartDate.Date <= workDay && item.EndDate.Date >= workDay, cancellationToken);
+        var directMember = await _context.Set<ProjectMember>().AnyAsync(item => item.TenantId == tenantId
+            && item.ProjectId == projectId && item.ResourceId == resourceId && !item.IsDeleted
+            && item.Status == "Active" && item.StartDate.Date <= workDay && item.EndDate.Date >= workDay, cancellationToken);
+        var groupMember = false;
+        if (!directMember)
+        {
+            var activeTeamIds = _context.Set<Team>().AsNoTracking()
+                .Where(team => team.TenantId == tenantId && team.IsActive && !team.IsDeleted)
+                .Select(team => team.Id);
+            groupMember = await _context.Set<ProjectMember>().AnyAsync(projectMember =>
+                projectMember.TenantId == tenantId && projectMember.ProjectId == projectId
+                && projectMember.TeamId.HasValue && activeTeamIds.Contains(projectMember.TeamId.Value)
+                && !projectMember.IsDeleted && projectMember.Status == "Active"
+                && projectMember.StartDate.Date <= workDay && projectMember.EndDate.Date >= workDay
+                && _context.Set<TeamMember>().Any(teamMember => teamMember.TeamId == projectMember.TeamId
+                    && teamMember.TenantId == tenantId
+                    && teamMember.ResourceId == resourceId && teamMember.IsActive && !teamMember.IsDeleted
+                    && teamMember.EffectiveFrom.Date <= workDay
+                    && (!teamMember.EffectiveTo.HasValue || teamMember.EffectiveTo.Value.Date >= workDay)), cancellationToken);
+        }
+        var member = directMember || groupMember;
         if (!member) return Result.Failure(Error.Validation("The Resource is not an active Project Member for the work date"));
 
         if (activityId.HasValue)
@@ -307,8 +363,11 @@ public sealed class TimeEntryService : ITimeEntryService
     private async Task<Result> CanReadAsync(Guid resourceId, Guid projectId, Guid actorId, Guid tenantId, CancellationToken cancellationToken)
     {
         var resource = await _context.Set<Resource>().AsNoTracking().FirstOrDefaultAsync(item => item.Id == resourceId && item.TenantId == tenantId && !item.IsDeleted, cancellationToken);
-        if (resource?.UserId == actorId) return Result.Success();
-        if (!HasPermission(TimeTrackingPermissions.ViewTeam) && !HasPermission(TimeTrackingPermissions.ManageTeam)) return Result.Failure(Error.Forbidden("You are not allowed to view this Resource's time"));
+        if (resource?.UserId == actorId)
+            return HasPermission(TimeTrackingPermissions.ViewOwn)
+                ? Result.Success()
+                : Result.Failure(Error.Forbidden("You are not allowed to view your own time"));
+        if (!HasPermission(TimeTrackingPermissions.ViewTeam)) return Result.Failure(Error.Forbidden("You are not allowed to view this Resource's time"));
         return await CanAccessProjectScopeAsync(projectId, actorId, tenantId, cancellationToken)
             ? Result.Success()
             : Result.Failure(Error.Forbidden("The Project is outside your management scope"));
@@ -391,68 +450,145 @@ public sealed class TimeEntryService : ITimeEntryService
         }).ToList();
     }
 
-    private async Task<decimal> PlannedHoursAsync(TimeEntryFilterDto filter, Guid actorId, Guid tenantId, CancellationToken cancellationToken)
+    private async Task<decimal> PlannedHoursAsync(TimeEntryFilterDto filter, TimeEntryReadScope scope, Guid tenantId, CancellationToken cancellationToken)
     {
         var from = (filter.From ?? DateTime.UtcNow.Date.AddDays(-6)).Date;
         var to = (filter.To ?? DateTime.UtcNow.Date).Date;
         var allocations = _context.Set<ResourceAllocation>().Where(allocation => allocation.TenantId == tenantId && !allocation.IsDeleted && allocation.Status != ResourceAllocation.StatusCancelled && allocation.StartDate.Date <= to && allocation.EndDate.Date >= from);
-        if (filter.ResourceId.HasValue) allocations = allocations.Where(allocation => allocation.ResourceId == filter.ResourceId.Value);
-        if (filter.ProjectId.HasValue) allocations = allocations.Where(allocation => allocation.ProjectId == filter.ProjectId.Value);
-        if (!filter.ResourceId.HasValue && !filter.ProjectId.HasValue)
-        {
-            var ownResourceIds = await _context.Set<Resource>().Where(resource => resource.TenantId == tenantId && resource.UserId == actorId && !resource.IsDeleted).Select(resource => resource.Id).ToListAsync(cancellationToken);
-            if (HasPermission(TimeTrackingPermissions.ViewTeam) || HasPermission(TimeTrackingPermissions.ManageTeam))
-            {
-                var snapshot = await _scopeResolver.GetPerspectiveSnapshotAsync(actorId, tenantId, cancellationToken: cancellationToken);
-                allocations = snapshot.Scope.ProjectIds.Count > 0
-                    ? allocations.Where(allocation => ownResourceIds.Contains(allocation.ResourceId) || (allocation.ProjectId.HasValue && snapshot.Scope.ProjectIds.Contains(allocation.ProjectId.Value)))
-                    : allocations.Where(allocation => ownResourceIds.Contains(allocation.ResourceId));
-            }
-            else
-            {
-                allocations = allocations.Where(allocation => ownResourceIds.Contains(allocation.ResourceId));
-            }
-        }
-        var allocationHours = await allocations.Where(allocation => allocation.PlannedHours.HasValue).SumAsync(allocation => (decimal?)allocation.PlannedHours, cancellationToken) ?? 0m;
-
         var assignments = _context.Set<PlanAssignment>().Where(assignment => assignment.TenantId == tenantId && !assignment.IsDeleted && assignment.PlannedHours.HasValue && (!assignment.StartDate.HasValue || assignment.StartDate.Value.Date <= to) && (!assignment.EndDate.HasValue || assignment.EndDate.Value.Date >= from) && !assignment.ResourceAllocationId.HasValue);
-        if (filter.ResourceId.HasValue) assignments = assignments.Where(assignment => assignment.ResourceId == filter.ResourceId.Value);
-        if (filter.ProjectId.HasValue) assignments = assignments.Where(assignment => assignment.PlanVersion != null && assignment.PlanVersion.Plan != null && assignment.PlanVersion.Plan.ProjectId == filter.ProjectId.Value);
-        if (!filter.ResourceId.HasValue && !filter.ProjectId.HasValue)
+
+        if (filter.ResourceId.HasValue)
         {
-            var ownResourceIds = await _context.Set<Resource>().Where(resource => resource.TenantId == tenantId && resource.UserId == actorId && !resource.IsDeleted).Select(resource => resource.Id).ToListAsync(cancellationToken);
-            if (HasPermission(TimeTrackingPermissions.ViewTeam) || HasPermission(TimeTrackingPermissions.ManageTeam))
+            if (scope.OwnResourceIds.Contains(filter.ResourceId.Value))
             {
-                var snapshot = await _scopeResolver.GetPerspectiveSnapshotAsync(actorId, tenantId, cancellationToken: cancellationToken);
-                assignments = snapshot.Scope.ProjectIds.Count > 0
-                    ? assignments.Where(assignment => ownResourceIds.Contains(assignment.ResourceId) || (assignment.PlanVersion != null && assignment.PlanVersion.Plan != null && snapshot.Scope.ProjectIds.Contains(assignment.PlanVersion.Plan.ProjectId)))
-                    : assignments.Where(assignment => ownResourceIds.Contains(assignment.ResourceId));
+                allocations = scope.CanViewOwn
+                    ? allocations.Where(allocation => allocation.ResourceId == filter.ResourceId.Value)
+                    : allocations.Where(_ => false);
+                assignments = scope.CanViewOwn
+                    ? assignments.Where(assignment => assignment.ResourceId == filter.ResourceId.Value)
+                    : assignments.Where(_ => false);
             }
             else
             {
-                assignments = assignments.Where(assignment => ownResourceIds.Contains(assignment.ResourceId));
+                allocations = scope.CanViewTeam && scope.ProjectIds.Count > 0
+                    ? allocations.Where(allocation => allocation.ResourceId == filter.ResourceId.Value
+                        && allocation.ProjectId.HasValue && scope.ProjectIds.Contains(allocation.ProjectId.Value))
+                    : allocations.Where(_ => false);
+                assignments = scope.CanViewTeam && scope.ProjectIds.Count > 0
+                    ? assignments.Where(assignment => assignment.ResourceId == filter.ResourceId.Value
+                        && assignment.PlanVersion != null && assignment.PlanVersion.Plan != null
+                        && scope.ProjectIds.Contains(assignment.PlanVersion.Plan.ProjectId))
+                    : assignments.Where(_ => false);
             }
         }
+        else if (filter.ProjectId.HasValue)
+        {
+            var inTeamScope = scope.CanViewTeam && scope.ProjectIds.Contains(filter.ProjectId.Value);
+            if (inTeamScope)
+            {
+                allocations = allocations.Where(allocation => allocation.ProjectId == filter.ProjectId.Value
+                    && (scope.CanViewOwn || !scope.OwnResourceIds.Contains(allocation.ResourceId)));
+                assignments = assignments.Where(assignment => assignment.PlanVersion != null && assignment.PlanVersion.Plan != null
+                    && assignment.PlanVersion.Plan.ProjectId == filter.ProjectId.Value
+                    && (scope.CanViewOwn || !scope.OwnResourceIds.Contains(assignment.ResourceId)));
+            }
+            else if (scope.CanViewOwn)
+            {
+                allocations = allocations.Where(allocation => allocation.ProjectId == filter.ProjectId.Value
+                    && scope.OwnResourceIds.Contains(allocation.ResourceId));
+                assignments = assignments.Where(assignment => assignment.PlanVersion != null && assignment.PlanVersion.Plan != null
+                    && assignment.PlanVersion.Plan.ProjectId == filter.ProjectId.Value
+                    && scope.OwnResourceIds.Contains(assignment.ResourceId));
+            }
+            else
+            {
+                allocations = allocations.Where(_ => false);
+                assignments = assignments.Where(_ => false);
+            }
+        }
+
+        else
+        {
+            allocations = allocations.Where(allocation =>
+                (scope.CanViewOwn && scope.OwnResourceIds.Contains(allocation.ResourceId))
+                || (scope.CanViewTeam && allocation.ProjectId.HasValue && scope.ProjectIds.Contains(allocation.ProjectId.Value)
+                    && (scope.CanViewOwn || !scope.OwnResourceIds.Contains(allocation.ResourceId))));
+            assignments = assignments.Where(assignment =>
+                (scope.CanViewOwn && scope.OwnResourceIds.Contains(assignment.ResourceId))
+                || (scope.CanViewTeam && assignment.PlanVersion != null && assignment.PlanVersion.Plan != null
+                    && scope.ProjectIds.Contains(assignment.PlanVersion.Plan.ProjectId)
+                    && (scope.CanViewOwn || !scope.OwnResourceIds.Contains(assignment.ResourceId))));
+        }
+
+        if (filter.ProjectId.HasValue && filter.ResourceId.HasValue)
+        {
+            allocations = allocations.Where(allocation => allocation.ProjectId == filter.ProjectId.Value);
+            assignments = assignments.Where(assignment => assignment.PlanVersion != null && assignment.PlanVersion.Plan != null
+                && assignment.PlanVersion.Plan.ProjectId == filter.ProjectId.Value);
+        }
+
+        var allocationHours = await allocations.Where(allocation => allocation.PlannedHours.HasValue).SumAsync(allocation => (decimal?)allocation.PlannedHours, cancellationToken) ?? 0m;
         var assignmentHours = await assignments.SumAsync(assignment => (decimal?)assignment.PlannedHours, cancellationToken) ?? 0m;
         return allocationHours + assignmentHours;
     }
 
-    private async Task<decimal> CapacityHoursAsync(Guid resourceId, DateTime from, DateTime to, CancellationToken cancellationToken)
+    private async Task<decimal> CapacityHoursAsync(
+        Guid resourceId,
+        Guid? projectId,
+        Guid tenantId,
+        DateTime from,
+        DateTime to,
+        CancellationToken cancellationToken)
     {
-        var resource = await _context.Set<Resource>().AsNoTracking().FirstOrDefaultAsync(item => item.Id == resourceId, cancellationToken);
+        var resource = await _context.Set<Resource>().AsNoTracking()
+            .FirstOrDefaultAsync(item => item.Id == resourceId && item.TenantId == tenantId && !item.IsDeleted, cancellationToken);
         if (resource is null) return 0m;
-        var calendar = resource.BaseCalendarId.HasValue
-            ? await _context.Set<NEXUS.Modules.Organization.Domain.WorkingCalendar>().AsNoTracking().FirstOrDefaultAsync(item => item.Id == resource.BaseCalendarId.Value, cancellationToken)
-            : await _context.Set<NEXUS.Modules.Organization.Domain.WorkingCalendar>().AsNoTracking().Where(item => item.IsDefault).FirstOrDefaultAsync(cancellationToken);
-        calendar ??= new NEXUS.Modules.Organization.Domain.WorkingCalendar();
-        var holidays = await _context.Set<NEXUS.Modules.Organization.Domain.Holiday>().AsNoTracking().Where(holiday => holiday.Date >= from && holiday.Date <= to).Select(holiday => holiday.Date.Date).ToListAsync(cancellationToken);
+
+        var projectCalendarId = projectId.HasValue
+            ? await _context.Set<Project>().AsNoTracking()
+                .Where(project => project.Id == projectId.Value && project.TenantId == tenantId && !project.IsDeleted)
+                .Select(project => project.WorkingCalendarId)
+                .FirstOrDefaultAsync(cancellationToken)
+            : null;
+        var planningContext = projectId.HasValue
+            ? await _planning.GetPlanningContextAsync(projectId.Value, resourceId, cancellationToken)
+            : null;
+
+        var calendars = await _context.Set<WorkingCalendar>().AsNoTracking()
+            .Include(calendar => calendar.Holidays)
+            .Include(calendar => calendar.DayRules)
+            .Where(calendar => calendar.TenantId == tenantId && !calendar.IsDeleted
+                && (calendar.IsDefault
+                    || calendar.Id == resource.BaseCalendarId
+                    || calendar.Id == projectCalendarId))
+            .ToListAsync(cancellationToken);
+        WorkingCalendar? FindValid(Guid? id) => id.HasValue
+            ? calendars.FirstOrDefault(calendar => calendar.Id == id.Value && calendar.HasValidSchedule)
+            : null;
+
+        var resourceCalendar = FindValid(resource.BaseCalendarId);
+        var projectCalendar = FindValid(projectCalendarId);
+        var systemCalendar = calendars.FirstOrDefault(calendar => calendar.IsDefault && calendar.HasValidSchedule);
+        var followsProject = string.Equals(planningContext?.CalendarPolicy, "FollowProjectCalendar", StringComparison.Ordinal);
+        var calendar = followsProject
+            ? projectCalendar ?? resourceCalendar ?? systemCalendar
+            : resourceCalendar ?? projectCalendar ?? systemCalendar;
+        if (calendar is null) return 0m;
+        var capacityCalendar = resourceCalendar ?? systemCalendar ?? calendar;
+
+        var resourceExceptions = await _context.Set<ResourceCalendar>().AsNoTracking()
+            .Where(item => item.TenantId == tenantId && item.ResourceId == resourceId && !item.IsDeleted
+                && item.Date >= from.Date && item.Date < to.Date.AddDays(1))
+            .ToListAsync(cancellationToken);
+        var exceptionByDate = resourceExceptions
+            .GroupBy(item => item.Date.Date)
+            .ToDictionary(group => group.Key, group => group.OrderByDescending(item => item.UpdatedAt ?? item.CreatedAt).First());
         var total = 0m;
         for (var day = from.Date; day <= to.Date; day = day.AddDays(1))
         {
-            if (holidays.Contains(day)) continue;
-            var ordinal = (int)day.DayOfWeek;
-            if (ordinal is 0 or 6) continue;
-            total += Math.Max(0, calendar.HoursPerDay - calendar.PaidBreakMinutesPerDay / 60m);
+            exceptionByDate.TryGetValue(day, out var exception);
+            total += ResourceWorkingCapacityCalculator.GetAvailableDailyCapacity(
+                resource, capacityCalendar, calendar, day, exception);
         }
         return total;
     }

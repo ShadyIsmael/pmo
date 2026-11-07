@@ -1,0 +1,46 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="9b77aa78-bb98-4989-8c8b-a2f192525b74" name="shady@SHADY 2026-10-27 17:42:24" runUser="SHADY\shady" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-10-27T17:42:24.9754280+03:00" queuing="2026-10-27T17:42:24.9754285+03:00" start="2026-10-27T17:42:18.6248890+03:00" finish="2026-10-27T17:42:28.7225009+03:00" />
+  <TestSettings name="default" id="1123349a-77a0-4200-90b8-ce1fa0b1391c">
+    <Deployment runDeploymentRoot="shady_SHADY_2026-10-27_17_42_24" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="882e2090-636c-4e4d-8b3f-a46a1c994f09" testId="84d1cd07-3c20-87b1-ead7-971690fb09cc" testName="NEXUS.Api.Tests.Integration.ProjectStatusReportWorkflowProvisioningTests.First_provisioning_persists_the_definition_and_all_required_children" computerName="SHADY" duration="00:00:05.0580961" startTime="2026-10-27T17:42:19.8676306+03:00" endTime="2026-10-27T17:42:24.9376611+03:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="882e2090-636c-4e4d-8b3f-a46a1c994f09" />
+    <UnitTestResult executionId="e13776a4-d490-4512-a860-14f2f49b060b" testId="08d2fb93-87f4-35fe-8524-a719675a7b9a" testName="NEXUS.Api.Tests.Integration.ProjectReportingPersistenceTests.Persisted_multi_plan_configuration_uses_weighted_EVM_and_freezes_generated_report_data" computerName="SHADY" duration="00:00:02.8292403" startTime="2026-10-27T17:42:25.8055610+03:00" endTime="2026-10-27T17:42:28.6340469+03:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="e13776a4-d490-4512-a860-14f2f49b060b" />
+    <UnitTestResult executionId="c61e067f-b943-4aaf-b8da-a0de1036d661" testId="9758687b-4284-56e4-a98a-ed0a7172495e" testName="NEXUS.Api.Tests.Integration.ProjectStatusReportWorkflowProvisioningTests.Legacy_workflow_upgrade_inserts_new_graph_instead_of_returning_publish_409" computerName="SHADY" duration="00:00:00.8634334" startTime="2026-10-27T17:42:24.9575727+03:00" endTime="2026-10-27T17:42:25.8014922+03:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="c61e067f-b943-4aaf-b8da-a0de1036d661" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="NEXUS.Api.Tests.Integration.ProjectStatusReportWorkflowProvisioningTests.First_provisioning_persists_the_definition_and_all_required_children" storage="c:\users\shady\documents\codex\_build\status-publish-fixedtests3\debug\net10.0\nexus.api.tests.dll" id="84d1cd07-3c20-87b1-ead7-971690fb09cc">
+      <Execution id="882e2090-636c-4e4d-8b3f-a46a1c994f09" />
+      <TestMethod codeBase="C:\Users\shady\Documents\Codex\_build\status-publish-fixedtests3\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Integration.ProjectStatusReportWorkflowProvisioningTests" name="First_provisioning_persists_the_definition_and_all_required_children" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Integration.ProjectStatusReportWorkflowProvisioningTests.Legacy_workflow_upgrade_inserts_new_graph_instead_of_returning_publish_409" storage="c:\users\shady\documents\codex\_build\status-publish-fixedtests3\debug\net10.0\nexus.api.tests.dll" id="9758687b-4284-56e4-a98a-ed0a7172495e">
+      <Execution id="c61e067f-b943-4aaf-b8da-a0de1036d661" />
+      <TestMethod codeBase="C:\Users\shady\Documents\Codex\_build\status-publish-fixedtests3\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Integration.ProjectStatusReportWorkflowProvisioningTests" name="Legacy_workflow_upgrade_inserts_new_graph_instead_of_returning_publish_409" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Integration.ProjectReportingPersistenceTests.Persisted_multi_plan_configuration_uses_weighted_EVM_and_freezes_generated_report_data" storage="c:\users\shady\documents\codex\_build\status-publish-fixedtests3\debug\net10.0\nexus.api.tests.dll" id="08d2fb93-87f4-35fe-8524-a719675a7b9a">
+      <Execution id="e13776a4-d490-4512-a860-14f2f49b060b" />
+      <TestMethod codeBase="C:\Users\shady\Documents\Codex\_build\status-publish-fixedtests3\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Integration.ProjectReportingPersistenceTests" name="Persisted_multi_plan_configuration_uses_weighted_EVM_and_freezes_generated_report_data" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="84d1cd07-3c20-87b1-ead7-971690fb09cc" executionId="882e2090-636c-4e4d-8b3f-a46a1c994f09" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="08d2fb93-87f4-35fe-8524-a719675a7b9a" executionId="e13776a4-d490-4512-a860-14f2f49b060b" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="9758687b-4284-56e4-a98a-ed0a7172495e" executionId="c61e067f-b943-4aaf-b8da-a0de1036d661" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Completed">
+    <Counters total="3" executed="3" passed="3" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.0.0+e341b939fe (64-bit .NET 10.0.10)&#xD;
+[xUnit.net 00:00:00.15]   Discovering: NEXUS.Api.Tests&#xD;
+[xUnit.net 00:00:00.25]   Discovered:  NEXUS.Api.Tests&#xD;
+[xUnit.net 00:00:00.28]   Starting:    NEXUS.Api.Tests&#xD;
+[xUnit.net 00:00:09.07]   Finished:    NEXUS.Api.Tests&#xD;
+</StdOut>
+    </Output>
+  </ResultSummary>
+</TestRun>

@@ -11,11 +11,12 @@ services:
       MSSQL_SA_PASSWORD: ${NEXUS_DB_PASSWORD:?NEXUS_DB_PASSWORD must be set}
       MSSQL_PID: "Developer"
     ports:
-      - "1433:1433"
+      # Bind to loopback only: the database must never be reachable from an external network.
+      - "127.0.0.1:1433:1433"
     volumes:
       - sqlserver-data:/var/opt/mssql
     healthcheck:
-      test: /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "${NEXUS_DB_PASSWORD:?NEXUS_DB_PASSWORD must be set}" -C -Q "SELECT 1" || exit 1
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -Q \"SELECT 1\" || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 10
@@ -25,12 +26,25 @@ services:
   redis:
     image: redis:7-alpine
     container_name: nexus-redis
+    environment:
+      REDIS_PASSWORD: ${NEXUS_REDIS_PASSWORD:-}
+    # Authentication is optional for local runs; when NEXUS_REDIS_PASSWORD is set the server
+    # requires it. The port below binds to loopback so it is never externally reachable.
+    command:
+      - sh
+      - -c
+      - |
+        if [ -n "$$REDIS_PASSWORD" ]; then
+          exec redis-server --requirepass "$$REDIS_PASSWORD"
+        else
+          exec redis-server
+        fi
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "if [ -n \"$$REDIS_PASSWORD\" ]; then redis-cli -a \"$$REDIS_PASSWORD\" ping; else redis-cli ping; fi"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -42,12 +56,16 @@ services:
       dockerfile: Dockerfile
     container_name: nexus-api
     environment:
-      ASPNETCORE_ENVIRONMENT: Development
+      # Defaults to Production so a plain `docker compose up` never enables Swagger,
+      # auto-migration, or demo seeding. Set ASPNETCORE_ENVIRONMENT=Development for local dev.
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
       ASPNETCORE_URLS: http://+:5000
+      # Compose requires a non-empty secret before starting.
+      Jwt__Secret: ${NEXUS_JWT_SECRET:?NEXUS_JWT_SECRET must be set}
       Firebase__ProjectId: nexus-pmo-36fbf
       Firebase__CredentialsJson: ${FIREBASE_CREDENTIALS_JSON-}
       Firebase__AllowApplicationDefaultCredentials: ${FIREBASE_ALLOW_APPLICATION_DEFAULT-false}
-      ConnectionStrings__DefaultConnection: Server=sqlserver;Database=NexusPmo;User Id=sa;Password=${NEXUS_DB_PASSWORD:?NEXUS_DB_PASSWORD must be set};TrustServerCertificate=True;MultipleActiveResultSets=true
+      ConnectionStrings__DefaultConnection: Server=sqlserver;Database=NexusPmo;User Id=sa;Password=${NEXUS_DB_PASSWORD:?NEXUS_DB_PASSWORD must be set};Encrypt=True;TrustServerCertificate=False;MultipleActiveResultSets=true
       Redis__ConnectionString: redis:6379
     ports:
       - "5000:5000"
@@ -60,32 +78,6 @@ services:
 
   web:
     build:
-      context: ./apps/web
-      dockerfile: Dockerfile
-      args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL-http://localhost:5000}
-        NEXT_PUBLIC_FIREBASE_API_KEY: ${NEXT_PUBLIC_FIREBASE_API_KEY-}
-        NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN-}
-        NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${NEXT_PUBLIC_FIREBASE_PROJECT_ID-}
-        NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: ${NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET-}
-        NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID-}
-        NEXT_PUBLIC_FIREBASE_APP_ID: ${NEXT_PUBLIC_FIREBASE_APP_ID-}
-        NEXT_PUBLIC_FIREBASE_VAPID_KEY: ${NEXT_PUBLIC_FIREBASE_VAPID_KEY-}
-    container_name: nexus-web
-    environment:
-      NODE_ENV: production
-      NEXT_PUBLIC_API_URL: http://localhost:5000
-    ports:
-      - "4000:4000"
-    depends_on:
-      - api
-    restart: unless-stopped
-
-  # Optional React/Vite preview. Keep this separate from the Next service until the
-  # parity gate and manual UAT are approved.
-  web-react:
-    profiles: ["react"]
-    build:
       context: ./apps/web-react
       dockerfile: Dockerfile
       args:
@@ -97,24 +89,25 @@ services:
         VITE_FIREBASE_MESSAGING_SENDER_ID: ${VITE_FIREBASE_MESSAGING_SENDER_ID-}
         VITE_FIREBASE_APP_ID: ${VITE_FIREBASE_APP_ID-}
         VITE_FIREBASE_VAPID_KEY: ${VITE_FIREBASE_VAPID_KEY-}
-    container_name: nexus-web-react
+    container_name: nexus-web
     ports:
-      - "4100:80"
+      - "4000:80"
     depends_on:
       - api
     restart: unless-stopped
-
   worker:
     build:
       context: ./apps/api
       dockerfile: Dockerfile.worker
     container_name: nexus-worker
     environment:
-      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
+      # Compose requires a non-empty secret before starting.
+      Jwt__Secret: ${NEXUS_JWT_SECRET:?NEXUS_JWT_SECRET must be set}
       Firebase__ProjectId: nexus-pmo-36fbf
       Firebase__CredentialsJson: ${FIREBASE_CREDENTIALS_JSON-}
       Firebase__AllowApplicationDefaultCredentials: ${FIREBASE_ALLOW_APPLICATION_DEFAULT-false}
-      ConnectionStrings__DefaultConnection: Server=sqlserver;Database=NexusPmo;User Id=sa;Password=${NEXUS_DB_PASSWORD:?NEXUS_DB_PASSWORD must be set};TrustServerCertificate=True;MultipleActiveResultSets=true
+      ConnectionStrings__DefaultConnection: Server=sqlserver;Database=NexusPmo;User Id=sa;Password=${NEXUS_DB_PASSWORD:?NEXUS_DB_PASSWORD must be set};Encrypt=True;TrustServerCertificate=False;MultipleActiveResultSets=true
       Redis__ConnectionString: redis:6379
     depends_on:
       sqlserver:

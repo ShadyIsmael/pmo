@@ -1,8 +1,9 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using NEXUS.Modules.Audit.Application;
+using NEXUS.Modules.Audit.Domain;
 using NEXUS.Modules.Organization.Domain;
 using NEXUS.SharedKernel;
-using OrganizationEntity = NEXUS.Modules.Organization.Domain.Organization;
 
 namespace NEXUS.Modules.Organization.Application;
 
@@ -14,6 +15,13 @@ public sealed record CurrencyDto(
     decimal ExchangeRate,
     bool IsBase);
 
+public sealed record CurrencyLookupDto(
+    Guid Id,
+    string Code,
+    string Name,
+    string Symbol,
+    bool IsBase);
+
 public sealed record SaveCurrencyRequest(
     string Code,
     string Name,
@@ -23,6 +31,7 @@ public sealed record SaveCurrencyRequest(
 public interface ICurrencyService
 {
     Task<IReadOnlyList<CurrencyDto>> GetAllAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<CurrencyLookupDto>> GetProjectLookupAsync(CancellationToken cancellationToken = default);
     Task<Result<CurrencyDto>> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
     Task<Result<CurrencyDto>> CreateAsync(SaveCurrencyRequest request, string userId, CancellationToken cancellationToken = default);
     Task<Result<CurrencyDto>> UpdateAsync(Guid id, SaveCurrencyRequest request, string userId, CancellationToken cancellationToken = default);
@@ -33,11 +42,13 @@ public sealed class CurrencyService : ICurrencyService
 {
     private readonly DbContext _context;
     private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly IAuditService _auditService;
 
-    public CurrencyService(DbContext context, IHttpContextAccessor httpContextAccessor)
+    public CurrencyService(DbContext context, IHttpContextAccessor httpContextAccessor, IAuditService auditService)
     {
         _context = context;
         _httpContextAccessor = httpContextAccessor;
+        _auditService = auditService;
     }
 
     public async Task<IReadOnlyList<CurrencyDto>> GetAllAsync(CancellationToken cancellationToken = default)
@@ -49,6 +60,24 @@ public sealed class CurrencyService : ICurrencyService
             .ToListAsync(cancellationToken);
 
         return currencies.Select(ToDto).ToList();
+    }
+
+    public async Task<IReadOnlyList<CurrencyLookupDto>> GetProjectLookupAsync(CancellationToken cancellationToken = default)
+    {
+        var tenantId = CurrentTenantId();
+        if (!tenantId.HasValue) return Array.Empty<CurrencyLookupDto>();
+
+        return await _context.Set<Currency>()
+            .Where(currency => currency.TenantId == tenantId.Value && !currency.IsDeleted)
+            .OrderByDescending(currency => currency.IsBase)
+            .ThenBy(currency => currency.Code)
+            .Select(currency => new CurrencyLookupDto(
+                currency.Id,
+                currency.Code,
+                currency.Name,
+                currency.Symbol,
+                currency.IsBase))
+            .ToListAsync(cancellationToken);
     }
 
     public async Task<Result<CurrencyDto>> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
@@ -66,12 +95,12 @@ public sealed class CurrencyService : ICurrencyService
         var validation = Validate(request, out var code, out var name, out var symbol);
         if (validation is not null) return Result<CurrencyDto>.Failure(validation);
 
-        var tenantId = await GetTenantIdAsync(cancellationToken);
-        if (!tenantId.HasValue) return Result<CurrencyDto>.Failure(Error.Validation("Tenant context is not available"));
+        var tenantId = CurrentTenantId();
+        if (!tenantId.HasValue) return Result<CurrencyDto>.Failure(Error.Forbidden("A valid tenant context is required"));
 
         var duplicate = await _context.Set<Currency>()
             .IgnoreQueryFilters()
-            .AnyAsync(currency => currency.TenantId == tenantId.Value && currency.Code == code, cancellationToken);
+            .AnyAsync(currency => currency.TenantId == tenantId.Value && !currency.IsDeleted && currency.Code == code, cancellationToken);
         if (duplicate) return Result<CurrencyDto>.Failure(Error.Conflict("A currency with this code already exists"));
 
         if (request.IsBase)
@@ -92,6 +121,7 @@ public sealed class CurrencyService : ICurrencyService
 
         _context.Set<Currency>().Add(currency);
         await _context.SaveChangesAsync(cancellationToken);
+        await WriteAuditAsync(currency, "CreateCurrency", userId, cancellationToken);
         return Result<CurrencyDto>.Success(ToDto(currency));
     }
 
@@ -100,13 +130,15 @@ public sealed class CurrencyService : ICurrencyService
         var validation = Validate(request, out var code, out var name, out var symbol);
         if (validation is not null) return Result<CurrencyDto>.Failure(validation);
 
+        var tenantId = CurrentTenantId();
+        if (!tenantId.HasValue) return Result<CurrencyDto>.Failure(Error.Forbidden("A valid tenant context is required"));
         var currency = await _context.Set<Currency>()
-            .FirstOrDefaultAsync(item => item.Id == id && !item.IsDeleted, cancellationToken);
+            .FirstOrDefaultAsync(item => item.TenantId == tenantId.Value && item.Id == id && !item.IsDeleted, cancellationToken);
         if (currency is null) return Result<CurrencyDto>.Failure(Error.NotFound("Currency not found"));
 
         var duplicate = await _context.Set<Currency>()
             .IgnoreQueryFilters()
-            .AnyAsync(item => item.Id != id && item.TenantId == currency.TenantId && item.Code == code, cancellationToken);
+            .AnyAsync(item => item.Id != id && item.TenantId == currency.TenantId && !item.IsDeleted && item.Code == code, cancellationToken);
         if (duplicate) return Result<CurrencyDto>.Failure(Error.Conflict("A currency with this code already exists"));
 
         if (request.IsBase)
@@ -120,34 +152,42 @@ public sealed class CurrencyService : ICurrencyService
         currency.IsBase = request.IsBase;
         currency.UpdatedBy = userId;
         await _context.SaveChangesAsync(cancellationToken);
+        await WriteAuditAsync(currency, "UpdateCurrency", userId, cancellationToken);
 
         return Result<CurrencyDto>.Success(ToDto(currency));
     }
 
     public async Task<Result> DeleteAsync(Guid id, string userId, CancellationToken cancellationToken = default)
     {
+        var tenantId = CurrentTenantId();
+        if (!tenantId.HasValue) return Result.Failure(Error.Forbidden("A valid tenant context is required"));
         var currency = await _context.Set<Currency>()
-            .FirstOrDefaultAsync(item => item.Id == id && !item.IsDeleted, cancellationToken);
+            .FirstOrDefaultAsync(item => item.TenantId == tenantId.Value && item.Id == id && !item.IsDeleted, cancellationToken);
         if (currency is null) return Result.Failure(Error.NotFound("Currency not found"));
         if (currency.IsBase) return Result.Failure(Error.Validation("The base currency cannot be deleted"));
 
         currency.IsDeleted = true;
         currency.UpdatedBy = userId;
         await _context.SaveChangesAsync(cancellationToken);
+        await WriteAuditAsync(currency, "DeleteCurrency", userId, cancellationToken);
         return Result.Success();
     }
 
-    private async Task<Guid?> GetTenantIdAsync(CancellationToken cancellationToken)
-    {
-        var tenantClaim = _httpContextAccessor.HttpContext?.User.FindFirst("tenantId")?.Value;
-        if (Guid.TryParse(tenantClaim, out var tenantId)) return tenantId;
+    private Guid? CurrentTenantId() => Guid.TryParse(
+        _httpContextAccessor.HttpContext?.User.FindFirst("tenantId")?.Value, out var tenantId) && tenantId != Guid.Empty
+        ? tenantId : null;
 
-        var seededTenantId = await _context.Set<OrganizationEntity>()
-            .IgnoreQueryFilters()
-            .Select(organization => (Guid?)organization.TenantId)
-            .FirstOrDefaultAsync(cancellationToken);
-        return seededTenantId == Guid.Empty ? null : seededTenantId;
-    }
+    private Task WriteAuditAsync(Currency currency, string action, string userId, CancellationToken cancellationToken) =>
+        _auditService.LogAsync(new AuditEntry
+        {
+            TenantId = currency.TenantId,
+            EntityType = "Currency",
+            EntityId = currency.Id,
+            Action = action,
+            UserId = Guid.TryParse(userId, out var userIdValue) ? userIdValue : Guid.Empty,
+            Timestamp = DateTime.UtcNow,
+            CreatedBy = userId
+        }, cancellationToken);
 
     private async Task ClearBaseCurrencyAsync(Guid tenantId, CancellationToken cancellationToken, Guid? exceptId = null)
     {

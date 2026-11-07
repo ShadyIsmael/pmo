@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Plus, Download, FolderKanban, Banknote, AlertTriangle, Clock, ArrowUpRight, FileSpreadsheet, FileText, Loader2, Filter, ChevronDown } from "lucide-react";
 import { PageHeader } from "@components/layout/PageHeader";
 import { useI18n } from "@i18n/messages";
@@ -42,6 +42,7 @@ function isStatusTab(value: string): value is StatusTab {
 function statusMatches(project: ProjectSummaryDto, tab: StatusTab): boolean {
   switch (tab) {
     case "all":
+      return true;
     case "active":
       return project.status !== "Completed" && project.status !== "Cancelled";
     case "atRisk":
@@ -68,6 +69,7 @@ function ProjectStatusBadge({ status, children }: { status: string; children: Re
 }
 
 export function ProjectsListPage() {
+  const navigate = useNavigate();
   const { t, locale } = useI18n();
   const { toast } = useToast();
   const { user } = useAuth();
@@ -145,14 +147,14 @@ export function ProjectsListPage() {
     if (filterName.trim() && !p.name.toLowerCase().includes(filterName.toLowerCase())) return false;
     if (filterCode.trim() && !p.code.toLowerCase().includes(filterCode.toLowerCase())) return false;
     if (filterStatuses.length > 0 && !filterStatuses.includes(p.status)) return false;
-    if (filterHealths.length > 0 && p.health && !filterHealths.includes(p.health)) return false;
+    if (filterHealths.length > 0 && !filterHealths.includes(p.health)) return false;
     if (filterProgressMin.trim() && (p.planProgress == null || p.planProgress < parseFloat(filterProgressMin))) return false;
     if (filterProgressMax.trim() && (p.planProgress == null || p.planProgress > parseFloat(filterProgressMax))) return false;
     if (filterBudgetMin.trim() && (p.budget || 0) < parseFloat(filterBudgetMin)) return false;
     if (filterBudgetMax.trim() && (p.budget || 0) > parseFloat(filterBudgetMax)) return false;
     if (filterProjectManager.trim() && p.projectManagerId !== filterProjectManager) return false;
-    if (filterDueDateFrom.trim() && p.endDate && new Date(p.endDate) < new Date(filterDueDateFrom)) return false;
-    if (filterDueDateTo.trim() && p.endDate && new Date(p.endDate) > new Date(filterDueDateTo)) return false;
+    if (filterDueDateFrom.trim() && (!p.endDate || new Date(p.endDate) < new Date(filterDueDateFrom))) return false;
+    if (filterDueDateTo.trim() && (!p.endDate || new Date(p.endDate) > new Date(filterDueDateTo))) return false;
     return true;
   });
 
@@ -180,6 +182,7 @@ export function ProjectsListPage() {
         name: filterName.trim() || undefined,
         code: filterCode.trim() || undefined,
         statuses: filterStatuses.length > 0 ? filterStatuses : tabFilter.statuses,
+        includeAllStatuses: filterStatus === "all" && filterStatuses.length === 0,
         healths: filterHealths.length > 0 ? filterHealths : tabFilter.healths,
         progressMin: filterProgressMin.trim() ? parseFloat(filterProgressMin) : undefined,
         progressMax: filterProgressMax.trim() ? parseFloat(filterProgressMax) : undefined,
@@ -314,7 +317,7 @@ export function ProjectsListPage() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            <Link to="/ai-workspace/plan-generator"><Button variant="outline" size="sm"><Plus className="mr-2 h-4 w-4" />AI Plan</Button></Link>
+            <Link to="/ai-workspace/plan-generator"><Button variant="outline" size="sm"><Plus className="mr-2 h-4 w-4" />{t("projects.aiPlan")}</Button></Link>
             {canCreateProject ? <Button size="sm" onClick={() => setCreateOpen(true)}><Plus className="mr-2 h-4 w-4" />{t("common.create")}</Button> : null}
           </div>
         }
@@ -444,7 +447,7 @@ export function ProjectsListPage() {
             {filtered.length === 0 ? (
               <div className="col-span-full py-12 text-center text-muted-foreground">{t("common.noResults")}</div>
             ) : (
-              filtered.slice(0, 12).map((project: ProjectSummaryDto) => (
+              filtered.map((project: ProjectSummaryDto) => (
                 <Link key={project.publicId} to={`/projects/${project.publicId}`}>
                   <Card className="h-full transition-colors hover:bg-muted/50">
                     <CardHeader>
@@ -479,7 +482,7 @@ export function ProjectsListPage() {
         </TabsContent>
       </Tabs>
 
-      {createOpen && <CreateProjectSheet open={createOpen} onOpenChange={setCreateOpen} />}
+      {createOpen && <CreateProjectSheet open={createOpen} onOpenChange={setCreateOpen} onCreated={(publicId) => navigate(`/projects/${publicId}`)} />}
     </div>
   );
 }

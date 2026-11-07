@@ -6,7 +6,7 @@ namespace NEXUS.Modules.IssueManagement.Api;
 
 [ApiController]
 [Route("api/issues")]
-[Authorize]
+[Authorize(Policy = "Issue.View")]
 public class IssueController : ControllerBase
 {
     private readonly IIssueService _issueService;

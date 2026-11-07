@@ -1,6 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
 using NEXUS.Modules.ProjectPlanning.Application;
-using NEXUS.Modules.ProjectPlanning.Application.Import;
 using NEXUS.Modules.ProjectPlanning.Domain.Scheduling;
 using NEXUS.SharedKernel;
 
@@ -28,7 +27,6 @@ public static class ProjectPlanningModuleRegistration
         services.AddScoped<IPlanningTablePreferenceService, PlanningTablePreferenceService>();
         services.AddScoped<IPlanVersionService, PlanVersionService>();
         services.AddScoped<IPlanVersionComparisonService, PlanVersionComparisonService>();
-        services.AddScoped<IPlanningImportProvider, MppPlanningImportProvider>();
         services.AddScoped<IPlanningImportService, PlanningImportService>();
         return services;
     }

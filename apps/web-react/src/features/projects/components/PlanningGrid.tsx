@@ -93,7 +93,7 @@ interface Mutations {
 
 function toDateInput(value?: string | null) { return value?.slice(0, 10) ?? ""; }
 
-export function PlanningGrid({ projectId, planId, projectStartDate, wbs, activities, dependencies, mutations, editable, showBaseline, ribbonTab, ribbonExpanded = true, ribbonContentHost, t, onEdit, onOpenAssignments, selectedRowId, collapsedWbsIds, onSelectionChange, onCollapsedChange }: {
+export function PlanningGrid({ projectId, planId, projectStartDate, wbs, activities, dependencies, mutations, editable, showBaseline, ribbonTab, ribbonExpanded = true, t, onEdit, onOpenAssignments, selectedRowId, collapsedWbsIds, onSelectionChange, onCollapsedChange }: {
   projectId: string;
   planId: string;
   projectStartDate?: string;
@@ -105,7 +105,6 @@ export function PlanningGrid({ projectId, planId, projectStartDate, wbs, activit
   showBaseline: boolean;
   ribbonTab: PlanningRibbonTab;
   ribbonExpanded?: boolean;
-  ribbonContentHost?: HTMLDivElement | null;
   t: (key: string) => string;
   onEdit: (activity: PlanActivityDto) => void;
   /** Kept optional for older callers; row deletion is handled here to share confirmation and cleanup. */
@@ -1620,8 +1619,7 @@ export function PlanningGrid({ projectId, planId, projectStartDate, wbs, activit
     <Button size="icon-sm" variant="ghost" disabled={!editable || !selected || !selectedFormat || moving} onClick={() => void updateTextFormat(null)} aria-label={t("planning.clearFormatting")}><Eraser className="h-3.5 w-3.5" /></Button>
   </PlanningRibbonGroup>;
   return <div tabIndex={0} onCopy={handleGridCopy} onPaste={handleGridPaste} onMouseDown={(event) => { const target = event.target; if (target instanceof HTMLElement && !target.closest("button, input, select, textarea, [contenteditable='true']")) event.currentTarget.focus({ preventScroll: true }); }} onKeyDown={onGridKeyDown}>
-      {ribbonExpanded && ribbonTab === "format" && ribbonContentHost ? createPortal(<div className="flex min-w-max items-stretch gap-1">{formatRibbonGroup}</div>, ribbonContentHost) : null}
-      {ribbonExpanded && (ribbonTab === "task" || (ribbonTab === "resource" && Boolean(onOpenAssignments)) || (ribbonTab === "format" && ribbonContentHost === undefined)) ? <div className="flex min-w-max items-stretch gap-1 overflow-x-auto border-b bg-muted/20 px-1.5 py-1 text-[12px]">
+      {ribbonExpanded && (ribbonTab === "task" || (ribbonTab === "resource" && Boolean(onOpenAssignments))) ? <div className="flex min-w-max items-stretch gap-1 overflow-x-auto border-b bg-muted/20 px-1.5 py-1 text-[12px]">
       {ribbonTab === "task" ? <>
         <PlanningRibbonGroup label={t("planning.ribbon.task")}>
           <PlanningIconButton label={t("planning.addTask")} icon={<Plus className="h-3.5 w-3.5" />} variant="secondary" disabled={!editable || creating} onClick={() => void createRow("Task", "append")} />
@@ -1661,11 +1659,11 @@ export function PlanningGrid({ projectId, planId, projectStartDate, wbs, activit
           <PlanningIconButton label={t("planning.unlinkSelected")} icon={<Link2 className="h-3.5 w-3.5 rotate-45" />} disabled={!editable || selectedLeafActivities().length < 2 || saving || !selectedLeafActivities().some((activity) => (depsByActivity.get(activity.id) ?? []).some((dependency) => selectedRowIds.has(`activity:${dependency.predecessorActivityId}`)))} onClick={() => void unlinkSelectedActivities()} />
           <PlanningIconButton label={t("planning.manageLinks")} icon={<Link2 className="h-3.5 w-3.5" />} disabled={!selected?.activity} onClick={() => { if (selected?.activity) onEdit(selected.activity); }} />
         </PlanningRibbonGroup>
+        {formatRibbonGroup}
       </> : null}
       {ribbonTab === "resource" && onOpenAssignments ? <PlanningRibbonGroup label={t("planning.ribbon.resource")}>
         <PlanningIconButton label={t("planning.resourceAssignments")} icon={<Users className="h-3.5 w-3.5" />} onClick={onOpenAssignments} />
       </PlanningRibbonGroup> : null}
-      {ribbonTab === "format" && ribbonContentHost === undefined ? formatRibbonGroup : null}
     </div> : null}
     <div className="space-y-3 px-4 pb-4 pt-3">
     <div className="flex flex-wrap items-center gap-2">

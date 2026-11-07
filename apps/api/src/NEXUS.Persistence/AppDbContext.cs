@@ -38,6 +38,7 @@ public class AppDbContext : DbContext
     public DbSet<UserPermissionOverride> UserPermissionOverrides => Set<UserPermissionOverride>();
 
     public DbSet<Organization> Organizations => Set<Organization>();
+    public DbSet<Tenant> Tenants => Set<Tenant>();
     public DbSet<BusinessUnit> BusinessUnits => Set<BusinessUnit>();
     public DbSet<Department> Departments => Set<Department>();
     public DbSet<Team> Teams => Set<Team>();
@@ -49,6 +50,7 @@ public class AppDbContext : DbContext
     public DbSet<Location> Locations => Set<Location>();
     public DbSet<WorkingCalendar> WorkingCalendars => Set<WorkingCalendar>();
     public DbSet<Holiday> Holidays => Set<Holiday>();
+    public DbSet<WorkingCalendarDayRule> WorkingCalendarDayRules => Set<WorkingCalendarDayRule>();
     public DbSet<Lookup> Lookups => Set<Lookup>();
     public DbSet<Currency> Currencies => Set<Currency>();
     public DbSet<CostCentre> CostCentres => Set<CostCentre>();
@@ -127,12 +129,20 @@ public class AppDbContext : DbContext
     public DbSet<TimerSegment> TimerSegments => Set<TimerSegment>();
 
     public DbSet<Budget> Budgets => Set<Budget>();
+    public DbSet<ProjectAnnualBudget> ProjectAnnualBudgets => Set<ProjectAnnualBudget>();
+    public DbSet<ProjectAnnualBudgetClosing> ProjectAnnualBudgetClosings => Set<ProjectAnnualBudgetClosing>();
+    public DbSet<ProjectPaymentRequestFundingTransfer> ProjectPaymentRequestFundingTransfers => Set<ProjectPaymentRequestFundingTransfer>();
     public DbSet<BudgetRevision> BudgetRevisions => Set<BudgetRevision>();
     public DbSet<CostEntry> CostEntries => Set<CostEntry>();
     public DbSet<CostCategory> CostCategories => Set<CostCategory>();
     public DbSet<CostApproval> CostApprovals => Set<CostApproval>();
     public DbSet<Invoice> Invoices => Set<Invoice>();
     public DbSet<PurchaseCommitment> PurchaseCommitments => Set<PurchaseCommitment>();
+    public DbSet<PaymentObligation> PaymentObligations => Set<PaymentObligation>();
+    public DbSet<PaymentSettlement> PaymentSettlements => Set<PaymentSettlement>();
+    public DbSet<PaymentNotificationDispatch> PaymentNotificationDispatches => Set<PaymentNotificationDispatch>();
+    public DbSet<ProjectPaymentRequestDetail> ProjectPaymentRequestDetails => Set<ProjectPaymentRequestDetail>();
+    public DbSet<PaymentRequestApproverAssignment> PaymentRequestApproverAssignments => Set<PaymentRequestApproverAssignment>();
 
     public DbSet<Risk> Risks => Set<Risk>();
     public DbSet<RiskAction> RiskActions => Set<RiskAction>();
@@ -173,6 +183,7 @@ public class AppDbContext : DbContext
     public DbSet<Delegation> Delegations => Set<Delegation>();
 
     public DbSet<Notification> Notifications => Set<Notification>();
+    public DbSet<EmailNotificationProfileEntity> EmailNotificationProfiles => Set<EmailNotificationProfileEntity>();
     public DbSet<NotificationDelivery> NotificationDeliveries => Set<NotificationDelivery>();
     public DbSet<NotificationDeliveryAttempt> NotificationDeliveryAttempts => Set<NotificationDeliveryAttempt>();
     public DbSet<UserDeviceToken> UserDeviceTokens => Set<UserDeviceToken>();
@@ -228,6 +239,22 @@ public class AppDbContext : DbContext
         // leaving the SQL Server rowversion behavior untouched.
         if (Database.ProviderName == "Microsoft.EntityFrameworkCore.Sqlite")
         {
+            // SQLite does not accept SQL Server national string literals (N'...') inside
+            // check constraints, so test schemas translate them to plain literals. The
+            // SQL Server model, its snapshot, and the applied migrations are unchanged.
+            foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+            foreach (var constraint in entityType.GetDeclaredCheckConstraints().ToArray())
+            {
+                if (constraint.Name is { } name
+                    && constraint.Sql.Contains("N'", StringComparison.Ordinal))
+                {
+                    entityType.RemoveCheckConstraint(name);
+                    entityType.AddCheckConstraint(
+                        name,
+                        constraint.Sql.Replace("N'", "'", StringComparison.Ordinal));
+                }
+            }
+
             foreach (var property in modelBuilder.Model.GetEntityTypes()
                          .SelectMany(t => t.GetProperties())
                          .Where(p => p.ClrType == typeof(byte[])
@@ -286,7 +313,7 @@ public class AppDbContext : DbContext
 
     private void ApplyTenantFilter<T>(ModelBuilder modelBuilder) where T : class, ITenantEntity
     {
-        modelBuilder.Entity<T>().HasQueryFilter(e => e.TenantId == CurrentTenantId);
+        modelBuilder.Entity<T>().HasQueryFilter(e => CurrentTenantId != Guid.Empty && e.TenantId == CurrentTenantId);
     }
 
     /// <summary>
@@ -298,13 +325,49 @@ public class AppDbContext : DbContext
     /// </summary>
     private void ApplyTenantAndSoftDeleteFilter<T>(ModelBuilder modelBuilder) where T : class, ITenantEntity, ISoftDeletable
     {
-        modelBuilder.Entity<T>().HasQueryFilter(e => e.TenantId == CurrentTenantId && !e.IsDeleted);
+        modelBuilder.Entity<T>().HasQueryFilter(e => CurrentTenantId != Guid.Empty && e.TenantId == CurrentTenantId && !e.IsDeleted);
     }
 
-    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    public override int SaveChanges() => SaveChanges(acceptAllChangesOnSuccess: true);
+
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
+        PrepareTrackedEntitiesForSave();
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>
+        SaveChangesAsync(acceptAllChangesOnSuccess: true, cancellationToken);
+
+    public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        PrepareTrackedEntitiesForSave();
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
+    private void PrepareTrackedEntitiesForSave()
+    {
+        ValidateTenantScopedEntries();
+
         foreach (var entry in ChangeTracker.Entries<BaseEntity>())
         {
+            // Audit records are append-only. Any attempt to rewrite or remove an
+            // existing entry through the application is a programming error and
+            // must fail loudly rather than silently corrupting the trail.
+            if (entry.Entity is AuditEntry or AuditActivity && entry.State is EntityState.Modified or EntityState.Deleted)
+            {
+                throw new InvalidOperationException("Audit records are immutable and cannot be updated or deleted.");
+            }
+
+            // ApprovalRequest.RowVersion predates SQL Server rowversion mapping
+            // and is retained as a binary token for compatibility with existing
+            // generic approval data. Rotate it on every write so EF performs a
+            // genuine optimistic concurrency check.
+            if (entry.Entity is ApprovalRequest && entry.State is EntityState.Added or EntityState.Modified)
+            {
+                entry.Property(request => request.RowVersion).CurrentValue = Guid.NewGuid().ToByteArray();
+            }
+
             switch (entry.State)
             {
                 case EntityState.Added:
@@ -316,17 +379,48 @@ public class AppDbContext : DbContext
                     break;
             }
         }
-        return base.SaveChangesAsync(cancellationToken);
     }
 
-    private static readonly Guid DemoTenantId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+    private void ValidateTenantScopedEntries()
+    {
+        var currentTenantId = GetCurrentTenantId();
+
+        foreach (var entry in ChangeTracker.Entries())
+        {
+            if (entry.Entity is not ITenantEntity tenantEntity
+                || entry.State is not (EntityState.Added or EntityState.Modified or EntityState.Deleted))
+            {
+                continue;
+            }
+
+            if (currentTenantId == Guid.Empty
+                || tenantEntity.TenantId == Guid.Empty
+                || tenantEntity.TenantId != currentTenantId)
+            {
+                throw new InvalidOperationException(
+                    "Tenant-scoped entities can only be persisted in the matching tenant context.");
+            }
+
+            if (entry.State is EntityState.Modified or EntityState.Deleted)
+            {
+                if (entry.Property(nameof(ITenantEntity.TenantId)).OriginalValue is not Guid originalTenantId
+                    || originalTenantId != currentTenantId
+                    || tenantEntity.TenantId != originalTenantId)
+                {
+                    throw new InvalidOperationException(
+                        "Tenant-scoped entities can only be persisted in the matching tenant context.");
+                }
+            }
+        }
+    }
 
     private static IHttpContextAccessor? _httpContextAccessor;
 
     /// <summary>
     /// Wires tenant resolution to the current HTTP request so the global query
-    /// filter filters by the JWT "tenantId" claim. Falls back to the demo tenant
-    /// outside of a request (migrations, seeding, background work).
+    /// filter filters by the JWT "tenantId" claim. A malformed or missing claim
+    /// in a request resolves to no tenant. Trusted out-of-request work must
+    /// establish an explicit tenant execution scope.
     /// </summary>
     public static void ConfigureTenantResolution(IHttpContextAccessor accessor)
     {
@@ -343,8 +437,19 @@ public class AppDbContext : DbContext
 
     internal static Guid GetCurrentTenantId()
     {
-        var tenantId = _httpContextAccessor?.HttpContext?.User.FindFirst("tenantId")?.Value;
-        return Guid.TryParse(tenantId, out var parsed) ? parsed : DemoTenantId;
+        var httpContext = _httpContextAccessor?.HttpContext;
+        if (httpContext is not null)
+        {
+            if (httpContext.User.Identity?.IsAuthenticated != true)
+                return Guid.Empty;
+
+            var tenantClaim = httpContext.User.FindFirst("tenantId")?.Value;
+            return Guid.TryParse(tenantClaim, out var parsed) && parsed != Guid.Empty ? parsed : Guid.Empty;
+        }
+
+        return TrustedTenantExecutionContext.CurrentTenantId is { } trustedTenantId
+            ? trustedTenantId
+            : Guid.Empty;
     }
 
     private static (int precision, int scale) GetDecimalPrecision(string propertyName)

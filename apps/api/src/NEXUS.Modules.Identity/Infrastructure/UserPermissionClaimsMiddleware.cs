@@ -1,6 +1,8 @@
 using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using NEXUS.Modules.Identity.Application;
+using NEXUS.SharedKernel;
 
 namespace NEXUS.Modules.Identity.Infrastructure;
 
@@ -12,7 +14,11 @@ public sealed class UserPermissionClaimsMiddleware
 
     public UserPermissionClaimsMiddleware(RequestDelegate next) => _next = next;
 
-    public async Task InvokeAsync(HttpContext context, IUserEffectivePermissionService permissions, IUserSessionValidator sessions)
+    public async Task InvokeAsync(
+        HttpContext context,
+        IUserEffectivePermissionService permissions,
+        IUserSessionValidator sessions,
+        ITenantRegistryStatusValidator tenantRegistry)
     {
         if (context.User.Identity is ClaimsIdentity identity && identity.IsAuthenticated)
         {
@@ -24,12 +30,41 @@ public sealed class UserPermissionClaimsMiddleware
                     subject.RemoveClaim(claim);
             }
 
+            if (context.GetEndpoint()?.Metadata.GetMetadata<IAllowAnonymous>() is not null)
+            {
+                await _next(context);
+                return;
+            }
+
+            var tenantClaim = context.User.FindFirstValue("tenantId");
+            if (HasPlatformAuthority(context.User) && !Guid.TryParse(tenantClaim, out _))
+            {
+                if (!Guid.TryParse(context.User.FindFirstValue(ClaimTypes.NameIdentifier)
+                        ?? context.User.FindFirstValue("sub"), out var platformActorId)
+                    || platformActorId == Guid.Empty)
+                {
+                    context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                    return;
+                }
+
+                foreach (var claim in context.User.FindAll("tenantId").ToArray())
+                    if (claim.Subject is ClaimsIdentity subject) subject.RemoveClaim(claim);
+                await _next(context);
+                return;
+            }
+
             if (!Guid.TryParse(context.User.FindFirstValue(ClaimTypes.NameIdentifier), out var userId)
                 || !Guid.TryParse(context.User.FindFirstValue("tenantId"), out var tenantId)
                 || !Guid.TryParse(context.User.FindFirstValue(SessionClaimType), out var sessionId)
                 || !await sessions.IsActiveAsync(sessionId, userId, tenantId, context.RequestAborted))
             {
                 context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                return;
+            }
+
+            if (!await tenantRegistry.IsActiveAsync(tenantId, context.RequestAborted))
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
                 return;
             }
 
@@ -47,4 +82,10 @@ public sealed class UserPermissionClaimsMiddleware
 
         await _next(context);
     }
+
+    private static bool HasPlatformAuthority(ClaimsPrincipal principal) =>
+        principal.FindAll("platform_role").Any(claim =>
+            string.Equals(claim.Value, "PlatformAdministrator", StringComparison.OrdinalIgnoreCase))
+        || principal.FindAll("platform_permission").Any(claim =>
+            claim.Value is "tenants.manage");
 }

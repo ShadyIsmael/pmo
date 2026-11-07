@@ -8,7 +8,7 @@ NEXUS PMO is built as a **Modular Monolith** -- a single deployment unit with lo
 - **Single deployment** simplifies DevOps, testing, and operations
 - **Strict module boundaries** via namespaces and dependency rules prevent coupling
 - **Future extraction** path: any module can be split into its own microservice without rewriting business logic
-- **Database schema** is unified (shared PostgreSQL) but module entities are owned by their respective modules
+- **Database schema** is unified (shared SQL Server) but module entities are owned by their respective modules
 
 ### Clean Architecture
 Each module follows Clean Architecture with four layers:
@@ -47,10 +47,10 @@ Cross-module communication uses:
 ## Layer Descriptions
 
 ### Presentation Layer (Frontend)
-- **Pages:** Next.js App Router (`apps/web/src/app/`)
-- **Components:** React Server Components by default, Client Components for interactivity
-- **Layout Shell:** Sidebar, header, breadcrumbs (`apps/web/src/components/layout/`)
-- **Data Fetching:** TanStack React Query for client-side, server-side fetch for SSR
+- **Pages:** React Router route tree in apps/web-react/src/routes/AppRoutes.tsx
+- **Components:** React feature screens and shared UI components under apps/web-react/src/
+- **Layout Shell:** React application shell and route layouts under apps/web-react/src/
+- **Data Fetching:** TanStack React Query through the shared React API client
 
 ### API Layer
 - **Controllers:** ASP.NET Core `[ApiController]` with `[Route("api/{module}")]`
@@ -72,7 +72,7 @@ Cross-module communication uses:
 - **Aggregate Roots:** `IAggregateRoot` interface marks consistency boundaries
 
 ### Infrastructure Layer
-- **Persistence:** Entity Framework Core with PostgreSQL (Npgsql provider)
+- **Persistence:** Entity Framework Core with SQL Server
 - **Repositories:** Implement interfaces from Application/Domain
 - **External Services:** Email, file storage, AI provider integrations
 - **Module Registration:** Each module has a static `Add{Module}Module()` extension method
@@ -150,13 +150,12 @@ public static class ProjectManagementModuleRegistration
 │                                                                   │
 │  ┌──────────────┐   ┌──────────────┐   ┌──────────────────────┐  │
 │  │   NEXUS Web   │   │  NEXUS API   │   │  Background Worker   │  │
-│  │  (Next.js)    │──▶│ (.NET 10)    │   │  (.NET 10)           │  │
+│  │  (React/Vite SPA)    │──▶│ (.NET 10)    │   │  (.NET 10)           │  │
 │  │  :3000        │   │  :5000       │   │  (internal)          │  │
 │  └──────────────┘   └──────┬───────┘   └──────────────────────┘  │
 │                             │                                     │
 │  ┌──────────────┐   ┌──────┴───────┐                             │
-│  │    Redis 7   │   │  PostgreSQL   │                             │
-│  │   :6379      │   │  16 :5432    │                             │
+│  │    Redis 7   │   │  SQL Server   │                             │\n│  │   :6379      │   │  2022        │                             │
 │  └──────────────┘   └──────────────┘                             │
 └──────────────────────────────────────────────────────────────────┘
 ```
@@ -168,7 +167,7 @@ public static class ProjectManagementModuleRegistration
 | Decision | Rationale |
 |----------|-----------|
 | Modular Monolith over Microservices | Faster development, simpler operations, easier refactoring; extraction path available |
-| PostgreSQL over SQL Server | Modern feature set, JSON support, excellent EF Core support, lower TCO |
+| SQL Server over PostgreSQL | Current implementation targets SQL Server 2022 (EF Core migrations, docker-compose) |
 | MediatR for domain events | Decouples modules, enables cross-cutting concerns (logging, audit) without direct dependencies |
 | JWT over session auth | Stateless, scalable, suitable for API-first design |
 | shadcn/ui over MUI | Lower bundle size, full styling control, Tailwind-native, accessible by default |

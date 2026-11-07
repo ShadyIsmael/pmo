@@ -19,7 +19,7 @@ public class Portfolio : BaseEntity
     public decimal? ActualSpend { get; set; }
     public string? Health { get; set; }
     public string? Priority { get; set; }
-    public string Currency { get; set; } = "USD";
+    public string Currency { get; set; } = string.Empty;
     public Guid? SponsorId { get; set; }
     public string? ConfidenceLevel { get; set; }
     public string? StrategicObjective { get; set; }

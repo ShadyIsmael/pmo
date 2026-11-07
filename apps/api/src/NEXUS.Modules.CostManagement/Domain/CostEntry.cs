@@ -12,7 +12,7 @@ public class CostEntry : BaseEntity
     public string? SubCategory { get; set; }
     public string? Description { get; set; }
     public decimal Amount { get; set; }
-    public string Currency { get; set; } = "GBP";
+    public string Currency { get; set; } = string.Empty;
     public decimal? TaxAmount { get; set; }
     public DateTime IncurredDate { get; set; }
     public string Type { get; set; } = string.Empty;

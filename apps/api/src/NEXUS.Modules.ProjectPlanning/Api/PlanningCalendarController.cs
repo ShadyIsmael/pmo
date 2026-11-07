@@ -31,7 +31,7 @@ public class PlanningCalendarController : ControllerBase
         return result.IsSuccess ? Ok(result.Value) : ErrorResult(result.Error);
     }
 
-    [Authorize(Policy = "Planning.Manage")]
+    [Authorize(Policy = "Planning.Edit")]
     [HttpPost]
     public async Task<IActionResult> CreateTemplate([FromBody] CreateCalendarTemplateDto dto, CancellationToken cancellationToken)
     {
@@ -39,7 +39,7 @@ public class PlanningCalendarController : ControllerBase
         return result.IsSuccess ? CreatedAtAction(nameof(GetTemplate), new { templateId = result.Value!.Id }, result.Value) : ErrorResult(result.Error);
     }
 
-    [Authorize(Policy = "Planning.Manage")]
+    [Authorize(Policy = "Planning.Edit")]
     [HttpPut("{templateId:guid}")]
     public async Task<IActionResult> UpdateTemplate(Guid templateId, [FromBody] UpdateCalendarTemplateDto dto, CancellationToken cancellationToken)
     {
@@ -47,7 +47,7 @@ public class PlanningCalendarController : ControllerBase
         return result.IsSuccess ? Ok(result.Value) : ErrorResult(result.Error);
     }
 
-    [Authorize(Policy = "Planning.Manage")]
+    [Authorize(Policy = "Planning.Edit")]
     [HttpDelete("{templateId:guid}")]
     public async Task<IActionResult> DeleteTemplate(Guid templateId, [FromQuery] byte[] rowVersion, CancellationToken cancellationToken)
     {

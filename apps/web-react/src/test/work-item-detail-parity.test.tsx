@@ -55,7 +55,7 @@ describe("Work Item detail feature and design parity", () => {
     transition.mockReset().mockResolvedValue(undefined);
     useAuthMock.mockReturnValue({ user: { id: "user-1", permissions: ["WorkItem.View", "WorkItem.Edit"] } } as unknown as ReturnType<typeof useAuth>);
     useManagementMock.mockReturnValue({ canMutate: true, effectiveReadOnly: false } as unknown as ReturnType<typeof useManagement>);
-    useStatusesMock.mockReturnValue({ data: [{ id: "status-open", code: "Open", nameEn: "Open", nameAr: "مفتوح", displayOrder: 1, isActive: true, isTerminal: false, color: "blue" }] } as unknown as ReturnType<typeof useWorkItemStatuses>);
+    useStatusesMock.mockReturnValue({ data: [{ id: "status-open", code: "Open", nameEn: "Open", nameAr: "مفتوح", displayOrder: 1, isActive: true, isTerminal: false, color: "blue" }, { id: "status-in-progress", code: "InProgress", nameEn: "In progress", nameAr: "In progress", displayOrder: 2, isActive: true, isTerminal: false, color: "blue" }] } as unknown as ReturnType<typeof useWorkItemStatuses>);
     useProjectsMock.mockReturnValue({ data: { items: [{ id: "project-1", name: "Core Platform", code: "PRJ-1" }] } } as unknown as ReturnType<typeof useProjects>);
     useItemMock.mockReturnValue({ data: makeWorkItem(), isLoading: false, isError: false, refetch: vi.fn() } as unknown as ReturnType<typeof useFullWorkItem>);
     useActivityMock.mockReturnValue({ data: { items: [{ id: "activity-1", action: "Updated", changes: JSON.stringify({ priority: { from: "Medium", to: "High" } }), userId: "user-2", userName: "Jordan", timestamp: "2026-01-03" }], totalPages: 1, totalCount: 1 }, isLoading: false, isError: false } as unknown as ReturnType<typeof useFullWorkItemActivity>);
@@ -86,7 +86,7 @@ describe("Work Item detail feature and design parity", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(saveWorkItem).toHaveBeenCalledWith(expect.objectContaining({ id: "task-42", body: expect.objectContaining({ title: "Forecast reviewed", rowVersion: [4] }) })));
 
-    fireEvent.click(screen.getByRole("button", { name: "Start work" }));
+    fireEvent.click(screen.getByRole("button", { name: "In progress" }));
     await waitFor(() => expect(transition).toHaveBeenCalledWith({ transitionCode: "StartWork" }));
   });
 
@@ -115,7 +115,7 @@ describe("Work Item detail feature and design parity", () => {
     useManagementMock.mockReturnValue({ canMutate: false, effectiveReadOnly: true } as unknown as ReturnType<typeof useManagement>);
     renderDetail();
     expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Start work" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "In progress" })).toBeDisabled();
     expect(await screen.findByText("Please validate the baseline.")).toBeInTheDocument();
   });
 });

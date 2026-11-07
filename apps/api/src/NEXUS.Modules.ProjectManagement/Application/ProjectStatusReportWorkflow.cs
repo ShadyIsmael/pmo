@@ -1,7 +1,10 @@
+using System.Collections.Concurrent;
 using System.Security.Claims;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Logging;
 using NEXUS.Modules.ProjectManagement.Domain;
 using NEXUS.Modules.ProjectManagement.Application.DTOs;
 using NEXUS.Modules.WorkflowEngine.Application.Contracts;
@@ -22,6 +25,10 @@ public static class ProjectStatusReportWorkflow
     public const string Reopen = "REOPEN";
     public const string Publish = "PUBLISH";
     private static readonly (string Code, string From, string To)[] RequiredTransitions =
+    [
+        (Publish, "Draft", "Published")
+    ];
+    private static readonly (string Code, string From, string To)[] LegacyTransitions =
     [
         (Generate, "Draft", "Generated"),
         (Submit, "Generated", "Submitted"),
@@ -59,7 +66,7 @@ public static class ProjectStatusReportWorkflow
 
     public static Result ValidateWorkflowVersion(WorkflowDefinitionVersion version)
     {
-        var requiredStates = new[] { "Draft", "Generated", "Submitted", "Approved", "Returned", "Published" };
+        var requiredStates = new[] { "Draft", "Published" };
         var activeStates = version.States.Where(item => item.IsActive && !item.IsDeleted).ToList();
         if (activeStates.Any(item => !requiredStates.Contains(item.Code, StringComparer.OrdinalIgnoreCase))
             || requiredStates.Any(expected => activeStates.Count(item => item.Code.Equals(expected, StringComparison.OrdinalIgnoreCase)) != 1))
@@ -76,8 +83,25 @@ public static class ProjectStatusReportWorkflow
             activeTransitions.Count(item => item.Code.Equals(expected.Code, StringComparison.OrdinalIgnoreCase)
                 && item.FromState.Code.Equals(expected.From, StringComparison.OrdinalIgnoreCase)
                 && item.ToState.Code.Equals(expected.To, StringComparison.OrdinalIgnoreCase)) != 1))
-            return Result.Failure(Error.Validation("The status-report workflow must contain only the six required lifecycle transitions."));
+            return Result.Failure(Error.Validation("The status-report workflow must contain only the Draft-to-Published transition."));
         return Result.Success();
+    }
+
+    public static bool IsLegacyWorkflowVersion(WorkflowDefinitionVersion version)
+    {
+        var legacyStates = new[] { "Draft", "Generated", "Submitted", "Approved", "Returned", "Published" };
+        var states = version.States.Where(item => item.IsActive && !item.IsDeleted).ToList();
+        if (states.Count != legacyStates.Length || legacyStates.Any(code => states.Count(item => item.Code.Equals(code, StringComparison.OrdinalIgnoreCase)) != 1))
+            return false;
+        if (states.Count(item => item.IsInitial) != 1 || !states.Any(item => item.IsInitial && item.Code.Equals("Draft", StringComparison.OrdinalIgnoreCase)))
+            return false;
+        if (states.Count(item => item.IsFinal) != 1 || !states.Any(item => item.IsFinal && item.Code.Equals("Published", StringComparison.OrdinalIgnoreCase)))
+            return false;
+        var transitions = version.Transitions.Where(item => item.IsActive && !item.IsDeleted).ToList();
+        return transitions.Count == LegacyTransitions.Length && LegacyTransitions.All(expected => transitions.Count(item =>
+            item.Code.Equals(expected.Code, StringComparison.OrdinalIgnoreCase)
+            && item.FromState.Code.Equals(expected.From, StringComparison.OrdinalIgnoreCase)
+            && item.ToState.Code.Equals(expected.To, StringComparison.OrdinalIgnoreCase)) == 1);
     }
 }
 
@@ -88,125 +112,382 @@ public interface IProjectStatusReportWorkflowProvisioningService
     Task<Result<ProjectStatusReportWorkflowDefinition>> EnsureAsync(Guid tenantId, string actor, CancellationToken cancellationToken = default);
 }
 
-public sealed class ProjectStatusReportWorkflowProvisioningService(DbContext context) : IProjectStatusReportWorkflowProvisioningService
+public sealed class ProjectStatusReportWorkflowProvisioningService(
+    DbContext context,
+    ILogger<ProjectStatusReportWorkflowProvisioningService> logger) : IProjectStatusReportWorkflowProvisioningService
 {
+    private static readonly ConcurrentDictionary<Guid, SemaphoreSlim> TenantProvisioningGates = new();
     private static readonly (string Code, string NameEn, string NameAr, bool IsFinal)[] States =
     [
         ("Draft", "Draft", "مسودة", false),
-        ("Generated", "Generated", "تم الإنشاء", false),
-        ("Submitted", "Submitted", "مُرسل للمراجعة", false),
-        ("Approved", "Approved", "معتمد", false),
-        ("Returned", "Returned", "مُعاد للتعديل", false),
         ("Published", "Published", "منشور", true)
     ];
 
     private static readonly (string Code, string From, string To, string NameEn, string NameAr)[] Transitions =
     [
-        (ProjectStatusReportWorkflow.Generate, "Draft", "Generated", "Generate snapshot", "إنشاء اللقطة"),
-        (ProjectStatusReportWorkflow.Submit, "Generated", "Submitted", "Submit for review", "إرسال للمراجعة"),
-        (ProjectStatusReportWorkflow.Approve, "Submitted", "Approved", "Approve report", "اعتماد التقرير"),
-        (ProjectStatusReportWorkflow.Return, "Submitted", "Returned", "Return for revision", "إعادة للتعديل"),
-        (ProjectStatusReportWorkflow.Reopen, "Returned", "Draft", "Reopen draft", "إعادة فتح المسودة"),
-        (ProjectStatusReportWorkflow.Publish, "Approved", "Published", "Publish report", "نشر التقرير")
+        (ProjectStatusReportWorkflow.Publish, "Draft", "Published", "Publish report", "نشر التقرير")
     ];
+
+    private const int MaxProvisioningRecoveryAttempts = 4;
 
     public async Task<Result<ProjectStatusReportWorkflowDefinition>> EnsureAsync(Guid tenantId, string actor, CancellationToken cancellationToken = default)
     {
-        if (tenantId == Guid.Empty) return Result<ProjectStatusReportWorkflowDefinition>.Failure(Error.Validation("A valid tenant is required to provision the status-report workflow."));
-        var definition = await context.Set<WorkflowDefinition>()
-            .FirstOrDefaultAsync(item => item.TenantId == tenantId && item.EntityType == ProjectStatusReportWorkflow.EntityType
-                && item.Code == ProjectStatusReportWorkflow.DefinitionCode && !item.IsDeleted, cancellationToken);
-        if (definition is { IsActive: false })
-            return Result<ProjectStatusReportWorkflowDefinition>.Failure(Error.Conflict("The tenant's project status-report workflow is disabled."));
+        if (tenantId == Guid.Empty)
+            return await EnsureAsyncCore(tenantId, actor, cancellationToken, recoveryAttempt: 0);
 
-        if (definition?.ActivePublishedVersionId is Guid activeVersionId)
-        {
-            var activeVersion = await context.Set<WorkflowDefinitionVersion>()
-                .Include(item => item.States).Include(item => item.Transitions).ThenInclude(item => item.FromState)
-                .Include(item => item.Transitions).ThenInclude(item => item.ToState)
-                .FirstOrDefaultAsync(item => item.Id == activeVersionId && item.WorkflowDefinitionId == definition.Id
-                    && item.LifecycleStatus == WorkflowDefinitionVersionLifecycleStatus.Published && !item.IsDeleted, cancellationToken);
-            if (activeVersion is not null)
-            {
-                var validation = ValidateVersion(activeVersion);
-                return validation.IsSuccess
-                    ? Result<ProjectStatusReportWorkflowDefinition>.Success(new(definition.Id, activeVersion.Id))
-                    : Result<ProjectStatusReportWorkflowDefinition>.Failure(validation.Error!);
-            }
-        }
-
-        List<int> existingVersionNumbers = definition is null ? new() : await context.Set<WorkflowDefinitionVersion>()
-            .Where(item => item.WorkflowDefinitionId == definition.Id && !item.IsDeleted)
-            .Select(item => item.VersionNumber).ToListAsync(cancellationToken);
-        var version = new WorkflowDefinitionVersion
-        {
-            TenantId = tenantId,
-            VersionNumber = existingVersionNumbers.DefaultIfEmpty(0).Max() + 1,
-            LifecycleStatus = WorkflowDefinitionVersionLifecycleStatus.Published,
-            ChangeLog = "Provisioned canonical weekly project status-report workflow.",
-            PublishedAt = DateTime.UtcNow,
-            PublishedBy = actor,
-            CreatedBy = actor
-        };
-        var stateByCode = new Dictionary<string, WorkflowState>(StringComparer.OrdinalIgnoreCase);
-        for (var index = 0; index < States.Length; index++)
-        {
-            var item = States[index];
-            var state = new WorkflowState
-            {
-                TenantId = tenantId, WorkflowDefinitionVersionId = version.Id, Code = item.Code,
-                NameEn = item.NameEn, NameAr = item.NameAr, DisplayOrder = index + 1,
-                IsInitial = item.Code == "Draft", IsFinal = item.IsFinal, IsActive = true, CreatedBy = actor
-            };
-            version.States.Add(state);
-            stateByCode.Add(state.Code, state);
-        }
-        foreach (var item in Transitions)
-        {
-            var transition = new WorkflowTransition
-            {
-                TenantId = tenantId, WorkflowDefinitionVersionId = version.Id, Code = item.Code,
-                NameEn = item.NameEn, NameAr = item.NameAr,
-                FromStateId = stateByCode[item.From].Id, ToStateId = stateByCode[item.To].Id,
-                DisplayOrder = Array.IndexOf(Transitions, item) + 1, IsActive = true, CreatedBy = actor
-            };
-            transition.Actions.Add(new WorkflowTransitionAction
-            {
-                TenantId = tenantId, WorkflowTransitionId = transition.Id, ActionType = "DomainProjection",
-                ConfigurationJson = "{}", ExecutionOrder = 10, IsActive = true, CreatedBy = actor
-            });
-            version.Transitions.Add(transition);
-        }
-
-        definition ??= new WorkflowDefinition
-        {
-            TenantId = tenantId, Code = ProjectStatusReportWorkflow.DefinitionCode,
-            Name = "Weekly Project Status Report", Description = "Canonical report generation, review, approval, and publication lifecycle.",
-            Domain = WorkflowDomains.Reporting, EntityType = ProjectStatusReportWorkflow.EntityType,
-            IsActive = true, CreatedBy = actor
-        };
-        definition.ActivePublishedVersionId = null;
-        definition.ActivePublishedVersion = null;
-        definition.Versions.Add(version);
-        if (context.Entry(definition).State == EntityState.Detached) context.Set<WorkflowDefinition>().Add(definition);
-
-        await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+        // Serialize first-time/legacy workflow upgrades for this tenant across API requests
+        // in this process. Database concurrency recovery below covers multiple API instances.
+        var gate = TenantProvisioningGates.GetOrAdd(tenantId, static _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(cancellationToken);
         try
         {
+            return await EnsureAsyncCore(tenantId, actor, cancellationToken, recoveryAttempt: 0);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    private async Task<Result<ProjectStatusReportWorkflowDefinition>> EnsureAsyncCore(Guid tenantId, string actor, CancellationToken cancellationToken, int recoveryAttempt)
+    {
+        if (tenantId == Guid.Empty) return Result<ProjectStatusReportWorkflowDefinition>.Failure(Error.Validation("A valid tenant is required to provision the status-report workflow."));
+        // Existing published configurations are common. Avoid taking a write lock for
+        // that path; if provisioning is required, every provisioning read is repeated
+        // after the cross-process lock has been acquired below.
+        var currentDefinition = await GetCurrentValidDefinitionAsync(tenantId, cancellationToken);
+        if (currentDefinition is not null)
+            return Result<ProjectStatusReportWorkflowDefinition>.Success(currentDefinition);
+
+        IDbContextTransaction? ownedTransaction = null;
+        WorkflowDefinition? definition = null;
+        WorkflowDefinitionVersion? version = null;
+        var createdDefinition = false;
+        var attemptEntities = new List<object>();
+        try
+        {
+            if (context.Database.CurrentTransaction is null)
+                ownedTransaction = await context.Database.BeginTransactionAsync(cancellationToken);
+
+            // The transaction-owned SQL application lock must precede the reads that
+            // choose the definition row and next version number. Otherwise another API
+            // instance can commit while this request waits, leaving it with stale data.
+            var databaseLock = await AcquireDatabaseProvisioningLockAsync(tenantId, cancellationToken);
+            if (databaseLock < 0)
+            {
+                return Result<ProjectStatusReportWorkflowDefinition>.Failure(
+                    Error.Conflict("The status-report workflow is busy in another server process. Wait a moment and retry publishing."));
+            }
+
+            // Recheck after waiting for the lock. A competing API instance may have
+            // completed provisioning while this request was queued.
+            currentDefinition = await GetCurrentValidDefinitionAsync(tenantId, cancellationToken);
+            if (currentDefinition is not null)
+            {
+                if (ownedTransaction is not null)
+                    await ownedTransaction.CommitAsync(cancellationToken);
+                return Result<ProjectStatusReportWorkflowDefinition>.Success(currentDefinition);
+            }
+
+            var definitionSnapshot = await context.Set<WorkflowDefinition>().AsNoTracking()
+                .FirstOrDefaultAsync(item => item.TenantId == tenantId && item.EntityType == ProjectStatusReportWorkflow.EntityType
+                    && item.Code == ProjectStatusReportWorkflow.DefinitionCode && !item.IsDeleted, cancellationToken);
+            if (definitionSnapshot is { IsActive: false })
+                return Result<ProjectStatusReportWorkflowDefinition>.Failure(Error.Conflict("The tenant's project status-report workflow is disabled."));
+
+            if (definitionSnapshot?.ActivePublishedVersionId is Guid activeVersionId)
+            {
+                var activeVersion = await context.Set<WorkflowDefinitionVersion>().AsNoTracking()
+                    .Include(item => item.States).Include(item => item.Transitions).ThenInclude(item => item.FromState)
+                    .Include(item => item.Transitions).ThenInclude(item => item.ToState)
+                    .FirstOrDefaultAsync(item => item.Id == activeVersionId && item.WorkflowDefinitionId == definitionSnapshot.Id
+                        && item.LifecycleStatus == WorkflowDefinitionVersionLifecycleStatus.Published && !item.IsDeleted, cancellationToken);
+                if (activeVersion is not null)
+                {
+                    var validation = ValidateVersion(activeVersion);
+                    if (!validation.IsSuccess && !ProjectStatusReportWorkflow.IsLegacyWorkflowVersion(activeVersion))
+                        return Result<ProjectStatusReportWorkflowDefinition>.Failure(validation.Error!);
+                }
+            }
+
+            // The version number is also selected while holding the tenant lock, so
+            // concurrent instances cannot both construct the same next version.
+            var existingVersionNumbers = definitionSnapshot is null ? new List<int>() : await context.Set<WorkflowDefinitionVersion>()
+                .Where(item => item.WorkflowDefinitionId == definitionSnapshot.Id && !item.IsDeleted)
+                .Select(item => item.VersionNumber).ToListAsync(cancellationToken);
+            version = new WorkflowDefinitionVersion
+            {
+                TenantId = tenantId,
+                VersionNumber = existingVersionNumbers.DefaultIfEmpty(0).Max() + 1,
+                LifecycleStatus = WorkflowDefinitionVersionLifecycleStatus.Published,
+                ChangeLog = "Provisioned the simplified Draft-to-Published status-report workflow.",
+                PublishedAt = DateTime.UtcNow,
+                PublishedBy = actor,
+                CreatedBy = actor
+            };
+            attemptEntities.Add(version);
+
+            var stateByCode = new Dictionary<string, WorkflowState>(StringComparer.OrdinalIgnoreCase);
+            for (var index = 0; index < States.Length; index++)
+            {
+                var item = States[index];
+                var state = new WorkflowState
+                {
+                    TenantId = tenantId, WorkflowDefinitionVersionId = version.Id, Code = item.Code,
+                    NameEn = item.NameEn, NameAr = item.NameAr, DisplayOrder = index + 1,
+                    IsInitial = item.Code == "Draft", IsFinal = item.IsFinal, IsActive = true, CreatedBy = actor
+                };
+                version.States.Add(state);
+                attemptEntities.Add(state);
+                stateByCode.Add(state.Code, state);
+            }
+            foreach (var item in Transitions)
+            {
+                var transition = new WorkflowTransition
+                {
+                    TenantId = tenantId, WorkflowDefinitionVersionId = version.Id, Code = item.Code,
+                    NameEn = item.NameEn, NameAr = item.NameAr,
+                    FromStateId = stateByCode[item.From].Id, ToStateId = stateByCode[item.To].Id,
+                    DisplayOrder = Array.IndexOf(Transitions, item) + 1, IsActive = true, CreatedBy = actor
+                };
+                var action = new WorkflowTransitionAction
+                {
+                    TenantId = tenantId, WorkflowTransitionId = transition.Id, ActionType = "DomainProjection",
+                    ConfigurationJson = "{}", ExecutionOrder = 10, IsActive = true, CreatedBy = actor
+                };
+                transition.Actions.Add(action);
+                version.Transitions.Add(transition);
+                attemptEntities.Add(transition);
+                attemptEntities.Add(action);
+            }
+
+            if (definitionSnapshot is null)
+            {
+                definition = new WorkflowDefinition
+                {
+                    TenantId = tenantId, Code = ProjectStatusReportWorkflow.DefinitionCode,
+                    Name = "Weekly Project Status Report", Description = "Simplified Draft and Published lifecycle for status reports.",
+                    Domain = WorkflowDomains.Reporting, EntityType = ProjectStatusReportWorkflow.EntityType,
+                    IsActive = true, CreatedBy = actor
+                };
+                createdDefinition = true;
+                attemptEntities.Add(definition);
+            }
+            else
+            {
+                definition = context.Set<WorkflowDefinition>().Local.FirstOrDefault(item => item.Id == definitionSnapshot.Id);
+                if (definition is null)
+                {
+                    definition = definitionSnapshot;
+                    context.Attach(definition);
+                }
+                else
+                {
+                    // A scoped DbContext can retain a definition read before this lock.
+                    // Refresh it so its row version and active-version pointer are current.
+                    await context.Entry(definition).ReloadAsync(cancellationToken);
+                }
+            }
+
+            definition.Versions.Add(version);
+
+            if (createdDefinition)
+            {
+                // Track the complete new workflow graph. Adding only children to an
+                // untracked definition leaves SaveChanges with nothing to persist.
+                definition.ActivePublishedVersionId = null;
+                definition.ActivePublishedVersion = null;
+                context.Set<WorkflowDefinition>().Add(definition);
+            }
+            else
+            {
+                // BaseEntity assigns GUID keys before tracking. Discovering this new
+                // graph through an existing definition can mark it Modified and issue
+                // UPDATEs for rows that do not exist. Explicit Add tracks the entire
+                // version/state/transition/action graph as new while retaining the
+                // existing definition's optimistic concurrency token.
+                version.WorkflowDefinitionId = definition.Id;
+                context.Set<WorkflowDefinitionVersion>().Add(version);
+                definition.ActivePublishedVersionId = version.Id;
+                definition.ActivePublishedVersion = version;
+                definition.UpdatedAt = DateTime.UtcNow;
+                definition.UpdatedBy = actor;
+            }
+
             await context.SaveChangesAsync(cancellationToken);
-            definition.ActivePublishedVersionId = version.Id;
-            definition.ActivePublishedVersion = version;
-            definition.UpdatedAt = DateTime.UtcNow;
-            definition.UpdatedBy = actor;
-            await context.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
+            if (createdDefinition)
+            {
+                // A new definition and its version reference each other. Persist the
+                // definition/version graph first, then set the optional active pointer.
+                definition.ActivePublishedVersionId = version.Id;
+                definition.ActivePublishedVersion = version;
+                definition.UpdatedAt = DateTime.UtcNow;
+                definition.UpdatedBy = actor;
+                await context.SaveChangesAsync(cancellationToken);
+            }
+            if (ownedTransaction is not null)
+                await ownedTransaction.CommitAsync(cancellationToken);
+
+            return Result<ProjectStatusReportWorkflowDefinition>.Success(new(definition.Id, version.Id));
+        }
+        catch (DbUpdateConcurrencyException exception)
+        {
+            logger.LogWarning(exception,
+                "Status-report workflow provisioning conflict for tenant {TenantId}, attempt {Attempt}/{Attempts}. Conflicting entities: {Entities}",
+                tenantId, recoveryAttempt + 1, MaxProvisioningRecoveryAttempts + 1,
+                string.Join(", ", exception.Entries.Select(entry => $"{entry.Metadata.ClrType.Name}:{entry.State}")));
+            if (ownedTransaction is null)
+                return Result<ProjectStatusReportWorkflowDefinition>.Failure(
+                    Error.Conflict("The status-report workflow changed while publishing. Refresh and retry."));
+
+            await ownedTransaction.RollbackAsync(CancellationToken.None);
+            await CleanupFailedProvisioningAttemptAsync(definition, createdDefinition, attemptEntities);
+            await ownedTransaction.DisposeAsync();
+            ownedTransaction = null;
+
+            var concurrentDefinition = await GetCurrentValidDefinitionAsync(tenantId, cancellationToken);
+            if (concurrentDefinition is not null)
+                return Result<ProjectStatusReportWorkflowDefinition>.Success(concurrentDefinition);
+
+            if (recoveryAttempt < MaxProvisioningRecoveryAttempts)
+            {
+                var delay = TimeSpan.FromMilliseconds(50 * (1 << recoveryAttempt));
+                await Task.Delay(delay, cancellationToken);
+                return await EnsureAsyncCore(tenantId, actor, cancellationToken, recoveryAttempt + 1);
+            }
+
+            return Result<ProjectStatusReportWorkflowDefinition>.Failure(
+                Error.Conflict("The status-report workflow is still being updated. Wait a moment, refresh, and retry publishing."));
+        }
+        catch (DbUpdateException)
+        {
+            if (ownedTransaction is null)
+                throw;
+
+            // The application lock normally prevents duplicate inserts. Keep bounded
+            // recovery for a competing writer that does not participate in that lock,
+            // but preserve unrelated persistence failures as server errors.
+            await ownedTransaction.RollbackAsync(CancellationToken.None);
+            await CleanupFailedProvisioningAttemptAsync(definition, createdDefinition, attemptEntities);
+            await ownedTransaction.DisposeAsync();
+            ownedTransaction = null;
+
+            var concurrentDefinition = await GetCurrentValidDefinitionAsync(tenantId, cancellationToken);
+            if (concurrentDefinition is not null)
+                return Result<ProjectStatusReportWorkflowDefinition>.Success(concurrentDefinition);
+
+            if (recoveryAttempt < MaxProvisioningRecoveryAttempts)
+            {
+                var delay = TimeSpan.FromMilliseconds(50 * (1 << recoveryAttempt));
+                await Task.Delay(delay, cancellationToken);
+                return await EnsureAsyncCore(tenantId, actor, cancellationToken, recoveryAttempt + 1);
+            }
+
+            throw;
         }
         catch
         {
-            await transaction.RollbackAsync(cancellationToken);
+            if (ownedTransaction is not null)
+                await ownedTransaction.RollbackAsync(CancellationToken.None);
             throw;
         }
-        return Result<ProjectStatusReportWorkflowDefinition>.Success(new(definition.Id, version.Id));
+        finally
+        {
+            if (ownedTransaction is not null)
+                await ownedTransaction.DisposeAsync();
+        }
+    }
+
+    private async Task CleanupFailedProvisioningAttemptAsync(
+        WorkflowDefinition? definition,
+        bool createdDefinition,
+        IReadOnlyCollection<object> attemptEntities)
+    {
+        // Detach dependents before their principals. Removing a WorkflowDefinitionVersion
+        // from the required Versions collection first creates an EF conceptual null and
+        // can mask the concurrency error that this cleanup is recovering from.
+        var entitiesToDetach = attemptEntities.OfType<WorkflowTransitionAction>().Cast<object>()
+            .Concat(attemptEntities.OfType<WorkflowTransition>().Cast<object>())
+            .Concat(attemptEntities.OfType<WorkflowState>().Cast<object>())
+            .Concat(attemptEntities.OfType<WorkflowDefinitionVersion>().Cast<object>())
+            .ToList();
+        var detectChangesEnabled = context.ChangeTracker.AutoDetectChangesEnabled;
+        context.ChangeTracker.AutoDetectChangesEnabled = false;
+        try
+        {
+            foreach (var entity in entitiesToDetach)
+            {
+                var entry = context.Entry(entity);
+                if (entry.State != EntityState.Detached)
+                    entry.State = EntityState.Detached;
+            }
+
+            if (createdDefinition && definition is not null)
+            {
+                var entry = context.Entry(definition);
+                if (entry.State != EntityState.Detached)
+                    entry.State = EntityState.Detached;
+            }
+        }
+        finally
+        {
+            context.ChangeTracker.AutoDetectChangesEnabled = detectChangesEnabled;
+        }
+
+        if (!createdDefinition && definition is not null)
+        {
+            var entry = context.Entry(definition);
+            if (entry.State != EntityState.Detached)
+                await entry.ReloadAsync(CancellationToken.None);
+        }
+    }
+
+    private async Task<int> AcquireDatabaseProvisioningLockAsync(Guid tenantId, CancellationToken cancellationToken)
+    {
+        if (!string.Equals(context.Database.ProviderName, "Microsoft.EntityFrameworkCore.SqlServer", StringComparison.Ordinal))
+            return 0;
+
+        var transaction = context.Database.CurrentTransaction?.GetDbTransaction()
+            ?? throw new InvalidOperationException("A transaction is required to lock status-report workflow provisioning.");
+        await using var command = context.Database.GetDbConnection().CreateCommand();
+        command.Transaction = transaction;
+        command.CommandTimeout = 20;
+        command.CommandText = """
+            DECLARE @lockResult int;
+            EXEC @lockResult = sys.sp_getapplock
+                @Resource = @resource,
+                @LockMode = 'Exclusive',
+                @LockOwner = 'Transaction',
+                @LockTimeout = 15000;
+            SELECT @lockResult;
+            """;
+        var resource = command.CreateParameter();
+        resource.ParameterName = "@resource";
+        resource.Value = $"NEXUS:ProjectStatusReportWorkflow:{tenantId:D}";
+        command.Parameters.Add(resource);
+
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return Convert.ToInt32(result, System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    private async Task<ProjectStatusReportWorkflowDefinition?> GetCurrentValidDefinitionAsync(Guid tenantId, CancellationToken cancellationToken)
+    {
+        var definition = await context.Set<WorkflowDefinition>().AsNoTracking()
+            .Where(item => item.TenantId == tenantId && item.EntityType == ProjectStatusReportWorkflow.EntityType
+                && item.Code == ProjectStatusReportWorkflow.DefinitionCode && item.IsActive && !item.IsDeleted)
+            .Select(item => new { item.Id, item.ActivePublishedVersionId })
+            .FirstOrDefaultAsync(cancellationToken);
+        if (definition?.ActivePublishedVersionId is not Guid activeVersionId) return null;
+
+        var activeVersion = await context.Set<WorkflowDefinitionVersion>().AsNoTracking()
+            .Include(item => item.States)
+            .Include(item => item.Transitions).ThenInclude(item => item.FromState)
+            .Include(item => item.Transitions).ThenInclude(item => item.ToState)
+            .FirstOrDefaultAsync(item => item.Id == activeVersionId && item.WorkflowDefinitionId == definition.Id
+                && item.LifecycleStatus == WorkflowDefinitionVersionLifecycleStatus.Published && !item.IsDeleted, cancellationToken);
+        if (activeVersion is null || !ValidateVersion(activeVersion).IsSuccess) return null;
+
+        return new ProjectStatusReportWorkflowDefinition(definition.Id, activeVersion.Id);
     }
 
     private static Result ValidateVersion(WorkflowDefinitionVersion version)
@@ -231,7 +512,6 @@ public sealed class ProjectStatusReportWorkflowAdapter(
             ["StateNameAr"] = report.ReportState.ToString(),
             ["ProjectId"] = report.ProjectId,
             ["PreparedByUserId"] = report.PreparedByUserId,
-            ["HasGeneratedSnapshot"] = !string.IsNullOrWhiteSpace(report.PerformanceSnapshotJson),
             ["HasConfiguredSections"] = ProjectStatusReportWorkflow.HasConfiguredSections(report.PerformanceSnapshotJson),
             ["StatusDate"] = report.StatusDate
         }));
@@ -245,41 +525,34 @@ public sealed class ProjectStatusReportWorkflowAdapter(
             : Result.Success();
     }
 
+    /// <summary>
+    /// Publication is gated by the dedicated publish permission; any other draft-lifecycle
+    /// transition is a write and requires edit rights. The exact lifecycle is still enforced
+    /// by <see cref="ValidateTransitionAsync"/>.
+    /// </summary>
+    public async Task<Result> AuthorizeTransitionAsync(WorkflowTransitionContext transition, CancellationToken cancellationToken = default)
+    {
+        var permission = transition.ToState.Code.Equals("Published", StringComparison.OrdinalIgnoreCase)
+            ? "StatusReport.Publish"
+            : "StatusReport.Edit";
+        if (!HasPermission(permission))
+            return Result.Failure(Error.Forbidden("You do not have permission for this status-report workflow transition."));
+        return await FindAccessibleAsync(transition.EntityId, transition.Execution, cancellationToken) is null
+            ? Result.Failure(WorkflowErrors.EntityNotAccessible(EntityType, transition.EntityId))
+            : Result.Success();
+    }
+
     public Task<Result> ValidateTransitionAsync(WorkflowTransitionContext transition, CancellationToken cancellationToken = default)
     {
         var target = transition.ToState.Code;
         if (!ProjectStatusReportWorkflow.IsExpectedTransition(transition.Transition.Code, transition.FromState.Code, target))
             return Task.FromResult(Result.Failure(Error.Forbidden("This transition is not part of the approved status-report lifecycle.")));
-        var permission = target.ToUpperInvariant() switch
-        {
-            "GENERATED" => "StatusReport.Generate",
-            "SUBMITTED" => "StatusReport.Submit",
-            "APPROVED" or "RETURNED" => "StatusReport.Approve",
-            "PUBLISHED" => "StatusReport.Publish",
-            "DRAFT" => "StatusReport.Edit",
-            _ => null
-        };
+        var permission = target.Equals("Published", StringComparison.OrdinalIgnoreCase) ? "StatusReport.Publish" : null;
         if (permission is null || !HasPermission(permission))
             return Task.FromResult(Result.Failure(Error.Forbidden("You do not have permission for this status-report workflow transition.")));
-        var requiresSnapshot = target.Equals("Generated", StringComparison.OrdinalIgnoreCase)
-            || target.Equals("Submitted", StringComparison.OrdinalIgnoreCase)
-            || target.Equals("Approved", StringComparison.OrdinalIgnoreCase)
-            || target.Equals("Returned", StringComparison.OrdinalIgnoreCase)
-            || target.Equals("Published", StringComparison.OrdinalIgnoreCase);
-        if (requiresSnapshot && (!transition.Entity.Facts.TryGetValue("HasGeneratedSnapshot", out var hasSnapshot) || hasSnapshot is not true))
-            return Task.FromResult(Result.Failure(Error.Conflict("A report snapshot must be generated before continuing this workflow.")));
         if (target.Equals("Published", StringComparison.OrdinalIgnoreCase)
             && (!transition.Entity.Facts.TryGetValue("HasConfiguredSections", out var hasConfiguredSections) || hasConfiguredSections is not true))
             return Task.FromResult(Result.Failure(Error.Conflict("At least one configured report section is required before publication.")));
-        if (target.Equals("Approved", StringComparison.OrdinalIgnoreCase))
-        {
-            if (!transition.Entity.Facts.TryGetValue("PreparedByUserId", out var author)
-                || author is not Guid authorId
-                || !Guid.TryParse(transition.Execution.UserId, out var reviewerId))
-                return Task.FromResult(Result.Failure(Error.Forbidden("The report author and reviewer must be identified before approval.")));
-            if (authorId == reviewerId)
-                return Task.FromResult(Result.Failure(Error.Forbidden("A report author cannot approve their own report.")));
-        }
         return Task.FromResult(Result.Success());
     }
 
@@ -293,50 +566,19 @@ public sealed class ProjectStatusReportWorkflowAdapter(
             return Result.Failure(Error.Validation("The target state is not supported by the status-report domain."));
 
         if (newState == ProjectStatusReportState.Published && string.IsNullOrWhiteSpace(report.PerformanceSnapshotJson))
-            return Result.Failure(Error.Conflict("Generate and freeze the report snapshot before publishing."));
+            return Result.Failure(Error.Conflict("Capture the report snapshot as part of publication."));
         if (newState == ProjectStatusReportState.Published && !ProjectStatusReportWorkflow.HasConfiguredSections(report.PerformanceSnapshotJson))
             return Result.Failure(Error.Conflict("At least one configured report section is required before publication."));
-        if (newState == ProjectStatusReportState.Draft && report.ReportState == ProjectStatusReportState.Returned)
-            await ClearGeneratedSnapshotAsync(report, cancellationToken);
         report.ReportState = newState;
         report.UpdatedAt = DateTime.UtcNow;
         report.UpdatedBy = transition.Execution.UserId;
         if (newState == ProjectStatusReportState.Published)
         {
-            report.PublishedAt = DateTime.UtcNow;
+            report.PublishedAt = report.SourceDataCapturedAt ?? DateTime.UtcNow;
             report.PublishedByUserId = Guid.TryParse(transition.Execution.UserId, out var publisherId) ? publisherId : null;
             report.PublishedByNameSnapshot = transition.Execution.UserName;
         }
-        if (newState == ProjectStatusReportState.Draft)
-        {
-            report.PublishedAt = null;
-            report.PublishedByUserId = null;
-            report.PublishedByNameSnapshot = null;
-        }
         return Result.Success();
-    }
-
-    private async Task ClearGeneratedSnapshotAsync(ProjectStatusReport report, CancellationToken cancellationToken)
-    {
-        report.PerformanceSnapshotJson = null;
-        report.ReportingConfigurationVersionSnapshot = null;
-        report.SourceDataCapturedAt = null;
-        report.ProjectNameSnapshot = null;
-        report.ProjectCodeSnapshot = null;
-        report.CurrencyCodeSnapshot = null;
-        report.BudgetAmountSnapshot = null;
-        report.ActualCostAmountSnapshot = null;
-        report.CommittedCostAmountSnapshot = null;
-        report.ForecastCostAmountSnapshot = null;
-        report.CostVarianceAmountSnapshot = null;
-        report.ScheduleVarianceDaysSnapshot = null;
-        report.ScheduleVariancePercentSnapshot = null;
-        report.BaselineIdAtReport = null;
-        report.BaselineNameSnapshot = null;
-        report.BaselineVersionSnapshot = null;
-        context.Set<ProjectStatusReportRiskSnapshot>().RemoveRange(await context.Set<ProjectStatusReportRiskSnapshot>().Where(item => item.ProjectStatusReportId == report.Id).ToListAsync(cancellationToken));
-        context.Set<ProjectStatusReportIssueSnapshot>().RemoveRange(await context.Set<ProjectStatusReportIssueSnapshot>().Where(item => item.ProjectStatusReportId == report.Id).ToListAsync(cancellationToken));
-        context.Set<ProjectStatusReportChangeRequestSnapshot>().RemoveRange(await context.Set<ProjectStatusReportChangeRequestSnapshot>().Where(item => item.ProjectStatusReportId == report.Id).ToListAsync(cancellationToken));
     }
 
     private async Task<ProjectStatusReport?> FindAccessibleAsync(Guid id, WorkflowExecutionContext execution, CancellationToken cancellationToken, bool tracked = false)
@@ -366,7 +608,7 @@ public sealed class ProjectStatusReportWorkflowMetadataProvider : IWorkflowEntit
     {
         new WorkflowFactMetadata("ProjectId", "Project", "المشروع", "string"),
         new WorkflowFactMetadata("PreparedByUserId", "Prepared by", "أعده", "string"),
-        new WorkflowFactMetadata("HasGeneratedSnapshot", "Has generated snapshot", "توجد لقطة منشأة", "boolean"),
+        new WorkflowFactMetadata("HasConfiguredSections", "Has configured report sections", "توجد أقسام تقرير مهيأة", "boolean"),
         new WorkflowFactMetadata("StatusDate", "Status date", "تاريخ الحالة", "date")
     });
 }

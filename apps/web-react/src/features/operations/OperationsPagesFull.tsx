@@ -14,6 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@components/ui/Tabs";
 import { Pagination } from "@components/ui/Pagination";
 import { useI18n } from "@i18n/messages";
+import { useProjectEnumLabels } from "@features/projects/lib/project-labels";
 import { api } from "@api/client";
 import { endpoints } from "@api/endpoints";
 import { useAuditEntries } from "@api/audit";
@@ -25,7 +26,7 @@ import { useAuth } from "@auth/AuthProvider";
 import { useManagement } from "@api/management";
 import { hasPermission, Permissions } from "@lib/permissions";
 import { MANAGEMENT_PERSPECTIVES } from "@lib/perspective";
-import { useManagedPortfolios, usePortfolioManagementOverview, type PortfolioManagementListItem } from "@features/delivery/api/delivery";
+import { useManagedPortfolios, usePortfolioFinancialRollup, usePortfolioManagementOverview, type PortfolioManagementListItem } from "@features/delivery/api/delivery";
 import { useDebounce } from "use-debounce";
 
 type Paged<T> = { items: T[]; totalCount: number; totalPages?: number };
@@ -92,10 +93,11 @@ function reportInCategory(report: Report, category: string): boolean {
 }
 
 function PortfolioReportsFull() {
-  const { t, formatCurrency, formatPercent, formatNumber } = useI18n();
+  const { t, formatPercent, formatNumber } = useI18n();
   const { user } = useAuth();
   const { context, loading: managementLoading } = useManagement();
   const canView = Boolean(user && hasPermission(user.permissions, Permissions.Portfolio.View));
+  const canViewFinancials = Boolean(user && hasPermission(user.permissions, Permissions.PortfolioFinancialRollup.View));
   const hasPortfolioScope = context?.perspective === MANAGEMENT_PERSPECTIVES.PortfolioManager;
   const portfoliosQuery = useManagedPortfolios("", canView && hasPortfolioScope);
   const portfolios = portfoliosQuery.data?.items ?? [];
@@ -108,17 +110,19 @@ function PortfolioReportsFull() {
           : portfoliosQuery.isLoading ? <Loading text={t("common.loading")} />
             : portfoliosQuery.isError ? <Card><CardContent className="flex flex-col items-center gap-3 py-10 text-center"><ErrorState text={t("portfolioManager.loadFailed")} /><Button size="sm" variant="outline" onClick={() => void portfoliosQuery.refetch()}>{t("common.retry")}</Button></CardContent></Card>
               : portfolios.length === 0 ? <Card><CardContent className="py-10 text-center text-sm text-muted-foreground">{t("portfolioManager.noPortfolios")}</CardContent></Card>
-                : <div className="grid gap-4 md:grid-cols-2">{portfolios.map((portfolio) => <PortfolioReportCard key={portfolio.id} portfolio={portfolio} t={t} formatCurrency={formatCurrency} formatPercent={formatPercent} formatNumber={formatNumber} />)}</div>}
+                : <div className="grid gap-4 md:grid-cols-2">{portfolios.map((portfolio) => <PortfolioReportCard key={portfolio.id} portfolio={portfolio} canViewFinancials={canViewFinancials} t={t} formatPercent={formatPercent} formatNumber={formatNumber} />)}</div>}
   </div>;
 }
 
-function PortfolioReportCard({ portfolio, t, formatCurrency, formatPercent, formatNumber }: {
+function PortfolioReportCard({ portfolio, canViewFinancials, t, formatPercent, formatNumber }: {
   portfolio: PortfolioManagementListItem;
+  canViewFinancials: boolean;
   t: (key: string, values?: Record<string, string | number>) => string;
-  formatCurrency: (value: number, currency?: string) => string;
   formatPercent: (value: number) => string;
   formatNumber: (value: number) => string;
 }) {
+  const { formatCurrency } = useI18n();
+  const { healthLabel } = useProjectEnumLabels();
   const cardRef = React.useRef<HTMLDivElement>(null);
   const [visible, setVisible] = React.useState(false);
   React.useEffect(() => {
@@ -131,12 +135,13 @@ function PortfolioReportCard({ portfolio, t, formatCurrency, formatPercent, form
     return () => observer.disconnect();
   }, []);
   const overviewQuery = usePortfolioManagementOverview(portfolio.id, { programsPage: 1, projectsPage: 1, pageSize: 1 }, visible);
+  const financialRollupQuery = usePortfolioFinancialRollup(portfolio.id, {}, visible && canViewFinancials);
   const overview = overviewQuery.data;
 
   return <Card ref={cardRef}>
     <CardHeader className="flex flex-row items-start justify-between gap-3">
       <div className="min-w-0"><CardTitle className="text-base">{portfolio.name}</CardTitle><CardDescription className="mt-1">{t("operations.portfolioReportProjectCount", { count: portfolio.totalProjectCount })}</CardDescription></div>
-      <span className={`shrink-0 text-sm font-medium ${getStatusTextClass(portfolio.health ?? "Unknown")}`}>{portfolio.health || t("portfolioManager.unknown")}</span>
+      <span className={`shrink-0 text-sm font-medium ${getStatusTextClass(portfolio.health ?? "Unknown")}`}>{healthLabel(portfolio.health)}</span>
     </CardHeader>
     <CardContent className="space-y-4">
       {!visible || overviewQuery.isLoading ? <div className="space-y-3"><Skeleton className="h-5 w-2/3" /><Skeleton className="h-12 w-full" /></div>
@@ -146,10 +151,13 @@ function PortfolioReportCard({ portfolio, t, formatCurrency, formatPercent, form
               <div><p className="text-xs text-muted-foreground">{t("portfolioManager.totalProjects")}</p><p className="mt-1 text-lg font-semibold tabular-nums">{formatNumber(overview.summary.totalProjects)}</p></div>
               <div><p className="text-xs text-muted-foreground">{t("portfolioManager.averageProgress")}</p><p className="mt-1 text-lg font-semibold tabular-nums">{overview.summary.averageProjectProgress == null ? "—" : formatPercent(overview.summary.averageProjectProgress)}</p></div>
             </div>
-            <div className="space-y-3">
-              {overview.financials.groups.length ? <div className="grid gap-3 sm:grid-cols-2">{overview.financials.groups.map((group) => <div key={group.currency} className="rounded-md border p-3"><p className="text-xs font-medium text-muted-foreground">{group.currency}</p><div className="mt-2 grid grid-cols-2 gap-3 text-sm"><div><p className="text-xs text-muted-foreground">{t("portfolioManager.budget")}</p><p className="mt-1 font-medium tabular-nums">{formatCurrency(group.budget, group.currency)}</p></div><div><p className="text-xs text-muted-foreground">{t("portfolioManager.actual")}</p><p className="mt-1 font-medium tabular-nums">{formatCurrency(group.actual, group.currency)}</p></div></div></div>)}</div> : <p className="text-sm text-muted-foreground">{t("portfolioManager.noFinancials")}</p>}
-              {overview.financials.hasMixedCurrencies ? <p className="text-xs text-muted-foreground">{t("portfolioManager.mixedCurrencyNote")}</p> : null}
-            </div>
+            {canViewFinancials ? <div className="space-y-3">
+              {financialRollupQuery.isLoading ? <Skeleton className="h-20 w-full" />
+                : financialRollupQuery.isError || !financialRollupQuery.data ? <div className="flex items-center justify-between gap-3"><p role="alert" className="text-sm text-destructive">{t("operations.portfolioReportLoadFailed")}</p><Button size="sm" variant="outline" onClick={() => void financialRollupQuery.refetch()}>{t("common.retry")}</Button></div>
+                  : financialRollupQuery.data.currencyGroups.length ? <div className="grid gap-3 sm:grid-cols-2">{financialRollupQuery.data.currencyGroups.map((group) => <div key={group.currency} className="rounded-md border p-3"><p className="text-xs font-medium text-muted-foreground">{group.currency}</p><div className="mt-2 grid grid-cols-2 gap-3 text-sm"><div><p className="text-xs text-muted-foreground">{t("portfolioManager.budget")}</p><p className="mt-1 font-medium tabular-nums">{formatCurrency(group.approvedAnnualBudget, group.currency)}</p></div><div><p className="text-xs text-muted-foreground">{t("portfolioManager.actual")}</p><p className="mt-1 font-medium tabular-nums">{formatCurrency(group.actualSettlementsInFiscalYear, group.currency)}</p></div></div></div>)}</div>
+                    : <p className="text-sm text-muted-foreground">{t("portfolioManager.noFinancials")}</p>}
+              {financialRollupQuery.data?.hasMixedCurrencies ? <p className="text-xs text-muted-foreground">{t("portfolioManager.mixedCurrencyNote")}</p> : null}
+            </div> : null}
           </>}
       <div className="flex justify-end border-t pt-3"><Link to={`/portfolios/${encodeURIComponent(portfolio.id)}`} className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline">{t("portfolioManager.open")}<ArrowUpRight className="h-4 w-4" /></Link></div>
     </CardContent>
@@ -228,7 +236,7 @@ export function SecurityPoliciesPageFull() {
     { name: t("operations.securityPolicies.dataExportControls"), description: t("operations.securityPolicies.dataExportControlsDescription"), active: true, scope: t("operations.securityPolicies.project") },
     { name: t("operations.securityPolicies.auditLogRetention"), description: t("operations.securityPolicies.auditLogRetentionDescription"), active: true, scope: t("operations.securityPolicies.system") },
   ];
-  return <div className="space-y-6"><PageHeader title={t("operations.securityPolicies.title")} description={t("operations.securityPolicies.description")} actions={<Button size="sm"><Plus className="me-2 h-4 w-4" />{t("operations.securityPolicies.newPolicy")}</Button>} /><div className="space-y-3">{policies.map((policy) => <Card key={policy.name}><CardContent className="flex items-center gap-4 py-4"><div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted"><ShieldCheck className="h-5 w-5" /></div><div className="flex-1"><div className="flex flex-wrap items-center gap-2"><p className="font-medium">{policy.name}</p><Badge status={policy.active ? "Active" : "Inactive"} className="text-[10px]">{policy.active ? t("common.active") : t("common.inactive")}</Badge><span className="text-xs font-medium text-muted-foreground">{policy.scope}</span></div><p className="mt-1 text-xs text-muted-foreground">{policy.description}</p></div><Button size="sm" variant="outline"><Pencil className="me-1.5 h-3.5 w-3.5" />{t("common.edit")}</Button></CardContent></Card>)}</div></div>;
+  return <div className="space-y-6"><PageHeader title={t("operations.securityPolicies.title")} description={t("operations.securityPolicies.description")} actions={<Button size="sm"><Plus className="me-2 h-4 w-4" />{t("operations.securityPolicies.newPolicy")}</Button>} /><div className="space-y-3">{policies.map((policy) => <Card key={policy.name}><CardContent className="flex items-center gap-4 py-4"><div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted"><ShieldCheck className="h-5 w-5" /></div><div className="flex-1"><div className="flex flex-wrap items-center gap-2"><p className="font-medium">{policy.name}</p><Badge status="Pending" className="text-[10px]">{t("operations.securityPolicies.notConfigured")}</Badge><span className="text-xs font-medium text-muted-foreground">{policy.scope}</span></div><p className="mt-1 text-xs text-muted-foreground">{policy.description}</p></div><Button size="sm" variant="outline"><Pencil className="me-1.5 h-3.5 w-3.5" />{t("common.edit")}</Button></CardContent></Card>)}</div></div>;
 }
 
 export function WorkItemCollectionPageFull({ type, titleKey, descriptionKey }: { type: WorkItemType; titleKey: string; descriptionKey: string }) {

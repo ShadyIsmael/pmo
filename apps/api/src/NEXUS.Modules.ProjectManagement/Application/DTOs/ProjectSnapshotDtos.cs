@@ -17,6 +17,7 @@ public class ProjectSnapshotSummaryDto
     public string? HandoverNotes { get; set; }
     public DateTime CreatedAt { get; set; }
     public string CreatedBy { get; set; } = string.Empty;
+    public string? CreatedByName { get; set; }
 }
 
 public class ProjectSnapshotDto : ProjectSnapshotSummaryDto
@@ -85,7 +86,10 @@ public class ProjectSnapshotDataDto
 public class SnapshotMemberDto
 {
     public Guid OriginalId { get; set; }
-    public Guid ResourceId { get; set; }
+    public Guid? ResourceId { get; set; }
+    public Guid? TeamId { get; set; }
+    public string? TeamName { get; set; }
+    public string MemberType { get; set; } = "Resource";
     public string? ResourceName { get; set; }
     public string? ResourceJobTitle { get; set; }
     public string Role { get; set; } = string.Empty;

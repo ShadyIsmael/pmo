@@ -1,0 +1,67 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="ec86173f-40eb-4919-965a-0b8cedb1f98d" name="shady@SHADY 2026-10-27 17:39:53" runUser="SHADY\shady" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-10-27T17:39:53.7810350+03:00" queuing="2026-10-27T17:39:53.7810356+03:00" start="2026-10-27T17:39:41.8681776+03:00" finish="2026-10-27T17:39:55.0632341+03:00" />
+  <TestSettings name="default" id="ae08557a-7146-4a20-9b24-376c3e033317">
+    <Deployment runDeploymentRoot="shady_SHADY_2026-10-27_17_39_53" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="39e7665a-5b94-4cae-9701-94bcbabdebb9" testId="08d2fb93-87f4-35fe-8524-a719675a7b9a" testName="NEXUS.Api.Tests.Integration.ProjectReportingPersistenceTests.Persisted_multi_plan_configuration_uses_weighted_EVM_and_freezes_generated_report_data" computerName="SHADY" duration="00:00:08.9063217" startTime="2026-10-27T17:39:44.8220500+03:00" endTime="2026-10-27T17:39:53.7352486+03:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="39e7665a-5b94-4cae-9701-94bcbabdebb9">
+      <Output>
+        <ErrorInfo>
+          <Message>Expected 909375, got 906666.6666666666666666666670.</Message>
+          <StackTrace>   at NEXUS.Api.Tests.Integration.ProjectReportingPersistenceTests.AssertClose(String field, Decimal expected, Nullable`1 actual) in C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Integration\ProjectReportingPersistenceTests.cs:line 583&#xD;
+   at NEXUS.Api.Tests.Integration.ProjectReportingPersistenceTests.AssertPerformance(ProjectPerformanceDto actual, Decimal bac, Decimal pv, Decimal ev, Decimal ac) in C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Integration\ProjectReportingPersistenceTests.cs:line 572&#xD;
+   at NEXUS.Api.Tests.Integration.ProjectReportingPersistenceTests.Persisted_multi_plan_configuration_uses_weighted_EVM_and_freezes_generated_report_data() in C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Integration\ProjectReportingPersistenceTests.cs:line 303&#xD;
+--- End of stack trace from previous location ---</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="ab0cbb66-7120-4ea2-a77b-73346661bbca" testId="84d1cd07-3c20-87b1-ead7-971690fb09cc" testName="NEXUS.Api.Tests.Integration.ProjectStatusReportWorkflowProvisioningTests.First_provisioning_persists_the_definition_and_all_required_children" computerName="SHADY" duration="00:00:00.6667156" startTime="2026-10-27T17:39:53.7643175+03:00" endTime="2026-10-27T17:39:54.4063987+03:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="ab0cbb66-7120-4ea2-a77b-73346661bbca" />
+    <UnitTestResult executionId="05109310-c6f6-4556-8623-20379ca00bce" testId="9758687b-4284-56e4-a98a-ed0a7172495e" testName="NEXUS.Api.Tests.Integration.ProjectStatusReportWorkflowProvisioningTests.Legacy_workflow_upgrade_inserts_new_graph_instead_of_returning_publish_409" computerName="SHADY" duration="00:00:00.5686971" startTime="2026-10-27T17:39:54.4085931+03:00" endTime="2026-10-27T17:39:54.9747857+03:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="05109310-c6f6-4556-8623-20379ca00bce" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="NEXUS.Api.Tests.Integration.ProjectStatusReportWorkflowProvisioningTests.First_provisioning_persists_the_definition_and_all_required_children" storage="c:\users\shady\documents\codex\_build\status-publish-fixedtests3\debug\net10.0\nexus.api.tests.dll" id="84d1cd07-3c20-87b1-ead7-971690fb09cc">
+      <Execution id="ab0cbb66-7120-4ea2-a77b-73346661bbca" />
+      <TestMethod codeBase="C:\Users\shady\Documents\Codex\_build\status-publish-fixedtests3\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Integration.ProjectStatusReportWorkflowProvisioningTests" name="First_provisioning_persists_the_definition_and_all_required_children" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Integration.ProjectStatusReportWorkflowProvisioningTests.Legacy_workflow_upgrade_inserts_new_graph_instead_of_returning_publish_409" storage="c:\users\shady\documents\codex\_build\status-publish-fixedtests3\debug\net10.0\nexus.api.tests.dll" id="9758687b-4284-56e4-a98a-ed0a7172495e">
+      <Execution id="05109310-c6f6-4556-8623-20379ca00bce" />
+      <TestMethod codeBase="C:\Users\shady\Documents\Codex\_build\status-publish-fixedtests3\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Integration.ProjectStatusReportWorkflowProvisioningTests" name="Legacy_workflow_upgrade_inserts_new_graph_instead_of_returning_publish_409" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Integration.ProjectReportingPersistenceTests.Persisted_multi_plan_configuration_uses_weighted_EVM_and_freezes_generated_report_data" storage="c:\users\shady\documents\codex\_build\status-publish-fixedtests3\debug\net10.0\nexus.api.tests.dll" id="08d2fb93-87f4-35fe-8524-a719675a7b9a">
+      <Execution id="39e7665a-5b94-4cae-9701-94bcbabdebb9" />
+      <TestMethod codeBase="C:\Users\shady\Documents\Codex\_build\status-publish-fixedtests3\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Integration.ProjectReportingPersistenceTests" name="Persisted_multi_plan_configuration_uses_weighted_EVM_and_freezes_generated_report_data" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="08d2fb93-87f4-35fe-8524-a719675a7b9a" executionId="39e7665a-5b94-4cae-9701-94bcbabdebb9" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="84d1cd07-3c20-87b1-ead7-971690fb09cc" executionId="ab0cbb66-7120-4ea2-a77b-73346661bbca" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="9758687b-4284-56e4-a98a-ed0a7172495e" executionId="05109310-c6f6-4556-8623-20379ca00bce" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Failed">
+    <Counters total="3" executed="3" passed="2" failed="1" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.0.0+e341b939fe (64-bit .NET 10.0.10)&#xD;
+[xUnit.net 00:00:01.03]   Discovering: NEXUS.Api.Tests&#xD;
+[xUnit.net 00:00:01.24]   Discovered:  NEXUS.Api.Tests&#xD;
+[xUnit.net 00:00:01.27]   Starting:    NEXUS.Api.Tests&#xD;
+[xUnit.net 00:00:10.24]       Expected 909375, got 906666.6666666666666666666670.&#xD;
+[xUnit.net 00:00:10.24]       Stack Trace:&#xD;
+[xUnit.net 00:00:10.24]         C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Integration\ProjectReportingPersistenceTests.cs(583,0): at NEXUS.Api.Tests.Integration.ProjectReportingPersistenceTests.AssertClose(String field, Decimal expected, Nullable`1 actual)&#xD;
+[xUnit.net 00:00:10.24]         C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Integration\ProjectReportingPersistenceTests.cs(572,0): at NEXUS.Api.Tests.Integration.ProjectReportingPersistenceTests.AssertPerformance(ProjectPerformanceDto actual, Decimal bac, Decimal pv, Decimal ev, Decimal ac)&#xD;
+[xUnit.net 00:00:10.24]         C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Integration\ProjectReportingPersistenceTests.cs(303,0): at NEXUS.Api.Tests.Integration.ProjectReportingPersistenceTests.Persisted_multi_plan_configuration_uses_weighted_EVM_and_freezes_generated_report_data()&#xD;
+[xUnit.net 00:00:10.24]         --- End of stack trace from previous location ---&#xD;
+[xUnit.net 00:00:11.48]   Finished:    NEXUS.Api.Tests&#xD;
+</StdOut>
+    </Output>
+    <RunInfos>
+      <RunInfo computerName="SHADY" outcome="Error" timestamp="2026-10-27T17:39:53.7402359+03:00">
+        <Text>[xUnit.net 00:00:10.24]     NEXUS.Api.Tests.Integration.ProjectReportingPersistenceTests.Persisted_multi_plan_configuration_uses_weighted_EVM_and_freezes_generated_report_data [FAIL]</Text>
+      </RunInfo>
+    </RunInfos>
+  </ResultSummary>
+</TestRun>

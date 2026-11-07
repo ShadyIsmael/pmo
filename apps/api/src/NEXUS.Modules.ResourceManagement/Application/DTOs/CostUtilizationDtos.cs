@@ -11,6 +11,7 @@ public sealed class CostUtilizationFilterDto
     public Guid? PlanActivityId { get; set; }
     public Guid? WorkItemId { get; set; }
     public Guid? DepartmentId { get; set; }
+    public Guid? TeamId { get; set; }
 }
 
 public sealed class CostUtilizationReportDto
@@ -21,11 +22,18 @@ public sealed class CostUtilizationReportDto
     public CostUtilizationMetricDto Operational { get; init; } = new();
     public IReadOnlyList<CostUtilizationMetricDto> ByCurrency { get; init; } = [];
     public IReadOnlyList<CostUtilizationResourceDto> Resources { get; init; } = [];
+    public IReadOnlyList<CostUtilizationDepartmentOptionDto> Departments { get; init; } = [];
     public IReadOnlyList<CostUtilizationAttributionDto> Projects { get; init; } = [];
     public IReadOnlyList<CostUtilizationAttributionDto> Vendors { get; init; } = [];
     public IReadOnlyList<CostUtilizationAttributionDto> Roles { get; init; } = [];
     public IReadOnlyList<CostUtilizationDailyDto> Daily { get; init; } = [];
     public IReadOnlyList<CostUtilizationWarningDto> Warnings { get; init; } = [];
+}
+
+public sealed class CostUtilizationDepartmentOptionDto
+{
+    public Guid DepartmentId { get; init; }
+    public string Name { get; init; } = string.Empty;
 }
 
 public class CostUtilizationMetricDto
@@ -90,6 +98,18 @@ public sealed class CostUtilizationDailyDto : CostUtilizationMetricDto
     public Guid ResourceId { get; init; }
     public string ResourceName { get; init; } = string.Empty;
     public DateTime WorkDate { get; init; }
+    public IReadOnlyList<CostUtilizationActivityDto> Activities { get; init; } = [];
+}
+
+public sealed class CostUtilizationActivityDto
+{
+    public Guid? PlanActivityId { get; init; }
+    public string? ActivityName { get; init; }
+    public IReadOnlyList<string> WorkItemTitles { get; init; } = [];
+    public Guid? ProjectId { get; init; }
+    public string? ProjectName { get; init; }
+    public decimal PlannedHours { get; init; }
+    public decimal ActualHours { get; init; }
 }
 
 public sealed class CostUtilizationWarningDto

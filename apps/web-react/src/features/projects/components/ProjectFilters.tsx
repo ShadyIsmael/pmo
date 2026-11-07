@@ -23,6 +23,15 @@ interface ProjectFiltersProps {
 
 export function ProjectFilters({ filters, onChange }: ProjectFiltersProps) {
   const { t } = useI18n();
+  const statusLabels: Record<string, string> = {
+    Active: t("projects.filterStatuses.active"), OnHold: t("projects.filterStatuses.onHold"),
+    Completed: t("projects.filterStatuses.completed"), Cancelled: t("projects.filterStatuses.cancelled"),
+    Archived: t("projects.filterStatuses.archived"),
+  };
+  const priorityLabels: Record<string, string> = {
+    High: t("enums.projectPriority.high"), Medium: t("enums.projectPriority.medium"),
+    Low: t("enums.projectPriority.low"),
+  };
   const [draft, setDraft] = React.useState(filters.search);
   const portfoliosQuery = usePortfolios(true);
 
@@ -41,8 +50,8 @@ export function ProjectFilters({ filters, onChange }: ProjectFiltersProps) {
 
   const activeFilters = [
     filters.search && { key: "search", label: `${t("common.search")}: ${filters.search}` },
-    filters.status && { key: "status", label: `${t("common.status")}: ${filters.status}` },
-    filters.priority && { key: "priority", label: `${t("projects.priority")}: ${filters.priority}` },
+    filters.status && { key: "status", label: `${t("common.status")}: ${statusLabels[filters.status] ?? filters.status}` },
+    filters.priority && { key: "priority", label: `${t("projects.priority")}: ${priorityLabels[filters.priority] ?? filters.priority}` },
     filters.portfolioId && {
       key: "portfolioId",
       label: `${t("projects.portfolio")}: ${(portfoliosQuery.data?.items ?? []).find((p) => p.id === filters.portfolioId)?.name ?? filters.portfolioId}`,
@@ -74,11 +83,11 @@ export function ProjectFilters({ filters, onChange }: ProjectFiltersProps) {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="">{t("common.all")}</SelectItem>
-              <SelectItem value="Active">Active</SelectItem>
-              <SelectItem value="OnHold">On Hold</SelectItem>
-              <SelectItem value="Completed">Completed</SelectItem>
-              <SelectItem value="Cancelled">Cancelled</SelectItem>
-              <SelectItem value="Archived">Archived</SelectItem>
+              <SelectItem value="Active">{statusLabels.Active}</SelectItem>
+              <SelectItem value="OnHold">{statusLabels.OnHold}</SelectItem>
+              <SelectItem value="Completed">{statusLabels.Completed}</SelectItem>
+              <SelectItem value="Cancelled">{statusLabels.Cancelled}</SelectItem>
+              <SelectItem value="Archived">{statusLabels.Archived}</SelectItem>
             </SelectContent>
           </Select>
           <Select value={filters.priority} onValueChange={(value) => onChange({ ...filters, priority: value })}>
@@ -87,9 +96,9 @@ export function ProjectFilters({ filters, onChange }: ProjectFiltersProps) {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="">{t("common.all")}</SelectItem>
-              <SelectItem value="High">High</SelectItem>
-              <SelectItem value="Medium">Medium</SelectItem>
-              <SelectItem value="Low">Low</SelectItem>
+              <SelectItem value="High">{priorityLabels.High}</SelectItem>
+              <SelectItem value="Medium">{priorityLabels.Medium}</SelectItem>
+              <SelectItem value="Low">{priorityLabels.Low}</SelectItem>
             </SelectContent>
           </Select>
           <Select value={filters.portfolioId} onValueChange={(value) => onChange({ ...filters, portfolioId: value })}>

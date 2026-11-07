@@ -1,0 +1,58 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="364ee488-150e-4367-88dc-25edd9754cef" name="shady@SHADY 2026-11-05 18:29:59" runUser="SHADY\shady" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-11-05T18:29:59.2082657+02:00" queuing="2026-11-05T18:29:59.2082670+02:00" start="2026-11-05T18:29:50.0898003+02:00" finish="2026-11-05T18:30:01.3091067+02:00" />
+  <TestSettings name="default" id="37d1d2a3-6402-4b1b-9e6c-45ffa7f1e6d0">
+    <Deployment runDeploymentRoot="shady_SHADY_2026-11-05_18_29_59" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="42c355fe-57ae-41cf-98ff-5a5dae8e7985" testId="ae1062b9-1b29-6746-bc35-b06e0691e18e" testName="NEXUS.Api.Tests.CostManagement.P004FinancialDataIntegrityTests.BudgetAuthority_Allocation_Rejects_When_Exceeding_Authoritative_Ceiling" computerName="SHADY" duration="00:00:00.1582764" startTime="2026-11-05T18:30:00.9132007+02:00" endTime="2026-11-05T18:30:01.0666868+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="42c355fe-57ae-41cf-98ff-5a5dae8e7985" />
+    <UnitTestResult executionId="6ac38e45-a2e9-4fe0-bf06-9f1cd9a8aa3a" testId="788c582e-fec0-2a2a-ed78-9b0bf4bad2bf" testName="NEXUS.Api.Tests.CostManagement.P004FinancialDataIntegrityTests.BudgetAuthority_Commitment_Rejects_When_Project_Ceiling_Missing" computerName="SHADY" duration="00:00:00.5096230" startTime="2026-11-05T18:29:58.2048131+02:00" endTime="2026-11-05T18:29:58.6624574+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="6ac38e45-a2e9-4fe0-bf06-9f1cd9a8aa3a" />
+    <UnitTestResult executionId="2b7b06c4-9a9d-4fc8-8871-e2d5b4ca8284" testId="51775e6f-69a4-f26e-1a5c-d9b654560f4b" testName="NEXUS.Api.Tests.CostManagement.P004FinancialDataIntegrityTests.BudgetAuthority_Allocation_Rejects_When_Project_Ceiling_Missing" computerName="SHADY" duration="00:00:00.0270148" startTime="2026-11-05T18:29:58.6663226+02:00" endTime="2026-11-05T18:29:58.6895845+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="2b7b06c4-9a9d-4fc8-8871-e2d5b4ca8284" />
+    <UnitTestResult executionId="4d5b6bb0-a7df-4fc1-8c65-b63de8d59d20" testId="d1603a34-c89c-40fc-cb62-3bec9340b3e3" testName="NEXUS.Api.Tests.CostManagement.P004FinancialDataIntegrityTests.BudgetAuthority_Commitment_Uses_Normalized_Project_Currency_In_Error" computerName="SHADY" duration="00:00:02.2178854" startTime="2026-11-05T18:29:58.6905191+02:00" endTime="2026-11-05T18:30:00.9080552+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="4d5b6bb0-a7df-4fc1-8c65-b63de8d59d20" />
+    <UnitTestResult executionId="4d7ea032-5076-4d29-b4af-f93633bf753b" testId="93e78d95-74d7-2f66-b980-157ad1171d5c" testName="NEXUS.Api.Tests.CostManagement.P004FinancialDataIntegrityTests.PaymentRequestWorkflowPolicy_ReservesBudget_For_Pending_And_Approved_Only" computerName="SHADY" duration="00:00:00.6092644" startTime="2026-11-05T18:29:57.6223158+02:00" endTime="2026-11-05T18:29:58.1503442+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="4d7ea032-5076-4d29-b4af-f93633bf753b" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="NEXUS.Api.Tests.CostManagement.P004FinancialDataIntegrityTests.BudgetAuthority_Allocation_Rejects_When_Exceeding_Authoritative_Ceiling" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="ae1062b9-1b29-6746-bc35-b06e0691e18e">
+      <Execution id="42c355fe-57ae-41cf-98ff-5a5dae8e7985" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.CostManagement.P004FinancialDataIntegrityTests" name="BudgetAuthority_Allocation_Rejects_When_Exceeding_Authoritative_Ceiling" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.CostManagement.P004FinancialDataIntegrityTests.PaymentRequestWorkflowPolicy_ReservesBudget_For_Pending_And_Approved_Only" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="93e78d95-74d7-2f66-b980-157ad1171d5c">
+      <Execution id="4d7ea032-5076-4d29-b4af-f93633bf753b" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.CostManagement.P004FinancialDataIntegrityTests" name="PaymentRequestWorkflowPolicy_ReservesBudget_For_Pending_And_Approved_Only" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.CostManagement.P004FinancialDataIntegrityTests.BudgetAuthority_Commitment_Uses_Normalized_Project_Currency_In_Error" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="d1603a34-c89c-40fc-cb62-3bec9340b3e3">
+      <Execution id="4d5b6bb0-a7df-4fc1-8c65-b63de8d59d20" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.CostManagement.P004FinancialDataIntegrityTests" name="BudgetAuthority_Commitment_Uses_Normalized_Project_Currency_In_Error" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.CostManagement.P004FinancialDataIntegrityTests.BudgetAuthority_Allocation_Rejects_When_Project_Ceiling_Missing" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="51775e6f-69a4-f26e-1a5c-d9b654560f4b">
+      <Execution id="2b7b06c4-9a9d-4fc8-8871-e2d5b4ca8284" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.CostManagement.P004FinancialDataIntegrityTests" name="BudgetAuthority_Allocation_Rejects_When_Project_Ceiling_Missing" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.CostManagement.P004FinancialDataIntegrityTests.BudgetAuthority_Commitment_Rejects_When_Project_Ceiling_Missing" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="788c582e-fec0-2a2a-ed78-9b0bf4bad2bf">
+      <Execution id="6ac38e45-a2e9-4fe0-bf06-9f1cd9a8aa3a" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.CostManagement.P004FinancialDataIntegrityTests" name="BudgetAuthority_Commitment_Rejects_When_Project_Ceiling_Missing" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="ae1062b9-1b29-6746-bc35-b06e0691e18e" executionId="42c355fe-57ae-41cf-98ff-5a5dae8e7985" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="788c582e-fec0-2a2a-ed78-9b0bf4bad2bf" executionId="6ac38e45-a2e9-4fe0-bf06-9f1cd9a8aa3a" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="51775e6f-69a4-f26e-1a5c-d9b654560f4b" executionId="2b7b06c4-9a9d-4fc8-8871-e2d5b4ca8284" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="d1603a34-c89c-40fc-cb62-3bec9340b3e3" executionId="4d5b6bb0-a7df-4fc1-8c65-b63de8d59d20" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="93e78d95-74d7-2f66-b980-157ad1171d5c" executionId="4d7ea032-5076-4d29-b4af-f93633bf753b" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Completed">
+    <Counters total="5" executed="5" passed="5" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.01] xUnit.net VSTest Adapter v3.0.0+e341b939fe (64-bit .NET 10.0.10)&#xD;
+[xUnit.net 00:00:01.87]   Discovering: NEXUS.Api.Tests&#xD;
+[xUnit.net 00:00:04.07]   Discovered:  NEXUS.Api.Tests&#xD;
+[xUnit.net 00:00:04.18]   Starting:    NEXUS.Api.Tests&#xD;
+[xUnit.net 00:00:07.87]   Finished:    NEXUS.Api.Tests&#xD;
+</StdOut>
+    </Output>
+  </ResultSummary>
+</TestRun>

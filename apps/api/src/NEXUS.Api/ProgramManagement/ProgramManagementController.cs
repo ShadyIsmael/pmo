@@ -9,8 +9,13 @@ namespace NEXUS.Api.ProgramManagement;
 public sealed class ProgramManagementController : ControllerBase
 {
     private readonly IProgramManagementService _service;
+    private readonly IProgramPortfolioFinancialRollupService _financialRollups;
 
-    public ProgramManagementController(IProgramManagementService service) => _service = service;
+    public ProgramManagementController(IProgramManagementService service, IProgramPortfolioFinancialRollupService financialRollups)
+    {
+        _service = service;
+        _financialRollups = financialRollups;
+    }
 
     [HttpGet("programs")]
     public async Task<ActionResult> GetPrograms([FromQuery] int page = 1, [FromQuery] int pageSize = 50, [FromQuery] string? search = null, CancellationToken cancellationToken = default)
@@ -21,6 +26,16 @@ public sealed class ProgramManagementController : ControllerBase
     {
         var result = await _service.GetOverviewAsync(programId, projectsPage, projectsPageSize, cancellationToken);
         if (result.IsFailure) return NotFound(new { error = result.Error?.Message });
+        return Ok(result.Value);
+    }
+
+    [Authorize(Policy = "ProgramFinancialRollup.View")]
+    [HttpGet("programs/{programId:guid}/financial-rollup")]
+    public async Task<ActionResult> GetFinancialRollup(Guid programId, [FromQuery] int? fiscalYear = null,
+        [FromQuery] int page = 1, [FromQuery] int pageSize = 25, CancellationToken cancellationToken = default)
+    {
+        var result = await _financialRollups.GetProgramAsync(programId, fiscalYear, page, pageSize, cancellationToken);
+        if (result.IsFailure) return StatusCode(result.Error?.StatusCode ?? StatusCodes.Status500InternalServerError, new { error = result.Error?.Message });
         return Ok(result.Value);
     }
 }

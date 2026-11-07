@@ -14,7 +14,7 @@ The local provider stores opaque relative keys below the configured `Storage:Doc
 
 ## Scope and localization
 
-Tenant isolation remains provided by the shared persistence query filters. A selected management context further limits project-linked documents to the current `Scope.ProjectIds`; unlinked documents are visible only to their owner in that context. The UI uses server results, supports English and Arabic/RTL, and formats numeric counts and file sizes with western digits.
+Tenant isolation remains provided by the shared persistence query filters. Document creation also assigns the trusted authenticated tenant to the document and its first version, and validates category references through the tenant-filtered category set. A selected management context further limits project-linked documents to the current `Scope.ProjectIds`; unlinked documents are visible only to their owner in that context. Missing or mismatched tenant/management context fails closed for document records and mutations. The UI uses server results, supports English and Arabic/RTL, and formats numeric counts and file sizes with western digits.
 
 `ManagementContextMiddleware` rejects all document mutations while the active context is `ReadOnlyViewAs`; the frontend also removes upload, new-version, archive, and template-management controls in that mode. Read actions remain available within the resolved tenant and management scope.
 

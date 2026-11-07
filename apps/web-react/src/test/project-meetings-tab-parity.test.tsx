@@ -8,6 +8,8 @@ import type { ProjectDto } from "@features/projects/api/projects";
 
 const mocks = vi.hoisted(() => ({
   useFullMeetings: vi.fn(),
+  useMeetingCalendar: vi.fn(),
+  useMeetingProjectOptions: vi.fn(),
   user: null as { id: string; permissions: string[] } | null,
   status: "authenticated",
 }));
@@ -16,11 +18,17 @@ vi.mock("@auth/AuthProvider", () => ({ useAuth: () => ({ user: mocks.user, statu
 vi.mock("@api/management", () => ({ useManagement: () => ({ canMutate: true, effectiveReadOnly: false }) }));
 vi.mock("@api/meetingsFull", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@api/meetingsFull")>();
-  return { ...actual, useFullMeetings: mocks.useFullMeetings, useMeetingFullMutations: () => ({ create: { mutate: vi.fn(), isPending: false } }) };
+  return {
+    ...actual,
+    useFullMeetings: mocks.useFullMeetings,
+    useMeetingCalendar: mocks.useMeetingCalendar,
+    useMeetingProjectOptions: mocks.useMeetingProjectOptions,
+    useMeetingFullMutations: () => ({ create: { mutate: vi.fn(), isPending: false } }),
+  };
 });
-vi.mock("@features/projects/lib/project-lookups", () => ({ useUserLookup: () => ({ data: [], isLoading: false }) }));
+vi.mock("@features/projects/lib/project-lookups", () => ({ useMeetingWorkflowUserLookup: () => ({ data: [], isLoading: false }) }));
 
-const project = { id: "project-1", name: "Core Modernization", code: "PRJ-1" } as ProjectDto;
+const project = { id: "project-1", publicId: "public-project-1", name: "Core Modernization", code: "PRJ-1" } as ProjectDto;
 
 function renderTab(locale: "en" | "ar" = "en") {
   window.localStorage.setItem("nexus-locale", locale);
@@ -42,13 +50,15 @@ describe("project meetings permission parity", () => {
     mocks.user = { id: "user-1", permissions: [] };
     mocks.status = "authenticated";
     mocks.useFullMeetings.mockReset().mockReturnValue({ data: { items: [], totalPages: 0, totalCount: 0 }, isLoading: false, isError: false, refetch: vi.fn() });
+    mocks.useMeetingCalendar.mockReset().mockReturnValue({ data: { items: [], totalCount: 0, isTruncated: false }, isLoading: false, isError: false, refetch: vi.fn() });
+    mocks.useMeetingProjectOptions.mockReset().mockReturnValue({ data: [], isLoading: false, isError: false, refetch: vi.fn() });
   });
 
   it("does not enable the meetings query when the user lacks Meeting.View", () => {
     mocks.user = { id: "user-1", permissions: ["Meeting.Create"] };
     renderTab();
 
-    expect(mocks.useFullMeetings).toHaveBeenCalledWith(expect.objectContaining({ projectId: "project-1" }), false);
+    expect(mocks.useFullMeetings).toHaveBeenCalledWith(expect.objectContaining({ projectIds: "public-project-1" }), false);
     expect(screen.getByText("You do not have permission to view this project's meetings.")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "New meeting" })).not.toBeInTheDocument();
     expect(screen.queryByPlaceholderText("Search meetings by title or objective...")).not.toBeInTheDocument();
@@ -59,7 +69,7 @@ describe("project meetings permission parity", () => {
 
     renderTab();
 
-    expect(mocks.useFullMeetings).toHaveBeenCalledWith(expect.objectContaining({ projectId: "project-1" }), true);
+    expect(mocks.useFullMeetings).toHaveBeenCalledWith(expect.objectContaining({ projectIds: "public-project-1" }), true);
   });
 
   it("keeps the query disabled until authentication is established", () => {
@@ -68,7 +78,7 @@ describe("project meetings permission parity", () => {
 
     const { container } = renderTab();
 
-    expect(mocks.useFullMeetings).toHaveBeenCalledWith(expect.objectContaining({ projectId: "project-1" }), false);
+    expect(mocks.useFullMeetings).toHaveBeenCalledWith(expect.objectContaining({ projectIds: "public-project-1" }), false);
     expect(container.querySelectorAll('[class*="h-16"]')).toHaveLength(3);
     expect(screen.queryByText("You do not have permission to view this project's meetings.")).not.toBeInTheDocument();
   });
@@ -88,7 +98,7 @@ describe("project meetings permission parity", () => {
   it("shows the Arabic permission message without enabling the query", () => {
     renderTab("ar");
 
-    expect(mocks.useFullMeetings).toHaveBeenCalledWith(expect.objectContaining({ projectId: "project-1" }), false);
+    expect(mocks.useFullMeetings).toHaveBeenCalledWith(expect.objectContaining({ projectIds: "public-project-1" }), false);
     expect(screen.getByText("ليس لديك صلاحية عرض اجتماعات هذا المشروع.")).toBeInTheDocument();
   });
 });

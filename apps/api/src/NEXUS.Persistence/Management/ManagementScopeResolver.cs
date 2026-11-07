@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
+using NEXUS.Modules.Identity.Application;
 using NEXUS.Modules.Identity.Domain;
+using NEXUS.Modules.Organization.Domain;
 using NEXUS.Modules.Portfolio.Domain;
 using NEXUS.Modules.ProjectManagement.Domain;
 using NEXUS.Modules.ResourceManagement.Domain;
@@ -9,10 +11,14 @@ namespace NEXUS.Persistence.Management;
 
 public sealed class ManagementScopeResolver : IManagementScopeResolver
 {
-    private const string TenantAdministratorRoleName = "admin";
     private readonly AppDbContext _db;
+    private readonly IUserEffectivePermissionService _effectivePermissions;
 
-    public ManagementScopeResolver(AppDbContext db) => _db = db;
+    public ManagementScopeResolver(AppDbContext db, IUserEffectivePermissionService effectivePermissions)
+    {
+        _db = db;
+        _effectivePermissions = effectivePermissions;
+    }
 
     public async Task<ManagementPerspectiveSnapshot> GetPerspectiveSnapshotAsync(
         Guid userId,
@@ -23,7 +29,7 @@ public sealed class ManagementScopeResolver : IManagementScopeResolver
         var assignments = await LoadAssignmentsAsync(userId, tenantId, cancellationToken);
         var native = assignments.NativePerspectives;
         var defaultPerspective = native.OrderByDescending(ManagementPerspectiveRules.Level).FirstOrDefault();
-        var scope = await BuildScopeAsync(assignments, defaultPerspective, cancellationToken);
+        var scope = await BuildNativeScopeAsync(assignments, cancellationToken);
 
         var available = new List<ManagementPerspectiveAvailability>();
         foreach (var perspective in new[]
@@ -40,8 +46,8 @@ public sealed class ManagementScopeResolver : IManagementScopeResolver
             var contexts = perspective switch
             {
                 ManagementPerspective.PortfolioManager => assignments.Portfolios,
-                ManagementPerspective.ProgramManager => await GetProgramContextsAsync(assignments, native, cancellationToken),
-                ManagementPerspective.ProjectManager => await GetProjectContextsAsync(assignments, native, cancellationToken),
+                ManagementPerspective.ProgramManager => await GetProgramContextsAsync(assignments, cancellationToken),
+                ManagementPerspective.ProjectManager => await GetProjectContextsAsync(assignments, cancellationToken),
                 _ => Array.Empty<ManagementEntityReference>()
             };
             available.Add(new ManagementPerspectiveAvailability(
@@ -73,10 +79,7 @@ public sealed class ManagementScopeResolver : IManagementScopeResolver
             return null;
         }
 
-        var scopePerspective = mode == ManagementViewMode.ReadOnlyViewAs
-            ? assignments.NativePerspectives.OrderByDescending(ManagementPerspectiveRules.Level).First()
-            : selectedPerspective;
-        var nativeScope = await BuildScopeAsync(assignments, scopePerspective, cancellationToken);
+        var nativeScope = await BuildNativeScopeAsync(assignments, cancellationToken);
 
         if (selectedPerspective == ManagementPerspective.PortfolioManager && portfolioId.HasValue && !nativeScope.PortfolioIds.Contains(portfolioId.Value)) return null;
         if (selectedPerspective == ManagementPerspective.ProgramManager && programId.HasValue && !nativeScope.ProgramIds.Contains(programId.Value)) return null;
@@ -118,13 +121,19 @@ public sealed class ManagementScopeResolver : IManagementScopeResolver
         return portfolioScope.ProjectIds.Contains(projectId) || programScope.ProjectIds.Contains(projectId) || projectScope.ProjectIds.Contains(projectId);
     }
 
-    public Task<bool> IsTenantAdministratorAsync(Guid userId, Guid tenantId, CancellationToken cancellationToken = default)
-        => _db.Set<UserRole>().IgnoreQueryFilters().AsNoTracking().AnyAsync(assignment =>
-            assignment.UserId == userId && assignment.TenantId == tenantId && !assignment.IsDeleted &&
-            assignment.User.TenantId == tenantId && assignment.User.IsActive && !assignment.User.IsDeleted &&
-            assignment.Role.TenantId == tenantId && assignment.Role.IsSystem &&
-            assignment.Role.Name == TenantAdministratorRoleName && !assignment.Role.IsDeleted,
-            cancellationToken);
+    public async Task<bool> IsTenantAdministratorAsync(Guid userId, Guid tenantId, CancellationToken cancellationToken = default)
+    {
+        if (userId == Guid.Empty || tenantId == Guid.Empty)
+            return false;
+
+        var userIsActive = await _db.Set<User>().IgnoreQueryFilters().AsNoTracking()
+            .AnyAsync(user => user.Id == userId && user.TenantId == tenantId && user.IsActive && !user.IsDeleted, cancellationToken);
+        if (!userIsActive)
+            return false;
+
+        var permissions = await _effectivePermissions.GetEffectivePermissionsAsync(userId, tenantId, cancellationToken);
+        return permissions.Contains("TenantAdministration.ManageScope");
+    }
 
     private async Task<ManagementScope> BuildScopeAsync(AssignmentSet assignments, ManagementPerspective perspective, CancellationToken cancellationToken)
     {
@@ -137,12 +146,85 @@ public sealed class ManagementScopeResolver : IManagementScopeResolver
         };
         var projectIds = perspective switch
         {
-            ManagementPerspective.PortfolioManager => await _db.Set<Project>().Where(x => x.TenantId == assignments.TenantId && ((x.ProgramId.HasValue && programIds.Contains(x.ProgramId.Value)) || (!x.ProgramId.HasValue && x.PortfolioId.HasValue && portfolioIds.Contains(x.PortfolioId.Value)))).Select(x => x.Id).ToHashSetAsync(cancellationToken),
-            ManagementPerspective.ProgramManager => await _db.Set<Project>().Where(x => x.TenantId == assignments.TenantId && x.ProgramId.HasValue && programIds.Contains(x.ProgramId.Value)).Select(x => x.Id).ToHashSetAsync(cancellationToken),
+            ManagementPerspective.PortfolioManager => (await _db.Set<Project>().Where(x => x.TenantId == assignments.TenantId && ((x.ProgramId.HasValue && programIds.Contains(x.ProgramId.Value)) || (!x.ProgramId.HasValue && x.PortfolioId.HasValue && portfolioIds.Contains(x.PortfolioId.Value)))).Select(x => x.Id).ToHashSetAsync(cancellationToken)).Union(assignments.Projects.Select(x => x.Id)).ToHashSet(),
+            ManagementPerspective.ProgramManager => (await _db.Set<Project>().Where(x => x.TenantId == assignments.TenantId && x.ProgramId.HasValue && programIds.Contains(x.ProgramId.Value)).Select(x => x.Id).ToHashSetAsync(cancellationToken)).Union(assignments.Projects.Select(x => x.Id)).ToHashSet(),
             ManagementPerspective.ProjectManager => assignments.Projects.Select(x => x.Id).ToHashSet(),
             _ => new HashSet<Guid>()
         };
-        return new ManagementScope(portfolioIds, programIds, projectIds);
+        // Organization capability scope is the union of the user's native assignments.
+        // It is independent from the currently selected Portfolio/Program/Project context
+        // and does not widen the corresponding record-id sets above.
+        var organizationPortfolioIds = assignments.Portfolios.Select(item => item.Id).ToHashSet();
+        var assignedProgramIds = assignments.Programs.Select(item => item.Id).ToArray();
+        if (assignedProgramIds.Length > 0)
+        {
+            var assignedProgramPortfolios = await _db.Set<Program>().AsNoTracking()
+                .Where(program => program.TenantId == assignments.TenantId && assignedProgramIds.Contains(program.Id))
+                .Select(program => program.PortfolioId)
+                .ToListAsync(cancellationToken);
+            organizationPortfolioIds.UnionWith(assignedProgramPortfolios);
+        }
+        var assignedProjectIds = assignments.Projects.Select(item => item.Id).ToArray();
+        if (assignedProjectIds.Length > 0)
+        {
+            var projectRows = await _db.Set<Project>().AsNoTracking()
+                .Where(project => project.TenantId == assignments.TenantId && assignedProjectIds.Contains(project.Id))
+                .Select(project => new { project.PortfolioId, project.ProgramId })
+                .ToListAsync(cancellationToken);
+            organizationPortfolioIds.UnionWith(projectRows.Where(row => row.PortfolioId.HasValue)
+                .Select(row => row.PortfolioId!.Value));
+            var projectProgramIds = projectRows.Where(row => row.ProgramId.HasValue)
+                .Select(row => row.ProgramId!.Value).Distinct().ToArray();
+            if (projectProgramIds.Length > 0)
+            {
+                var programPortfolios = await _db.Set<Program>().AsNoTracking()
+                    .Where(program => program.TenantId == assignments.TenantId && projectProgramIds.Contains(program.Id))
+                    .Select(program => program.PortfolioId)
+                    .ToListAsync(cancellationToken);
+                organizationPortfolioIds.UnionWith(programPortfolios);
+            }
+        }
+
+        var isTenantAdministrator = await IsTenantAdministratorAsync(assignments.UserId, assignments.TenantId, cancellationToken);
+        var organizationIds = isTenantAdministrator
+            ? await _db.Set<Organization>().AsNoTracking()
+                .Where(organization => organization.TenantId == assignments.TenantId && !organization.IsDeleted)
+                .Select(organization => organization.Id).ToHashSetAsync(cancellationToken)
+            : organizationPortfolioIds.Count == 0 ? new HashSet<Guid>()
+                : await _db.Set<Portfolio>().AsNoTracking()
+                    .Where(portfolio => portfolio.TenantId == assignments.TenantId
+                        && organizationPortfolioIds.Contains(portfolio.Id) && portfolio.OrganizationId.HasValue)
+                    .Select(portfolio => portfolio.OrganizationId!.Value).ToHashSetAsync(cancellationToken);
+
+        return new ManagementScope(portfolioIds, programIds, projectIds) { OrganizationIds = organizationIds };
+    }
+
+    private async Task<ManagementScope> BuildNativeScopeAsync(AssignmentSet assignments, CancellationToken cancellationToken)
+    {
+        var defaultPerspective = assignments.NativePerspectives
+            .OrderByDescending(ManagementPerspectiveRules.Level)
+            .FirstOrDefault();
+        var scope = await BuildScopeAsync(assignments, defaultPerspective, cancellationToken);
+        var programIds = scope.ProgramIds.Concat(assignments.Programs.Select(item => item.Id)).ToHashSet();
+        var projectIds = scope.ProjectIds.Concat(assignments.Projects.Select(item => item.Id)).ToHashSet();
+        var assignedProgramIds = assignments.Programs.Select(item => item.Id).ToArray();
+        if (assignedProgramIds.Length > 0)
+        {
+            var programProjectIds = await _db.Set<Project>().AsNoTracking()
+                .Where(project => project.TenantId == assignments.TenantId
+                    && project.ProgramId.HasValue && assignedProgramIds.Contains(project.ProgramId.Value))
+                .Select(project => project.Id)
+                .ToListAsync(cancellationToken);
+            projectIds.UnionWith(programProjectIds);
+        }
+
+        return new ManagementScope(
+            scope.PortfolioIds,
+            programIds,
+            projectIds)
+        {
+            OrganizationIds = scope.OrganizationIds
+        };
     }
 
     private async Task<ManagementScope> BuildProgramContextScopeAsync(Guid programId, ManagementScope inheritedScope, CancellationToken cancellationToken)
@@ -150,7 +232,11 @@ public sealed class ManagementScopeResolver : IManagementScopeResolver
         var program = await _db.Set<Program>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == programId && inheritedScope.ProgramIds.Contains(x.Id), cancellationToken);
         if (program is null) return ManagementScope.Empty;
         var projects = await _db.Set<Project>().Where(x => x.ProgramId == programId).Select(x => x.Id).ToHashSetAsync(cancellationToken);
-        return new ManagementScope(new HashSet<Guid> { program.PortfolioId }, new HashSet<Guid> { programId }, projects);
+        var organizationIds = await _db.Set<Portfolio>().AsNoTracking()
+            .Where(portfolio => portfolio.TenantId == program.TenantId && portfolio.Id == program.PortfolioId && portfolio.OrganizationId.HasValue)
+            .Select(portfolio => portfolio.OrganizationId!.Value).ToHashSetAsync(cancellationToken);
+        return new ManagementScope(new HashSet<Guid> { program.PortfolioId }, new HashSet<Guid> { programId }, projects)
+        { OrganizationIds = organizationIds };
     }
 
     private async Task<ManagementScope> BuildProjectContextScopeAsync(Guid projectId, ManagementScope inheritedScope, CancellationToken cancellationToken)
@@ -159,32 +245,23 @@ public sealed class ManagementScopeResolver : IManagementScopeResolver
         if (project is null) return ManagementScope.Empty;
         var programs = project.ProgramId.HasValue ? new HashSet<Guid> { project.ProgramId.Value } : new HashSet<Guid>();
         var portfolios = project.PortfolioId.HasValue ? new HashSet<Guid> { project.PortfolioId.Value } : new HashSet<Guid>();
-        return new ManagementScope(portfolios, programs, new HashSet<Guid> { projectId });
+        var organizationIds = portfolios.Count == 0 ? new HashSet<Guid>() : await _db.Set<Portfolio>().AsNoTracking()
+            .Where(portfolio => portfolio.TenantId == project.TenantId && portfolios.Contains(portfolio.Id) && portfolio.OrganizationId.HasValue)
+            .Select(portfolio => portfolio.OrganizationId!.Value).ToHashSetAsync(cancellationToken);
+        return new ManagementScope(portfolios, programs, new HashSet<Guid> { projectId }) { OrganizationIds = organizationIds };
     }
 
-    private async Task<IReadOnlyList<ManagementEntityReference>> GetProgramContextsAsync(AssignmentSet assignments, IReadOnlySet<ManagementPerspective> native, CancellationToken cancellationToken)
+    private async Task<IReadOnlyList<ManagementEntityReference>> GetProgramContextsAsync(AssignmentSet assignments, CancellationToken cancellationToken)
     {
-        var scope = await BuildScopeAsync(assignments, native.Contains(ManagementPerspective.PortfolioManager) ? ManagementPerspective.PortfolioManager : ManagementPerspective.ProgramManager, cancellationToken);
-        var programIds = scope.ProgramIds.ToHashSet();
-        if (native.Contains(ManagementPerspective.ProgramManager))
-        {
-            foreach (var program in assignments.Programs) programIds.Add(program.Id);
-        }
+        var scope = await BuildNativeScopeAsync(assignments, cancellationToken);
+        var programIds = scope.ProgramIds;
         return await _db.Set<Program>().AsNoTracking().Where(x => x.TenantId == assignments.TenantId && programIds.Contains(x.Id)).OrderBy(x => x.Name).ThenBy(x => x.Code).ThenBy(x => x.Id).Select(x => new ManagementEntityReference(x.Id, x.Name, x.Code)).ToListAsync(cancellationToken);
     }
 
-    private async Task<IReadOnlyList<ManagementEntityReference>> GetProjectContextsAsync(AssignmentSet assignments, IReadOnlySet<ManagementPerspective> native, CancellationToken cancellationToken)
+    private async Task<IReadOnlyList<ManagementEntityReference>> GetProjectContextsAsync(AssignmentSet assignments, CancellationToken cancellationToken)
     {
-        var scope = native.Contains(ManagementPerspective.PortfolioManager)
-            ? await BuildScopeAsync(assignments, ManagementPerspective.PortfolioManager, cancellationToken)
-            : native.Contains(ManagementPerspective.ProgramManager)
-                ? await BuildScopeAsync(assignments, ManagementPerspective.ProgramManager, cancellationToken)
-                : await BuildScopeAsync(assignments, ManagementPerspective.ProjectManager, cancellationToken);
-        var projectIds = scope.ProjectIds.ToHashSet();
-        if (native.Contains(ManagementPerspective.ProjectManager))
-        {
-            foreach (var project in assignments.Projects) projectIds.Add(project.Id);
-        }
+        var scope = await BuildNativeScopeAsync(assignments, cancellationToken);
+        var projectIds = scope.ProjectIds;
         return await _db.Set<Project>().AsNoTracking().Where(x => x.TenantId == assignments.TenantId && projectIds.Contains(x.Id)).OrderBy(x => x.Name).ThenBy(x => x.Code).ThenBy(x => x.Id).Select(x => new ManagementEntityReference(x.Id, x.Name, x.Code)).ToListAsync(cancellationToken);
     }
 
@@ -192,13 +269,25 @@ public sealed class ManagementScopeResolver : IManagementScopeResolver
     {
         var portfolios = await _db.Set<Portfolio>().AsNoTracking().Where(x => x.TenantId == tenantId && (x.OwnerId == userId || _db.Set<PortfolioManagerAssignment>().Any(a => a.TenantId == tenantId && a.PortfolioId == x.Id && a.PortfolioManagerId == userId && a.IsCurrent && !a.IsDeleted))).OrderBy(x => x.Name).ThenBy(x => x.Code).ThenBy(x => x.Id).Select(x => new ManagementEntityReference(x.Id, x.Name, x.Code)).ToListAsync(cancellationToken);
         var programs = await _db.Set<Program>().AsNoTracking().Where(x => x.TenantId == tenantId && (x.ProgramManagerId == userId || _db.Set<ProgramManagerAssignment>().Any(a => a.TenantId == tenantId && a.ProgramId == x.Id && a.ProgramManagerId == userId && a.IsCurrent && !a.IsDeleted))).OrderBy(x => x.Name).ThenBy(x => x.Code).ThenBy(x => x.Id).Select(x => new ManagementEntityReference(x.Id, x.Name, x.Code)).ToListAsync(cancellationToken);
-        var projects = await _db.Set<Project>().AsNoTracking().Where(x => x.TenantId == tenantId && (x.ProjectManagerId == userId || _db.Set<ProjectManagerAssignment>().Any(a => a.TenantId == tenantId && a.ProjectId == x.Id && a.ProjectManagerId == userId && a.IsCurrent && !a.IsDeleted) || _db.Set<ProjectMember>().Any(m => m.ProjectId == x.Id && m.Status == "Active" && !m.IsDeleted && _db.Set<Resource>().Any(r => r.Id == m.ResourceId && r.UserId == userId && !r.IsDeleted)))).OrderBy(x => x.Name).ThenBy(x => x.Code).ThenBy(x => x.Id).Select(x => new ManagementEntityReference(x.Id, x.Name, x.Code)).ToListAsync(cancellationToken);
+        var today = DateTime.UtcNow.Date;
+        var projects = await _db.Set<Project>().AsNoTracking().Where(x => x.TenantId == tenantId && (x.ProjectManagerId == userId
+            || _db.Set<ProjectManagerAssignment>().Any(a => a.TenantId == tenantId && a.ProjectId == x.Id && a.ProjectManagerId == userId && a.IsCurrent && !a.IsDeleted)
+            || _db.Set<ProjectMember>().Any(m => m.TenantId == tenantId && m.ProjectId == x.Id && m.Status == "Active" && !m.IsDeleted
+                && m.StartDate.Date <= today && m.EndDate.Date >= today
+                && ((m.ResourceId.HasValue && _db.Set<Resource>().Any(r => r.TenantId == tenantId && r.Id == m.ResourceId.Value
+                    && r.UserId == userId && r.IsActive && !r.IsDeleted))
+                    || (m.TeamId.HasValue && _db.Set<Team>().Any(team => team.TenantId == tenantId && team.Id == m.TeamId.Value && team.IsActive && !team.IsDeleted
+                        && _db.Set<TeamMember>().Any(tm => tm.TenantId == tenantId && tm.TeamId == team.Id && tm.IsActive && !tm.IsDeleted
+                            && tm.EffectiveFrom.Date <= today && (!tm.EffectiveTo.HasValue || tm.EffectiveTo.Value.Date >= today)
+                            && _db.Set<Resource>().Any(r => r.TenantId == tenantId && r.Id == tm.ResourceId && r.UserId == userId
+                                && r.IsActive && !r.IsDeleted)))))))).OrderBy(x => x.Name).ThenBy(x => x.Code).ThenBy(x => x.Id)
+            .Select(x => new ManagementEntityReference(x.Id, x.Name, x.Code)).ToListAsync(cancellationToken);
         var native = new HashSet<ManagementPerspective>();
         if (portfolios.Count > 0) native.Add(ManagementPerspective.PortfolioManager);
         if (programs.Count > 0) native.Add(ManagementPerspective.ProgramManager);
         if (projects.Count > 0) native.Add(ManagementPerspective.ProjectManager);
-        return new AssignmentSet(tenantId, portfolios, programs, projects, native);
+        return new AssignmentSet(userId, tenantId, portfolios, programs, projects, native);
     }
 
-    private sealed record AssignmentSet(Guid TenantId, IReadOnlyList<ManagementEntityReference> Portfolios, IReadOnlyList<ManagementEntityReference> Programs, IReadOnlyList<ManagementEntityReference> Projects, IReadOnlySet<ManagementPerspective> NativePerspectives);
+    private sealed record AssignmentSet(Guid UserId, Guid TenantId, IReadOnlyList<ManagementEntityReference> Portfolios, IReadOnlyList<ManagementEntityReference> Programs, IReadOnlyList<ManagementEntityReference> Projects, IReadOnlySet<ManagementPerspective> NativePerspectives);
 }

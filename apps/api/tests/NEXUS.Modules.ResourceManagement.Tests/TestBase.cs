@@ -71,22 +71,46 @@ public class TestBase : IDisposable
 
     private void SeedCalendars(TestDbContext context)
     {
+        var standardDays = new[]
+        {
+            DayOfWeek.Sunday, DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday
+        };
         context.WorkingCalendars.Add(new WorkingCalendar
         {
             Id = DefaultCalendarId,
+            TenantId = TenantConstants.DemoTenantId,
             Name = "Standard",
             WorkingDaysPerWeek = 5,
             HoursPerDay = 8,
-            IsDefault = true
+            IsDefault = true,
+            DayRules = CreateDayRules(standardDays, 8)
         });
         context.WorkingCalendars.Add(new WorkingCalendar
         {
             Id = NonDefaultCalendarId,
+            TenantId = TenantConstants.DemoTenantId,
             Name = "Part Time",
             WorkingDaysPerWeek = 4,
             HoursPerDay = 6,
-            IsDefault = false
+            IsDefault = false,
+            DayRules = CreateDayRules(standardDays.Take(4), 6)
         });
+    }
+
+    private static List<WorkingCalendarDayRule> CreateDayRules(IEnumerable<DayOfWeek> workingDays, int hoursPerDay)
+    {
+        var workingDaySet = workingDays.ToHashSet();
+        return Enum.GetValues<DayOfWeek>().Select(day =>
+        {
+            var isWorkingDay = workingDaySet.Contains(day);
+            return new WorkingCalendarDayRule
+            {
+                DayOfWeek = day,
+                IsWorkingDay = isWorkingDay,
+                StartTime = isWorkingDay ? TimeSpan.FromHours(8) : null,
+                EndTime = isWorkingDay ? TimeSpan.FromHours(8 + hoursPerDay) : null
+            };
+        }).ToList();
     }
 
     private void SeedSkills(TestDbContext context)

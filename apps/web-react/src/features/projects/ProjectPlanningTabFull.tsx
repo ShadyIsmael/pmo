@@ -30,7 +30,7 @@ import { PlanTimelineGantt } from "./components/PlanTimelineGantt";
 import { CriticalPathNetworkDiagram } from "./components/CriticalPathNetworkDiagram";
 import { buildPlanWorkspaceRows, visiblePlanWorkspaceRows } from "./lib/plan-workspace-rows";
 import { downloadPlanningWorkbook } from "./lib/planning-export";
-import { canPerformPlanningWrites, getPlanningBaselineUnavailableReason } from "./lib/planning-access";
+import { canPerformPlanningWrites, findActiveWorkingVersion, getPlanningBaselineUnavailableReason } from "./lib/planning-access";
 import { GANTT_ZOOM_LEVELS, type GanttZoom } from "./lib/gantt-constants";
 
 type ViewMode = "split" | "table" | "timeline" | "network";
@@ -54,10 +54,9 @@ export function ProjectPlanningTabFull() {
   const { effectiveReadOnly, canMutate } = useManagement();
   const [ribbonTab, setRibbonTab] = React.useState<PlanningRibbonTab>("project");
   const [ribbonExpanded, setRibbonExpanded] = React.useState(true);
-  const [ribbonContentHost, setRibbonContentHost] = React.useState<HTMLDivElement | null>(null);
   const [versionsOpen, setVersionsOpen] = React.useState(false);
   const [baselineOpen, setBaselineOpen] = React.useState(false);
-  const hasManagePlanningPermission = Boolean(user && hasPermission(user.permissions, Permissions.Planning.Manage));
+  const hasManagePlanningPermission = Boolean(user && hasPermission(user.permissions, Permissions.Planning.Edit));
   const canManagePlanning = canPerformPlanningWrites(hasManagePlanningPermission, canMutate, effectiveReadOnly);
   const canViewStatusReports = Boolean(user && hasPermission(user.permissions, Permissions.StatusReport.View));
   const baselineUnavailableReason = getPlanningBaselineUnavailableReason(
@@ -98,9 +97,10 @@ export function ProjectPlanningTabFull() {
   };
   const endSplitDrag = () => { splitDraggingRef.current = false; };
   const versions = planDetail.data?.versions ?? [];
-  const workingVersion = versions.find((v) => v.type === "Working" && v.status === "Active") ?? versions.find((v) => v.type === "Working");
+  const activeWorkingVersion = findActiveWorkingVersion(versions);
+  const workingVersion = activeWorkingVersion ?? versions.find((v) => v.type === "Working");
   const currentBaseline = versions.filter((v) => v.type === "Baseline" && v.status === "Approved").sort((a, b) => b.versionNumber - a.versionNumber)[0];
-  const editable = Boolean(workingVersion?.id && canManagePlanning && canMutate && !effectiveReadOnly);
+  const editable = Boolean(activeWorkingVersion?.id && canManagePlanning && canMutate && !effectiveReadOnly);
   const [planOpen, setPlanOpen] = React.useState(false);
   const [activityOpen, setActivityOpen] = React.useState(false);
   const [selectedActivity, setSelectedActivity] = React.useState<PlanActivityDto | undefined>();
@@ -236,7 +236,7 @@ export function ProjectPlanningTabFull() {
   function openCreatePlan() { mutations.createPlan.reset(); setPlanOpen(true); }
   function cancelCreatePlan() { mutations.createPlan.reset(); setPlanOpen(false); }
   function handlePlanCreated(createdPlanId: string) { setSelectedPlanId(createdPlanId); setPlanOpen(false); }
-  async function captureBaseline() { const versions = planDetail.data?.versions ?? []; const hasBaseline = versions.some((item) => item.type === "Baseline"); if (hasBaseline && !await confirm({ description: t("planning.replaceBaselineWarning") })) return; const working = versions.find((item) => item.type === "Working" && item.status === "Active") ?? versions.find((item) => item.type === "Working"); if (working) mutations.captureBaseline.mutate(working.rowVersion); }
+  async function captureBaseline() { const versions = planDetail.data?.versions ?? []; const hasBaseline = versions.some((item) => item.type === "Baseline"); if (hasBaseline && !await confirm({ description: t("planning.replaceBaselineWarning") })) return; if (activeWorkingVersion) mutations.captureBaseline.mutate(activeWorkingVersion.rowVersion); }
   async function recalculateSchedule() {
     try {
       await calendarMutations.recalculateSchedule.mutateAsync();
@@ -257,6 +257,10 @@ export function ProjectPlanningTabFull() {
     }
     if (assignmentCapacity.isError || !assignmentCapacity.data) {
       toast({ title: t("common.error"), description: t("planning.capacityLoadFailed"), variant: "destructive" });
+      return;
+    }
+    if (assignmentCapacity.data.isScheduleWithinMembership === false) {
+      toast({ title: t("common.error"), description: t("planning.assignmentMembershipLimit"), variant: "destructive" });
       return;
     }
     if (assignedWorkHours > assignmentCapacity.data.remainingAssignableHours + 0.0001) {
@@ -321,7 +325,7 @@ export function ProjectPlanningTabFull() {
 <Badge className="h-5 px-1.5 text-[10px]" status={currentBaseline ? "Approved" : "ReadOnly"} title={currentBaseline ? t("planning.baselineReadOnly") : undefined}>{planningLabel(t, "versionType", "Baseline")}: {currentBaseline ? `${t("planning.versionShort")} ${currentBaseline.versionNumber} · ${currentBaseline.createdAt?.slice(0, 10) ?? ""}` : t("planning.none")}</Badge>
 </div>
 </div>
-<div className="flex items-center gap-2 border-b px-2 pt-1"><div className="min-w-0 overflow-x-auto"><PlanningRibbonTabs ariaLabel={t("planning.ribbonTabs.label")} activeTab={ribbonTab} tabs={[{ id: "file", label: t("planning.ribbonTabs.file") }, { id: "task", label: t("planning.ribbonTabs.task") }, { id: "resource", label: t("planning.ribbonTabs.resource") }, { id: "project", label: t("planning.ribbonTabs.project") }, { id: "view", label: t("planning.ribbonTabs.view") }, { id: "format", label: t("planning.ribbonTabs.format") }, { id: "report", label: t("planning.ribbonTabs.report") }]} onChange={(tab) => { setRibbonTab(tab); if (tab === "task" || tab === "resource" || tab === "format") setView("table"); }} /></div><Button type="button" variant="ghost" size="sm" className="h-7 shrink-0 px-2 text-[11px]" aria-expanded={ribbonExpanded} aria-controls="planning-ribbon-panel" onClick={() => setRibbonExpanded((expanded) => !expanded)}><ChevronDown className={`me-1 h-3.5 w-3.5 transition-transform ${ribbonExpanded ? "" : "-rotate-90"}`} />{t(ribbonExpanded ? "planning.collapseRibbon" : "planning.expandRibbon")}</Button></div>
+<div className="flex items-center gap-2 border-b px-2 pt-1"><div className="min-w-0 overflow-x-auto"><PlanningRibbonTabs ariaLabel={t("planning.ribbonTabs.label")} activeTab={ribbonTab} tabs={[{ id: "file", label: t("planning.ribbonTabs.file") }, { id: "task", label: t("planning.ribbonTabs.task") }, { id: "resource", label: t("planning.ribbonTabs.resource") }, { id: "project", label: t("planning.ribbonTabs.project") }, { id: "view", label: t("planning.ribbonTabs.view") }, { id: "report", label: t("planning.ribbonTabs.report") }]} onChange={(tab) => { setRibbonTab(tab); if (tab === "task" || tab === "resource") setView("table"); }} /></div><Button type="button" variant="ghost" size="sm" className="h-7 shrink-0 px-2 text-[11px]" aria-expanded={ribbonExpanded} aria-controls="planning-ribbon-panel" onClick={() => setRibbonExpanded((expanded) => !expanded)}><ChevronDown className={`me-1 h-3.5 w-3.5 transition-transform ${ribbonExpanded ? "" : "-rotate-90"}`} />{t(ribbonExpanded ? "planning.collapseRibbon" : "planning.expandRibbon")}</Button></div>
 {ribbonExpanded && <div id="planning-ribbon-panel" className="overflow-x-auto px-1.5 py-1">
 {ribbonTab === "file" && <div className="flex min-w-max items-stretch gap-1">
 <PlanningRibbonGroup label={t("planning.ribbon.file")}>
@@ -339,7 +343,7 @@ export function ProjectPlanningTabFull() {
 {canManagePlanning ? <Button type="button" variant="default" size="sm" className="h-7 shrink-0 gap-1 px-2 text-[11px]" onClick={planOpen ? cancelCreatePlan : openCreatePlan}><Plus className="h-3.5 w-3.5" />{t(planOpen ? "planning.cancelCreatePlan" : "planning.createPlan")}</Button> : null}
 </PlanningRibbonGroup>
 <PlanningRibbonGroup label={t("planning.ribbon.tools")}>
-{canBaseline ? <WorkspaceButton onClick={() => void captureBaseline()} disabled={!workingVersion?.rowVersion || mutations.captureBaseline.isPending} icon={<Save className="h-3.5 w-3.5" />}>{t("planning.setBaseline")}</WorkspaceButton> : null}
+{canBaseline ? <WorkspaceButton onClick={() => void captureBaseline()} disabled={!activeWorkingVersion?.rowVersion || mutations.captureBaseline.isPending} icon={<Save className="h-3.5 w-3.5" />}>{t("planning.setBaseline")}</WorkspaceButton> : null}
 {canManagePlanning ? <WorkspaceButton onClick={() => void recalculateSchedule()} disabled={!editable || !planId || calendarMutations.recalculateSchedule.isPending} icon={<RefreshCw className={`h-3.5 w-3.5 ${calendarMutations.recalculateSchedule.isPending ? "animate-spin" : ""}`} />}>{t(calendarMutations.recalculateSchedule.isPending ? "planning.recalculatingSchedule" : "planning.recalculateSchedule")}</WorkspaceButton> : null}
 {planId ? <PlanningBaselineAccessHint reason={baselineUnavailableReason} t={t} /> : null}
 {currentBaseline ? <WorkspaceButton onClick={() => setBaselineOpen(true)} icon={<Eye className="h-3.5 w-3.5" />}>{t("planning.viewBaseline")}</WorkspaceButton> : null}
@@ -365,10 +369,10 @@ export function ProjectPlanningTabFull() {
 {canViewStatusReports ? <WorkspaceButton onClick={() => navigate(`/projects/${projectId}/status-reports`)} icon={<ClipboardList className="h-3.5 w-3.5" />}>{t("planning.reportActions.statusReports")}</WorkspaceButton> : null}
 </PlanningRibbonGroup>
 </div>}
-<div ref={setRibbonContentHost} className="contents" />
 </div>}
 {planOpen ? <div className="border-t p-3"><PlanningCreatePlanPanel mutation={mutations.createPlan} t={t} onCreated={handlePlanCreated} onCancel={cancelCreatePlan} /></div> : null}
 </div>
+{planId && planDetail.data && !activeWorkingVersion ? <p role="status" className="mx-4 mt-3 border-s-2 border-warning bg-warning/5 px-3 py-2 text-sm text-warning">{t("planning.noActiveWorkingVersion")}</p> : null}
 {planningPanel ? (
   <SideSheet open onOpenChange={(open) => { if (!open) setPlanningPanel(null); }} title={t(`planning.panelTitles.${planningPanel}`)} description={t(`planning.panelDescriptions.${planningPanel}`)} closeLabel={t("common.close")}>
     <SideSheetBody className="space-y-4">
@@ -383,7 +387,7 @@ export function ProjectPlanningTabFull() {
 {!planId ? <p className="m-4 rounded border border-dashed p-8 text-center text-sm text-muted-foreground">{t("planning.emptyWorkspace")}</p> : wbs.isLoading || activities.isLoading ? <div className="p-4"><Loading text={t("common.loading")} /></div> : view === "split" ? (
   <div ref={splitContainerRef} className="flex items-stretch border-t">
     <div ref={gridPaneRef} className="min-w-0 shrink-0" style={{ width: `${splitWidthPct}%` }}>
-      <PlanningGrid projectId={projectId} planId={planId} projectStartDate={project.startDate} wbs={wbs.data ?? []} activities={activities.data ?? []} dependencies={dependencies.data ?? []} mutations={mutations} editable={editable} showBaseline={showBaseline} ribbonTab={ribbonTab} ribbonExpanded={ribbonExpanded} ribbonContentHost={ribbonContentHost} t={t} selectedRowId={selectedRowId} collapsedWbsIds={collapsedWbs} onSelectionChange={setSelectedRowId} onCollapsedChange={(next) => setCollapsedWbs(new Set(next))} onOpenAssignments={() => setPlanningPanel("assignments")} onEdit={(activity) => { setSelectedActivity(activity); setActivityOpen(true); }} />
+      <PlanningGrid projectId={projectId} planId={planId} projectStartDate={project.startDate} wbs={wbs.data ?? []} activities={activities.data ?? []} dependencies={dependencies.data ?? []} mutations={mutations} editable={editable} showBaseline={showBaseline} ribbonTab={ribbonTab} ribbonExpanded={ribbonExpanded} t={t} selectedRowId={selectedRowId} collapsedWbsIds={collapsedWbs} onSelectionChange={setSelectedRowId} onCollapsedChange={(next) => setCollapsedWbs(new Set(next))} onOpenAssignments={() => setPlanningPanel("assignments")} onEdit={(activity) => { setSelectedActivity(activity); setActivityOpen(true); }} />
     </div>
     <div role="separator" aria-orientation="vertical" aria-label={t("planning.resizeSplitPane")} tabIndex={0} onPointerDown={beginSplitDrag} onPointerMove={moveSplitDrag} onPointerUp={endSplitDrag} onPointerCancel={endSplitDrag} className="w-1 shrink-0 cursor-col-resize touch-none bg-border hover:bg-primary/40 focus-visible:bg-primary/40" onKeyDown={(event) => { if (event.key === "ArrowLeft") { event.preventDefault(); setSplitWidthPct((p) => Math.max(25, p - 2)); } if (event.key === "ArrowRight") { event.preventDefault(); setSplitWidthPct((p) => Math.min(75, p + 2)); } }} />
     <div ref={ganttPaneRef} className="min-w-0 flex-1 overflow-x-auto" style={{ paddingTop: ganttRowOffset }}>
@@ -391,7 +395,7 @@ export function ProjectPlanningTabFull() {
     </div>
   </div>
 ) : view === "table" ? (
-  <PlanningGrid projectId={projectId} planId={planId} projectStartDate={project.startDate} wbs={wbs.data ?? []} activities={activities.data ?? []} dependencies={dependencies.data ?? []} mutations={mutations} editable={editable} showBaseline={showBaseline} ribbonTab={ribbonTab} ribbonExpanded={ribbonExpanded} ribbonContentHost={ribbonContentHost} t={t} selectedRowId={selectedRowId} collapsedWbsIds={collapsedWbs} onSelectionChange={setSelectedRowId} onCollapsedChange={(next) => setCollapsedWbs(new Set(next))} onOpenAssignments={() => setPlanningPanel("assignments")} onEdit={(activity) => { setSelectedActivity(activity); setActivityOpen(true); }} />
+  <PlanningGrid projectId={projectId} planId={planId} projectStartDate={project.startDate} wbs={wbs.data ?? []} activities={activities.data ?? []} dependencies={dependencies.data ?? []} mutations={mutations} editable={editable} showBaseline={showBaseline} ribbonTab={ribbonTab} ribbonExpanded={ribbonExpanded} t={t} selectedRowId={selectedRowId} collapsedWbsIds={collapsedWbs} onSelectionChange={setSelectedRowId} onCollapsedChange={(next) => setCollapsedWbs(new Set(next))} onOpenAssignments={() => setPlanningPanel("assignments")} onEdit={(activity) => { setSelectedActivity(activity); setActivityOpen(true); }} />
 ) : view === "network" ? (
   <CriticalPathNetworkDiagram
     projectId={projectId}
@@ -444,7 +448,7 @@ export function ProjectPlanningTabFull() {
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label htmlFor="planning-assignment-work-hours">{t("planning.assignedWorkHours")} <span aria-hidden="true" className="ms-1 text-destructive">*</span></Label>
-            <Input id="planning-assignment-work-hours" name="assignedWorkHours" type="number" min="0.1" step="0.5" value={assignmentForm.assignedWorkHours} onChange={(event) => setAssignmentForm(current => ({ ...current, assignedWorkHours: event.target.value }))} required />
+            <Input id="planning-assignment-work-hours" name="assignedWorkHours" type="number" min="0.5" step="0.5" value={assignmentForm.assignedWorkHours} onChange={(event) => setAssignmentForm(current => ({ ...current, assignedWorkHours: event.target.value }))} required />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="planning-assignment-start-date">{t("projects.startDate")} <span aria-hidden="true" className="ms-1 text-destructive">*</span></Label>
@@ -463,19 +467,20 @@ export function ProjectPlanningTabFull() {
               <div><p className="text-xs text-muted-foreground">{t("planning.workAssignedInPeriod")}</p><p className="mt-1 text-sm font-semibold tabular-nums">{formatNumber(assignmentCapacity.data.assignedWorkHours)} {t("common.hours")}</p></div>
               <div><p className="text-xs text-muted-foreground">{t("planning.remainingAssignableHours")}</p><p className={`mt-1 text-sm font-semibold tabular-nums ${assignmentCapacity.data.remainingAssignableHours > 0 ? "text-success" : "text-destructive"}`}>{formatNumber(assignmentCapacity.data.remainingAssignableHours)} {t("common.hours")}</p></div>
             </div>
-            {Number(assignmentForm.assignedWorkHours) > assignmentCapacity.data.remainingAssignableHours + 0.0001 ? <p className="text-xs text-destructive" role="alert">{t("planning.capacityOverLimit")}</p> : null}
+            {assignmentCapacity.data.isScheduleWithinMembership === false ? <div className="space-y-1" role="alert"><p className="text-xs text-warning">{t("planning.assignmentMembershipLimit")}</p><p className="text-xs text-muted-foreground">{t("planning.activeMembershipPeriod")}: {assignmentCapacity.data.membershipStartDate?.slice(0, 10) ?? "—"} – {assignmentCapacity.data.membershipEndDate?.slice(0, 10) ?? "—"}</p></div> : null}
+            {assignmentCapacity.data.isScheduleWithinMembership !== false && Number(assignmentForm.assignedWorkHours) > assignmentCapacity.data.remainingAssignableHours + 0.0001 ? <p className="text-xs text-destructive" role="alert">{t("planning.capacityOverLimit")}</p> : null}
           </> : null}
         </section> : null}
       </section>
     </SideSheetBody>
-    <SideSheetFooter><Button type="button" variant="outline" onClick={() => setAssignmentFormOpen(false)}>{t("common.cancel")}</Button><Button type="submit" disabled={mutations.createAssignment.isPending || mutations.updateAssignment.isPending || !assignmentCapacity.data || assignmentCapacity.isFetching || assignmentCapacity.isError || !Number.isFinite(Number(assignmentForm.assignedWorkHours)) || Number(assignmentForm.assignedWorkHours) <= 0 || Number(assignmentForm.assignedWorkHours) > (assignmentCapacity.data?.remainingAssignableHours ?? 0)}>{mutations.createAssignment.isPending || mutations.updateAssignment.isPending ? t("common.saving") : t("common.save")}</Button></SideSheetFooter>
+    <SideSheetFooter><Button type="button" variant="outline" onClick={() => setAssignmentFormOpen(false)}>{t("common.cancel")}</Button><Button type="submit" disabled={mutations.createAssignment.isPending || mutations.updateAssignment.isPending || !assignmentCapacity.data || assignmentCapacity.data.isScheduleWithinMembership === false || assignmentCapacity.isFetching || assignmentCapacity.isError || !Number.isFinite(Number(assignmentForm.assignedWorkHours)) || Number(assignmentForm.assignedWorkHours) <= 0 || Number(assignmentForm.assignedWorkHours) > (assignmentCapacity.data?.remainingAssignableHours ?? 0)}>{mutations.createAssignment.isPending || mutations.updateAssignment.isPending ? t("common.saving") : t("common.save")}</Button></SideSheetFooter>
   </form>
 </SideSheet>
 <SideSheet open={versionsOpen} onOpenChange={setVersionsOpen} title={t("planning.versions")} description={t("planning.versionsDescription")}>
   <SideSheetBody className="space-y-2">{versions.length === 0 ? <p className="text-sm text-muted-foreground">{t("common.noResults")}</p> : versions.map((v) => <div key={v.id} className="flex items-center justify-between gap-2 rounded border px-3 py-2 text-sm"><span className="font-medium">{planningLabel(t, "versionType", v.type)} · {t("planning.versionShort")} {v.versionNumber}</span><Badge status={v.status}>{planningLabel(t, "versionStatus", v.status)}</Badge></div>)}</SideSheetBody>
 </SideSheet>
 <SideSheet open={baselineOpen} onOpenChange={setBaselineOpen} title={t("planning.viewBaseline")} description={t("planning.baselineSummaryDescription")}><SideSheetBody><BaselinePanel baseline={currentBaseline} activities={activities.data ?? []} t={t} onCompare={() => { setShowBaseline(true); setBaselineOpen(false); setRibbonTab("view"); setView("table"); }} /></SideSheetBody></SideSheet>
-<PlanningActivityDetailsSheet open={activityOpen} onOpenChange={(open) => { setActivityOpen(open); if (!open) setSelectedActivity(undefined); }} activity={selectedActivity} projectId={projectId} planId={planId} editable={editable} t={t} />
+<PlanningActivityDetailsSheet open={activityOpen} onOpenChange={(open) => { setActivityOpen(open); if (!open) setSelectedActivity(undefined); }} activity={selectedActivity} projectId={projectId} projectName={project.name} planName={selectedPlan?.name} planId={planId} editable={editable} t={t} />
 {importOpen ? <PlanningImportSheet
   projectId={projectId}
   plans={plans.data ?? []}

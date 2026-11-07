@@ -1,4 +1,4 @@
-using NEXUS.Modules.CostManagement.Domain;
+﻿using NEXUS.Modules.CostManagement.Domain;
 
 namespace NEXUS.Modules.CostManagement.Application.DTOs;
 
@@ -14,7 +14,7 @@ public sealed class BudgetDto
     public decimal PlannedAmount { get; init; }
     public decimal ApprovedAmount { get; init; }
     public decimal ForecastAmount { get; init; }
-    public string Currency { get; init; } = "GBP";
+    public string Currency { get; init; } = string.Empty;
     public int FiscalYear { get; init; }
     public int? FiscalQuarter { get; init; }
     public string Status { get; init; } = string.Empty;
@@ -35,7 +35,7 @@ public class CreateBudgetDto
     public decimal PlannedAmount { get; init; }
     public decimal ApprovedAmount { get; init; }
     public decimal ForecastAmount { get; init; }
-    public string Currency { get; init; } = "GBP";
+    public string Currency { get; init; } = string.Empty;
     public int FiscalYear { get; init; }
     public int? FiscalQuarter { get; init; }
     public string Status { get; init; } = "Draft";
@@ -58,7 +58,7 @@ public sealed class CostEntryDto
     public string? SubCategory { get; init; }
     public string? Description { get; init; }
     public decimal Amount { get; init; }
-    public string Currency { get; init; } = "GBP";
+    public string Currency { get; init; } = string.Empty;
     public decimal? TaxAmount { get; init; }
     public DateTime IncurredDate { get; init; }
     public string Type { get; init; } = string.Empty;
@@ -80,7 +80,7 @@ public class CreateCostEntryDto
     public string? SubCategory { get; init; }
     public string? Description { get; init; }
     public decimal Amount { get; init; }
-    public string Currency { get; init; } = "GBP";
+    public string Currency { get; init; } = string.Empty;
     public decimal? TaxAmount { get; init; }
     public DateTime IncurredDate { get; init; } = DateTime.UtcNow.Date;
     public string Type { get; init; } = "Actual";
@@ -108,7 +108,7 @@ public sealed class PurchaseCommitmentDto
     public string? VendorName { get; init; }
     public decimal Amount { get; init; }
     public decimal? InvoicedAmount { get; init; }
-    public string Currency { get; init; } = "GBP";
+    public string Currency { get; init; } = string.Empty;
     public DateTime CommitmentDate { get; init; }
     public DateTime? ExpectedDeliveryDate { get; init; }
     public string Status { get; init; } = string.Empty;
@@ -139,6 +139,77 @@ public sealed class UpdateCommitmentDto
     public decimal Amount { get; init; }
     public DateTime CommitmentDate { get; init; }
     public DateTime? ExpectedDeliveryDate { get; init; }
+    public byte[] RowVersion { get; init; } = Array.Empty<byte>();
+}
+
+public sealed class PaymentSettlementDto
+{
+    public Guid Id { get; init; }
+    public Guid? PaymentObligationId { get; init; }
+    public Guid? ProjectPaymentRequestId { get; init; }
+    public Guid ProjectId { get; init; }
+    public Guid IdempotencyKey { get; init; }
+    public decimal Amount { get; init; }
+    public string? Currency { get; init; }
+    public DateTime SettlementDate { get; init; }
+    public string PaymentReference { get; init; } = string.Empty;
+    public string? Description { get; init; }
+    public string? Notes { get; init; }
+    public DateTime CreatedAt { get; init; }
+    public DateTime? UpdatedAt { get; init; }
+    public byte[] RowVersion { get; init; } = Array.Empty<byte>();
+}
+
+public sealed class RecordPaymentSettlementDto
+{
+    public Guid IdempotencyKey { get; init; }
+    public decimal Amount { get; init; }
+    public DateTime SettlementDate { get; init; } = DateTime.UtcNow;
+    public string PaymentReference { get; init; } = string.Empty;
+    public string? Notes { get; init; }
+}
+
+public sealed class PaymentObligationDto
+{
+    public Guid Id { get; init; }
+    public Guid ProjectId { get; init; }
+    public string ProjectName { get; init; } = string.Empty;
+    public Guid? MilestoneId { get; init; }
+    public string PaymentReference { get; init; } = string.Empty;
+    public string Purpose { get; init; } = string.Empty;
+    public string Description { get; init; } = string.Empty;
+    public decimal Amount { get; init; }
+    public string Currency { get; init; } = string.Empty;
+    public DateTime DueDate { get; init; }
+    public string? Notes { get; init; }
+    public decimal SettledAmount { get; init; }
+    public decimal OutstandingAmount { get; init; }
+    public string SettlementProgressStatus { get; init; } = string.Empty;
+    public string DueDateStatus { get; init; } = string.Empty;
+    public string LifecycleStatus { get; init; } = string.Empty;
+    public bool IsDue { get; init; }
+    public bool IsOverdue { get; init; }
+    public IReadOnlyList<PaymentSettlementDto> Settlements { get; init; } = Array.Empty<PaymentSettlementDto>();
+    public DateTime CreatedAt { get; init; }
+    public DateTime? UpdatedAt { get; init; }
+    public byte[] RowVersion { get; init; } = Array.Empty<byte>();
+}
+
+public class CreatePaymentObligationDto
+{
+    public Guid ProjectId { get; init; }
+    public Guid? MilestoneId { get; init; }
+    public string PaymentReference { get; init; } = string.Empty;
+    public string Purpose { get; init; } = string.Empty;
+    public string? Description { get; init; }
+    public decimal Amount { get; init; }
+    public string? Currency { get; init; }
+    public DateTime DueDate { get; init; }
+    public string? Notes { get; init; }
+}
+
+public sealed class UpdatePaymentObligationDto : CreatePaymentObligationDto
+{
     public byte[] RowVersion { get; init; } = Array.Empty<byte>();
 }
 
@@ -173,5 +244,49 @@ public static class CostManagementMappings
         ExpectedDeliveryDate = value.ExpectedDeliveryDate, Status = value.Status,
         BudgetId = value.BudgetId, ProjectId = value.ProjectId, CreatedAt = value.CreatedAt,
         UpdatedAt = value.UpdatedAt, RowVersion = value.RowVersion
+    };
+
+    public static PaymentSettlementDto ToDto(this PaymentSettlement value) => new()
+    {
+        Id = value.Id,
+        PaymentObligationId = value.PaymentObligationId,
+        ProjectPaymentRequestId = value.ProjectPaymentRequestId,
+        ProjectId = value.ProjectId,
+        IdempotencyKey = value.IdempotencyKey,
+        Amount = value.Amount,
+        Currency = value.Currency,
+        SettlementDate = value.SettlementDate,
+        PaymentReference = value.PaymentReference,
+        Description = value.Description,
+        Notes = value.Notes,
+        CreatedAt = value.CreatedAt,
+        UpdatedAt = value.UpdatedAt,
+        RowVersion = value.RowVersion
+    };
+
+    public static PaymentObligationDto ToDto(this PaymentObligation value) => new()
+    {
+        Id = value.Id,
+        ProjectId = value.ProjectId,
+        ProjectName = value.ProjectName,
+        MilestoneId = value.MilestoneId,
+        PaymentReference = value.PaymentReference,
+        Purpose = value.Purpose,
+        Description = value.Description,
+        Amount = value.Amount,
+        Currency = value.Currency,
+        DueDate = value.DueDate,
+        Notes = value.Notes,
+        SettledAmount = value.SettledAmount,
+        OutstandingAmount = value.OutstandingAmount,
+        SettlementProgressStatus = value.SettlementProgressStatus,
+        DueDateStatus = value.GetDueDateStatus(DateTime.UtcNow),
+        LifecycleStatus = value.GetLifecycleStatus(DateTime.UtcNow),
+        IsDue = value.IsDue(DateTime.UtcNow),
+        IsOverdue = value.IsOverdue(DateTime.UtcNow),
+        Settlements = value.Settlements.Where(item => !item.IsDeleted).OrderByDescending(item => item.SettlementDate).Select(item => item.ToDto()).ToList(),
+        CreatedAt = value.CreatedAt,
+        UpdatedAt = value.UpdatedAt,
+        RowVersion = value.RowVersion
     };
 }

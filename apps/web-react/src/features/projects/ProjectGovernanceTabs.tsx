@@ -1,7 +1,8 @@
 import * as React from "react";
-import { Link, useOutletContext, useParams } from "react-router-dom";
-import { AlertTriangle, ArrowLeft, CalendarCheck, CalendarDays, Camera, Download, ExternalLink, Eye, FileSpreadsheet, GitBranch, History, Loader2, Lock, Mail, Pencil, Plus, RefreshCw, Search, Send, Trash2, UserRound, UserRoundCheck, Users, X } from "lucide-react";
+import { Link, useOutletContext } from "react-router-dom";
+import { AlertTriangle, CalendarDays, Download, Eye, FileSpreadsheet, FileText, GitBranch, Headphones, ListChecks, Loader2, Pencil, Plus, Printer, RefreshCw, Send, TrendingUp, Trash2, UserRoundCheck } from "lucide-react";
 import { useI18n } from "@i18n/messages";
+import { getApiFieldError } from "@api/client";
 import { useConfirm } from "@components/ui/ConfirmProvider";
 import { useAuth } from "@auth/AuthProvider";
 import { useManagement } from "@api/management";
@@ -14,13 +15,8 @@ import { Label } from "@components/ui/Label";
 import { Textarea } from "@components/ui/Textarea";
 import { Badge } from "@components/ui/Badge";
 import { Skeleton } from "@components/ui/Skeleton";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@components/ui/Select";
 import { SideSheet, SideSheetBody, SideSheetFooter } from "@components/ui/SideSheet";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@components/ui/Dialog";
-import { Pagination } from "@components/ui/Pagination";
-import { PageHeader } from "@components/layout/PageHeader";
-import { useDebounce } from "use-debounce";
-import { ApiError } from "@api/client";
 import {
   useCancelProjectHandoverRequest,
   useCreateProjectHandoverRequest,
@@ -29,56 +25,99 @@ import {
   useRemediateProjectChangeRequest,
   useReassignProjectChangeRequestApproval,
   useCreateProjectStatusReport,
-  useGenerateProjectStatusReport,
-  useSubmitProjectStatusReport,
-  useApproveProjectStatusReport,
-  useReturnProjectStatusReport,
-  useReopenProjectStatusReport,
   useDeleteProjectStatusReport,
   useProjectChangeRequests,
   useProjectHandoverRequests,
   useProjectHandoverCapabilities,
   useProjectHandoverManagers,
-  useProjectManagerHistory,
-  useProjectSnapshots,
-  useProjectSnapshot,
   useProjectStatusReports,
   useProjectStatusReport,
+  requestProjectStatusReportExport,
   useProjectStatusReportComparison,
   useProjectStatusReportCurrentProgress,
   useUpdateProjectStatusReport,
   usePublishProjectStatusReport,
+  useProjectFinancialSummary,
+  useProjectIssues,
   type ProjectChangeRequestDto,
   type ProjectDto,
   type ProjectHandoverInitiationType,
-  type ProjectManagerHistoryDto,
-  type ProjectSnapshotSummaryDto,
   type ProjectStatusReportListDto,
   type ProjectStatusReportDto,
   type ProjectStatusReportComparisonDto,
   type ProjectStatusReportInput,
-  type ProjectStatusReportWorkflowAction,
 } from "./api/projects";
-import { useUserLookup } from "./lib/project-lookups";
 import { toHandoverManagerOptions } from "./lib/handover-manager-options";
-import { useFullMeetings, useMeetingFullMutations, type MeetingInput } from "@api/meetingsFull";
-import { createMeetingDraft, isValidMeetingEmail, toMeetingInput, validateMeetingDraft, type MeetingAttendeeDraft } from "@features/delivery/meeting-form";
-import { exportProjectStatusReportExcel, exportProjectStatusReportPdf } from "@lib/export/project-status-report-export";
-import { useProjectEnumLabels } from "./lib/project-labels";
+import { MeetingsBrowser } from "@features/delivery/MeetingsBrowser";
+import { exportProjectStatusReportExcel, exportProjectStatusReportPdf, printProjectStatusReport } from "@lib/export/project-status-report-export";
+import { getEvmReasonTranslationCandidates, useProjectEnumLabels } from "./lib/project-labels";
+import { useWorkItemStatuses } from "@api/workItems";
 import { PROJECT_STATUSES } from "@lib/enums";
 import { formatDateTime } from "@lib/utils";
+import { formatNumberValue } from "@lib/formatting/number";
 import { SearchableSelect } from "@components/ui/SearchableSelect";
-import { getRiskLevelTextClass, getRiskStatusTextClass } from "@lib/status-presentation";
+import { getStatusTextClass, getStatusTone, statusToneDotClasses } from "@lib/status-presentation";
+import { useRisks } from "@features/risks/api/risks";
 import { formatProjectChangeRequestAmount } from "./lib/project-change-request-format";
 import { ProjectChangeRequestActionSheet } from "./components/ProjectOverviewActionSheets";
 
+function localizedEnumValue(t: (key: string) => string, namespace: string, value?: string | null): string {
+  if (!value) return "—";
+  const key = `${namespace}.${value.charAt(0).toLowerCase()}${value.slice(1)}`;
+  const label = t(key);
+  return label === key ? value : label;
+}
+
+function localizedEvmReasonLabel(reason: string, t: (key: string) => string): string {
+  for (const candidate of getEvmReasonTranslationCandidates(reason)) {
+    const key = `projects.evmReasons.${candidate}`;
+    const label = t(key);
+    if (label !== key) return label;
+  }
+  return reason;
+}
+
+function workItemStatusLabel(status: string, statuses: { code: string; nameEn: string; nameAr: string }[], locale: string): string {
+  const match = statuses.find((item) => item.code === status);
+  if (!match) return status;
+  const names = locale === "ar" ? [match.nameAr, match.nameEn] : [match.nameEn, match.nameAr];
+  return names.find((name) => name.trim())?.trim() ?? status;
+}
+
 function formatPercent1(value: number | null | undefined, locale: string): string {
   if (typeof value !== "number" || !Number.isFinite(value)) return "—";
-  return `${new Intl.NumberFormat(locale === "ar" ? "ar-EG-u-nu-latn" : "en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(value)}%`;
+  return `${formatNumberValue(value, locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
+}
+
+function resourceUtilizationTextClass(status?: string | null): string {
+  if (status === "Overallocated") return "text-destructive";
+  if (status === "WithinCapacity") return "text-success";
+  if (status === "Unavailable") return "text-warning";
+  return "text-muted-foreground";
+}
+
+function statusReportInput(report: ProjectStatusReportDto): ProjectStatusReportInput {
+  return {
+    reportDate: report.reportDate.slice(0, 10),
+    periodFrom: report.periodFrom.slice(0, 10),
+    periodTo: report.periodTo.slice(0, 10),
+    statusDate: (report.statusDate || report.reportDate).slice(0, 10),
+    projectLifecycleStatusAtReport: report.projectLifecycleStatusAtReport,
+    overallHealth: report.overallHealth,
+    overallProgressPercent: report.overallProgressPercent,
+    costHealth: report.costHealth,
+    qualityHealth: report.qualityHealth,
+    executiveSummary: report.executiveSummary,
+    keyAchievements: report.keyAchievements,
+    challengesConcerns: report.challengesConcerns,
+    nextPeriodPriorities: report.nextPeriodPriorities,
+    actionsNeeded: report.actionsNeeded,
+    supportNeeded: report.supportNeeded,
+    rowVersion: report.rowVersion,
+  };
 }
 
 interface ProjectContext { projectId: string; project: ProjectDto }
-interface UserLookupDto { id: string; fullName: string; email: string; jobTitle?: string }
 
 function useProjectContext(): ProjectContext {
   return useOutletContext<ProjectContext>();
@@ -103,35 +142,54 @@ export function ProjectStatusReportsTab() {
   const { statusLabel, healthLabel } = useProjectEnumLabels();
   const { user } = useAuth();
   const { canMutate, effectiveReadOnly } = useManagement();
+  const canViewIssues = Boolean(user && hasPermission(user.permissions, Permissions.Issue.View));
   const query = useProjectStatusReports(projectId);
   const create = useCreateProjectStatusReport(projectId);
   const today = React.useMemo(() => new Date().toISOString().slice(0, 10), []);
-  const [statusDate, setStatusDate] = React.useState(today);
+  const [periodFrom, setPeriodFrom] = React.useState(today);
+  const [periodTo, setPeriodTo] = React.useState(today);
   const [detailId, setDetailId] = React.useState("");
   const detail = useProjectStatusReport(projectId, detailId, Boolean(detailId));
   const [editingReport, setEditingReport] = React.useState<ProjectStatusReportDto | null>(null);
   const selectedReportId = editingReport?.id ?? "";
   const update = useUpdateProjectStatusReport(projectId, selectedReportId);
-  const generate = useGenerateProjectStatusReport(projectId);
-  const submitReport = useSubmitProjectStatusReport(projectId);
-  const approveReport = useApproveProjectStatusReport(projectId);
-  const returnReport = useReturnProjectStatusReport(projectId);
-  const reopenReport = useReopenProjectStatusReport(projectId);
   const publish = usePublishProjectStatusReport(projectId);
   const remove = useDeleteProjectStatusReport(projectId);
   const [formOpen, setFormOpen] = React.useState(false);
-  const currentProgress = useProjectStatusReportCurrentProgress(projectId, statusDate, formOpen);
+  const [formSession, setFormSession] = React.useState(0);
+  const [progressDraft, setProgressDraft] = React.useState("");
+  const progressTouched = React.useRef(false);
+  const currentProgress = useProjectStatusReportCurrentProgress(projectId, today, formOpen, periodFrom, periodTo);
+  const financialSummary = useProjectFinancialSummary(projectId, periodFrom, periodTo, Boolean(formOpen));
+  const risks = useRisks({ projectId, pageSize: 100 }, Boolean(formOpen));
+  const issues = useProjectIssues(projectId, Boolean(formOpen && canViewIssues));
+  const workItemStatusesQuery = useWorkItemStatuses(Boolean(formOpen || detailId));
+  React.useEffect(() => {
+    if (!formOpen || (editingReport?.overallProgressPercent != null) || currentProgress.isLoading || currentProgress.isFetching || currentProgress.isError || !currentProgress.data) return;
+    const suggestedProgress = currentProgress.data.projectPlanProgressPercent;
+    const value = suggestedProgress == null ? "" : String(suggestedProgress);
+    if (!progressTouched.current) setProgressDraft(value);
+  }, [currentProgress.data, currentProgress.isError, currentProgress.isFetching, currentProgress.isLoading, editingReport?.overallProgressPercent, formOpen]);
   const [exporting, setExporting] = React.useState(false);
   const [actionError, setActionError] = React.useState<string | null>(null);
   const canCreate = Boolean(user && hasPermission(user.permissions, Permissions.StatusReport.Create) && canMutate && !effectiveReadOnly);
   const canEdit = Boolean(user && hasPermission(user.permissions, Permissions.StatusReport.Edit) && canMutate && !effectiveReadOnly);
-  const canGenerate = Boolean(user && hasPermission(user.permissions, Permissions.StatusReport.Generate) && canMutate && !effectiveReadOnly);
-  const canSubmit = Boolean(user && hasPermission(user.permissions, Permissions.StatusReport.Submit) && canMutate && !effectiveReadOnly);
-  const canApprove = Boolean(user && hasPermission(user.permissions, Permissions.StatusReport.Approve) && canMutate && !effectiveReadOnly);
   const canPublish = Boolean(user && hasPermission(user.permissions, Permissions.StatusReport.Publish) && canMutate && !effectiveReadOnly);
   const canExport = Boolean(user && hasPermission(user.permissions, Permissions.StatusReport.Export));
-  const workflowPending = generate.isPending || submitReport.isPending || approveReport.isPending || returnReport.isPending || reopenReport.isPending || publish.isPending;
+  const workflowPending = publish.isPending;
   const reports = query.data?.items ?? [];
+  const lifecycleStatusDefault = editingReport ? editingReport.projectLifecycleStatusAtReport : project.status;
+  const hasNonstandardLifecycleStatus = Boolean(lifecycleStatusDefault && !PROJECT_STATUSES.some((status) => status === lifecycleStatusDefault));
+  const progressForSummary = progressTouched.current
+    ? (progressDraft === "" ? null : Number(progressDraft))
+    : editingReport
+      ? editingReport.overallProgressPercent ?? (progressDraft === "" ? project.progress : Number(progressDraft))
+      : progressDraft !== ""
+        ? Number(progressDraft)
+        : currentProgress.data?.projectPlanProgressPercent ?? project.progress;
+  const progressBarValue = typeof progressForSummary === "number" && Number.isFinite(progressForSummary)
+    ? Math.min(100, Math.max(0, progressForSummary))
+    : null;
   const [comparisonSelection, setComparisonSelection] = React.useState<string[]>([]);
   const [comparisonOpen, setComparisonOpen] = React.useState(false);
   const comparisonQuery = useProjectStatusReportComparison(
@@ -140,8 +198,25 @@ export function ProjectStatusReportsTab() {
     comparisonSelection[1] ?? "",
     comparisonOpen,
   );
+  const comparisonFirstReport = useProjectStatusReport(projectId, comparisonSelection[0] ?? "", comparisonOpen);
+  const comparisonSecondReport = useProjectStatusReport(projectId, comparisonSelection[1] ?? "", comparisonOpen);
+  const comparisonEarlierCurrency = comparisonQuery.data?.earlierReportId === comparisonSelection[0]
+    ? comparisonFirstReport.data?.performanceSnapshot?.currency ?? comparisonFirstReport.data?.currencyCodeSnapshot
+    : comparisonSecondReport.data?.performanceSnapshot?.currency ?? comparisonSecondReport.data?.currencyCodeSnapshot;
+  const comparisonLaterCurrency = comparisonQuery.data?.laterReportId === comparisonSelection[0]
+    ? comparisonFirstReport.data?.performanceSnapshot?.currency ?? comparisonFirstReport.data?.currencyCodeSnapshot
+    : comparisonSecondReport.data?.performanceSnapshot?.currency ?? comparisonSecondReport.data?.currencyCodeSnapshot;
 
-  function openNewReport() { setActionError(null); setEditingReport(null); setStatusDate(today); setFormOpen(true); }
+  function openNewReport() {
+    setActionError(null);
+    setEditingReport(null);
+    progressTouched.current = false;
+    setProgressDraft(project.progress == null ? "" : String(project.progress));
+    setFormSession((session) => session + 1);
+    setPeriodFrom(today);
+    setPeriodTo(today);
+    setFormOpen(true);
+  }
   function openReport(reportId: string) { setActionError(null); setDetailId(reportId); }
   function toggleComparison(report: ProjectStatusReportListDto) {
     if (report.reportState !== "Published") return;
@@ -155,7 +230,8 @@ export function ProjectStatusReportsTab() {
     setActionError(null);
     setExporting(true);
     try {
-      await exportProjectStatusReportPdf({ report: detail.data, publishedHistory: reports, locale: document.documentElement.lang });
+      const exportableReport = await requestProjectStatusReportExport(projectId, detail.data.id);
+      await exportProjectStatusReportPdf({ report: exportableReport, publishedHistory: reports, locale: document.documentElement.lang, workItemStatuses: workItemStatusesQuery.data });
     } catch (reason) {
       setActionError(reason instanceof Error ? reason.message : t("projects.statusReportExportFailed"));
     } finally {
@@ -168,9 +244,24 @@ export function ProjectStatusReportsTab() {
     setActionError(null);
     setExporting(true);
     try {
-      await exportProjectStatusReportExcel({ report: detail.data, locale });
+      const exportableReport = await requestProjectStatusReportExport(projectId, detail.data.id);
+      await exportProjectStatusReportExcel({ report: exportableReport, locale });
     } catch (reason) {
       setActionError(reason instanceof Error ? reason.message : t("projects.statusReportExportFailed"));
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  async function printReport() {
+    if (!detail.data || detail.data.reportState !== "Published" || !canExport || exporting) return;
+    setActionError(null);
+    setExporting(true);
+    try {
+      const exportableReport = await requestProjectStatusReportExport(projectId, detail.data.id);
+      await printProjectStatusReport({ report: exportableReport, publishedHistory: reports, locale: document.documentElement.lang, workItemStatuses: workItemStatusesQuery.data });
+    } catch (reason) {
+      setActionError(reason instanceof Error ? reason.message : t("projects.statusReportPrintFailed"));
     } finally {
       setExporting(false);
     }
@@ -187,22 +278,21 @@ export function ProjectStatusReportsTab() {
     }
     const progressRaw = String(data.get("overallProgressPercent") || "").trim();
     const input: ProjectStatusReportInput = {
-      reportDate: String(data.get("reportDate") || ""),
+      reportDate: today,
       periodFrom,
       periodTo,
-      statusDate: String(data.get("statusDate") || ""),
-      projectLifecycleStatusAtReport: String(data.get("projectLifecycleStatusAtReport") || project.status || ""),
+      statusDate: today,
+      projectLifecycleStatusAtReport: String(data.get("projectLifecycleStatusAtReport") || "") || undefined,
       overallHealth: String(data.get("overallHealth") || "") || undefined,
       overallProgressPercent: progressRaw === "" ? undefined : Number(progressRaw),
       executiveSummary: String(data.get("executiveSummary") || "").trim() || undefined,
       keyAchievements: String(data.get("keyAchievements") || "").trim() || undefined,
       challengesConcerns: String(data.get("challengesConcerns") || "").trim() || undefined,
       nextPeriodPriorities: String(data.get("nextPeriodPriorities") || "").trim() || undefined,
-      scheduleHealth: String(data.get("scheduleHealth") || "") || undefined,
       costHealth: String(data.get("costHealth") || "") || undefined,
-      scopeHealth: String(data.get("scopeHealth") || "") || undefined,
       qualityHealth: String(data.get("qualityHealth") || "") || undefined,
-      resourceHealth: String(data.get("resourceHealth") || "") || undefined,
+      actionsNeeded: String(data.get("actionsNeeded") || "").trim() || undefined,
+      supportNeeded: String(data.get("supportNeeded") || "").trim() || undefined,
       rowVersion: editingReport?.rowVersion,
     };
     setActionError(null);
@@ -216,14 +306,14 @@ export function ProjectStatusReportsTab() {
     }
   }
 
-  async function runWorkflowAction(reportId: string, action: ProjectStatusReportWorkflowAction) {
-    const confirmationKey = action === "approve" ? "projects.approveStatusReportConfirm"
-      : action === "return" ? "projects.returnStatusReportConfirm"
-        : action === "publish" ? "projects.publishStatusReportConfirm" : null;
-    if (confirmationKey && !await confirm({ description: t(confirmationKey), destructive: action === "return" })) return;
+  async function publishReport(report: ProjectStatusReportDto) {
+    if (!await confirm({ description: t("projects.publishStatusReportConfirm") })) return;
     setActionError(null);
-    const mutation = ({ generate, submit: submitReport, approve: approveReport, return: returnReport, reopen: reopenReport, publish } as const)[action];
-    try { await mutation.mutateAsync(reportId); } catch (reason) { setActionError(reason instanceof Error ? reason.message : t(action === "publish" ? "projects.statusReportPublishFailed" : "projects.statusReportWorkflowActionFailed")); }
+    try {
+      await publish.mutateAsync({ reportId: report.id, content: statusReportInput(report) });
+    } catch (reason) {
+      setActionError(reason instanceof Error ? reason.message : t("projects.statusReportPublishFailed"));
+    }
   }
 
   async function confirmDelete(reportId: string) {
@@ -248,32 +338,192 @@ export function ProjectStatusReportsTab() {
           
       </CardContent>
     </Card>
-    <StatusReportComparisonDialog open={comparisonOpen} onOpenChange={setComparisonOpen} comparison={comparisonQuery.data} loading={comparisonQuery.isLoading} error={comparisonQuery.isError} projectCurrency={project.currency} locale={locale} t={t} formatDate={formatDate} formatCurrency={formatCurrency} />
-    <SideSheet open={formOpen} onOpenChange={(next) => { setFormOpen(next); if (!next) { setEditingReport(null); setActionError(null); } }} title={editingReport ? t("projects.editStatusReport") : t("projects.newStatusReport")} description={t("projects.statusReportFormDescription")}>
-      <form key={selectedReportId || "new"} onSubmit={(event) => void submit(event)} className="flex min-h-0 flex-1 flex-col"><SideSheetBody className="space-y-4">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{t("projects.reportingPeriodSection")}</p>
-        <div className="rounded-lg border bg-muted/20 p-3 text-xs text-muted-foreground"><div className="grid gap-2 sm:grid-cols-2"><span>{t("projects.name")}: <strong className="text-foreground">{project.name} ({project.code || "—"})</strong></span><span>{t("projects.projectManager")}: <strong className="text-foreground">{project.projectManagerName || "—"}</strong></span><span>{t("projects.status")}: <strong className="text-foreground">{project.status ? statusLabel(project.status) : "—"}</strong></span><span>{t("projects.preparedBy")}: <strong className="text-foreground">{user?.fullName || "—"}</strong></span><span>{t("projects.health")}: <strong className="text-foreground">{project.health ? healthLabel(project.health) : "—"} · {formatPercent1(currentProgress.data?.projectPlanProgressPercent, locale)}</strong></span></div></div>
-        <div className="grid gap-3 sm:grid-cols-2"><div><Label>{t("projects.reportDate")}</Label><Input className="mt-1" name="reportDate" type="date" defaultValue={editingReport?.reportDate?.slice(0, 10) ?? today} required /></div><div><Label>{t("projects.statusDate")}</Label><Input className="mt-1" name="statusDate" type="date" value={statusDate} onChange={(event) => setStatusDate(event.currentTarget.value)} required /></div><div><Label>{t("projects.periodFrom")}</Label><Input className="mt-1" name="periodFrom" type="date" defaultValue={editingReport?.periodFrom?.slice(0, 10) ?? today} required /></div><div><Label>{t("projects.periodTo")}</Label><Input className="mt-1" name="periodTo" type="date" defaultValue={editingReport?.periodTo?.slice(0, 10) ?? today} required /></div><div><Label>{t("projects.projectStatusAtReport")}</Label><select className="input-field mt-1 w-full" name="projectLifecycleStatusAtReport" defaultValue={editingReport?.projectLifecycleStatusAtReport || project.status || ""}>{PROJECT_STATUSES.map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}</select></div></div>
-        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{t("projects.overallStatusSection")}</p>
-        <div className="grid gap-3 sm:grid-cols-2"><div><Label>{t("projects.overallHealth")}</Label><select className="input-field mt-1 w-full" name="overallHealth" defaultValue={editingReport?.overallHealth ?? "Green"}><option value="">—</option>{["Green", "Amber", "Red"].map((h) => <option key={h} value={h}>{t(`projects.healthValues.${h}`)}</option>)}</select></div><div><Label>{t("projects.overallProgress")}</Label><Input className="mt-1" name="overallProgressPercent" type="number" min="0" max="100" value={currentProgress.data?.projectPlanProgressPercent ?? editingReport?.overallProgressPercent ?? ""} readOnly /></div></div>
-        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{t("projects.healthDimensionsSection")}</p>
-        <div className="grid gap-3 sm:grid-cols-2"><HealthField name="scheduleHealth" label={t("projects.scheduleHealth")} value={editingReport?.scheduleHealth} t={t} /><HealthField name="costHealth" label={t("projects.costHealth")} value={editingReport?.costHealth} t={t} /><HealthField name="scopeHealth" label={t("projects.scopeHealth")} value={editingReport?.scopeHealth} t={t} /><HealthField name="qualityHealth" label={t("projects.qualityHealth")} value={editingReport?.qualityHealth} t={t} /><HealthField name="resourceHealth" label={t("projects.resourceHealth")} value={editingReport?.resourceHealth} t={t} /></div>
-        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{t("projects.narrativesSection")}</p>
-        <NarrativeField name="executiveSummary" label={t("projects.executiveSummary")} defaultValue={editingReport?.executiveSummary} /><NarrativeField name="keyAchievements" label={t("projects.keyAchievements")} defaultValue={editingReport?.keyAchievements} /><NarrativeField name="challengesConcerns" label={t("projects.challengesConcerns")} defaultValue={editingReport?.challengesConcerns} /><NarrativeField name="nextPeriodPriorities" label={t("projects.nextPeriodPriorities")} defaultValue={editingReport?.nextPeriodPriorities} />
-        {actionError ? <p className="text-sm text-destructive">{actionError}</p> : null}
-      </SideSheetBody><SideSheetFooter><Button type="button" variant="outline" onClick={() => { setFormOpen(false); setEditingReport(null); }}>{t("common.cancel")}</Button><Button type="submit" disabled={create.isPending || update.isPending}>{editingReport ? t("projects.saveChanges") : t("projects.saveDraft")}</Button></SideSheetFooter></form>
-    </SideSheet>
-    <StatusReportDetailsDialog open={Boolean(detailId)} onOpenChange={(next) => { if (!next) { setDetailId(""); setActionError(null); } }} report={detail.data} loading={detail.isLoading} error={detail.isError} actionError={actionError} canEdit={canEdit} canGenerate={canGenerate} canSubmit={canSubmit} canApprove={canApprove} canPublish={canPublish} canExport={canExport} exporting={exporting} workflowPending={workflowPending} isDeleting={remove.isPending} onEdit={() => { if (detail.data) { setEditingReport(detail.data); setStatusDate((detail.data.statusDate || detail.data.reportDate).slice(0, 10)); setDetailId(""); setActionError(null); setFormOpen(true); } }} onWorkflowAction={(action) => { if (detail.data) void runWorkflowAction(detail.data.id, action); }} onDelete={() => { if (detail.data) void confirmDelete(detail.data.id); }} onExport={() => void exportReport()} onExportExcel={() => void exportExcelReport()} t={t} locale={locale} statusLabel={statusLabel} healthLabel={healthLabel} formatDate={formatDate} formatDateTime={(value) => formatDateTime(value, locale)} formatCurrency={formatCurrency} projectCurrency={project.currency} />
+    <StatusReportComparisonDialog open={comparisonOpen} onOpenChange={setComparisonOpen} comparison={comparisonQuery.data} loading={comparisonQuery.isLoading} error={comparisonQuery.isError} earlierCurrency={comparisonEarlierCurrency} laterCurrency={comparisonLaterCurrency} locale={locale} t={t} formatDate={formatDate} formatCurrency={formatCurrency} />
+    <SideSheet open={formOpen} onOpenChange={(next) => { setFormOpen(next); if (!next) { setEditingReport(null); setActionError(null); } }} title={editingReport ? t("projects.editStatusReport") : t("projects.newStatusReport")} description={t("projects.statusReportFormDescription")} size="xl">
+      <form key={formSession} onSubmit={(event) => void submit(event)} className="flex min-h-0 flex-1 flex-col">
+        <SideSheetBody className="space-y-4">
+          <div className="grid gap-3 xl:grid-cols-[minmax(0,1.25fr)_minmax(260px,0.75fr)]">
+            <section className="rounded-xl border p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-xs font-medium text-muted-foreground">{t("projects.name")}</p>
+                  <h3 className="mt-1 truncate text-base font-semibold text-foreground">{project.name}</h3>
+                  <p className="mt-0.5 text-xs text-muted-foreground">{project.code || "—"}</p>
+                </div>
+                {project.status ? <Badge status={project.status} className="shrink-0 text-[10px]">{statusLabel(project.status)}</Badge> : null}
+              </div>
+              <div className="mt-4 grid gap-x-4 gap-y-3 border-t pt-3 sm:grid-cols-3">
+                <div><p className="text-[11px] text-muted-foreground">{t("projects.projectManager")}</p><p className="mt-0.5 truncate text-sm font-medium">{project.projectManagerName || "—"}</p></div>
+                <div><p className="text-[11px] text-muted-foreground">{t("projects.preparedBy")}</p><p className="mt-0.5 truncate text-sm font-medium">{user?.fullName || "—"}</p></div>
+                <div><p className="text-[11px] text-muted-foreground">{t("projects.health")}</p><p className="mt-0.5 text-sm font-medium">{project.health ? healthLabel(project.health) : "—"}</p></div>
+              </div>
+            </section>
+
+            <section className="rounded-xl border border-primary/20 p-4" aria-label={t("projects.overallProgress")}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">{t("projects.overallProgress")}</p>
+                  <p className="mt-1 text-3xl font-semibold tabular-nums text-foreground">{formatPercent1(progressForSummary, locale)}</p>
+                </div>
+                <span className="rounded-lg border p-2 text-primary" aria-hidden="true"><TrendingUp className="h-4 w-4" /></span>
+              </div>
+              {progressBarValue !== null ? <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted" role="progressbar" aria-label={t("projects.overallProgress")} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progressBarValue)}><div className="h-full rounded-full bg-primary transition-[width]" style={{ width: String(progressBarValue) + "%" }} /></div> : null}
+              <p className="mt-2 text-xs text-muted-foreground" role={!editingReport && currentProgress.isFetching ? "status" : undefined}>
+                {editingReport?.overallProgressPercent != null
+                  ? t("projects.statusReportProgressDraftValue")
+                  : progressTouched.current
+                    ? t("projects.statusReportProgressEditable")
+                    : currentProgress.isFetching
+                      ? t("projects.statusReportProgressLoading")
+                      : currentProgress.isError
+                        ? project.progress == null ? t("projects.statusReportProgressUnavailable") : t("projects.statusReportProgressFallback")
+                        : progressForSummary == null
+                          ? t("projects.statusReportProgressNoSource")
+                          : t("projects.statusReportProgressAutoAtPublish")}
+              </p>
+              {!progressTouched.current && currentProgress.isError ? <Button type="button" size="sm" variant="outline" className="mt-2" onClick={() => void currentProgress.refetch()}><RefreshCw className="me-1.5 h-3.5 w-3.5" />{t("common.retry")}</Button> : null}
+            </section>
+          </div>
+
+          <section className="space-y-4 rounded-xl border p-4">
+            <div className="flex items-center gap-2 border-b pb-3"><CalendarDays className="h-4 w-4 text-primary" aria-hidden="true" /><h3 className="text-sm font-semibold">{t("projects.reportingPeriodSection")}</h3></div>
+            <div className="grid gap-3 sm:grid-cols-2">
+<div><Label htmlFor="status-report-period-from">{t("projects.periodFrom")}</Label><Input id="status-report-period-from" className="mt-1" name="periodFrom" type="date" value={periodFrom} onChange={(event) => setPeriodFrom(event.currentTarget.value)} max={periodTo} required /></div>
+               <div><Label htmlFor="status-report-period-to">{t("projects.periodTo")}</Label><Input id="status-report-period-to" className="mt-1" name="periodTo" type="date" value={periodTo} onChange={(event) => setPeriodTo(event.currentTarget.value)} max={today} required /></div>
+            </div>
+          </section>
+
+          <section className="space-y-4 rounded-xl border p-4">
+            <div className="flex items-center gap-2 border-b pb-3"><TrendingUp className="h-4 w-4 text-primary" aria-hidden="true" /><h3 className="text-sm font-semibold">{t("projects.overallStatusSection")}</h3></div>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              <div><Label htmlFor="status-report-lifecycle">{t("projects.projectStatusAtReport")}</Label><select id="status-report-lifecycle" className="input-field mt-1 w-full" name="projectLifecycleStatusAtReport" defaultValue={editingReport ? editingReport.projectLifecycleStatusAtReport ?? "" : project.status || ""}><option value="">—</option>{hasNonstandardLifecycleStatus ? <option value={lifecycleStatusDefault!}>{statusLabel(lifecycleStatusDefault)}</option> : null}{PROJECT_STATUSES.map((state) => <option key={state} value={state}>{statusLabel(state)}</option>)}</select></div>
+              <div><Label htmlFor="status-report-overall-health">{t("projects.overallHealth")}</Label><select id="status-report-overall-health" className="input-field mt-1 w-full" name="overallHealth" defaultValue={editingReport ? editingReport.overallHealth ?? "" : project.health || ""}><option value="">—</option>{"Green,Amber,Red".split(",").map((health) => <option key={health} value={health}>{healthLabel(health)}</option>)}</select></div>
+              <div><Label htmlFor="status-report-progress">{t("projects.overallProgress")}</Label><Input id="status-report-progress" className="mt-1" name="overallProgressPercent" type="number" min="0" max="100" step="any" value={progressDraft} onChange={(event) => { progressTouched.current = true; setProgressDraft(event.currentTarget.value); }} /><p className="mt-1 text-[11px] leading-4 text-muted-foreground">{t("projects.statusReportProgressEditable")}</p></div>
+            </div>
+          </section>
+
+          <section className="space-y-4 rounded-xl border p-4">
+            <div className="flex items-center gap-2 border-b pb-3"><FileText className="h-4 w-4 text-primary" aria-hidden="true" /><h3 className="text-sm font-semibold">{t("projects.financialSummarySection")}</h3></div>
+            {financialSummary.isLoading ? (
+              <div className="grid gap-3 sm:grid-cols-3 md:grid-cols-5">{[1, 2, 3, 4, 5].map((i) => <Card key={i}><CardContent className="p-3"><Skeleton className="h-8 w-full" /><Skeleton className="mt-2 h-5 w-3/4" /></CardContent></Card>)}</div>
+            ) : financialSummary.isError ? (
+              <p className="text-sm text-destructive">{t("projects.financialSummaryLoadFailed")}</p>
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-3 md:grid-cols-5">
+                <Card><CardContent className="p-3"><div className="text-[11px] text-muted-foreground">{t("projects.approvedBudget")}</div><div className="mt-1 text-sm font-semibold tabular-nums">{financialSummary.data?.approvedBudget == null ? "—" : formatCurrency(financialSummary.data?.approvedBudget ?? 0, financialSummary.data?.currencyCode ?? project.currency)}</div></CardContent></Card>
+                <Card><CardContent className="p-3"><div className="text-[11px] text-muted-foreground">{t("projects.actualPaid")}</div><div className="mt-1 text-sm font-semibold tabular-nums">{formatCurrency(financialSummary.data?.actualPaid ?? 0, financialSummary.data?.currencyCode ?? project.currency)}</div></CardContent></Card>
+                <Card><CardContent className="p-3"><div className="text-[11px] text-muted-foreground">{t("projects.outstandingPlannedPayments")}</div><div className="mt-1 text-sm font-semibold tabular-nums">{formatCurrency(financialSummary.data?.outstandingPlannedPayments ?? 0, financialSummary.data?.currencyCode ?? project.currency)}</div></CardContent></Card>
+                <Card><CardContent className="p-3"><div className="text-[11px] text-muted-foreground">{t("projects.paymentsDueWithinPeriod")}</div><div className="mt-1 text-sm font-semibold tabular-nums">{formatCurrency(financialSummary.data?.paymentsDueWithinPeriod ?? 0, financialSummary.data?.currencyCode ?? project.currency)}</div></CardContent></Card>
+                <Card><CardContent className="p-3"><div className="text-[11px] text-muted-foreground">{t("projects.remainingUnpaidAtPeriodEnd")}</div><div className="mt-1 text-sm font-semibold tabular-nums">{formatCurrency(financialSummary.data?.remainingUnpaidAtPeriodEnd ?? 0, financialSummary.data?.currencyCode ?? project.currency)}</div></CardContent></Card>
+              </div>
+            )}
+            <p className="mt-2 text-xs text-muted-foreground">{t("projects.financialSummaryPeriod", { from: formatDate(financialSummary.data?.periodFrom ?? periodFrom), to: formatDate(financialSummary.data?.periodTo ?? periodTo) })}</p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">{t("projects.budgetStatusLabel", { status: financialSummary.data?.budgetStatus ?? "" })}</p>
+          </section>
+
+          <section className="space-y-4 rounded-xl border p-4">
+            <div className="grid gap-4 lg:grid-cols-2">
+              <Card>
+                <CardHeader className="flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-1.5"><AlertTriangle className="h-4 w-4 text-primary" aria-hidden="true" /><h3 className="text-sm font-semibold" aria-hidden="true">{t("projects.topRisks")}</h3></span>
+                  <span className="text-xs font-semibold tabular-nums text-foreground">{risks.data?.items?.length ?? 0}</span>
+                </CardHeader>
+                <CardContent className="p-0">
+                  {risks.isLoading ? <div className="p-3"><Skeleton className="h-8 w-full" /><Skeleton className="mt-2 h-4 w-2/3" /></div> : risks.isError ? <p className="p-3 text-sm text-destructive">{t("projects.risksIssuesLoadFailed")}</p> : risks.data?.items?.length ? <div className="space-y-1">{risks.data!.items.map((item) => <div key={item.id} className="border-b border-border last:border-b-0 py-2 text-sm"><div className="flex items-start justify-between gap-2"><p className="font-medium truncate">{item.title}</p></div><p className="mt-0.5 text-[11px] text-muted-foreground">{localizedEnumValue(t, "enums.riskStatus", item.status)}</p></div>)}</div> : <p className="p-3 text-sm text-muted-foreground">{t("projects.noRisksYet")}</p>}
+                </CardContent>
+              </Card>
+              {canViewIssues ? <Card>
+                <CardHeader className="flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-1.5"><FileText className="h-4 w-4 text-primary" aria-hidden="true" /><h3 className="text-sm font-semibold" aria-hidden="true">{t("projects.topIssues")}</h3></span>
+                  <span className="text-xs font-semibold tabular-nums text-foreground">{issues.data?.length ?? 0}</span>
+                </CardHeader>
+                <CardContent className="p-0">
+                  {issues.isLoading ? <div className="p-3"><Skeleton className="h-8 w-full" /><Skeleton className="mt-2 h-4 w-2/3" /></div> : issues.isError ? <p className="p-3 text-sm text-destructive">{t("projects.risksIssuesLoadFailed")}</p> : issues.data?.length ? <div className="space-y-1">{issues.data.map((item) => <div key={item.id} className="border-b border-border last:border-b-0 py-2 text-sm"><div className="flex items-start justify-between gap-2"><p className="font-medium truncate">{item.title}</p></div><p className="mt-0.5 text-[11px] text-muted-foreground">{workItemStatusLabel(item.status, workItemStatusesQuery.data ?? [], locale)}</p></div>)}</div> : <p className="p-3 text-sm text-muted-foreground">{t("projects.noIssuesYet")}</p>}
+                </CardContent>
+              </Card> : null}
+            </div>
+          </section>
+
+          <section className="space-y-4 rounded-xl border p-4">
+            <div className="flex items-center gap-2 border-b pb-3"><AlertTriangle className="h-4 w-4 text-primary" aria-hidden="true" /><h3 className="text-sm font-semibold">{t("projects.healthDimensionsSection")}</h3></div>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              <HealthField name="costHealth" label={t("projects.costHealth")} value={editingReport?.costHealth} healthLabel={healthLabel} />
+              <HealthField name="qualityHealth" label={t("projects.qualityHealth")} value={editingReport?.qualityHealth} healthLabel={healthLabel} />
+              <div className="min-w-0 rounded-md border border-border px-3 py-2">
+                <p className="text-sm font-medium text-foreground">{t("projects.resourceUtilization")}</p>
+                <p className={`mt-1 text-sm font-semibold ${resourceUtilizationTextClass(currentProgress.isError ? "Unavailable" : currentProgress.data?.resourceUtilizationStatus)}`} aria-live={currentProgress.isFetching ? "polite" : undefined}>
+                  {currentProgress.isFetching
+                    ? t("projects.statusReportUtilizationLoading")
+                    : t(`projects.resourceUtilizationStates.${currentProgress.isError ? "Unavailable" : currentProgress.data?.resourceUtilizationStatus || "Unavailable"}`)}
+                </p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {currentProgress.isError || currentProgress.data?.resourceUtilizationPercent == null
+                    ? t("projects.statusReportUtilizationNoPercentage")
+                    : t("projects.statusReportUtilizationPercent", { percent: formatPercent1(currentProgress.data.resourceUtilizationPercent, locale) })}
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <section className="space-y-4 rounded-xl border p-4">
+            <div className="flex items-center gap-2 border-b pb-3"><FileText className="h-4 w-4 text-primary" aria-hidden="true" /><h3 className="text-sm font-semibold">{t("projects.narrativesSection")}</h3></div>
+            <div className="grid gap-4 sm:grid-cols-2"><NarrativeField name="executiveSummary" label={t("projects.executiveSummary")} defaultValue={editingReport?.executiveSummary} /><NarrativeField name="keyAchievements" label={t("projects.keyAchievements")} defaultValue={editingReport?.keyAchievements} /><NarrativeField name="challengesConcerns" label={t("projects.challengesConcerns")} defaultValue={editingReport?.challengesConcerns} /><NarrativeField name="nextPeriodPriorities" label={t("projects.nextPeriodPriorities")} defaultValue={editingReport?.nextPeriodPriorities} /></div>
+          </section>
+
+          <section className="space-y-4 rounded-xl border p-4">
+            <div className="flex items-center gap-2 border-b pb-3"><ListChecks className="h-4 w-4 text-primary" aria-hidden="true" /><h3 className="text-sm font-semibold">{t("projects.actionsNeededSection")}</h3></div>
+            <NarrativeField name="actionsNeeded" label={t("projects.actionsNeeded")} defaultValue={editingReport?.actionsNeeded} />
+          </section>
+
+          <section className="space-y-4 rounded-xl border p-4">
+            <div className="flex items-center gap-2 border-b pb-3"><Headphones className="h-4 w-4 text-primary" aria-hidden="true" /><h3 className="text-sm font-semibold">{t("projects.supportNeededSection")}</h3></div>
+            <NarrativeField name="supportNeeded" label={t("projects.supportNeeded")} defaultValue={editingReport?.supportNeeded} />
+          </section>
+
+          {actionError ? <p role="alert" className="flex items-start gap-2 rounded-lg border border-destructive/40 px-3 py-2 text-sm text-destructive"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />{actionError}</p> : null}
+        </SideSheetBody>
+        <SideSheetFooter><Button type="button" variant="outline" onClick={() => { setFormOpen(false); setEditingReport(null); }}>{t("common.cancel")}</Button><Button type="submit" disabled={create.isPending || update.isPending}>{editingReport ? t("projects.saveChanges") : t("projects.saveDraft")}</Button></SideSheetFooter>
+      </form>
+    </SideSheet>    <StatusReportDetailsDialog
+      open={Boolean(detailId)}
+      onOpenChange={(next) => { if (!next) { setDetailId(""); setActionError(null); } }}
+      report={detail.data}
+      loading={detail.isLoading}
+      error={detail.isError}
+      actionError={actionError}
+      canEdit={canEdit}
+      canPublish={canPublish}
+      canExport={canExport}
+      exporting={exporting}
+      workflowPending={workflowPending}
+      isDeleting={remove.isPending}
+      onEdit={() => { if (detail.data) { setEditingReport(detail.data); progressTouched.current = detail.data.overallProgressPercent != null; setProgressDraft(detail.data.overallProgressPercent == null ? (project.progress == null ? "" : String(project.progress)) : String(detail.data.overallProgressPercent)); setPeriodFrom(detail.data.periodFrom.slice(0, 10)); setPeriodTo(detail.data.periodTo.slice(0, 10)); setFormSession((session) => session + 1); setDetailId(""); setActionError(null); setFormOpen(true); } }}
+      onPublish={() => { if (detail.data) void publishReport(detail.data); }}
+      onDelete={() => { if (detail.data) void confirmDelete(detail.data.id); }}
+      onExport={() => void exportReport()}
+      onExportExcel={() => void exportExcelReport()}
+      onPrint={() => void printReport()}
+      t={t}
+      locale={locale}
+      statusLabel={statusLabel}
+      healthLabel={healthLabel}
+      issueStatusLabel={(status) => workItemStatusLabel(status, workItemStatusesQuery.data ?? [], locale)}
+      formatDate={formatDate}
+      formatDateTime={(value) => formatDateTime(value, locale)}
+      formatCurrency={formatCurrency}
+
+    />
   </div>;
 }
 
-function StatusReportComparisonDialog({ open, onOpenChange, comparison, loading, error, projectCurrency, locale, t, formatDate, formatCurrency }: {
+function StatusReportComparisonDialog({ open, onOpenChange, comparison, loading, error, earlierCurrency, laterCurrency, locale, t, formatDate, formatCurrency }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   comparison?: ProjectStatusReportComparisonDto;
   loading: boolean;
   error: boolean;
-  projectCurrency: string;
+  earlierCurrency?: string;
+  laterCurrency?: string;
   locale: string;
   t: (key: string, values?: Record<string, string | number>) => string;
   formatDate: (value: string | Date) => string;
@@ -286,13 +536,14 @@ function StatusReportComparisonDialog({ open, onOpenChange, comparison, loading,
     ["ScheduleVariance", "projects.statusReportComparison.metrics.scheduleVariance"],
     ["CostVariance", "projects.statusReportComparison.metrics.costVariance"],
   ] as const;
-  const formatMetric = (code: string, value?: number | null) => {
+  const formatMetric = (code: string, value?: number | null, currency?: string) => {
     if (value == null || !Number.isFinite(value)) return "—";
     if (code === "OverallProgressPercent") return formatPercent1(value, locale);
     if (code === "SchedulePerformanceIndex" || code === "CostPerformanceIndex")
-      return new Intl.NumberFormat(locale === "ar" ? "ar-EG-u-nu-latn" : "en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
-    return formatCurrency(value, projectCurrency);
+      return formatNumberValue(value, locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return currency ? formatCurrency(value, currency) : "—";
   };
+  const isCurrencyMetric = (code: string) => code === "ScheduleVariance" || code === "CostVariance";
   const formatMilestoneVariance = (value?: number | null) => value == null ? "—" : `${value} ${t("projects.days")}`;
 
   return <Dialog open={open} onOpenChange={onOpenChange} ariaLabel={t("projects.statusReportComparison.title")} contentClassName="max-h-[calc(100vh-2rem)] max-w-5xl overflow-y-auto sm:max-w-5xl">
@@ -309,7 +560,7 @@ function StatusReportComparisonDialog({ open, onOpenChange, comparison, loading,
           {comparison.reportingBaselinesChanged ? <p>{t("projects.statusReportComparison.baselinesChanged")}</p> : null}
         </div> : null}
         <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>{t("projects.statusReportComparison.metric")}</TableHead><TableHead>{t("projects.statusReportComparison.earlier")}</TableHead><TableHead>{t("projects.statusReportComparison.later")}</TableHead><TableHead>{t("projects.statusReportComparison.change")}</TableHead></TableRow></TableHeader><TableBody>
-          {metricRows.map(([code, label]) => { const row = comparison.metrics.find((item) => item.code === code); return <TableRow key={code}><TableCell>{t(label)}</TableCell><TableCell className="tabular-nums">{formatMetric(code, row?.earlierValue)}</TableCell><TableCell className="tabular-nums">{formatMetric(code, row?.laterValue)}</TableCell><TableCell className="tabular-nums">{formatMetric(code, row?.change)}</TableCell></TableRow>; })}
+          {metricRows.map(([code, label]) => { const row = comparison.metrics.find((item) => item.code === code); const sameCurrency = Boolean(earlierCurrency && laterCurrency && earlierCurrency === laterCurrency); return <TableRow key={code}><TableCell>{t(label)}</TableCell><TableCell className="tabular-nums">{formatMetric(code, row?.earlierValue, earlierCurrency)}</TableCell><TableCell className="tabular-nums">{formatMetric(code, row?.laterValue, laterCurrency)}</TableCell><TableCell className="tabular-nums">{isCurrencyMetric(code) && !sameCurrency ? "—" : formatMetric(code, row?.change, earlierCurrency)}</TableCell></TableRow>; })}
         </TableBody></Table></div>
         <div className="grid gap-3 md:grid-cols-2">
           {([["riskTrend", comparison.riskTrend], ["issueTrend", comparison.issueTrend]] as const).map(([key, trend]) => <Card key={key}><CardHeader><CardTitle className="text-sm">{t(`projects.statusReportComparison.${key}`)}</CardTitle></CardHeader><CardContent className="grid grid-cols-3 gap-2 text-sm"><ReportDetail label={t("projects.statusReportComparison.totalEarlier")} value={String(trend.earlierTotal)} /><ReportDetail label={t("projects.statusReportComparison.totalLater")} value={String(trend.laterTotal)} /><ReportDetail label={t("projects.statusReportComparison.openEarlier")} value={String(trend.earlierOpen)} /><ReportDetail label={t("projects.statusReportComparison.openLater")} value={String(trend.laterOpen)} /><ReportDetail label={t("projects.statusReportComparison.highCriticalEarlier")} value={String(trend.earlierHighOrCriticalOpen)} /><ReportDetail label={t("projects.statusReportComparison.highCriticalLater")} value={String(trend.laterHighOrCriticalOpen)} /></CardContent></Card>)}
@@ -322,7 +573,7 @@ function StatusReportComparisonDialog({ open, onOpenChange, comparison, loading,
   </Dialog>;
 }
 
-function StatusReportDetailsDialog({ open, onOpenChange, report, loading, error, actionError, canEdit, canGenerate, canSubmit, canApprove, canPublish, canExport, exporting, workflowPending, isDeleting, onEdit, onWorkflowAction, onDelete, onExport, onExportExcel, t, locale, statusLabel, healthLabel, formatDate, formatDateTime, formatCurrency, projectCurrency }: {
+function StatusReportDetailsDialog({ open, onOpenChange, report, loading, error, actionError, canEdit, canPublish, canExport, exporting, workflowPending, isDeleting, onEdit, onPublish, onDelete, onExport, onExportExcel, onPrint, t, locale, statusLabel, healthLabel, issueStatusLabel, formatDate, formatDateTime, formatCurrency }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   report?: ProjectStatusReportDto;
@@ -330,107 +581,280 @@ function StatusReportDetailsDialog({ open, onOpenChange, report, loading, error,
   error: boolean;
   actionError: string | null;
   canEdit: boolean;
-  canGenerate: boolean;
-  canSubmit: boolean;
-  canApprove: boolean;
   canPublish: boolean;
   canExport: boolean;
   exporting: boolean;
   workflowPending: boolean;
   isDeleting: boolean;
   onEdit: () => void;
-  onWorkflowAction: (action: ProjectStatusReportWorkflowAction) => void;
+  onPublish: () => void;
   onDelete: () => void;
   onExport: () => void;
   onExportExcel: () => void;
+  onPrint: () => void;
   t: (key: string) => string;
   locale: string;
   statusLabel: (value?: string | null) => string;
   healthLabel: (value?: string | null) => string;
+  issueStatusLabel: (value: string) => string;
   formatDate: (value: string | Date, options?: Intl.DateTimeFormatOptions) => string;
   formatDateTime: (value: string | Date) => string;
   formatCurrency: (value: number, currency?: string) => string;
-  projectCurrency: string;
+
 }) {
   const isDraft = report?.reportState === "Draft";
-  const isGenerated = report?.reportState === "Generated";
-  const isSubmitted = report?.reportState === "Submitted";
-  const isApproved = report?.reportState === "Approved";
-  const isReturned = report?.reportState === "Returned";
-  const health = (value?: string) => <Badge status={value}>{healthLabel(value)}</Badge>;
+  const isPublished = report?.reportState === "Published";
+  const health = (value?: string) => <ReportStatus status={value} label={healthLabel(value)} />;
+  const resourceStatus = report?.resourceHealth;
+  const legacyResourceHealth = resourceStatus === "Green" || resourceStatus === "Amber" || resourceStatus === "Red";
+  const resourceUtilizationValue = resourceStatus
+    ? legacyResourceHealth
+      ? health(resourceStatus)
+      : <ReportStatus
+          status={resourceStatus}
+          label={t(`projects.resourceUtilizationStates.${resourceStatus}`)}
+          textClass={resourceUtilizationTextClass(resourceStatus)}
+          dotClass={resourceStatus === "Overallocated" ? "bg-destructive" : resourceStatus === "WithinCapacity" ? "bg-success" : resourceStatus === "Unavailable" ? "bg-warning" : "bg-muted-foreground"}
+        />
+    : "—";
   const dimensions = [
-    [t("projects.scheduleHealth"), report?.scheduleHealth],
-    [t("projects.costHealth"), report?.costHealth],
-    [t("projects.scopeHealth"), report?.scopeHealth],
-    [t("projects.qualityHealth"), report?.qualityHealth],
-    [t("projects.resourceHealth"), report?.resourceHealth],
+    [t("projects.costHealth"), report?.costHealth ? health(report.costHealth) : "—"],
+    [t("projects.qualityHealth"), report?.qualityHealth ? health(report.qualityHealth) : "—"],
+    [t("projects.resourceUtilization"), resourceUtilizationValue],
   ] as const;
   const includedSections = report?.includedSectionsSnapshot?.length
     ? report.includedSectionsSnapshot
     : report?.performanceSnapshot?.includedReportSections ?? [];
   const hasSection = (section: string) => includedSections.length === 0 || includedSections.includes(section);
-  return <Dialog open={open} onOpenChange={onOpenChange} ariaLabel={t("projects.statusReportDetails")} contentClassName="max-h-[calc(100vh-2rem)] max-w-4xl overflow-y-auto sm:max-w-4xl">
+  const hasFinancialSummary = Boolean(report?.currencyCodeSnapshot || report?.budgetAmountSnapshot != null);
+  const actualPaidValue = report?.actualCostAmountSnapshot;
+  const outstandingPaymentsValue = report?.committedCostAmountSnapshot;
+  const chartActualPaid = typeof actualPaidValue === "number" && Number.isFinite(actualPaidValue) && actualPaidValue > 0 ? actualPaidValue : 0;
+  const chartOutstanding = typeof outstandingPaymentsValue === "number" && Number.isFinite(outstandingPaymentsValue) && outstandingPaymentsValue > 0 ? outstandingPaymentsValue : 0;
+  const chartScale = Math.max(chartActualPaid, chartOutstanding);
+  const scaledActualPaid = chartScale > 0 ? chartActualPaid / chartScale : 0;
+  const scaledOutstanding = chartScale > 0 ? chartOutstanding / chartScale : 0;
+  const chartActualPaidShare = scaledActualPaid + scaledOutstanding > 0 ? scaledActualPaid / (scaledActualPaid + scaledOutstanding) * 100 : 0;
+  const financeDonutBackground = chartScale > 0
+    ? `conic-gradient(from -90deg, hsl(var(--chart-1)) 0 ${chartActualPaidShare}%, hsl(var(--chart-2)) ${chartActualPaidShare}% 100%)`
+    : "hsl(var(--muted))";
+  return <Dialog open={open} onOpenChange={onOpenChange} ariaLabel={t("projects.statusReportDetails")} contentClassName="max-h-[calc(100vh-1rem)] w-[calc(100vw-1rem)] max-w-6xl overflow-y-auto p-4 sm:max-w-6xl sm:p-6">
     <DialogContent className="space-y-6">
-      <DialogHeader>
-        <DialogTitle>{report?.projectNameSnapshot || t("projects.statusReportDetails")}</DialogTitle>
-        <DialogDescription>{report ? `${formatDate(report.periodFrom)} – ${formatDate(report.periodTo)} · ${t(`projects.statusReportStates.${report.reportState}`)}` : t("projects.statusReportDetails")}</DialogDescription>
+      <DialogHeader className="border-b border-border pb-4 text-start sm:!text-start">
+        <p className="text-xs font-semibold tracking-wide text-muted-foreground">{t("projects.statusReportDetails")}</p>
+        <DialogTitle className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-2xl leading-tight">
+          <span>{report?.projectNameSnapshot || t("projects.statusReportDetails")}</span>
+          {report?.projectCodeSnapshot ? <span className="text-sm font-medium text-muted-foreground">({report.projectCodeSnapshot})</span> : null}
+        </DialogTitle>
+        <DialogDescription className="text-start">{report ? <ReportStatus status={report.reportState} label={t(`projects.statusReportStates.${report.reportState}`)} /> : t("projects.statusReportDetails")}</DialogDescription>
       </DialogHeader>
-      {loading ? <Loading t={t} /> : error || !report ? <p role="alert" className="py-8 text-sm text-destructive">{t("projects.statusReportLoadFailed")}</p> : <div className="space-y-6">
-        <div className="grid gap-3 sm:grid-cols-5"><ReportDetail label={t("projects.reportDate")} value={formatDate(report.reportDate)} /><ReportDetail label={t("projects.statusDate")} value={formatDate(report.statusDate || report.reportDate)} /><ReportDetail label={t("projects.sourceDataCapturedAt")} value={report.sourceDataCapturedAt ? formatDateTime(report.sourceDataCapturedAt) : "—"} /><ReportDetail label={t("projects.preparedBy")} value={report.preparedByNameSnapshot} /><ReportDetail label={t("projects.publishedAt")} value={report.publishedAt ? formatDateTime(report.publishedAt) : "—"} /></div>
-        <div className="grid gap-3 sm:grid-cols-3"><ReportDetail label={t("projects.overallHealth")} value={health(report.overallHealth)} /><ReportDetail label={t("projects.overallProgress")} value={formatPercent1(report.overallProgressPercent, locale)} /><ReportDetail label={t("projects.projectStatusAtReport")} value={statusLabel(report.projectLifecycleStatusAtReport)} /></div>
-        {hasSection("PerformanceKPIs") || hasSection("PlanPerformance") ? <StatusReportPerformanceSnapshot report={report} includeKpis={hasSection("PerformanceKPIs")} includePlans={hasSection("PlanPerformance")} projectCurrency={projectCurrency} t={t} formatDate={formatDate} formatCurrency={formatCurrency} /> : null}
-        {report.performanceSnapshot && hasSection("Milestones") ? <StatusReportMilestones report={report} t={t} formatDate={formatDate} /> : null}
-        <div className="grid gap-3 sm:grid-cols-5">{dimensions.map(([label, value]) => <ReportDetail key={label} label={label} value={health(value)} />)}</div>
-        {hasSection("ExecutiveSummary") ? <section className="space-y-2"><h3 className="text-sm font-semibold">{t("projects.reporting.sections.executiveSummary")}</h3><div className="grid gap-4 md:grid-cols-2"><ReportNarrative label={t("projects.executiveSummary")} value={report.executiveSummary} /><ReportNarrative label={t("projects.keyAchievements")} value={report.keyAchievements} /><ReportNarrative label={t("projects.challengesConcerns")} value={report.challengesConcerns} /><ReportNarrative label={t("projects.nextPeriodPriorities")} value={report.nextPeriodPriorities} /></div></section> : null}
-        <StatusReportSnapshotDetails report={report} includeRisksIssues={hasSection("RisksIssues")} t={t} />
-        {hasSection("DecisionsRequired") ? <StatusReportDecisions report={report} t={t} formatDate={formatDate} /> : null}
+      {loading ? <Loading t={t} /> : error || !report ? <p role="alert" className="py-8 text-sm text-destructive">{t("projects.statusReportLoadFailed")}</p> : <div className="divide-y divide-border">
+        <section className="space-y-3 py-5 first:pt-0">
+          <h3 className="text-base font-semibold text-foreground">{t("projects.statusReportView.sections.projectInformation")}</h3>
+          <dl className="grid grid-cols-1 gap-x-6 sm:grid-cols-2 lg:grid-cols-4">
+            <ReportMetaField label={t("projects.reportDate")} value={formatDate(report.reportDate)} />
+            <ReportMetaField label={t("projects.preparedBy")} value={report.preparedByNameSnapshot} />
+            <ReportMetaField label={t("projects.sourceDataCapturedAt")} value={report.sourceDataCapturedAt ? formatDateTime(report.sourceDataCapturedAt) : "—"} />
+            <ReportMetaField label={t("projects.publishedAt")} value={report.publishedAt ? formatDateTime(report.publishedAt) : "—"} />
+          </dl>
+        </section>
+        <section className="space-y-3 py-5">
+          <h3 className="text-base font-semibold text-foreground">{t("projects.statusReportView.sections.reportingPeriodStatus")}</h3>
+          <dl className="grid grid-cols-1 gap-x-6 sm:grid-cols-2 lg:grid-cols-3">
+            <ReportMetaField label={t("projects.reportingPeriod")} value={`${formatDate(report.periodFrom)} – ${formatDate(report.periodTo)}`} />
+            <ReportMetaField label={t("projects.statusDate")} value={formatDate(report.statusDate || report.reportDate)} />
+            <ReportMetaField label={t("projects.overallHealth")} value={health(report.overallHealth)} />
+            <ReportMetaField label={t("projects.overallProgress")} value={formatPercent1(report.overallProgressPercent, locale)} />
+            <ReportMetaField label={t("projects.projectStatusAtReport")} value={<ReportStatus status={report.projectLifecycleStatusAtReport} label={statusLabel(report.projectLifecycleStatusAtReport)} />} />
+            {dimensions.map(([label, value]) => <ReportMetaField key={label} label={label} value={value} />)}
+          </dl>
+        </section>
+        <div dir="ltr" className={`grid grid-cols-1 gap-x-8 lg:items-start ${hasFinancialSummary ? "lg:grid-cols-[minmax(0,1fr)_18rem]" : ""}`}>
+          <main dir={locale === "ar" ? "rtl" : "ltr"} className="min-w-0 divide-y divide-border">
+            {hasSection("ExecutiveSummary") ? <section className="space-y-3 py-5 first:pt-0"><ReportNarrative headingLevel={3} label={t("projects.executiveSummary")} value={report.executiveSummary} /></section> : null}
+            {hasSection("PerformanceKPIs") ? <section className="space-y-3 py-5">
+              <h3 className="text-base font-semibold text-foreground">{t("projects.statusReportView.sections.progressPerformance")}</h3>
+              <StatusReportPerformanceSnapshot report={report} locale={locale} t={t} formatDate={formatDate} formatCurrency={formatCurrency} />
+            </section> : null}
+            {hasSection("ExecutiveSummary") ? <section className="space-y-3 py-5"><ReportNarrative headingLevel={3} label={t("projects.keyAchievements")} value={report.keyAchievements} /></section> : null}
+            {report.performanceSnapshot && hasSection("Milestones") ? <div className="py-5"><StatusReportMilestones report={report} t={t} formatDate={formatDate} /></div> : null}
+          </main>
+          {hasFinancialSummary ? <aside dir={locale === "ar" ? "rtl" : "ltr"} className="min-w-0 border-t border-border py-5 lg:border-l lg:border-t-0 lg:pl-6">
+            <section className="space-y-3">
+              <h3 className="text-base font-semibold text-foreground">{t("projects.statusReportView.sections.financialSummary")}</h3>
+              <figure className="space-y-3">
+                <div
+                  role="img"
+                  aria-label={`${t("projects.financialSummary")}. ${t("projects.approvedBudget")}: ${report.budgetAmountSnapshot == null ? "—" : formatCurrency(report.budgetAmountSnapshot, report.currencyCodeSnapshot)}. ${t("projects.actualPaid")}: ${actualPaidValue == null ? "—" : formatCurrency(actualPaidValue, report.currencyCodeSnapshot)}. ${t("projects.outstandingPlannedPayments")}: ${outstandingPaymentsValue == null ? "—" : formatCurrency(outstandingPaymentsValue, report.currencyCodeSnapshot)}`}
+                  className="relative mx-auto h-40 w-40 rounded-full"
+                  style={{ background: financeDonutBackground }}
+                >
+                  <div aria-hidden="true" className="absolute inset-5 flex flex-col items-center justify-center rounded-full border border-border bg-background px-2 text-center">
+                    <span className="text-[10px] leading-4 text-muted-foreground">{t("projects.approvedBudget")}</span>
+                    <span className="max-w-full break-words text-xs font-semibold leading-4 tabular-nums">{report.budgetAmountSnapshot == null ? "—" : formatCurrency(report.budgetAmountSnapshot, report.currencyCodeSnapshot)}</span>
+                  </div>
+                </div>
+                <figcaption className="space-y-2">
+                  <div className="flex items-baseline justify-between gap-3 text-xs">
+                    <span className="flex min-w-0 items-center gap-2"><span aria-hidden="true" className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: "hsl(var(--chart-1))" }} /><span className="text-muted-foreground">{t("projects.actualPaid")}</span></span>
+                    <span className="break-words text-end font-medium tabular-nums">{actualPaidValue == null ? "—" : formatCurrency(actualPaidValue, report.currencyCodeSnapshot)}</span>
+                  </div>
+                  <div className="flex items-baseline justify-between gap-3 text-xs">
+                    <span className="flex min-w-0 items-center gap-2"><span aria-hidden="true" className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: "hsl(var(--chart-2))" }} /><span className="text-muted-foreground">{t("projects.outstandingPlannedPayments")}</span></span>
+                    <span className="break-words text-end font-medium tabular-nums">{outstandingPaymentsValue == null ? "—" : formatCurrency(outstandingPaymentsValue, report.currencyCodeSnapshot)}</span>
+                  </div>
+                  <p className="text-xs leading-5 text-muted-foreground">{t("projects.financialDonutNote")}</p>
+                </figcaption>
+              </figure>
+              <dl>
+                <ReportMetaField label={t("projects.currencyCode")} value={report.currencyCodeSnapshot || "—"} />
+                <ReportMetaField label={t("projects.costVariance")} value={<span className="break-words tabular-nums">{report.costVarianceAmountSnapshot == null ? "—" : formatCurrency(report.costVarianceAmountSnapshot, report.currencyCodeSnapshot)}</span>} />
+              </dl>
+            </section>
+          </aside> : null}
+          {hasSection("RisksIssues") ? <div dir={locale === "ar" ? "rtl" : "ltr"} className={`min-w-0 border-t border-border py-5 ${hasFinancialSummary ? "lg:col-span-2" : ""}`}><StatusReportSnapshotDetails report={report} includeRisksIssues t={t} issueStatusLabel={issueStatusLabel} /></div> : null}
+          <section dir={locale === "ar" ? "rtl" : "ltr"} className={`space-y-3 border-t border-border py-5 ${hasFinancialSummary ? "lg:col-span-2" : ""}`}>
+            <h3 className="text-base font-semibold text-foreground">{t("projects.statusReportView.sections.challengesDependencies")}</h3>
+            {hasSection("ExecutiveSummary") ? <ReportNarrative label={t("projects.challengesConcerns")} value={report.challengesConcerns} /> : null}
+            <ReportNarrative label={t("projects.supportNeeded")} value={report.supportNeeded} />
+          </section>
+          <section dir={locale === "ar" ? "rtl" : "ltr"} className={`space-y-3 border-t border-border py-5 ${hasFinancialSummary ? "lg:col-span-2" : ""}`}>
+            <h3 className="text-base font-semibold text-foreground">{t("projects.statusReportView.sections.nextStepsActions")}</h3>
+            {hasSection("ExecutiveSummary") ? <ReportNarrative label={t("projects.nextPeriodPriorities")} value={report.nextPeriodPriorities} /> : null}
+            <ReportNarrative label={t("projects.actionsNeeded")} value={report.actionsNeeded} />
+          </section>
+          {hasSection("DecisionsRequired") ? <div dir={locale === "ar" ? "rtl" : "ltr"} className={`border-t border-border py-5 ${hasFinancialSummary ? "lg:col-span-2" : ""}`}><StatusReportDecisions report={report} t={t} formatDate={formatDate} /></div> : null}
+        </div>
       </div>}
       {actionError ? <p role="alert" className="text-sm text-destructive">{actionError}</p> : null}
-      {report && ((isDraft && (canEdit || canGenerate)) || (isGenerated && canSubmit) || (isSubmitted && canApprove) || (isApproved && canPublish) || (isReturned && canEdit) || (canExport && report.reportState === "Published")) ? <DialogFooter className="gap-2 pt-2">
-        {canExport && report.reportState === "Published" ? <><Button type="button" variant="outline" onClick={onExport} disabled={exporting}><Download className="me-1.5 h-3.5 w-3.5" />{exporting ? t("projects.generatingPdf") : t("projects.exportPdf")}</Button><Button type="button" variant="outline" onClick={onExportExcel} disabled={exporting}><FileSpreadsheet className="me-1.5 h-3.5 w-3.5" />{exporting ? t("projects.generatingExcel") : t("projects.exportExcel")}</Button></> : null}
+      {report && !isDraft && !isPublished ? <p className="border-s-2 border-muted-foreground/40 py-1 ps-3 text-sm text-muted-foreground">{t("projects.legacyStatusReportReadOnly")}</p> : null}
+      {report && ((isDraft && (canEdit || canPublish)) || (isPublished && canExport)) ? <DialogFooter className="gap-2 border-t border-border pt-4">
+        {isPublished && canExport ? <><Button type="button" variant="outline" onClick={onPrint} disabled={exporting}><Printer className="me-1.5 h-3.5 w-3.5" />{t("projects.printReport")}</Button><Button type="button" variant="outline" onClick={onExport} disabled={exporting}><Download className="me-1.5 h-3.5 w-3.5" />{exporting ? t("projects.generatingPdf") : t("projects.exportPdf")}</Button><Button type="button" variant="outline" onClick={onExportExcel} disabled={exporting}><FileSpreadsheet className="me-1.5 h-3.5 w-3.5" />{exporting ? t("projects.generatingExcel") : t("projects.exportExcel")}</Button></> : null}
         {canEdit && isDraft ? <><Button type="button" variant="outline" onClick={onDelete} disabled={isDeleting}><Trash2 className="me-1.5 h-3.5 w-3.5" />{t("projects.delete")}</Button><Button type="button" variant="outline" onClick={onEdit}><Pencil className="me-1.5 h-3.5 w-3.5" />{t("common.edit")}</Button></> : null}
-        {isDraft && canGenerate ? <Button type="button" onClick={() => onWorkflowAction("generate")} disabled={workflowPending}>{workflowPending ? <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" /> : <Camera className="me-1.5 h-3.5 w-3.5" />}{t("projects.reportActions.generate")}</Button> : null}
-        {isGenerated && canSubmit ? <Button type="button" onClick={() => onWorkflowAction("submit")} disabled={workflowPending}><Send className="me-1.5 h-3.5 w-3.5" />{t("projects.reportActions.submit")}</Button> : null}
-        {isSubmitted && canApprove ? <><Button type="button" variant="outline" onClick={() => onWorkflowAction("return")} disabled={workflowPending}><ArrowLeft className="me-1.5 h-3.5 w-3.5" />{t("projects.reportActions.return")}</Button><Button type="button" onClick={() => onWorkflowAction("approve")} disabled={workflowPending}><Send className="me-1.5 h-3.5 w-3.5" />{t("projects.reportActions.approve")}</Button></> : null}
-        {isApproved && canPublish ? <Button type="button" onClick={() => onWorkflowAction("publish")} disabled={workflowPending}>{workflowPending ? <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" /> : <Send className="me-1.5 h-3.5 w-3.5" />}{t("projects.reportActions.publish")}</Button> : null}
-        {isReturned && canEdit ? <Button type="button" onClick={() => onWorkflowAction("reopen")} disabled={workflowPending}><Pencil className="me-1.5 h-3.5 w-3.5" />{t("projects.reportActions.reopen")}</Button> : null}
+        {isDraft && canPublish ? <Button type="button" onClick={onPublish} disabled={workflowPending}>{workflowPending ? <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" /> : <Send className="me-1.5 h-3.5 w-3.5" />}{t("projects.reportActions.publish")}</Button> : null}
       </DialogFooter> : null}
     </DialogContent>
   </Dialog>;
 }
 
-function HealthField({ name, label, value, disabled, t }: { name: string; label: string; value?: string; disabled?: boolean; t: (key: string) => string }) {
-  return <div><Label>{label}</Label><select className="input-field mt-1 w-full" name={name} defaultValue={value || ""} disabled={disabled}><option value="">—</option>{["Green", "Amber", "Red"].map((h) => <option key={h} value={h}>{t(`projects.healthValues.${h}`)}</option>)}</select></div>;
+function HealthField({ name, label, value, disabled, healthLabel }: { name: string; label: string; value?: string; disabled?: boolean; healthLabel: (value?: string | null) => string }) {
+  return <div><Label htmlFor={name}>{label}</Label><select id={name} className="input-field mt-1 w-full" name={name} defaultValue={value || ""} disabled={disabled}><option value="">—</option>{["Green", "Amber", "Red"].map((h) => <option key={h} value={h}>{healthLabel(h)}</option>)}</select></div>;
 }
 
 function NarrativeField({ name, label, defaultValue, readOnly }: { name: string; label: string; defaultValue?: string; readOnly?: boolean }) {
-  return <div><Label>{label}</Label><Textarea className="mt-1" name={name} rows={3} defaultValue={defaultValue} readOnly={readOnly} /> </div>;
+  return <div><Label htmlFor={name}>{label}</Label><Textarea id={name} className="mt-1" name={name} rows={3} defaultValue={defaultValue} readOnly={readOnly} /> </div>;
 }
 
-function StatusReportPerformanceSnapshot({ report, includeKpis, includePlans, projectCurrency, t, formatDate, formatCurrency }: { report: ProjectStatusReportDto; includeKpis: boolean; includePlans: boolean; projectCurrency: string; t: (key: string, values?: Record<string, string | number>) => string; formatDate: (value: string | Date) => string; formatCurrency: (value: number, currency?: string) => string }) {
+function StatusReportPerformanceSnapshot({ report, locale, t, formatDate, formatCurrency }: { report: ProjectStatusReportDto; locale: string; t: (key: string, values?: Record<string, string | number>) => string; formatDate: (value: string | Date) => string; formatCurrency: (value: number, currency?: string) => string }) {
   const performance = report.performanceSnapshot;
-  const currency = performance?.currency || report.currencyCodeSnapshot || projectCurrency;
+  const currency = performance?.currency || report.currencyCodeSnapshot;
   const money = (value?: number | null) => typeof value === "number" && Number.isFinite(value) ? formatCurrency(value, currency) : "—";
-  return <div className="space-y-4">
-    {includeKpis ? <Card><CardHeader><CardTitle className="text-sm">{t("projects.reporting.sections.performanceKpis")}</CardTitle><CardDescription>{performance ? <>{t("projects.performanceSnapshotDescription", { date: formatDate(performance.statusDate) })} · {t(`projects.reporting.quality.${performance.dataQuality.toLowerCase()}`)}</> : t("projects.statusReportComparison.kpisUnavailable")}</CardDescription></CardHeader><CardContent className="space-y-3"><div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4"><SnapshotValue label={t("projects.budget")} value={money(report.budgetAmountSnapshot)} /><SnapshotValue label={t("projects.actualCost")} value={money(report.actualCostAmountSnapshot)} /><SnapshotValue label={t("projects.committedCost")} value={money(report.committedCostAmountSnapshot)} /><SnapshotValue label={t("projects.forecast")} value={money(report.forecastCostAmountSnapshot)} /><SnapshotValue label={t("projects.costVariance")} value={money(report.costVarianceAmountSnapshot)} />{performance ? <><SnapshotValue label="BAC" value={money(performance.budgetAtCompletion)} /><SnapshotValue label="PV" value={money(performance.plannedValue)} /><SnapshotValue label="EV" value={money(performance.earnedValue)} /><SnapshotValue label="AC" value={money(performance.actualCost)} /><SnapshotValue label="SPI" value={performance.schedulePerformanceIndex?.toFixed(2)} /><SnapshotValue label="CPI" value={performance.costPerformanceIndex?.toFixed(2)} /><SnapshotValue label="SV" value={money(performance.scheduleVariance)} /><SnapshotValue label="CV" value={money(performance.costVariance)} /><SnapshotValue label={t("projects.unallocatedProjectActualCost")} value={money(performance.unallocatedProjectActualCost)} /></> : null}<SnapshotValue label={t("projects.reportingConfigurationVersion")} value={report.reportingConfigurationVersionSnapshot ?? undefined} /></div>{performance?.dataQualityReasons.length ? <p className="text-xs text-muted-foreground">{performance.dataQualityReasons.map((reason) => t(`projects.evmReasons.${reason}`)).join(" · ")}</p> : null}</CardContent></Card> : null}
-    {includePlans ? <Card><CardHeader><CardTitle className="text-sm">{t("projects.reporting.sections.planPerformance")}</CardTitle></CardHeader><CardContent>{performance?.plans.filter((plan) => plan.includedInOfficialReporting).length ? <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>{t("projects.plan")}</TableHead><TableHead>BAC</TableHead><TableHead>PV</TableHead><TableHead>EV</TableHead><TableHead>AC</TableHead><TableHead>SPI</TableHead><TableHead>CPI</TableHead></TableRow></TableHeader><TableBody>{performance.plans.filter((plan) => plan.includedInOfficialReporting).map((plan) => <TableRow key={plan.planId}><TableCell>{plan.planName}</TableCell><TableCell>{money(plan.budgetAtCompletion)}</TableCell><TableCell>{money(plan.plannedValue)}</TableCell><TableCell>{money(plan.earnedValue)}</TableCell><TableCell>{money(plan.actualCost)}</TableCell><TableCell>{plan.schedulePerformanceIndex?.toFixed(2) ?? "—"}</TableCell><TableCell>{plan.costPerformanceIndex?.toFixed(2) ?? "—"}</TableCell></TableRow>)}</TableBody></Table></div> : <Empty>{t("projects.noSnapshotItems")}</Empty>}</CardContent></Card> : null}
-  </div>;
+  return <section className="space-y-3">
+      <div className="space-y-1">
+        <h4 className="text-sm font-semibold">{t("projects.reporting.sections.performanceKpis")}</h4>
+        <p className="text-sm text-muted-foreground">{performance ? <>{t("projects.performanceSnapshotDescription", { date: formatDate(performance.statusDate) })} · {t(`projects.reporting.quality.${performance.dataQuality.toLowerCase()}`)}</> : t("projects.statusReportComparison.kpisUnavailable")}</p>
+      </div>
+      <dl className="grid grid-cols-1 gap-x-6 sm:grid-cols-2 lg:grid-cols-4">
+        <ReportMetric label={t("projects.budget")} value={money(report.budgetAmountSnapshot)} />
+        <ReportMetric label={t("projects.actualCost")} value={money(report.actualCostAmountSnapshot)} />
+        <ReportMetric label={t("projects.committedCost")} value={money(report.committedCostAmountSnapshot)} />
+        <ReportMetric label={t("projects.forecast")} value={money(report.forecastCostAmountSnapshot)} />
+        <ReportMetric label={t("projects.costVariance")} value={money(report.costVarianceAmountSnapshot)} />
+        {performance ? <>
+          <ReportMetric label="BAC" value={money(performance.budgetAtCompletion)} />
+          <ReportMetric label="PV" value={money(performance.plannedValue)} />
+          <ReportMetric label="EV" value={money(performance.earnedValue)} />
+          <ReportMetric label="AC" value={money(performance.actualCost)} />
+          <ReportMetric label="SPI" value={performance.schedulePerformanceIndex == null ? undefined : formatNumberValue(performance.schedulePerformanceIndex, locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} />
+          <ReportMetric label="CPI" value={performance.costPerformanceIndex == null ? undefined : formatNumberValue(performance.costPerformanceIndex, locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} />
+          <ReportMetric label="SV" value={money(performance.scheduleVariance)} />
+          <ReportMetric label="CV" value={money(performance.costVariance)} />
+          <ReportMetric label={t("projects.unallocatedProjectActualCost")} value={money(performance.unallocatedProjectActualCost)} />
+        </> : null}
+        <ReportMetric label={t("projects.reportingConfigurationVersion")} value={report.reportingConfigurationVersionSnapshot ?? undefined} />
+      </dl>
+      {performance?.dataQualityReasons.length ? <p className="text-sm text-muted-foreground">{performance.dataQualityReasons.map((reason) => localizedEvmReasonLabel(reason, t)).join(" · ")}</p> : null}
+  </section>;
 }
 
 function StatusReportMilestones({ report, t, formatDate }: { report: ProjectStatusReportDto; t: (key: string) => string; formatDate: (value: string | Date) => string }) {
   const milestones = report.performanceSnapshot?.milestones ?? [];
-  return <section className="space-y-2"><h3 className="text-sm font-semibold">{t("projects.reporting.sections.milestones")}</h3>{milestones.length ? <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>{t("projects.plan")}</TableHead><TableHead>{t("projects.statusReportComparison.milestone")}</TableHead><TableHead>{t("projects.statusReportComparison.baselineDate")}</TableHead><TableHead>{t("projects.statusReportComparison.plannedDate")}</TableHead><TableHead>{t("projects.statusReportComparison.actualDate")}</TableHead><TableHead>{t("projects.statusReportComparison.variance")}</TableHead><TableHead>{t("projects.status")}</TableHead></TableRow></TableHeader><TableBody>{milestones.map((milestone, index) => <TableRow key={`${milestone.planId}-${milestone.name}-${index}`}><TableCell>{milestone.planName}</TableCell><TableCell>{milestone.name}</TableCell><TableCell>{milestone.baselineDate ? formatDate(milestone.baselineDate) : "—"}</TableCell><TableCell>{milestone.plannedDate ? formatDate(milestone.plannedDate) : "—"}</TableCell><TableCell>{milestone.actualCompletionDate ? formatDate(milestone.actualCompletionDate) : "—"}</TableCell><TableCell>{milestone.varianceDays == null ? "—" : `${milestone.varianceDays} ${t("projects.days")}`}</TableCell><TableCell>{t(`projects.statusReportComparison.milestoneStatuses.${milestone.status}`)}</TableCell></TableRow>)}</TableBody></Table></div> : <Empty>{t("projects.noSnapshotItems")}</Empty>}</section>;
+  return <section className="space-y-3"><h3 className="text-base font-semibold text-foreground">{t("projects.reporting.sections.milestones")}</h3>{milestones.length ? <Table className="min-w-[64rem] table-fixed"><TableHeader><TableRow><TableHead className="w-[19%] text-start">{t("projects.plan")}</TableHead><TableHead className="w-[19%] text-start">{t("projects.statusReportComparison.milestone")}</TableHead><TableHead className="text-start">{t("projects.statusReportComparison.baselineDate")}</TableHead><TableHead className="text-start">{t("projects.statusReportComparison.plannedDate")}</TableHead><TableHead className="text-start">{t("projects.statusReportComparison.actualDate")}</TableHead><TableHead className="text-end">{t("projects.statusReportComparison.variance")}</TableHead><TableHead className="text-start">{t("projects.status")}</TableHead></TableRow></TableHeader><TableBody>{milestones.map((milestone, index) => <TableRow key={`${milestone.planId}-${milestone.name}-${index}`}><TableCell className="break-words text-start">{milestone.planName}</TableCell><TableCell className="break-words text-start">{milestone.name}</TableCell><TableCell className="break-words text-start">{milestone.baselineDate ? formatDate(milestone.baselineDate) : "—"}</TableCell><TableCell className="break-words text-start">{milestone.plannedDate ? formatDate(milestone.plannedDate) : "—"}</TableCell><TableCell className="break-words text-start">{milestone.actualCompletionDate ? formatDate(milestone.actualCompletionDate) : "—"}</TableCell><TableCell className="break-words text-end tabular-nums">{milestone.varianceDays == null ? "—" : `${milestone.varianceDays} ${t("projects.days")}`}</TableCell><TableCell className="break-words text-start">{t(`projects.statusReportComparison.milestoneStatuses.${milestone.status}`)}</TableCell></TableRow>)}</TableBody></Table> : <p className="text-sm text-muted-foreground">{t("projects.noSnapshotItems")}</p>}</section>;
 }
 
-function StatusReportSnapshotDetails({ report, includeRisksIssues, t }: { report: ProjectStatusReportDto; includeRisksIssues: boolean; t: (key: string, values?: Record<string, string | number>) => string }) {
-  const list = (values: readonly { title: string; status: string; owner?: string; detail?: string }[], empty: string) => values.length ? <div className="space-y-2">{values.map((item, index) => <div key={`${item.title}-${index}`} className="flex items-start justify-between gap-3 rounded border px-3 py-2 text-sm"><div className="min-w-0"><p className="font-medium">{item.title}</p>{item.detail ? <p className="mt-0.5 text-xs text-muted-foreground">{item.detail}</p> : null}</div><div className="shrink-0 text-end text-xs text-muted-foreground"><p>{item.status || "—"}</p>{item.owner ? <p>{item.owner}</p> : null}</div></div>)}</div> : <p className="text-sm text-muted-foreground">{empty}</p>;
+function StatusReportSnapshotDetails({ report, includeRisksIssues, t, issueStatusLabel }: { report: ProjectStatusReportDto; includeRisksIssues: boolean; t: (key: string, values?: Record<string, string | number>) => string; issueStatusLabel: (status: string) => string }) {
   if (!includeRisksIssues) return null;
-  return <div className="grid gap-4 lg:grid-cols-2"><Card><CardHeader><CardTitle className="text-sm">{t("projects.reporting.sections.risksIssues")}: {t("projects.topRisks")}</CardTitle></CardHeader><CardContent>{list((report.risks ?? []).map((item) => ({ title: item.title, status: item.riskLevel, owner: item.ownerNameSnapshot, detail: item.riskStatus })), t("projects.noSnapshotItems"))}</CardContent></Card><Card><CardHeader><CardTitle className="text-sm">{t("projects.topIssues")}</CardTitle></CardHeader><CardContent>{list((report.issues ?? []).map((item) => ({ title: item.title, status: item.severity, owner: item.assigneeNameSnapshot, detail: item.issueStatus })), t("projects.noSnapshotItems"))}</CardContent></Card></div>;
+  const severityLabel = (value: string) => {
+    const key = `workItems.severity${value}`;
+    const label = t(key);
+    return label === key ? value : label;
+  };
+  return (
+    <section className="space-y-3">
+      <h3 className="text-base font-semibold text-foreground">{t("projects.reporting.sections.risksIssues")}</h3>
+      <div className="grid gap-6 lg:grid-cols-2">
+        <section className="min-w-0 space-y-2">
+          <h4 className="text-sm font-semibold">{t("projects.topRisks")} <span className="font-normal text-muted-foreground">({report.risks.length})</span></h4>
+          {report.risks.length ? (
+            <Table className="min-w-[32rem] table-fixed">
+              <TableHeader><TableRow><TableHead className="w-[38%] text-start">{t("projects.name")}</TableHead><TableHead className="text-start">{t("risks.riskLevel")}</TableHead><TableHead className="text-start">{t("common.status")}</TableHead><TableHead className="text-start">{t("projects.owner")}</TableHead></TableRow></TableHeader>
+              <TableBody>{report.risks.map((item, index) => (
+                <TableRow key={`${item.title}-${index}`}>
+                  <TableCell className="break-words text-start">{item.title}</TableCell>
+                  <TableCell className="break-words text-start"><ReportStatus status={item.riskLevel} label={localizedEnumValue(t, "enums.riskLevel", item.riskLevel)} /></TableCell>
+                  <TableCell className="break-words text-start"><ReportStatus status={item.riskStatus} label={localizedEnumValue(t, "enums.riskStatus", item.riskStatus)} /></TableCell>
+                  <TableCell className="break-words text-start">{item.ownerNameSnapshot || "—"}</TableCell>
+                </TableRow>
+              ))}</TableBody>
+            </Table>
+          ) : <p className="text-sm text-muted-foreground">{t("projects.noSnapshotItems")}</p>}
+        </section>
+        <section className="min-w-0 space-y-2">
+          <h4 className="text-sm font-semibold">{t("projects.topIssues")} <span className="font-normal text-muted-foreground">({report.issues.length})</span></h4>
+          {report.issues.length ? (
+            <Table className="min-w-[32rem] table-fixed">
+              <TableHeader><TableRow><TableHead className="w-[38%] text-start">{t("projects.name")}</TableHead><TableHead className="text-start">{t("workItems.severity")}</TableHead><TableHead className="text-start">{t("common.status")}</TableHead><TableHead className="text-start">{t("projects.assignee")}</TableHead></TableRow></TableHeader>
+              <TableBody>{report.issues.map((item, index) => (
+                <TableRow key={`${item.title}-${index}`}>
+                  <TableCell className="break-words text-start">{item.title}</TableCell>
+                  <TableCell className="break-words text-start"><ReportStatus status={item.severity} label={severityLabel(item.severity)} /></TableCell>
+                  <TableCell className="break-words text-start"><ReportStatus status={item.issueStatus} label={issueStatusLabel(item.issueStatus)} /></TableCell>
+                  <TableCell className="break-words text-start">{item.assigneeNameSnapshot || "—"}</TableCell>
+                </TableRow>
+              ))}</TableBody>
+            </Table>
+          ) : <p className="text-sm text-muted-foreground">{t("projects.noSnapshotItems")}</p>}
+        </section>
+      </div>
+    </section>
+  );
 }
 
 function StatusReportDecisions({ report, t, formatDate }: { report: ProjectStatusReportDto; t: (key: string) => string; formatDate: (value: string | Date) => string }) {
   const pending = (report.changeRequests ?? []).filter((item) => item.changeRequestStatus === "Pending");
-  return <section className="space-y-2"><h3 className="text-sm font-semibold">{t("projects.reporting.sections.decisionsRequired")}</h3><p className="text-xs text-muted-foreground">{t("projects.statusReportComparison.decisionsSourceNote")}</p>{pending.length ? <div className="space-y-2">{pending.map((item) => <Card key={item.sourceChangeRequestId}><CardContent className="space-y-2 p-3"><div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm font-medium">#{item.number} · {item.reason}</p><Badge status={item.changeRequestStatus}>{t("projects.statusReportComparison.pendingDecision")}</Badge></div>{item.justification ? <p className="text-sm text-muted-foreground">{item.justification}</p> : null}{item.impact ? <p className="text-sm"><span className="font-medium">{t("projects.statusReportComparison.impact")}:</span> {item.impact}</p> : null}<p className="text-xs text-muted-foreground">{t("projects.requestedBy")}: {item.requestedByNameSnapshot || "—"} · {formatDate(item.requestedAt)}</p></CardContent></Card>)}</div> : <Empty>{t("projects.statusReportComparison.noDecisionsRequired")}</Empty>}</section>;
+  return (
+    <section className="space-y-3">
+      <h3 className="text-base font-semibold text-foreground">{t("projects.reporting.sections.decisionsRequired")}</h3>
+      <p className="text-sm text-muted-foreground">{t("projects.statusReportComparison.decisionsSourceNote")}</p>
+      {pending.length ? (
+        <Table className="min-w-[52rem] table-fixed">
+          <TableHeader><TableRow><TableHead className="w-[42%] text-start">{t("projects.changeRequest")}</TableHead><TableHead className="text-start">{t("common.status")}</TableHead><TableHead className="text-start">{t("projects.requestedBy")}</TableHead><TableHead className="text-start">{t("projects.requestedAt")}</TableHead></TableRow></TableHeader>
+          <TableBody>{pending.map((item) => (
+            <TableRow key={item.sourceChangeRequestId}>
+              <TableCell className="break-words text-start">
+                <p className="font-medium">#{item.number} · {item.reason}</p>
+                {item.justification ? <p className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">{item.justification}</p> : null}
+                {item.impact ? <p className="mt-1 text-sm"><span className="font-medium">{t("projects.statusReportComparison.impact")}:</span> {item.impact}</p> : null}
+              </TableCell>
+              <TableCell className="break-words text-start"><ReportStatus status={item.changeRequestStatus} label={t("projects.statusReportComparison.pendingDecision")} /></TableCell>
+              <TableCell className="break-words text-start">{item.requestedByNameSnapshot || "—"}</TableCell>
+              <TableCell className="break-words text-start tabular-nums">{formatDate(item.requestedAt)}</TableCell>
+            </TableRow>
+          ))}</TableBody>
+        </Table>
+      ) : <p className="text-sm text-muted-foreground">{t("projects.statusReportComparison.noDecisionsRequired")}</p>}
+    </section>
+  );
 }
 
 export function ProjectHandoverTab() {
@@ -441,10 +865,11 @@ export function ProjectHandoverTab() {
   const canAccessHandover = Boolean(user && (hasPermission(user.permissions, Permissions.Handover.View) || hasPermission(user.permissions, Permissions.Handover.Manage) || hasPermission(user.permissions, Permissions.Handover.AdminInitiate)));
   const query = useProjectHandoverRequests(projectId, canAccessHandover);
   const capabilities = useProjectHandoverCapabilities(projectId, canAccessHandover);
-  const [open, setOpen] = React.useState(false);
   const [newManagerId, setNewManagerId] = React.useState("");
   const [actionError, setActionError] = React.useState<string | null>(null);
+  const [handoverDateError, setHandoverDateError] = React.useState<string | null>(null);
   const [initiationType, setInitiationType] = React.useState<ProjectHandoverInitiationType>("ManagerInitiated");
+  const [open, setOpen] = React.useState(false);
   const canChangeHandover = canMutate && !effectiveReadOnly;
   const selectedAllowed = initiationType === "ManagerInitiated" ? capabilities.data?.canInitiate : initiationType === "AdminInitiated" ? capabilities.data?.canAdminInitiate : capabilities.data?.canAssignInitial;
   const handoverManagers = useProjectHandoverManagers(projectId, open && canChangeHandover && Boolean(selectedAllowed));
@@ -462,7 +887,7 @@ export function ProjectHandoverTab() {
   }, [capabilities.data]);
 
   React.useEffect(() => {
-    if (open) { setNewManagerId(""); setActionError(null); }
+    if (open) { setNewManagerId(""); setActionError(null); setHandoverDateError(null); }
   }, [open]);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -478,7 +903,9 @@ export function ProjectHandoverTab() {
       await create.mutateAsync({ initiationType, newProjectManagerId: newManagerId || String(data.get("newProjectManagerId") || ""), effectiveHandoverDate: String(data.get("effectiveHandoverDate") || ""), reason, notes: String(data.get("notes") || "").trim() || undefined });
       setOpen(false);
     } catch (reason) {
-      setActionError(reason instanceof Error ? reason.message : t("projects.handoverFailed"));
+      const fieldError = getApiFieldError(reason, "effectiveHandoverDate");
+      setHandoverDateError(fieldError ?? null);
+      setActionError(fieldError ? null : reason instanceof Error ? reason.message : t("projects.handoverFailed"));
     }
   }
 
@@ -511,7 +938,7 @@ export function ProjectHandoverTab() {
         <div><Label>{t("projects.project")}</Label><Input className="mt-1" value={project.name} readOnly /></div>
         <div><Label>{t("projects.currentProjectManager")}</Label><Input className="mt-1" value={capabilities.data?.currentManagerName || project.projectManagerName || t("managerHandover.notAssigned")} readOnly /></div>
         <div><Label>{t("projects.newManager")}</Label><SearchableSelect options={managerOptions} value={newManagerId} onValueChange={setNewManagerId} placeholder={t("projects.selectProjectManager")} searchPlaceholder={t("projects.selectProjectManager")} loading={managersLoading} emptyText={t("projects.noEligibleManagers")} disabled={managersError} /><input type="hidden" name="newProjectManagerId" value={newManagerId} />{managersError ? <p role="alert" className="mt-1 text-xs text-destructive">{t("common.errorLoading")}</p> : null}{!managersLoading && !managersError && managerOptions.length === 0 ? <div className="mt-2 space-y-1 text-xs text-muted-foreground"><p>{t("projects.noEligibleManagersHint")}</p><Link to="/administration/users" className="text-primary underline-offset-4 hover:underline">{t("projects.manageUsers")}</Link></div> : null}</div>
-        <div><Label>{t("projects.effectiveHandoverDate")}</Label><Input className="mt-1" name="effectiveHandoverDate" type="date" required min={minDate} max={maxDate} /><p className="mt-1 text-xs text-muted-foreground">{t("managerHandover.effectiveDateHint")}</p></div>
+        <div><Label htmlFor="project-handover-effective-date">{t("projects.effectiveHandoverDate")}</Label><Input id="project-handover-effective-date" className="mt-1" name="effectiveHandoverDate" type="date" required min={minDate} max={maxDate} aria-invalid={Boolean(handoverDateError)} aria-describedby={handoverDateError ? "project-handover-date-error" : undefined} onChange={() => setHandoverDateError(null)} />{handoverDateError ? <p id="project-handover-date-error" role="alert" className="mt-1 text-xs text-destructive">{handoverDateError}</p> : <p className="mt-1 text-xs text-muted-foreground">{t("managerHandover.effectiveDateHint")}</p>}</div>
         <div><Label>{t(initiationType === "ManagerInitiated" ? "projects.handoverReason" : "managerHandover.administrativeReason")}</Label><Textarea className="mt-1" name="reason" required maxLength={500} /></div>
         <div><Label>{t("projects.handoverNotes")}</Label><Textarea className="mt-1" name="notes" rows={3} maxLength={2000} /></div>
       </SideSheetBody><SideSheetFooter><Button type="button" variant="outline" onClick={() => setOpen(false)}>{t("common.cancel")}</Button><Button type="submit" disabled={create.isPending || query.isLoading || query.isError || managersLoading || managersError || !newManagerId || !selectedAllowed}>{create.isPending ? t("common.saving") : t("projects.submitHandover")}</Button></SideSheetFooter></form>}
@@ -519,168 +946,31 @@ export function ProjectHandoverTab() {
   </div>;
 }
 
-export function ProjectHistoryTab() {
-  const { projectId } = useProjectContext();
-  const { t, formatDate } = useI18n();
-  const query = useProjectManagerHistory(projectId);
-  const rows: ProjectManagerHistoryDto[] = query.data ?? [];
-  return <Card><CardHeader><CardTitle className="flex items-center gap-2"><History className="h-4 w-4" />{t("projects.managerHistory")}</CardTitle><CardDescription>{t("projects.managerHistoryDescription")}</CardDescription></CardHeader><CardContent className="p-0">{query.isLoading ? <Loading t={t} /> : query.isError ? <ErrorState t={t} onRetry={() => void query.refetch()} /> : rows.length === 0 ? <Empty>{t("projects.noManagerHistory")}</Empty> : <div className="divide-y">{rows.map((row) => <div key={row.id} className="flex flex-col gap-2 px-4 py-4 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><p className="text-sm font-medium">{row.projectManagerName}</p><p className="mt-1 text-xs text-muted-foreground">{formatDate(row.startDate)} – {row.endDate ? formatDate(row.endDate) : t("projects.current")}{row.handoverFromProjectManagerName ? ` · ${t("common.from")}: ${row.handoverFromProjectManagerName}` : ""}</p>{row.handoverReason ? <p className="mt-1 text-xs text-muted-foreground">{row.handoverReason}</p> : null}</div>{row.isCurrent ? <Badge status="Active" className="w-fit text-[10px]">{t("projects.current")}</Badge> : <Badge status="Closed" className="w-fit text-[10px]">{row.endDate ? formatDate(row.endDate) : t("projects.current")}</Badge>}</div>)}</div>}</CardContent></Card>;
-}
-
-export function ProjectSnapshotDetailPage() {
-  const { t } = useI18n();
-  return <div className="space-y-6"><PageHeader title={t("projects.snapshot")} description={t("projects.snapshotsDescription")} /><ProjectSnapshotsTab /></div>;
-}
-
-export function ProjectSnapshotsTab() {
-  const context = useOutletContext<ProjectContext | undefined>();
-  const { id: routeProjectId, snapshotId } = useParams<{ id?: string; snapshotId?: string }>();
-  const projectId = context?.projectId ?? routeProjectId ?? "";
-  const { t, formatDate, formatCurrency } = useI18n();
-  const query = useProjectSnapshots(projectId, !snapshotId && Boolean(projectId));
-  const detail = useProjectSnapshot(projectId, snapshotId ?? "", Boolean(snapshotId));
-  const rows: ProjectSnapshotSummaryDto[] = query.data ?? [];
-  if (snapshotId) {
-    const snapshot = detail.data;
-    if (detail.isLoading) return <Loading t={t} />;
-    if (detail.isError || !snapshot) return <Card><CardContent className="p-8 text-center text-sm text-destructive">{t("projects.noSnapshots")}</CardContent></Card>;
-    const data = snapshot.data;
-    const sections = [
-      ["projects.snapshotTeam", "members", "projects.noTeamMembers"], ["projects.snapshotWorkItems", "workItems", "projects.noTasksYet"], ["projects.snapshotMilestones", "milestones", "projects.noMilestonesYet"],
-      ["projects.snapshotDeliverables", "deliverables", "projects.noDeliverablesYet"], ["projects.snapshotPhases", "phases", "projects.noPhasesYet"], ["projects.snapshotRisks", "risks", "projects.noRisksYet"], ["projects.snapshotIssues", "issues", "projects.noIssuesYet"],
-      ["projects.snapshotBudgets", "budgets", "projects.noBudgetsYet"], ["projects.snapshotCostEntries", "costEntries", "projects.noCostEntriesYet"], ["projects.snapshotMeetings", "meetings", "projects.noMeetingsYet"], ["projects.snapshotDocuments", "documents", "projects.noDocumentsYet"], ["projects.snapshotStatusReports", "statusReports", "projects.noStatusReportsYet"],
-    ] as const;
-    return (
-      <div className="space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <Badge variant="secondary"><Lock className="me-1 h-3 w-3" />{t("projects.readOnlySnapshot")}</Badge>
-            <Badge variant="outline">{t("projects.snapshotNumber")} #{snapshot.snapshotNumber}</Badge>
-          </div>
-          <Link to={`/projects/${encodeURIComponent(projectId)}`}><Button size="sm" variant="outline"><ArrowLeft className="me-1.5 h-4 w-4 rtl:rotate-180" />{t("projects.backToProject")}</Button></Link>
-        </div>
-        <Card>
-          <CardHeader><CardTitle>{snapshot.name}</CardTitle><CardDescription>{t("projects.readOnlySnapshotDescription")}</CardDescription></CardHeader>
-          <CardContent className="space-y-1">
-            <SnapshotValue label={t("projects.snapshotDate")} value={formatDate(snapshot.snapshotDate)} />
-            <SnapshotValue label={t("projects.effectiveEndDate")} value={formatDate(snapshot.effectiveEndDate)} />
-            <SnapshotValue label={t("projects.previousManager")} value={snapshot.previousProjectManagerName} />
-            <SnapshotValue label={t("projects.newManager")} value={snapshot.newProjectManagerName} />
-            <SnapshotValue label={t("projects.handoverReason")} value={snapshot.handoverReason} />
-            {snapshot.handoverNotes ? <SnapshotValue label={t("projects.handoverNotes")} value={snapshot.handoverNotes} /> : null}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-3"><CardTitle className="text-sm">{t("projects.snapshotProjectDetails")}</CardTitle></CardHeader>
-          <CardContent className="space-y-1">
-            <SnapshotValue label={t("projects.name")} value={snapshot.name} />
-            <SnapshotValue label={t("projects.code")} value={snapshot.code} />
-            <SnapshotValue label={t("common.status")} value={snapshot.status} />
-            <SnapshotValue label={t("projects.priority")} value={snapshot.priority} />
-            <SnapshotValue label={t("projects.phase")} value={snapshot.phase} />
-            <SnapshotValue label={t("projects.health")} value={snapshot.health} />
-            <SnapshotValue label={t("projects.confidenceLevel")} value={snapshot.confidenceLevel} />
-            <SnapshotValue label={t("projects.riskRating")} value={snapshot.riskRating} />
-            <SnapshotValue label={t("projects.portfolio")} value={snapshot.portfolioName} />
-            <SnapshotValue label={t("projects.program")} value={snapshot.programName} />
-            <SnapshotValue label={t("projects.department")} value={snapshot.departmentName} />
-            <SnapshotValue label={t("projects.sponsor")} value={snapshot.sponsorName} />
-            <SnapshotValue label={t("projects.startDate")} value={snapshot.startDate ? formatDate(snapshot.startDate) : undefined} />
-            <SnapshotValue label={t("projects.endDate")} value={snapshot.endDate ? formatDate(snapshot.endDate) : undefined} />
-            <SnapshotValue label={t("projects.budget")} value={snapshot.budget == null ? undefined : formatCurrency(snapshot.budget, snapshot.currency)} />
-            <SnapshotValue label={t("projects.actualCost")} value={snapshot.actualCost == null ? undefined : formatCurrency(snapshot.actualCost, snapshot.currency)} />
-            <SnapshotValue label={t("projects.progress")} value={snapshot.progress == null ? undefined : `${snapshot.progress}%`} />
-            <SnapshotValue label={t("projects.projectDescription")} value={snapshot.description} />
-            <SnapshotValue label={t("projects.businessCase")} value={snapshot.businessCase} />
-            <SnapshotValue label={t("projects.notes")} value={snapshot.notes} />
-          </CardContent>
-        </Card>
-        <div className="grid gap-4 lg:grid-cols-2">
-          {sections.map(([title, key, emptyKey]) => {
-            const items = data?.[key] ?? [];
-            return <Card key={key}><CardHeader><CardTitle className="flex items-center gap-2 text-sm"><Camera className="h-4 w-4" />{t(title)} <span className="font-normal text-muted-foreground">({items.length})</span></CardTitle></CardHeader><CardContent>{items.length === 0 ? <p className="text-sm text-muted-foreground">{t(emptyKey)}</p> : <div className="space-y-2">{items.map((item) => <div key={item.originalId} className="flex items-center justify-between gap-3 text-sm"><SnapshotRow item={item} section={key} currency={snapshot.currency} /></div>)}</div>}</CardContent></Card>;
-          })}
-        </div>
-      </div>
-    );
-  }
-  return <Card><CardHeader><CardTitle className="flex items-center gap-2"><History className="h-4 w-4" />{t("projects.snapshots")}</CardTitle><CardDescription>{t("projects.snapshotsDescription")}</CardDescription></CardHeader><CardContent>{query.isLoading ? <Loading t={t} /> : query.isError ? <ErrorState t={t} onRetry={() => void query.refetch()} /> : rows.length === 0 ? <Empty>{t("projects.noSnapshots")}</Empty> : <div className="divide-y">{rows.map((row) => <div key={row.id} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between"><div className="flex min-w-0 items-start gap-3"><Camera className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" /><div className="min-w-0"><p className="text-sm font-medium">{row.snapshotName}</p><p className="mt-1 text-xs text-muted-foreground">{t("projects.effectiveEndDate")}: {formatDate(row.effectiveEndDate)} · {t("projects.snapshotDate")}: {formatDate(row.snapshotDate)}</p><p className="mt-1 text-xs text-muted-foreground">{row.previousProjectManagerName || "—"} → {row.newProjectManagerName || "—"}</p></div></div><Link to={row.id}><Button variant="outline" size="sm"><Camera className="me-1.5 h-3.5 w-3.5" />{t("projects.viewSnapshot")}</Button></Link></div>)}</div>}</CardContent></Card>;
-}
-
-function SnapshotValue({ label, value }: { label: string; value?: string | number | null }) {
-  return <div className="flex justify-between py-1 text-sm"><span className="text-muted-foreground">{label}</span><span className="max-w-[60%] text-right font-medium">{value ?? "-"}</span></div>;
-}
+// The project history tab is now the backend-driven audit workspace. It lives in its
+// own module to keep this already-large governance file focused.
+export { ProjectHistoryTab } from "./ProjectAuditTrailTab";
+export { ProjectSnapshotDetailPage, ProjectSnapshotsTab } from "./ProjectSnapshotsTab";
 
 function ReportDetail({ label, value }: { label: string; value?: React.ReactNode }) {
-  return <div className="rounded-lg border bg-muted/20 p-3"><p className="text-xs text-muted-foreground">{label}</p><div className="mt-1 text-sm font-medium">{value ?? "—"}</div></div>;
+  return <div className="flex items-baseline justify-between gap-4 border-b border-border/40 py-1.5"><span className="text-xs text-muted-foreground">{label}</span><div className="text-sm font-medium text-end">{value ?? "—"}</div></div>;
 }
 
-function ReportNarrative({ label, value }: { label: string; value?: string }) {
-  return <div className="rounded-lg border p-3"><p className="text-xs font-semibold text-muted-foreground">{label}</p><p className="mt-2 whitespace-pre-wrap text-sm">{value || "—"}</p></div>;
+function ReportMetaField({ label, value }: { label: string; value?: React.ReactNode }) {
+  return <div className="min-w-0 border-b border-border/60 py-2.5"><dt className="break-words text-xs text-muted-foreground">{label}</dt><dd className="mt-1 break-words text-sm font-medium leading-5 text-foreground">{value ?? "—"}</dd></div>;
 }
 
-type SnapshotItem = { name?: string; title?: string; summary?: string; description?: string; status?: string; role?: string; resourceName?: string; assigneeName?: string; ownerName?: string; category?: string; amount?: number; approvedAmount?: number; currency?: string; allocationPercentage?: number; progress?: number; riskLevel?: string; severity?: string; version?: number; startDate?: string; endDate?: string; dueDate?: string; startTime?: string; incurredDate?: string; reportedAt?: string; [key: string]: string | number | boolean | undefined };
+function ReportMetric({ label, value }: { label: string; value?: React.ReactNode }) {
+  return <div className="min-w-0 border-b border-border/60 py-2.5"><dt className="break-words text-xs text-muted-foreground">{label}</dt><dd className="mt-1 break-words text-base font-semibold leading-6 text-foreground tabular-nums">{value ?? "—"}</dd></div>;
+}
 
-function SnapshotRow({ item, section, currency }: { item: SnapshotItem; section: string; currency: string }) {
-  const { t, formatCurrency, formatDate } = useI18n();
-  const title = item.name || item.title || item.summary || item.description || item.category || "—";
-  const money = (v: unknown, code?: string) => typeof v === "number" && Number.isFinite(v) ? formatCurrency(v, code || currency) : "—";
-  const localizedEnum = (group: "riskLevel" | "riskStatus", value?: string) => {
-    if (!value) return undefined;
-    const key = `enums.${group}.${value.charAt(0).toLowerCase()}${value.slice(1)}`;
-    const label = t(key);
-    return label === key ? value : label;
-  };
-  let detail: React.ReactNode;
-  switch (section) {
-    case "members":
-    case "allocations": {
-      const dates = [item.startDate ? formatDate(item.startDate) : undefined, item.endDate ? formatDate(item.endDate) : undefined];
-      const metadata = [item.role, typeof item.allocationPercentage === "number" ? `${item.allocationPercentage}%` : undefined, ...dates].filter(Boolean);
-      detail = <>{item.resourceName || title}{metadata.length ? <span className="ms-1.5 text-muted-foreground">{metadata.join(" · ")}</span> : null}</>;
-      break;
-    }
-    case "risks": {
-      const level = localizedEnum("riskLevel", item.riskLevel);
-      const status = localizedEnum("riskStatus", item.status);
-      detail = <span className="inline-flex items-center gap-1.5">{level ? <span className={getRiskLevelTextClass(item.riskLevel)}>{level}</span> : null}{level && status ? <span aria-hidden="true">·</span> : null}{status ? <span className={getRiskStatusTextClass(item.status)}>{status}</span> : null}</span>;
-      break;
-    }
-    case "issues":
-      detail = <span>{[item.severity, item.status].filter(Boolean).join(" · ") || "—"}</span>;
-      break;
-    case "budgets":
-      detail = <span className="tabular-nums">{money(item.approvedAmount ?? item.amount, item.currency)}</span>;
-      break;
-    case "costEntries":
-      detail = <span className="tabular-nums">{money(item.amount, item.currency)}{item.incurredDate ? ` · ${formatDate(item.incurredDate)}` : ""}</span>;
-      break;
-    case "milestones":
-    case "deliverables": {
-      const dueDate = item.dueDate ? formatDate(item.dueDate) : undefined;
-      detail = <span>{[item.status, dueDate].filter(Boolean).join(" · ") || "—"}</span>;
-      break;
-    }
-    case "phases":
-      detail = <span>{[item.status, typeof item.progress === "number" ? `${item.progress}%` : undefined].filter(Boolean).join(" · ") || "—"}</span>;
-      break;
-    case "meetings":
-      detail = <span>{item.startTime ? formatDate(item.startTime) : item.status || "—"}</span>;
-      break;
-    case "documents":
-      detail = <span>{[typeof item.version === "number" ? `v${item.version}` : undefined, item.status].filter(Boolean).join(" · ") || "—"}</span>;
-      break;
-    case "statusReports":
-      detail = <span>{item.reportedAt ? formatDate(item.reportedAt) : item.status || "—"}</span>;
-      break;
-    case "workItems":
-      detail = <span>{[item.status, item.assigneeName].filter(Boolean).join(" · ") || "—"}</span>;
-      break;
-    default:
-      detail = <span>{item.status || item.role || item.resourceName || item.assigneeName || (typeof item.amount === "number" ? money(item.amount, item.currency) : t("common.notAvailable"))}</span>;
-      break;
-  }
-  return <><span className="min-w-0 truncate font-medium">{title}</span><span className="shrink-0 text-xs text-muted-foreground">{detail}</span></>;
+function ReportStatus({ status, label, textClass, dotClass }: { status?: string | null; label: string; textClass?: string; dotClass?: string }) {
+  const tone = getStatusTone(status);
+  return <span className={`inline-flex min-w-0 items-center gap-2 text-sm font-medium ${textClass ?? getStatusTextClass(status)}`}><span aria-hidden="true" className={`h-2 w-2 shrink-0 rounded-full ${dotClass ?? statusToneDotClasses[tone]}`} /><span className="break-words">{label}</span></span>;
+}
+
+function ReportNarrative({ label, value, headingLevel = 4 }: { label: string; value?: string; headingLevel?: 3 | 4 }) {
+  const Heading = headingLevel === 3 ? "h3" : "h4";
+  return <div className="max-w-4xl space-y-1.5"><Heading className="text-sm font-semibold text-foreground">{label}</Heading><p className="whitespace-pre-wrap break-words text-sm leading-7 text-foreground">{value || "—"}</p></div>;
 }
 
 export function ProjectChangeTrackerTab() {
@@ -885,128 +1175,32 @@ export function ProjectChangeTrackerTab() {
 
 export function ProjectMeetingsTab() {
   const { projectId, project } = useProjectContext();
-  const { t, locale } = useI18n();
-  const { user, status: authStatus } = useAuth();
-  const [search, setSearch] = React.useState("");
-  const [status, setStatus] = React.useState("all");
-  const [page, setPage] = React.useState(1);
-  const [deferredSearch] = useDebounce(search.trim(), 400);
-  const [open, setOpen] = React.useState(false);
-  const canView = Boolean(user && hasPermission(user.permissions, Permissions.Meeting.View));
-  const canCreate = Boolean(user && hasPermission(user.permissions, Permissions.Meeting.Create));
-  const query = useFullMeetings({ projectId, page, pageSize: 10, search: deferredSearch || undefined, status: status === "all" ? undefined : status }, authStatus === "authenticated" && Boolean(projectId) && canView);
-  const rows = query.data?.items ?? [];
-  const totalPages = query.data?.totalPages ?? 1;
-  function meetingStatusLabel(value?: string | null) {
-    const key = (value || "").trim().toLowerCase();
-    if (key === "scheduled" || key === "completed" || key === "cancelled") return t(`meetings.status.${key}`);
-    return value?.trim() || t("meetings.status.unknown");
-  }
-  function formatTime(value?: string | null) {
-    if (!value) return "—";
-    return formatDateTime(value, locale);
-  }
-  if (authStatus === "loading") return <div className="space-y-2">{[0, 1, 2].map((item) => <Skeleton key={item} className="h-16 w-full" />)}</div>;
-  if (!canView) return <Empty>{t("projects.projectMeetings.permissionDenied")}</Empty>;
-  return <div className="space-y-4"><Card><CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><CardTitle className="flex items-center gap-2"><CalendarDays className="h-4 w-4" />{t("projects.projectMeetings.title")}</CardTitle><CardDescription>{t("projects.projectMeetings.description")}</CardDescription></div>{canCreate ? <Button size="sm" onClick={() => setOpen(true)}><Plus className="me-1.5 h-4 w-4" />{t("meetings.createMeeting")}</Button> : null}</CardHeader>
-  <div className="flex flex-col gap-2 px-4 pb-3 sm:flex-row">
-    <div className="relative flex-1">
-      <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-      <Input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder={t("meetings.searchPlaceholder")} aria-label={t("meetings.searchPlaceholder")} className="bg-background ps-9" />
-    </div>
-    <Select value={status} onValueChange={(v) => { setStatus(v); setPage(1); }}>
-      <SelectTrigger className="sm:w-44" aria-label={t("common.status")}><SelectValue placeholder={t("common.status")} /></SelectTrigger>
-      <SelectContent>
-        <SelectItem value="all">{t("common.all")}</SelectItem>
-        {["Scheduled", "Completed", "Cancelled"].map((s) => <SelectItem key={s} value={s}>{meetingStatusLabel(s)}</SelectItem>)}
-      </SelectContent>
-    </Select>
-  </div>
-  <CardContent className="p-0">{query.isLoading ? <Loading t={t} /> : query.isError ? query.error instanceof ApiError && query.error.status === 403 ? <div className="rounded border border-dashed p-8 text-center text-sm text-muted-foreground"><p>{t("projects.projectMeetings.permissionDenied")}</p><Button className="mt-3" variant="outline" onClick={() => void query.refetch()}>{t("common.retry")}</Button></div> : <ErrorState t={t} onRetry={() => void query.refetch()} /> : rows.length === 0 ? <Empty><span className="block font-medium text-foreground">{t("projects.projectMeetings.emptyTitle")}</span><span className="mt-1 block">{t("projects.projectMeetings.emptyDescription")}</span></Empty> : <div className="divide-y px-4">{rows.map((row) => <Link key={row.id} to={`/meetings/${encodeURIComponent(row.id)}`} className="group flex items-center gap-3 py-3 hover:bg-muted/20"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><CalendarCheck className="h-4 w-4" /></span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{row.title}</span><span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground"><span>{formatTime(row.startTime)}</span><span aria-hidden="true">·</span><span>{row.organizerName || "—"}</span><span aria-hidden="true">·</span><span className="inline-flex items-center gap-1"><Users className="h-3 w-3" />{row.attendeeCount}</span></span></span><Badge status={row.status || undefined}>{meetingStatusLabel(row.status)}</Badge><ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" /></Link>)}
-  {totalPages > 1 ? <div className="py-3"><Pagination page={page} totalPages={totalPages} total={query.data?.totalCount} pageSize={10} onChange={setPage} /></div> : null}</div>}</CardContent></Card><ProjectMeetingCreateSheet open={open} onOpenChange={setOpen} projectId={projectId} project={project} /></div>;
-}
-
-function ProjectMeetingCreateSheet({ open, onOpenChange, projectId, project }: { open: boolean; onOpenChange: (open: boolean) => void; projectId: string; project: ProjectDto }) {
   const { t } = useI18n();
-  const [draft, setDraft] = React.useState(() => createMeetingDraft());
-  const [attendeeSearch, setAttendeeSearch] = React.useState("");
-  const [error, setError] = React.useState<string | null>(null);
-  const mutations = useMeetingFullMutations();
-  const usersQuery = useUserLookup(undefined, open);
-  const users = usersQuery.data;
-  const userOptions = React.useMemo(() => (users ?? []).map((user) => ({ value: user.id, label: `${user.fullName} · ${user.email}`, keywords: [user.jobTitle ?? ""] })), [users]);
-  const attendeeQuery = attendeeSearch.trim().toLocaleLowerCase();
-  const visibleUsers = (users ?? []).filter((candidate) => !attendeeQuery || `${candidate.fullName} ${candidate.email} ${candidate.jobTitle ?? ""}`.toLocaleLowerCase().includes(attendeeQuery));
-  const externalEmail = attendeeSearch.trim();
-  const matchingInternalUser = (users ?? []).some((candidate) => candidate.email.trim().toLocaleLowerCase() === externalEmail.toLocaleLowerCase());
-  const canAddExternal = isValidMeetingEmail(externalEmail)
-    && !matchingInternalUser
-    && !draft.attendees.some((attendee) => attendee.email.trim().toLocaleLowerCase() === externalEmail.toLocaleLowerCase());
+  const { user, status: authStatus } = useAuth();
+  const { canMutate, effectiveReadOnly } = useManagement();
+  const canView = Boolean(user && hasPermission(user.permissions, Permissions.Meeting.View));
+  const canCreate = Boolean(user && hasPermission(user.permissions, Permissions.Meeting.Create) && canMutate && !effectiveReadOnly);
+  const canManageMinutes = Boolean(user && hasPermission(user.permissions, Permissions.Meeting.Manage) && canMutate && !effectiveReadOnly);
 
-  React.useEffect(() => {
-    if (!open) return;
-    setDraft(createMeetingDraft());
-    setAttendeeSearch("");
-    setError(null);
-  }, [open]);
-
-  function toggleAttendee(person: UserLookupDto) {
-    const selected = draft.attendees.some((attendee) => attendee.userId === person.id);
-    setDraft((current) => ({ ...current, attendees: selected
-      ? current.attendees.filter((attendee) => attendee.userId !== person.id)
-      : [...current.attendees, { userId: person.id, email: person.email, displayName: person.fullName }] }));
-  }
-
-  function addExternalAttendee() {
-    if (!canAddExternal) return;
-    setDraft((current) => ({ ...current, attendees: [...current.attendees, { email: externalEmail }] }));
-    setAttendeeSearch("");
-  }
-
-  function removeAttendee(attendee: MeetingAttendeeDraft) {
-    setDraft((current) => ({ ...current, attendees: current.attendees.filter((candidate) => candidate.userId !== attendee.userId || candidate.email !== attendee.email) }));
-  }
-
-  function updateExternalName(email: string, displayName: string) {
-    setDraft((current) => ({ ...current, attendees: current.attendees.map((attendee) => attendee.email === email && !attendee.userId ? { ...attendee, displayName } : attendee) }));
-  }
-
-  function save() {
-    const validationError = validateMeetingDraft(draft);
-    if (validationError) {
-      setError(t(`meetings.validation.${validationError}`));
-      return;
-    }
-    setError(null);
-    const body: MeetingInput = toMeetingInput(draft, projectId);
-    mutations.create.mutate(body, {
-      onSuccess: () => onOpenChange(false),
-      onError: () => setError(t("meetings.saveError")),
-    });
-  }
-
-  return <SideSheet open={open} onOpenChange={onOpenChange} title={t("meetings.createMeeting")} description={t("meetings.createDescription")}>
-    <SideSheetBody className="space-y-4">
-      <div className="space-y-1.5"><Label htmlFor="project-meeting-title">{t("meetings.titleField")} *</Label><Input id="project-meeting-title" maxLength={500} value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} /></div>
-      <div className="space-y-1.5"><Label htmlFor="project-meeting-objective">{t("meetings.objective")}</Label><Textarea id="project-meeting-objective" rows={3} value={draft.objective} onChange={(event) => setDraft({ ...draft, objective: event.target.value })} /></div>
-      <div className="space-y-1.5"><Label>{t("meetings.project")}</Label><div className="rounded-md border bg-muted/20 px-3 py-2"><p className="text-sm font-medium">{project.name}</p><p className="mt-0.5 text-xs text-muted-foreground">{project.code}</p></div></div>
-      <div className="space-y-1.5"><Label>{t("meetings.organizer")} *</Label><SearchableSelect options={userOptions} value={draft.organizerId} onValueChange={(organizerId) => setDraft({ ...draft, organizerId })} placeholder={t("meetings.selectOrganizer")} searchPlaceholder={t("meetings.searchUsers")} emptyText={t("meetings.noUsers")} loading={usersQuery.isLoading} /></div>
-      <div className="space-y-2">
-        <Label htmlFor="project-meeting-attendee-search">{t("meetings.attendees")}</Label>
-        <Input id="project-meeting-attendee-search" value={attendeeSearch} onChange={(event) => setAttendeeSearch(event.target.value)} placeholder={t("meetings.searchUsers")} />
-        {draft.attendees.length > 0 ? <p className="text-xs text-muted-foreground">{t("meetings.selectedUsers", { count: draft.attendees.length })}</p> : null}
-        {usersQuery.isLoading ? <p className="text-xs text-muted-foreground">{t("meetings.loadingUsers")}</p> : visibleUsers.length > 0 ? <div className="max-h-36 space-y-1 overflow-y-auto rounded-md border p-1">{visibleUsers.map((person) => {
-          const selected = draft.attendees.some((attendee) => attendee.userId === person.id);
-          return <button key={person.id} type="button" aria-pressed={selected} onClick={() => toggleAttendee(person)} className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-start text-sm hover:bg-accent"><input type="checkbox" checked={selected} readOnly tabIndex={-1} /><UserRound className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /><span className="min-w-0 flex-1 truncate">{person.fullName}<span className="ms-1 text-xs text-muted-foreground">{person.email}</span></span></button>;
-        })}</div> : <p className="text-xs text-muted-foreground">{t("meetings.noUsers")}</p>}
-        {canAddExternal ? <Button type="button" size="sm" variant="outline" onClick={addExternalAttendee}><Mail className="me-1.5 h-3.5 w-3.5" />{t("meetings.addExternalAttendee", { email: externalEmail })}</Button> : null}
-        {draft.attendees.length > 0 ? <div className="space-y-2">{draft.attendees.map((attendee) => <div key={attendee.userId ?? attendee.email.toLocaleLowerCase()} className="flex items-start gap-2 rounded-md border bg-muted/20 p-2"><div className="min-w-0 flex-1"><p className="truncate text-xs font-medium">{attendee.displayName || attendee.email}</p><p className="truncate text-xs text-muted-foreground">{t(attendee.userId ? "meetings.internalUser" : "meetings.externalAttendee")} · {attendee.email}</p>{!attendee.userId ? <Input className="mt-1.5 h-8" maxLength={200} value={attendee.displayName ?? ""} onChange={(event) => updateExternalName(attendee.email, event.target.value)} placeholder={t("meetings.optionalDisplayName")} aria-label={t("meetings.optionalDisplayName")} /> : null}</div><Button type="button" size="sm" variant="ghost" aria-label={t("meetings.removeUser", { name: attendee.displayName || attendee.email })} onClick={() => removeAttendee(attendee)}><X className="h-4 w-4" /></Button></div>)}</div> : null}
+  return <Card>
+    <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div>
+        <CardTitle className="flex items-center gap-2"><CalendarDays className="h-4 w-4" />{t("projects.projectMeetings.title")}</CardTitle>
+        <CardDescription>{t("projects.projectMeetings.description")}</CardDescription>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2"><div className="space-y-1.5"><Label htmlFor="project-meeting-start">{t("meetings.start")} *</Label><Input id="project-meeting-start" type="datetime-local" value={draft.startTime} onChange={(event) => setDraft({ ...draft, startTime: event.target.value })} /></div><div className="space-y-1.5"><Label htmlFor="project-meeting-end">{t("meetings.end")} *</Label><Input id="project-meeting-end" type="datetime-local" value={draft.endTime} onChange={(event) => setDraft({ ...draft, endTime: event.target.value })} /></div></div>
-      <div className="grid gap-3 sm:grid-cols-2"><div className="space-y-1.5"><Label htmlFor="project-meeting-location">{t("meetings.location")}</Label><Input id="project-meeting-location" value={draft.location} onChange={(event) => setDraft({ ...draft, location: event.target.value })} /></div><div className="space-y-1.5"><Label htmlFor="project-meeting-link">{t("meetings.meetingLink")}</Label><Input id="project-meeting-link" type="text" value={draft.meetingLink} onChange={(event) => setDraft({ ...draft, meetingLink: event.target.value })} /></div></div>
-      <div className="space-y-1.5"><Label htmlFor="project-meeting-reminder">{t("meetings.reminder")}</Label><select id="project-meeting-reminder" className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={draft.reminderOffsetMinutes} onChange={(event) => setDraft({ ...draft, reminderOffsetMinutes: event.target.value })}>{[["", "noReminder"], ["15", "fifteenMinutesBefore"], ["30", "thirtyMinutesBefore"], ["60", "oneHourBefore"], ["1440", "oneDayBefore"]].map(([value, key]) => <option key={value || "none"} value={value}>{t(`meetings.${key}`)}</option>)}</select></div>
-      {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
-    </SideSheetBody>
-    <SideSheetFooter><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>{t("common.cancel")}</Button><Button type="button" onClick={save} disabled={mutations.create.isPending}>{mutations.create.isPending ? t("common.saving") : t("common.save")}</Button></SideSheetFooter>
-  </SideSheet>;
+      {canCreate ? <Button asChild size="sm"><Link to={`/meetings/new?projectId=${encodeURIComponent(project.publicId || projectId)}`}><Plus className="me-1.5 h-4 w-4" />{t("meetings.createMeeting")}</Link></Button> : null}
+    </CardHeader>
+    <CardContent>
+      <MeetingsBrowser
+        lockedProject={{ publicId: project.publicId || projectId, name: project.name, code: project.code }}
+        pageSize={10}
+        canView={canView}
+        canManageMinutes={canManageMinutes}
+        authLoading={authStatus === "loading"}
+        permissionDeniedText={t("projects.projectMeetings.permissionDenied")}
+        emptyTitle={t("projects.projectMeetings.emptyTitle")}
+        emptyDescription={t("projects.projectMeetings.emptyDescription")}
+      />
+    </CardContent>
+  </Card>;
 }

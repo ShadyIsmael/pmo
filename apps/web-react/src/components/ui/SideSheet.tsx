@@ -22,10 +22,11 @@ export interface SideSheetProps {
   size?: SideSheetSize;
   closeLabel?: string;
   ariaLabel?: string;
+  panelRef?: React.Ref<HTMLDivElement>;
   className?: string;
 }
 
-export function SideSheet({ open, onOpenChange, title, description, children, size = "lg", closeLabel = "Close", ariaLabel, className }: SideSheetProps) {
+export function SideSheet({ open, onOpenChange, title, description, children, size = "lg", closeLabel = "Close", ariaLabel, panelRef, className }: SideSheetProps) {
   React.useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -43,7 +44,7 @@ export function SideSheet({ open, onOpenChange, title, description, children, si
   return createPortal(
     <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label={ariaLabel ?? (typeof title === "string" ? title : undefined)}>
       <button type="button" aria-label={closeLabel} onClick={() => onOpenChange(false)} className="absolute inset-0 bg-black/50" />
-      <div className={cn("absolute inset-y-0 end-0 flex w-full max-w-md flex-col border-s bg-background shadow-xl", sideSheetSizes[size], className)}>
+      <div ref={panelRef} tabIndex={-1} className={cn("absolute inset-y-0 end-0 flex w-full max-w-md flex-col border-s bg-background shadow-xl", sideSheetSizes[size], className)}>
         <div className="flex shrink-0 items-start gap-3 border-b px-5 py-4">
           <div className="min-w-0 flex-1">
             <h2 className="text-base font-semibold">{title}</h2>

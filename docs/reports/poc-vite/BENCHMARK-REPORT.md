@@ -1,5 +1,7 @@
 # NEXUS Frontend Technology Benchmark Report
 
+> Historical record: Next.js references below describe the retired frontend and are kept only to preserve the original decision or implementation history. The supported frontend is apps/web-react (React, Vite, and React Router); these references are not build, deployment, agent, or audit targets.
+
 ## Executive Summary
 
 **Recommendation: Keep Next.js and optimize client boundaries. Do NOT migrate to Vite + React Router.**

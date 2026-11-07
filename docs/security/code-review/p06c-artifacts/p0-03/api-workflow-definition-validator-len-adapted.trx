@@ -1,0 +1,64 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="fc593d48-b1bb-46b9-9fd8-5f1d87534e4b" name="shady@SHADY 2026-11-05 19:45:14" runUser="SHADY\shady" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-11-05T19:45:14.6385401+02:00" queuing="2026-11-05T19:45:14.6385408+02:00" start="2026-11-05T19:45:12.6126217+02:00" finish="2026-11-05T19:45:16.3306185+02:00" />
+  <TestSettings name="default" id="374b237c-91ba-4f3d-a349-f5d1a5c5a417">
+    <Deployment runDeploymentRoot="shady_SHADY_2026-11-05_19_45_14" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="814d83cd-b419-4272-8996-1d243ef08c74" testId="155fe486-ed1c-9bf9-1e74-57126bda0c0f" testName="NEXUS.Api.Tests.Unit.WorkflowDefinitionValidatorTests.Accepts_valid_definition_with_typed_rules" computerName="SHADY" duration="00:00:00.0016872" startTime="2026-11-05T19:45:13.4809709+02:00" endTime="2026-11-05T19:45:13.4810152+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="814d83cd-b419-4272-8996-1d243ef08c74" />
+    <UnitTestResult executionId="a719e3a8-d96b-44bf-8391-0beaebbfbeb9" testId="2b0dcca4-8b93-b5e3-3921-d7a05061fa59" testName="NEXUS.Api.Tests.Unit.WorkflowDefinitionValidatorTests.Configures_history_as_non_cascading_and_instances_with_concurrency" computerName="SHADY" duration="00:00:02.7672892" startTime="2026-11-05T19:45:13.4811136+02:00" endTime="2026-11-05T19:45:16.2422799+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="a719e3a8-d96b-44bf-8391-0beaebbfbeb9" />
+    <UnitTestResult executionId="0a34ce22-24c8-4807-8cdf-a8dc422b142b" testId="cd52a519-9413-9e74-06df-d697414a9004" testName="NEXUS.Api.Tests.Unit.WorkflowDefinitionValidatorTests.Rejects_final_outgoing_self_and_unknown_rule_types" computerName="SHADY" duration="00:00:00.0012923" startTime="2026-11-05T19:45:16.2440284+02:00" endTime="2026-11-05T19:45:16.2441175+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="0a34ce22-24c8-4807-8cdf-a8dc422b142b" />
+    <UnitTestResult executionId="77d7336e-e99c-45b7-92d7-5e7093723ac8" testId="1f7a4803-ec7d-2d97-b54a-f1ed39fc245d" testName="NEXUS.Api.Tests.Unit.WorkflowDefinitionValidatorTests.Rejects_duplicate_codes_and_duplicate_edges" computerName="SHADY" duration="00:00:00.0003998" startTime="2026-11-05T19:45:16.2443136+02:00" endTime="2026-11-05T19:45:16.2443787+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="77d7336e-e99c-45b7-92d7-5e7093723ac8" />
+    <UnitTestResult executionId="24225c2a-4e42-4bfd-aafc-2e4c46138cc0" testId="f8e1639a-985f-69ad-f28c-0743f476e8b8" testName="NEXUS.Api.Tests.Unit.WorkflowDefinitionValidatorTests.Rejects_missing_or_multiple_initial_states" computerName="SHADY" duration="00:00:00.0732095" startTime="2026-11-05T19:45:13.3872239+02:00" endTime="2026-11-05T19:45:13.4688222+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="24225c2a-4e42-4bfd-aafc-2e4c46138cc0" />
+    <UnitTestResult executionId="905d9fe2-83e2-40f0-be61-98e57a39d165" testId="129d2833-c92f-7f4a-951f-d363266528b0" testName="NEXUS.Api.Tests.Unit.WorkflowDefinitionValidatorTests.Rejects_malformed_json_and_non_object_root" computerName="SHADY" duration="00:00:00.0040651" startTime="2026-11-05T19:45:13.4800535+02:00" endTime="2026-11-05T19:45:13.4801956+02:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="905d9fe2-83e2-40f0-be61-98e57a39d165" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="NEXUS.Api.Tests.Unit.WorkflowDefinitionValidatorTests.Rejects_final_outgoing_self_and_unknown_rule_types" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="cd52a519-9413-9e74-06df-d697414a9004">
+      <Execution id="0a34ce22-24c8-4807-8cdf-a8dc422b142b" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Unit.WorkflowDefinitionValidatorTests" name="Rejects_final_outgoing_self_and_unknown_rule_types" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Unit.WorkflowDefinitionValidatorTests.Accepts_valid_definition_with_typed_rules" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="155fe486-ed1c-9bf9-1e74-57126bda0c0f">
+      <Execution id="814d83cd-b419-4272-8996-1d243ef08c74" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Unit.WorkflowDefinitionValidatorTests" name="Accepts_valid_definition_with_typed_rules" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Unit.WorkflowDefinitionValidatorTests.Rejects_malformed_json_and_non_object_root" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="129d2833-c92f-7f4a-951f-d363266528b0">
+      <Execution id="905d9fe2-83e2-40f0-be61-98e57a39d165" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Unit.WorkflowDefinitionValidatorTests" name="Rejects_malformed_json_and_non_object_root" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Unit.WorkflowDefinitionValidatorTests.Configures_history_as_non_cascading_and_instances_with_concurrency" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="2b0dcca4-8b93-b5e3-3921-d7a05061fa59">
+      <Execution id="a719e3a8-d96b-44bf-8391-0beaebbfbeb9" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Unit.WorkflowDefinitionValidatorTests" name="Configures_history_as_non_cascading_and_instances_with_concurrency" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Unit.WorkflowDefinitionValidatorTests.Rejects_missing_or_multiple_initial_states" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="f8e1639a-985f-69ad-f28c-0743f476e8b8">
+      <Execution id="24225c2a-4e42-4bfd-aafc-2e4c46138cc0" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Unit.WorkflowDefinitionValidatorTests" name="Rejects_missing_or_multiple_initial_states" />
+    </UnitTest>
+    <UnitTest name="NEXUS.Api.Tests.Unit.WorkflowDefinitionValidatorTests.Rejects_duplicate_codes_and_duplicate_edges" storage="c:\projects\pmo\apps\api\tests\nexus.api.tests\bin\debug\net10.0\nexus.api.tests.dll" id="1f7a4803-ec7d-2d97-b54a-f1ed39fc245d">
+      <Execution id="77d7336e-e99c-45b7-92d7-5e7093723ac8" />
+      <TestMethod codeBase="C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="NEXUS.Api.Tests.Unit.WorkflowDefinitionValidatorTests" name="Rejects_duplicate_codes_and_duplicate_edges" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="155fe486-ed1c-9bf9-1e74-57126bda0c0f" executionId="814d83cd-b419-4272-8996-1d243ef08c74" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="2b0dcca4-8b93-b5e3-3921-d7a05061fa59" executionId="a719e3a8-d96b-44bf-8391-0beaebbfbeb9" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="cd52a519-9413-9e74-06df-d697414a9004" executionId="0a34ce22-24c8-4807-8cdf-a8dc422b142b" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1f7a4803-ec7d-2d97-b54a-f1ed39fc245d" executionId="77d7336e-e99c-45b7-92d7-5e7093723ac8" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="f8e1639a-985f-69ad-f28c-0743f476e8b8" executionId="24225c2a-4e42-4bfd-aafc-2e4c46138cc0" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="129d2833-c92f-7f4a-951f-d363266528b0" executionId="905d9fe2-83e2-40f0-be61-98e57a39d165" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Completed">
+    <Counters total="6" executed="6" passed="6" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.0.0+e341b939fe (64-bit .NET 10.0.10)&#xD;
+[xUnit.net 00:00:00.11]   Discovering: NEXUS.Api.Tests&#xD;
+[xUnit.net 00:00:00.22]   Discovered:  NEXUS.Api.Tests&#xD;
+[xUnit.net 00:00:00.25]   Starting:    NEXUS.Api.Tests&#xD;
+[xUnit.net 00:00:03.14]   Finished:    NEXUS.Api.Tests&#xD;
+</StdOut>
+    </Output>
+  </ResultSummary>
+</TestRun>

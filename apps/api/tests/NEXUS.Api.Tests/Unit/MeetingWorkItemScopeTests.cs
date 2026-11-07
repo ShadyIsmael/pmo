@@ -5,6 +5,7 @@ using NEXUS.Api.Management;
 using NEXUS.Modules.Audit.Application;
 using NEXUS.Modules.Meetings.Application;
 using NEXUS.Modules.Meetings.Domain;
+using NEXUS.Api.Tests.Testing;
 using NEXUS.Persistence;
 using NEXUS.SharedKernel;
 using NEXUS.SharedKernel.Management;
@@ -21,7 +22,7 @@ public sealed class MeetingWorkItemScopeTests
     {
         var projectAId = Guid.NewGuid();
         var projectBId = Guid.NewGuid();
-        var meeting = new Meeting { TenantId = TenantId, ProjectId = projectAId, Title = "Project A meeting" };
+        var meeting = new Meeting { TenantId = TenantId, ProjectId = projectAId, Title = "Project A meeting", Status = MeetingStatuses.Completed };
         var minutes = new MeetingMinutes { TenantId = TenantId, MeetingId = meeting.Id };
         var workItemId = Guid.NewGuid();
         await using var db = CreateDb(meeting, minutes);
@@ -41,7 +42,7 @@ public sealed class MeetingWorkItemScopeTests
     {
         var projectAId = Guid.NewGuid();
         var projectBId = Guid.NewGuid();
-        var meeting = new Meeting { TenantId = TenantId, ProjectId = projectAId, Title = "Project A meeting" };
+        var meeting = new Meeting { TenantId = TenantId, ProjectId = projectAId, Title = "Project A meeting", Status = MeetingStatuses.Completed };
         var minutes = new MeetingMinutes { TenantId = TenantId, MeetingId = meeting.Id };
         var workItemId = Guid.NewGuid();
         var link = new MeetingMinutesWorkItemLink { TenantId = TenantId, MeetingMinutesId = minutes.Id, WorkItemId = workItemId };
@@ -91,6 +92,7 @@ public sealed class MeetingWorkItemScopeTests
             Mock.Of<IHttpContextAccessor>(),
             Mock.Of<IMeetingMinutesAttachmentStorage>(),
             Mock.Of<IMeetingMinutesAttachmentPolicy>(),
-            management);
+            management,
+            new NoOpMeetingNotificationPublisher());
     }
 }

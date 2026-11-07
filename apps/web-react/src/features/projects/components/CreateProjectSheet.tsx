@@ -2,7 +2,6 @@ import * as React from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useNavigate } from "react-router-dom";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { Button } from "@components/ui/Button";
 import { Input } from "@components/ui/Input";
@@ -13,14 +12,21 @@ import { SearchableSelect } from "@components/ui/SearchableSelect";
 import { SideSheet, SideSheetBody, SideSheetFooter } from "@components/ui/SideSheet";
 import { useI18n } from "@i18n/messages";
 import { useCreateProject, useUpdateProject, type ProjectDto, type CreateProjectDto, type UpdateProjectDto } from "../api/projects";
-import { toUserSelectOptions, useUserLookup } from "../lib/project-lookups";
+import {
+  toUserSelectOptions,
+  useDepartmentLookup,
+  usePortfolioLookup,
+  useProjectCurrencyLookup,
+  useProjectWorkflowUserLookup,
+  useProjectManagerCandidateLookup,
+  useProgramLookup,
+} from "../lib/project-lookups";
 import { useProjectEnumLabels } from "../lib/project-labels";
-import { useCurrencies } from "@features/administration/api/admin";
-import { usePortfolios, usePrograms } from "@features/delivery/api/delivery";
-import { useOrganizationUnits } from "@features/organization/api/organization";
 import { PROJECT_HEALTHS, PROJECT_PRIORITIES, PROJECT_STATUSES } from "@lib/enums";
-import { toDateInput } from "@lib/utils";
-import { ApiError } from "@api/client";
+import { cn, toDateInput } from "@lib/utils";
+import { ApiError, getApiFieldError } from "@api/client";
+import { useAuth } from "@auth/AuthProvider";
+import { hasPermission, Permissions } from "@lib/permissions";
 
 const projectSchema = z
   .object({
@@ -43,6 +49,10 @@ const projectSchema = z
       (value) => (value === "" || value === null || value === undefined ? undefined : value),
       z.coerce.number().min(0, "Budget must be non-negative").optional()
     ),
+    initialAnnualBudgetAmount: z.preprocess(
+      (value) => (value === "" || value === null || value === undefined ? undefined : value),
+      z.coerce.number().optional()
+    ),
     businessCase: z.string().trim().optional(),
     notes: z.string().trim().optional(),
   })
@@ -62,6 +72,22 @@ interface ProjectSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   project?: ProjectDto | null;
+  onCreated?: (publicId: string) => void;
+  embedded?: boolean;
+  onHandover?: () => void;
+  canInitiateHandover?: boolean;
+}
+
+function ProjectSheetBody({ embedded, className, children }: { embedded: boolean; className?: string; children: React.ReactNode }) {
+  return embedded
+    ? <div className={cn("space-y-5 p-4", className)}>{children}</div>
+    : <SideSheetBody className={className}>{children}</SideSheetBody>;
+}
+
+function ProjectSheetFooter({ embedded, className, children }: { embedded: boolean; className?: string; children: React.ReactNode }) {
+  return embedded
+    ? <div className={cn("flex shrink-0 flex-col-reverse gap-2 border-t bg-background px-4 py-3 sm:flex-row sm:justify-end", className)}>{children}</div>
+    : <SideSheetFooter className={className}>{children}</SideSheetFooter>;
 }
 
 function generateAutoProjectCode() {
@@ -86,6 +112,7 @@ function createDefaultValues(defaultCurrency = ""): ProjectFormData {
     endDate: "",
     currency: defaultCurrency,
     budget: undefined,
+    initialAnnualBudgetAmount: undefined,
     businessCase: "",
     notes: "",
   };
@@ -108,46 +135,49 @@ function toEditDefaultValues(project: ProjectDto): ProjectFormData {
     startDate: toDateInput(project.startDate),
     endDate: toDateInput(project.endDate),
     currency: project.currency || "",
-    budget: project.budget ?? undefined,
+    // The lifetime ceiling is not editable after Project creation. Changes go through an approved CR.
+    budget: undefined,
+    initialAnnualBudgetAmount: undefined,
     businessCase: project.businessCase ?? "",
     notes: project.notes ?? "",
   };
 }
 
-function FieldError({ message }: { message?: string }) {
+function FieldError({ id, message }: { id?: string; message?: string }) {
   if (!message) return null;
-  return <p className="text-xs text-destructive">{message}</p>;
+  return <p id={id} role="alert" className="text-xs text-destructive">{message}</p>;
 }
 
-export function ProjectSheet({ open, onOpenChange, project }: ProjectSheetProps) {
-  const { t } = useI18n();
-  const navigate = useNavigate();
+export function ProjectSheet({ open, onOpenChange, project, onCreated, embedded = false, onHandover, canInitiateHandover = false }: ProjectSheetProps) {
+  const { t, formatCurrency } = useI18n();
+  const { user } = useAuth();
   const isEdit = !!project;
   const createMutation = useCreateProject();
   const updateMutation = useUpdateProject(project?.publicId ?? "");
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
   const isSubmittingRef = React.useRef(false);
 
-  const { data: userLookup, isLoading: usersLoading } = useUserLookup(undefined, open);
-  const { data: projectManagers, isLoading: managersLoading } = useUserLookup("project.manager", open);
-  const { data: portfolioData } = usePortfolios(open);
-  const { data: programData } = usePrograms(open);
-  const { data: departmentUnits } = useOrganizationUnits(open);
-  const { data: currencies } = useCurrencies(open);
+  const { data: userLookup, isLoading: usersLoading, error: usersError } = useProjectWorkflowUserLookup(open);
+  const { data: projectManagers, isLoading: managersLoading, isFetching: managersFetching, error: managersError, refetch: refetchProjectManagers } = useProjectManagerCandidateLookup(open && !isEdit);
+  const { data: portfolioData, error: portfoliosError } = usePortfolioLookup(open);
+  const { data: programData, error: programsError } = useProgramLookup(open);
+  const { data: departmentUnits, error: departmentsError } = useDepartmentLookup(open);
+  const { data: currencies, error: currenciesError } = useProjectCurrencyLookup(open);
 
   const userOptions = toUserSelectOptions(userLookup ?? []);
   const projectManagerOptions = toUserSelectOptions(projectManagers ?? []);
+  const managersForbidden = managersError instanceof ApiError && managersError.status === 403;
   const portfolioOptions = (portfolioData?.items ?? []).map((p) => ({ value: p.id, label: p.name }));
   const programOptions = (programData?.items ?? []).map((p) => ({ value: p.id, label: p.name }));
   const portfolioCurrencyMap = React.useMemo<Record<string, string>>(() => Object.fromEntries((portfolioData?.items ?? []).map((p) => [p.id, p.currency ?? ""])), [portfolioData]);
   const programLookupMap = React.useMemo(() => Object.fromEntries((programData?.items ?? []).map((p) => [p.id, p])), [programData]);
   const departmentOptions = (departmentUnits ?? []).map((d) => ({ value: d.id, label: d.name }));
-  const baseCurrencyCode = currencies?.find((currency) => currency.isBase)?.code ?? currencies?.[0]?.code ?? "";
+  const baseCurrencyCode = currencies?.find((currency) => currency.isBase)?.code ?? "";
   const currentProjectCurrency = project?.currency ?? "";
   const currencyOptions = React.useMemo(() => {
     const options = currencies ?? [];
     if (currentProjectCurrency && !options.some((currency) => currency.code === currentProjectCurrency)) {
-      return [{ id: currentProjectCurrency, code: currentProjectCurrency, name: currentProjectCurrency, symbol: "", exchangeRate: 1, isBase: false }, ...options];
+      return [{ id: currentProjectCurrency, code: currentProjectCurrency, name: currentProjectCurrency, symbol: "", isBase: false }, ...options];
     }
     return options;
   }, [currencies, currentProjectCurrency]);
@@ -171,9 +201,19 @@ export function ProjectSheet({ open, onOpenChange, project }: ProjectSheetProps)
 
   const onSubmit = async (data: ProjectFormData) => {
     if (isSubmittingRef.current) return;
-    if (!isEdit && !data.projectManagerId) {
-      form.setError("projectManagerId", { type: "manual", message: t("projects.projectManagerRequired") });
-      return;
+    if (!isEdit && data.initialAnnualBudgetAmount !== undefined) {
+      if (data.initialAnnualBudgetAmount < 0) {
+        form.setError("initialAnnualBudgetAmount", { type: "manual", message: t("projects.initialAnnualBudgetMustBeNonNegative") });
+        return;
+      }
+      if (data.budget === undefined) {
+        form.setError("initialAnnualBudgetAmount", { type: "manual", message: t("projects.initialAnnualBudgetRequiresCeiling") });
+        return;
+      }
+      if (data.initialAnnualBudgetAmount > data.budget) {
+        form.setError("initialAnnualBudgetAmount", { type: "manual", message: t("projects.initialAnnualBudgetExceedsCeiling") });
+        return;
+      }
     }
     isSubmittingRef.current = true;
     setErrorMessage(null);
@@ -190,7 +230,6 @@ export function ProjectSheet({ open, onOpenChange, project }: ProjectSheetProps)
         endDate: data.endDate || undefined,
         code: data.code?.trim() || undefined,
         currency: data.currency,
-        budget: data.budget === undefined || data.budget === null ? undefined : Number(data.budget),
         businessCase: data.businessCase || undefined,
         notes: data.notes || undefined,
       };
@@ -202,7 +241,6 @@ export function ProjectSheet({ open, onOpenChange, project }: ProjectSheetProps)
           name: data.name,
           status: data.status,
           priority: data.priority,
-          projectManagerId: data.projectManagerId || undefined,
           confidenceLevel: data.confidenceLevel,
         };
         await updateMutation.mutateAsync(payload);
@@ -212,12 +250,14 @@ export function ProjectSheet({ open, onOpenChange, project }: ProjectSheetProps)
           name: data.name,
           priority: data.priority,
           projectManagerId: data.projectManagerId || undefined,
+          budget: data.budget === undefined || data.budget === null ? undefined : Number(data.budget),
+          initialAnnualBudgetAmount: data.initialAnnualBudgetAmount === undefined ? undefined : Number(data.initialAnnualBudgetAmount),
         };
         const result = await createMutation.mutateAsync(payload);
         if (result?.publicId) {
+          onCreated?.(result.publicId);
           onOpenChange(false);
           form.reset();
-          navigate(`/projects/${result.publicId}`);
           return;
         }
       }
@@ -225,13 +265,27 @@ export function ProjectSheet({ open, onOpenChange, project }: ProjectSheetProps)
       onOpenChange(false);
       form.reset();
     } catch (err) {
-      const apiMessage = err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Failed to save project";
-      const normalized = apiMessage.toLowerCase();
-      if (normalized.includes("code") && (normalized.includes("exist") || normalized.includes("duplicate") || normalized.includes("already"))) {
-        form.setError("code", { type: "server", message: apiMessage });
-      } else {
-        setErrorMessage(apiMessage);
+      const apiMessage = err instanceof ApiError ? err.message : t("projects.saveFailed");
+      const apiFields = [
+        "code",
+        "name",
+        "projectManagerId",
+        "startDate",
+        "endDate",
+        "currency",
+        "budget",
+        "initialAnnualBudgetAmount",
+      ] as const;
+      let hasFieldErrors = false;
+      if (err instanceof ApiError) {
+        for (const field of apiFields) {
+          const fieldMessage = getApiFieldError(err, field);
+          if (!fieldMessage) continue;
+          form.setError(field, { type: "server", message: fieldMessage });
+          hasFieldErrors = true;
+        }
       }
+      setErrorMessage(hasFieldErrors ? null : apiMessage);
     } finally {
       isSubmittingRef.current = false;
     }
@@ -245,20 +299,19 @@ export function ProjectSheet({ open, onOpenChange, project }: ProjectSheetProps)
 
   const isSubmitting = createMutation.isPending || updateMutation.isPending;
 
-  return (
-    <SideSheet
-      open={open}
-      onOpenChange={onOpenChange}
-      title={isEdit ? t("projects.edit") : t("projects.create")}
-      description={isEdit ? t("projects.editDescription") : t("projects.createDescription")}
-      size="lg"
-    >
-      <form onSubmit={form.handleSubmit(onSubmit as never)} className="flex min-h-0 flex-1 flex-col">
-        <SideSheetBody className="space-y-5">
+  const formContent = (
+    <form onSubmit={form.handleSubmit(onSubmit as never)} className="flex min-h-0 flex-1 flex-col">
+        <ProjectSheetBody embedded={embedded} className="space-y-5">
           {errorMessage && (
-            <div className="flex items-center gap-2 rounded-md border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
+            <div role="alert" className="flex items-center gap-2 rounded-md border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
               <AlertCircle className="h-4 w-4 shrink-0" />
               {errorMessage}
+            </div>
+          )}
+          {open && (usersError || (!isEdit && managersError) || portfoliosError || programsError || departmentsError || currenciesError) && (
+            <div role="alert" className="rounded-md border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
+              {[usersError, managersError, portfoliosError, programsError, departmentsError, currenciesError]
+                .find((error): error is Error => error instanceof Error)?.message ?? t("projects.saveFailed")}
             </div>
           )}
 
@@ -271,13 +324,13 @@ export function ProjectSheet({ open, onOpenChange, project }: ProjectSheetProps)
             <div className="grid gap-5 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label>{t("projects.code")}</Label>
-                <Input placeholder={t("projects.code")} value={form.watch("code") ?? ""} onChange={(e) => form.setValue("code", e.target.value)} disabled={!isEdit} readOnly={!isEdit} />
-                <FieldError message={form.formState.errors.code?.message} />
+                <Input placeholder={t("projects.code")} value={form.watch("code") ?? ""} onChange={(e) => form.setValue("code", e.target.value)} disabled={!isEdit} readOnly={!isEdit} aria-invalid={Boolean(form.formState.errors.code)} aria-describedby={form.formState.errors.code ? "project-code-error" : undefined} />
+                <FieldError id="project-code-error" message={form.formState.errors.code?.message} />
               </div>
               <div className="space-y-1.5">
                 <Label>{t("projects.name")} <span className="text-destructive">*</span></Label>
-                <Input placeholder={t("projects.name")} value={form.watch("name") ?? ""} onChange={(e) => form.setValue("name", e.target.value, { shouldValidate: true })} />
-                <FieldError message={form.formState.errors.name?.message} />
+                <Input placeholder={t("projects.name")} value={form.watch("name") ?? ""} onChange={(e) => form.setValue("name", e.target.value, { shouldValidate: true })} aria-invalid={Boolean(form.formState.errors.name)} aria-describedby={form.formState.errors.name ? "project-name-error" : undefined} />
+                <FieldError id="project-name-error" message={form.formState.errors.name?.message} />
               </div>
             </div>
 
@@ -335,9 +388,48 @@ export function ProjectSheet({ open, onOpenChange, project }: ProjectSheetProps)
 
             <div className="grid gap-5 sm:grid-cols-2">
               <div className="space-y-1.5">
-                <Label>{t("projects.projectManager")} {!isEdit && <span className="text-destructive">*</span>}</Label>
-                <SearchableSelect options={projectManagerOptions} value={form.watch("projectManagerId") ?? ""} onValueChange={(v) => form.setValue("projectManagerId", v)} placeholder={t("projects.projectManager")} searchPlaceholder={t("projects.projectManager")} loading={managersLoading} emptyText={t("common.noResults")} />
-                <FieldError message={form.formState.errors.projectManagerId?.message} />
+                <Label>{t("projects.projectManager")}</Label>
+                {isEdit && project ? (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        aria-label={t("projects.currentProjectManager")}
+                        value={project.projectManagerName || (project.projectManagerId ? t("common.notAvailable") : t("managerHandover.notAssigned"))}
+                        readOnly
+                      />
+                      {canInitiateHandover && onHandover ? (
+                        <Button type="button" variant="outline" className="shrink-0" onClick={onHandover}>
+                          {project.projectManagerId ? t("projects.handover") : t("managerHandover.initialAssignment")}
+                        </Button>
+                      ) : null}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {project.projectManagerId ? t("managerHandover.managerChangeViaHandover") : t("managerHandover.setInitialManager")}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    {managersError ? (
+                      <div role="alert" className="space-y-2 rounded-md border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
+                        <p>{managersForbidden ? t("projects.managerCandidatesForbidden") : t("common.errorLoading")}</p>
+                        {!managersForbidden ? (
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-xs">{t("common.notAvailable")}</span>
+                            <Button type="button" variant="outline" size="sm" onClick={() => void refetchProjectManagers()} disabled={managersFetching}>
+                              {managersFetching ? t("common.loading") : t("common.retry")}
+                            </Button>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <>
+                        <SearchableSelect options={projectManagerOptions} value={form.watch("projectManagerId") ?? ""} onValueChange={(v) => form.setValue("projectManagerId", v)} placeholder={t("projects.projectManager")} searchPlaceholder={t("projects.projectManager")} loading={managersLoading} emptyText={t("projects.noEligibleProjectManagers")} />
+                        {!managersLoading && projectManagerOptions.length === 0 ? <p className="text-xs text-muted-foreground">{t("projects.initialManagerResourceIndependence")}</p> : null}
+                        <p className="text-xs text-muted-foreground">{t("managerHandover.setInitialManager")}</p>
+                      </>
+                    )}
+                  </>
+                )}
               </div>
               <div className="space-y-1.5">
                 <Label>{t("projects.sponsor")}</Label>
@@ -399,12 +491,13 @@ export function ProjectSheet({ open, onOpenChange, project }: ProjectSheetProps)
             <div className="grid gap-5 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label>{t("projects.plannedStartDate")}</Label>
-                <Input type="date" value={form.watch("startDate") ?? ""} onChange={(e) => form.setValue("startDate", e.target.value)} />
+                <Input type="date" value={form.watch("startDate") ?? ""} onChange={(e) => form.setValue("startDate", e.target.value)} aria-invalid={Boolean(form.formState.errors.startDate)} aria-describedby={form.formState.errors.startDate ? "project-start-date-error" : undefined} />
+                <FieldError id="project-start-date-error" message={form.formState.errors.startDate?.message} />
               </div>
               <div className="space-y-1.5">
                 <Label>{t("projects.plannedEndDate")}</Label>
-                <Input type="date" value={form.watch("endDate") ?? ""} onChange={(e) => form.setValue("endDate", e.target.value)} />
-                <FieldError message={form.formState.errors.endDate?.message} />
+                <Input type="date" value={form.watch("endDate") ?? ""} onChange={(e) => form.setValue("endDate", e.target.value)} aria-invalid={Boolean(form.formState.errors.endDate)} aria-describedby={form.formState.errors.endDate ? "project-end-date-error" : undefined} />
+                <FieldError id="project-end-date-error" message={form.formState.errors.endDate?.message} />
               </div>
             </div>
           </section>
@@ -419,21 +512,44 @@ export function ProjectSheet({ open, onOpenChange, project }: ProjectSheetProps)
               <div className="space-y-1.5">
                 <Label>{t("projects.currency")}</Label>
                 <Select value={form.watch("currency") ?? ""} onValueChange={(v) => form.setValue("currency", v)}>
-                  <SelectTrigger><SelectValue placeholder={t("common.select")} /></SelectTrigger>
+                  <SelectTrigger aria-invalid={Boolean(form.formState.errors.currency)} aria-describedby={form.formState.errors.currency ? "project-currency-error" : undefined}><SelectValue placeholder={t("common.select")} /></SelectTrigger>
                   <SelectContent>
                     {currencyOptions.map((currency) => (
                       <SelectItem key={currency.id} value={currency.code}>{currency.code} — {currency.name}{currency.symbol ? ` (${currency.symbol})` : ""}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                <FieldError message={form.formState.errors.currency?.message} />
+                <FieldError id="project-currency-error" message={form.formState.errors.currency?.message} />
               </div>
-              <div className="space-y-1.5">
-                <Label>{t("projects.budgetCeiling")}</Label>
-                <Input type="number" step="0.01" min="0" placeholder="0" value={form.watch("budget") ?? ""} onChange={(event) => form.setValue("budget", event.target.value === "" ? undefined : Number(event.target.value) as unknown as number)} disabled={isEdit} readOnly={isEdit} />
-                <p className="text-xs text-muted-foreground">{t("projects.budgetCeilingHint")}</p>
-              </div>
+              {isEdit ? (
+                <div className="space-y-1.5">
+                  <Label>{t("projects.projectLifetimeCeiling")}</Label>
+                  <p className="rounded-md border bg-muted/30 px-3 py-2 text-sm tabular-nums" aria-readonly="true">
+                    {project?.budget == null ? "—" : formatCurrency(project.budget, project.currency)}
+                  </p>
+                  <p className="text-xs text-muted-foreground">{t("projects.budgetCeilingHint")}</p>
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  <Label>{t("projects.projectLifetimeCeiling")}</Label>
+                  <Input type="number" step="0.01" min="0" placeholder="0" value={form.watch("budget") ?? ""} onChange={(event) => form.setValue("budget", event.target.value === "" ? undefined : Number(event.target.value) as unknown as number)} aria-invalid={Boolean(form.formState.errors.budget)} aria-describedby={form.formState.errors.budget ? "project-budget-error" : undefined} />
+                  <FieldError id="project-budget-error" message={form.formState.errors.budget?.message} />
+                  <p className="text-xs text-muted-foreground">{t("projects.budgetCeilingHint")}</p>
+                </div>
+              )}
             </div>
+            {!isEdit && hasPermission(user?.permissions ?? [], Permissions.ProjectAnnualBudget.Create) ? <div className="rounded-md border p-4">
+              <div className="space-y-1">
+                <h4 className="text-sm font-medium">{t("projects.initialAnnualBudgetTitle")}</h4>
+                <p className="text-xs text-muted-foreground">{t("projects.initialAnnualBudgetDescription")}</p>
+              </div>
+              <div className="mt-3 max-w-sm space-y-1.5">
+                <Label htmlFor="project-initial-annual-budget">{t("projects.annualBudgetFunding")}</Label>
+                <Input id="project-initial-annual-budget" type="number" min="0" step="0.0001" value={form.watch("initialAnnualBudgetAmount") ?? ""} onChange={event => form.setValue("initialAnnualBudgetAmount", event.target.value === "" ? undefined : Number(event.target.value), { shouldValidate: true })} aria-invalid={Boolean(form.formState.errors.initialAnnualBudgetAmount)} aria-describedby={form.formState.errors.initialAnnualBudgetAmount ? "project-initial-budget-error" : undefined} />
+                <FieldError id="project-initial-budget-error" message={form.formState.errors.initialAnnualBudgetAmount?.message} />
+                <p className="text-xs text-muted-foreground">{t("projects.initialAnnualBudgetHint", { currency: form.watch("currency") || "" })}</p>
+              </div>
+            </div> : null}
           </section>
 
           <section className="space-y-4">
@@ -454,15 +570,29 @@ export function ProjectSheet({ open, onOpenChange, project }: ProjectSheetProps)
               </div>
             )}
           </section>
-        </SideSheetBody>
+        </ProjectSheetBody>
 
-        <SideSheetFooter>
+        <ProjectSheetFooter embedded={embedded}>
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>{t("common.cancel")}</Button>
           <Button type="submit" disabled={isSubmitting}>
             {isSubmitting ? (<><Loader2 className="mr-2 h-4 w-4 animate-spin" />{isEdit ? t("projects.updating") : t("common.creating")}</>) : isEdit ? t("projects.update") : t("projects.create")}
           </Button>
-        </SideSheetFooter>
+        </ProjectSheetFooter>
       </form>
+  );
+
+  if (embedded)
+    return <div className="overflow-hidden rounded-lg border border-border bg-card">{formContent}</div>;
+
+  return (
+    <SideSheet
+      open={open}
+      onOpenChange={onOpenChange}
+      title={isEdit ? t("projects.edit") : t("projects.create")}
+      description={isEdit ? t("projects.editDescription") : t("projects.createDescription")}
+      size="lg"
+    >
+      {formContent}
     </SideSheet>
   );
 }
@@ -472,13 +602,13 @@ export interface LegacyProjectSheetValues {
   description: string;
 }
 
-export function CreateProjectSheet({ open, onOpenChange, mode, initialValues, onSubmit }: { open: boolean; onOpenChange: (open: boolean) => void; mode?: "create" | "edit"; initialValues?: Partial<LegacyProjectSheetValues>; onSubmit?: (values: LegacyProjectSheetValues) => void | Promise<void> }) {
+export function CreateProjectSheet({ open, onOpenChange, mode, initialValues, onSubmit, onCreated }: { open: boolean; onOpenChange: (open: boolean) => void; mode?: "create" | "edit"; initialValues?: Partial<LegacyProjectSheetValues>; onSubmit?: (values: LegacyProjectSheetValues) => void | Promise<void>; onCreated?: (publicId: string) => void }) {
   // Legacy callers (e.g. ProjectHeader edit) use mode/initialValues/onSubmit.
   // Render a lightweight legacy modal for those, otherwise the full golden sheet.
   if (mode || initialValues || onSubmit) {
     return <LegacyCreateProjectSheet open={open} onOpenChange={onOpenChange} mode={mode} initialValues={initialValues} onSubmit={onSubmit} />;
   }
-  return <ProjectSheet open={open} onOpenChange={onOpenChange} />;
+  return <ProjectSheet open={open} onOpenChange={onOpenChange} onCreated={onCreated} />;
 }
 
 function LegacyCreateProjectSheet({ open, onOpenChange, initialValues, onSubmit }: { open: boolean; onOpenChange: (open: boolean) => void; mode?: "create" | "edit"; initialValues?: Partial<LegacyProjectSheetValues>; onSubmit?: (values: LegacyProjectSheetValues) => void | Promise<void> }) {
@@ -524,6 +654,6 @@ function LegacyCreateProjectSheet({ open, onOpenChange, initialValues, onSubmit 
   );
 }
 
-export function EditProjectSheet({ open, onOpenChange, project }: { open: boolean; onOpenChange: (open: boolean) => void; project: ProjectDto | null }) {
-  return <ProjectSheet open={open} onOpenChange={onOpenChange} project={project} />;
+export function EditProjectSheet({ open, onOpenChange, project, onHandover, canInitiateHandover }: { open: boolean; onOpenChange: (open: boolean) => void; project: ProjectDto | null; onHandover?: () => void; canInitiateHandover?: boolean }) {
+  return <ProjectSheet open={open} onOpenChange={onOpenChange} project={project} onHandover={onHandover} canInitiateHandover={canInitiateHandover} />;
 }

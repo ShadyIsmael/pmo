@@ -34,6 +34,14 @@ public class VendorController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>Returns minimal active Vendor options for Resource forms.</summary>
+    [HttpGet("workflow-lookups/resource-options")]
+    [Authorize(Policy = "WorkflowLookup.Resource.Vendors")]
+    public async Task<IActionResult> GetResourceVendorOptions([FromQuery] Guid? resourceId, CancellationToken cancellationToken)
+    {
+        return Ok(await _vendorService.GetResourceVendorOptionsAsync(resourceId, cancellationToken));
+    }
+
     [HttpPost]
     [Authorize(Policy = "Resource.Create")]
     public async Task<IActionResult> Create([FromBody] CreateVendorDto dto, CancellationToken cancellationToken)

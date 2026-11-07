@@ -41,7 +41,7 @@ function renderGlobalCenter() {
 }
 
 function ProjectOutlet() {
-  return <Outlet context={{ projectId: "project-42" }} />;
+  return <Outlet context={{ projectId: "project-42", project: { id: "project-42" } }} />;
 }
 
 function renderProjectCenter() {

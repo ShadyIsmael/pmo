@@ -20,8 +20,7 @@ public class TeamConfiguration : IEntityTypeConfiguration<Team>
         builder.HasIndex(t => t.IsActive);
 
         // Backstops the TEAM-000001 code generator against concurrent creates,
-        // mirroring the Vendor code convention. Mirrored on Resource.TeamId so the
-        // legacy single-team pointer keeps a referential relationship.
+        // mirroring the Vendor code convention.
         builder.HasIndex(t => new { t.TenantId, t.Code }).IsUnique().HasFilter("[Code] IS NOT NULL");
         builder.HasOne(t => t.Department)
             .WithMany(d => d.Teams)

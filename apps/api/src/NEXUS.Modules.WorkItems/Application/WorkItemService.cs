@@ -67,7 +67,7 @@ public sealed class WorkItemService : IWorkItemService
             return Result<IReadOnlyList<WorkItemAssigneeDto>>.Failure(Error.NotFound("Project not found"));
 
         var allowedProjectIds = _managementContext.Current?.Scope.ProjectIds;
-        if (allowedProjectIds is not null && !allowedProjectIds.Contains(projectId))
+        if (allowedProjectIds is null || !allowedProjectIds.Contains(projectId))
             return Result<IReadOnlyList<WorkItemAssigneeDto>>.Failure(Error.Forbidden("The project is outside the current management scope"));
 
         var candidates = await _assigneeLookup.GetEligibleAsync(projectId, cancellationToken);
@@ -96,7 +96,7 @@ public sealed class WorkItemService : IWorkItemService
     {
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 100);
-        var query = ApplyFilters(ScopedWorkItems(), projectId, status, type, priority, search, assignedResourceId, assignedTeamId, reporterId, dueDateFrom, dueDateTo, overdue, unassigned, highPriority);
+        var query = ApplyFilters(ScopedWorkItems(), projectId, status, type, priority, search, assignedResourceId, assignedTeamId, reporterId, dueDateFrom, dueDateTo, overdue, unassigned, highPriority, await GetTerminalStatusCodesAsync(cancellationToken), cancellationToken);
         if (legacyAssigneeUserId.HasValue)
         {
             var legacyResourceIds = (await _resourceLookup.GetDetailsByUserIdsAsync(new[] { legacyAssigneeUserId.Value }, cancellationToken)).Keys.ToArray();
@@ -125,7 +125,8 @@ public sealed class WorkItemService : IWorkItemService
 
     public async Task<WorkItemInsightsDto> GetInsightsAsync(Guid? projectId = null, string? status = null, string? type = null, string? priority = null, string? search = null, Guid? assignedResourceId = null, Guid? assignedTeamId = null, Guid? legacyAssigneeUserId = null, Guid? reporterId = null, DateTime? dueDateFrom = null, DateTime? dueDateTo = null, bool? overdue = null, bool? unassigned = null, bool? highPriority = null, CancellationToken cancellationToken = default)
     {
-        var query = ApplyFilters(ScopedWorkItems().AsNoTracking(), projectId, status, type, priority, search, assignedResourceId, assignedTeamId, reporterId, dueDateFrom, dueDateTo, overdue, unassigned, highPriority);
+        var terminalStatuses = await GetTerminalStatusCodesAsync(cancellationToken);
+        var query = ApplyFilters(ScopedWorkItems().AsNoTracking(), projectId, status, type, priority, search, assignedResourceId, assignedTeamId, reporterId, dueDateFrom, dueDateTo, overdue, unassigned, highPriority, terminalStatuses, cancellationToken);
         if (legacyAssigneeUserId.HasValue)
         {
             var legacyResourceIds = (await _resourceLookup.GetDetailsByUserIdsAsync(new[] { legacyAssigneeUserId.Value }, cancellationToken)).Keys.ToArray();
@@ -134,7 +135,6 @@ public sealed class WorkItemService : IWorkItemService
         var now = DateTime.UtcNow;
         var today = now.Date;
         var weekEnd = today.AddDays(7);
-        var terminalStatuses = TerminalStatusCodes;
         return new WorkItemInsightsDto
         {
             Total = await query.CountAsync(cancellationToken),
@@ -152,11 +152,11 @@ public sealed class WorkItemService : IWorkItemService
         var query = _context.Set<WorkItem>().AsQueryable();
         var projectIds = _managementContext.Current?.Scope.ProjectIds?.ToArray();
         return projectIds is null
-            ? query
+            ? query.Where(_ => false)
             : query.Where(item => item.ProjectId.HasValue && projectIds.Contains(item.ProjectId.Value));
     }
 
-    private static IQueryable<WorkItem> ApplyFilters(IQueryable<WorkItem> query, Guid? projectId, string? status, string? type, string? priority, string? search, Guid? assignedResourceId, Guid? assignedTeamId, Guid? reporterId, DateTime? dueDateFrom, DateTime? dueDateTo, bool? overdue, bool? unassigned, bool? highPriority)
+    private static IQueryable<WorkItem> ApplyFilters(IQueryable<WorkItem> query, Guid? projectId, string? status, string? type, string? priority, string? search, Guid? assignedResourceId, Guid? assignedTeamId, Guid? reporterId, DateTime? dueDateFrom, DateTime? dueDateTo, bool? overdue, bool? unassigned, bool? highPriority, string[] terminalStatusCodes, CancellationToken cancellationToken)
     {
         if (projectId.HasValue) query = query.Where(item => item.ProjectId == projectId.Value);
         if (!string.IsNullOrWhiteSpace(status)) query = query.Where(item => item.Status == status);
@@ -185,7 +185,9 @@ public sealed class WorkItemService : IWorkItemService
         if (overdue == true)
         {
             var now = DateTime.UtcNow;
-            query = query.Where(item => !TerminalStatusCodes.Contains(item.Status) && (item.Type == WorkItemType.Issue.ToString() ? item.TargetResolutionDate ?? item.DueDate : item.DueDate) < now);
+            // Terminal detection comes from the published workflow IsFinal states
+            // passed in by GetTerminalStatusCodesAsync, not from hardcoded codes.
+            query = query.Where(item => !terminalStatusCodes.Contains(item.Status) && (item.Type == WorkItemType.Issue.ToString() ? item.TargetResolutionDate ?? item.DueDate : item.DueDate) < now);
         }
         return query;
     }
@@ -200,17 +202,32 @@ public sealed class WorkItemService : IWorkItemService
         _ => query.OrderByDescending(item => item.CreatedAt).ThenBy(item => item.Id)
     };
 
-    private static readonly string[] TerminalStatusCodes = { "Done", "Cancelled" };
+    /// <summary>
+    /// Terminal status codes for the current tenant, derived from the
+    /// <c>IsActive &amp;&amp; IsFinal</c> states of the active published versions of
+    /// every workflow definition whose <c>EntityType</c> is <c>WorkItem</c> (the
+    /// standard compatibility workflow plus custom project-selected workflows).
+    /// Falls back to the documented legacy set when no published final state is
+    /// visible; see <see cref="WorkItemTerminalStateLookup"/> for the fallback rule.
+    /// </summary>
+    private Task<string[]> GetTerminalStatusCodesAsync(CancellationToken cancellationToken) =>
+        WorkItemTerminalStateLookup.GetAsync(_context, _httpContextAccessor, cancellationToken);
 
     public async Task<ProjectWorkItemOverviewDto> GetProjectOverviewAsync(Guid projectId, int previewLimit = 3, CancellationToken cancellationToken = default)
     {
         previewLimit = Math.Clamp(previewLimit, 1, 10);
         var issueQuery = ScopedWorkItems().AsNoTracking()
             .Where(item => item.ProjectId == projectId && item.Type == WorkItemType.Issue.ToString());
+        var terminalStatusCodes = await GetTerminalStatusCodesAsync(cancellationToken);
         var openIssueQuery = issueQuery
             .Where(item => item.ResolvedDate == null
                 && item.CompletedAt == null
-                && item.Status != "Done"
+                // Terminal detection is driven by published workflow IsFinal
+                // definitions (with the documented legacy fallback).
+                && !terminalStatusCodes.Contains(item.Status)
+                // "Resolved" and "Closed" are legacy Work Item domain statuses,
+                // not workflow terminal states; they stay excluded exactly as
+                // before so historical project overview numbers do not shift.
                 && item.Status != "Resolved"
                 && item.Status != "Closed");
 
@@ -503,7 +520,6 @@ public sealed class WorkItemService : IWorkItemService
 
             _context.Set<WorkItemAttachment>().AddRange(attachments);
             await _context.SaveChangesAsync(cancellationToken);
-            return Result<IReadOnlyList<WorkItemAttachmentDto>>.Success(attachments.Select(ToAttachmentDto).ToList());
         }
         catch
         {
@@ -513,6 +529,15 @@ public sealed class WorkItemService : IWorkItemService
             }
             throw;
         }
+
+        // Audit after the attachment rows are committed so a failed audit write never
+        // deletes stored files for attachments that already exist in the database.
+        foreach (var attachment in attachments)
+        {
+            await LogAttachmentAsync(item, attachment, "AttachmentAdded", userId, cancellationToken);
+        }
+
+        return Result<IReadOnlyList<WorkItemAttachmentDto>>.Success(attachments.Select(ToAttachmentDto).ToList());
     }
 
     public async Task<Result<WorkItemAttachmentContent>> GetAttachmentContentAsync(Guid id, Guid attachmentId, CancellationToken cancellationToken = default)
@@ -549,6 +574,7 @@ public sealed class WorkItemService : IWorkItemService
         attachment.IsDeleted = true;
         attachment.UpdatedBy = userId;
         await _context.SaveChangesAsync(cancellationToken);
+        await LogAttachmentAsync(item, attachment, "AttachmentRemoved", userId, cancellationToken);
         return Result.Success();
     }
 
@@ -561,7 +587,7 @@ public sealed class WorkItemService : IWorkItemService
         if (string.IsNullOrWhiteSpace(status)) return Error.Validation("Work item status is invalid");
         if (projectId.HasValue && await _projectLookup.FindAsync(projectId.Value, cancellationToken) is null) return Error.NotFound("Project not found");
         var allowedProjectIds = _managementContext.Current?.Scope.ProjectIds;
-        if (allowedProjectIds is not null && (!projectId.HasValue || !allowedProjectIds.Contains(projectId.Value))) return Error.Forbidden("The project is outside the current management scope");
+        if (allowedProjectIds is null || !projectId.HasValue || !allowedProjectIds.Contains(projectId.Value)) return Error.Forbidden("The project is outside the current management scope");
         if (parentId.HasValue)
         {
             if (updatingWorkItemId == parentId.Value) return Error.Validation("A work item cannot be its own parent.");
@@ -660,6 +686,34 @@ public sealed class WorkItemService : IWorkItemService
         await _auditService.LogAsync(new AuditEntry { TenantId = item.TenantId, EntityType = "WorkItem", EntityId = item.Id, Action = action, Changes = JsonSerializer.Serialize(changes), UserId = TryParseGuid(userId), UserName = actorName, Timestamp = DateTime.UtcNow, CreatedBy = userId }, cancellationToken);
     }
 
+    /// <summary>
+    /// Attachment events are attributed to the parent work item's project and never
+    /// carry the server storage path, which is an internal implementation detail.
+    /// </summary>
+    private async Task LogAttachmentAsync(WorkItem item, WorkItemAttachment attachment, string action, string userId, CancellationToken cancellationToken)
+    {
+        var actorName = _httpContextAccessor.HttpContext?.User.FindFirst(ClaimTypes.Name)?.Value;
+        await _auditService.LogAsync(new AuditEntry
+        {
+            TenantId = item.TenantId,
+            ProjectId = item.ProjectId,
+            EntityType = "WorkItemAttachment",
+            EntityId = attachment.Id,
+            Action = action,
+            Changes = JsonSerializer.Serialize(new
+            {
+                attachment.WorkItemId,
+                attachment.FileName,
+                attachment.ContentType,
+                attachment.FileSize
+            }),
+            UserId = TryParseGuid(userId),
+            UserName = actorName,
+            Timestamp = DateTime.UtcNow,
+            CreatedBy = userId
+        }, cancellationToken);
+    }
+
     private static Dictionary<string, object?> BuildChanges(Dictionary<string, object?> oldValues, Dictionary<string, object?> newValues) => newValues.Where(pair => !Equals(oldValues.GetValueOrDefault(pair.Key), pair.Value)).ToDictionary(pair => pair.Key, pair => (object?)new { from = oldValues.GetValueOrDefault(pair.Key), to = pair.Value });
 
     private static Dictionary<string, object?> Snapshot(WorkItem item) => new() { ["title"] = item.Title, ["description"] = item.Description, ["type"] = item.Type, ["priority"] = item.Priority, ["status"] = item.Status, ["projectId"] = item.ProjectId, ["assignedResourceId"] = item.AssignedResourceId, ["assignedTeamId"] = item.AssignedTeamId, ["dueDate"] = item.DueDate, ["severity"] = item.Severity, ["targetResolutionDate"] = item.TargetResolutionDate, ["resolvedDate"] = item.ResolvedDate, ["resolution"] = item.Resolution };
@@ -692,7 +746,9 @@ public sealed class WorkItemService : IWorkItemService
     private Guid GetCurrentTenantId()
     {
         var tenantId = _httpContextAccessor.HttpContext?.User.FindFirst("tenantId")?.Value;
-        return Guid.TryParse(tenantId, out var parsed) ? parsed : TenantConstants.DemoTenantId;
+        return Guid.TryParse(tenantId, out var parsed) && parsed != Guid.Empty
+            ? parsed
+            : throw new InvalidOperationException("A trusted tenant context is required.");
     }
     private static T Parse<T>(string value, T fallback) where T : struct, Enum => Enum.TryParse<T>(value, true, out var parsed) ? parsed : fallback;
 }

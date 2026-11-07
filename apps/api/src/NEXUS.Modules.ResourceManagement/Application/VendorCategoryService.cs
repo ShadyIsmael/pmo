@@ -87,6 +87,8 @@ public class VendorCategoryService : IVendorCategoryService
     {
         var lookup = await Query().FirstOrDefaultAsync(l => l.Id == id, cancellationToken);
         if (lookup is null) return Result<LookupDto>.Failure(Error.NotFound("Vendor category not found"));
+        if (lookup.IsActive && dto.IsActive == false)
+            return Result<LookupDto>.Failure(Error.Conflict("Use the Deactivate operation for vendor categories."));
 
         if (dto.Code != null)
         {

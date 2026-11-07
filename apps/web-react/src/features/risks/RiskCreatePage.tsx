@@ -11,7 +11,7 @@ import { Textarea } from "@components/ui/Textarea";
 import { useI18n } from "@i18n/messages";
 import { hasPermission, Permissions } from "@lib/permissions";
 import { useProjects, useProject } from "@features/projects/api/projects";
-import { useResources } from "@features/resources/api/resources";
+import { useRiskWorkflowUserLookup } from "@features/projects/lib/project-lookups";
 import { useCreateRisk, type RiskImpactType, type RiskLevel } from "./api/risks";
 
 const RISK_LEVELS: RiskLevel[] = ["Low", "Medium", "High", "Critical"];
@@ -28,6 +28,7 @@ type RiskForm = {
   title: string;
   description: string;
   riskLevel: RiskLevel | "";
+  ownerUserId: string;
   ownerResourceId: string;
   impactTypes: RiskImpactType[];
   impactDescription: string;
@@ -42,9 +43,9 @@ export function RiskCreatePage({ embedded = false, onCreated, onCancel }: RiskCr
   const canCreate = Boolean(user && hasPermission(user.permissions, Permissions.Risk.Create));
   const projectQuery = useProject(initialProjectId);
   const projectsQuery = useProjects({ page: 1, pageSize: 100 }, !initialProjectId);
-  const resourcesQuery = useResources({ page: 1, pageSize: 100, isActive: true });
+  const usersQuery = useRiskWorkflowUserLookup(canCreate);
   const createRisk = useCreateRisk();
-  const [form, setForm] = React.useState<RiskForm>({ projectId: "", title: "", description: "", riskLevel: "", ownerResourceId: "", impactTypes: [], impactDescription: "" });
+  const [form, setForm] = React.useState<RiskForm>({ projectId: "", title: "", description: "", riskLevel: "", ownerUserId: "", ownerResourceId: "", impactTypes: [], impactDescription: "" });
   const [submitted, setSubmitted] = React.useState(false);
   const [saveError, setSaveError] = React.useState(false);
   React.useEffect(() => {
@@ -74,6 +75,7 @@ export function RiskCreatePage({ embedded = false, onCreated, onCancel }: RiskCr
         title: form.title.trim(),
         description: form.description.trim(),
         riskLevel: form.riskLevel,
+        ownerUserId: form.ownerUserId || undefined,
         ownerResourceId: form.ownerResourceId || undefined,
         impactAssessment: form.impactTypes.length ? { impactTypes: form.impactTypes, description: form.impactDescription.trim() } : undefined,
       });
@@ -120,7 +122,7 @@ export function RiskCreatePage({ embedded = false, onCreated, onCancel }: RiskCr
 
             <div className="grid gap-5 md:grid-cols-2">
               <div className="space-y-2"><Label htmlFor="risk-title">{t("risks.titleField")}</Label><Input id="risk-title" value={form.title} aria-invalid={submitted && !form.title.trim()} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} />{required(form.title)}</div>
-              <div className="space-y-2"><Label htmlFor="risk-owner">{t("risks.owner")}</Label><select id="risk-owner" className="input-field" value={form.ownerResourceId} onChange={(event) => setForm((current) => ({ ...current, ownerResourceId: event.target.value }))}><option value="">{resourcesQuery.isLoading ? t("risks.loadingOwners") : t("risks.noOwner")}</option>{(resourcesQuery.data?.items ?? []).map((resource) => <option key={resource.id} value={resource.id}>{resource.name}</option>)}</select>{resourcesQuery.isError ? <p role="alert" className="text-xs text-destructive">{t("risks.ownerLoadError")}</p> : null}</div>
+              <div className="space-y-2"><Label htmlFor="risk-owner">{t("risks.systemUserOwner")}</Label><select id="risk-owner" className="input-field" value={form.ownerUserId} onChange={(event) => setForm((current) => ({ ...current, ownerUserId: event.target.value, ownerResourceId: "" }))}><option value="">{usersQuery.isLoading ? t("risks.loadingUsers") : t("risks.noOwner")}</option>{(usersQuery.data ?? []).map((owner) => <option key={owner.id} value={owner.id}>{owner.fullName}</option>)}</select>{usersQuery.isError ? <p role="alert" className="text-xs text-destructive">{t("risks.ownerLoadError")}</p> : null}</div>
             </div>
 
             <div className="space-y-2"><Label htmlFor="risk-description">{t("risks.descriptionField")}</Label><Textarea id="risk-description" value={form.description} aria-invalid={submitted && !form.description.trim()} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} />{required(form.description)}</div>

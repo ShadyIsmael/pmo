@@ -4,7 +4,9 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using NEXUS.Modules.Audit.Domain;
+using NEXUS.Modules.Identity.Application;
 using NEXUS.Modules.Identity.Domain;
+using NEXUS.Modules.Identity.Infrastructure;
 using NEXUS.Modules.Integrations.Domain;
 using NEXUS.Modules.Organization.Domain;
 using NEXUS.Modules.ResourceManagement.Domain;
@@ -21,13 +23,15 @@ public sealed partial class DirectoryIntegrationService : IDirectoryIntegrationS
     private readonly IDirectorySecretResolver _secretResolver;
     private readonly IReadOnlyDictionary<string, IDirectoryProvider> _providers;
     private readonly IPasswordHasher<User> _passwordHasher;
+    private readonly IUserEffectivePermissionService _effectivePermissions;
 
-    public DirectoryIntegrationService(DbContext context, IDirectorySecretResolver secretResolver, IEnumerable<IDirectoryProvider> providers, IPasswordHasher<User> passwordHasher)
+    public DirectoryIntegrationService(DbContext context, IDirectorySecretResolver secretResolver, IEnumerable<IDirectoryProvider> providers, IPasswordHasher<User> passwordHasher, IUserEffectivePermissionService effectivePermissions)
     {
         _context = context;
         _secretResolver = secretResolver;
         _providers = providers.ToDictionary(provider => provider.ProviderType, StringComparer.OrdinalIgnoreCase);
         _passwordHasher = passwordHasher;
+        _effectivePermissions = effectivePermissions;
     }
 
     public async Task<IReadOnlyList<DirectoryConnectionDto>> GetConnectionsAsync(Guid tenantId, CancellationToken cancellationToken = default)
@@ -215,8 +219,13 @@ public sealed partial class DirectoryIntegrationService : IDirectoryIntegrationS
         var roleIds = request.Mappings.Where(mapping => mapping.RoleId.HasValue).Select(mapping => mapping.RoleId!.Value).Distinct().ToArray();
         if (roleIds.Length > 0)
         {
-            var activeRoles = await _context.Set<Role>().Where(role => role.TenantId == tenantId && !role.IsDeleted && roleIds.Contains(role.Id)).Select(role => role.Id).ToArrayAsync(cancellationToken);
-            if (activeRoles.Length != roleIds.Length) throw BadRequest("DIRECTORY_ROLE_INVALID", "Every mapped NEXUS Role must be active and belong to the current tenant.");
+            var activeRoles = await _context.Set<Role>()
+                .IgnoreQueryFilters()
+                .Where(role => role.TenantId == tenantId && !role.IsDeleted && roleIds.Contains(role.Id))
+                .ToListAsync(cancellationToken);
+            if (activeRoles.Count != roleIds.Length) throw BadRequest("DIRECTORY_ROLE_INVALID", "Every mapped NEXUS Role must be active and belong to the current tenant.");
+            if (activeRoles.Any(ProtectedTenantAdminPolicy.IsProtectedSystemAdminRole))
+                throw BadRequest("DIRECTORY_SYSTEM_ADMIN_ASSIGNMENT_BLOCKED", "The protected system Admin role cannot be assigned by directory synchronization.");
         }
         var oldMappings = await _context.Set<DirectoryGroupMapping>()
             .Where(mapping => mapping.TenantId == tenantId && mapping.DirectoryConnectionId == connectionId && !mapping.IsDeleted)

@@ -5,6 +5,7 @@ namespace NEXUS.Modules.Organization.Application;
 public interface IOrganizationalUnitService
 {
     Task<IReadOnlyList<OrganizationalUnitDto>> GetUnitsAsync(bool includeInactive, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<OrganizationalUnitLookupDto>> GetProjectLookupAsync(CancellationToken cancellationToken = default);
     Task<Result<OrganizationalUnitDto>> GetUnitAsync(Guid id, CancellationToken cancellationToken = default);
     Task<Result<OrganizationalUnitDto>> CreateUnitAsync(SaveOrganizationalUnitDto request, string userId, CancellationToken cancellationToken = default);
     Task<Result<OrganizationalUnitDto>> UpdateUnitAsync(Guid id, SaveOrganizationalUnitDto request, string userId, CancellationToken cancellationToken = default);

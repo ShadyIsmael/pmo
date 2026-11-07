@@ -1,5 +1,9 @@
 using FluentAssertions;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using NEXUS.Modules.Identity.Application;
+using NEXUS.Modules.Identity.Domain;
+using NEXUS.Modules.Organization.Application.Settings;
 using NEXUS.Modules.ResourceManagement.Domain;
 using NEXUS.Modules.RiskManagement.Domain;
 using NEXUS.Persistence;
@@ -7,8 +11,522 @@ using Xunit;
 
 namespace NEXUS.Modules.ResourceManagement.Tests;
 
-public class SeedDataProviderTests
+public class SeedDataProviderTests : IDisposable
 {
+    private readonly string? _originalEnvironment;
+    private readonly string? _originalBootstrapPassword;
+    private readonly string? _originalProjectSeedReset;
+
+    public SeedDataProviderTests()
+    {
+        _originalEnvironment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
+        _originalBootstrapPassword = Environment.GetEnvironmentVariable("NEXUS_ADMIN_BOOTSTRAP_PASSWORD");
+        _originalProjectSeedReset = Environment.GetEnvironmentVariable("NEXUS_RESET_PROJECT_SEED");
+
+        Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Development");
+        Environment.SetEnvironmentVariable("NEXUS_ADMIN_BOOTSTRAP_PASSWORD",
+            Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32)));
+        Environment.SetEnvironmentVariable("NEXUS_RESET_PROJECT_SEED", null);
+    }
+
+    public void Dispose()
+    {
+        Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", _originalEnvironment);
+        Environment.SetEnvironmentVariable("NEXUS_ADMIN_BOOTSTRAP_PASSWORD", _originalBootstrapPassword);
+        Environment.SetEnvironmentVariable("NEXUS_RESET_PROJECT_SEED", _originalProjectSeedReset);
+    }
+
+    [Fact]
+    public void Protected_admin_administration_baseline_uses_active_tenant_catalog_metadata()
+    {
+        var futureAdministrationPermission = PermissionCatalog.Entries
+            .First(entry => entry.ModuleId == "administration") with
+        {
+            SeedId = "b0000999-0000-0000-0000-000000000999",
+            Key = "FutureAdministration.Capability",
+            Resource = "FutureAdministration",
+            Action = "Capability"
+        };
+        var explicitlyProtectedPermission = futureAdministrationPermission with
+        {
+            SeedId = "b0000998-0000-0000-0000-000000000998",
+            Key = "Governance.FutureCapability",
+            Resource = "Governance",
+            Action = "FutureCapability",
+            ModuleId = "governance",
+            IsTenantAdminBaseline = true
+        };
+        var platformAdministrationPermission = futureAdministrationPermission with
+        {
+            SeedId = "b0000997-0000-0000-0000-000000000997",
+            Key = "FutureAdministration.PlatformCapability",
+            Resource = "FutureAdministration",
+            Action = "PlatformCapability",
+            Scope = PermissionScope.Platform
+        };
+
+        var baseline = ProtectedTenantAdminPolicy.GetTenantAdministrationPermissionKeys(
+            PermissionCatalog.Entries.Append(futureAdministrationPermission)
+                .Append(explicitlyProtectedPermission)
+                .Append(platformAdministrationPermission));
+
+        baseline.Should().Contain(futureAdministrationPermission.Key);
+        baseline.Should().Contain(explicitlyProtectedPermission.Key);
+        baseline.Should().NotContain(platformAdministrationPermission.Key);
+        baseline.Should().Contain("Workflow.View");
+        baseline.Should().Contain("Governance.AssignmentRecovery.View");
+        baseline.Should().NotContain("ProjectAnnualBudget.Approve");
+        baseline.Should().NotContain("Program.CreateAcrossPortfolios");
+    }
+
+    [Fact]
+    public async Task SeedIdentityOnlyAsync_NewAdminRole_SeedsAllApprovedTenantAdministrationPermissions()
+    {
+        var originalEnvironment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
+        Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Development");
+
+        try
+        {
+            var options = new DbContextOptionsBuilder<AppDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+
+            await using var context = new AppDbContext(options);
+            await SeedDataProvider.SeedIdentityOnlyAsync(context);
+
+            var activeCatalogKeys = PermissionCatalog.Entries
+                .Where(item => item.IsActive)
+                .Select(item => item.Key)
+                .ToArray();
+            var seededPermissionRows = await context.Permissions
+                .IgnoreQueryFilters()
+                .Where(item => item.TenantId == SeedDataProvider.TenantId)
+                .ToListAsync();
+            seededPermissionRows.Select(item => item.Name)
+                .Should().BeEquivalentTo(activeCatalogKeys,
+                    "fresh identity seeding must persist every active canonical permission and no retired catalog entry");
+            seededPermissionRows.Select(item => $"{item.Resource}|{item.Action}")
+                .Should().OnlyHaveUniqueItems("one persisted permission row represents one canonical capability");
+
+            var role = await context.Roles
+                .IgnoreQueryFilters()
+                .Include(item => item.Permissions)
+                .SingleAsync(item => item.TenantId == SeedDataProvider.TenantId
+                    && item.SystemRoleKey == Role.TenantAdminSystemRoleKey);
+            role.SystemRoleKey.Should().Be(Role.TenantAdminSystemRoleKey,
+                "the protected tenant Admin must be identified by a stable system key, not its display name");
+            var permissionKeys = role.Permissions.Select(item => $"{item.Resource}.{item.Action}").ToHashSet(StringComparer.Ordinal);
+
+            var seededSystemRoles = await context.Roles.IgnoreQueryFilters()
+                .Where(item => item.TenantId == SeedDataProvider.TenantId && item.IsSystem)
+                .ToArrayAsync();
+            seededSystemRoles.Should().OnlyContain(item => !string.IsNullOrWhiteSpace(item.SystemRoleKey));
+            seededSystemRoles.Select(item => item.SystemRoleKey).Should().OnlyHaveUniqueItems();
+
+            var activeAdministrationKeys = PermissionCatalog.Entries
+                .Where(item => item.ModuleId == "administration" && item.IsActive && item.Scope == PermissionScope.Tenant)
+                .Select(item => item.Key)
+                .ToArray();
+            permissionKeys.Should().Contain(activeAdministrationKeys);
+            permissionKeys.Should().Contain(ProtectedTenantAdminPolicy.PortfolioProgramPermissionKeys);
+            permissionKeys.Should().Contain([
+                "Governance.AssignmentRecovery.View",
+                "Governance.AssignmentRecovery.Initiate",
+                "Governance.AssignmentRecovery.Manage",
+                "Workflow.View",
+                "Workflow.Manage",
+                "Workflow.Publish"
+            ]);
+            permissionKeys.Should().Contain("Roles.Delete");
+            permissionKeys.Should().Contain(["ProjectSettings.View", "ProjectSettings.Edit"],
+                "the stable tenant Admin seed receives the approved additive Project-scoped Settings grants");
+            permissionKeys.Should().NotContain("ProjectAnnualBudget.Approve", "sensitive approval grants are excluded from the Admin seed");
+            permissionKeys.Should().NotContain("ProjectFinancialCeiling.ApproveChange", "sensitive approval grants are excluded from the Admin seed");
+            permissionKeys.Should().NotContain("Program.CreateAcrossPortfolios", "cross-Portfolio authority is explicit and not a tenant Admin default");
+            permissionKeys.Should().NotContain(key => key.StartsWith("Platform", StringComparison.Ordinal), "tenant Admin has no platform authority");
+            permissionKeys.Should().Contain("Users.ManageAccounts", "canonical account management is part of the protected tenant Administration baseline");
+
+            var pmoAdminRole = await context.Roles
+                .IgnoreQueryFilters()
+                .Include(item => item.Permissions)
+                .SingleAsync(item => item.Name == "pmo.admin" && item.TenantId == SeedDataProvider.TenantId);
+            var pmoAdminPermissionKeys = pmoAdminRole.Permissions
+                .Select(item => $"{item.Resource}.{item.Action}")
+                .ToHashSet(StringComparer.Ordinal);
+            pmoAdminPermissionKeys.Should().Contain(["Roles.View", "Roles.Create", "Roles.EditDetails", "Roles.ConfigurePermissions"]);
+            pmoAdminPermissionKeys.Should().NotContain("Roles.Delete");
+            pmoAdminPermissionKeys.Should().NotContain("TenantAdministration.ManageScope");
+            pmoAdminPermissionKeys.Should().NotContain("Settings.ManageTenantConfiguration");
+            pmoAdminPermissionKeys.Should().NotContain("ReferenceData.Manage");
+            pmoAdminPermissionKeys.Should().NotContain(["ProjectSettings.View", "ProjectSettings.Edit"],
+                "the protected Project Settings grant is bound to the stable tenant Admin system role, not its display name");
+
+            var portfolioManagerRole = await context.Roles
+                .IgnoreQueryFilters()
+                .Include(item => item.Permissions)
+                .SingleAsync(item => item.Name == "portfolio.manager" && item.TenantId == SeedDataProvider.TenantId);
+            var portfolioManagerPermissionKeys = portfolioManagerRole.Permissions
+                .Select(item => $"{item.Resource}.{item.Action}")
+                .ToHashSet(StringComparer.Ordinal);
+            portfolioManagerPermissionKeys.Should().Contain(["StatusReport.View", "StatusReport.Export"]);
+
+            var projectManagerRole = await context.Roles
+                .IgnoreQueryFilters()
+                .Include(item => item.Permissions)
+                .SingleAsync(item => item.Name == "project.manager" && item.TenantId == SeedDataProvider.TenantId);
+            var projectManagerPermissionKeys = projectManagerRole.Permissions
+                .Select(item => $"{item.Resource}.{item.Action}")
+                .ToHashSet(StringComparer.Ordinal);
+            projectManagerPermissionKeys.Should().Contain([
+                "StatusReport.View", "StatusReport.Create", "StatusReport.Edit",
+                "StatusReport.Export", "StatusReport.ManageConfiguration"
+            ]);
+
+            var seededRoleGrants = await context.Roles
+                .IgnoreQueryFilters()
+                .Include(item => item.Permissions)
+                .ToListAsync();
+            seededRoleGrants.Should().OnlyContain(role =>
+                role.Permissions.Select(permission => permission.Id).Distinct().Count() == role.Permissions.Count,
+                "repeated entries in deterministic seed arrays must not create duplicate role grants");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", originalEnvironment);
+        }
+    }
+
+    [Fact]
+    public void SystemRoleIdentity_CanBeAssignedOnceAndCannotBeReplaced()
+    {
+        var role = new Role
+        {
+            TenantId = SeedDataProvider.TenantId,
+            IsSystem = true,
+            CreatedBy = "tenant-provisioning-actor"
+        };
+
+        role.AssignSystemRoleKey(Role.TenantAdminSystemRoleKey, SeedDataProvider.TenantId);
+        role.SystemRoleKey.Should().Be(Role.TenantAdminSystemRoleKey);
+        var assignDifferentKey = () => role.AssignSystemRoleKey("tenant.attacker-controlled-key", SeedDataProvider.TenantId);
+        assignDifferentKey.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public async Task SeedIdentityOnlyAsync_Rerun_RestoresMissingAdminBaselineAndPreservesCustomGrant()
+    {
+        var originalEnvironment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
+        Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Development");
+
+        try
+        {
+            var options = new DbContextOptionsBuilder<AppDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+
+            await using var context = new AppDbContext(options);
+            await SeedDataProvider.SeedIdentityOnlyAsync(context);
+
+            var role = await context.Roles
+                .IgnoreQueryFilters()
+                .Include(item => item.Permissions)
+                .SingleAsync(item => item.TenantId == SeedDataProvider.TenantId
+                    && item.SystemRoleKey == Role.TenantAdminSystemRoleKey);
+            var reconciliationKeys = ProtectedTenantAdminPolicy.MandatoryPermissionKeys
+                .Concat(["ProjectSettings.View", "ProjectSettings.Edit"])
+                .ToHashSet(StringComparer.Ordinal);
+            foreach (var permission in role.Permissions
+                .Where(item => reconciliationKeys.Contains($"{item.Resource}.{item.Action}"))
+                .ToList())
+            {
+                role.Permissions.Remove(permission);
+            }
+
+            var preservedCustomGrant = await context.Permissions.IgnoreQueryFilters()
+                .SingleAsync(item => item.Name == "ProjectFinancialCeiling.ApproveChange");
+            role.Permissions.Add(preservedCustomGrant);
+
+            var adminUserId = await context.UserRoles.IgnoreQueryFilters()
+                .Where(item => item.TenantId == SeedDataProvider.TenantId && item.RoleId == role.Id && !item.IsDeleted)
+                .Select(item => item.UserId)
+                .SingleAsync();
+            var settingsEditPermission = await context.Permissions.IgnoreQueryFilters()
+                .SingleAsync(item => item.TenantId == SeedDataProvider.TenantId && item.Name == "ProjectSettings.Edit");
+            var preservedDeny = new UserPermissionOverride
+            {
+                TenantId = SeedDataProvider.TenantId,
+                UserId = adminUserId,
+                PermissionId = settingsEditPermission.Id,
+                Effect = PermissionOverrideEffect.Deny,
+                CreatedBy = "SeedDataProviderTests"
+            };
+            context.UserPermissionOverrides.Add(preservedDeny);
+
+            await context.SaveChangesAsync();
+
+            await SeedDataProvider.SeedIdentityOnlyAsync(context);
+            await SeedDataProvider.SeedIdentityOnlyAsync(context);
+
+            context.ChangeTracker.Clear();
+            var reloadedRole = await context.Roles
+                .IgnoreQueryFilters()
+                .AsNoTracking()
+                .Include(item => item.Permissions)
+                .SingleAsync(item => item.Id == role.Id);
+            var permissionKeys = reloadedRole.Permissions.Select(item => $"{item.Resource}.{item.Action}").ToHashSet(StringComparer.Ordinal);
+            permissionKeys.Should().Contain(reconciliationKeys);
+            permissionKeys.Should().Contain("ProjectFinancialCeiling.ApproveChange", "custom grants are preserved without being inferred for new roles");
+            permissionKeys.Should().Contain(["ProjectSettings.View", "ProjectSettings.Edit"]);
+            var preservedSettingsDeny = await context.UserPermissionOverrides.IgnoreQueryFilters()
+                .AsNoTracking()
+                .SingleAsync(item => item.Id == preservedDeny.Id);
+            preservedSettingsDeny.Effect.Should().Be(PermissionOverrideEffect.Deny);
+            preservedSettingsDeny.IsDeleted.Should().BeFalse();
+            EffectivePermissionResolver.Resolve(
+                    permissionKeys,
+                    [("ProjectSettings.Edit", preservedSettingsDeny.Effect)])
+                .Should().NotContain("ProjectSettings.Edit", "seed reconciliation must not erase a user's explicit Deny");
+            (await context.Roles.IgnoreQueryFilters()
+                .CountAsync(item => item.TenantId == SeedDataProvider.TenantId
+                    && item.SystemRoleKey == Role.TenantAdminSystemRoleKey && !item.IsDeleted))
+                .Should().Be(1, "repeated seed execution must not create a second protected Admin role");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", originalEnvironment);
+        }
+    }
+
+    [Fact]
+    public async Task SeedIdentityOnlyAsync_SetsBootstrapExpiryAndPreservesExistingAdminCredentialsOnRerun()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var context = new AppDbContext(options);
+        var bootstrapPassword = Environment.GetEnvironmentVariable("NEXUS_ADMIN_BOOTSTRAP_PASSWORD")!;
+        var passwordHasher = new PasswordHasher<User>();
+
+        await SeedDataProvider.SeedIdentityOnlyAsync(context, temporaryPasswordExpiryHours: 6);
+
+        var seededAdmin = await context.Users.IgnoreQueryFilters()
+            .SingleAsync(user => user.TenantId == SeedDataProvider.TenantId && user.Email == "admin@nexus.com");
+        seededAdmin.MustChangePassword.Should().BeTrue();
+        seededAdmin.TemporaryPasswordExpiresAt.Should().BeAfter(DateTime.UtcNow.AddHours(5.9))
+            .And.BeBefore(DateTime.UtcNow.AddHours(6.1));
+        passwordHasher.VerifyHashedPassword(seededAdmin, seededAdmin.PasswordHash!, bootstrapPassword)
+            .Should().Be(PasswordVerificationResult.Success);
+
+        var adminRole = await context.Roles.IgnoreQueryFilters()
+            .Include(role => role.Permissions)
+            .SingleAsync(role => role.TenantId == SeedDataProvider.TenantId
+                && role.SystemRoleKey == Role.TenantAdminSystemRoleKey);
+        var existingRoleId = await context.UserRoles.IgnoreQueryFilters()
+            .Where(link => link.TenantId == SeedDataProvider.TenantId && link.UserId == seededAdmin.Id)
+            .Select(link => link.RoleId)
+            .SingleAsync();
+        var existingGrantIds = adminRole.Permissions.Select(permission => permission.Id).ToHashSet();
+
+        var strandedTemporaryPassword = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32));
+        seededAdmin.PasswordHash = passwordHasher.HashPassword(seededAdmin, strandedTemporaryPassword);
+        seededAdmin.MustChangePassword = true;
+        seededAdmin.TemporaryPasswordExpiresAt = null;
+        await context.SaveChangesAsync();
+        var strandedTemporaryHash = seededAdmin.PasswordHash;
+
+        Environment.SetEnvironmentVariable("NEXUS_ADMIN_BOOTSTRAP_PASSWORD",
+            Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32)));
+        await SeedDataProvider.SeedIdentityOnlyAsync(context, temporaryPasswordExpiryHours: 1);
+
+        context.ChangeTracker.Clear();
+        seededAdmin = await context.Users.IgnoreQueryFilters()
+            .SingleAsync(user => user.TenantId == SeedDataProvider.TenantId && user.Email == "admin@nexus.com");
+        seededAdmin.PasswordHash.Should().Be(strandedTemporaryHash);
+        seededAdmin.MustChangePassword.Should().BeTrue();
+        seededAdmin.TemporaryPasswordExpiresAt.Should().BeNull();
+
+        var permanentPassword = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32));
+        seededAdmin.PasswordHash = passwordHasher.HashPassword(seededAdmin, permanentPassword);
+        seededAdmin.MustChangePassword = false;
+        seededAdmin.TemporaryPasswordExpiresAt = null;
+        seededAdmin.PasswordChangedAt = DateTime.UtcNow;
+        await context.SaveChangesAsync();
+        var permanentHash = seededAdmin.PasswordHash;
+        var passwordChangedAt = seededAdmin.PasswordChangedAt;
+
+        Environment.SetEnvironmentVariable("NEXUS_ADMIN_BOOTSTRAP_PASSWORD",
+            Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32)));
+        await SeedDataProvider.SeedIdentityOnlyAsync(context, temporaryPasswordExpiryHours: 1);
+
+        context.ChangeTracker.Clear();
+        var reseededAdmin = await context.Users.IgnoreQueryFilters()
+            .SingleAsync(user => user.TenantId == SeedDataProvider.TenantId && user.Email == "admin@nexus.com");
+        reseededAdmin.PasswordHash.Should().Be(permanentHash);
+        reseededAdmin.MustChangePassword.Should().BeFalse();
+        reseededAdmin.TemporaryPasswordExpiresAt.Should().BeNull();
+        reseededAdmin.PasswordChangedAt.Should().Be(passwordChangedAt);
+        passwordHasher.VerifyHashedPassword(reseededAdmin, reseededAdmin.PasswordHash!, permanentPassword)
+            .Should().Be(PasswordVerificationResult.Success);
+
+        (await context.UserRoles.IgnoreQueryFilters()
+            .Where(link => link.TenantId == SeedDataProvider.TenantId && link.UserId == reseededAdmin.Id)
+            .Select(link => link.RoleId)
+            .SingleAsync()).Should().Be(existingRoleId);
+        (await context.Roles.IgnoreQueryFilters()
+            .Include(role => role.Permissions)
+            .SingleAsync(role => role.Id == existingRoleId))
+            .Permissions.Select(permission => permission.Id)
+            .ToHashSet()
+            .Should().BeEquivalentTo(existingGrantIds);
+    }
+
+    [Fact]
+    public async Task SeedIdentityOnlyAsync_Rerun_SeedsMissingCatalogRowsAndPreservesOtherRoles()
+    {
+        var originalEnvironment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
+        Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Development");
+
+        try
+        {
+            var options = new DbContextOptionsBuilder<AppDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+            await using var context = new AppDbContext(options);
+            await SeedDataProvider.SeedIdentityOnlyAsync(context);
+
+            var adminRoleId = await context.Roles.IgnoreQueryFilters()
+                .Where(role => role.TenantId == SeedDataProvider.TenantId
+                    && role.SystemRoleKey == Role.TenantAdminSystemRoleKey && !role.IsDeleted)
+                .Select(role => role.Id)
+                .SingleAsync();
+            var missingKeys = new HashSet<string>(StringComparer.Ordinal)
+            {
+                "TenantAdministration.ManageScope", "Settings.ManageTenantConfiguration",
+                "Directory.View", "Directory.ManageConnection", "Directory.TestConnection",
+                "Directory.PreviewSync", "Directory.ExecuteSync", "Directory.ManageMappings",
+                "Directory.ManageProvisioningPolicy",
+                "ReferenceData.Create", "ReferenceData.Edit", "ReferenceData.Delete"
+            };
+            var otherRoleGrantsBefore = await context.Roles.IgnoreQueryFilters()
+                .Where(role => role.TenantId == SeedDataProvider.TenantId
+                    && role.SystemRoleKey != Role.TenantAdminSystemRoleKey)
+                .Include(role => role.Permissions)
+                .ToDictionaryAsync(role => role.Id,
+                    role => role.Permissions.Select(permission => $"{permission.Resource}.{permission.Action}")
+                        .ToHashSet(StringComparer.Ordinal));
+            var membershipsBefore = await context.UserRoles.IgnoreQueryFilters()
+                .Where(item => item.TenantId == SeedDataProvider.TenantId)
+                .Select(item => new { item.Id, item.UserId, item.RoleId })
+                .ToArrayAsync();
+            var removedRows = await context.Permissions.IgnoreQueryFilters()
+                .Where(permission => permission.TenantId == SeedDataProvider.TenantId && missingKeys.Contains(permission.Name))
+                .ToListAsync();
+            removedRows.Should().HaveCount(12);
+            context.Permissions.RemoveRange(removedRows);
+            await context.SaveChangesAsync();
+            context.ChangeTracker.Clear();
+
+            await SeedDataProvider.SeedIdentityOnlyAsync(context);
+            await SeedDataProvider.SeedIdentityOnlyAsync(context);
+            context.ChangeTracker.Clear();
+
+            var persistedKeys = await context.Permissions.IgnoreQueryFilters()
+                .Where(permission => permission.TenantId == SeedDataProvider.TenantId && !permission.IsDeleted)
+                .Select(permission => permission.Name)
+                .ToArrayAsync();
+            persistedKeys.Should().BeEquivalentTo(PermissionCatalog.Entries
+                .Where(item => item.IsActive)
+                .Select(item => item.Key));
+
+            var adminRole = await context.Roles.IgnoreQueryFilters().AsNoTracking()
+                .Include(role => role.Permissions)
+                .SingleAsync(role => role.Id == adminRoleId);
+            adminRole.Permissions.Select(permission => $"{permission.Resource}.{permission.Action}")
+                .Should().Contain(ProtectedTenantAdminPolicy.MandatoryPermissionKeys);
+
+            var otherRoleGrantsAfter = await context.Roles.IgnoreQueryFilters()
+                .Where(role => role.TenantId == SeedDataProvider.TenantId
+                    && role.SystemRoleKey != Role.TenantAdminSystemRoleKey)
+                .Include(role => role.Permissions)
+                .ToDictionaryAsync(role => role.Id,
+                    role => role.Permissions.Select(permission => $"{permission.Resource}.{permission.Action}")
+                        .ToHashSet(StringComparer.Ordinal));
+            otherRoleGrantsAfter.Should().BeEquivalentTo(otherRoleGrantsBefore);
+
+            var membershipsAfter = await context.UserRoles.IgnoreQueryFilters()
+                .Where(item => item.TenantId == SeedDataProvider.TenantId)
+                .Select(item => new { item.Id, item.UserId, item.RoleId })
+                .ToArrayAsync();
+            membershipsAfter.Should().BeEquivalentTo(membershipsBefore);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", originalEnvironment);
+        }
+    }
+
+    [Fact]
+    public async Task SeedIdentityOnlyAsync_Rerun_RestoresAdminBaselineWithoutRewritingMemberships()
+    {
+        var originalEnvironment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
+        Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Development");
+
+        try
+        {
+            var options = new DbContextOptionsBuilder<AppDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+
+            await using var context = new AppDbContext(options);
+            await SeedDataProvider.SeedIdentityOnlyAsync(context);
+
+            var role = await context.Roles
+                .IgnoreQueryFilters()
+                .Include(item => item.Permissions)
+                .SingleAsync(item => item.TenantId == SeedDataProvider.TenantId
+                    && item.SystemRoleKey == Role.TenantAdminSystemRoleKey);
+            role.Permissions.Remove(role.Permissions.Single(item => item.Name == "Roles.Delete"));
+            var additionalUser = new User
+            {
+                TenantId = SeedDataProvider.TenantId,
+                Email = "additional-admin-member@nexus.test",
+                PasswordHash = "not-used-by-this-test",
+                FirstName = "Additional",
+                LastName = "Member",
+                IsActive = true,
+                CreatedBy = "SeedDataProviderTests"
+            };
+            context.Users.Add(additionalUser);
+            context.UserRoles.Add(new UserRole
+            {
+                TenantId = SeedDataProvider.TenantId,
+                UserId = additionalUser.Id,
+                RoleId = role.Id,
+                CreatedBy = "SeedDataProviderTests"
+            });
+            await context.SaveChangesAsync();
+
+            context.ChangeTracker.Clear();
+            await SeedDataProvider.SeedIdentityOnlyAsync(context);
+            await SeedDataProvider.SeedIdentityOnlyAsync(context);
+
+            context.ChangeTracker.Clear();
+            var reloadedRole = await context.Roles
+                .IgnoreQueryFilters()
+                .AsNoTracking()
+                .Include(item => item.Permissions)
+                .SingleAsync(item => item.Id == role.Id);
+            reloadedRole.Permissions.Select(item => $"{item.Resource}.{item.Action}")
+                .Should().Contain("Roles.Delete");
+            (await context.UserRoles.IgnoreQueryFilters().CountAsync(item => item.RoleId == role.Id && !item.IsDeleted))
+                .Should().Be(2, "repeated seed execution must not alter role membership");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", originalEnvironment);
+        }
+    }
+
     [Fact]
     public async Task SeedAsync_Rerun_ShouldProduceExactlyTenDeterministicProjects()
     {
@@ -220,4 +738,268 @@ public class SeedDataProviderTests
             .ToListAsync();
         resourceSkills.Should().BeEmpty("resource-skill links belonged to the purged demo resources");
     }
+
+    [Fact]
+    public async Task SeedMinimalAsync_Twice_SeedsSystemBaselineAndLeavesBusinessDataEmpty()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        await using var context = new AppDbContext(options);
+
+        await SeedDataProvider.SeedMinimalAsync(context);
+        var firstPass = await ReadMinimalSeedSnapshotAsync(context);
+
+        await SeedDataProvider.SeedMinimalAsync(context);
+        var secondPass = await ReadMinimalSeedSnapshotAsync(context);
+
+        secondPass.Should().BeEquivalentTo(firstPass,
+            "the second Minimal Seed run must not add duplicate system rows or business data");
+        firstPass.Tenants.Should().Be(1);
+        firstPass.Organizations.Should().Be(1);
+        firstPass.Users.Should().Be(1, "the fresh baseline contains only the seeded Admin, including soft-deleted rows");
+        new[]
+        {
+            secondPass.Teams,
+            secondPass.Projects,
+            secondPass.Portfolios,
+            secondPass.Programs,
+            secondPass.ProjectHandoverRequests,
+            secondPass.ProgramHandoverRequests,
+            secondPass.PortfolioHandoverRequests,
+            secondPass.Budgets,
+            secondPass.ProjectAnnualBudgets,
+            secondPass.PortfolioBudgets,
+            secondPass.BudgetRevisions,
+            secondPass.ProjectAnnualBudgetClosings,
+            secondPass.ProjectPaymentRequestFundingTransfers,
+            secondPass.ProjectPaymentRequestDetails,
+            secondPass.PaymentRequestApproverAssignments,
+            secondPass.CostEntries,
+            secondPass.CostApprovals,
+            secondPass.PurchaseCommitments,
+            secondPass.Invoices,
+            secondPass.PaymentObligations,
+            secondPass.PaymentSettlements,
+            secondPass.PaymentNotificationDispatches,
+            secondPass.Resources,
+            secondPass.Vendors,
+            secondPass.Contracts,
+            secondPass.ResourceAllocations,
+            secondPass.ResourceRequests,
+            secondPass.ResourceCostProfiles,
+            secondPass.WorkItems,
+            secondPass.Risks,
+            secondPass.Issues,
+            secondPass.Meetings,
+            secondPass.Documents
+        }.Should().OnlyContain(count => count == 0,
+            "Minimal Seed must not create demo or business records");
+
+        var tenant = await context.Tenants.IgnoreQueryFilters()
+            .SingleAsync(item => item.Id == SeedDataProvider.TenantId);
+        tenant.Status.Should().Be(NEXUS.Modules.Organization.Domain.TenantLifecycleStatus.Active);
+
+        var organization = await context.Organizations.IgnoreQueryFilters()
+            .SingleAsync(item => item.TenantId == SeedDataProvider.TenantId);
+        organization.Should().NotBeNull("Minimal Seed includes the structural Organization required by the Tenant");
+
+        var users = await context.Users.IgnoreQueryFilters().ToListAsync();
+        users.Should().ContainSingle(item => item.Email == "admin@nexus.com" && item.IsActive && !item.IsDeleted);
+        users[0].PasswordHash.Should().NotBeNullOrWhiteSpace();
+        users[0].MustChangePassword.Should().BeTrue();
+        users[0].TemporaryPasswordExpiresAt.Should().BeAfter(DateTime.UtcNow);
+
+        var adminRole = await context.Roles.IgnoreQueryFilters()
+            .Include(role => role.Permissions)
+            .SingleAsync(role => role.TenantId == SeedDataProvider.TenantId
+                && role.SystemRoleKey == Role.TenantAdminSystemRoleKey);
+        var systemRoleKeys = await context.Roles.IgnoreQueryFilters()
+            .Where(role => role.TenantId == SeedDataProvider.TenantId && role.IsSystem && !role.IsDeleted)
+            .Select(role => role.SystemRoleKey)
+            .ToListAsync();
+        systemRoleKeys.Should().NotBeEmpty();
+        systemRoleKeys.Should().OnlyContain(key => !string.IsNullOrWhiteSpace(key));
+        systemRoleKeys.Should().OnlyHaveUniqueItems();
+        var adminMemberships = await context.UserRoles.IgnoreQueryFilters()
+            .Where(item => item.TenantId == SeedDataProvider.TenantId
+                && item.UserId == users[0].Id
+                && !item.IsDeleted)
+            .ToListAsync();
+        adminMemberships.Should().ContainSingle(item => item.RoleId == adminRole.Id);
+        adminRole.Permissions.Select(item => $"{item.Resource}.{item.Action}")
+            .Should().Contain(ProtectedTenantAdminPolicy.MandatoryPermissionKeys);
+
+        var activePermissionKeys = await context.Permissions.IgnoreQueryFilters()
+            .Where(item => item.TenantId == SeedDataProvider.TenantId && !item.IsDeleted)
+            .Select(item => item.Name)
+            .ToListAsync();
+        activePermissionKeys.Should().BeEquivalentTo(PermissionCatalog.Entries
+            .Where(item => item.IsActive)
+            .Select(item => item.Key));
+
+        new SettingDefinitionCatalog().All.Should().NotBeEmpty(
+            "system setting defaults are code-defined and need no per-tenant override rows");
+        (await context.Lookups.IgnoreQueryFilters().CountAsync(item => item.TenantId == SeedDataProvider.TenantId
+            && item.Category == NEXUS.SharedKernel.ReferenceDataCategories.WorkItemStatus && !item.IsDeleted))
+            .Should().BeGreaterThan(0);
+        (await context.Lookups.IgnoreQueryFilters().CountAsync(item => item.TenantId == SeedDataProvider.TenantId
+            && item.Category == NEXUS.SharedKernel.ReferenceDataCategories.VendorCategory && !item.IsDeleted))
+            .Should().BeGreaterThan(0);
+        (await context.Currencies.IgnoreQueryFilters().CountAsync(item => item.TenantId == SeedDataProvider.TenantId && !item.IsDeleted))
+            .Should().BeGreaterThan(0);
+        (await context.DocumentCategories.IgnoreQueryFilters().CountAsync(item => item.TenantId == SeedDataProvider.TenantId && !item.IsDeleted))
+            .Should().BeGreaterThan(0);
+        (await context.Skills.IgnoreQueryFilters().CountAsync(item => item.TenantId == SeedDataProvider.TenantId && !item.IsDeleted))
+            .Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public async Task SeedMinimalAsync_RefusesExistingBusinessDataWithoutChangingIt()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        await using var context = new AppDbContext(options);
+        var existingProject = new NEXUS.Modules.ProjectManagement.Domain.Project
+        {
+            TenantId = SeedDataProvider.TenantId,
+            Name = "Existing project",
+            Code = "EXISTING-1",
+            CreatedBy = "SeedDataProviderTests"
+        };
+        context.Projects.Add(existingProject);
+        await context.SaveChangesAsync();
+
+        Func<Task> seed = () => SeedDataProvider.SeedMinimalAsync(context);
+        await seed.Should().ThrowAsync<InvalidOperationException>();
+
+        (await context.Projects.IgnoreQueryFilters().CountAsync()).Should().Be(1);
+        (await context.Users.IgnoreQueryFilters().CountAsync()).Should().Be(0);
+        (await context.Roles.IgnoreQueryFilters().CountAsync()).Should().Be(0);
+        (await context.Permissions.IgnoreQueryFilters().CountAsync()).Should().Be(0);
+        (await context.Tenants.IgnoreQueryFilters().CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task SeedMinimalAsync_RefusesUnexpectedUserWithoutCreatingAdminOrRoles()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        await using var context = new AppDbContext(options);
+        context.Users.Add(new User
+        {
+            TenantId = SeedDataProvider.TenantId,
+            Email = "pre-existing@nexus.test",
+            PasswordHash = "test-only-hash",
+            FirstName = "Existing",
+            LastName = "User",
+            IsActive = true,
+            CreatedBy = "SeedDataProviderTests"
+        });
+        await context.SaveChangesAsync();
+
+        Func<Task> seed = () => SeedDataProvider.SeedMinimalAsync(context);
+        await seed.Should().ThrowAsync<InvalidOperationException>();
+
+        (await context.Users.IgnoreQueryFilters().CountAsync()).Should().Be(1);
+        (await context.Users.IgnoreQueryFilters().CountAsync(item => item.Email == "admin@nexus.com")).Should().Be(0);
+        (await context.Roles.IgnoreQueryFilters().CountAsync()).Should().Be(0);
+        (await context.Permissions.IgnoreQueryFilters().CountAsync()).Should().Be(0);
+        (await context.Tenants.IgnoreQueryFilters().CountAsync()).Should().Be(0);
+    }
+
+    private static async Task<MinimalSeedSnapshot> ReadMinimalSeedSnapshotAsync(AppDbContext context) => new(
+        await context.Tenants.IgnoreQueryFilters().CountAsync(),
+        await context.Organizations.IgnoreQueryFilters().CountAsync(),
+        await context.Users.IgnoreQueryFilters().CountAsync(),
+        await context.Roles.IgnoreQueryFilters().CountAsync(),
+        await context.Permissions.IgnoreQueryFilters().CountAsync(),
+        await context.UserRoles.IgnoreQueryFilters().CountAsync(),
+        await context.Lookups.IgnoreQueryFilters().CountAsync(),
+        await context.Currencies.IgnoreQueryFilters().CountAsync(),
+        await context.DocumentCategories.IgnoreQueryFilters().CountAsync(),
+        await context.Skills.IgnoreQueryFilters().CountAsync(),
+        await context.Teams.IgnoreQueryFilters().CountAsync(),
+        await context.Projects.IgnoreQueryFilters().CountAsync(),
+        await context.Portfolios.IgnoreQueryFilters().CountAsync(),
+        await context.Programs.IgnoreQueryFilters().CountAsync(),
+        await context.ProjectHandoverRequests.IgnoreQueryFilters().CountAsync(),
+        await context.ProgramHandoverRequests.IgnoreQueryFilters().CountAsync(),
+        await context.PortfolioHandoverRequests.IgnoreQueryFilters().CountAsync(),
+        await context.Budgets.IgnoreQueryFilters().CountAsync(),
+        await context.ProjectAnnualBudgets.IgnoreQueryFilters().CountAsync(),
+        await context.PortfolioBudgets.IgnoreQueryFilters().CountAsync(),
+        await context.BudgetRevisions.IgnoreQueryFilters().CountAsync(),
+        await context.ProjectAnnualBudgetClosings.IgnoreQueryFilters().CountAsync(),
+        await context.ProjectPaymentRequestFundingTransfers.IgnoreQueryFilters().CountAsync(),
+        await context.ProjectPaymentRequestDetails.IgnoreQueryFilters().CountAsync(),
+        await context.PaymentRequestApproverAssignments.IgnoreQueryFilters().CountAsync(),
+        await context.CostEntries.IgnoreQueryFilters().CountAsync(),
+        await context.CostApprovals.IgnoreQueryFilters().CountAsync(),
+        await context.PurchaseCommitments.IgnoreQueryFilters().CountAsync(),
+        await context.Invoices.IgnoreQueryFilters().CountAsync(),
+        await context.PaymentObligations.IgnoreQueryFilters().CountAsync(),
+        await context.PaymentSettlements.IgnoreQueryFilters().CountAsync(),
+        await context.PaymentNotificationDispatches.IgnoreQueryFilters().CountAsync(),
+        await context.Resources.IgnoreQueryFilters().CountAsync(),
+        await context.Vendors.IgnoreQueryFilters().CountAsync(),
+        await context.Contracts.IgnoreQueryFilters().CountAsync(),
+        await context.ResourceAllocations.IgnoreQueryFilters().CountAsync(),
+        await context.ResourceRequests.IgnoreQueryFilters().CountAsync(),
+        await context.ResourceCostProfiles.IgnoreQueryFilters().CountAsync(),
+        await context.WorkItems.IgnoreQueryFilters().CountAsync(),
+        await context.Risks.IgnoreQueryFilters().CountAsync(),
+        await context.Issues.IgnoreQueryFilters().CountAsync(),
+        await context.Meetings.IgnoreQueryFilters().CountAsync(),
+        await context.Documents.IgnoreQueryFilters().CountAsync());
+
+    private sealed record MinimalSeedSnapshot(
+        int Tenants,
+        int Organizations,
+        int Users,
+        int Roles,
+        int Permissions,
+        int UserRoles,
+        int Lookups,
+        int Currencies,
+        int DocumentCategories,
+        int Skills,
+        int Teams,
+        int Projects,
+        int Portfolios,
+        int Programs,
+        int ProjectHandoverRequests,
+        int ProgramHandoverRequests,
+        int PortfolioHandoverRequests,
+        int Budgets,
+        int ProjectAnnualBudgets,
+        int PortfolioBudgets,
+        int BudgetRevisions,
+        int ProjectAnnualBudgetClosings,
+        int ProjectPaymentRequestFundingTransfers,
+        int ProjectPaymentRequestDetails,
+        int PaymentRequestApproverAssignments,
+        int CostEntries,
+        int CostApprovals,
+        int PurchaseCommitments,
+        int Invoices,
+        int PaymentObligations,
+        int PaymentSettlements,
+        int PaymentNotificationDispatches,
+        int Resources,
+        int Vendors,
+        int Contracts,
+        int ResourceAllocations,
+        int ResourceRequests,
+        int ResourceCostProfiles,
+        int WorkItems,
+        int Risks,
+        int Issues,
+        int Meetings,
+        int Documents);
 }

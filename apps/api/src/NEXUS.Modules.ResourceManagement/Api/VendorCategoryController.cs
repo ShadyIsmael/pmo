@@ -17,7 +17,7 @@ public class VendorCategoryController : ControllerBase
     }
 
     [HttpGet]
-    [Authorize(Policy = "VendorCategory.View")]
+    [Authorize(Policy = "ReferenceData.View")]
     public async Task<IActionResult> GetAll([FromQuery] bool activeOnly = true, CancellationToken cancellationToken = default)
     {
         var result = activeOnly
@@ -27,7 +27,7 @@ public class VendorCategoryController : ControllerBase
     }
 
     [HttpGet("{id:guid}")]
-    [Authorize(Policy = "VendorCategory.View")]
+    [Authorize(Policy = "ReferenceData.View")]
     public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
     {
         var result = await _service.GetByIdAsync(id, cancellationToken);
@@ -36,7 +36,7 @@ public class VendorCategoryController : ControllerBase
     }
 
     [HttpPost]
-    [Authorize(Policy = "VendorCategory.Manage")]
+    [Authorize(Policy = "ReferenceData.Create")]
     public async Task<IActionResult> Create([FromBody] CreateLookupDto dto, CancellationToken cancellationToken)
     {
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
@@ -51,7 +51,7 @@ public class VendorCategoryController : ControllerBase
     }
 
     [HttpPut("{id:guid}")]
-    [Authorize(Policy = "VendorCategory.Manage")]
+    [Authorize(Policy = "ReferenceData.Edit")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateLookupDto dto, CancellationToken cancellationToken)
     {
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
@@ -67,7 +67,7 @@ public class VendorCategoryController : ControllerBase
     }
 
     [HttpPut("{id:guid}/deactivate")]
-    [Authorize(Policy = "VendorCategory.Manage")]
+    [Authorize(Policy = "ReferenceData.Delete")]
     public async Task<IActionResult> Deactivate(Guid id, CancellationToken cancellationToken)
     {
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";

@@ -23,6 +23,11 @@ export interface AssignmentRecoveryItem {
   missingParentHierarchy: boolean;
   assignmentRequestStatus?: string | null;
   assignmentInitiationType?: string | null;
+  requestId?: string | null;
+  canViewExistingRequest?: boolean;
+  canReviewExistingRequest?: boolean;
+  isInitiatedByCurrentUser?: boolean;
+  isAssignedToCurrentUser?: boolean;
   proposedManagerId?: string | null;
   proposedManagerName?: string | null;
   initiatedByName?: string | null;
@@ -53,9 +58,36 @@ export interface AssignmentRecoveryPage {
   summary: AssignmentRecoverySummary;
 }
 
+export interface RecoveryProjectSummary {
+  publicId: string;
+  name: string;
+  code: string;
+  description?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
+  sponsorName?: string | null;
+}
+
 export interface RecoveryCandidate { userId: string; fullName: string; email: string; jobTitle?: string | null; managerTypes: string[]; }
 export interface RecoveryAssignmentInput { managerId: string; effectiveDate: string; reason: string; notes?: string; }
 export interface RecoveryAssignmentCreated { requestId: string; entityType: RecoveryEntityType; entityPublicId: string; entityName: string; status: string; initiationType: string; proposedManagerName: string; initiatedByName: string; requestedAt: string; }
+export interface RecoveryExistingRequestDetails {
+  id: string;
+  projectPublicId?: string | null;
+  projectName: string;
+  projectCode: string;
+  status: string;
+  currentProjectManagerName?: string | null;
+  newProjectManagerName: string;
+  requestedByName: string;
+  requestedAt: string;
+  effectiveHandoverDate: string;
+  reason: string;
+  notes?: string | null;
+  respondedByName?: string | null;
+  respondedAt?: string | null;
+  rejectionReason?: string | null;
+}
 export interface RecoveryHistoryItem { recordType: string; status: string; previousManagerName?: string | null; managerName: string; initiatedByName?: string | null; requestedAt?: string | null; effectiveDate: string; respondedAt?: string | null; reason?: string | null; notes?: string | null; rejectionReason?: string | null; }
 export interface RecoveryHistory { items: RecoveryHistoryItem[]; }
 
@@ -64,6 +96,15 @@ export function useAssignmentRecoveryPage(type: RecoveryEntityType, page: number
     queryKey: ["administration", "assignment-recovery", type, page, pageSize, search, filter],
     queryFn: () => api.get<AssignmentRecoveryPage>(endpoints.assignmentRecovery.list(type), { page, pageSize, search: search || undefined, filter }),
     enabled,
+    staleTime: 15_000,
+  });
+}
+
+export function useRecoveryProjectSummary(publicId: string | null, enabled: boolean) {
+  return useQuery({
+    queryKey: ["administration", "assignment-recovery", "project-summary", publicId],
+    queryFn: () => api.get<RecoveryProjectSummary>(endpoints.assignmentRecovery.projectSummary(publicId!)),
+    enabled: enabled && Boolean(publicId),
     staleTime: 15_000,
   });
 }
@@ -91,6 +132,18 @@ export function useAssignmentRecoveryHistory(type: RecoveryEntityType, publicId:
     queryKey: ["administration", "assignment-recovery", "history", type, publicId],
     queryFn: () => api.get<RecoveryHistory>(endpoints.assignmentRecovery.history(type, publicId!)),
     enabled: enabled && Boolean(publicId),
+    staleTime: 0,
+  });
+}
+
+export function useRecoveryExistingRequestDetails(requestId: string | null, enabled: boolean) {
+  return useQuery({
+    queryKey: ["administration", "assignment-recovery", "existing-request", requestId],
+    queryFn: () => api.get<RecoveryExistingRequestDetails>(
+      "/api/handover-requests/" + encodeURIComponent(requestId!) + "/details"
+    ),
+    enabled: enabled && Boolean(requestId),
+    retry: false,
     staleTime: 0,
   });
 }

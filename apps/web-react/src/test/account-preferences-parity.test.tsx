@@ -10,18 +10,18 @@ describe("account preferences source parity", () => {
     window.localStorage.setItem("nexus-theme", "light");
   });
 
-  it("renders the Display card and an accessible Compact Mode switch in EN and AR", () => {
+  it("persists theme and locale through their existing providers in EN and AR", () => {
     render(<ThemeProvider><I18nProvider><PreferencesPage /></I18nProvider></ThemeProvider>);
 
     expect(screen.getByText("Display")).toBeInTheDocument();
-    expect(screen.getByText("Choose how NEXUS PMO appears for you.")).toBeInTheDocument();
-    const compactMode = screen.getByRole("switch", { name: "Compact mode" });
-    expect(compactMode).toHaveAttribute("aria-checked", "false");
-    fireEvent.click(compactMode);
-    expect(compactMode).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByText("Choose how FOPX PM appears for you.")).toBeInTheDocument();
+    expect(screen.getByText("A compact layout preference is not currently supported by this application.")).toBeInTheDocument();
+    fireEvent.change(screen.getByRole("combobox", { name: "Theme" }), { target: { value: "dark" } });
+    expect(window.localStorage.getItem("nexus-theme")).toBe("dark");
 
     fireEvent.change(screen.getByRole("combobox", { name: "Language" }), { target: { value: "ar" } });
-    expect(screen.getByRole("switch", { name: "الوضع المضغوط" })).toHaveAttribute("aria-checked", "true");
-    expect(screen.getByText("اختر طريقة ظهور NEXUS PMO لك.")).toBeInTheDocument();
+    expect(screen.getByText("اختر طريقة ظهور FOPX PM لك.")).toBeInTheDocument();
+    expect(window.localStorage.getItem("nexus-locale")).toBe("ar");
+    expect(document.documentElement.dir).toBe("rtl");
   });
 });

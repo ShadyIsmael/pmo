@@ -11,8 +11,6 @@ namespace NEXUS.Modules.ProjectManagement.Application;
 
 internal sealed class LegacyProjectChangeRequestService
 {
-    private const string PmoAdminRole = "pmo.admin";
-
     private readonly DbContext _context;
     private readonly IAuditService _auditService;
     private readonly IHttpContextAccessor _httpContextAccessor;
@@ -260,29 +258,8 @@ internal sealed class LegacyProjectChangeRequestService
         }
 
         if (request.BudgetChangeAmount.HasValue)
-        {
-            var project = await _context.Set<Project>().FirstOrDefaultAsync(p => p.Id == request.ProjectId && p.TenantId == tenantId, cancellationToken);
-            if (project is null) return Result<ProjectChangeRequestDto>.Failure(Error.NotFound());
-            if (!request.BudgetBeforeChange.HasValue || project.Budget != request.BudgetBeforeChange)
-                return Result<ProjectChangeRequestDto>.Failure(Error.Conflict("The approved project budget has changed. Cancel and resubmit this Change Request against the current ceiling."));
-            var proposed = request.BudgetBeforeChange.Value + request.BudgetChangeAmount.Value;
-            if (proposed < 0)
-                return Result<ProjectChangeRequestDto>.Failure(Error.Validation("The resulting project budget cannot be negative."));
-            var financials = _financialLookup is null
-                ? null
-                : await _financialLookup.GetAsync(project.Id, project.Currency, cancellationToken);
-            var currency = project.Currency?.Trim().ToUpperInvariant() ?? "GBP";
-            var allocatedBudget = financials?.AllocatedBudget ?? 0;
-            var actualCost = financials?.ActualCost ?? 0;
-            var committedCost = financials?.CommittedCost ?? 0;
-            if (proposed < allocatedBudget)
-                return Result<ProjectChangeRequestDto>.Failure(Error.Validation($"The proposed project budget of {currency} {proposed:N2} is lower than the currently allocated budget of {currency} {allocatedBudget:N2}. Reduce or revise Budget Lines before approving this Change Request."));
-            if (proposed < actualCost + committedCost)
-                return Result<ProjectChangeRequestDto>.Failure(Error.Validation($"The proposed project budget of {currency} {proposed:N2} is below the project's actual costs ({currency} {actualCost:N2}) and outstanding commitments ({currency} {committedCost:N2}). The budget cannot be reduced below current financial obligations."));
-            project.Budget = proposed;
-            project.UpdatedBy = userId;
-            project.UpdatedAt = DateTime.UtcNow;
-        }
+            return Result<ProjectChangeRequestDto>.Failure(Error.Forbidden(
+                "Financial ceiling changes require final approval through the assigned Change Request workflow."));
 
         request.Status = ProjectChangeRequest.Statuses.Approved;
         request.ReviewedBy = reviewerId;
@@ -459,13 +436,16 @@ internal sealed class LegacyProjectChangeRequestService
 
     private bool IsReviewer()
     {
-        return _httpContextAccessor.HttpContext?.User.IsInRole(PmoAdminRole) == true;
+        return HasPermission("ChangeRequest.Approve");
     }
 
     private bool IsPmoAdmin()
     {
-        return _httpContextAccessor.HttpContext?.User.IsInRole(PmoAdminRole) == true;
+        return HasPermission("ChangeRequest.Manage");
     }
+
+    private bool HasPermission(string permission) =>
+        _httpContextAccessor.HttpContext?.User.HasClaim("permission", permission) == true;
 
     private Result<Guid> GetCurrentTenantId()
     {

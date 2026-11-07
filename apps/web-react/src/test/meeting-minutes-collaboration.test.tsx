@@ -4,12 +4,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@i18n/messages";
 import { meetingsApiFull, type ChecklistItemDto, type MeetingAttachmentDto, type MeetingCommentDto } from "@api/meetingsFull";
 import { MeetingMinutesCollaboration } from "@features/delivery/MeetingMinutesCollaboration";
+import { MemoryRouter } from "react-router-dom";
 
 let storedComments: MeetingCommentDto[] = [];
 
-function renderPanel(canManage: boolean) {
+function renderPanel(canManage: boolean, initialPath = "/meetings/meeting-1") {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } } });
-  return render(<QueryClientProvider client={client}><I18nProvider><MeetingMinutesCollaboration meetingId="meeting-1" canManage={canManage} locale="en" mainContent={<section>Minutes editor</section>} /></I18nProvider></QueryClientProvider>);
+  return render(<MemoryRouter initialEntries={[initialPath]}><QueryClientProvider client={client}><I18nProvider><MeetingMinutesCollaboration meetingId="meeting-1" canManage={canManage} locale="en" mainContent={<section>Minutes editor</section>} /></I18nProvider></QueryClientProvider></MemoryRouter>);
 }
 
 afterEach(() => {
@@ -49,6 +50,35 @@ describe("meeting minutes collaboration", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: /Show replies/ }));
     expect(await screen.findByText("Follow-up noted")).toBeInTheDocument();
+  });
+
+  it("opens and focuses a comment notification target", async () => {
+    vi.spyOn(meetingsApiFull, "checklist").mockResolvedValue([]);
+    vi.spyOn(meetingsApiFull, "attachments").mockResolvedValue([]);
+    vi.spyOn(meetingsApiFull, "comments").mockResolvedValue([{
+      id: "comment-1", publicId: "comment-public-1", meetingMinutesId: "minutes-1", commentText: "Decision recorded", createdBy: "user-1", createdAt: "2026-10-07T08:00:00Z",
+    }]);
+
+    renderPanel(false, "/meetings/meeting-public-1?tab=minutes&comment=comment-public-1");
+
+    const target = await screen.findByText("Decision recorded");
+    await waitFor(() => expect(document.getElementById("meeting-comment-comment-public-1")).toHaveFocus());
+    expect(target.closest("article")).toHaveClass("ring-2");
+  });
+
+  it("expands and focuses a reply notification target", async () => {
+    vi.spyOn(meetingsApiFull, "checklist").mockResolvedValue([]);
+    vi.spyOn(meetingsApiFull, "attachments").mockResolvedValue([]);
+    vi.spyOn(meetingsApiFull, "comments").mockResolvedValue([
+      { id: "comment-1", publicId: "comment-public-1", meetingMinutesId: "minutes-1", commentText: "Decision recorded", createdBy: "user-1", createdAt: "2026-10-07T08:00:00Z" },
+      { id: "reply-1", publicId: "reply-public-1", meetingMinutesId: "minutes-1", parentCommentId: "comment-1", commentText: "Follow-up noted", createdBy: "user-2", createdAt: "2026-10-07T08:05:00Z" },
+    ]);
+
+    renderPanel(false, "/meetings/meeting-public-1?tab=minutes&reply=reply-public-1");
+
+    await screen.findByText("Follow-up noted");
+    await waitFor(() => expect(document.getElementById("meeting-comment-reply-public-1")).toHaveFocus());
+    expect(screen.getByRole("button", { name: /Hide replies/ })).toBeInTheDocument();
   });
 
   it("does not expose collaboration mutations without Meeting.Manage", async () => {

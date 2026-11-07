@@ -41,6 +41,14 @@ function toRequestContext(perspective: ManagementPerspective, isNative: boolean,
   };
 }
 
+function defaultEntityContextId(perspective: ManagementPerspective, isNative: boolean, availability?: PerspectiveSnapshot["availablePerspectives"][number]) {
+  // Native Project Managers can manage all projects assigned to them. Selecting
+  // the first project by default narrows collection endpoints such as /projects
+  // to one project and hides later handovers from the project registry.
+  if (perspective === MANAGEMENT_PERSPECTIVES.ProjectManager && isNative) return undefined;
+  return availability?.contexts[0]?.id;
+}
+
 export function ManagementProvider({ user, sessionId = getClientSessionId(), children }: { user: { id: string; permissions: string[] } | null; sessionId?: string | null; children: React.ReactNode }) {
   const queryClient = useQueryClient();
   const [snapshot, setSnapshot] = React.useState<PerspectiveSnapshot | null>(null);
@@ -94,7 +102,8 @@ export function ManagementProvider({ user, sessionId = getClientSessionId(), chi
         setSnapshot(next);
         if (next.defaultPerspective) {
           const availability = next.availablePerspectives.find((a) => a.perspective === next.defaultPerspective);
-          applyContext(toRequestContext(next.defaultPerspective, availability?.isNative ?? true, availability?.contexts[0]?.id));
+          const isNative = availability?.isNative ?? true;
+          applyContext(toRequestContext(next.defaultPerspective, isNative, defaultEntityContextId(next.defaultPerspective, isNative, availability)));
         } else {
           // A user without a management assignment still has a valid tenant
           // context. Do not manufacture a PortfolioManager context: the API
@@ -125,8 +134,9 @@ export function ManagementProvider({ user, sessionId = getClientSessionId(), chi
     (perspective: ManagementPerspective, entityId?: string) => {
       const availability = snapshot?.availablePerspectives.find((a) => a.perspective === perspective);
       if (!availability) return;
-      const resolved = entityId ?? availability.contexts[0]?.id;
-      if (availability.requiresEntityContext && !resolved) return;
+      const resolved = entityId ?? defaultEntityContextId(perspective, availability.isNative, availability);
+      const unscopedNativeProjectManager = perspective === MANAGEMENT_PERSPECTIVES.ProjectManager && availability.isNative;
+      if (availability.requiresEntityContext && !resolved && !unscopedNativeProjectManager) return;
       applyContext(toRequestContext(perspective, availability.isNative, resolved));
     },
     [snapshot, applyContext]
@@ -136,7 +146,7 @@ export function ManagementProvider({ user, sessionId = getClientSessionId(), chi
     const native = snapshot?.defaultPerspective;
     if (!native) return;
     const availability = snapshot?.availablePerspectives.find((a) => a.perspective === native);
-    applyContext(toRequestContext(native, true, availability?.contexts[0]?.id));
+    applyContext(toRequestContext(native, true, defaultEntityContextId(native, true, availability)));
   }, [snapshot, applyContext]);
 
   const refreshSnapshot = React.useCallback(async () => {
@@ -150,7 +160,9 @@ export function ManagementProvider({ user, sessionId = getClientSessionId(), chi
         const available = next.availablePerspectives.find((item) => item.perspective === current.perspective);
         const selectedId = current.portfolioId ?? current.programId ?? current.projectId;
         const modeMatches = current.viewMode === "Native" ? available?.isNative : available && !available.isNative;
-        if (available && modeMatches && selectedId && available.contexts.some((item) => item.id === selectedId)) {
+        const unscopedNativeProjectManager = current.perspective === MANAGEMENT_PERSPECTIVES.ProjectManager
+          && current.viewMode === "Native" && !selectedId && available?.isNative;
+        if (available && modeMatches && (unscopedNativeProjectManager || (selectedId && available.contexts.some((item) => item.id === selectedId)))) {
           nextContext = current;
           applyContext(nextContext);
           return;
@@ -161,7 +173,7 @@ export function ManagementProvider({ user, sessionId = getClientSessionId(), chi
         return;
       }
       const fallback = next.availablePerspectives.find((item) => item.perspective === next.defaultPerspective);
-      nextContext = fallback ? toRequestContext(next.defaultPerspective, fallback.isNative, fallback.contexts[0]?.id) : null;
+      nextContext = fallback ? toRequestContext(next.defaultPerspective, fallback.isNative, defaultEntityContextId(next.defaultPerspective, fallback.isNative, fallback)) : null;
       applyContext(nextContext);
     } catch {
       // Keep the last valid permission snapshot and management context on refresh failure.
@@ -177,7 +189,7 @@ export function ManagementProvider({ user, sessionId = getClientSessionId(), chi
       setSnapshot(next);
       const availability = next.availablePerspectives.find((item) => item.perspective === next.defaultPerspective);
       applyContext(next.defaultPerspective && availability
-        ? toRequestContext(next.defaultPerspective, availability.isNative, availability.contexts[0]?.id)
+        ? toRequestContext(next.defaultPerspective, availability.isNative, defaultEntityContextId(next.defaultPerspective, availability.isNative, availability))
         : null);
       setInitializedUserId(user.id);
     } catch {
@@ -213,5 +225,3 @@ export function useManagement() {
   return value;
 }
 
-// Back-compat alias used by Next.js code paths
-export const useManagementPerspective = useManagement;

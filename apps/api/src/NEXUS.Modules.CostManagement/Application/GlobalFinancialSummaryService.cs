@@ -66,7 +66,29 @@ public sealed class GlobalFinancialSummaryService : IGlobalFinancialSummaryServi
         var commitmentGroups = commitments.Where(c => c.ProjectId.HasValue).ToLookup(c => c.ProjectId!.Value);
         var byProject = projects.Select(project =>
         {
+            // Authoritative project currency comes from the project reference.
+            // Never silently substitute GBP when the project currency is missing.
             var currency = NormalizeCurrency(project.Currency);
+            if (string.IsNullOrEmpty(currency))
+            {
+                return new ProjectFinancialBreakdown
+                {
+                    ProjectId = project.Id,
+                    ProjectPublicId = project.PublicId,
+                    ProjectName = project.Name,
+                    Currency = string.Empty,
+                    OriginalApprovedBudget = 0m,
+                    ApprovedBudget = 0m,
+                    AllocatedBudget = 0m,
+                    UnallocatedBudget = 0m,
+                    ActualCost = 0m,
+                    CommittedCost = 0m,
+                    AvailableBudget = 0m,
+                    ForecastAtCompletion = 0m,
+                    ForecastVariance = 0m,
+                    BudgetUtilizationPercentage = null
+                };
+            }
             var lines = budgetGroups[project.Id].Where(b => NormalizeCurrency(b.Currency) == currency).ToList();
             var allocated = lines.Sum(b => b.ApprovedAmount);
             var ceiling = project.CurrentApprovedProjectBudget ?? 0;
@@ -115,6 +137,6 @@ public sealed class GlobalFinancialSummaryService : IGlobalFinancialSummaryServi
 
     private static string NormalizeCurrency(string? currency)
     {
-        return (currency ?? "GBP").Trim().ToUpperInvariant();
+        return (currency ?? string.Empty).Trim().ToUpperInvariant();
     }
 }

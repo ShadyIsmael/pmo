@@ -7,6 +7,7 @@ using NEXUS.Modules.ProjectPlanning.Application.Mapping;
 using NEXUS.Modules.ProjectPlanning.Domain;
 using NEXUS.SharedKernel;
 using NEXUS.SharedKernel.Helpers;
+using NEXUS.SharedKernel.Management;
 
 namespace NEXUS.Modules.ProjectPlanning.Application;
 
@@ -18,6 +19,8 @@ public class PlanService : IPlanService
     private readonly IPlanWbsService? _wbsService;
     private readonly IPlanActivityService? _activityService;
     private readonly IPlanDependencyService? _dependencyService;
+    private readonly IManagementContextAccessor? _managementContextAccessor;
+    private readonly IProjectPublicIdLookup? _projectPublicIdLookup;
 
     public PlanService(
         DbContext context,
@@ -25,7 +28,9 @@ public class PlanService : IPlanService
         IHttpContextAccessor httpContextAccessor,
         IPlanWbsService? wbsService = null,
         IPlanActivityService? activityService = null,
-        IPlanDependencyService? dependencyService = null)
+        IPlanDependencyService? dependencyService = null,
+        IManagementContextAccessor? managementContextAccessor = null,
+        IProjectPublicIdLookup? projectPublicIdLookup = null)
     {
         _context = context;
         _auditService = auditService;
@@ -33,6 +38,8 @@ public class PlanService : IPlanService
         _wbsService = wbsService;
         _activityService = activityService;
         _dependencyService = dependencyService;
+        _managementContextAccessor = managementContextAccessor;
+        _projectPublicIdLookup = projectPublicIdLookup;
     }
 
     public async Task<Result<PlanDto>> CreateAsync(CreatePlanDto dto, string userId, CancellationToken cancellationToken = default)
@@ -54,6 +61,29 @@ public class PlanService : IPlanService
         }
 
         var tenantId = GetCurrentTenantId();
+        if (!tenantId.HasValue)
+            return Result<PlanDto>.Failure(Error.Forbidden("A trusted tenant context is required."));
+
+        var managementContext = _managementContextAccessor?.Current;
+        if (managementContext is null
+            || managementContext.TenantId != tenantId.Value
+            || managementContext.EffectiveReadOnly)
+        {
+            return Result<PlanDto>.Failure(Error.Forbidden("A matching writable management context is required."));
+        }
+
+        if (!managementContext.Scope.ProjectIds.Contains(dto.ProjectId))
+            return Result<PlanDto>.Failure(Error.NotFound("Project not found"));
+
+        if (_projectPublicIdLookup is null)
+            return Result<PlanDto>.Failure(Error.Forbidden("Project ownership could not be verified."));
+
+        var projectPublicId = await _projectPublicIdLookup.FindPublicIdAsync(
+            dto.ProjectId,
+            tenantId.Value,
+            cancellationToken);
+        if (!projectPublicId.HasValue)
+            return Result<PlanDto>.Failure(Error.NotFound("Project not found"));
 
         var duplicateName = await _context.Set<Plan>()
             .AnyAsync(p => p.ProjectId == dto.ProjectId && p.PlanType == dto.PlanType.Value && p.Name == name, cancellationToken);
@@ -62,7 +92,7 @@ public class PlanService : IPlanService
 
         var plan = new Plan
         {
-            TenantId = tenantId,
+            TenantId = tenantId.Value,
             ProjectId = dto.ProjectId,
             PlanType = dto.PlanType.Value,
             Name = name,
@@ -74,7 +104,7 @@ public class PlanService : IPlanService
 
         var workingVersion = new PlanVersion
         {
-            TenantId = tenantId,
+            TenantId = tenantId.Value,
             PlanId = plan.Id,
             VersionNumber = 1,
             Type = PlanVersionType.Working,
@@ -114,6 +144,7 @@ public class PlanService : IPlanService
         var plans = await _context.Set<Plan>()
             .Where(p => p.ProjectId == projectId)
             .OrderByDescending(p => p.CreatedAt)
+            .ThenByDescending(p => p.Id)
             .AsNoTracking()
             .Select(plan => new PlanSummaryDto
             {
@@ -199,15 +230,14 @@ public class PlanService : IPlanService
         return Result<PlanVersionDto>.Success(version.ToDto());
     }
 
-    private Guid GetCurrentTenantId()
+    private Guid? GetCurrentTenantId()
     {
-        var tenantId = _httpContextAccessor.HttpContext?.User.FindFirst("tenantId")?.Value;
-        if (!string.IsNullOrWhiteSpace(tenantId) && Guid.TryParse(tenantId, out var parsed))
-        {
-            return parsed;
-        }
-
-        return TenantConstants.DemoTenantId;
+        var user = _httpContextAccessor.HttpContext?.User;
+        return user?.Identity?.IsAuthenticated == true
+            && Guid.TryParse(user.FindFirst("tenantId")?.Value, out var tenantId)
+            && tenantId != Guid.Empty
+                ? tenantId
+                : null;
     }
 
     private static Guid? TryParseGuid(string value)

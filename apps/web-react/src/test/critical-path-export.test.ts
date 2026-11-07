@@ -15,7 +15,7 @@ import {
 } from "@features/projects/lib/critical-path-export";
 
 const labels: CriticalPathExportLabels = {
-  title: "NEXUS PMO — Critical Path Network Diagram", subtitle: "Saved Working schedule", project: "Project", plan: "Plan", workingVersion: "Working version", exportedAt: "Exported",
+  title: "FOPX PM — Critical Path Network Diagram", subtitle: "Saved Working schedule", project: "Project", plan: "Plan", workingVersion: "Working version", exportedAt: "Exported",
   activities: "Activities", dependencies: "Dependencies", criticalActivities: "Critical activities", criticalPaths: "Critical paths", projectFinish: "Project finish",
   task: "Task", summary: "Summary task", milestone: "Milestone", critical: "Critical", nonCritical: "Non-critical", taskId: "Task ID", wbs: "WBS", name: "Name",
   duration: "Duration", start: "Planned start", finish: "Planned finish", totalFloat: "Total float", progress: "Progress", days: "days", planned: "Planned",

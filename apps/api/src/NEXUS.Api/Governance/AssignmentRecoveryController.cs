@@ -16,14 +16,20 @@ public sealed class AssignmentRecoveryController : ControllerBase
     public AssignmentRecoveryController(AssignmentRecoveryService service) => _service = service;
 
     [HttpGet("{entityType}")]
-    [Authorize(Policy = "AssignmentRecovery.Discover")]
+    [Authorize(Policy = AssignmentRecoveryPermissions.View)]
     public Task<IActionResult> GetPage(
         string entityType, [FromQuery] string? search, [FromQuery] string? filter,
         [FromQuery] int page = 1, [FromQuery] int pageSize = 25, CancellationToken cancellationToken = default) =>
         ExecuteAsync(() => _service.GetPageAsync(TenantId(), ActorId(), entityType, search, filter, page, pageSize, cancellationToken));
 
+    [HttpGet("projects/{publicId:guid}/summary")]
+    [Authorize(Policy = AssignmentRecoveryPermissions.Initiate)]
+    [Authorize(Policy = "Handover.AdminInitiate")]
+    public Task<IActionResult> GetInitialProjectManagerSummary(Guid publicId, CancellationToken cancellationToken) =>
+        ExecuteAsync(() => _service.GetInitialProjectManagerSummaryAsync(TenantId(), ActorId(), publicId, cancellationToken));
+
     [HttpGet("{entityType}/{publicId:guid}/manager-candidates")]
-    [Authorize(Policy = "AssignmentRecovery.Act")]
+    [Authorize(Policy = AssignmentRecoveryPermissions.View)]
     public Task<IActionResult> GetManagerCandidates(string entityType, Guid publicId, CancellationToken cancellationToken) =>
         ExecuteAsync(() => _service.GetManagerCandidatesAsync(TenantId(), ActorId(), entityType, publicId, cancellationToken));
 
@@ -33,7 +39,7 @@ public sealed class AssignmentRecoveryController : ControllerBase
         ExecuteAsync(() => _service.GetSponsorCandidatesAsync(TenantId(), ActorId(), cancellationToken));
 
     [HttpGet("{entityType}/{publicId:guid}/history")]
-    [Authorize(Policy = "AssignmentRecovery.Discover")]
+    [Authorize(Policy = AssignmentRecoveryPermissions.View)]
     public Task<IActionResult> GetHistory(string entityType, Guid publicId, CancellationToken cancellationToken) =>
         ExecuteAsync(() => _service.GetHistoryAsync(TenantId(), ActorId(), entityType, publicId, cancellationToken));
 
@@ -74,11 +80,14 @@ public sealed class AssignmentRecoveryController : ControllerBase
         }
         catch (AssignmentRecoveryException exception)
         {
-            return StatusCode(exception.StatusCode, new { error = exception.Message });
+            return StatusCode(exception.Error.StatusCode, exception.Error);
         }
         catch (DbUpdateException)
         {
-            return Conflict(new { error = "A conflicting governance update was saved by another administrator. Refresh and try again." });
+            return StatusCode(StatusCodes.Status409Conflict, new Error(
+                "ASSIGNMENT_RECOVERY_CONCURRENT_CONFLICT",
+                "A concurrent governance update was saved. Refresh the project and try again.",
+                StatusCodes.Status409Conflict));
         }
     }
 }

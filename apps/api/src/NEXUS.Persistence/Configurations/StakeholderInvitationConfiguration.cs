@@ -13,6 +13,8 @@ public sealed class StakeholderInvitationConfiguration : IEntityTypeConfiguratio
         builder.Property(item => item.Email).HasMaxLength(256).IsRequired();
         builder.Property(item => item.TokenHash).HasMaxLength(128).IsRequired();
         builder.Property(item => item.Status).HasConversion<string>().HasMaxLength(20).IsRequired();
+        builder.Property(item => item.ConsentVersion).HasMaxLength(64);
+        builder.Property(item => item.EmailDeliveryStatus).HasMaxLength(40).IsRequired();
         builder.Property(item => item.RowVersion).IsConcurrencyToken().ValueGeneratedNever();
 
         builder.HasOne(item => item.Project)

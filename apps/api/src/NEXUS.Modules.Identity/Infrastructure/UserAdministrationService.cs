@@ -13,7 +13,6 @@ namespace NEXUS.Modules.Identity.Application;
 
 public class UserAdministrationService : IUserAdministrationService
 {
-    private static readonly Guid DemoTenantId = Guid.Parse("11111111-1111-1111-1111-111111111111");
     private readonly DbContext _context;
     private readonly IPasswordHasher<User> _passwordHasher;
     private readonly IHttpContextAccessor _httpContextAccessor;
@@ -31,8 +30,14 @@ public class UserAdministrationService : IUserAdministrationService
         _passwordPolicy = passwordPolicy.Value;
     }
 
-    public async Task<PagedResult<UserAdminDto>> GetPagedAsync(int page, int pageSize, string? search, CancellationToken cancellationToken = default)
+    public async Task<Result<PagedResult<UserAdminDto>>> GetPagedAsync(int page, int pageSize, string? search, CancellationToken cancellationToken = default)
     {
+        if (!TryGetCurrentIdentity(null, null, out var actorId, out var tenantId))
+            return Result<PagedResult<UserAdminDto>>.Failure(Error.Forbidden("A valid authenticated user and tenant are required."));
+        var actorPermissions = await _effectivePermissions.GetEffectivePermissionsAsync(actorId, tenantId, cancellationToken);
+        if (!actorPermissions.Contains("Users.View"))
+            return Result<PagedResult<UserAdminDto>>.Failure(Error.Forbidden("Users.View is required to list tenant users."));
+
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 100);
         search = search?.Trim();
@@ -40,7 +45,10 @@ public class UserAdministrationService : IUserAdministrationService
             search = search[..200];
 
         var query = _context.Set<User>()
-            .Include(u => u.UserRoles)
+            .IgnoreQueryFilters()
+            .Where(user => user.TenantId == tenantId && !user.IsDeleted)
+            .Include(u => u.UserRoles.Where(userRole => userRole.TenantId == tenantId && !userRole.IsDeleted
+                && userRole.Role.TenantId == tenantId && !userRole.Role.IsDeleted))
                 .ThenInclude(ur => ur.Role)
             .AsNoTracking();
 
@@ -51,8 +59,7 @@ public class UserAdministrationService : IUserAdministrationService
                 u.FirstName.Contains(term) ||
                 u.LastName.Contains(term) ||
                 (u.FirstName + " " + u.LastName).Contains(term) ||
-                u.Email.Contains(term) ||
-                (u.JobTitle != null && u.JobTitle.Contains(term)));
+                u.Email.Contains(term));
         }
 
         var total = await query.CountAsync(cancellationToken);
@@ -64,28 +71,46 @@ public class UserAdministrationService : IUserAdministrationService
             .ToListAsync(cancellationToken);
 
         var dtos = items.Select(MapToDto).ToList();
-        return new PagedResult<UserAdminDto>(dtos, page, pageSize, total);
+        return Result<PagedResult<UserAdminDto>>.Success(new PagedResult<UserAdminDto>(dtos, page, pageSize, total));
     }
 
-    public async Task<IReadOnlyList<RoleDto>> GetRolesAsync(CancellationToken cancellationToken = default)
+    public async Task<Result<IReadOnlyList<RoleDto>>> GetRolesAsync(CancellationToken cancellationToken = default)
     {
+        if (!TryGetCurrentIdentity(null, null, out var actorId, out var tenantId))
+            return Result<IReadOnlyList<RoleDto>>.Failure(Error.Forbidden("A valid authenticated user and tenant are required."));
+        var actorPermissions = await _effectivePermissions.GetEffectivePermissionsAsync(actorId, tenantId, cancellationToken);
+        if (!actorPermissions.Contains("Roles.View"))
+            return Result<IReadOnlyList<RoleDto>>.Failure(Error.Forbidden("Roles.View is required to list tenant roles."));
+
         var roles = await _context.Set<Role>()
+            .IgnoreQueryFilters()
+            .Where(role => role.TenantId == tenantId && !role.IsDeleted)
             .AsNoTracking()
             .OrderBy(r => r.Category)
             .ThenBy(r => r.Name)
             .ToListAsync(cancellationToken);
 
-        return roles.Select(r => new RoleDto
+        return Result<IReadOnlyList<RoleDto>>.Success(roles.Select(r => new RoleDto
         {
             Id = r.Id,
             Name = r.Name,
             Description = r.Description,
             Category = r.Category
-        }).ToList();
+        }).ToList());
     }
 
     public async Task<Result<CreatedUserDto>> CreateAsync(CreateUserDto dto, string actorId, CancellationToken cancellationToken = default)
     {
+        if (!TryGetCurrentIdentity(actorId, null, out var actorUserId, out var tenantId))
+            return Result<CreatedUserDto>.Failure(Error.Forbidden("A valid authenticated user and tenant are required."));
+        var actorPermissions = await _effectivePermissions.GetEffectivePermissionsAsync(actorUserId, tenantId, cancellationToken);
+        if (!actorPermissions.Contains("Users.ManageAccounts"))
+            return Result<CreatedUserDto>.Failure(Error.Forbidden("Users.ManageAccounts is required to create a user account."));
+        if (!dto.IsActive && !actorPermissions.Contains("Users.SetStatus"))
+            return Result<CreatedUserDto>.Failure(Error.Forbidden("Users.SetStatus is required to create an inactive user account."));
+        if (dto.Roles?.Any() == true && !actorPermissions.Contains("Users.AssignRoles"))
+            return Result<CreatedUserDto>.Failure(Error.Forbidden("Users.AssignRoles is required to assign roles while creating a user."));
+
         var email = dto.Email?.Trim() ?? string.Empty;
         if (string.IsNullOrWhiteSpace(email) || !email.Contains('@'))
             return Result<CreatedUserDto>.Failure(Error.Validation("A valid email address is required"));
@@ -102,10 +127,10 @@ public class UserAdministrationService : IUserAdministrationService
         if (existing is not null)
             return Result<CreatedUserDto>.Failure(Error.Conflict("A user with this email already exists"));
 
-        var roles = await ResolveRolesAsync(dto.Roles, cancellationToken);
+        var roles = await ResolveRolesAsync(dto.Roles, tenantId, cancellationToken);
         if (roles is null)
             return Result<CreatedUserDto>.Failure(Error.Validation("One or more selected roles are unavailable"));
-        if (!await CanAssignRolesAsync(roles, actorId, GetCurrentTenantId(), cancellationToken))
+        if (!await CanAssignRolesAsync(roles, actorUserId, tenantId, targetUserId: null, cancellationToken))
             return Result<CreatedUserDto>.Failure(Error.Forbidden("You cannot assign a role with permissions you do not have"));
 
         var now = DateTime.UtcNow;
@@ -113,7 +138,7 @@ public class UserAdministrationService : IUserAdministrationService
 
         var user = new User
         {
-            TenantId = GetCurrentTenantId(),
+            TenantId = tenantId,
             Email = email,
             AuthenticationSource = AuthenticationSource.Local,
             PasswordHash = string.Empty,
@@ -122,8 +147,6 @@ public class UserAdministrationService : IUserAdministrationService
             PasswordChangedAt = now,
             FirstName = firstName,
             LastName = lastName,
-            JobTitle = dto.JobTitle,
-            Phone = dto.Phone,
             IsActive = dto.IsActive,
             CreatedBy = actorId
         };
@@ -140,7 +163,6 @@ public class UserAdministrationService : IUserAdministrationService
         }
 
         _context.Set<User>().Add(user);
-        var actorUserId = Guid.TryParse(actorId, out var parsedActorId) ? parsedActorId : Guid.Empty;
         await _auditService.AppendAsync(new AuditEntry
         {
             TenantId = user.TenantId,
@@ -164,7 +186,11 @@ public class UserAdministrationService : IUserAdministrationService
 
     public async Task<Result<TemporaryPasswordResetDto>> ResetPasswordAsync(Guid id, string actorId, CancellationToken cancellationToken = default)
     {
-        var tenantId = GetCurrentTenantId();
+        if (!TryGetCurrentIdentity(actorId, null, out var actorUserId, out var tenantId))
+            return Result<TemporaryPasswordResetDto>.Failure(Error.Forbidden("A valid authenticated user and tenant are required."));
+        var actorPermissions = await _effectivePermissions.GetEffectivePermissionsAsync(actorUserId, tenantId, cancellationToken);
+        if (!actorPermissions.Contains("Users.ResetPassword"))
+            return Result<TemporaryPasswordResetDto>.Failure(Error.Forbidden("Users.ResetPassword is required."));
         var user = await _context.Set<User>()
             .IgnoreQueryFilters()
             .Include(candidate => candidate.UserRoles)
@@ -192,7 +218,6 @@ public class UserAdministrationService : IUserAdministrationService
         foreach (var session in sessions)
             session.RevokedAt = now;
 
-        var actorUserId = Guid.TryParse(actorId, out var parsedActorId) ? parsedActorId : Guid.Empty;
         await _auditService.AppendAsync(new AuditEntry
         {
             TenantId = tenantId,
@@ -226,10 +251,23 @@ public class UserAdministrationService : IUserAdministrationService
 
     public async Task<Result<UserAdminDto>> UpdateAsync(Guid id, UpdateUserDto dto, string actorId, CancellationToken cancellationToken = default)
     {
+        if (!TryGetCurrentIdentity(actorId, null, out var actorUserId, out var tenantId))
+            return Result<UserAdminDto>.Failure(Error.Forbidden("A valid authenticated user and tenant are required."));
+        var actorPermissions = await _effectivePermissions.GetEffectivePermissionsAsync(actorUserId, tenantId, cancellationToken);
+        var canManageAccounts = actorPermissions.Contains("Users.ManageAccounts");
+        var canAssignRoles = actorPermissions.Contains("Users.AssignRoles");
+        var canSetUserStatus = actorPermissions.Contains("Users.SetStatus");
+        if (!canManageAccounts && !canAssignRoles && !canSetUserStatus)
+            return Result<UserAdminDto>.Failure(Error.Forbidden("A matching user account, role assignment, or status permission is required."));
+
+        await using var tenantAdminMutation = await TenantAdminMutationGuard.AcquireAsync(_context, tenantId, cancellationToken);
+        var hadEffectiveTenantAdmin = await tenantAdminMutation.HasEffectiveTenantAdminAsync(_effectivePermissions, tenantId, cancellationToken);
+
         var user = await _context.Set<User>()
+            .IgnoreQueryFilters()
             .Include(u => u.UserRoles)
             .ThenInclude(ur => ur.Role)
-            .FirstOrDefaultAsync(u => u.Id == id, cancellationToken);
+            .FirstOrDefaultAsync(u => u.Id == id && u.TenantId == tenantId && !u.IsDeleted, cancellationToken);
 
         if (user is null)
             return Result<UserAdminDto>.Failure(Error.NotFound("User not found"));
@@ -247,7 +285,7 @@ public class UserAdministrationService : IUserAdministrationService
         if (emailOwner is not null)
             return Result<UserAdminDto>.Failure(Error.Conflict("A user with this email already exists"));
 
-        var roles = await ResolveRolesAsync(dto.Roles, cancellationToken);
+        var roles = await ResolveRolesAsync(dto.Roles, tenantId, cancellationToken);
         if (roles is null)
             return Result<UserAdminDto>.Failure(Error.Validation("One or more selected roles are unavailable"));
 
@@ -259,24 +297,38 @@ public class UserAdministrationService : IUserAdministrationService
             .ToArray();
         var nextRoleIds = roles.Select(role => role.Id).ToHashSet();
         var rolesChanged = !previousRoleIds.SetEquals(nextRoleIds);
-        if (rolesChanged && Guid.TryParse(actorId, out var actorGuid) && actorGuid == user.Id)
+        if (rolesChanged && !actorPermissions.Contains("Users.AssignRoles"))
+            return Result<UserAdminDto>.Failure(Error.Forbidden("Users.AssignRoles is required to change user role assignments."));
+        var statusChanged = user.IsActive != dto.IsActive;
+        if (statusChanged && !canSetUserStatus)
+            return Result<UserAdminDto>.Failure(Error.Forbidden("Users.SetStatus is required to activate or deactivate a user account."));
+        if (statusChanged && actorUserId == user.Id)
+            return Result<UserAdminDto>.Failure(Error.Forbidden("You cannot change the status of your own account."));
+        var accountFieldsChanged = !string.Equals(user.Email, email, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(user.FirstName, firstName, StringComparison.Ordinal)
+            || !string.Equals(user.LastName, lastName, StringComparison.Ordinal);
+        if (accountFieldsChanged && !canManageAccounts)
+            return Result<UserAdminDto>.Failure(Error.Forbidden("Users.ManageAccounts is required to change account profile details."));
+        if (rolesChanged && actorUserId == user.Id)
             return Result<UserAdminDto>.Failure(Error.Forbidden("You cannot change your own role assignments. Ask another administrator to update them."));
-        if (rolesChanged && !await CanAssignRolesAsync(roles, actorId, GetCurrentTenantId(), cancellationToken))
+        if (rolesChanged && !await CanAssignRolesAsync(roles, actorUserId, tenantId, id, cancellationToken))
             return Result<UserAdminDto>.Failure(Error.Forbidden("You cannot assign a role with permissions you do not have"));
 
-        user.Email = email;
-        user.FirstName = firstName;
-        user.LastName = lastName;
-        user.JobTitle = dto.JobTitle;
-        user.Phone = dto.Phone;
-        user.IsActive = dto.IsActive;
+        if (canManageAccounts)
+        {
+            user.Email = email;
+            user.FirstName = firstName;
+            user.LastName = lastName;
+        }
+        if (canSetUserStatus)
+            user.IsActive = dto.IsActive;
         user.UpdatedBy = actorId;
-        ReplaceRoles(user, roles, actorId);
+        if (rolesChanged)
+            ReplaceRoles(user, roles, actorId);
 
         if (rolesChanged)
         {
-            var actorUserId = Guid.TryParse(actorId, out var parsedActorId) ? parsedActorId : Guid.Empty;
-            var actorName = actorUserId == Guid.Empty ? actorId : await _context.Set<User>()
+            var actorName = await _context.Set<User>()
                 .IgnoreQueryFilters()
                 .AsNoTracking()
                 .Where(actor => actor.Id == actorUserId && actor.TenantId == user.TenantId && !actor.IsDeleted)
@@ -298,7 +350,45 @@ public class UserAdministrationService : IUserAdministrationService
             }, cancellationToken);
         }
 
+        if (statusChanged)
+        {
+            await _auditService.AppendAsync(new AuditEntry
+            {
+                TenantId = user.TenantId,
+                EntityType = "User",
+                EntityId = user.Id,
+                Action = dto.IsActive ? "UserActivated" : "UserDeactivated",
+                Changes = JsonSerializer.Serialize(new { Original = !dto.IsActive, Current = dto.IsActive }),
+                OriginalValues = JsonSerializer.Serialize(!dto.IsActive),
+                NewValues = JsonSerializer.Serialize(dto.IsActive),
+                UserId = actorUserId,
+                UserName = actorId,
+                CreatedBy = actorId
+            }, cancellationToken);
+        }
+
         await _context.SaveChangesAsync(cancellationToken);
+        if (hadEffectiveTenantAdmin
+            && !await tenantAdminMutation.HasEffectiveTenantAdminAsync(_effectivePermissions, tenantId, cancellationToken))
+        {
+            await tenantAdminMutation.RollbackAsync(cancellationToken);
+            _context.ChangeTracker.Clear();
+            await _auditService.AppendAsync(new AuditEntry
+            {
+                TenantId = tenantId,
+                EntityType = "User",
+                EntityId = id,
+                Action = "TenantAdminMutationRejected",
+                Changes = JsonSerializer.Serialize(new { Rejected = true, Reason = "Last effective tenant administrator would be removed" }),
+                NewValues = JsonSerializer.Serialize(new { Rejected = true, dto.IsActive, dto.Roles }),
+                UserId = actorUserId,
+                UserName = actorId,
+                CreatedBy = actorId
+            }, cancellationToken);
+            await _context.SaveChangesAsync(cancellationToken);
+            return Result<UserAdminDto>.Failure(Error.Conflict("This change would remove the last effective tenant administrator."));
+        }
+        await tenantAdminMutation.CommitAsync(cancellationToken);
 
         var reloaded = await _context.Set<User>()
             .Include(u => u.UserRoles)
@@ -335,7 +425,7 @@ public class UserAdministrationService : IUserAdministrationService
         }
     }
 
-    private async Task<List<Role>?> ResolveRolesAsync(List<string> roleNames, CancellationToken cancellationToken)
+    private async Task<List<Role>?> ResolveRolesAsync(List<string>? roleNames, Guid tenantId, CancellationToken cancellationToken)
     {
         if (roleNames is null || roleNames.Count == 0)
             return new List<Role>();
@@ -345,28 +435,59 @@ public class UserAdministrationService : IUserAdministrationService
             return new List<Role>();
 
         var roles = await _context.Set<Role>()
+            .IgnoreQueryFilters()
             .Include(role => role.Permissions)
-            .Where(r => names.Contains(r.Name))
+            .Where(r => names.Contains(r.Name) && r.TenantId == tenantId && !r.IsDeleted)
             .ToListAsync(cancellationToken);
 
         return roles.Count == names.Count ? roles : null;
     }
 
-    private async Task<bool> CanAssignRolesAsync(IReadOnlyCollection<Role> roles, string actorId, Guid tenantId, CancellationToken cancellationToken)
+    private async Task<bool> CanAssignRolesAsync(
+        IReadOnlyCollection<Role> roles,
+        Guid actorUserId,
+        Guid tenantId,
+        Guid? targetUserId,
+        CancellationToken cancellationToken)
     {
         if (roles.Count == 0)
             return true;
-        if (!Guid.TryParse(actorId, out var actorUserId))
+        if (actorUserId == Guid.Empty || tenantId == Guid.Empty)
             return false;
 
         var actorPermissions = await _effectivePermissions.GetEffectivePermissionsAsync(actorUserId, tenantId, cancellationToken);
-        return roles.SelectMany(role => role.Permissions)
-            .Where(permission => permission.TenantId == tenantId && !permission.IsDeleted)
-            .All(permission => actorPermissions.Contains($"{permission.Resource}.{permission.Action}"));
+        var bootstrapDelegableKeys = await BootstrapPermissionDelegationPolicy.GetDelegableKeysAsync(
+            _context, actorUserId, tenantId, actorPermissions, cancellationToken);
+        if (roles.Any(role => role.TenantId != tenantId || role.IsDeleted))
+            return false;
+
+        foreach (var permission in roles.SelectMany(role => role.Permissions))
+        {
+            if (permission.TenantId != tenantId || permission.IsDeleted)
+                return false;
+
+            var key = $"{permission.Resource}.{permission.Action}";
+            if (actorPermissions.Contains(key))
+                continue;
+            if (!bootstrapDelegableKeys.Contains(key))
+                return false;
+
+            // Bootstrap delegation creates an exception for a different user. It
+            // cannot be used to amplify the acting administrator's own access.
+            if (targetUserId == actorUserId)
+                return false;
+        }
+
+        return true;
     }
 
     public async Task<Result<IReadOnlyList<UserPermissionAssignmentDto>>> GetUserPermissionsAsync(Guid id, Guid tenantId, CancellationToken cancellationToken = default)
     {
+        if (!TryGetCurrentIdentity(null, tenantId, out var actorUserId, out var currentTenantId))
+            return Result<IReadOnlyList<UserPermissionAssignmentDto>>.Failure(Error.Forbidden("A valid authenticated user and matching tenant are required."));
+        var actorPermissions = await _effectivePermissions.GetEffectivePermissionsAsync(actorUserId, currentTenantId, cancellationToken);
+        if (!actorPermissions.Contains("UserPermissions.Manage"))
+            return Result<IReadOnlyList<UserPermissionAssignmentDto>>.Failure(Error.Forbidden("UserPermissions.Manage is required to view direct permission overrides."));
         var exists = await _context.Set<User>()
             .IgnoreQueryFilters()
             .AsNoTracking()
@@ -379,10 +500,13 @@ public class UserAdministrationService : IUserAdministrationService
 
     public async Task<Result<IReadOnlyList<UserPermissionAssignmentDto>>> UpdateUserPermissionsAsync(Guid id, Guid tenantId, UpdateUserPermissionsDto dto, string actorId, CancellationToken cancellationToken = default)
     {
+        if (!TryGetCurrentIdentity(actorId, tenantId, out var actorUserId, out var currentTenantId))
+            return Result<IReadOnlyList<UserPermissionAssignmentDto>>.Failure(Error.Forbidden("A valid authenticated user and matching tenant are required."));
+        var actorPermissions = await _effectivePermissions.GetEffectivePermissionsAsync(actorUserId, currentTenantId, cancellationToken);
+        if (!actorPermissions.Contains("UserPermissions.Manage"))
+            return Result<IReadOnlyList<UserPermissionAssignmentDto>>.Failure(Error.Forbidden("UserPermissions.Manage is required to change direct permission overrides."));
         if (dto is null || dto.Overrides is null || dto.Overrides.Count > 1000)
             return Result<IReadOnlyList<UserPermissionAssignmentDto>>.Failure(Error.Validation("Permission override list is invalid"));
-        if (tenantId == Guid.Empty || !Guid.TryParse(actorId, out var actorUserId))
-            return Result<IReadOnlyList<UserPermissionAssignmentDto>>.Failure(Error.Forbidden("A valid authenticated tenant and user are required"));
         if (actorUserId == id)
             return Result<IReadOnlyList<UserPermissionAssignmentDto>>.Failure(Error.Forbidden("You cannot change your own permissions. Ask another administrator to update them."));
         if (dto.Overrides.Any(item => item.Effect is not (PermissionOverrideEffect.Allow or PermissionOverrideEffect.Deny)))
@@ -390,28 +514,31 @@ public class UserAdministrationService : IUserAdministrationService
         if (dto.Overrides.Select(item => item.PermissionId).Distinct().Count() != dto.Overrides.Count)
             return Result<IReadOnlyList<UserPermissionAssignmentDto>>.Failure(Error.Validation("A permission can only have one direct override"));
 
+        await using var tenantAdminMutation = await TenantAdminMutationGuard.AcquireAsync(_context, tenantId, cancellationToken);
+        var hadEffectiveTenantAdmin = await tenantAdminMutation.HasEffectiveTenantAdminAsync(_effectivePermissions, tenantId, cancellationToken);
+
         var target = await _context.Set<User>()
             .IgnoreQueryFilters()
             .FirstOrDefaultAsync(user => user.Id == id && user.TenantId == tenantId && !user.IsDeleted, cancellationToken);
         if (target is null)
             return Result<IReadOnlyList<UserPermissionAssignmentDto>>.Failure(Error.NotFound("User not found"));
 
-        var actorPermissions = await _effectivePermissions.GetEffectivePermissionsAsync(actorUserId, tenantId, cancellationToken);
-        if (!actorPermissions.Contains("users.write"))
-            return Result<IReadOnlyList<UserPermissionAssignmentDto>>.Failure(Error.Forbidden("You do not have permission to manage user access"));
+        var targetHasProtectedAdminRole = await _context.Set<UserRole>()
+            .IgnoreQueryFilters()
+            .AnyAsync(assignment => assignment.UserId == id && assignment.TenantId == tenantId && !assignment.IsDeleted
+                && assignment.Role.TenantId == tenantId && !assignment.Role.IsDeleted
+                && assignment.Role.IsSystem
+                && assignment.Role.SystemRoleKey == Role.TenantAdminSystemRoleKey,
+                cancellationToken);
 
         var catalog = await _context.Set<Permission>()
             .IgnoreQueryFilters()
             .AsNoTracking()
-            .Where(permission => permission.TenantId == tenantId && !permission.IsDeleted)
+            .Where(permission => permission.TenantId == tenantId)
             .ToListAsync(cancellationToken);
         var catalogById = catalog.ToDictionary(permission => permission.Id);
         if (dto.Overrides.Any(item => !catalogById.ContainsKey(item.PermissionId)))
             return Result<IReadOnlyList<UserPermissionAssignmentDto>>.Failure(Error.Validation("One or more permissions are not available in this tenant"));
-        if (dto.Overrides.Any(item => !actorPermissions.Contains($"{catalogById[item.PermissionId].Resource}.{catalogById[item.PermissionId].Action}")))
-            return Result<IReadOnlyList<UserPermissionAssignmentDto>>.Failure(Error.Forbidden("You can only grant or deny permissions within your own effective access"));
-
-        var requested = dto.Overrides.ToDictionary(item => item.PermissionId, item => item.Effect);
         var existingOverrides = await _context.Set<UserPermissionOverride>()
             .IgnoreQueryFilters()
             .Where(item => item.UserId == id && item.TenantId == tenantId)
@@ -419,9 +546,49 @@ public class UserAdministrationService : IUserAdministrationService
         var original = existingOverrides
             .Where(item => !item.IsDeleted && item.Effect is PermissionOverrideEffect.Allow or PermissionOverrideEffect.Deny)
             .ToDictionary(item => item.PermissionId, item => item.Effect);
+        var requested = dto.Overrides.ToDictionary(item => item.PermissionId, item => item.Effect);
+        var inactiveOriginalIds = original.Keys
+            .Where(permissionId => !catalogById.TryGetValue(permissionId, out var permission)
+                || permission.IsDeleted
+                || !PermissionCatalog.ByKey.TryGetValue(
+                    $"{permission.Resource}.{permission.Action}", out var definition)
+                || !definition.IsActive
+                || !definition.IsAssignable)
+            .ToHashSet();
+
+        foreach (var (permissionId, effect) in requested)
+        {
+            var permission = catalogById[permissionId];
+            var key = $"{permission.Resource}.{permission.Action}";
+            var isAssignable = !permission.IsDeleted && PermissionCatalog.ByKey.TryGetValue(key, out var definition)
+                && definition.IsActive && definition.IsAssignable;
+            if (!isAssignable)
+            {
+                return Result<IReadOnlyList<UserPermissionAssignmentDto>>.Failure(Error.Validation(
+                    $"Permission {key} is inactive or uncatalogued and cannot receive a direct override."));
+            }
+
+            if (!actorPermissions.Contains(key))
+                return Result<IReadOnlyList<UserPermissionAssignmentDto>>.Failure(Error.Forbidden("You can only grant or deny permissions within your own effective access"));
+
+            if (targetHasProtectedAdminRole && effect == PermissionOverrideEffect.Deny
+                && ProtectedTenantAdminPolicy.MandatoryPermissionKeys.Contains(key))
+                return Result<IReadOnlyList<UserPermissionAssignmentDto>>.Failure(Error.Conflict(
+                    $"Protected tenant Admin permission {key} cannot be denied."));
+        }
 
         foreach (var item in existingOverrides)
         {
+            // Retire stale overrides when this user's permission set is updated. No
+            // legacy or inactive override is carried forward by ordinary edits.
+            if (!item.IsDeleted && inactiveOriginalIds.Contains(item.PermissionId))
+            {
+                item.IsDeleted = true;
+                item.Effect = PermissionOverrideEffect.Inherit;
+                item.UpdatedBy = actorId;
+                item.UpdatedAt = DateTime.UtcNow;
+                continue;
+            }
             if (item.IsDeleted && !requested.ContainsKey(item.PermissionId))
                 continue;
 
@@ -449,16 +616,21 @@ public class UserAdministrationService : IUserAdministrationService
             });
         }
 
-        var normalized = requested
-            .Where(pair => pair.Value is PermissionOverrideEffect.Allow or PermissionOverrideEffect.Deny)
+        var normalized = original
+            .Where(pair => requested.ContainsKey(pair.Key) && !inactiveOriginalIds.Contains(pair.Key))
             .ToDictionary(pair => pair.Key, pair => pair.Value);
+        foreach (var (permissionId, effect) in requested)
+            normalized[permissionId] = effect;
         var changedIds = original.Keys.Union(normalized.Keys)
             .Where(permissionId => original.GetValueOrDefault(permissionId, PermissionOverrideEffect.Inherit)
                                    != normalized.GetValueOrDefault(permissionId, PermissionOverrideEffect.Inherit))
             .ToList();
 
         if (changedIds.Count == 0)
+        {
+            await tenantAdminMutation.CommitAsync(cancellationToken);
             return Result<IReadOnlyList<UserPermissionAssignmentDto>>.Success(await BuildPermissionAssignmentsAsync(id, tenantId, cancellationToken));
+        }
 
         var auditChanges = changedIds
             .OrderBy(permissionId => catalogById[permissionId].Resource, StringComparer.Ordinal)
@@ -495,6 +667,27 @@ public class UserAdministrationService : IUserAdministrationService
         {
             // Override rows and their audit record are saved together by EF's transaction.
             await _context.SaveChangesAsync(cancellationToken);
+            if (hadEffectiveTenantAdmin
+                && !await tenantAdminMutation.HasEffectiveTenantAdminAsync(_effectivePermissions, tenantId, cancellationToken))
+            {
+                await tenantAdminMutation.RollbackAsync(cancellationToken);
+                _context.ChangeTracker.Clear();
+                await _auditService.AppendAsync(new AuditEntry
+                {
+                    TenantId = tenantId,
+                    EntityType = "UserPermissionOverride",
+                    EntityId = id,
+                    Action = "TenantAdminMutationRejected",
+                    Changes = JsonSerializer.Serialize(new { Rejected = true, Reason = "Last effective tenant administrator would be removed" }),
+                    NewValues = JsonSerializer.Serialize(new { Rejected = true, PermissionIds = dto.Overrides.Select(item => item.PermissionId).ToArray() }),
+                    UserId = actorUserId,
+                    UserName = actorId,
+                    CreatedBy = actorId
+                }, cancellationToken);
+                await _context.SaveChangesAsync(cancellationToken);
+                return Result<IReadOnlyList<UserPermissionAssignmentDto>>.Failure(Error.Conflict("This change would remove the last effective tenant administrator."));
+            }
+            await tenantAdminMutation.CommitAsync(cancellationToken);
         }
         catch (DbUpdateConcurrencyException)
         {
@@ -534,14 +727,28 @@ public class UserAdministrationService : IUserAdministrationService
             .ThenBy(permission => permission.Action)
             .ToListAsync(cancellationToken);
 
-        return permissions.Select(permission =>
+        var activePermissions = permissions
+            .Where(permission => !permission.IsDeleted
+                && PermissionCatalog.ByKey.TryGetValue($"{permission.Resource}.{permission.Action}", out var definition)
+                && definition.IsActive)
+            .ToArray();
+        var hasProtectedAdminRole = await _context.Set<UserRole>()
+            .IgnoreQueryFilters()
+            .AnyAsync(assignment => assignment.UserId == userId && assignment.TenantId == tenantId && !assignment.IsDeleted
+                && assignment.Role.TenantId == tenantId && !assignment.Role.IsDeleted
+                && assignment.Role.IsSystem
+                && assignment.Role.SystemRoleKey == Role.TenantAdminSystemRoleKey,
+                cancellationToken);
+        var effectivePermissions = await _effectivePermissions.GetEffectivePermissionsAsync(userId, tenantId, cancellationToken);
+
+        return activePermissions.Select(permission =>
         {
-            var roleGranted = inherited.Contains($"{permission.Resource}.{permission.Action}");
+            var key = $"{permission.Resource}.{permission.Action}";
+            var roleGranted = inherited.Contains(key);
             var hasDirectOverride = overrides.TryGetValue(permission.Id, out var effect)
                 && effect is PermissionOverrideEffect.Allow or PermissionOverrideEffect.Deny;
-            var isEffective = hasDirectOverride
-                ? effect == PermissionOverrideEffect.Allow
-                : roleGranted;
+            var isEffective = effectivePermissions.Contains(key);
+            PermissionCatalog.ByKey.TryGetValue(key, out var catalogEntry);
             return new UserPermissionAssignmentDto
             {
                 Id = permission.Id,
@@ -549,9 +756,16 @@ public class UserAdministrationService : IUserAdministrationService
                 Resource = permission.Resource,
                 Action = permission.Action,
                 Description = permission.Description,
+                ScreenNameEn = catalogEntry?.ScreenNameEn ?? permission.Resource,
+                ScreenNameAr = catalogEntry?.ScreenNameAr ?? permission.Resource,
+                LabelEn = catalogEntry?.LabelEn ?? permission.Action,
+                LabelAr = catalogEntry?.LabelAr ?? permission.Action,
+                IsActive = catalogEntry?.IsActive == true,
+                IsAssignable = catalogEntry?.IsAssignable == true,
                 IsRoleGranted = roleGranted,
                 OverrideEffect = hasDirectOverride ? effect : null,
-                IsEffective = isEffective
+                IsEffective = isEffective,
+                IsProtectedAdminBaseline = hasProtectedAdminRole && ProtectedTenantAdminPolicy.MandatoryPermissionKeys.Contains(key)
             };
         }).ToList();
     }
@@ -565,8 +779,6 @@ public class UserAdministrationService : IUserAdministrationService
             FirstName = user.FirstName,
             LastName = user.LastName,
             FullName = user.FullName,
-            JobTitle = user.JobTitle,
-            Phone = user.Phone,
             IsActive = user.IsActive,
             AuthenticationSource = user.AuthenticationSource,
             MustChangePassword = user.MustChangePassword,
@@ -577,12 +789,28 @@ public class UserAdministrationService : IUserAdministrationService
         };
     }
 
-    private Guid GetCurrentTenantId()
+    private bool TryGetCurrentIdentity(string? expectedActorId, Guid? expectedTenantId, out Guid actorId, out Guid tenantId)
     {
-        var tenantId = _httpContextAccessor.HttpContext?.User.FindFirst("tenantId")?.Value;
-        if (!string.IsNullOrWhiteSpace(tenantId) && Guid.TryParse(tenantId, out var parsed))
-            return parsed;
+        actorId = Guid.Empty;
+        tenantId = Guid.Empty;
+        var principal = _httpContextAccessor.HttpContext?.User;
+        if (principal?.Identity?.IsAuthenticated != true
+            || !Guid.TryParse(principal.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, out actorId)
+            || actorId == Guid.Empty
+            || !Guid.TryParse(principal.FindFirst("tenantId")?.Value, out tenantId)
+            || tenantId == Guid.Empty)
+        {
+            return false;
+        }
 
-        return DemoTenantId;
+        if (expectedTenantId.HasValue && expectedTenantId.Value != tenantId)
+            return false;
+        if (expectedActorId is not null
+            && (!Guid.TryParse(expectedActorId, out var suppliedActorId) || suppliedActorId != actorId))
+        {
+            return false;
+        }
+
+        return true;
     }
 }

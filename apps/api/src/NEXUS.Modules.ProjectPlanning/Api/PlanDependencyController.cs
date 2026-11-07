@@ -31,7 +31,7 @@ public class PlanDependencyController : ControllerBase
         return Ok(result.Value);
     }
 
-    [Authorize(Policy = "Planning.Manage")]
+    [Authorize(Policy = "Planning.Edit")]
     [HttpPost]
     public async Task<IActionResult> Create(Guid projectId, Guid planId, [FromBody] CreatePlanDependencyDto dto, CancellationToken cancellationToken)
     {
@@ -47,7 +47,7 @@ public class PlanDependencyController : ControllerBase
         return CreatedAtAction(nameof(GetByPlan), new { projectId, planId }, result.Value);
     }
 
-    [Authorize(Policy = "Planning.Manage")]
+    [Authorize(Policy = "Planning.Edit")]
     [HttpPut("{dependencyId:guid}")]
     public async Task<IActionResult> Update(Guid projectId, Guid planId, Guid dependencyId, [FromBody] UpdatePlanDependencyDto dto, CancellationToken cancellationToken)
     {
@@ -63,7 +63,7 @@ public class PlanDependencyController : ControllerBase
         return Ok(result.Value);
     }
 
-    [Authorize(Policy = "Planning.Manage")]
+    [Authorize(Policy = "Planning.Edit")]
     [HttpDelete("{dependencyId:guid}")]
     public async Task<IActionResult> Delete(Guid projectId, Guid planId, Guid dependencyId, [FromQuery] byte[] rowVersion, CancellationToken cancellationToken)
     {
@@ -79,7 +79,7 @@ public class PlanDependencyController : ControllerBase
         return NoContent();
     }
 
-    [Authorize(Policy = "Planning.Manage")]
+    [Authorize(Policy = "Planning.Edit")]
     [HttpPut("predecessors")]
     public async Task<IActionResult> ReplacePredecessors(Guid projectId, Guid planId, [FromBody] ReplacePlanPredecessorsDto dto, CancellationToken cancellationToken)
     {
@@ -95,7 +95,7 @@ public class PlanDependencyController : ControllerBase
         return Ok(result.Value);
     }
 
-    [Authorize(Policy = "Planning.Manage")]
+    [Authorize(Policy = "Planning.Edit")]
     [HttpPut("bulk-predecessors")]
     public async Task<IActionResult> ReplacePredecessorsBulk(Guid projectId, Guid planId, [FromBody] BulkReplacePlanPredecessorsDto dto, CancellationToken cancellationToken)
     {

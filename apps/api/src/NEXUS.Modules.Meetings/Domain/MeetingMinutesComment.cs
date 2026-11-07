@@ -4,6 +4,7 @@ namespace NEXUS.Modules.Meetings.Domain;
 
 public class MeetingMinutesComment : BaseEntity
 {
+    public Guid PublicId { get; set; } = Guid.NewGuid();
     public Guid MeetingMinutesId { get; set; }
     public MeetingMinutes MeetingMinutes { get; set; } = null!;
     public Guid? ParentCommentId { get; set; }

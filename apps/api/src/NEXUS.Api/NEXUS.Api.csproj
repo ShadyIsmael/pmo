@@ -3,6 +3,8 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!-- Keep IKVM's Maven reference import in the active MSBuild process. -->
+    <IkvmMavenSdkTaskFactory Condition=" '$(MSBuildRuntimeType)' == 'Core' "></IkvmMavenSdkTaskFactory>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.10">
@@ -20,6 +22,7 @@
     <ProjectReference Include="..\NEXUS.Modules.Portfolio\NEXUS.Modules.Portfolio.csproj" />
     <ProjectReference Include="..\NEXUS.Modules.ProjectManagement\NEXUS.Modules.ProjectManagement.csproj" />
     <ProjectReference Include="..\NEXUS.Modules.ProjectPlanning\NEXUS.Modules.ProjectPlanning.csproj" />
+    <ProjectReference Include="..\NEXUS.Modules.ProjectPlanning.MppAdapter\NEXUS.Modules.ProjectPlanning.MppAdapter.csproj" />
     <ProjectReference Include="..\NEXUS.Modules.WorkItems\NEXUS.Modules.WorkItems.csproj" />
     <ProjectReference Include="..\NEXUS.Modules.ResourceManagement\NEXUS.Modules.ResourceManagement.csproj" />
     <ProjectReference Include="..\NEXUS.Modules.CostManagement\NEXUS.Modules.CostManagement.csproj" />

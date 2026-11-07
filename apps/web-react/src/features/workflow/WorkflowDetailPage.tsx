@@ -10,11 +10,12 @@ import { useI18n } from "@i18n/messages";
 import { useWorkflowDefinition, useWorkflowVersion, useWorkflowMutations } from "./api/workflows";
 
 function StateNode({ data }: { data: { label: string; terminal?: boolean } }) {
+  const { t } = useI18n();
   return (
     <div className="min-w-36 rounded-lg border bg-card px-3 py-2 text-center shadow-sm">
       <Handle type="target" position={Position.Top} />
       <p className="text-sm font-semibold">{data.label}</p>
-      {data.terminal ? <p className="text-[11px] text-muted-foreground">terminal</p> : null}
+      {data.terminal ? <p className="text-[11px] text-muted-foreground">{t("workflows.terminal")}</p> : null}
       <Handle type="source" position={Position.Bottom} />
     </div>
   );

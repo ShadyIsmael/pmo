@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dialogValuesToResourceForm, emptyResourceForm, resourceToForm, toCreateResourcePayload, toUpdateResourcePayload, validateResourceForm } from "../features/resources/resource-form";
+import { dialogValuesToResourceForm, emptyResourceForm, parseLocalizedHours, resourceToForm, toCreateResourcePayload, toUpdateResourcePayload, validateResourceForm } from "../features/resources/resource-form";
 
 const resourceTypes = [
   { code: "Staff", nameEn: "Staff", nameAr: "موظف", displayOrder: 1, isDefault: true, requiresVendor: false },
@@ -36,5 +36,36 @@ describe("resource directory form mapping", () => {
     expect(validateResourceForm(form)).toMatchObject({ nameTooLong: true, phoneTooLong: true, seniorityTooLong: true, notesTooLong: true });
     expect(toUpdateResourcePayload(dialogValuesToResourceForm({ name: "Sam", employeeId: "HR-100", employmentType: "Permanent" }))).not.toHaveProperty("employeeId");
     expect(toUpdateResourcePayload(dialogValuesToResourceForm({ name: "Sam", employeeId: "HR-100", employmentType: "Permanent" }))).not.toHaveProperty("employmentType");
+  });
+
+  it("accepts inclusive 1–24 daily-hour bounds and rejects blank or invalid input", () => {
+    const base = { ...emptyResourceForm, name: "Staff member", type: "Staff", userId: "user-1" };
+
+    for (const hoursPerDay of ["1", "8", "24", "1.25", "١٫٥"]) {
+      expect(validateResourceForm({ ...base, hoursPerDay }).hoursPerDay).toBe(false);
+    }
+
+    for (const hoursPerDay of ["", "0", "0.99", "25", "not a number"]) {
+      expect(validateResourceForm({ ...base, hoursPerDay }).hoursPerDay).toBe(true);
+    }
+  });
+
+  it("parses localized digits and serializes the same hours for create and update", () => {
+    expect(parseLocalizedHours("1.5")).toBe(1.5);
+    expect(parseLocalizedHours("١٫٥")).toBe(1.5);
+    expect(parseLocalizedHours("۱٫۵")).toBe(1.5);
+    expect(parseLocalizedHours("")).toBeNull();
+    expect(parseLocalizedHours("hours")).toBeNaN();
+
+    const form = dialogValuesToResourceForm({
+      name: "Staff member",
+      resourceType: "Staff",
+      systemUserId: "user-1",
+      hoursPerDay: "١٫٥",
+      hoursPerWeek: "٧٫٥",
+    }, resourceTypes);
+
+    expect(toCreateResourcePayload(form)).toMatchObject({ hoursPerDay: 1.5, hoursPerWeek: 7.5, userId: "user-1" });
+    expect(toUpdateResourcePayload(form)).toMatchObject({ hoursPerDay: 1.5, hoursPerWeek: 7.5, userId: "user-1", clearHoursPerWeek: false });
   });
 });

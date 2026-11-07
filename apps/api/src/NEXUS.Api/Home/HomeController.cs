@@ -11,6 +11,7 @@ namespace NEXUS.Api.Home;
 [ApiController]
 [Route("api/home")]
 [Authorize]
+[Authorize(Policy = "Dashboard.View")]
 public sealed class HomeController(
     AppDbContext db,
     IAuthorizationService authorization,

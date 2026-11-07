@@ -36,8 +36,8 @@ vi.mock("../features/risks/api/risks", () => ({
 }));
 
 vi.mock("@auth/AuthProvider", () => ({ useAuth: () => ({ user: { permissions: fixtures.permissions } }) }));
-vi.mock("@features/resources/api/resources", () => ({ useResources: () => ({ data: { items: [{ id: "resource-1", name: "Alex Owner" }, { id: "resource-2", name: "Sam Resource" }] }, isLoading: false, isError: false }) }));
-vi.mock("@features/projects/lib/project-lookups", () => ({ useUserLookup: () => ({ data: [{ id: "user-1", fullName: "Alex User" }] }) }));
+vi.mock("@features/resources/api/resources", () => ({ useResources: () => ({ data: { items: [] }, isLoading: false, isError: false }) }));
+vi.mock("@features/projects/lib/project-lookups", () => ({ useRiskWorkflowUserLookup: () => ({ data: [{ id: "user-1", fullName: "Alex User" }, { id: "user-2", fullName: "Sam User" }], isLoading: false, isError: false }) }));
 
 function CurrentLocation() {
   const location = useLocation();
@@ -68,12 +68,26 @@ describe("risk detail parity", () => {
     fireEvent.click(screen.getByRole("button", { name: "Edit Risk" }));
     fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Supplier delay revised" } });
     fireEvent.change(screen.getByLabelText("Description"), { target: { value: "An updated risk description." } });
-    fireEvent.change(screen.getByLabelText("Risk Owner"), { target: { value: "resource-2" } });
+    fireEvent.change(screen.getByLabelText("System user owner"), { target: { value: "user-2" } });
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
     await waitFor(() => expect(fixtures.updateRisk).toHaveBeenCalledWith({
       id: "risk-1",
-      data: { title: "Supplier delay revised", description: "An updated risk description.", riskLevel: "High", ownerResourceId: "resource-2", rowVersion: [1, 2] },
+      data: { title: "Supplier delay revised", description: "An updated risk description.", riskLevel: "High", ownerUserId: "user-2", ownerResourceId: undefined, rowVersion: [1, 2] },
+    }));
+  });
+
+  it("preserves a legacy Resource owner unless a System User is selected", async () => {
+    renderRisk("/risks-issues/risks/risk-1");
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit Risk" }));
+    expect(screen.getByText('Existing Resource owner "Alex Owner" is kept unless you select a System User or clear the owner.')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Supplier delay revised" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(fixtures.updateRisk).toHaveBeenCalledWith({
+      id: "risk-1",
+      data: { title: "Supplier delay revised", description: "The supplier may be late.", riskLevel: "High", ownerUserId: undefined, ownerResourceId: "resource-1", rowVersion: [1, 2] },
     }));
   });
 
@@ -83,13 +97,13 @@ describe("risk detail parity", () => {
     expect(screen.getByRole("dialog", { name: "Add action" })).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Action title"), { target: { value: "Confirm alternate supplier" } });
     fireEvent.change(screen.getByLabelText("Action description"), { target: { value: "Call the backup vendor." } });
-    fireEvent.change(screen.getByLabelText("Owner"), { target: { value: "resource-2" } });
+    fireEvent.change(screen.getByLabelText("System user owner"), { target: { value: "user-2" } });
     fireEvent.change(screen.getByLabelText("Action status"), { target: { value: "InProgress" } });
     fireEvent.change(screen.getByLabelText("Target date"), { target: { value: "2026-11-01" } });
     fireEvent.click(screen.getByRole("button", { name: "Save action" }));
 
     await waitFor(() => expect(fixtures.createAction).toHaveBeenCalledWith({ riskId: "risk-1", data: {
-      title: "Confirm alternate supplier", description: "Call the backup vendor.", ownerResourceId: "resource-2", targetDate: "2026-11-01", nextFollowUpDate: undefined, status: "InProgress", sortOrder: 1,
+      title: "Confirm alternate supplier", description: "Call the backup vendor.", ownerUserId: "user-2", ownerResourceId: undefined, targetDate: "2026-11-01", nextFollowUpDate: undefined, status: "InProgress", sortOrder: 1,
     } }));
     expect(await screen.findByTestId("location")).toHaveTextContent("actionId=action-2");
   });

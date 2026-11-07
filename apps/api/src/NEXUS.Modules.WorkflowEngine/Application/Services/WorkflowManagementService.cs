@@ -146,6 +146,9 @@ public sealed class WorkflowManagementService : IWorkflowManagementService
     {
         var writable = EnsureWritable();
         if (writable.IsFailure) return Result<WorkflowDefinitionDetailsDto>.Failure(writable.Error!);
+        var tenantId = CurrentTenantId();
+        if (!tenantId.HasValue)
+            return Result<WorkflowDefinitionDetailsDto>.Failure(Error.Forbidden("A trusted tenant context is required."));
         var name = request.Name.Trim();
         var code = request.Code.Trim();
         if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(code) || string.IsNullOrWhiteSpace(request.Domain))
@@ -165,7 +168,7 @@ public sealed class WorkflowManagementService : IWorkflowManagementService
 
         var definition = new WorkflowDefinition
         {
-            TenantId = CurrentTenantId(),
+            TenantId = tenantId.Value,
             Name = name,
             Code = code,
             Domain = domain,
@@ -598,11 +601,24 @@ public sealed class WorkflowManagementService : IWorkflowManagementService
     private Result EnsureWritable() => IsReadOnly() ? Result.Failure(WorkflowErrors.ReadOnlyViewAs) : Result.Success();
     private Result EnsurePublishable() => IsReadOnly() ? Result.Failure(WorkflowErrors.ReadOnlyViewAs) : Result.Success();
     private bool IsReadOnly() => _httpContextAccessor.HttpContext?.User.FindFirstValue("readOnly") == "true" || _httpContextAccessor.HttpContext?.User.FindFirstValue("viewAs") == "true";
-    private Guid CurrentTenantId() => Guid.TryParse(_httpContextAccessor.HttpContext?.User.FindFirstValue("tenantId"), out var id) ? id : Guid.Parse("11111111-1111-1111-1111-111111111111");
+    private Guid? CurrentTenantId()
+    {
+        var user = _httpContextAccessor.HttpContext?.User;
+        return user?.Identity?.IsAuthenticated == true
+            && Guid.TryParse(user.FindFirstValue("tenantId"), out var id)
+            && id != Guid.Empty
+                ? id
+                : null;
+    }
     private static string? Normalize(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     private static Error? ValidateStateRequest(string code, string nameEn, string nameAr) => string.IsNullOrWhiteSpace(code) || string.IsNullOrWhiteSpace(nameEn) || string.IsNullOrWhiteSpace(nameAr) ? Error.Validation("State code and localized names are required.") : null;
     private void ApplyRowVersion(object entity, byte[]? rowVersion) { if (rowVersion is { Length: > 0 }) _context.Entry(entity).Property(nameof(BaseEntity.RowVersion)).OriginalValue = rowVersion; }
-    private void AddAudit(Guid entityId, string action, string actor, object changes) => _context.Set<AuditEntry>().Add(new AuditEntry { TenantId = CurrentTenantId(), EntityType = "WorkflowManagement", EntityId = entityId, Action = action, Changes = JsonSerializer.Serialize(changes), UserId = Guid.TryParse(actor, out var id) ? id : null, UserName = _httpContextAccessor.HttpContext?.User.FindFirstValue("name"), Timestamp = DateTime.UtcNow, CreatedBy = actor });
+    private void AddAudit(Guid entityId, string action, string actor, object changes)
+    {
+        var tenantId = CurrentTenantId()
+            ?? throw new InvalidOperationException("A trusted tenant context is required to write workflow audit records.");
+        _context.Set<AuditEntry>().Add(new AuditEntry { TenantId = tenantId, EntityType = "WorkflowManagement", EntityId = entityId, Action = action, Changes = JsonSerializer.Serialize(changes), UserId = Guid.TryParse(actor, out var id) ? id : null, UserName = _httpContextAccessor.HttpContext?.User.FindFirstValue("name"), Timestamp = DateTime.UtcNow, CreatedBy = actor });
+    }
 
     private static WorkflowDefinitionDetailsDto ToDefinitionDto(WorkflowDefinition definition) => new(definition.Id, definition.Name, definition.Code, definition.Description, WorkflowDomains.Normalize(definition.Domain), definition.EntityType, definition.IsActive, definition.ActivePublishedVersionId, definition.CreatedAt, definition.CreatedBy, definition.UpdatedAt, definition.UpdatedBy, definition.RowVersion, definition.Versions.Where(item => !item.IsDeleted).OrderByDescending(item => item.VersionNumber).Select(ToVersionListDto).ToList());
     private static WorkflowVersionListItemDto ToVersionListDto(WorkflowDefinitionVersion version) => new(version.Id, version.VersionNumber, version.LifecycleStatus, version.ChangeLog, version.CreatedAt, version.CreatedBy, version.PublishedAt, version.PublishedBy, version.States.Count(item => !item.IsDeleted), version.Transitions.Count(item => !item.IsDeleted), version.Transitions.SelectMany(item => item.Guards).Count(item => !item.IsDeleted), version.Transitions.SelectMany(item => item.Actions).Count(item => !item.IsDeleted), version.RowVersion);

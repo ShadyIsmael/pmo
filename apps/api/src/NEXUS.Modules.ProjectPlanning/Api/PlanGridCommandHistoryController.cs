@@ -25,12 +25,12 @@ public sealed class PlanGridCommandHistoryController : ControllerBase
         return Ok(result.Value);
     }
 
-    [Authorize(Policy = "Planning.Manage")]
+    [Authorize(Policy = "Planning.Edit")]
     [HttpPost("{commandId:guid}/undo")]
     public Task<IActionResult> Undo(Guid projectId, Guid planId, Guid commandId, CancellationToken cancellationToken) =>
         Apply(projectId, planId, commandId, isRedo: false, cancellationToken);
 
-    [Authorize(Policy = "Planning.Manage")]
+    [Authorize(Policy = "Planning.Edit")]
     [HttpPost("{commandId:guid}/redo")]
     public Task<IActionResult> Redo(Guid projectId, Guid planId, Guid commandId, CancellationToken cancellationToken) =>
         Apply(projectId, planId, commandId, isRedo: true, cancellationToken);

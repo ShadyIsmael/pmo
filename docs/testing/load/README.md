@@ -10,7 +10,7 @@ This directory contains the read-heavy k6 baseline requested for the NEXUS backe
 - Use a Release-built API process and a production-style configuration where possible. Do not use `dotnet watch` for the measured run.
 - k6 is installed and available on PATH.
 
-The seeded demo users use password `Demo123!`. By default, VUs rotate across the seeded demo/admin identities in `nexus-baseline.js`. Each VU logs in independently and keeps its own access token. The test does not call refresh or logout, avoiding artificial refresh-token rotation conflicts during a short baseline.
+The seeded demo users share one development password, defined in `SeedDataProvider`. Supply it to the test through `K6_PASSWORD`; the scripts refuse to start without it. By default, VUs rotate across the seeded demo/admin identities in `nexus-baseline.js`. Each VU logs in independently and keeps its own access token. The test does not call refresh or logout, avoiding artificial refresh-token rotation conflicts during a short baseline.
 
 ## Install k6 on Windows
 
@@ -82,7 +82,7 @@ $env:REQUEST_TIMEOUT = '30s'
 $env:THINK_MIN_SECONDS = '1'
 $env:THINK_MAX_SECONDS = '3'
 $env:K6_USER_EMAIL = 'admin@nexus.com'
-$env:K6_PASSWORD = 'Demo123!'
+$env:K6_PASSWORD = '<seeded development password>'
 ```
 
 Do not set a shared token manually. `K6_USER_EMAIL` is only for choosing one valid identity; tokens are still generated independently per VU.
@@ -107,3 +107,7 @@ Expected validation 4xx responses are not treated as successful traffic: every e
 ## Server-side observations
 
 During every run record, at minimum, the timestamp, API environment/build/configuration, database and approximate row counts, and any available observations for API CPU/memory, SQL CPU, SQL connection/pool pressure, request queueing, query duration, exceptions, and timeouts. The load script does not install or redesign observability infrastructure.
+
+## Current authentication diagnosis
+
+- [Login SQL cancellation diagnosis (2026-11-03)](LOGIN-CANCELLATION-DIAGNOSIS-REPORT.md) records the request-abort propagation, SQL provider cancellation evidence, exception handling change, and the Development Admin verification blocker.

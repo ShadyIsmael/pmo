@@ -1,9 +1,9 @@
 import * as React from "react";
-import { useResource, useResources, useCreateResource, useUpdateResource, useDeleteResource, useBaseCalendars, useResourceReferenceData, type ResourceDto, type ResourceBaseCalendarDto, type ResourceReferenceDataDto, type ResourceTypeOptionDto } from "./api/resources";
-import { useOrganizationUnits } from "../organization/api/organization";
-import { useUserLookup, type UserLookupDto } from "../projects/lib/project-lookups";
-import { useVendors, type VendorDto } from "../vendors/api/vendors";
+import { useResource, useResources, useCreateResource, useUpdateResource, useDeleteResource, useBaseCalendars, useResourceReferenceData, useResourceVendorLookup, type ResourceDto, type ResourceBaseCalendarDto, type ResourceReferenceDataDto, type ResourceTypeOptionDto, type ResourceVendorLookupDto } from "./api/resources";
+import { useResourceUnitLookup } from "../projects/lib/project-lookups";
+import { useResourceWorkflowUserLookup, type WorkflowUserLookupDto } from "../projects/lib/project-lookups";
 import { useManagement } from "@api/management";
+import { ApiError } from "@api/client";
 import { useI18n } from "@i18n/messages";
 import { useAuth } from "@auth/AuthProvider";
 import { hasAnyPermission, hasPermission, Permissions } from "@lib/permissions";
@@ -21,6 +21,12 @@ import { dialogValuesToResourceForm, toCreateResourcePayload, toUpdateResourcePa
 import { emptyResourceFormValues, ResourceFormSections, type ResourceFormValues } from "./ResourceFormSections";
 import { ResourceFinderDialog } from "./ResourceFinderDialog";
 import { ResourceCostProfilesSheet } from "./ResourceCostProfilesSheet";
+
+function getResourceFormMutationError(error: unknown, fallback: string): string | undefined {
+  if (!error) return undefined;
+  if (error instanceof ApiError && Object.keys(error.fieldErrors).length > 0) return undefined;
+  return error instanceof Error ? error.message : fallback;
+}
 
 function getResourceTypeLabel(code: string | undefined, options: ResourceTypeOptionDto[], locale: string) {
   if (!code) return "";
@@ -123,9 +129,9 @@ function ResourceDetailsSheet({ resource, detail, loading, error, onRetry, onClo
   );
 }
 
-type ResourceLookups = { calendars?: ResourceBaseCalendarDto[]; referenceData?: ResourceReferenceDataDto; referenceDataLoading?: boolean; referenceDataError?: boolean; units?: { id: string; name: string; code?: string; isActive?: boolean }[]; users?: UserLookupDto[]; vendors?: VendorDto[]; calendarsLoading?: boolean; usersLoading?: boolean; vendorsLoading?: boolean };
+type ResourceLookups = { calendars?: ResourceBaseCalendarDto[]; referenceData?: ResourceReferenceDataDto; referenceDataLoading?: boolean; referenceDataError?: boolean; retryReferenceData?: () => void; units?: { id: string; name: string; code?: string; isActive?: boolean }[]; users?: WorkflowUserLookupDto[]; vendors?: ResourceVendorLookupDto[]; calendarsLoading?: boolean; calendarsError?: boolean; retryCalendars?: () => void; usersLoading?: boolean; usersError?: boolean; retryUsers?: () => void; unitsError?: boolean; retryUnits?: () => void; vendorsLoading?: boolean; vendorsError?: boolean; retryVendors?: () => void };
 
-function CreateResourceDialog({ open, onOpenChange, onSubmit, calendars, referenceData, referenceDataLoading, referenceDataError, units, users, vendors, calendarsLoading, usersLoading, vendorsLoading, isPending, error }: { open: boolean; onOpenChange: (open: boolean) => void; onSubmit: (data: Record<string, string>) => void; isPending: boolean; error?: string } & ResourceLookups) {
+function CreateResourceDialog({ open, onOpenChange, onSubmit, calendars, referenceData, referenceDataLoading, referenceDataError, retryReferenceData, units, users, vendors, calendarsLoading, calendarsError, retryCalendars, usersLoading, usersError, retryUsers, unitsError, retryUnits, vendorsLoading, vendorsError, retryVendors, isPending, error, apiError }: { open: boolean; onOpenChange: (open: boolean) => void; onSubmit: (data: Record<string, string>) => void; isPending: boolean; error?: string; apiError?: unknown } & ResourceLookups) {
   const { t } = useI18n();
   const [formData, setFormData] = React.useState<ResourceFormValues>(emptyResourceFormValues);
   const [submitted, setSubmitted] = React.useState(false);
@@ -158,18 +164,18 @@ function CreateResourceDialog({ open, onOpenChange, onSubmit, calendars, referen
         <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
           <SideSheetBody>
             {error ? <p role="alert" className="mb-4 text-sm text-destructive">{error}</p> : null}
-            <ResourceFormSections values={formData} setValues={setFormData} calendars={calendars} referenceData={referenceData} referenceDataLoading={referenceDataLoading} referenceDataError={referenceDataError} units={units} users={users} vendors={vendors} calendarsLoading={calendarsLoading} usersLoading={usersLoading} vendorsLoading={vendorsLoading} submitted={submitted} />
+            <ResourceFormSections values={formData} setValues={setFormData} calendars={calendars} referenceData={referenceData} referenceDataLoading={referenceDataLoading} referenceDataError={referenceDataError} onRetryReferenceData={retryReferenceData} units={units} users={users} vendors={vendors} calendarsLoading={calendarsLoading} calendarsError={calendarsError} onRetryCalendars={retryCalendars} usersLoading={usersLoading} usersError={usersError} onRetryUsers={retryUsers} unitsError={unitsError} onRetryUnits={retryUnits} vendorsLoading={vendorsLoading} vendorsError={vendorsError} onRetryVendors={retryVendors} submitted={submitted} apiError={apiError} />
           </SideSheetBody>
           <SideSheetFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>{t("common.cancel")}</Button>
-            <Button type="submit" disabled={isPending || !formData.name.trim() || !referenceData?.resourceTypes.length}>{isPending ? t("common.saving") : t("common.create")}</Button>
+            <Button type="submit" disabled={isPending || !referenceData?.resourceTypes.length}>{isPending ? t("common.saving") : t("common.create")}</Button>
           </SideSheetFooter>
         </form>
     </SideSheet>
   );
 }
 
-function EditResourceDialog({ open, onOpenChange, resource, onSubmit, calendars, referenceData, referenceDataLoading, referenceDataError, units, users, vendors, calendarsLoading, usersLoading, vendorsLoading, isPending, error }: { open: boolean; onOpenChange: (open: boolean) => void; resource: ResourceDto | null; onSubmit: (data: Record<string, string> & { id: string }) => void; isPending: boolean; error?: string } & ResourceLookups) {
+function EditResourceDialog({ open, onOpenChange, resource, onSubmit, calendars, referenceData, referenceDataLoading, referenceDataError, retryReferenceData, units, users, vendors, calendarsLoading, calendarsError, retryCalendars, usersLoading, usersError, retryUsers, unitsError, retryUnits, vendorsLoading, vendorsError, retryVendors, isPending, error, apiError }: { open: boolean; onOpenChange: (open: boolean) => void; resource: ResourceDto | null; onSubmit: (data: Record<string, string> & { id: string }) => void; isPending: boolean; error?: string; apiError?: unknown } & ResourceLookups) {
   const { t } = useI18n();
   const [formData, setFormData] = React.useState<ResourceFormValues>(emptyResourceFormValues);
   const [submitted, setSubmitted] = React.useState(false);
@@ -181,6 +187,7 @@ function EditResourceDialog({ open, onOpenChange, resource, onSubmit, calendars,
       organizationalUnitId: resource.primaryOrganizationalUnitId ?? "",
       resourceType: resource.type ?? "", status: resource.isActive ? "Active" : "Inactive", vendorId: resource.vendorId ?? "",
       baseCalendarId: resource.baseCalendarId ?? "", systemUserId: resource.userId ?? "",
+      hoursPerDay: resource.hoursPerDay?.toString() ?? "", hoursPerWeek: resource.hoursPerWeek?.toString() ?? "",
       seniority: resource.seniority ?? "", notes: resource.notes ?? "",
     });
     setSubmitted(false);
@@ -200,11 +207,11 @@ function EditResourceDialog({ open, onOpenChange, resource, onSubmit, calendars,
         <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
           <SideSheetBody>
             {error ? <p role="alert" className="mb-4 text-sm text-destructive">{error}</p> : null}
-            <ResourceFormSections values={formData} setValues={setFormData} calendars={calendars} referenceData={referenceData} referenceDataLoading={referenceDataLoading} referenceDataError={referenceDataError} units={units} users={users} vendors={vendors} calendarsLoading={calendarsLoading} usersLoading={usersLoading} vendorsLoading={vendorsLoading} readOnlyType currentVendorId={resource.vendorId} submitted={submitted} />
+            <ResourceFormSections values={formData} setValues={setFormData} calendars={calendars} referenceData={referenceData} referenceDataLoading={referenceDataLoading} referenceDataError={referenceDataError} onRetryReferenceData={retryReferenceData} units={units} users={users} vendors={vendors} calendarsLoading={calendarsLoading} calendarsError={calendarsError} onRetryCalendars={retryCalendars} usersLoading={usersLoading} usersError={usersError} onRetryUsers={retryUsers} unitsError={unitsError} onRetryUnits={retryUnits} vendorsLoading={vendorsLoading} vendorsError={vendorsError} onRetryVendors={retryVendors} readOnlyType currentVendorId={resource.vendorId} submitted={submitted} apiError={apiError} />
           </SideSheetBody>
           <SideSheetFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>{t("common.cancel")}</Button>
-            <Button type="submit" disabled={isPending || !formData.name.trim()}>{isPending ? t("common.saving") : t("common.save")}</Button>
+            <Button type="submit" disabled={isPending}>{isPending ? t("common.saving") : t("common.save")}</Button>
           </SideSheetFooter>
         </form>
     </SideSheet>
@@ -218,11 +225,11 @@ export function ResourcesListPage() {
   const canView = Boolean(user && hasPermission(user.permissions, Permissions.Resources.View));
   const mutable = canMutate && !effectiveReadOnly;
   const permissions = user?.permissions ?? [];
-  const canCreate = hasAnyPermission(permissions, [Permissions.Resources.Create, Permissions.Resources.Manage]) && mutable;
-  const canEdit = hasAnyPermission(permissions, [Permissions.Resources.Edit, Permissions.Resources.Manage]) && mutable;
-  const canDelete = hasAnyPermission(permissions, [Permissions.Resources.Delete, Permissions.Resources.Manage]) && mutable;
-  const canViewCostProfiles = hasAnyPermission(permissions, [Permissions.Resources.ViewCostRate, Permissions.Resources.EditCostRate, Permissions.Resources.ManageRates, Permissions.Resources.Manage]);
-  const canManageCostProfiles = hasAnyPermission(permissions, [Permissions.Resources.EditCostRate, Permissions.Resources.ManageRates, Permissions.Resources.Manage]) && mutable;
+  const canCreate = hasAnyPermission(permissions, [Permissions.Resources.Create]) && mutable;
+  const canEdit = hasAnyPermission(permissions, [Permissions.Resources.Edit]) && mutable;
+  const canDelete = hasAnyPermission(permissions, [Permissions.Resources.Delete]) && mutable;
+  const canViewCostProfiles = hasPermission(permissions, Permissions.Resources.ViewCostRate);
+  const canManageCostProfiles = hasPermission(permissions, Permissions.Resources.EditCostRate) && mutable;
 
   const [filters, setFilters] = React.useState({
     search: "",
@@ -243,11 +250,12 @@ export function ResourcesListPage() {
   const updateMutation = useUpdateResource();
   const deleteMutation = useDeleteResource();
   const detailQuery = useResource(detailResource?.id ?? "");
-  const calendarsQuery = useBaseCalendars(canView);
-  const referenceDataQuery = useResourceReferenceData(canView);
-  const usersQuery = useUserLookup(undefined, canView);
-  const unitsQuery = useOrganizationUnits(canView);
-  const vendorsQuery = useVendors(undefined, undefined, "all", canView && (createOpen || Boolean(editResource)));
+  const canLoadResourceLookups = canView || canCreate || canEdit;
+  const calendarsQuery = useBaseCalendars(canLoadResourceLookups);
+  const referenceDataQuery = useResourceReferenceData(canLoadResourceLookups);
+  const usersQuery = useResourceWorkflowUserLookup(canLoadResourceLookups, editResource?.id);
+  const unitsQuery = useResourceUnitLookup(canLoadResourceLookups);
+  const vendorsQuery = useResourceVendorLookup(canLoadResourceLookups && (createOpen || Boolean(editResource)), editResource?.id);
   const resourceTypes = referenceDataQuery.data?.resourceTypes ?? [];
   const seniorityLevels = referenceDataQuery.data?.seniorityLevels ?? [];
   const mutationError = createMutation.error ?? updateMutation.error ?? deleteMutation.error;
@@ -280,7 +288,24 @@ export function ResourcesListPage() {
     }
   };
 
-  if (!canView) return <Card><CardContent className="p-6"><h1 className="text-lg font-semibold">{t("resources.directory.permissionRequired")}</h1><p className="mt-1 text-sm text-muted-foreground">{t("resources.directory.permissionDescription")}</p></CardContent></Card>;
+  if (!canView && !canCreate) return <Card><CardContent className="p-6"><h1 className="text-lg font-semibold">{t("resources.directory.permissionRequired")}</h1><p className="mt-1 text-sm text-muted-foreground">{t("resources.directory.permissionDescription")}</p></CardContent></Card>;
+
+  if (!canView) return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">{t("resources.directory.title")}</h1>
+          <p className="text-muted-foreground">{t("resources.directory.formDescription")}</p>
+        </div>
+        <Button onClick={() => { createMutation.reset(); setCreateOpen(true); }} className="gap-2">
+          <Plus className="h-4 w-4" />
+          {t("resources.directory.addResource")}
+        </Button>
+      </div>
+      {mutationError && !createOpen ? <p className="text-sm text-destructive" role="alert">{mutationError instanceof Error ? mutationError.message : t("resources.directory.mutationError")}</p> : null}
+      <CreateResourceDialog open={createOpen} onOpenChange={setCreateOpen} onSubmit={handleCreate} calendars={calendarsQuery.data} referenceData={referenceDataQuery.data} referenceDataLoading={referenceDataQuery.isLoading} referenceDataError={referenceDataQuery.isError} retryReferenceData={() => void referenceDataQuery.refetch()} units={unitsQuery.data} users={usersQuery.data} vendors={vendorsQuery.data?.items} calendarsLoading={calendarsQuery.isLoading} calendarsError={calendarsQuery.isError} retryCalendars={() => void calendarsQuery.refetch()} usersLoading={usersQuery.isLoading} usersError={usersQuery.isError} retryUsers={() => void usersQuery.refetch()} unitsError={unitsQuery.isError} retryUnits={() => void unitsQuery.refetch()} vendorsLoading={vendorsQuery.isLoading} vendorsError={vendorsQuery.isError} retryVendors={() => void vendorsQuery.refetch()} isPending={createMutation.isPending} error={getResourceFormMutationError(createMutation.error, t("resources.directory.mutationError"))} apiError={createMutation.error} />
+    </div>
+  );
 
   return (
     <div className="space-y-4">
@@ -329,9 +354,10 @@ export function ResourcesListPage() {
                   <SelectTrigger className="w-full"><SelectValue placeholder={t("resources.directory.systemUserFilter")} /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="">{t("resources.directory.allSystemUsers")}</SelectItem>
-                    {usersQuery.data?.map((userOption) => <SelectItem key={userOption.id} value={userOption.id}>{userOption.fullName} · {userOption.email}</SelectItem>)}
+                    {usersQuery.data?.map((userOption) => <SelectItem key={userOption.id} value={userOption.id}>{userOption.fullName}</SelectItem>)}
                   </SelectContent>
                 </Select>
+                {usersQuery.isError ? <div role="alert" className="mt-1 flex flex-wrap items-center justify-between gap-2 text-xs text-destructive"><span>{t("common.errorLoading")}</span><Button type="button" size="sm" variant="outline" onClick={() => void usersQuery.refetch()}>{t("common.retry")}</Button></div> : null}
               </div>
             </div>
           </div>
@@ -399,8 +425,8 @@ export function ResourcesListPage() {
       </Card>
 
           {mutationError && !createOpen && !editResource ? <p className="text-sm text-destructive" role="alert">{mutationError instanceof Error ? mutationError.message : t("resources.directory.mutationError")}</p> : null}
-      <CreateResourceDialog open={createOpen} onOpenChange={setCreateOpen} onSubmit={handleCreate} calendars={calendarsQuery.data} referenceData={referenceDataQuery.data} referenceDataLoading={referenceDataQuery.isLoading} referenceDataError={referenceDataQuery.isError} units={unitsQuery.data} users={usersQuery.data} vendors={vendorsQuery.data?.items} calendarsLoading={calendarsQuery.isLoading} usersLoading={usersQuery.isLoading} vendorsLoading={vendorsQuery.isLoading} isPending={createMutation.isPending} error={createMutation.error ? createMutation.error instanceof Error ? createMutation.error.message : t("resources.directory.mutationError") : undefined} />
-      <EditResourceDialog open={!!editResource} onOpenChange={(open) => { if (!open) setEditResource(null); }} resource={editResource} onSubmit={handleUpdate} calendars={calendarsQuery.data} referenceData={referenceDataQuery.data} referenceDataLoading={referenceDataQuery.isLoading} referenceDataError={referenceDataQuery.isError} units={unitsQuery.data} users={usersQuery.data} vendors={vendorsQuery.data?.items} calendarsLoading={calendarsQuery.isLoading} usersLoading={usersQuery.isLoading} vendorsLoading={vendorsQuery.isLoading} isPending={updateMutation.isPending} error={updateMutation.error ? updateMutation.error instanceof Error ? updateMutation.error.message : t("resources.directory.mutationError") : undefined} />
+      <CreateResourceDialog open={createOpen} onOpenChange={setCreateOpen} onSubmit={handleCreate} calendars={calendarsQuery.data} referenceData={referenceDataQuery.data} referenceDataLoading={referenceDataQuery.isLoading} referenceDataError={referenceDataQuery.isError} retryReferenceData={() => void referenceDataQuery.refetch()} units={unitsQuery.data} users={usersQuery.data} vendors={vendorsQuery.data?.items} calendarsLoading={calendarsQuery.isLoading} calendarsError={calendarsQuery.isError} retryCalendars={() => void calendarsQuery.refetch()} usersLoading={usersQuery.isLoading} usersError={usersQuery.isError} retryUsers={() => void usersQuery.refetch()} unitsError={unitsQuery.isError} retryUnits={() => void unitsQuery.refetch()} vendorsLoading={vendorsQuery.isLoading} vendorsError={vendorsQuery.isError} retryVendors={() => void vendorsQuery.refetch()} isPending={createMutation.isPending} error={getResourceFormMutationError(createMutation.error, t("resources.directory.mutationError"))} apiError={createMutation.error} />
+      <EditResourceDialog open={!!editResource} onOpenChange={(open) => { if (!open) setEditResource(null); }} resource={editResource} onSubmit={handleUpdate} calendars={calendarsQuery.data} referenceData={referenceDataQuery.data} referenceDataLoading={referenceDataQuery.isLoading} referenceDataError={referenceDataQuery.isError} retryReferenceData={() => void referenceDataQuery.refetch()} units={unitsQuery.data} users={usersQuery.data} vendors={vendorsQuery.data?.items} calendarsLoading={calendarsQuery.isLoading} calendarsError={calendarsQuery.isError} retryCalendars={() => void calendarsQuery.refetch()} usersLoading={usersQuery.isLoading} usersError={usersQuery.isError} retryUsers={() => void usersQuery.refetch()} unitsError={unitsQuery.isError} retryUnits={() => void unitsQuery.refetch()} vendorsLoading={vendorsQuery.isLoading} vendorsError={vendorsQuery.isError} retryVendors={() => void vendorsQuery.refetch()} isPending={updateMutation.isPending} error={getResourceFormMutationError(updateMutation.error, t("resources.directory.mutationError"))} apiError={updateMutation.error} />
       <ConfirmDialog open={!!confirmResource} onOpenChange={(open) => { if (!open) setConfirmResource(null); }} title={confirmResource?.isActive ? t("resources.directory.deactivateConfirm") : t("resources.directory.activateConfirm")} confirmLabel={confirmResource?.isActive ? t("resources.directory.deactivate") : t("resources.directory.activate")} destructive={Boolean(confirmResource?.isActive)} loading={deleteMutation.isPending || updateMutation.isPending} onConfirm={confirmStatusChange} />
       <ResourceDetailsSheet resource={detailResource} detail={detailQuery.data} loading={detailQuery.isLoading} error={detailQuery.isError} onRetry={() => void detailQuery.refetch()} onClose={() => setDetailResource(null)} onEdit={(resource) => { setDetailResource(null); setEditResource(resource); }} onManageCostProfiles={(resource) => { setDetailResource(null); setCostProfileResource(resource); }} canEdit={canEdit} canViewCostProfiles={canViewCostProfiles} resourceTypes={resourceTypes} seniorityLevels={seniorityLevels} locale={locale} />
       <ResourceCostProfilesSheet open={Boolean(costProfileResource)} resource={costProfileResource} canView={canViewCostProfiles} canManage={canManageCostProfiles} onOpenChange={(open) => { if (!open) setCostProfileResource(null); }} />

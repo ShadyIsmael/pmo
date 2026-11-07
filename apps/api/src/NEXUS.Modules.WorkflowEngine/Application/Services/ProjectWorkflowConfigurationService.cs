@@ -19,6 +19,8 @@ public interface IProjectWorkflowConfigurationService
 
 public sealed class ProjectWorkflowConfigurationService : IProjectWorkflowConfigurationService
 {
+    private const string ProjectSettingsViewPermission = "ProjectSettings.View";
+    private const string ProjectSettingsEditPermission = "ProjectSettings.Edit";
     private static readonly string[] Domains = { WorkflowDomains.Task, WorkflowDomains.Risk, WorkflowDomains.Finance, WorkflowDomains.ChangeRequest };
     private readonly DbContext _context;
     private readonly IProjectReferenceLookup _projectLookup;
@@ -39,6 +41,12 @@ public sealed class ProjectWorkflowConfigurationService : IProjectWorkflowConfig
 
     public async Task<Result<ProjectWorkflowSettingsDto>> GetAsync(Guid projectId, CancellationToken cancellationToken = default)
     {
+        if (!HasPermission(ProjectSettingsViewPermission))
+            return Result<ProjectWorkflowSettingsDto>.Failure(Error.Forbidden("ProjectSettings.View is required to view project workflow settings."));
+        var tenantId = CurrentTenantId();
+        if (!tenantId.HasValue)
+            return Result<ProjectWorkflowSettingsDto>.Failure(Error.Forbidden("A verified tenant context is required to view project workflow settings."));
+
         var access = await EnsureProjectAccessAsync(projectId, cancellationToken);
         if (access.IsFailure) return Result<ProjectWorkflowSettingsDto>.Failure(access.Error!);
 
@@ -46,7 +54,7 @@ public sealed class ProjectWorkflowConfigurationService : IProjectWorkflowConfig
             .AsNoTracking()
             .Include(item => item.WorkflowDefinition)
             .Include(item => item.EffectiveWorkflowVersion)
-            .Where(item => item.ProjectId == projectId && !item.IsDeleted)
+            .Where(item => item.TenantId == tenantId.Value && item.ProjectId == projectId && !item.IsDeleted)
             .ToListAsync(cancellationToken);
 
         var dto = Domains.Select(domain => ToDto(rows.FirstOrDefault(item => item.Domain == domain), projectId, domain)).ToList();
@@ -55,14 +63,20 @@ public sealed class ProjectWorkflowConfigurationService : IProjectWorkflowConfig
 
     public async Task<Result<ProjectWorkflowConfigurationDto>> SaveAsync(Guid projectId, string domain, SaveProjectWorkflowConfigurationRequest request, string actor, CancellationToken cancellationToken = default)
     {
+        if (!HasPermission(ProjectSettingsViewPermission) || !HasPermission(ProjectSettingsEditPermission))
+            return Result<ProjectWorkflowConfigurationDto>.Failure(Error.Forbidden("ProjectSettings.View and ProjectSettings.Edit are required to change project workflow settings."));
+
+        var tenantId = CurrentTenantId();
+        if (!tenantId.HasValue)
+            return Result<ProjectWorkflowConfigurationDto>.Failure(Error.Forbidden("A verified tenant context is required to change project workflow settings."));
         var access = await EnsureProjectAccessAsync(projectId, cancellationToken);
         if (access.IsFailure) return Result<ProjectWorkflowConfigurationDto>.Failure(access.Error!);
         if (_managementContext.Current?.EffectiveReadOnly == true || IsReadOnlyClaim())
             return Result<ProjectWorkflowConfigurationDto>.Failure(Error.Forbidden("Cannot change project workflow configuration in read-only view."));
 
         var normalizedDomain = WorkflowDomains.Normalize(domain);
-        if (!WorkflowDomains.IsSupported(normalizedDomain))
-            return Result<ProjectWorkflowConfigurationDto>.Failure(Error.Validation("Workflow domain must be a supported workflow domain."));
+        if (!Domains.Contains(normalizedDomain, StringComparer.Ordinal))
+            return Result<ProjectWorkflowConfigurationDto>.Failure(Error.Validation("Project workflow settings are not available for this workflow domain."));
         var mode = request.Mode.Trim();
         if (!ProjectWorkflowModes.IsSupported(mode))
             return Result<ProjectWorkflowConfigurationDto>.Failure(Error.Validation("Workflow mode must be Standard or Custom."));
@@ -72,12 +86,14 @@ public sealed class ProjectWorkflowConfigurationService : IProjectWorkflowConfig
         WorkflowDefinitionVersion? version = null;
         if (mode == ProjectWorkflowModes.Custom)
         {
+            if (!HasPermission("Workflow.View"))
+                return Result<ProjectWorkflowConfigurationDto>.Failure(Error.Forbidden("Workflow.View is required to select a published project workflow."));
             if (!request.WorkflowDefinitionId.HasValue)
                 return Result<ProjectWorkflowConfigurationDto>.Failure(Error.Validation("Select a published workflow before enabling Custom mode."));
 
             definition = await _context.Set<WorkflowDefinition>()
                 .Include(item => item.Versions)
-                .FirstOrDefaultAsync(item => item.Id == request.WorkflowDefinitionId.Value && !item.IsDeleted, cancellationToken);
+                .FirstOrDefaultAsync(item => item.Id == request.WorkflowDefinitionId.Value && item.TenantId == tenantId.Value && !item.IsDeleted, cancellationToken);
             if (definition is null)
                 return Result<ProjectWorkflowConfigurationDto>.Failure(Error.NotFound("Workflow definition not found."));
             if (!definition.IsActive || !string.Equals(WorkflowDomains.Normalize(definition.Domain), normalizedDomain, StringComparison.OrdinalIgnoreCase))
@@ -86,19 +102,19 @@ public sealed class ProjectWorkflowConfigurationService : IProjectWorkflowConfig
                 return Result<ProjectWorkflowConfigurationDto>.Failure(Error.Validation("The selected workflow is not compatible with this domain."));
             if (!definition.ActivePublishedVersionId.HasValue)
                 return Result<ProjectWorkflowConfigurationDto>.Failure(Error.Validation("Only a Published workflow can be selected."));
-            version = definition.Versions.FirstOrDefault(item => item.Id == definition.ActivePublishedVersionId.Value && !item.IsDeleted);
+            version = definition.Versions.FirstOrDefault(item => item.Id == definition.ActivePublishedVersionId.Value && item.TenantId == tenantId.Value && !item.IsDeleted);
             if (version is null || version.LifecycleStatus != WorkflowDefinitionVersionLifecycleStatus.Published)
                 return Result<ProjectWorkflowConfigurationDto>.Failure(Error.Validation("Only the active Published version can be selected."));
         }
 
         var row = await _context.Set<ProjectWorkflowConfiguration>()
-            .FirstOrDefaultAsync(item => item.ProjectId == projectId && item.Domain == normalizedDomain && !item.IsDeleted, cancellationToken);
+            .FirstOrDefaultAsync(item => item.TenantId == tenantId.Value && item.ProjectId == projectId && item.Domain == normalizedDomain && !item.IsDeleted, cancellationToken);
         var oldValue = row is null ? ProjectWorkflowModes.Standard : row.Mode;
         if (row is null)
         {
             row = new ProjectWorkflowConfiguration
             {
-                TenantId = CurrentTenantId(),
+                TenantId = tenantId.Value,
                 ProjectId = projectId,
                 Domain = normalizedDomain,
                 CreatedBy = actor
@@ -153,26 +169,31 @@ public sealed class ProjectWorkflowConfigurationService : IProjectWorkflowConfig
     {
         if (!projectId.HasValue) return Result<ProjectWorkflowSelection?>.Success(null);
         var normalizedDomain = WorkflowDomains.Normalize(domain);
-        if (!WorkflowDomains.IsSupported(normalizedDomain))
-            return Result<ProjectWorkflowSelection?>.Failure(Error.Validation("Workflow domain is not supported."));
+        if (!Domains.Contains(normalizedDomain, StringComparer.Ordinal))
+            return Result<ProjectWorkflowSelection?>.Failure(Error.Validation("Project workflow settings are not available for this workflow domain."));
         if (!string.Equals(entityType, WorkflowDomains.EntityTypeFor(normalizedDomain), StringComparison.OrdinalIgnoreCase))
             return Result<ProjectWorkflowSelection?>.Failure(Error.Validation("Workflow entity type does not match the requested domain."));
 
+        var tenantId = CurrentTenantId();
+        if (!tenantId.HasValue)
+            return Result<ProjectWorkflowSelection?>.Failure(Error.Forbidden("A verified tenant context is required to resolve a project workflow."));
+        if (context.TenantId != tenantId.Value)
+            return Result<ProjectWorkflowSelection?>.Failure(Error.Forbidden("The workflow execution tenant does not match the authenticated tenant."));
         var access = await EnsureProjectAccessAsync(projectId.Value, cancellationToken);
         if (access.IsFailure) return Result<ProjectWorkflowSelection?>.Failure(access.Error!);
         var row = await _context.Set<ProjectWorkflowConfiguration>()
             .AsNoTracking()
             .Include(item => item.WorkflowDefinition)
             .Include(item => item.EffectiveWorkflowVersion)
-            .FirstOrDefaultAsync(item => item.ProjectId == projectId.Value && item.Domain == normalizedDomain && !item.IsDeleted, cancellationToken);
+            .FirstOrDefaultAsync(item => item.TenantId == tenantId.Value && item.ProjectId == projectId.Value && item.Domain == normalizedDomain && !item.IsDeleted, cancellationToken);
         if (row is null || row.Mode != ProjectWorkflowModes.Custom)
             return Result<ProjectWorkflowSelection?>.Success(null);
 
         var definition = row.WorkflowDefinition;
         var version = row.EffectiveWorkflowVersion;
-        if (definition is null || version is null || !definition.IsActive || definition.ActivePublishedVersionId != version.Id || version.LifecycleStatus != WorkflowDefinitionVersionLifecycleStatus.Published)
+        if (definition is null || version is null || definition.TenantId != tenantId.Value || version.TenantId != tenantId.Value || !definition.IsActive || definition.ActivePublishedVersionId != version.Id || version.LifecycleStatus != WorkflowDefinitionVersionLifecycleStatus.Published)
             return Result<ProjectWorkflowSelection?>.Failure(Error.Conflict("The selected project workflow is no longer an active Published version."));
-        var initial = await _context.Set<WorkflowState>().AsNoTracking().FirstOrDefaultAsync(item => item.WorkflowDefinitionVersionId == version.Id && item.IsInitial && item.IsActive && !item.IsDeleted, cancellationToken);
+        var initial = await _context.Set<WorkflowState>().AsNoTracking().FirstOrDefaultAsync(item => item.WorkflowDefinitionVersionId == version.Id && item.TenantId == tenantId.Value && item.IsInitial && item.IsActive && !item.IsDeleted, cancellationToken);
         if (initial is null)
             return Result<ProjectWorkflowSelection?>.Failure(Error.Validation("The selected workflow has no active initial state."));
         return Result<ProjectWorkflowSelection?>.Success(new ProjectWorkflowSelection(normalizedDomain, entityType, true, definition.Id, version.Id, definition.Code, initial.Code));
@@ -180,10 +201,15 @@ public sealed class ProjectWorkflowConfigurationService : IProjectWorkflowConfig
 
     private async Task<Result> EnsureProjectAccessAsync(Guid projectId, CancellationToken cancellationToken)
     {
+        var tenantId = CurrentTenantId();
+        if (!tenantId.HasValue)
+            return Result.Failure(Error.Forbidden("A verified tenant context is required for project workflow settings."));
+        if (_managementContext.Current is { } managementContext && managementContext.TenantId != tenantId.Value)
+            return Result.Failure(Error.Forbidden("The project workflow request tenant does not match the active management context."));
         if (await _projectLookup.FindAsync(projectId, cancellationToken) is null)
             return Result.Failure(Error.NotFound("Project not found."));
         var scope = _managementContext.Current?.Scope.ProjectIds;
-        if (scope is not null && scope.Count > 0 && !scope.Contains(projectId))
+        if (scope is not null && !scope.Contains(projectId))
             return Result.Failure(Error.Forbidden("The project is outside the current management scope."));
         return Result.Success();
     }
@@ -195,6 +221,9 @@ public sealed class ProjectWorkflowConfigurationService : IProjectWorkflowConfig
     private bool IsReadOnlyClaim() => string.Equals(_httpContextAccessor.HttpContext?.User.FindFirstValue("readOnly"), "true", StringComparison.OrdinalIgnoreCase)
         || string.Equals(_httpContextAccessor.HttpContext?.User.FindFirstValue("viewAs"), "true", StringComparison.OrdinalIgnoreCase);
 
+    private bool HasPermission(string permission) =>
+        _httpContextAccessor.HttpContext?.User.HasClaim("permission", permission) == true;
+
     private Guid? TryUserId(string actor) => Guid.TryParse(actor, out var id) ? id : null;
-    private Guid CurrentTenantId() => Guid.TryParse(_httpContextAccessor.HttpContext?.User.FindFirstValue("tenantId"), out var id) ? id : TenantConstants.DemoTenantId;
+    private Guid? CurrentTenantId() => Guid.TryParse(_httpContextAccessor.HttpContext?.User.FindFirstValue("tenantId"), out var id) && id != Guid.Empty ? id : null;
 }

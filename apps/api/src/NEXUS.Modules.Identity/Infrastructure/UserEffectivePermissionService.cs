@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using NEXUS.Modules.Identity.Application;
 using NEXUS.Modules.Identity.Domain;
 
@@ -7,8 +8,13 @@ namespace NEXUS.Modules.Identity.Infrastructure;
 public sealed class UserEffectivePermissionService : IUserEffectivePermissionService
 {
     private readonly DbContext _context;
+    private readonly ILogger<UserEffectivePermissionService>? _logger;
 
-    public UserEffectivePermissionService(DbContext context) => _context = context;
+    public UserEffectivePermissionService(DbContext context, ILogger<UserEffectivePermissionService>? logger = null)
+    {
+        _context = context;
+        _logger = logger;
+    }
 
     public async Task<IReadOnlySet<string>> GetEffectivePermissionsAsync(Guid userId, Guid tenantId, CancellationToken cancellationToken = default)
     {
@@ -47,21 +53,40 @@ public sealed class UserEffectivePermissionService : IUserEffectivePermissionSer
             })
             .ToListAsync(cancellationToken);
 
-        var effective = new HashSet<string>(inherited, StringComparer.Ordinal);
-        foreach (var item in overrides)
+        var hasProtectedAdminRole = await (
+                from assignment in _context.Set<UserRole>().IgnoreQueryFilters().AsNoTracking()
+                where assignment.UserId == userId && assignment.TenantId == tenantId && !assignment.IsDeleted
+                      && assignment.Role.TenantId == tenantId && !assignment.Role.IsDeleted
+                      && assignment.Role.IsSystem
+                      && assignment.Role.SystemRoleKey == Role.TenantAdminSystemRoleKey
+                select assignment.RoleId)
+            .AnyAsync(cancellationToken);
+        IEnumerable<string> mandatoryPermissions = hasProtectedAdminRole
+            ? ProtectedTenantAdminPolicy.MandatoryPermissionKeys
+            : Array.Empty<string>();
+        if (hasProtectedAdminRole)
         {
-            switch (item.Effect)
-            {
-                case PermissionOverrideEffect.Allow:
-                    effective.Add(item.Permission);
-                    break;
-                case PermissionOverrideEffect.Deny:
-                    effective.Remove(item.Permission);
-                    break;
-            }
+            var deniedMandatoryKeys = overrides
+                .Where(item => item.Effect == PermissionOverrideEffect.Deny
+                    && ProtectedTenantAdminPolicy.MandatoryPermissionKeys.Contains(item.Permission))
+                .Select(item => item.Permission)
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(key => key, StringComparer.Ordinal)
+                .ToArray();
+            if (deniedMandatoryKeys.Length > 0)
+                _logger?.LogError("Protected tenant Admin user {UserId} has conflicting Deny overrides for mandatory permissions: {PermissionKeys}", userId, deniedMandatoryKeys);
+
         }
 
-        return effective;
+        var effective = EffectivePermissionResolver.Resolve(
+            inherited,
+            overrides.Select(item => (item.Permission, item.Effect)),
+            mandatoryPermissions);
+
+        // Existing persisted roles are not rewritten when the catalog adds View
+        // dependencies. Their invalid Action grants simply do not become effective
+        // until an administrator explicitly configures the matching View capability.
+        return PermissionCatalog.EnforceDependencies(effective);
     }
 
     public async Task<IReadOnlySet<string>> GetEffectiveRoleNamesAsync(Guid userId, Guid tenantId, CancellationToken cancellationToken = default)

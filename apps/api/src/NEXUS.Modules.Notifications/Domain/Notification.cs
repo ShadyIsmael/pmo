@@ -4,6 +4,8 @@ namespace NEXUS.Modules.Notifications.Domain;
 
 public class Notification : BaseEntity
 {
+    /// <summary>The Organization that owns the source event, when the event is Organization-scoped.</summary>
+    public Guid? OrganizationId { get; set; }
     public Guid? UserId { get; set; }
     public string? Email { get; set; }
     public string Title { get; set; } = string.Empty;
@@ -11,6 +13,7 @@ public class Notification : BaseEntity
     public string Type { get; set; } = string.Empty;
     public string? ReferenceType { get; set; }
     public Guid? ReferenceId { get; set; }
+    public Guid? ReferencePublicId { get; set; }
     public bool IsInAppVisible { get; set; } = true;
     public bool IsRead { get; set; }
     public DateTime? ReadAt { get; set; }

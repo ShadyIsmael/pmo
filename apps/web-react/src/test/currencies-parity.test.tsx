@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "../i18n/messages";
+import { ApiError } from "../api/client";
 import { CurrenciesPage } from "../features/administration/AdminPages";
 
 const mocks = vi.hoisted(() => ({
@@ -30,7 +31,7 @@ const initialCurrencies = [
   { id: "usd-id", code: "USD", name: "US Dollar", symbol: "$", exchangeRate: 1, isBase: true },
 ];
 
-function renderPage(permissions = ["settings.read", "settings.write"]) {
+function renderPage(permissions = ["ReferenceData.View", "ReferenceData.Create", "ReferenceData.Edit", "ReferenceData.Delete"]) {
   window.localStorage.setItem("nexus-locale", "en");
   mocks.useAuth.mockReturnValue({ user: { id: "admin-1", permissions }, status: "authenticated" });
   return render(<I18nProvider><MemoryRouter initialEntries={["/administration/currencies"]}><CurrenciesPage /></MemoryRouter></I18nProvider>);
@@ -38,7 +39,7 @@ function renderPage(permissions = ["settings.read", "settings.write"]) {
 
 describe("Currencies source parity", () => {
   beforeEach(() => {
-    mocks.useAuth.mockReset().mockReturnValue({ user: { id: "admin-1", permissions: ["settings.read", "settings.write"] }, status: "authenticated" });
+    mocks.useAuth.mockReset().mockReturnValue({ user: { id: "admin-1", permissions: ["ReferenceData.View", "ReferenceData.Create", "ReferenceData.Edit", "ReferenceData.Delete"] }, status: "authenticated" });
     mocks.currencies.mockReturnValue({ data: initialCurrencies, isLoading: false, isError: false, refetch: mocks.refetch });
     mocks.create.mockReset().mockResolvedValue(undefined);
     mocks.update.mockReset().mockResolvedValue(undefined);
@@ -49,11 +50,18 @@ describe("Currencies source parity", () => {
     mocks.deleteHook.mockReturnValue({ mutateAsync: mocks.remove, isPending: false });
   });
 
-  it("lists currencies with the base currency first and hides management controls without Settings.Write", () => {
-    renderPage(["settings.read"]);
+  it("lists currencies with the base currency first and hides management controls without a ReferenceData mutation permission", () => {
+    renderPage(["Settings.View"]);
     const currencyTitles = screen.getAllByText(/^[A-Z]{3} · /).map((element) => element.textContent);
     expect(currencyTitles).toEqual(["USD · US Dollar", "EUR · Euro"]);
     expect(screen.getByText("$ · Base currency")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Add Currency" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Edit Currency/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Delete/ })).not.toBeInTheDocument();
+  });
+
+  it("does not treat legacy or tenant-settings permissions as reference-data write access", () => {
+    renderPage(["Settings.View", "Settings.ManageTenantConfiguration"]);
     expect(screen.queryByRole("button", { name: "Add Currency" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Edit Currency/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Delete/ })).not.toBeInTheDocument();
@@ -90,7 +98,7 @@ describe("Currencies source parity", () => {
   });
 
   it("prevents base-currency deletion and confirms and reports errors for other currencies", async () => {
-    mocks.remove.mockRejectedValue(new Error("Currency is still referenced"));
+    mocks.remove.mockRejectedValue(new ApiError(409, "Currency is still referenced", "CONFLICT"));
     renderPage();
     const baseDelete = screen.getByRole("button", { name: "Delete USD" });
     expect(baseDelete).toBeDisabled();

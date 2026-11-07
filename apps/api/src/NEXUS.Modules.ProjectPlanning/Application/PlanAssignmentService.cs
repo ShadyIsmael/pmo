@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using System.Data;
 using NEXUS.Modules.Audit.Application;
 using NEXUS.Modules.Audit.Domain;
 using NEXUS.Modules.Organization.Domain;
@@ -67,6 +68,94 @@ public class PlanAssignmentService : IPlanAssignmentService
 
         await AuditAsync("Create", assignment, null, dto, userId, cancellationToken);
         return Result<PlanAssignmentDto>.Success(assignment.ToDto());
+    }
+
+    public async Task<Result<IReadOnlyList<PlanAssignmentDto>>> CreateManyAsync(
+        Guid planId,
+        CreatePlanAssignmentsBatchDto dto,
+        string userId,
+        CancellationToken cancellationToken = default)
+    {
+        if (_managementContext?.Current?.EffectiveReadOnly == true)
+            return Result<IReadOnlyList<PlanAssignmentDto>>.Failure(Error.Validation("Cannot modify data in ReadOnly management view"));
+        if (dto.ActivityId == Guid.Empty || dto.Assignments is null || dto.Assignments.Count is < 1 or > 100)
+            return Result<IReadOnlyList<PlanAssignmentDto>>.Failure(Error.Validation("Select one activity and between 1 and 100 resources."));
+        if (dto.Assignments.Any(item => item.ResourceId == Guid.Empty || item.AssignedWorkHours <= 0m))
+            return Result<IReadOnlyList<PlanAssignmentDto>>.Failure(Error.Validation("Every resource must have positive assigned work hours."));
+        if (dto.Assignments.Select(item => item.ResourceId).Distinct().Count() != dto.Assignments.Count)
+            return Result<IReadOnlyList<PlanAssignmentDto>>.Failure(Error.Conflict("A resource can only be included once in an assignment batch."));
+
+        await using var transaction = await _context.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        try
+        {
+            var workingVersion = await GetActiveWorkingVersionAsync(planId, cancellationToken);
+            if (workingVersion is null)
+                return Result<IReadOnlyList<PlanAssignmentDto>>.Failure(Error.NotFound(await GetActiveWorkingVersionNotAvailableMessageAsync(planId, cancellationToken)));
+
+            var activity = await _context.Set<PlanActivity>().AsNoTracking()
+                .FirstOrDefaultAsync(item => item.Id == dto.ActivityId && item.PlanVersionId == workingVersion.Id, cancellationToken);
+            if (activity is null)
+                return Result<IReadOnlyList<PlanAssignmentDto>>.Failure(Error.Validation("Activity must belong to the active plan version."));
+            if (activity.Type != PlanActivityType.Task)
+                return Result<IReadOnlyList<PlanAssignmentDto>>.Failure(Error.Validation("Resources can only be assigned to task activities."));
+            var isSummaryTask = activity.WbsId.HasValue && await _context.Set<PlanWbsNode>().AsNoTracking()
+                .AnyAsync(node => node.Id == activity.WbsId.Value && node.PlanVersionId == workingVersion.Id && !node.IsDeleted
+                    && _context.Set<PlanWbsNode>().Any(child => child.ParentWbsId == node.Id && !child.IsDeleted), cancellationToken);
+            if (isSummaryTask)
+                return Result<IReadOnlyList<PlanAssignmentDto>>.Failure(Error.Validation("Resources cannot be assigned to a summary task."));
+            if (activity.EstimateHours is not > 0m)
+                return Result<IReadOnlyList<PlanAssignmentDto>>.Failure(Error.Validation("Set positive planned work hours on the task before assigning resources."));
+
+            var existingWorkHours = await _context.Set<PlanAssignment>().AsNoTracking()
+                .Where(item => item.PlanVersionId == workingVersion.Id && item.ActivityId == activity.Id && !item.IsDeleted)
+                .SumAsync(item => item.PlannedHours ?? 0m, cancellationToken);
+            var proposedWorkHours = dto.Assignments.Sum(item => item.AssignedWorkHours);
+            if (existingWorkHours + proposedWorkHours > activity.EstimateHours.Value + 0.0001m)
+                return Result<IReadOnlyList<PlanAssignmentDto>>.Failure(Error.Validation(
+                    $"Combined assigned work cannot exceed the task's planned work of {activity.EstimateHours.Value:0.##} hours."));
+
+            var requests = dto.Assignments.Select(item => new CreatePlanAssignmentDto
+            {
+                ActivityId = activity.Id,
+                ResourceId = item.ResourceId,
+                AssignedWorkHours = item.AssignedWorkHours,
+                StartDate = item.StartDate ?? activity.StartDate,
+                EndDate = item.EndDate ?? activity.EndDate,
+                ProjectRoleId = item.ProjectRoleId
+            }).ToList();
+
+            foreach (var request in requests)
+            {
+                var validationError = await ValidateAsync(request, planId, workingVersion.Id, null, cancellationToken);
+                if (validationError is not null)
+                    return Result<IReadOnlyList<PlanAssignmentDto>>.Failure(validationError);
+            }
+
+            var created = new List<PlanAssignmentDto>(requests.Count);
+            foreach (var request in requests)
+            {
+                var result = await CreateAsync(planId, request, userId, cancellationToken);
+                if (result.IsFailure || result.Value is null)
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    return Result<IReadOnlyList<PlanAssignmentDto>>.Failure(result.Error ?? Error.Conflict("The assignment batch could not be saved."));
+                }
+                if (!result.Value.ResourceAllocationId.HasValue)
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    return Result<IReadOnlyList<PlanAssignmentDto>>.Failure(Error.Conflict("The resource allocation could not be synchronized with the task assignment."));
+                }
+                created.Add(result.Value);
+            }
+
+            await transaction.CommitAsync(cancellationToken);
+            return Result<IReadOnlyList<PlanAssignmentDto>>.Success(created);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+            throw;
+        }
     }
 
     public async Task<Result<PlanAssignmentDto>> UpdateAsync(Guid planId, Guid assignmentId, UpdatePlanAssignmentDto dto, string userId, CancellationToken cancellationToken = default)
@@ -219,20 +308,30 @@ public class PlanAssignmentService : IPlanAssignmentService
         if (resourceResult.IsFailure || resourceResult.Value is null)
             return Result<PlanAssignmentCapacityDto>.Failure(Error.Validation("Resource was not found or is not available in this tenant."));
 
-        var calendars = await _context.Set<WorkingCalendar>().AsNoTracking().Include(calendar => calendar.Holidays)
+        var calendars = await _context.Set<WorkingCalendar>().AsNoTracking()
+            .Include(calendar => calendar.Holidays)
+            .Include(calendar => calendar.DayRules)
             .Where(calendar => calendar.TenantId == plan.TenantId && !calendar.IsDeleted)
             .ToListAsync(cancellationToken);
-        var selectedCalendarId = string.Equals(member.CalendarPolicy, "FollowProjectCalendar", StringComparison.Ordinal)
-            ? member.ProjectCalendarId
-            : resourceResult.Value.BaseCalendarId;
-        var calendar = selectedCalendarId.HasValue
-            ? calendars.FirstOrDefault(item => item.Id == selectedCalendarId.Value)
-            : calendars.FirstOrDefault(item => item.IsDefault);
-        calendar ??= calendars.FirstOrDefault(item => item.IsDefault);
+        var resourceCalendarCandidate = resourceResult.Value.BaseCalendarId.HasValue
+            ? calendars.FirstOrDefault(item => item.Id == resourceResult.Value.BaseCalendarId.Value)
+            : null;
+        var resourceCalendar = resourceCalendarCandidate?.HasValidSchedule == true ? resourceCalendarCandidate : null;
+        var projectCalendarCandidate = member.ProjectCalendarId.HasValue
+            ? calendars.FirstOrDefault(item => item.Id == member.ProjectCalendarId.Value)
+            : null;
+        var projectCalendar = projectCalendarCandidate?.HasValidSchedule == true ? projectCalendarCandidate : null;
+        var systemCalendar = calendars.FirstOrDefault(item => item.IsDefault && item.HasValidSchedule);
+        var followsProjectCalendar = string.Equals(member.CalendarPolicy, "FollowProjectCalendar", StringComparison.Ordinal);
+        var calendar = followsProjectCalendar
+            ? projectCalendar ?? resourceCalendar ?? systemCalendar
+            : resourceCalendar ?? projectCalendar ?? systemCalendar;
         if (member.AllocationPercentage is < 0m or > 100m || member.EndDate.Date < member.StartDate.Date)
             return Result<PlanAssignmentCapacityDto>.Failure(Error.Validation("The project allocation or membership dates are invalid."));
-        if (calendar is null || calendar.WorkingDaysPerWeek is < 1 or > 7 || calendar.ProductiveHoursPerDay <= 0m)
-            return Result<PlanAssignmentCapacityDto>.Failure(Error.Validation("Configure a valid resource working calendar before assigning task work."));
+        if (calendar is null || !calendar.HasValidSchedule)
+            return Result<PlanAssignmentCapacityDto>.Failure(Error.Validation(
+                "No valid working calendar applies to this assignment. Configure a resource calendar, project calendar, or the tenant's Standard calendar."));
+        var resourceCapacityCalendar = resourceCalendar ?? systemCalendar ?? calendar;
 
         var loads = await (
             from assignment in _context.Set<PlanAssignment>().AsNoTracking()
@@ -261,9 +360,14 @@ public class PlanAssignmentService : IPlanAssignmentService
             .ToListAsync(cancellationToken);
 
         var effectiveLoads = new List<EffectiveAssignmentWorkload>(loads.Count);
+        var weeklyResourceCapacity = ResourceWorkingCapacityCalculator.GetWeeklyCapacity(
+            resourceResult.Value.HoursPerDay,
+            resourceResult.Value.HoursPerWeek,
+            resourceCapacityCalendar,
+            calendar);
         foreach (var load in loads)
         {
-            var workHours = ResolveExistingWorkHours(load, calendar);
+            var workHours = ResolveExistingWorkHours(load, weeklyResourceCapacity);
             if (workHours <= 0m) continue;
             var loadStart = load.StartDate ?? load.ActivityStartDate;
             var loadEnd = load.EndDate ?? load.ActivityEndDate;
@@ -291,13 +395,33 @@ public class PlanAssignmentService : IPlanAssignmentService
                 && entry.Date >= workloadStart && entry.Date < workloadEnd && !entry.IsDeleted)
             .ToListAsync(cancellationToken);
 
-        var requestedWeight = CalculateWorkingCalendarHours(requestedStart, requestedEnd, calendar, resourceCalendarEntries);
+        var requestedWeight = CalculateWorkingCalendarHours(
+            resourceResult.Value.HoursPerDay,
+            resourceResult.Value.HoursPerWeek,
+            resourceCapacityCalendar,
+            calendar,
+            requestedStart,
+            requestedEnd,
+            resourceCalendarEntries);
         if (requestedWeight <= 0m)
             return Result<PlanAssignmentCapacityDto>.Failure(Error.Validation("The selected assignment period has no working capacity in the resource calendar."));
 
         var memberStart = member.StartDate.Date;
-        var memberEnd = member.EndDate.Date.AddDays(1);
-        var weeklyResourceCapacity = calendar.WorkingDaysPerWeek * calendar.ProductiveHoursPerDay;
+        var memberEnd = member.EndDate.Date;
+        var memberEndExclusive = memberEnd.AddDays(1);
+        var eligibleStart = requestedStart > memberStart ? requestedStart : memberStart;
+        var eligibleEnd = requestedEnd < memberEndExclusive ? requestedEnd : memberEndExclusive;
+        var isScheduleWithinMembership = requestedStart >= memberStart && endDate.Date <= memberEnd;
+        var eligibleRequestedWeight = eligibleStart < eligibleEnd
+            ? CalculateWorkingCalendarHours(
+                resourceResult.Value.HoursPerDay,
+                resourceResult.Value.HoursPerWeek,
+                resourceCapacityCalendar,
+                calendar,
+                eligibleStart,
+                eligibleEnd,
+                resourceCalendarEntries)
+            : 0m;
         var weeklyProjectCapacity = weeklyResourceCapacity * member.AllocationPercentage / 100m;
         var totalProjectCapacity = 0m;
         var assignedInRange = 0m;
@@ -309,25 +433,45 @@ public class PlanAssignmentService : IPlanAssignmentService
             var weekEnd = weekStart.AddDays(7);
             var targetSliceStart = requestedStart > weekStart ? requestedStart : weekStart;
             var targetSliceEnd = requestedEnd < weekEnd ? requestedEnd : weekEnd;
-            var targetWeight = CalculateWorkingCalendarHours(targetSliceStart, targetSliceEnd, calendar, resourceCalendarEntries);
-            var demandFraction = targetWeight / requestedWeight;
-            var memberSliceStart = memberStart > weekStart ? memberStart : weekStart;
-            var memberSliceEnd = memberEnd < weekEnd ? memberEnd : weekEnd;
-            var projectCapacity = memberSliceStart < memberSliceEnd
-                ? CalculateWorkingCalendarHours(memberSliceStart, memberSliceEnd, calendar, resourceCalendarEntries)
-                    * member.AllocationPercentage / 100m
+            var eligibleSliceStart = targetSliceStart > memberStart ? targetSliceStart : memberStart;
+            var eligibleSliceEnd = targetSliceEnd < memberEndExclusive ? targetSliceEnd : memberEndExclusive;
+            var targetWeight = eligibleSliceStart < eligibleSliceEnd
+                ? CalculateWorkingCalendarHours(
+                    resourceResult.Value.HoursPerDay,
+                    resourceResult.Value.HoursPerWeek,
+                    resourceCapacityCalendar,
+                    calendar,
+                    eligibleSliceStart,
+                    eligibleSliceEnd,
+                    resourceCalendarEntries)
                 : 0m;
+            var demandFraction = eligibleRequestedWeight > 0m ? targetWeight / eligibleRequestedWeight : 0m;
+            var projectCapacity = targetWeight * member.AllocationPercentage / 100m;
             totalProjectCapacity += projectCapacity;
 
             var assigned = 0m;
             foreach (var load in effectiveLoads)
             {
-                var fullWeight = CalculateWorkingCalendarHours(load.StartDate, load.EndDate, calendar, resourceCalendarEntries);
+                var fullWeight = CalculateWorkingCalendarHours(
+                    resourceResult.Value.HoursPerDay,
+                    resourceResult.Value.HoursPerWeek,
+                    resourceCapacityCalendar,
+                    calendar,
+                    load.StartDate,
+                    load.EndDate,
+                    resourceCalendarEntries);
                 if (fullWeight <= 0m) continue;
-                var overlapStart = load.StartDate > targetSliceStart ? load.StartDate : targetSliceStart;
-                var overlapEnd = load.EndDate < targetSliceEnd ? load.EndDate : targetSliceEnd;
+                var overlapStart = load.StartDate > eligibleSliceStart ? load.StartDate : eligibleSliceStart;
+                var overlapEnd = load.EndDate < eligibleSliceEnd ? load.EndDate : eligibleSliceEnd;
                 if (overlapStart < overlapEnd)
-                    assigned += load.WorkHours * CalculateWorkingCalendarHours(overlapStart, overlapEnd, calendar, resourceCalendarEntries) / fullWeight;
+                    assigned += load.WorkHours * CalculateWorkingCalendarHours(
+                        resourceResult.Value.HoursPerDay,
+                        resourceResult.Value.HoursPerWeek,
+                        resourceCapacityCalendar,
+                        calendar,
+                        overlapStart,
+                        overlapEnd,
+                        resourceCalendarEntries) / fullWeight;
             }
             assignedInRange += assigned;
             var remaining = Math.Max(0m, projectCapacity - assigned);
@@ -342,16 +486,19 @@ public class PlanAssignmentService : IPlanAssignmentService
             ResourceId = resourceId,
             StartDate = requestedStart,
             EndDate = endDate.Date,
+            MembershipStartDate = memberStart,
+            MembershipEndDate = memberEnd,
+            IsScheduleWithinMembership = isScheduleWithinMembership,
             ProjectAllocationPercentage = member.AllocationPercentage,
             ResourceCapacityHoursPerWeek = weeklyResourceCapacity,
             ProjectCapacityHoursPerWeek = weeklyProjectCapacity,
-            ProjectCapacityHours = totalProjectCapacity,
-            AssignedWorkHours = assignedInRange,
-            RemainingAssignableHours = Math.Max(0m, maximumAssignable)
+            ProjectCapacityHours = Math.Round(totalProjectCapacity, 2, MidpointRounding.AwayFromZero),
+            AssignedWorkHours = Math.Round(assignedInRange, 2, MidpointRounding.AwayFromZero),
+            RemainingAssignableHours = Math.Round(Math.Max(0m, maximumAssignable), 2, MidpointRounding.AwayFromZero)
         });
     }
 
-    private static decimal ResolveExistingWorkHours(AssignmentWorkload load, WorkingCalendar calendar)
+    private static decimal ResolveExistingWorkHours(AssignmentWorkload load, decimal weeklyResourceCapacity)
     {
         if (load.PlannedHours is > 0m) return load.PlannedHours.Value;
         var effectiveStart = load.StartDate ?? load.ActivityStartDate;
@@ -366,52 +513,39 @@ public class PlanAssignmentService : IPlanAssignmentService
             var weeks = effectiveStart.HasValue && effectiveEnd.HasValue
                 ? Math.Max(1m, ((effectiveEnd.Value.Date - effectiveStart.Value.Date).Days + 1) / 7m)
                 : 1m;
-            return calendar.WorkingDaysPerWeek * calendar.ProductiveHoursPerDay * load.AllocationPct.Value / 100m * weeks;
+            return weeklyResourceCapacity * load.AllocationPct.Value / 100m * weeks;
         }
         return 0m;
     }
 
     private static decimal CalculateWorkingCalendarHours(
+        decimal? hoursPerDay,
+        decimal? hoursPerWeek,
+        WorkingCalendar? capacityCalendar,
+        WorkingCalendar calendar,
         DateTime startDate,
         DateTime endDateExclusive,
-        WorkingCalendar calendar,
         IReadOnlyCollection<ResourceCalendar> resourceCalendarEntries)
     {
         if (endDateExclusive <= startDate) return 0m;
-        var weeklyHours = calendar.WorkingDaysPerWeek * calendar.ProductiveHoursPerDay;
-        var dailyWorkingHours = calendar.ProductiveHoursPerDay;
-        var dailyExpectedHours = weeklyHours / 7m;
-        var total = Math.Max(0, (endDateExclusive.Date - startDate.Date).Days) * dailyExpectedHours;
-        var holidays = calendar.Holidays.Where(holiday => !holiday.IsDeleted).ToList();
-        var holidayDates = new HashSet<DateTime>();
+        var total = 0m;
+        var exceptionsByDate = resourceCalendarEntries
+            .Where(entry => entry.Date.Date >= startDate.Date && entry.Date.Date < endDateExclusive.Date)
+            .GroupBy(entry => entry.Date.Date)
+            .ToDictionary(group => group.Key, group => group.OrderByDescending(item => item.UpdatedAt ?? item.CreatedAt).First());
         for (var date = startDate.Date; date < endDateExclusive.Date; date = date.AddDays(1))
         {
-            if (holidays.Any(holiday => holiday.IsRecurring
-                    ? holiday.Date.Month == date.Month && holiday.Date.Day == date.Day
-                    : holiday.Date.Date == date))
-            {
-                holidayDates.Add(date);
-                total -= dailyExpectedHours;
-            }
+            exceptionsByDate.TryGetValue(date, out var exception);
+            total += ResourceWorkingCapacityCalculator.GetAvailableDailyCapacity(
+                hoursPerDay,
+                hoursPerWeek,
+                capacityCalendar,
+                calendar,
+                date,
+                exception);
         }
 
-        foreach (var group in resourceCalendarEntries
-            .Where(entry => entry.Date >= startDate && entry.Date < endDateExclusive)
-            .GroupBy(entry => entry.Date.Date))
-        {
-            var entry = group.OrderByDescending(item => item.UpdatedAt ?? item.CreatedAt).First();
-            var type = entry.DayType.Trim();
-            var isWorking = string.Equals(type, "WorkingDay", StringComparison.OrdinalIgnoreCase);
-            var isUnavailable = new[] { "NonWorking", "NonWorkingDay", "Holiday", "Leave", "SickLeave", "PersonalLeave" }
-                .Any(value => string.Equals(type, value, StringComparison.OrdinalIgnoreCase));
-            if (!isWorking && !isUnavailable) continue;
-            if (entry.AvailableHours is < 0m || entry.AvailableHours > dailyWorkingHours) continue;
-            var baseline = holidayDates.Contains(group.Key) ? 0m : dailyExpectedHours;
-            var adjusted = entry.AvailableHours ?? (isWorking ? dailyWorkingHours : 0m);
-            total += adjusted - baseline;
-        }
-
-        return Math.Max(0m, total);
+        return total;
     }
 
     private sealed record AssignmentWorkload(
@@ -640,6 +774,18 @@ public class PlanAssignmentService : IPlanAssignmentService
         if (!assignedWorkHours.HasValue || assignedWorkHours.Value <= 0m)
             return Error.Validation("Assigned work hours must be greater than zero.");
 
+        if (activity.EstimateHours is >= 0m)
+        {
+            var existingTaskWorkHours = await _context.Set<PlanAssignment>().AsNoTracking()
+                .Where(assignment => assignment.PlanVersionId == planVersionId
+                    && assignment.ActivityId == activity.Id
+                    && assignment.Id != excludedAssignmentId
+                    && !assignment.IsDeleted)
+                .SumAsync(assignment => assignment.PlannedHours ?? 0m, cancellationToken);
+            if (existingTaskWorkHours + assignedWorkHours.Value > activity.EstimateHours.Value + 0.0001m)
+                return Error.Validation($"Combined assigned work cannot exceed the task's planned work of {activity.EstimateHours.Value:0.##} hours.");
+        }
+
         var resourceResult = await _resourceService.GetByIdAsync(dto.ResourceId, cancellationToken);
         if (resourceResult.IsFailure) return Error.Validation("Resource was not found or is not available in this tenant");
 
@@ -678,6 +824,8 @@ public class PlanAssignmentService : IPlanAssignmentService
             projectId, planId, dto.ResourceId, startDate.Value, endDate.Value, excludedAssignmentId, cancellationToken);
         if (capacity.IsFailure || capacity.Value is null)
             return capacity.Error ?? Error.Validation("Project resource capacity could not be calculated.");
+        if (!capacity.Value.IsScheduleWithinMembership)
+            return Error.Validation("Assignment dates must fall within the resource's active project membership period.");
         if (assignedWorkHours.Value > capacity.Value.RemainingAssignableHours + 0.0001m)
             return Error.Validation($"Assigned work exceeds the resource's remaining project capacity of {capacity.Value.RemainingAssignableHours:0.##} hours for the selected schedule.");
 
@@ -725,7 +873,14 @@ public class PlanAssignmentService : IPlanAssignmentService
     private Guid GetCurrentTenantId()
     {
         var tenantId = _httpContextAccessor.HttpContext?.User.FindFirst("tenantId")?.Value;
-        return Guid.TryParse(tenantId, out var parsed) ? parsed : TenantConstants.DemoTenantId;
+        if (_httpContextAccessor.HttpContext?.User.Identity?.IsAuthenticated == true
+            && Guid.TryParse(tenantId, out var parsed)
+            && parsed != Guid.Empty)
+        {
+            return parsed;
+        }
+
+        throw new InvalidOperationException("A trusted tenant context is required for project planning operations.");
     }
 
     private static Guid? TryParseGuid(string value) => GuidHelper.TryParse(value);

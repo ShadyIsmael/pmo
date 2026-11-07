@@ -1,3 +1,5 @@
+using System.Security.Claims;
+using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -162,13 +164,13 @@ public class WorkflowEntityController : ControllerBase
 
         var correlationId = HttpContext.Request.Headers["X-Correlation-ID"].FirstOrDefault();
 
-        var metadata = new Dictionary<string, string?>();
-        var permissionsClaim = User.FindFirst("permissions")?.Value;
-        if (!string.IsNullOrEmpty(permissionsClaim))
-            metadata["permissions"] = permissionsClaim;
-        var rolesClaim = User.FindFirst("roles")?.Value;
-        if (!string.IsNullOrEmpty(rolesClaim))
-            metadata["roles"] = rolesClaim;
+        var permissions = User.FindAll("permission").Select(claim => claim.Value).ToArray();
+        var roles = User.FindAll(ClaimTypes.Role).Select(claim => claim.Value).ToArray();
+        var metadata = new Dictionary<string, string?>
+        {
+            ["permissions"] = JsonSerializer.Serialize(permissions),
+            ["roles"] = JsonSerializer.Serialize(roles)
+        };
 
         return new WorkflowExecutionContext(
             TenantId: tenantId,

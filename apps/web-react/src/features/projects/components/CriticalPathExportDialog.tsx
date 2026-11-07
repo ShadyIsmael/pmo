@@ -3,6 +3,7 @@ import { Download, LoaderCircle } from "lucide-react";
 import { Button } from "@components/ui/Button";
 import { SideSheet, SideSheetBody, SideSheetFooter } from "@components/ui/SideSheet";
 import { useI18n } from "@i18n/messages";
+import { formatNumberValue } from "@lib/formatting/number";
 import {
   criticalPathExportErrorMessage,
   DEFAULT_CRITICAL_PATH_EXPORT_OPTIONS,
@@ -206,7 +207,7 @@ function makeLabels(locale: string, formatDate: (value: string, options?: { numb
     const date = new Date(value);
     return Number.isNaN(date.getTime()) ? "—" : formatDate(value, { numberingSystem: "latn" });
   };
-  const numberFormatter = new Intl.NumberFormat(locale === "ar" ? "ar-SA-u-nu-latn" : "en-US", { maximumFractionDigits: 2 });
+  const numberFormatter = { format: (value: number) => formatNumberValue(value, locale, { maximumFractionDigits: 2 }) };
   return {
     title: key("metadataTitle"), subtitle: key("description"), project: key("project"), plan: key("plan"), workingVersion: key("workingVersion"), exportedAt: key("exportedAt"),
     activities: key("activities"), dependencies: key("dependencies"), criticalActivities: key("criticalActivities"), criticalPaths: key("criticalPaths"), projectFinish: key("projectFinish"),

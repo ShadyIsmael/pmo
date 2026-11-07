@@ -16,6 +16,7 @@ public class ProjectConfiguration : IEntityTypeConfiguration<Project>
         builder.Property(p => p.Priority).HasMaxLength(50);
         builder.Property(p => p.Health).HasMaxLength(50);
         builder.Property(p => p.ConfidenceLevel).HasMaxLength(50);
+        builder.Property(p => p.FinanceApprovalMode).HasMaxLength(24);
         builder.Property(p => p.Phase).HasMaxLength(100);
         builder.Property(p => p.RiskRating).HasMaxLength(50);
         builder.HasIndex(p => p.TenantId);

@@ -1,4 +1,5 @@
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./Dialog";
 import { Button } from "./Button";
 import { useI18n } from "@i18n/messages";
@@ -72,10 +73,13 @@ export function ConfirmDialog({ open, onOpenChange, title, description, confirmL
       setBusy(false);
     }
   }
-  return (
+  if (!open || typeof document === "undefined") return null;
+
+  return createPortal((
     <Dialog
       ref={dialogRootRef}
-      open={open}
+      open
+      className="z-[120]"
       role="alertdialog"
       ariaLabelledBy={titleId}
       ariaDescribedBy={description ? descriptionId : undefined}
@@ -96,5 +100,5 @@ export function ConfirmDialog({ open, onOpenChange, title, description, confirmL
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  );
+  ), document.body);
 }
