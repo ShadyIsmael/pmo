@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "npm run dev:web",
     "dev:web": "npm --prefix apps/web-react run dev",
-    "dev:api": "cd apps/api && dotnet run",
+    "dev:api": "node scripts/start-api-dev-https.mjs",
     "build:web": "npm --prefix apps/web-react run build",
     "build:api": "cd apps/api && dotnet build",
     "lint": "npm run lint:web",

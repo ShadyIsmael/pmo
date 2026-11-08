@@ -69,6 +69,9 @@ export const Permissions = {
     Edit: "Planning.Edit",
     Lifecycle: "Planning.Lifecycle",
   },
+  ProjectPlan: {
+    Create: "ProjectPlan.Create",
+  },
   Portfolio: {
     View: "Portfolio.View",
     Create: "Portfolio.Create",

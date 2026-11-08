@@ -305,7 +305,7 @@ public sealed class RoleAdministrationService : IRoleAdministrationService
                 .Select(PermissionKey)
                 .Any(key => BootstrapPermissionDelegationPolicy.Keys.Contains(key) && !oldPermissionKeys.Contains(key)))
             return Result<RoleDetailDto>.Failure(Error.Forbidden(
-                "Bootstrap-only financial permissions can be added only to a custom role, not a system role."));
+                "Bootstrap-delegable permissions can be added only to custom roles, not system roles."));
         if (!await ActorRetainsRoleManagementAsync(actorId, tenantId, role.Id, nextPermissions, cancellationToken))
             return Result<RoleDetailDto>.Failure(Error.Conflict("This change would remove your role-management access. Keep an effective Roles.Create, Roles.EditDetails, Roles.ConfigurePermissions, or Roles.Delete permission assigned to your account."));
 

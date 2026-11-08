@@ -58,6 +58,8 @@ export function ProjectPlanningTabFull() {
   const [baselineOpen, setBaselineOpen] = React.useState(false);
   const hasManagePlanningPermission = Boolean(user && hasPermission(user.permissions, Permissions.Planning.Edit));
   const canManagePlanning = canPerformPlanningWrites(hasManagePlanningPermission, canMutate, effectiveReadOnly);
+  const hasCreateProjectPlanPermission = Boolean(user && hasPermission(user.permissions, Permissions.ProjectPlan.Create));
+  const canCreateProjectPlan = canPerformPlanningWrites(hasCreateProjectPlanPermission, canMutate, effectiveReadOnly);
   const canViewStatusReports = Boolean(user && hasPermission(user.permissions, Permissions.StatusReport.View));
   const baselineUnavailableReason = getPlanningBaselineUnavailableReason(
     Boolean(user && hasPermission(user.permissions, Permissions.Planning.Lifecycle)),
@@ -330,6 +332,7 @@ export function ProjectPlanningTabFull() {
 {ribbonTab === "file" && <div className="flex min-w-max items-stretch gap-1">
 <PlanningRibbonGroup label={t("planning.ribbon.file")}>
 {canManagePlanning ? <WorkspaceButton onClick={() => setImportOpen(true)} icon={<FileUp className="h-3.5 w-3.5" />}>{t("planning.import.action")}</WorkspaceButton> : null}
+{hasCreateProjectPlanPermission && !hasManagePlanningPermission ? <p role="note" className="max-w-64 self-center px-2 text-[10px] leading-4 text-muted-foreground">{t("planning.import.editPermissionRequired")}</p> : null}
 <WorkspaceButton onClick={() => void exportCurrentPlan()} disabled={!selectedPlan || !workingVersion || planExportPending} icon={<Download className="h-3.5 w-3.5" />}>{t(planExportPending ? "planning.export.exporting" : "planning.export.action")}</WorkspaceButton>
 </PlanningRibbonGroup>
 {planExportError ? <p role="alert" className="self-center rounded border border-destructive/30 bg-destructive/5 px-2 py-1 text-xs text-destructive">{t("planning.export.failed")}</p> : null}
@@ -340,7 +343,7 @@ export function ProjectPlanningTabFull() {
 <SelectTrigger aria-label={t("planning.selectPlan")} className="h-7 w-48 max-w-[13rem] shrink-0 text-[11px]"><SelectValue placeholder={t("planning.selectPlan")} /></SelectTrigger>
 <SelectContent>{(plans.data ?? []).map((plan) => <SelectItem key={plan.id} value={plan.id}>{plan.name} · {planningLabel(t, "planType", plan.planType)}</SelectItem>)}</SelectContent>
 </Select></div>
-{canManagePlanning ? <Button type="button" variant="default" size="sm" className="h-7 shrink-0 gap-1 px-2 text-[11px]" onClick={planOpen ? cancelCreatePlan : openCreatePlan}><Plus className="h-3.5 w-3.5" />{t(planOpen ? "planning.cancelCreatePlan" : "planning.createPlan")}</Button> : null}
+{canCreateProjectPlan ? <Button type="button" variant="default" size="sm" className="h-7 shrink-0 gap-1 px-2 text-[11px]" onClick={planOpen ? cancelCreatePlan : openCreatePlan}><Plus className="h-3.5 w-3.5" />{t(planOpen ? "planning.cancelCreatePlan" : "planning.createPlan")}</Button> : null}
 </PlanningRibbonGroup>
 <PlanningRibbonGroup label={t("planning.ribbon.tools")}>
 {canBaseline ? <WorkspaceButton onClick={() => void captureBaseline()} disabled={!activeWorkingVersion?.rowVersion || mutations.captureBaseline.isPending} icon={<Save className="h-3.5 w-3.5" />}>{t("planning.setBaseline")}</WorkspaceButton> : null}
@@ -485,6 +488,8 @@ export function ProjectPlanningTabFull() {
   projectId={projectId}
   plans={plans.data ?? []}
   selectedPlanId={planId}
+  canCreatePlan={canCreateProjectPlan}
+  canEditPlan={canManagePlanning}
   commitMutation={mutations.commitImport}
   t={t}
   onOpenChange={setImportOpen}

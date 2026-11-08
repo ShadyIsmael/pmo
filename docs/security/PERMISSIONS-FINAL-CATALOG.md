@@ -8,11 +8,11 @@ The catalog defines permission keys and bilingual module/screen labels, descript
 
 | Measure | Count |
 |---|---:|
-| Active catalog definitions | 133 |
-| Active View keys | 35 |
-| Active Action keys | 98 |
+| Active catalog definitions | 171 |
+| Active View keys | 46 |
+| Active Action keys | 125 |
 | Inactive compatibility definitions | 0 |
-| Protected tenant Admin baseline | 48 |
+| Protected tenant Admin baseline | 47 |
 
 These are code counts. They do not represent persisted Permission rows, role grants, user overrides, or runtime effective permissions. The existing `PERMISSIONS-FINAL-TARGET-MATRIX.csv` and `docs/security/permission-audit/ACTION-PERMISSION-MATRIX.csv` retain source evidence; the latter preserves its existing row IDs and source references.
 
@@ -20,7 +20,7 @@ These are code counts. They do not represent persisted Permission rows, role gra
 
 The source catalog contains only active canonical keys. Former aliases such as `projects.read`, `Resource.Manage`, `Team.Manage`, `Roles.Manage`, `ReferenceData.Manage`, `Program.Manage`, and `Portfolio.Manage` do not grant access. The canonical frontend constants and API policies use active catalog keys.
 
-The rebuilt catalog includes dedicated read keys for `Issue.View` and `Plugin.View`, exact directory connection management (`Directory.ManageConnection`), and planning editing (`Planning.Edit`). Report, settings, and user administration use `Report.View`, `Settings.View`, and `Users.View`. Each action is catalogued and localized in English and Arabic.
+The rebuilt catalog includes dedicated read keys for `Issue.View` and `Plugin.View`, exact directory connection management (`Directory.ManageConnection`), and Project Plan capabilities. `ProjectPlan.Create` creates a Plan aggregate; `Planning.Edit` edits existing Plan contents. Both are Project-scoped, depend on `Planning.View`, and remain outside the protected Admin baseline. Report, settings, and user administration use `Report.View`, `Settings.View`, and `Users.View`. Each action is catalogued and localized in English and Arabic.
 
 The catalog's action dependencies are enforced during effective-permission resolution. Missing dependencies remove an Action from the effective set; the resolver does not add grants. Assigned approval capabilities remain narrow exceptions where their APIs expose only an exact assigned record.
 
@@ -44,7 +44,7 @@ This is the initial workflow mapping, not permission to reuse one workflow's pol
 
 ## Protected tenant Admin
 
-The source-derived baseline contains 48 active tenant-scoped permissions. It includes eligible Administration, role-management, Assignment Recovery, and Workflow capabilities plus explicitly approved Portfolio, Program, and Handover operations. Organization, Platform, CrossTenant, and SystemOwner permissions are excluded. The trusted protected identity requires the seeded `admin` role identity; role names alone do not authorize access.
+The source-derived baseline contains 47 active tenant-scoped permissions. It includes eligible Administration, role-management, Assignment Recovery, and Workflow capabilities plus explicitly approved Portfolio, Program, and Handover operations. Organization, Platform, CrossTenant, and SystemOwner permissions are excluded. The trusted protected identity requires the seeded `admin` role identity; role names alone do not authorize access.
 
 The baseline is applied after direct Deny overrides, so a conflicting Deny cannot remove a mandatory key from effective permissions. Existing active canonical grants are preserved by the permission catalog reconciliation. No new grants are automatically assigned to ordinary roles, users, or `pmo.admin`.
 
@@ -56,4 +56,6 @@ The reconciliation is limited to the seeded Development tenant. It adds missing 
 
 The operation was **not run** in this task: the current Development target, physical schema, and independent backup were not verified. No migration or database write was performed. Use `scripts/database/ef-database-gate.ps1` and complete the required before-state and backup reviews before an authorized Development execution.
 
-**Role category overlay (2026-11-05):** Role composition also uses explicit `AllowedCategories` metadata for each permission. The code-backed mapping is in `apps/api/src/NEXUS.Modules.Identity/Application/RoleCategoryPolicy.cs`; it does not change permission keys, runtime scope, or effective authorization. See [Role Category Eligibility and Migration Notes](ROLE-CATEGORY-ELIGIBILITY-AND-MIGRATION.md) for enforcement and the source-only seed conflict inventory.
+**Role category overlay (2026-11-05; current Project Plan mapping):** Role composition also uses explicit `AllowedCategories` metadata for each permission. `ProjectPlan.Create` is Management-only; `Planning.Edit` allows Management and Operation roles. The code-backed mapping is in `apps/api/src/NEXUS.Modules.Identity/Application/RoleCategoryPolicy.cs`; it does not change permission keys, runtime scope, or effective authorization. See [Role Category Eligibility and Migration Notes](ROLE-CATEGORY-ELIGIBILITY-AND-MIGRATION.md) for enforcement and the source-only seed conflict inventory.
+
+**First-grant policy:** `ProjectPlan.Create`, `Planning.Edit`, and dependency `Planning.View` are explicitly delegable only to a same-Tenant custom role by an actor with both `Roles.ConfigurePermissions` and `TenantAdministration.ManageScope`. The role service excludes a key with a direct Deny and enforces dependency, role-category, and Tenant checks. Bootstrap delegation does not add grants automatically or change protected Admin permissions; the bootstrap path cannot configure system roles.

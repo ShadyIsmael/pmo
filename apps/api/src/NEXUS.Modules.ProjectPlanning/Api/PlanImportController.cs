@@ -51,10 +51,15 @@ public sealed class PlanImportController : ControllerBase
     public async Task<IActionResult> ResolveCalendar(Guid projectId, Guid sessionId, string sourceCalendarId, [FromBody] PlanImportCalendarResolutionDto resolution, CancellationToken cancellationToken) =>
         ToActionResult(await _importService.ResolveCalendarAsync(projectId, sessionId, sourceCalendarId, resolution, CurrentUserId(), cancellationToken));
 
-    [Authorize(Policy = "Planning.Edit")]
     [HttpPost("sessions/{sessionId:guid}/commit")]
     public async Task<IActionResult> Commit(Guid projectId, Guid sessionId, [FromBody] CommitPlanImportDto request, CancellationToken cancellationToken)
     {
+        if (!User.HasClaim("permission", "Planning.Edit")
+            || (!request.TargetPlanId.HasValue && !User.HasClaim("permission", "ProjectPlan.Create")))
+        {
+            return Forbid();
+        }
+
         request.ProjectId = projectId;
         return ToActionResult(await _importService.CommitSessionAsync(projectId, sessionId, request, CurrentUserId(), cancellationToken));
     }
@@ -81,6 +86,7 @@ public sealed class PlanImportController : ControllerBase
         {
             404 => NotFound(new { error = result.Error.Message }),
             409 => Conflict(new { error = result.Error.Message }),
+            403 => StatusCode(403, new { error = result.Error.Message }),
             _ => BadRequest(new { error = result.Error?.Message ?? "The plan import failed" })
         };
     }
@@ -92,6 +98,7 @@ public sealed class PlanImportController : ControllerBase
         {
             404 => NotFound(new { error = result.Error.Message }),
             409 => Conflict(new { error = result.Error.Message }),
+            403 => StatusCode(403, new { error = result.Error.Message }),
             _ => BadRequest(new { error = result.Error?.Message ?? "The plan import failed" })
         };
     }

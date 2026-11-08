@@ -62,14 +62,17 @@ public class PlanServiceTests : IDisposable
             projectPublicIdLookup: _projectLookup.Object);
     }
 
-    private void SetTenant(Guid tenantId, Guid userId)
+    private void SetTenant(Guid tenantId, Guid userId, string[]? permissionKeys = null)
     {
         var httpContext = new DefaultHttpContext();
-        httpContext.User = new ClaimsPrincipal(new ClaimsIdentity(new[]
+        var claims = new List<Claim>
         {
             new Claim("tenantId", tenantId.ToString()),
             new Claim(ClaimTypes.NameIdentifier, userId.ToString())
-        }, "mock"));
+        };
+        claims.AddRange((permissionKeys ?? ["Planning.View", "ProjectPlan.Create"])
+            .Select(key => new Claim("permission", key)));
+        httpContext.User = new ClaimsPrincipal(new ClaimsIdentity(claims, "mock"));
         _accessor.Setup(x => x.HttpContext).Returns(httpContext);
         AppDbContext.ConfigureTenantResolution(_accessor.Object);
         _managementContext.Set(new ManagementContext(
@@ -112,6 +115,19 @@ public class PlanServiceTests : IDisposable
 
         Assert.Single(_context.PlanVersions.IgnoreQueryFilters());
         _auditService.Verify(a => a.LogAsync(It.IsAny<AuditEntry>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Create_WithPlanningEditButWithoutProjectPlanCreate_IsForbidden()
+    {
+        SetTenant(_tenantA, _userA, ["Planning.View", "Planning.Edit"]);
+
+        var result = await _service.CreateAsync(NewDto(PlanType.Execution), _userA.ToString());
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(403, result.Error!.StatusCode);
+        Assert.Empty(_context.Plans.IgnoreQueryFilters());
+        _auditService.Verify(a => a.LogAsync(It.IsAny<AuditEntry>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

@@ -5,7 +5,7 @@ using NEXUS.Modules.Identity.Domain;
 namespace NEXUS.Modules.Identity.Infrastructure;
 
 /// <summary>
-/// Narrow first-grant delegation for explicitly selected finance capabilities.
+/// Narrow first-grant delegation for explicitly selected workflow capabilities.
 /// It gives qualifying tenant role administrators delegation authority only; it
 /// does not add the capabilities to their own effective permission set.
 /// </summary>
@@ -13,6 +13,14 @@ internal static class BootstrapPermissionDelegationPolicy
 {
     private static readonly string[] PermissionKeys =
     [
+        // A scoped tenant role administrator can make Project Planning available
+        // to eligible Management/Operation roles without receiving those rights.
+        // Recipient category, dependency, Project scope, and Active Deny checks
+        // are enforced by the catalog, role service, and effective resolver.
+        "ProjectPlan.Create",
+        "Planning.Edit",
+        "Planning.View",
+
         // A tenant administrator may delegate the annual-budget View dependency
         // without receiving it personally on a fresh tenant.
         "ProjectAnnualBudget.View",

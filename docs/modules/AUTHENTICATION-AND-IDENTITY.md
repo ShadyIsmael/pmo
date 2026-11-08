@@ -31,7 +31,7 @@ Login ──► POST /api/auth/login
 |--------|------|------|-------------|
 | POST | `/api/auth/login` | Public (`AllowAnonymous`) | Validate email/password without an existing session, create session, return token pair + user |
 | POST | `/api/auth/refresh` | Public (`AllowAnonymous`, refresh token) | Rotate refresh token; return new access + refresh tokens |
-| POST | `/api/auth/logout` | Authenticated | Revoke current session; optionally revoke by refresh token |
+| POST | `/api/auth/logout` | Cookie mode: `AllowAnonymous` with CSRF + refresh cookie; bearer mode: authenticated | Revoke the selected session |
 | GET | `/api/auth/me` | Authenticated | Return current user with roles and permissions |
 | POST | `/api/auth/switch-role` | Authenticated | Compatibility endpoint; returns the current user and does not switch roles |
 
@@ -110,6 +110,7 @@ Temporary passwords are governed by `Security:LocalPasswords:TemporaryPasswordEx
 
 - Each login creates a `UserSession` row (session id, user id, issued/expiry, token hash, status).
 - Login and refresh carry explicit `AllowAnonymous` endpoint metadata. The session/permission and initial-password middleware skip these endpoints even if a bearer token is present; login therefore does not depend on an earlier access-token session.
+- After login credentials are verified, session creation and last-login metadata use the tenant ID read from the matched account inside a bounded `PreAuthenticationTenantExecutionContext`. Refresh uses the persisted session tenant only after the refresh-token hash, session state, and owning account have been validated. Cookie logout looks up by the refresh-token hash and revokes within that session's tenant. These scopes apply only to `AllowAnonymous` endpoints; authenticated request claims remain authoritative and ordinary anonymous writes still fail closed.
 - Invalid login credentials return `401` with the generic credential message. Database exceptions remain `500` and are not rewritten as session failures.
 - Login request cancellation is propagated through EF Core to SQL Server. The API treats an `OperationCanceledException` or the narrowly identified SqlClient command-cancellation error as an expected abort only when `HttpContext.RequestAborted` is canceled. Other SQL failures remain error-logged; if the client has disconnected, the handler logs the failure without trying to write a response.
 - The refresh token is stored only as a SHA-256 hex hash in `UserSession.RefreshToken`; the plaintext is returned once at issuance.
@@ -135,7 +136,7 @@ Theme and locale continue through the existing React providers and browser-local
 
 ## Tenant Resolution
 
-`AppDbContext.GetCurrentTenantId()` resolves the tenant from the authenticated `tenantId` claim via the scoped `IHttpContextAccessor`. A missing or malformed request claim resolves to `Guid.Empty`, so tenant query filters fail closed. Only trusted out-of-request Development initialization paths retain the fixed seed-tenant fallback `11111111-1111-1111-1111-111111111111`.
+`AppDbContext.GetCurrentTenantId()` resolves ordinary request tenants from the authenticated `tenantId` claim via the scoped `IHttpContextAccessor`. A missing or malformed claim resolves to `Guid.Empty`, so tenant query filters fail closed. After credentials or a refresh-token hash have been validated, the Identity service may establish a short-lived `PreAuthenticationTenantExecutionContext` on an `AllowAnonymous` authentication endpoint, using only the tenant ID loaded from the account/session record. Authenticated request claims take precedence; no request-supplied tenant value can establish this scope. Only trusted out-of-request Development initialization paths retain the fixed seed-tenant fallback `11111111-1111-1111-1111-111111111111`.
 
 ## Frontend Integration
 

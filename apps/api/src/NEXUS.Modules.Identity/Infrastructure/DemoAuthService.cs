@@ -97,8 +97,12 @@ public class DemoAuthService : IAuthenticationService
 
         // Session creation is authoritative. LastLoginAt is best-effort metadata and
         // must not turn a valid concurrent login into a failed request.
-        var loginResult = await IssueSessionAsync(user, cancellationToken);
-        await TryUpdateLastLoginAsync(user.Id, cancellationToken);
+        Result<LoginResponseDto> loginResult;
+        using (PreAuthenticationTenantExecutionContext.EnterAfterCredentialValidation(user.TenantId))
+        {
+            loginResult = await IssueSessionAsync(user, cancellationToken);
+            await TryUpdateLastLoginAsync(user.Id, cancellationToken);
+        }
 
         return loginResult;
     }
@@ -111,17 +115,22 @@ public class DemoAuthService : IAuthenticationService
         var tokenHash = HashToken(refreshToken);
         var session = await _context.Set<UserSession>()
             .IgnoreQueryFilters()
-            .FirstOrDefaultAsync(s => s.RefreshToken == tokenHash && s.UserId != Guid.Empty, cancellationToken);
+            .FirstOrDefaultAsync(s => s.RefreshToken == tokenHash
+                && s.UserId != Guid.Empty
+                && s.TenantId != Guid.Empty
+                && !s.IsDeleted, cancellationToken);
 
         if (session is null || session.RevokedAt is not null || session.ExpiresAt <= DateTime.UtcNow)
             return Result<LoginResponseDto>.Failure(Error.Unauthorized("Invalid or expired refresh token"));
 
         var user = await GetUserWithRolesByIdAsync(session.UserId, session.TenantId, cancellationToken);
-        if (user is null || !user.IsActive)
+        if (user is null || !user.IsActive || user.TenantId != session.TenantId)
             return Result<LoginResponseDto>.Failure(Error.Unauthorized("User account is not available"));
 
         if (user.AuthenticationSource != AuthenticationSource.Local || string.IsNullOrEmpty(user.PasswordHash))
             return Result<LoginResponseDto>.Failure(Error.Unauthorized("User account is not available for local authentication"));
+
+        using var tenantScope = PreAuthenticationTenantExecutionContext.EnterAfterCredentialValidation(user.TenantId);
         var bypassInitialPasswordPolicy = IsDevelopmentAdminPasswordBypassEnabled(user.TenantId, user.Email, user.AuthenticationSource);
         if (user.MustChangePassword && !bypassInitialPasswordPolicy
             && (!user.TemporaryPasswordExpiresAt.HasValue || user.TemporaryPasswordExpiresAt <= DateTime.UtcNow))
@@ -237,9 +246,13 @@ public class DemoAuthService : IAuthenticationService
 
         var tokenHash = HashToken(refreshToken);
         var session = await _context.Set<UserSession>()
-            .FirstOrDefaultAsync(candidate => candidate.RefreshToken == tokenHash, cancellationToken);
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(candidate => candidate.RefreshToken == tokenHash
+                && candidate.TenantId != Guid.Empty
+                && !candidate.IsDeleted, cancellationToken);
         if (session is not null && session.RevokedAt is null)
         {
+            using var tenantScope = PreAuthenticationTenantExecutionContext.EnterAfterCredentialValidation(session.TenantId);
             session.RevokedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync(cancellationToken);
         }

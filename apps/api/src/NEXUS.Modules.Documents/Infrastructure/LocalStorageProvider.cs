@@ -46,7 +46,7 @@ public class LocalStorageProvider : IStorageProvider
         var baseWithSeparator = _basePath.EndsWith(Path.DirectorySeparatorChar)
             ? _basePath
             : _basePath + Path.DirectorySeparatorChar;
-        if (!fullPath.StartsWith(baseWithSeparator, StringComparison.OrdinalIgnoreCase))
+        if (!fullPath.StartsWith(baseWithSeparator, StringComparison.Ordinal))
             throw new InvalidOperationException("Storage key escapes the configured storage root.");
         return fullPath;
     }

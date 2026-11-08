@@ -1478,6 +1478,128 @@ public sealed class UserPermissionAdministrationTests : IAsyncLifetime
         Assert.Equal(400, foreignGrant.Error?.StatusCode);
     }
 
+    [Fact]
+    public async Task Planning_bootstrap_assigns_a_custom_role_to_another_same_tenant_user()
+    {
+        var (actor, actorRole) = AddUserWithRole(_tenantId, "planning-delegator");
+        var (target, _) = AddUserWithRole(_tenantId, "planning-recipient");
+        actorRole.Permissions.Add(AddPermission(_tenantId, "Users", "AssignRoles"));
+        actorRole.Permissions.Add(AddPermission(_tenantId, "Roles", "ConfigurePermissions"));
+        actorRole.Permissions.Add(AddPermission(_tenantId, "TenantAdministration", "ManageScope"));
+
+        var planningView = AddPermission(_tenantId, "Planning", "View");
+        var planningEdit = AddPermission(_tenantId, "Planning", "Edit");
+        var planCreate = AddPermission(_tenantId, "ProjectPlan", "Create");
+        var customRole = new Role
+        {
+            TenantId = _tenantId,
+            Name = "Planning Custom Role",
+            Category = RoleCategories.Management,
+            IsSystem = false,
+            CreatedBy = actor.Id.ToString("D"),
+            Permissions = [planningView, planningEdit, planCreate]
+        };
+        _context.Roles.Add(customRole);
+        await _context.SaveChangesAsync();
+
+        var service = CreateUserAdministrationService(actor.Id);
+        var updated = await service.UpdateAsync(target.Id, new UpdateUserDto
+        {
+            Email = target.Email,
+            FirstName = target.FirstName,
+            LastName = target.LastName,
+            IsActive = target.IsActive,
+            Roles = [customRole.Name]
+        }, actor.Id.ToString("D"));
+
+        Assert.True(updated.IsSuccess, updated.Error?.Message);
+        var assignment = await _context.UserRoles.IgnoreQueryFilters()
+            .Include(item => item.Role)
+                .ThenInclude(role => role.Permissions)
+            .SingleAsync(item => item.UserId == target.Id && item.RoleId == customRole.Id && !item.IsDeleted);
+        Assert.False(assignment.Role.IsSystem);
+        Assert.Equal(
+            new[] { "Planning.Edit", "Planning.View", "ProjectPlan.Create" },
+            assignment.Role.Permissions.Select(permission => permission.Name).OrderBy(key => key, StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public async Task Planning_bootstrap_cannot_assign_a_seeded_system_role_when_actor_lacks_Planning_Edit()
+    {
+        var (actor, actorRole) = AddUserWithRole(_tenantId, "planning-delegator");
+        var (target, _) = AddUserWithRole(_tenantId, "planning-recipient");
+        actorRole.Permissions.Add(AddPermission(_tenantId, "Users", "AssignRoles"));
+        actorRole.Permissions.Add(AddPermission(_tenantId, "Roles", "ConfigurePermissions"));
+        actorRole.Permissions.Add(AddPermission(_tenantId, "TenantAdministration", "ManageScope"));
+
+        var projectManager = new Role
+        {
+            TenantId = _tenantId,
+            Name = "project.manager",
+            Category = RoleCategories.Management,
+            IsSystem = true,
+            CreatedBy = "seed"
+        };
+        projectManager.AssignSystemRoleKey("tenant.project-manager", _tenantId);
+        projectManager.Permissions.Add(AddPermission(_tenantId, "Planning", "View"));
+        projectManager.Permissions.Add(AddPermission(_tenantId, "Planning", "Edit"));
+        _context.Roles.Add(projectManager);
+        await _context.SaveChangesAsync();
+
+        var service = CreateUserAdministrationService(actor.Id);
+        var rejected = await service.UpdateAsync(target.Id, new UpdateUserDto
+        {
+            Email = target.Email,
+            FirstName = target.FirstName,
+            LastName = target.LastName,
+            IsActive = target.IsActive,
+            Roles = [projectManager.Name]
+        }, actor.Id.ToString("D"));
+
+        Assert.True(rejected.IsFailure);
+        Assert.Equal(403, rejected.Error?.StatusCode);
+        Assert.False(await _context.UserRoles.IgnoreQueryFilters()
+            .AnyAsync(item => item.UserId == target.Id && item.RoleId == projectManager.Id && !item.IsDeleted));
+    }
+
+    [Fact]
+    public async Task Existing_Planning_Edit_holder_can_still_assign_a_system_role_with_the_same_permission()
+    {
+        var (actor, actorRole) = AddUserWithRole(_tenantId, "planning-delegator");
+        var (target, _) = AddUserWithRole(_tenantId, "planning-recipient");
+        actorRole.Permissions.Add(AddPermission(_tenantId, "Users", "AssignRoles"));
+        actorRole.Permissions.Add(AddPermission(_tenantId, "Planning", "View"));
+        actorRole.Permissions.Add(AddPermission(_tenantId, "Planning", "Edit"));
+
+        var projectManager = new Role
+        {
+            TenantId = _tenantId,
+            Name = "project.manager",
+            Category = RoleCategories.Management,
+            IsSystem = true,
+            CreatedBy = "seed"
+        };
+        projectManager.AssignSystemRoleKey("tenant.project-manager", _tenantId);
+        projectManager.Permissions.Add(AddPermission(_tenantId, "Planning", "View"));
+        projectManager.Permissions.Add(AddPermission(_tenantId, "Planning", "Edit"));
+        _context.Roles.Add(projectManager);
+        await _context.SaveChangesAsync();
+
+        var service = CreateUserAdministrationService(actor.Id);
+        var assigned = await service.UpdateAsync(target.Id, new UpdateUserDto
+        {
+            Email = target.Email,
+            FirstName = target.FirstName,
+            LastName = target.LastName,
+            IsActive = target.IsActive,
+            Roles = [projectManager.Name]
+        }, actor.Id.ToString("D"));
+
+        Assert.True(assigned.IsSuccess, assigned.Error?.Message);
+        Assert.True(await _context.UserRoles.IgnoreQueryFilters()
+            .AnyAsync(item => item.UserId == target.Id && item.RoleId == projectManager.Id && !item.IsDeleted));
+    }
+
     private RoleAdministrationService CreateRoleService(Guid actorId)
     {
         var audit = new Mock<IAuditService>();
@@ -1496,6 +1618,32 @@ public sealed class UserPermissionAdministrationTests : IAsyncLifetime
             }
         };
         return new RoleAdministrationService(_context, new UserEffectivePermissionService(_context), audit.Object, http);
+    }
+
+    private UserAdministrationService CreateUserAdministrationService(Guid actorId)
+    {
+        var audit = new Mock<IAuditService>();
+        audit.Setup(service => service.AppendAsync(It.IsAny<AuditEntry>(), It.IsAny<CancellationToken>()))
+            .Callback<AuditEntry, CancellationToken>((entry, _) => _context.AuditEntries.Add(entry))
+            .ReturnsAsync(Result.Success());
+        var http = new HttpContextAccessor
+        {
+            HttpContext = new DefaultHttpContext
+            {
+                User = new ClaimsPrincipal(new ClaimsIdentity(
+                [
+                    new Claim(ClaimTypes.NameIdentifier, actorId.ToString()),
+                    new Claim("tenantId", _tenantId.ToString())
+                ], "test"))
+            }
+        };
+        return new UserAdministrationService(
+            _context,
+            Mock.Of<Microsoft.AspNetCore.Identity.IPasswordHasher<User>>(),
+            http,
+            new UserEffectivePermissionService(_context),
+            audit.Object,
+            Options.Create(new LocalPasswordPolicyOptions()));
     }
 
     private (User User, Role Role) AddUserWithRole(Guid tenantId, string roleName)

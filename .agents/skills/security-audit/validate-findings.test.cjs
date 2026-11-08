@@ -530,10 +530,31 @@ test("checks pattern and branch invariants", () => {
 
 test("rejects unsupported and malformed schema keywords", () => {
   assert(collectSchemaErrors({ type: "string", format: "uuid" }).some((error) => error.includes("format")));
-  assert(collectSchemaErrors({ type: "string", pattern: "[" }).some((error) => error.includes("regular expression")));
+  assert(collectSchemaErrors({ type: "string", pattern: "[" }).some((error) => error.includes("unsupported pattern")));
   assert(collectSchemaErrors({ type: "string", visibleContent: "yes" }).some((error) => error.includes("expected boolean")));
   assert(collectSchemaErrors({ type: "array", visibleContent: true }).some((error) => error.includes("requires type")));
   assert.notEqual(validateDocument([], { type: "array", maxItems: 1 }).length, 0);
+});
+
+test("rejects non-allowlisted patterns without constructing regular expressions", () => {
+  const originalRegExp = global.RegExp;
+  global.RegExp = function () {
+    throw new Error("schema validation must not construct a regular expression");
+  };
+  try {
+    assert.deepEqual(collectSchemaErrors({
+      type: "string",
+      pattern: "^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$",
+    }), []);
+    for (const pattern of ["^other$", "(a+)+$", "["]) {
+      const schemaWithPattern = { type: "string", pattern };
+      assert(collectSchemaErrors(schemaWithPattern).some((error) => error.includes("unsupported pattern")));
+      assert(validateDocument(`${"a".repeat(10000)}!`, schemaWithPattern)
+        .some((error) => error.includes("unsupported pattern")));
+    }
+  } finally {
+    global.RegExp = originalRegExp;
+  }
 });
 
 test("caps malformed 1000-finding validation output", () => {

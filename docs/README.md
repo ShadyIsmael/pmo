@@ -78,7 +78,6 @@ Welcome to the central documentation index for **NEXUS PMO** (FOPX PM). This dir
 See the dedicated **[Reports Catalog](reports/README.md)** for a full index of all reports across the repository:
 - [Security Audit Report](reports/security/SECURITY-AUDIT-REPORT.md)
 - [Project Plan Desktop Parity](reports/PROJECT-PLAN-DESKTOP-PARITY.md)
-- [Vite POC Benchmark Report](reports/poc-vite/BENCHMARK-REPORT.md)
 - [Vitest Focused Test Results](reports/testing/)
 - [Financial Current State Audit](modules/FINANCIAL-CURRENT-STATE-AUDIT.md)
 - [Dead Code Audit](development/DEAD-CODE-AUDIT.md)

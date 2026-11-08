@@ -1,4 +1,5 @@
 using System.Reflection;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
@@ -419,8 +420,9 @@ public class AppDbContext : DbContext
     /// <summary>
     /// Wires tenant resolution to the current HTTP request so the global query
     /// filter filters by the JWT "tenantId" claim. A malformed or missing claim
-    /// in a request resolves to no tenant. Trusted out-of-request work must
-    /// establish an explicit tenant execution scope.
+    /// in a request resolves to no tenant, except for a short-lived server-derived
+    /// pre-authentication scope on an AllowAnonymous auth endpoint. Trusted
+    /// out-of-request work must establish an explicit tenant execution scope.
     /// </summary>
     public static void ConfigureTenantResolution(IHttpContextAccessor accessor)
     {
@@ -429,7 +431,7 @@ public class AppDbContext : DbContext
 
     /// <summary>
     /// Current tenant for query filtering, resolved per-execution from the active
-    /// HTTP request. Referenced as an instance property from the global query
+    /// HTTP request or an explicitly trusted server-side execution scope. Referenced as an instance property from the global query
     /// filters so EF parameterizes it and re-evaluates it for every query instead
     /// of baking a single tenant value into the cached model/compiled query.
     /// </summary>
@@ -440,6 +442,12 @@ public class AppDbContext : DbContext
         var httpContext = _httpContextAccessor?.HttpContext;
         if (httpContext is not null)
         {
+            if (httpContext.GetEndpoint()?.Metadata.GetMetadata<IAllowAnonymous>() is not null
+                && PreAuthenticationTenantExecutionContext.CurrentTenantId is { } verifiedTenantId)
+            {
+                return verifiedTenantId;
+            }
+
             if (httpContext.User.Identity?.IsAuthenticated != true)
                 return Guid.Empty;
 
@@ -447,9 +455,8 @@ public class AppDbContext : DbContext
             return Guid.TryParse(tenantClaim, out var parsed) && parsed != Guid.Empty ? parsed : Guid.Empty;
         }
 
-        return TrustedTenantExecutionContext.CurrentTenantId is { } trustedTenantId
-            ? trustedTenantId
-            : Guid.Empty;
+        return TrustedTenantExecutionContext.CurrentTenantId
+            ?? Guid.Empty;
     }
 
     private static (int precision, int scale) GetDecimalPrecision(string propertyName)

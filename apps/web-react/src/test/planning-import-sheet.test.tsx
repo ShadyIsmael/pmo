@@ -37,11 +37,16 @@ const session: PlanImportSessionDto = {
   calendars: [],
 };
 
-function renderSheet(commit = vi.fn().mockResolvedValue({ planId: "plan-imported", versionNumber: 2, statistics: { tasks: 2, milestones: 1 } }), translator = t) {
+function renderSheet(
+  commit = vi.fn().mockResolvedValue({ planId: "plan-imported", versionNumber: 2, statistics: { tasks: 2, milestones: 1 } }),
+  translator = t,
+  permissions = { canCreatePlan: true, canEditPlan: true },
+  availablePlans = plans,
+) {
   const onOpenChange = vi.fn();
   const onImported = vi.fn();
   const commitMutation = { mutateAsync: commit, isPending: false };
-  render(<I18nProvider><PlanningImportSheet projectId="project-1" plans={plans} selectedPlanId="plan-existing" commitMutation={commitMutation} t={translator} onOpenChange={onOpenChange} onImported={onImported} /></I18nProvider>);
+  render(<I18nProvider><PlanningImportSheet projectId="project-1" plans={availablePlans} selectedPlanId={availablePlans[0]?.id ?? ""} canCreatePlan={permissions.canCreatePlan} canEditPlan={permissions.canEditPlan} commitMutation={commitMutation} t={translator} onOpenChange={onOpenChange} onImported={onImported} /></I18nProvider>);
   return { commit, onOpenChange, onImported };
 }
 
@@ -60,7 +65,7 @@ describe("planning import sheet", () => {
   });
 
   it("imports into the selected existing plan and opens the returned plan", async () => {
-    const { commit, onImported, onOpenChange } = renderSheet();
+    const { commit, onImported, onOpenChange } = renderSheet(undefined, t, { canCreatePlan: false, canEditPlan: true });
     await chooseFileAndPreview();
     fireEvent.click(screen.getByRole("button", { name: "planning.import.confirm" }));
 
@@ -70,7 +75,7 @@ describe("planning import sheet", () => {
   });
 
   it("allows creating a new plan and commits the chosen name and type", async () => {
-    const { commit, onImported } = renderSheet();
+    const { commit, onImported } = renderSheet(undefined, t, { canCreatePlan: true, canEditPlan: true });
     fireEvent.click(screen.getByRole("button", { name: "planning.import.newPlan" }));
     fireEvent.change(screen.getByLabelText("planning.import.planName"), { target: { value: "  New approved plan  " } });
     await chooseFileAndPreview();
@@ -80,6 +85,32 @@ describe("planning import sheet", () => {
     await waitFor(() => expect(commit).toHaveBeenCalledWith({ sessionId: "import-1", body: { newPlanName: "New approved plan", newPlanType: "Custom" } }));
     expect(planningApiFull.importSession).toHaveBeenCalledWith("project-1", expect.any(File), undefined);
     expect(onImported).toHaveBeenCalledWith("plan-imported");
+  });
+
+  it("shows no MPP import mode to a Create-only actor because import also writes plan contents", async () => {
+    renderSheet(undefined, t, { canCreatePlan: true, canEditPlan: false });
+
+    expect(screen.getByRole("note")).toHaveTextContent("planning.import.noAvailableMode");
+    expect(screen.queryByLabelText("planning.import.fileLabel")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "planning.import.newPlan" })).not.toBeInTheDocument();
+    expect(planningApiFull.importSession).not.toHaveBeenCalled();
+  });
+
+  it("does not offer new-plan import to an actor with Planning.Edit but no ProjectPlan.Create", async () => {
+    renderSheet(undefined, t, { canCreatePlan: false, canEditPlan: true });
+
+    expect(screen.queryByRole("button", { name: "planning.import.newPlan" })).not.toBeInTheDocument();
+    expect(screen.getByRole("note")).toHaveTextContent("planning.import.newPlanRequiresBothPermissions");
+    await chooseFileAndPreview();
+    expect(planningApiFull.importSession).toHaveBeenCalledWith("project-1", expect.any(File), "plan-existing");
+  });
+
+  it("shows no import mode to an Edit-only actor when there is no existing Plan", () => {
+    renderSheet(undefined, t, { canCreatePlan: false, canEditPlan: true }, []);
+
+    expect(screen.getByRole("note")).toHaveTextContent("planning.import.noAvailableMode");
+    expect(screen.queryByLabelText("planning.import.fileLabel")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "planning.import.newPlan" })).not.toBeInTheDocument();
   });
 
   it("shows import mismatches and API errors in Arabic when Arabic is the active locale", async () => {

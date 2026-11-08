@@ -1010,6 +1010,155 @@ describe("Access & Security component pages", () => {
     expect(within(editor).getAllByText("Unavailable for Operation roles. Allowed categories: Management.")).toHaveLength(2);
   });
 
+  it("enables Project Plan create/edit from catalog delegation and category metadata", async () => {
+    const user = userEvent.setup();
+    fixtures.actorPermissions = ["Roles.View", "Roles.Create", "Roles.ConfigurePermissions"];
+    const planningView = {
+      id: "planning-view",
+      name: "Planning.View",
+      resource: "Planning",
+      action: "View",
+      moduleId: "project-delivery",
+      moduleNameEn: "Project Delivery",
+      moduleNameAr: "تسليم المشاريع",
+      screenId: "planning",
+      screenNameEn: "Planning",
+      screenNameAr: "التخطيط",
+      scope: "Project" as const,
+      level: "View" as const,
+      labelEn: "View project plans",
+      labelAr: "عرض خطط المشاريع",
+      descriptionEn: "View plans in the authorized project scope.",
+      descriptionAr: "عرض الخطط ضمن نطاق المشروع المصرح به.",
+      canDelegate: true,
+      sensitivity: "Low" as const,
+      isSensitive: false,
+      isAssignable: true,
+      isMandatoryForSystemAdmin: false,
+      requiredPermissionKeys: [],
+      isActive: true,
+      allowedCategories: ["Management", "Operation"],
+    };
+    const planningEdit = {
+      ...planningView,
+      id: "planning-edit",
+      name: "Planning.Edit",
+      action: "Edit",
+      level: "Action" as const,
+      labelEn: "Edit project plans",
+      labelAr: "تعديل خطط المشاريع",
+      descriptionEn: "Edit plan activities and content in the authorized project scope.",
+      descriptionAr: "تعديل أنشطة الخطة ومحتواها ضمن نطاق المشروع المصرح به.",
+      canDelegate: true,
+      sensitivity: "High" as const,
+      isSensitive: true,
+      requiredPermissionKeys: ["Planning.View"],
+      allowedCategories: ["Management", "Operation"],
+    };
+    const projectPlanCreate = {
+      ...planningEdit,
+      id: "project-plan-create",
+      name: "ProjectPlan.Create",
+      resource: "ProjectPlan",
+      action: "Create",
+      labelEn: "Create project plans",
+      labelAr: "إنشاء خطط المشاريع",
+      descriptionEn: "Create a Project Plan in the authorized project scope.",
+      descriptionAr: "إنشاء خطة مشروع ضمن نطاق المشروع المصرح به.",
+      canDelegate: true,
+      allowedCategories: ["Management"],
+    };
+    fixtures.assignablePermissions = [planningView, planningEdit, projectPlanCreate];
+
+    renderWithI18n(<MemoryRouter><RolesPage /></MemoryRouter>);
+    await user.click(screen.getByRole("button", { name: /New role/ }));
+    const editor = await screen.findByRole("dialog", { name: "New role" });
+    const category = within(editor).getByRole("combobox", { name: "Category" });
+    await user.selectOptions(category, "Management");
+    await user.click(within(editor).getByRole("button", { name: /Project Delivery/ }));
+    const planningToggle = within(editor).getAllByRole("button", { name: /Planning/ })
+      .find((button) => button.getAttribute("aria-expanded") === "false");
+    if (!planningToggle) throw new Error("Project Planning permissions section did not render");
+    await user.click(planningToggle);
+
+    expect(permissionCheckbox(editor, projectPlanCreate.id)).toBeEnabled();
+    expect(permissionCheckbox(editor, planningEdit.id)).toBeEnabled();
+    expect(within(editor).getByText("Create project plans")).toBeInTheDocument();
+    expect(within(editor).getByText("Edit project plans")).toBeInTheDocument();
+
+    await user.selectOptions(category, "Operation");
+    expect(permissionCheckbox(editor, projectPlanCreate.id)).toBeDisabled();
+    expect(permissionCheckbox(editor, planningEdit.id)).toBeEnabled();
+    expect(within(editor).getByText("Unavailable for Operation roles. Allowed categories: Management.")).toBeInTheDocument();
+  });
+
+  it("shows the server delegation restriction when a Management role cannot receive ProjectPlan.Create", async () => {
+    const user = userEvent.setup();
+    fixtures.actorPermissions = ["Roles.View", "Roles.Create", "Roles.ConfigurePermissions"];
+    fixtures.assignablePermissions = [{
+      id: "planning-view-for-create",
+      name: "Planning.View",
+      resource: "Planning",
+      action: "View",
+      moduleId: "project-delivery",
+      moduleNameEn: "Project Delivery",
+      moduleNameAr: "تسليم المشاريع",
+      screenId: "planning",
+      screenNameEn: "Planning",
+      screenNameAr: "التخطيط",
+      scope: "Project",
+      level: "View",
+      labelEn: "View project plans",
+      labelAr: "عرض خطط المشاريع",
+      descriptionEn: "View plans in the authorized project scope.",
+      descriptionAr: "عرض الخطط ضمن نطاق المشروع المصرح به.",
+      canDelegate: true,
+      sensitivity: "Low",
+      isSensitive: false,
+      isAssignable: true,
+      isMandatoryForSystemAdmin: false,
+      requiredPermissionKeys: [],
+      isActive: true,
+      allowedCategories: ["Management"],
+    }, {
+      id: "project-plan-create-not-delegable",
+      name: "ProjectPlan.Create",
+      resource: "ProjectPlan",
+      action: "Create",
+      moduleId: "project-delivery",
+      moduleNameEn: "Project Delivery",
+      moduleNameAr: "تسليم المشاريع",
+      screenId: "planning",
+      screenNameEn: "Planning",
+      screenNameAr: "التخطيط",
+      scope: "Project",
+      level: "Action",
+      labelEn: "Create project plans",
+      labelAr: "إنشاء خطط المشاريع",
+      descriptionEn: "Create a Project Plan in the authorized project scope.",
+      descriptionAr: "إنشاء خطة مشروع ضمن نطاق المشروع المصرح به.",
+      canDelegate: false,
+      sensitivity: "High",
+      isSensitive: true,
+      isAssignable: true,
+      isMandatoryForSystemAdmin: false,
+      requiredPermissionKeys: ["Planning.View"],
+      isActive: true,
+      allowedCategories: ["Management"],
+    }];
+
+    renderWithI18n(<MemoryRouter><RolesPage /></MemoryRouter>);
+    await user.click(screen.getByRole("button", { name: /New role/ }));
+    const editor = await screen.findByRole("dialog", { name: "New role" });
+    await user.selectOptions(within(editor).getByRole("combobox", { name: "Category" }), "Management");
+    await user.click(within(editor).getByRole("button", { name: /Project Delivery/ }));
+    const planningToggle = within(editor).getByRole("button", { name: /Planning/ });
+    await user.click(planningToggle);
+
+    expect(permissionCheckbox(editor, "project-plan-create-not-delegable")).toBeDisabled();
+    expect(within(editor).getByText("Your current access does not allow you to grant this permission.")).toBeInTheDocument();
+  });
+
   it("preserves existing category-conflicting grants and provides an explicit removal action in Arabic", async () => {
     const user = userEvent.setup();
     window.localStorage.setItem("nexus-locale", "ar");

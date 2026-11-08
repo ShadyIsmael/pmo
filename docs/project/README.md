@@ -57,8 +57,8 @@ npm run dev:api
 npm run dev:web
 
 # 8. Open browser
-#    Frontend: http://localhost:4100
-#    API Swagger: http://localhost:5000/swagger
+#    Frontend: https://localhost:4100
+#    API Swagger: https://localhost:5001/swagger
 ```
 
 ### Development Administrator Bootstrap
@@ -262,7 +262,7 @@ Services:
 
 ### Frontend (`apps/web-react/.env.local`)
 ```env
-VITE_API_URL=http://localhost:5000
+# Leave VITE_API_URL unset for the local same-origin HTTPS proxy.
 ```
 
 ### API (`apps/api/src/NEXUS.Api/appsettings.json`)

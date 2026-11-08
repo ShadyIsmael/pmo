@@ -12,6 +12,7 @@ import { useAuth } from "@auth/AuthProvider";
 import { useManagement } from "@api/management";
 import { hasPermission, Permissions } from "@lib/permissions";
 import { toast } from "@hooks/use-toast";
+import { updatePlanSelection, type PlanSelection } from "./lib/project-reporting-configuration";
 import {
   useProjectReportingConfiguration,
   useProjectReportingOptions,
@@ -22,7 +23,6 @@ import {
 } from "./api/projects";
 
 type ProjectContext = { projectId: string; project: ProjectDto };
-type PlanSelection = { include: boolean; workingVersionId: string; baselineVersionId: string };
 
 const SECTION_KEYS = [
   ["ExecutiveSummary", "projects.reporting.sections.executiveSummary"],
@@ -56,7 +56,7 @@ export function ProjectReportingConfigurationPage() {
   const save = useSaveProjectReportingConfiguration(projectId);
   const canManage = Boolean(user && hasPermission(user.permissions, Permissions.StatusReport.ManageConfiguration) && canMutate && !effectiveReadOnly);
   const candidates = React.useMemo(() => (optionsQuery.data?.plans ?? []).filter(plan => plan.planType === "Execution"), [optionsQuery.data?.plans]);
-  const [selections, setSelections] = React.useState<Record<string, PlanSelection>>({});
+  const [selections, setSelections] = React.useState<Map<string, PlanSelection>>(() => new Map());
   const [effectiveFrom, setEffectiveFrom] = React.useState("");
   const [sections, setSections] = React.useState<string[]>(SECTION_KEYS.map(([key]) => key));
   const [error, setError] = React.useState<string | null>(null);
@@ -65,16 +65,16 @@ export function ProjectReportingConfigurationPage() {
   React.useEffect(() => {
     if (!optionsQuery.data || configurationQuery.isLoading) return;
     const configured = new Map((configurationQuery.data?.plans ?? []).map(plan => [plan.planId, plan]));
-    const next: Record<string, PlanSelection> = {};
+    const next = new Map<string, PlanSelection>();
     for (const plan of candidates) {
       const existing = configured.get(plan.planId);
       const activeWorking = latestVersion(plan, "Working");
       const approvedBaseline = latestVersion(plan, "Baseline");
-      next[plan.planId] = {
+      next.set(plan.planId, {
         include: existing?.includeInConsolidatedReporting ?? false,
         workingVersionId: existing?.workingVersionId ?? activeWorking?.id ?? "",
         baselineVersionId: existing?.baselineVersionId ?? approvedBaseline?.id ?? "",
-      };
+      });
     }
     setSelections(next);
     setSections(configurationQuery.data?.includedSections?.length ? configurationQuery.data.includedSections : SECTION_KEYS.map(([key]) => key));
@@ -82,7 +82,7 @@ export function ProjectReportingConfigurationPage() {
   }, [candidates, optionsQuery.data, configurationQuery.data, configurationQuery.isLoading]);
 
   function updatePlan(planId: string, patch: Partial<PlanSelection>) {
-    setSelections(current => ({ ...current, [planId]: { ...current[planId], ...patch } }));
+    setSelections(current => updatePlanSelection(current, planId, patch));
   }
 
   function toggleSection(key: string) {
@@ -90,12 +90,12 @@ export function ProjectReportingConfigurationPage() {
   }
 
   async function saveConfiguration() {
-    const selected = candidates.filter(plan => selections[plan.planId]?.include);
+    const selected = candidates.filter(plan => selections.get(plan.planId)?.include);
     if (selected.length === 0) {
       setError(t("projects.reporting.selectOneExecutionPlan"));
       return;
     }
-    if (selected.some(plan => !selections[plan.planId]?.workingVersionId || !selections[plan.planId]?.baselineVersionId)) {
+    if (selected.some(plan => !selections.get(plan.planId)?.workingVersionId || !selections.get(plan.planId)?.baselineVersionId)) {
       setError(t("projects.reporting.missingVersionOrBaseline"));
       return;
     }
@@ -107,12 +107,15 @@ export function ProjectReportingConfigurationPage() {
       timeZoneId: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
       currencyCode: project.currency,
       includedSections: sections,
-      plans: selected.map(plan => ({
-        planId: plan.planId,
-        workingVersionId: selections[plan.planId].workingVersionId,
-        baselineVersionId: selections[plan.planId].baselineVersionId,
-        includeInConsolidatedReporting: true,
-      })),
+      plans: selected.map(plan => {
+        const selection = selections.get(plan.planId)!;
+        return {
+          planId: plan.planId,
+          workingVersionId: selection.workingVersionId,
+          baselineVersionId: selection.baselineVersionId,
+          includeInConsolidatedReporting: true,
+        };
+      }),
     };
     setError(null);
     try {
@@ -152,7 +155,7 @@ export function ProjectReportingConfigurationPage() {
         <div className="space-y-2">
           <h3 className="text-sm font-semibold">{t("projects.reporting.executionPlans")}</h3>
           {candidates.length === 0 ? <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">{t("projects.reporting.noExecutionPlans")}</p> : candidates.map(plan => {
-            const selection = selections[plan.planId] ?? { include: false, workingVersionId: "", baselineVersionId: "" };
+            const selection = selections.get(plan.planId) ?? { include: false, workingVersionId: "", baselineVersionId: "" };
             const workingOptions = plan.versions.filter(version => version.type === "Working");
             const baselineOptions = plan.versions.filter(version => version.type === "Baseline");
             const hasCurrent = Boolean(latestVersion(plan, "Working"));

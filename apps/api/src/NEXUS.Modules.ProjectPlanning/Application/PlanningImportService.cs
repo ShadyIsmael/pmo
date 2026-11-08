@@ -184,9 +184,19 @@ public sealed class PlanningImportService : IPlanningImportService
         var session = await LoadSessionAsync(projectId, sessionId, cancellationToken);
         if (session is null) return Result<PlanImportResultDto>.Failure(Error.NotFound("The import review session was not found"));
         if (session.Status == PlanImportSessionStatus.Committed && !string.IsNullOrWhiteSpace(session.CommitResultJson))
-            return Result<PlanImportResultDto>.Success(JsonSerializer.Deserialize<PlanImportResultDto>(session.CommitResultJson)!);
+        {
+            var committedResult = JsonSerializer.Deserialize<PlanImportResultDto>(session.CommitResultJson)!;
+            var committedPermissionError = GetCommitPermissionError(committedResult.CreatedPlan);
+            return committedPermissionError is null
+                ? Result<PlanImportResultDto>.Success(committedResult)
+                : Result<PlanImportResultDto>.Failure(committedPermissionError);
+        }
         if (session.Status == PlanImportSessionStatus.Cancelled)
             return Result<PlanImportResultDto>.Failure(Error.Conflict("The import review session was cancelled"));
+
+        var permissionError = GetCommitPermissionError(!request.TargetPlanId.HasValue);
+        if (permissionError is not null)
+            return Result<PlanImportResultDto>.Failure(permissionError);
 
         var document = DeserializeDocument(session.ParsedDocumentJson);
         var state = DeserializeResolutionState(session.ResolutionJson);
@@ -563,6 +573,10 @@ public sealed class PlanningImportService : IPlanningImportService
         string userId,
         CancellationToken cancellationToken = default)
     {
+        var permissionError = GetCommitPermissionError(!request.TargetPlanId.HasValue);
+        if (permissionError is not null)
+            return Result<PlanImportResultDto>.Failure(permissionError);
+
         if (request.ProjectId == Guid.Empty)
             return Result<PlanImportResultDto>.Failure(Error.Validation("A project is required"));
         if (!request.TargetPlanId.HasValue && request.NewPlanType is null)
@@ -1079,6 +1093,18 @@ public sealed class PlanningImportService : IPlanningImportService
         }
 
         throw new InvalidOperationException("A trusted tenant context is required for project planning operations.");
+    }
+
+    private Error? GetCommitPermissionError(bool createsPlan)
+    {
+        var user = _httpContextAccessor.HttpContext?.User;
+        if (user?.HasClaim("permission", "Planning.Edit") != true)
+            return Error.Forbidden("Project Plan editing permission is required.");
+
+        if (createsPlan && user.HasClaim("permission", "ProjectPlan.Create") != true)
+            return Error.Forbidden("Project Plan creation permission is required.");
+
+        return null;
     }
 
     private static PlanImportNoticeDto ToDto(PlanningImportNotice notice) => new() { Code = notice.Code, Message = notice.Message, Count = notice.Count };

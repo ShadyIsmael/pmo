@@ -38,6 +38,15 @@ describe("meeting rich text", () => {
     expect(parsed.body.textContent).toContain("Safe text");
   });
 
+  it("keeps report text inert when links and active attributes are supplied", () => {
+    const clean = sanitizeRichText('<p onmouseover="run()">Summary <a href="javascript:run()" onclick="run()">details</a><iframe srcdoc="<script>run()</script>"></iframe></p>');
+    const parsed = new DOMParser().parseFromString(clean, "text/html");
+
+    expect(clean).toBe("<p>Summary details</p>");
+    expect(parsed.body.querySelector("a, iframe, script, [href], [onclick], [onmouseover]")).toBeNull();
+    expect(parsed.body.textContent).toBe("Summary details");
+  });
+
   it("keeps the DOMParser fallback output inert", () => {
     vi.stubGlobal("DOMParser", undefined);
     try {

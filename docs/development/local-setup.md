@@ -61,9 +61,19 @@ In Development, API startup skips database migrations and seeding by default. Ap
 
 ### React/Vite Frontend Environment
 
-The Vite app defaults to the local API URL. Add apps/web-react/.env.local only when overriding it:
+The local Vite setup uses a same-origin `/api` proxy over HTTPS. Leave `VITE_API_URL`
+unset in `.env.local`; add it only when explicitly configuring another HTTPS API.
 
-VITE_API_URL=http://localhost:5000
+Before starting either app, trust the local .NET HTTPS certificate:
+
+```powershell
+dotnet dev-certs https --trust
+```
+
+The standard `npm run dev:api` and `npm run dev:web` commands also prepare/trust the
+certificate. Vite exports it to a temporary password-protected PFX for its HTTPS listener
+and removes that temporary file when Vite exits. The password is generated per run and is
+not written to the repository.
 
 ### API (`apps/api/src/NEXUS.Api/appsettings.Development.json`)
 
@@ -73,8 +83,7 @@ VITE_API_URL=http://localhost:5000
     "AllowedOrigins": [
       "http://localhost:4000",
       "http://127.0.0.1:4000",
-      "http://localhost:4100",
-      "http://127.0.0.1:4100"
+      "https://localhost:4100"
     ]
   },
   "ConnectionStrings": {
@@ -149,8 +158,9 @@ npm run dev:api
 cd apps/api && dotnet run
 ```
 
-The API starts on http://localhost:5000 with Swagger at
-http://localhost:5000/swagger. Development startup skips migrations, seeding,
+The API starts on https://localhost:5001 with Swagger at
+https://localhost:5001/swagger. HTTP requests on port 5000 are redirected to HTTPS.
+Development startup skips migrations, seeding,
 and workflow provisioning unless an explicit seed option is supplied.
 
 After applying schema through the documented EF Core workflow, seed the identity fixture without
@@ -165,7 +175,10 @@ applies migrations.
 
 ### Start Frontend (Terminal 2)
 
-Run npm run dev:web, or run npm run dev from apps/web-react. Vite is available at http://localhost:4100. The local API CORS allow-list includes localhost:4100 and 127.0.0.1:4100. The Docker-hosted static SPA is published on host port 4000.
+Run `npm run dev:web`, or run `npm run dev` from `apps/web-react`. Vite is available at
+https://localhost:4100 and proxies `/api` to `https://localhost:5001`. Use `localhost`
+(not `127.0.0.1`) so the trusted development certificate matches the host. The
+Docker-hosted static SPA is a separate setup published on host port 4000.
 
 ## Step 7: Bootstrap the Development Administrator
 
@@ -431,35 +444,37 @@ docker compose exec redis redis-cli ping
 
 ### Frontend Can't Connect to API
 
-- Verify API is running on port 5000
-- Check `VITE_API_URL` in `.env.local` (must be `http://localhost:5000`)
-- Check CORS configuration in `appsettings.Development.json` under `Cors:AllowedOrigins`
-  - Must include `http://localhost:4000` and/or `http://127.0.0.1:4000`
+- Verify the API is running on `https://localhost:5001` and Vite on `https://localhost:4100`.
+- Run `dotnet dev-certs https --trust` if the browser or Vite reports a certificate error.
+- Leave `VITE_API_URL` unset for the local Vite proxy. A stale `http://localhost:5000`
+  override bypasses the proxy and is blocked by browser mixed-content protections.
+- For a direct cross-origin API call, ensure the HTTPS frontend origin is in
+  `Cors:AllowedOrigins` and the request includes credentials.
 - Verify the API startup did not fail with the "CORS is not configured" error
-- Test the preflight manually:
+- Test a preflight for the local Vite origin:
 
 ```powershell
-curl.exe -i -X OPTIONS "http://localhost:5000/api/resources?pageSize=50" `
-  -H "Origin: http://localhost:4000" `
+curl.exe -i -X OPTIONS "https://localhost:5001/api/resources?pageSize=50" `
+  -H "Origin: https://localhost:4100" `
   -H "Access-Control-Request-Method: GET" `
   -H "Access-Control-Request-Headers: authorization,content-type"
 ```
 
-The response must include `Access-Control-Allow-Origin: http://localhost:4000`.
+The response must include `Access-Control-Allow-Origin: https://localhost:4100`.
 
 ### Port Conflicts
 
 Default ports:
-- API: 5000
-- Frontend: 4100 (Vite development) or 4000 (Docker SPA)
+- API: 5001 (HTTPS), 5000 (HTTP redirect)
+- Frontend: 4100 (HTTPS Vite development) or 4000 (Docker SPA)
 - SQL Server: 1433
 - Redis: 6379
 
 Override with environment variables:
 
 ```bash
-# Change API port
-ASPNETCORE_URLS=http://localhost:5001 dotnet run
+# Change API ports only when updating the HTTPS redirect and Vite proxy target too.
+ASPNETCORE_URLS="https://localhost:5001;http://localhost:5000" dotnet run
 
 # Change PostgreSQL port in docker-compose.override.yml
 ```

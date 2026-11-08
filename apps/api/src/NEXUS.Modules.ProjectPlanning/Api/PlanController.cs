@@ -35,7 +35,7 @@ public class PlanController : ControllerBase
         return Ok(result.Value);
     }
 
-    [Authorize(Policy = "Planning.Edit")]
+    [Authorize(Policy = "ProjectPlan.Create")]
     [HttpPost]
     public async Task<IActionResult> Create(Guid projectId, [FromBody] CreatePlanDto dto, CancellationToken cancellationToken)
     {

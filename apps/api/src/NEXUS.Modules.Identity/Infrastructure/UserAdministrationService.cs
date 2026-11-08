@@ -461,21 +461,28 @@ public class UserAdministrationService : IUserAdministrationService
         if (roles.Any(role => role.TenantId != tenantId || role.IsDeleted))
             return false;
 
-        foreach (var permission in roles.SelectMany(role => role.Permissions))
+        foreach (var role in roles)
         {
-            if (permission.TenantId != tenantId || permission.IsDeleted)
+            if (role.TenantId != tenantId || role.IsDeleted)
                 return false;
 
-            var key = $"{permission.Resource}.{permission.Action}";
-            if (actorPermissions.Contains(key))
-                continue;
-            if (!bootstrapDelegableKeys.Contains(key))
-                return false;
+            foreach (var permission in role.Permissions)
+            {
+                if (permission.TenantId != tenantId || permission.IsDeleted)
+                    return false;
 
-            // Bootstrap delegation creates an exception for a different user. It
-            // cannot be used to amplify the acting administrator's own access.
-            if (targetUserId == actorUserId)
-                return false;
+                var key = $"{permission.Resource}.{permission.Action}";
+                if (actorPermissions.Contains(key))
+                    continue;
+                if (!bootstrapDelegableKeys.Contains(key))
+                    return false;
+
+                // First-grant delegation is limited to a different user receiving
+                // a same-tenant custom role; it cannot add rights through a system
+                // role or amplify the acting administrator's own access.
+                if (role.IsSystem || targetUserId == actorUserId)
+                    return false;
+            }
         }
 
         return true;

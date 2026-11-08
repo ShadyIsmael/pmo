@@ -87,6 +87,7 @@ public static class PermissionRoleCategoryPolicy
             "WorkItem.Create", "WorkItem.Delete", "WorkItem.Edit", "WorkItem.View");
 
         Add(map, [RoleCategories.Management],
+            "ProjectPlan.Create",
             "ChangeRequest.Approve",
             "Governance.AssignmentRecovery.Initiate", "Governance.AssignmentRecovery.Manage", "Governance.AssignmentRecovery.View",
             "Handover.AdminInitiate", "Handover.Approve", "Handover.Manage", "Handover.View",

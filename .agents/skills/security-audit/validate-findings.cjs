@@ -39,6 +39,8 @@ const SEVERITY_RANK = new Map([
   ["high", 3],
   ["critical", 4],
 ]);
+const FINGERPRINT_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$/;
+const FINGERPRINT_PATTERN_SOURCE = FINGERPRINT_PATTERN.source;
 const LIMITS = Object.freeze({
   inputBytes: 5 * 1024 * 1024,
   nestingDepth: 64,
@@ -316,12 +318,8 @@ function collectSchemaErrors(schema, location = "schema") {
     if (hasOwn(node, "pattern")) {
       if (typeof node.pattern !== "string") {
         errors.push(`${p}.pattern: expected string`);
-      } else {
-        try {
-          new RegExp(node.pattern);
-        } catch (error) {
-          errors.push(`${p}.pattern: invalid regular expression`);
-        }
+      } else if (node.pattern !== FINGERPRINT_PATTERN_SOURCE) {
+        errors.push(`${p}.pattern: unsupported pattern; only the bounded fingerprint pattern is allowed`);
       }
     }
     if (hasOwn(node, "uniqueItems") && typeof node.uniqueItems !== "boolean") {
@@ -448,7 +446,7 @@ function validate(value, schema, p, errors) {
         errors.push(`${p}: must contain a visible character`);
       }
     }
-    if (hasOwn(schema, "pattern") && !(new RegExp(schema.pattern).test(value))) {
+    if (hasOwn(schema, "pattern") && !FINGERPRINT_PATTERN.test(value)) {
       errors.push(`${p}: must match pattern ${JSON.stringify(schema.pattern)}`);
     }
   }

@@ -2,7 +2,7 @@
 
 This mapping describes the current canonical source. The only supported frontend is `apps/web-react`. Route guards control page access and affordances; API policies and service checks remain authoritative. Tenant, Organization, project/resource scope, ownership, and workflow assignment are separate authorization conditions.
 
-The catalog contains 133 active keys (35 View, 98 Action). The existing final target matrix retains its source evidence; the permission audit matrix preserves its row IDs and source references and is updated in place.
+The source catalog contains 171 active keys (46 View, 125 Action). These are source counts only; they do not represent persisted Permission rows or role grants. The permission audit matrix preserves its existing row IDs and source references and is updated in place.
 
 ## Read routes and tenant-facing registries
 
@@ -26,7 +26,9 @@ The catalog contains 133 active keys (35 View, 98 Action). The existing final ta
 - Resource actions use `Resource.Create`, `Resource.Edit`, `Resource.Delete`, `Resource.Assign`, and `Resource.Allocate`. Cost information uses `Resource.ViewCostRate`, `Resource.EditCostRate`, and `Resource.ManageRates`.
 - Team operations use `Team.View`, `Team.Create`, `Team.Edit`, and `Team.Delete`. Stakeholder links use `Stakeholders.Read`/`Stakeholders.Manage` and retain project/tenant checks.
 - Portfolio and Program use separate View/Create/Edit/Archive/Reactivate keys. `Program.CreateAcrossPortfolios` is Organization-scoped and additionally requires normal `Program.Create` and `Portfolio.View`; it is excluded from the protected tenant Admin baseline.
-- `Planning.Edit` requires `Planning.View`. Other Action dependencies are enforced by `PermissionCatalog.EnforceDependencies` at effective-permission resolution.
+- Project Plan creation uses `ProjectPlan.Create`, while editing existing plan contents uses `Planning.Edit`; both require `Planning.View` and authorized Project scope. The standalone blank Plan form requires Create only. MPP import into an existing Plan requires Edit; MPP import creating a Plan requires both Create and Edit. `ProjectPlan.Create` is Management-category only; `Planning.Edit` allows Management and Operation categories. Neither is in the protected Admin baseline or automatically granted to existing roles.
+- `ProjectPlan.Create` and `Planning.Edit` have an explicit first-grant path only for a same-Tenant custom role, requiring both `Roles.ConfigurePermissions` and `TenantAdministration.ManageScope`. Active Deny, dependencies, role category, and Tenant ownership remain enforced; bootstrap delegation cannot configure system roles.
+- Other Action dependencies are enforced by `PermissionCatalog.EnforceDependencies` at effective-permission resolution.
 
 ## Users and role delegation
 
@@ -40,7 +42,7 @@ The catalog contains 133 active keys (35 View, 98 Action). The existing final ta
 | Manage direct Allow/Deny overrides | `UserPermissions.Manage` |
 | Read, create, edit, configure, or delete tenant roles | `Roles.View`, `Roles.Create`, `Roles.EditDetails`, `Roles.ConfigurePermissions`, `Roles.Delete` |
 
-Every mutation is tenant-scoped and bounded by actor delegation authority. Role names do not grant permissions or scope. Configuration requires active, dependency-valid keys; sensitive grants cannot exceed the actor's effective authority. The protected Admin baseline is locked and derives from current eligible catalog entries.
+Every mutation is tenant-scoped and bounded by actor delegation authority, with only the explicit bootstrap first-grant exception described above. Role names do not grant permissions or scope. Configuration requires active, dependency-valid keys; sensitive grants cannot exceed the actor's effective authority. The protected Admin baseline is locked and derives from current eligible catalog entries.
 
 The shared `GET /api/users/lookup` route remains `Users.View`-only and returns its existing user selector projection. Dedicated workflow routes now authorize Project, Portfolio/Program manager, Program Portfolio edit, Meeting, Work Item, Risk, Resource, and Handover user options by their canonical operation or assignment permission and return minimal projections. Project, Meeting, Program, and Payment Obligation reference routes likewise return purpose-specific fields; full listing endpoints retain their existing View policies. No blanket `Users.Lookup` key or role grant was added. Other Finance screens and narrower Organization/Project/resource candidate eligibility remain open; see F-11 and [Workflow Lookup Authorization](WORKFLOW-LOOKUP-AUTHORIZATION.md).
 

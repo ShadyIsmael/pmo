@@ -131,10 +131,10 @@ Tenant identity comes from the authenticated principal and is validated against 
 |-----------|---------------|--------|
 | `ITenantEntity` interface | `TenantId` property on `BaseEntity` | Implemented |
 | Global query filter | `e.TenantId == GetCurrentTenantId()` | Implemented |
-| Tenant resolution | `GetCurrentTenantId()` reads the `tenantId` JWT claim via `IHttpContextAccessor` | Implemented |
+| Tenant resolution | `GetCurrentTenantId()` reads the authenticated `tenantId` claim; validated pre-authentication session writes use a bounded server-derived scope only on anonymous auth endpoints | Implemented |
 | Seed tenant ID | `11111111-1111-1111-1111-111111111111` | Fixed in seed data |
 
-**Note:** All seeded users and data share the single demo tenant. Real per-customer tenancy requires tenant resolution at login and per-tenant token issuance.
+**Note:** Tenant identity for login session writes is loaded from the matched account only after password verification. Per-tenant token issuance binds the resulting session and JWT to that same persisted tenant.
 
 ---
 

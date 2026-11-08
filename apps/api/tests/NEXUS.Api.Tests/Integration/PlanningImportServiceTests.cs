@@ -20,6 +20,7 @@ public sealed class PlanningImportServiceTests : IDisposable
 {
     private readonly SqliteConnection _connection = new("Data Source=:memory:");
     private readonly Mock<IHttpContextAccessor> _accessor = new();
+    private readonly DefaultHttpContext _httpContext = new();
     private readonly Mock<IResourceService> _resources = new();
     private readonly Mock<IAuditService> _audit = new();
     private readonly Guid _tenantId = Guid.NewGuid();
@@ -30,14 +31,8 @@ public sealed class PlanningImportServiceTests : IDisposable
     public PlanningImportServiceTests()
     {
         _connection.Open();
-        _accessor.Setup(value => value.HttpContext).Returns(new DefaultHttpContext
-        {
-            User = new ClaimsPrincipal(new ClaimsIdentity(new[]
-            {
-                new Claim("tenantId", _tenantId.ToString()),
-                new Claim(ClaimTypes.NameIdentifier, _userId.ToString())
-            }, "test"))
-        });
+        SetPermissions("Planning.View", "Planning.Edit", "ProjectPlan.Create");
+        _accessor.Setup(value => value.HttpContext).Returns(_httpContext);
         _context = new PlanningWorkflowTestDbContext(
             new DbContextOptionsBuilder<PlanningWorkflowTestDbContext>().UseSqlite(_connection).Options,
             _accessor.Object);
@@ -85,6 +80,7 @@ public sealed class PlanningImportServiceTests : IDisposable
     [Fact]
     public async Task ImportExistingPlan_ReplacesWorkingAndPreservesApprovedBaseline()
     {
+        SetPermissions("Planning.View", "Planning.Edit");
         SetResources();
         var plan = new Plan { TenantId = _tenantId, ProjectId = _projectId, PlanType = PlanType.Execution, Name = "Execution", CreatedBy = _userId.ToString() };
         var baseline = new PlanVersion { TenantId = _tenantId, PlanId = plan.Id, VersionNumber = 1, Type = PlanVersionType.Baseline, Status = PlanVersionStatus.Approved, Name = "Approved", CreatedBy = _userId.ToString() };
@@ -104,6 +100,26 @@ public sealed class PlanningImportServiceTests : IDisposable
         var replacement = await _context.PlanVersions.SingleAsync(value => value.Type == PlanVersionType.Working && value.Status == PlanVersionStatus.Active);
         Assert.Equal(2, replacement.VersionNumber);
         Assert.Equal(baseline.Id, replacement.SourceBaselineId);
+    }
+
+    [Theory]
+    [InlineData("Planning.View", "Planning.Edit")]
+    [InlineData("Planning.View", "ProjectPlan.Create")]
+    public async Task ImportNewPlan_RequiresBothCreateAndEditPermissions(string permissionA, string permissionB)
+    {
+        SetPermissions(permissionA, permissionB);
+        SetResources();
+
+        var result = await CreateService(FixtureDocument()).ImportAsync(new MemoryStream([1]), "fixture.mpp", new CommitPlanImportDto
+        {
+            ProjectId = _projectId,
+            NewPlanName = "Must not be created",
+            NewPlanType = PlanType.Execution
+        }, _userId.ToString());
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(403, result.Error!.StatusCode);
+        Assert.Empty(await _context.Plans.IgnoreQueryFilters().ToListAsync());
     }
 
     [Fact]
@@ -208,6 +224,17 @@ public sealed class PlanningImportServiceTests : IDisposable
 
     private PlanningImportService CreateService(PlanningImportDocument document) => new(
         [new FakeImportProvider(document)], _context, _resources.Object, _audit.Object, _accessor.Object);
+
+    private void SetPermissions(params string[] permissionKeys)
+    {
+        var claims = new List<Claim>
+        {
+            new("tenantId", _tenantId.ToString()),
+            new(ClaimTypes.NameIdentifier, _userId.ToString())
+        };
+        claims.AddRange(permissionKeys.Select(key => new Claim("permission", key)));
+        _httpContext.User = new ClaimsPrincipal(new ClaimsIdentity(claims, "test"));
+    }
 
     private void SetResources(params ResourceDto[] resources) =>
         _resources.Setup(value => value.GetPagedAsync(It.IsAny<ResourceFilterDto>(), It.IsAny<CancellationToken>()))

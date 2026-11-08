@@ -28,5 +28,10 @@ RUN npm run build
 FROM nginx:1.27-alpine AS runner
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder /app/dist /usr/share/nginx/html
+RUN sed -i 's#pid /var/run/nginx.pid;#pid /var/cache/nginx/nginx.pid;#' /etc/nginx/nginx.conf \
+    && grep -q 'pid /var/cache/nginx/nginx.pid;' /etc/nginx/nginx.conf \
+    && chown -R nginx:nginx /var/cache/nginx
+USER nginx
 EXPOSE 80
-CMD ["nginx", "-g", "daemon off;"]
+ENTRYPOINT ["nginx"]
+CMD ["-g", "daemon off;"]

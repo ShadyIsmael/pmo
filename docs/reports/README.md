@@ -52,7 +52,6 @@ Verification gates, UAT checklists, and release readiness audits.
 Project roadmaps, parity benchmarks, and architectural audits.
 
 - **[Project Plan Desktop Parity](PROJECT-PLAN-DESKTOP-PARITY.md)** — Strategic plan and execution stages for desktop parity.
-- **[Vite POC Benchmark Report](poc-vite/BENCHMARK-REPORT.md)** — Performance benchmarking for the Vite architecture adoption.
 - **[Dead Code Audit](../development/DEAD-CODE-AUDIT.md)** — Unused files, dead components, and cleanup backlog.
 - **[Financial Current State Audit](../modules/FINANCIAL-CURRENT-STATE-AUDIT.md)** — Deep dive into financial domain models and legacy constraints.
 - **[Financial Sprint 2 Implementation Report](../modules/FINANCIAL-SPRINT-2-IMPLEMENTATION-REPORT.md)** — Implementation summary for project financial baseline.

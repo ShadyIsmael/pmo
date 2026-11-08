@@ -6,6 +6,8 @@ services:
   sqlserver:
     image: mcr.microsoft.com/mssql/server:2022-latest
     container_name: nexus-sqlserver
+    security_opt:
+      - no-new-privileges:true
     environment:
       ACCEPT_EULA: "Y"
       MSSQL_SA_PASSWORD: ${NEXUS_DB_PASSWORD:?NEXUS_DB_PASSWORD must be set}
@@ -26,6 +28,8 @@ services:
   redis:
     image: redis:7-alpine
     container_name: nexus-redis
+    security_opt:
+      - no-new-privileges:true
     environment:
       REDIS_PASSWORD: ${NEXUS_REDIS_PASSWORD:-}
     # Authentication is optional for local runs; when NEXUS_REDIS_PASSWORD is set the server
@@ -55,6 +59,10 @@ services:
       context: ./apps/api
       dockerfile: Dockerfile
     container_name: nexus-api
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     environment:
       # Defaults to Production so a plain `docker compose up` never enables Swagger,
       # auto-migration, or demo seeding. Set ASPNETCORE_ENVIRONMENT=Development for local dev.
@@ -90,6 +98,12 @@ services:
         VITE_FIREBASE_APP_ID: ${VITE_FIREBASE_APP_ID-}
         VITE_FIREBASE_VAPID_KEY: ${VITE_FIREBASE_VAPID_KEY-}
     container_name: nexus-web
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
     ports:
       - "4000:80"
     depends_on:
@@ -100,6 +114,10 @@ services:
       context: ./apps/api
       dockerfile: Dockerfile.worker
     container_name: nexus-worker
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     environment:
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
       # Compose requires a non-empty secret before starting.

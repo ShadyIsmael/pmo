@@ -45,7 +45,7 @@ def test_go_is_not_listed_as_needing_no_build() -> None:
 def test_languages_without_a_none_mode_are_flagged(language: str) -> None:
     """A reader must not be sent to Method 4 for a language that rejects it."""
     text = BUILD_DB.read_text(encoding="utf-8")
-    assert re.search(rf"{language}.*[Rr]eject", text), (
+    assert re.search(rf"{re.escape(language)}.*[Rr]eject", text), (
         f"{language} rejects --build-mode=none, but build-database.md does not say so. "
         f"Method 4 would be attempted and fail."
     )

@@ -18,6 +18,12 @@ The role editor is a convenience layer. `RoleAdministrationService` is authorita
 
 Before the canonical role-operation split, `RoleAdministrationService` used `users.write` as a blanket service gate. Existing persisted roles are not automatically backfilled when the service switches to `Roles.View`, `Roles.Create`, `Roles.EditDetails`, `Roles.ConfigurePermissions`, and `Roles.Delete`. If a verified Development inventory finds an existing administrator role relying on the legacy gate, reconcile only the approved canonical grants through an audited recovery; do not restore a live `users.write` bypass.
 
+## First grant for Project Plan permissions
+
+The bootstrap allowlist provides a narrow initial delegation path for `ProjectPlan.Create`, `Planning.Edit`, and dependency `Planning.View`. The actor must have both effective `Roles.ConfigurePermissions` and `TenantAdministration.ManageScope` in the authenticated Tenant. A direct Deny on a candidate key removes that key from the grantable catalog, and the role service still checks active catalog status, dependencies, same-Tenant permission rows, and `AllowedCategories`.
+
+This bootstrap path can add these keys only to a same-Tenant custom role; it cannot configure any system role. The shared allowlist also supports user-role assignment only when the target is a different user and the recipient role is same-Tenant and non-system. Ordinary system-role assignment remains available when the actor already holds every permission in that role. No bootstrap grant is assigned to the actor, Admin, or any role automatically, and the protected Admin baseline is unchanged.
+
 ## User administration operations
 
 | Operation | Required capability | Enforcement |

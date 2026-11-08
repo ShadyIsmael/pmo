@@ -13,6 +13,9 @@ RUN dotnet publish -c Release -o /app
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 COPY --from=build /app .
+RUN mkdir -p /app/uploads/documents /app/.isolated-data-protection \
+    && chown -R "$APP_UID" /app/uploads/documents /app/.isolated-data-protection
 EXPOSE 5000
 ENV ASPNETCORE_URLS=http://+:5000
+USER $APP_UID
 ENTRYPOINT ["dotnet", "NEXUS.Api.dll"]

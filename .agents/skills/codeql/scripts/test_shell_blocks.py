@@ -473,7 +473,7 @@ def test_arrays_are_expanded_with_subscript() -> None:
                 continue
             for name in ARRAY_NAMES:
                 # Bare $NAME or ${NAME}: no [@], [*], or [n] subscript, and not ${#NAME[@]}.
-                if re.search(rf"(?<!#)\$\{{?{name}\}}?(?!\[|\w)", raw):
+                if re.search(rf"(?<!#)\$\{{?{re.escape(name)}\}}?(?!\[|\w)", raw):
                     offenders.append(f"{_ident(path, line)}: {stripped}")
                     break
 
@@ -486,7 +486,7 @@ def test_arrays_are_expanded_with_subscript() -> None:
 # A subscripted read: "${NAME[@]}", ${#NAME[@]}, ${NAME[0]}. Bare $NAME is the other bug,
 # caught by the test above.
 def _subscripted_reads(source: str, name: str) -> bool:
-    return bool(re.search(rf"\$\{{#?{name}\[", source))
+    return bool(re.search(rf"\$\{{#?{re.escape(name)}\[", source))
 
 
 def _assigns(source: str, name: str) -> bool:

@@ -44,6 +44,9 @@ public class PlanService : IPlanService
 
     public async Task<Result<PlanDto>> CreateAsync(CreatePlanDto dto, string userId, CancellationToken cancellationToken = default)
     {
+        if (_httpContextAccessor.HttpContext?.User.HasClaim("permission", "ProjectPlan.Create") != true)
+            return Result<PlanDto>.Failure(Error.Forbidden("Project Plan creation permission is required."));
+
         if (dto.PlanType is null)
         {
             return Result<PlanDto>.Failure(Error.Validation("A plan type is required"));

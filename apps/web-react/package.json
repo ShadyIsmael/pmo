@@ -7,7 +7,8 @@
     "node": ">=22.23.4"
   },
   "scripts": {
-    "dev": "vite --config vite.config.ts",
+    "dev": "node ../../scripts/start-web-dev-https.mjs",
+    "dev:server": "vite --config vite.config.ts",
     "build": "tsc -b && vite build --config vite.config.ts",
     "preview": "vite preview --config vite.config.ts",
     "typecheck": "tsc -b",

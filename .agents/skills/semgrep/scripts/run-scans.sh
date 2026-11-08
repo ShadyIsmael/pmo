@@ -349,10 +349,17 @@ add_scan() {
 
 mapfile_compat() { # read newline-separated stdin into a named array, bash 3.2 safe
   local __name=$1 __line
-  eval "$__name=()"
+  case "$__name" in
+    BASELINE | THIRD_PARTY | LANG_KEYS) ;;
+    *) die "unsupported destination array: $__name" ;;
+  esac
   while IFS= read -r __line; do
     [ -n "$__line" ] || continue
-    eval "$__name+=(\"\$__line\")"
+    case "$__name" in
+      BASELINE) BASELINE+=("$__line") ;;
+      THIRD_PARTY) THIRD_PARTY+=("$__line") ;;
+      LANG_KEYS) LANG_KEYS+=("$__line") ;;
+    esac
   done
 }
 

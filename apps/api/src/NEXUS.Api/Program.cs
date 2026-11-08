@@ -396,6 +396,7 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("Planning.View", policy => policy.RequireClaim("permission", "Planning.View"));
     options.AddPolicy("Planning.Edit", policy => policy.RequireClaim("permission", "Planning.Edit"));
     options.AddPolicy("Planning.Lifecycle", policy => policy.RequireClaim("permission", "Planning.Lifecycle"));
+    options.AddPolicy("ProjectPlan.Create", policy => policy.RequireClaim("permission", "ProjectPlan.Create"));
 
     options.AddPolicy("Portfolio.View", policy => policy.RequireClaim("permission", "Portfolio.View"));
     options.AddPolicy("Portfolio.Create", policy => policy.RequireClaim("permission", "Portfolio.Create"));
@@ -478,7 +479,7 @@ var corsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<st
 if (builder.Environment.IsDevelopment() && corsOrigins.Length == 0)
 {
     throw new InvalidOperationException(
-        "CORS is not configured. Add 'Cors:AllowedOrigins' (e.g. http://localhost:4000) to appsettings.Development.json.");
+        "CORS is not configured. Add 'Cors:AllowedOrigins' (e.g. https://localhost:4100) to appsettings.Development.json.");
 }
 
 builder.Services.AddCors(options =>
@@ -603,13 +604,14 @@ app.UseForwardedHeaders();
 app.UseExceptionHandler();
 app.UseStatusCodePages();
 
-// Enforce HTTPS and HSTS in non-Development environments. Local Development
-// continues to use HTTP so local frontend-to-API traffic is not disrupted.
+// HSTS is reserved for non-Development environments. HTTPS redirection also
+// applies in Development so the Secure antiforgery cookie is never issued from
+// an HTTP request.
 if (!app.Environment.IsDevelopment())
 {
     app.UseHsts();
-    app.UseHttpsRedirection();
 }
+app.UseHttpsRedirection();
 
 // Security headers are applied to every response after forwarding is resolved
 // but before routing, so all endpoints receive consistent protection.

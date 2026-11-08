@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Data.Sqlite;
@@ -24,6 +25,7 @@ public sealed class DemoAuthTenantIsolationTests : IDisposable
 {
     private readonly SqliteConnection _connection = new("Data Source=:memory:");
     private readonly AppDbContext _db;
+    private readonly HttpContextAccessor _requestContext = new();
     private readonly Guid _demoUserId = Guid.NewGuid();
     private readonly Guid _tenantA = Guid.NewGuid();
     private readonly Guid _tenantAUserId = Guid.NewGuid();
@@ -34,16 +36,13 @@ public sealed class DemoAuthTenantIsolationTests : IDisposable
     public DemoAuthTenantIsolationTests()
     {
         _connection.Open();
-        var requestContext = new HttpContextAccessor
+        _requestContext.HttpContext = new DefaultHttpContext
         {
-            HttpContext = new DefaultHttpContext
-            {
-                User = new ClaimsPrincipal(new ClaimsIdentity(
-                    [new Claim("tenantId", TenantConstants.DemoTenantId.ToString()), new Claim(ClaimTypes.NameIdentifier, _demoUserId.ToString())],
-                    authenticationType: "test"))
-            }
+            User = new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim("tenantId", TenantConstants.DemoTenantId.ToString()), new Claim(ClaimTypes.NameIdentifier, _demoUserId.ToString())],
+                authenticationType: "test"))
         };
-        AppDbContext.ConfigureTenantResolution(requestContext);
+        AppDbContext.ConfigureTenantResolution(_requestContext);
         _db = new AmbiguousAccountSqliteTestAppDbContext(new DbContextOptionsBuilder<AppDbContext>()
             .UseSqlite(_connection)
             .Options);
@@ -52,6 +51,7 @@ public sealed class DemoAuthTenantIsolationTests : IDisposable
             NewUser(_demoUserId, TenantConstants.DemoTenantId, "demo@example.test"),
             NewUser(_tenantAUserId, _tenantA, "tenant-a@example.test"));
         _db.SaveChanges();
+        SetAnonymousLoginContext();
 
         _effectivePermissions
             .Setup(service => service.GetEffectivePermissionsAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
@@ -124,8 +124,10 @@ public sealed class DemoAuthTenantIsolationTests : IDisposable
     [InlineData("   ")]
     public async Task Login_without_or_blank_tenant_rejects_duplicate_email_across_tenants(string? tenantId)
     {
+        SetAuthenticatedTenant(_tenantA);
         _db.Users.Add(NewUser(Guid.NewGuid(), _tenantA, "demo@example.test"));
         await _db.SaveChangesAsync();
+        SetAnonymousLoginContext();
 
         var result = await _service.LoginAsync(new LoginCommand("demo@example.test", "dummy-password", tenantId));
 
@@ -161,6 +163,56 @@ public sealed class DemoAuthTenantIsolationTests : IDisposable
         Assert.Equal(_tenantA.ToString(), result.Value.TenantId);
     }
 
+    [Fact]
+    public async Task Refresh_and_cookie_logout_revoke_sessions_in_the_verified_tenant()
+    {
+        _passwordHasher
+            .Setup(hasher => hasher.VerifyHashedPassword(It.IsAny<User>(), It.IsAny<string>(), It.IsAny<string>()))
+            .Returns(PasswordVerificationResult.Success);
+
+        var login = await _service.LoginAsync(new LoginCommand("demo@example.test", "dummy-password", TenantConstants.DemoTenantId.ToString()));
+        Assert.True(login.IsSuccess, login.Error?.Message);
+
+        var refresh = await _service.RefreshAsync(login.Value!.RefreshToken!);
+        Assert.True(refresh.IsSuccess, refresh.Error?.Message);
+        var sessionsAfterRefresh = await _db.UserSessions.IgnoreQueryFilters()
+            .Where(session => session.UserId == _demoUserId)
+            .ToListAsync();
+        Assert.Equal(2, sessionsAfterRefresh.Count);
+        var originalSessionId = Guid.Parse(new JwtSecurityTokenHandler().ReadJwtToken(login.Value.Token)
+            .Claims.Single(claim => claim.Type == "sid").Value);
+        var rotatedSessionId = Guid.Parse(new JwtSecurityTokenHandler().ReadJwtToken(refresh.Value!.Token)
+            .Claims.Single(claim => claim.Type == "sid").Value);
+        Assert.NotNull(sessionsAfterRefresh.Single(session => session.Id == originalSessionId).RevokedAt);
+        Assert.Null(sessionsAfterRefresh.Single(session => session.Id == rotatedSessionId).RevokedAt);
+
+        var logout = await _service.LogoutCookieSessionAsync(refresh.Value!.RefreshToken);
+        Assert.True(logout.IsSuccess, logout.Error?.Message);
+        Assert.All(
+            await _db.UserSessions.IgnoreQueryFilters().Where(session => session.UserId == _demoUserId).ToListAsync(),
+            session => Assert.NotNull(session.RevokedAt));
+    }
+
+    private void SetAnonymousLoginContext()
+    {
+        var context = new DefaultHttpContext();
+        context.SetEndpoint(new Endpoint(
+            null,
+            new EndpointMetadataCollection(new AllowAnonymousAttribute()),
+            "POST /api/auth/login"));
+        _requestContext.HttpContext = context;
+    }
+
+    private void SetAuthenticatedTenant(Guid tenantId)
+    {
+        _requestContext.HttpContext = new DefaultHttpContext
+        {
+            User = new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim("tenantId", tenantId.ToString("D"))],
+                authenticationType: "test"))
+        };
+    }
+
     private static User NewUser(Guid id, Guid tenantId, string email) => new()
     {
         Id = id,
@@ -189,6 +241,7 @@ public sealed class DemoAuthTenantIsolationTests : IDisposable
 
     public void Dispose()
     {
+        AppDbContext.ConfigureTenantResolution(new HttpContextAccessor());
         _db.Dispose();
         _connection.Dispose();
     }

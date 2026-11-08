@@ -1,15 +1,26 @@
 #!/usr/bin/env python3
-"""Fail CI when CodeQL reports a High or Critical security finding."""
+"""Fail CI on medium-or-higher CodeQL findings or results with unknown severity."""
 
 from __future__ import annotations
 
 import json
+import math
 import sys
 from pathlib import Path
 from typing import Any
 
 
-THRESHOLD = 7.0
+THRESHOLD = 4.0
+
+
+def parse_security_severity(raw: Any) -> float | None:
+    if isinstance(raw, bool) or not isinstance(raw, (str, int, float)):
+        return None
+    try:
+        score = float(raw)
+    except (TypeError, ValueError):
+        return None
+    return score if math.isfinite(score) and 0.0 <= score <= 10.0 else None
 
 
 def sarif_files(arguments: list[str]) -> list[Path]:
@@ -31,14 +42,12 @@ def rule_severities(run: dict[str, Any]) -> dict[str, float]:
     for component in components:
         for rule in component.get("rules", []):
             properties = rule.get("properties", {})
-            raw = properties.get("security-severity")
-            try:
-                score = float(raw)
-            except (TypeError, ValueError):
+            score = parse_security_severity(properties.get("security-severity"))
+            if score is None:
                 continue
             rule_id = rule.get("id")
             if rule_id:
-                severities[rule_id] = score
+                severities[rule_id] = max(score, severities.get(rule_id, score))
     return severities
 
 
@@ -48,7 +57,7 @@ def main(arguments: list[str]) -> int:
         print("ERROR: CodeQL produced no SARIF file to evaluate.", file=sys.stderr)
         return 2
 
-    high_findings: list[str] = []
+    blocked_findings: list[str] = []
     for path in files:
         try:
             document = json.loads(path.read_text(encoding="utf-8"))
@@ -56,20 +65,40 @@ def main(arguments: list[str]) -> int:
             print(f"ERROR: Could not read CodeQL SARIF {path}: {error}", file=sys.stderr)
             return 2
 
-        for run in document.get("runs", []):
+        runs = document.get("runs") if isinstance(document, dict) else None
+        if not isinstance(runs, list) or not runs:
+            print(f"ERROR: CodeQL SARIF {path} has no analysis runs.", file=sys.stderr)
+            return 2
+
+        for run in runs:
+            if not isinstance(run, dict) or not isinstance(run.get("results"), list):
+                print(f"ERROR: CodeQL SARIF {path} has a malformed analysis run.", file=sys.stderr)
+                return 2
             severities = rule_severities(run)
-            for result in run.get("results", []):
+            for result in run["results"]:
+                if not isinstance(result, dict):
+                    print(f"ERROR: CodeQL SARIF {path} contains a malformed result.", file=sys.stderr)
+                    return 2
                 rule_id = result.get("ruleId")
                 score = severities.get(rule_id)
-                if score is None and isinstance(result.get("ruleIndex"), int):
+                if score is None:
+                    result_properties = result.get("properties")
+                    if isinstance(result_properties, dict):
+                        score = parse_security_severity(result_properties.get("security-severity"))
+                if score is None and type(result.get("ruleIndex")) is int:
                     rules = run.get("tool", {}).get("driver", {}).get("rules", [])
                     index = result["ruleIndex"]
                     if 0 <= index < len(rules):
-                        try:
-                            score = float(rules[index].get("properties", {}).get("security-severity"))
-                        except (TypeError, ValueError):
-                            score = None
-                if score is None or score < THRESHOLD:
+                        rule = rules[index]
+                        properties = rule.get("properties", {}) if isinstance(rule, dict) else {}
+                        if isinstance(properties, dict):
+                            score = parse_security_severity(properties.get("security-severity"))
+                if score is None:
+                    blocked_findings.append(
+                        f"{path}: {rule_id or 'unknown rule'} has no valid security-severity"
+                    )
+                    continue
+                if score < THRESHOLD:
                     continue
 
                 location = "unknown location"
@@ -80,17 +109,17 @@ def main(arguments: list[str]) -> int:
                     line = physical.get("region", {}).get("startLine", "?")
                     location = f"{uri}:{line}"
                 message = result.get("message", {}).get("text", "").splitlines()[0]
-                high_findings.append(
+                blocked_findings.append(
                     f"{path}: {rule_id or 'unknown rule'} ({score:.1f}) at {location}: {message}"
                 )
 
-    if high_findings:
-        print("CodeQL High/Critical security findings block this build:", file=sys.stderr)
-        for finding in high_findings:
+    if blocked_findings:
+        print("CodeQL findings with medium-or-higher or unknown severity block this build:", file=sys.stderr)
+        for finding in blocked_findings:
             print(f"- {finding}", file=sys.stderr)
         return 1
 
-    print("CodeQL security threshold passed: no findings at severity 7.0 or higher.")
+    print("CodeQL security threshold passed: no findings at severity 4.0 or higher.")
     return 0
 
 

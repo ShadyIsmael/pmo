@@ -978,7 +978,13 @@ public static class PermissionCatalog
             "b0000243-0000-0000-0000-000000000243", "Planning.Edit", "Planning", "Edit",
             "project-delivery", "Project Delivery", "تسليم المشاريع",
             "planning", "Planning", "التخطيط", PermissionLevel.Action,
-            "Edit project plans", "تعديل خطط المشاريع", "Create and edit plan activities, dependencies, assignments, and calendars within project scope.", "إنشاء وتعديل أنشطة الخطط والارتباطات والتعيينات والتقاويم ضمن نطاق المشروع.",
+            "Edit project plans", "تعديل خطط المشاريع", "Edit existing plan activities, dependencies, assignments, and calendars within project scope.", "تعديل الأنشطة والارتباطات والتعيينات والتقاويم الموجودة في الخطة ضمن نطاق المشروع.",
+            "High", true, ["Planning.View"], true, PermissionScope.Project),
+        new(
+            "b0000286-0000-0000-0000-000000000286", "ProjectPlan.Create", "ProjectPlan", "Create",
+            "project-delivery", "Project Delivery", "تسليم المشاريع",
+            "planning", "Planning", "التخطيط", PermissionLevel.Action,
+            "Create project plans", "إنشاء خطط المشاريع", "Create a Project Plan within the actor's authorized project scope.", "إنشاء خطة مشروع ضمن نطاق المشروع المصرح به للمستخدم.",
             "High", true, ["Planning.View"], true, PermissionScope.Project),
         new(
             "b0000272-0000-0000-0000-000000000272", "ProjectSettings.View", "ProjectSettings", "View",

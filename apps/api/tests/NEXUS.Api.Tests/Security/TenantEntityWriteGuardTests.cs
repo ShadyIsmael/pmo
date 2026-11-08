@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using NEXUS.Api.Tests.Testing;
@@ -147,6 +148,65 @@ public sealed class TenantEntityWriteGuardTests : IDisposable
 
         var persisted = await _db.Projects.IgnoreQueryFilters().AsNoTracking().SingleAsync();
         Assert.Equal(_tenantA, persisted.TenantId);
+    }
+
+    [Fact]
+    public async Task SaveChanges_allows_verified_pre_authentication_tenant_only_on_anonymous_endpoint()
+    {
+        var context = new DefaultHttpContext();
+        context.SetEndpoint(new Endpoint(
+            null,
+            new EndpointMetadataCollection(new AllowAnonymousAttribute()),
+            "POST /api/auth/login"));
+        _http.HttpContext = context;
+
+        using (PreAuthenticationTenantExecutionContext.EnterAfterCredentialValidation(_tenantA))
+        {
+            _db.Projects.Add(NewProject(_tenantA, "VERIFIED-LOGIN-TENANT"));
+            Assert.Equal(1, await _db.SaveChangesAsync());
+        }
+
+        var persisted = await _db.Projects.SingleAsync();
+        Assert.Equal(_tenantA, persisted.TenantId);
+    }
+
+    [Fact]
+    public async Task SaveChanges_does_not_allow_pre_authentication_scope_on_non_anonymous_endpoint()
+    {
+        _http.HttpContext = new DefaultHttpContext();
+        using var tenantScope = PreAuthenticationTenantExecutionContext.EnterAfterCredentialValidation(_tenantA);
+        _db.Projects.Add(NewProject(_tenantA, "NON-ANONYMOUS-SCOPE"));
+
+        var exception = await Record.ExceptionAsync(() => _db.SaveChangesAsync());
+
+        Assert.IsType<InvalidOperationException>(exception);
+        Assert.Empty(await _db.Projects.IgnoreQueryFilters().ToListAsync());
+    }
+
+    [Fact]
+    public async Task SaveChanges_does_not_treat_pre_authentication_scope_as_background_tenant_context()
+    {
+        _http.HttpContext = null;
+        using var tenantScope = PreAuthenticationTenantExecutionContext.EnterAfterCredentialValidation(_tenantA);
+        _db.Projects.Add(NewProject(_tenantA, "NO-HTTP-REQUEST"));
+
+        var exception = await Record.ExceptionAsync(() => _db.SaveChangesAsync());
+
+        Assert.IsType<InvalidOperationException>(exception);
+        Assert.Empty(await _db.Projects.IgnoreQueryFilters().ToListAsync());
+    }
+
+    [Fact]
+    public async Task SaveChanges_authenticated_claim_takes_precedence_over_pre_authentication_scope()
+    {
+        SetAuthenticatedTenant(_tenantA);
+        using var tenantScope = PreAuthenticationTenantExecutionContext.EnterAfterCredentialValidation(_tenantB);
+        _db.Projects.Add(NewProject(_tenantB, "PREAUTH-CANNOT-OVERRIDE-CLAIM"));
+
+        var exception = await Record.ExceptionAsync(() => _db.SaveChangesAsync());
+
+        Assert.IsType<InvalidOperationException>(exception);
+        Assert.Empty(await _db.Projects.IgnoreQueryFilters().ToListAsync());
     }
 
     private void SetAuthenticatedTenant(Guid tenantId)

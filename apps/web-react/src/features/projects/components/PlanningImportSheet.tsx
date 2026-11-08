@@ -30,6 +30,8 @@ export function PlanningImportSheet({
   projectId,
   plans,
   selectedPlanId,
+  canCreatePlan,
+  canEditPlan,
   commitMutation,
   t,
   onOpenChange,
@@ -38,6 +40,8 @@ export function PlanningImportSheet({
   projectId: string;
   plans: PlanSummaryDto[];
   selectedPlanId: string;
+  canCreatePlan: boolean;
+  canEditPlan: boolean;
   commitMutation: CommitMutation;
   t: Message;
   onOpenChange: (open: boolean) => void;
@@ -45,7 +49,10 @@ export function PlanningImportSheet({
 }) {
   const { toast } = useToast();
   const { locale } = useI18n();
-  const [mode, setMode] = React.useState<ImportMode>(plans.length ? "existing" : "new");
+  const canImportIntoExistingPlan = canEditPlan && plans.length > 0;
+  const canImportAsNewPlan = canCreatePlan && canEditPlan;
+  const hasAvailableImportMode = canImportAsNewPlan || canImportIntoExistingPlan;
+  const [mode, setMode] = React.useState<ImportMode>(() => canImportIntoExistingPlan ? "existing" : "new");
   const [targetPlanId, setTargetPlanId] = React.useState(selectedPlanId || plans[0]?.id || "");
   const [newPlanName, setNewPlanName] = React.useState("");
   const [newPlanType, setNewPlanType] = React.useState<PlanType>("Custom");
@@ -60,7 +67,10 @@ export function PlanningImportSheet({
 
   const busy = state === "parsing" || state === "committing" || commitMutation.isPending;
   const validFile = Boolean(file && file.name.toLowerCase().endsWith(".mpp"));
-  const canParse = validFile && (mode === "new" ? Boolean(newPlanType) : Boolean(targetPlanId));
+  const canParse = validFile && (mode === "new"
+    ? canImportAsNewPlan && Boolean(newPlanType)
+    : canImportIntoExistingPlan && Boolean(targetPlanId));
+  const canCommitImport = mode === "new" ? canImportAsNewPlan : canImportIntoExistingPlan;
   const totalRows = session ? session.statistics.tasks + session.statistics.milestones : 0;
   const resourceResolutionCounts = session?.resources.reduce((counts, resource) => {
     const resolution = resource.resolution;
@@ -85,6 +95,11 @@ export function PlanningImportSheet({
     assignmentResolutionCounts.ignored ? t("planning.import.assignmentSummary.ignored", { count: assignmentResolutionCounts.ignored }) : undefined,
     assignmentResolutionCounts.needsReview ? t("planning.import.assignmentSummary.needsReview", { count: assignmentResolutionCounts.needsReview }) : undefined,
   ].filter(Boolean).join(" · ") : undefined;
+
+  React.useEffect(() => {
+    if (mode === "existing" && !canImportIntoExistingPlan) setMode("new");
+    else if (mode === "new" && !canImportAsNewPlan && canImportIntoExistingPlan) setMode("existing");
+  }, [canImportAsNewPlan, canImportIntoExistingPlan, mode]);
 
   React.useEffect(() => {
     if (!reviewTarget || reviewTarget.tab !== tab) return;
@@ -146,7 +161,7 @@ export function PlanningImportSheet({
   }
 
   async function commit() {
-    if (!session || session.blockingIssueCount > 0 || session.status !== "ReadyToCommit") return;
+    if (!session || !canCommitImport || session.blockingIssueCount > 0 || session.status !== "ReadyToCommit") return;
     setError(undefined);
     setState("committing");
     try {
@@ -182,7 +197,7 @@ export function PlanningImportSheet({
           <p className="mt-2 text-xs text-muted-foreground">{state === "parsing" ? t("planning.import.parsingHint") : t("planning.import.atomicHint")}</p>
         </div> : null}
 
-        {!session && !busy ? <div className="grid gap-4 lg:grid-cols-2">
+        {!session && !busy && hasAvailableImportMode ? <div className="grid gap-4 lg:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="planning-import-file">{t("planning.import.fileLabel")}</Label>
             <Input id="planning-import-file" type="file" accept=".mpp,application/vnd.ms-project" onChange={(event) => {
@@ -194,8 +209,8 @@ export function PlanningImportSheet({
           </div>
           <div className="space-y-3 rounded-md border p-3">
             <div className="flex gap-1 rounded-md bg-muted/40 p-1">
-              {plans.length > 0 ? <Button type="button" size="sm" className="flex-1" variant={mode === "existing" ? "secondary" : "ghost"} onClick={() => setMode("existing")}>{t("planning.import.existingPlan")}</Button> : null}
-              <Button type="button" size="sm" className="flex-1" variant={mode === "new" ? "secondary" : "ghost"} onClick={() => setMode("new")}>{t("planning.import.newPlan")}</Button>
+              {canImportIntoExistingPlan ? <Button type="button" size="sm" className="flex-1" variant={mode === "existing" ? "secondary" : "ghost"} onClick={() => setMode("existing")}>{t("planning.import.existingPlan")}</Button> : null}
+              {canImportAsNewPlan ? <Button type="button" size="sm" className="flex-1" variant={mode === "new" ? "secondary" : "ghost"} onClick={() => setMode("new")}>{t("planning.import.newPlan")}</Button> : null}
             </div>
             {mode === "existing" ? <div className="space-y-2">
               <Label>{t("planning.import.targetPlan")}</Label>
@@ -210,6 +225,10 @@ export function PlanningImportSheet({
             </div>}
           </div>
         </div> : null}
+
+        {!session && !busy && !hasAvailableImportMode ? <p role="note" className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground">{t("planning.import.noAvailableMode")}</p> : null}
+        {canEditPlan && !canCreatePlan && hasAvailableImportMode ? <p role="note" className="text-xs text-muted-foreground">{t("planning.import.newPlanRequiresBothPermissions")}</p> : null}
+        {session && !canCommitImport ? <p role="note" className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground">{mode === "new" ? t("planning.import.newPlanRequiresBothPermissions") : t("planning.import.editPermissionRequired")}</p> : null}
 
         {session && !busy ? <div className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/20 px-3 py-2">
@@ -277,7 +296,7 @@ export function PlanningImportSheet({
       </SideSheetBody>
       <SideSheetFooter>
         <Button type="button" variant="outline" disabled={busy || resolving} onClick={() => session ? void cancelSession() : onOpenChange(false)}>{t("planning.import.cancel")}</Button>
-        {!session ? <Button type="button" disabled={!canParse || busy} onClick={() => void parse()}>{t("planning.import.preview")}</Button> : <Button type="button" disabled={busy || resolving || session.blockingIssueCount > 0 || session.status !== "ReadyToCommit"} onClick={() => void commit()}><FileUp className="me-1.5 h-4 w-4" />{t("planning.import.confirm")}</Button>}
+        {!session ? <Button type="button" disabled={!canParse || busy} onClick={() => void parse()}>{t("planning.import.preview")}</Button> : <Button type="button" disabled={busy || resolving || !canCommitImport || session.blockingIssueCount > 0 || session.status !== "ReadyToCommit"} onClick={() => void commit()}><FileUp className="me-1.5 h-4 w-4" />{t("planning.import.confirm")}</Button>}
       </SideSheetFooter>
     </SideSheet>
   );

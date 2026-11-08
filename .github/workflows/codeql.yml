@@ -22,10 +22,10 @@ jobs:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4
+        uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066 # v4
         with:
           languages: csharp
           build-mode: manual
@@ -33,7 +33,7 @@ jobs:
           config-file: .github/codeql/codeql-config.yml
 
       - name: Setup .NET for API tracing
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           global-json-file: global.json
 
@@ -41,18 +41,18 @@ jobs:
         run: dotnet build apps/api/src/NEXUS.Api/NEXUS.Api.csproj --configuration Release
 
       - name: Analyze without repository code-scanning upload
-        uses: github/codeql-action/analyze@v4
+        uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4
         with:
           category: /language:csharp
           upload: never
           output: codeql-results
 
-      - name: Block high and critical CodeQL findings
+      - name: Block medium-or-higher and unscored CodeQL findings
         run: python3 .github/scripts/enforce-codeql-severity.py codeql-results
 
       - name: Retain SARIF for review
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: codeql-csharp-sarif
           path: codeql-results
@@ -68,28 +68,28 @@ jobs:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4
+        uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066 # v4
         with:
           languages: javascript-typescript
           queries: security-extended
           config-file: .github/codeql/codeql-config.yml
 
       - name: Analyze without repository code-scanning upload
-        uses: github/codeql-action/analyze@v4
+        uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4
         with:
           category: /language:javascript-typescript
           upload: never
           output: codeql-results
 
-      - name: Block high and critical CodeQL findings
+      - name: Block medium-or-higher and unscored CodeQL findings
         run: python3 .github/scripts/enforce-codeql-severity.py codeql-results
 
       - name: Retain SARIF for review
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: codeql-javascript-typescript-sarif
           path: codeql-results

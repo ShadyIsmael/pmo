@@ -1,12 +1,12 @@
 # Permission and Authorization Model
 
-**Current source contract:** 2026-11-03. This document describes the current code-defined permission architecture. The existing audit evidence and working matrix remain under `docs/security/permission-audit/`; runtime and persisted database state are reported separately from source counts.
+**Current source contract:** 2026-11-08. This document describes the current code-defined permission architecture. The existing audit evidence and working matrix remain under `docs/security/permission-audit/`; runtime and persisted database state are reported separately from source counts.
 
 ## Permission catalog
 
 `apps/api/src/NEXUS.Modules.Identity/Application/PermissionCatalog.cs` is the authoritative catalog. It defines stable keys, Module and Screen grouping, View/Action level, English and Arabic labels/descriptions, sensitivity, scope, assignability, action dependencies, and the protected tenant Admin baseline flag. API DTOs project this metadata to the Roles & Permissions screen; grouping metadata is not stored as new database schema. Retired aliases are not kept in runtime compatibility metadata.
 
-The source catalog currently contains 160 unique active keys (43 View and 117 Action). These are code counts, not persisted Permission rows, role grants, user assignments, or runtime effective access. Retired aliases are not accepted as effective permissions.
+The source catalog currently contains 171 unique active keys (46 View and 125 Action). These are code counts, not persisted Permission rows, role grants, user assignments, or runtime effective access. Retired aliases are not accepted as effective permissions.
 
 ## Effective permissions and dependencies
 
@@ -42,11 +42,19 @@ Persistent Project approval defaults use `ProjectAnnualBudget.ManageApprovalConf
 
 Project Settings has its own Project-scoped `ProjectSettings.View` and `ProjectSettings.Edit` permissions, grouped under Projects → Settings. Edit depends on View. The View key opens the Header Side Sheet but does not replace each section's View key. Workflow settings writes require both Project Settings keys and an authorized mutable Project context. Financial approval configuration also retains its section View and `ProjectAnnualBudget.ManageApprovalConfiguration` checks. These Project-scoped keys are outside the dynamic Tenant Admin baseline; the identity seed adds them to the stable `tenant.admin` role. Direct user Deny overrides remain effective, and the Admin grant does not bypass Tenant, Project, section, or read-only checks.
 
+## Project Plan creation and content editing
+
+`ProjectPlan.Create` creates a new Plan aggregate through `POST /api/projects/{projectId}/plans`; it is Project-scoped, depends on `Planning.View`, and is eligible for Management custom roles. `Planning.Edit` authorizes changes to existing Plan contents, including activities, WBS, dependencies, assignments, calendars, and importing into an existing Plan; it is Project-scoped, depends on `Planning.View`, and is eligible for Management and Operation custom roles. The standalone empty-Plan creation form requires `ProjectPlan.Create` only. Plan content controls and write APIs require `Planning.Edit`.
+
+MPP import writes plan contents: importing into an existing Plan requires `Planning.Edit`, while creating a Plan from MPP requires both `ProjectPlan.Create` and `Planning.Edit`. Plan creation and content editing remain distinct operations; the catalog has no separate Plan metadata edit permission because no Plan metadata edit API exists. Neither key is added to the protected Tenant Admin baseline or automatically granted to existing roles.
+
 ## Role delegation
 
 Role administration distinguishes `Roles.View`, `Roles.Create`, `Roles.EditDetails`, `Roles.ConfigurePermissions`, and `Roles.Delete`. The retired `users.write` key is not accepted by any role policy or service. The actor may only configure permissions within their own effective delegation authority; the server checks tenant/role ownership, binds actor arguments to the current authenticated principal, and re-reads persisted grants. Role updates must not let the actor grant themselves or another assignable role powers outside that delegation boundary. System roles cannot be deleted or renamed, and roles with user assignments cannot be deleted through the current service.
 
-Catalog `IsAssignable` metadata does not itself make a permission available to a particular role administrator. `RoleAdministrationService.GetAssignablePermissionsAsync` returns only active catalog entries already held by the actor, including their dependencies. A permission with no approved initial grant-holder therefore cannot be delegated through the Roles UI; do not bypass this boundary or add an unapproved Admin grant. The initial grant path for the new financial read/export keys remains a release/UAT blocker until an explicit authorization policy and holder are approved.
+Catalog `IsAssignable` metadata does not itself make a permission available to a particular role administrator. `RoleAdministrationService.GetAssignablePermissionsAsync` returns active catalog entries already held by the actor, plus the exact keys allowed by `BootstrapPermissionDelegationPolicy`. That policy provides a narrow first-grant path for `ProjectPlan.Create`, `Planning.Edit`, and dependency `Planning.View` only when the actor has both `Roles.ConfigurePermissions` and `TenantAdministration.ManageScope`; direct Deny, Tenant ownership, dependencies, and the target role's `AllowedCategories` still apply. Bootstrap grants can be configured only on a same-Tenant custom role, never a system role. The separate user-role bootstrap fallback can assign such a custom role only to another user in the same Tenant. If the actor already holds every permission in a seeded system role, ordinary system-role assignment remains available under the normal permission checks.
+
+This first-grant path adds no automatic grants and does not change the protected Admin baseline. The initial grant path for the new financial read/export keys remains a release/UAT blocker until an explicit authorization policy and holder are approved.
 
 See `docs/security/PERMISSIONS-ROLE-DELEGATION.md` for the implementation rule and `PERMISSIONS-TWO-LEVEL-UX.md` for the editor behavior.
 
