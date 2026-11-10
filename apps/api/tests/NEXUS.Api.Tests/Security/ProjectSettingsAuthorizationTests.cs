@@ -429,7 +429,7 @@ public sealed class ProjectSettingsAuthorizationTests
             Name = "Eligible reviewer",
             IsActive = true
         });
-        context.Add(new User
+        var approver = new User
         {
             Id = approverId,
             TenantId = tenantId,
@@ -437,9 +437,22 @@ public sealed class ProjectSettingsAuthorizationTests
             FirstName = "Eligible",
             LastName = "Reviewer",
             IsActive = true
-        });
+        };
+        var approverRole = new Role
+        {
+            TenantId = tenantId,
+            Name = "Project Management Reviewer",
+            Category = "Management"
+        };
         var today = DateTime.UtcNow.Date;
-        context.Add(new ProjectMember
+        context.AddRange(approver, approverRole, new UserRole
+        {
+            TenantId = tenantId,
+            UserId = approverId,
+            User = approver,
+            RoleId = approverRole.Id,
+            Role = approverRole
+        }, new ProjectMember
         {
             TenantId = tenantId,
             ProjectId = projectId,
@@ -467,7 +480,9 @@ public sealed class ProjectSettingsAuthorizationTests
             Mock.Of<IFiscalYearCalendarService>(),
             permissionService.Object,
             management,
-            Mock.Of<IAuditService>());
+            Mock.Of<IAuditService>(),
+            new NoopProjectAnnualBudgetApprovalNotificationPublisher(),
+            Mock.Of<IManagementScopeResolver>());
 
         var result = await workflow.GetApprovalConfigurationAsync(tenantId, projectId, actorId, CancellationToken.None);
 
@@ -536,14 +551,53 @@ public sealed class ProjectSettingsAuthorizationTests
                 Status = "Active",
                 IsActive = true
             };
+            var firstApprover = new User
+            {
+                Id = firstApproverId,
+                TenantId = tenantId,
+                Email = "first@example.test",
+                FirstName = "First",
+                LastName = "Reviewer"
+            };
+            var secondApprover = new User
+            {
+                Id = secondApproverId,
+                TenantId = tenantId,
+                Email = "second@example.test",
+                FirstName = "Second",
+                LastName = "Reviewer"
+            };
+            var managementRole = new Role
+            {
+                TenantId = tenantId,
+                Name = "Project Management Reviewer",
+                Category = "Management"
+            };
 
             context.AddRange(
                 project,
                 annualBudget,
                 firstResource,
                 secondResource,
-                new User { Id = firstApproverId, TenantId = tenantId, Email = "first@example.test", FirstName = "First", LastName = "Reviewer" },
-                new User { Id = secondApproverId, TenantId = tenantId, Email = "second@example.test", FirstName = "Second", LastName = "Reviewer" },
+                firstApprover,
+                secondApprover,
+                managementRole,
+                new UserRole
+                {
+                    TenantId = tenantId,
+                    UserId = firstApproverId,
+                    User = firstApprover,
+                    RoleId = managementRole.Id,
+                    Role = managementRole
+                },
+                new UserRole
+                {
+                    TenantId = tenantId,
+                    UserId = secondApproverId,
+                    User = secondApprover,
+                    RoleId = managementRole.Id,
+                    Role = managementRole
+                },
                 new ProjectMember
                 {
                     TenantId = tenantId,
@@ -847,6 +901,8 @@ public sealed class ProjectSettingsAuthorizationTests
             Mock.Of<IFiscalYearCalendarService>(),
             effectivePermissionService,
             management,
-            auditService ?? Mock.Of<IAuditService>());
+            auditService ?? Mock.Of<IAuditService>(),
+            new NoopProjectAnnualBudgetApprovalNotificationPublisher(),
+            Mock.Of<IManagementScopeResolver>());
     }
 }

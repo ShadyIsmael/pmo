@@ -1,5 +1,5 @@
 import * as React from "react";
-import { useOutletContext } from "react-router-dom";
+import { useOutletContext, useSearchParams } from "react-router-dom";
 import { Banknote, CalendarDays, ClipboardList, History, Landmark, LayoutDashboard } from "lucide-react";
 import { Card, CardContent } from "@components/ui/Card";
 import { useI18n } from "@i18n/messages";
@@ -32,6 +32,7 @@ const FINANCE_SECTIONS = [
 
 export function ProjectFinanceTab() {
   const { projectId, project } = useOutletContext<ProjectContext>();
+  const [searchParams] = useSearchParams();
   const { t } = useI18n();
   const { user } = useAuth();
   const { canMutate, effectiveReadOnly } = useManagement();
@@ -58,6 +59,12 @@ export function ProjectFinanceTab() {
   const canManage = canCreateAnnualBudget;
   const canEditAnnualBudget = Boolean(user && canWriteInScope
     && hasPermission(user.permissions, Permissions.ProjectAnnualBudget.EditDraft));
+  const canConfigureDraftAnnualBudgetApproval = Boolean(user && canViewAnnualBudgets && canEditAnnualBudget
+    && hasPermission(user.permissions, Permissions.ProjectAnnualBudget.ConfigureDraftApproval));
+  const canDeleteAnnualBudget = Boolean(user && canWriteInScope
+    && hasPermission(user.permissions, Permissions.ProjectAnnualBudget.Delete));
+  const canWithdrawAnnualBudget = Boolean(user && canWriteInScope
+    && hasPermission(user.permissions, Permissions.ProjectAnnualBudget.Withdraw));
   const canSubmitAnnualBudget = Boolean(user && canWriteInScope
     && hasPermission(user.permissions, Permissions.ProjectAnnualBudget.SubmitForReview));
   const canReviseAnnualBudget = Boolean(user && canWriteInScope
@@ -87,8 +94,17 @@ export function ProjectFinanceTab() {
   const canCancelPaymentRequests = Boolean(user && canWriteInScope
     && hasPermission(user.permissions, Permissions.ProjectPaymentRequest.Cancel));
 
-  const [activeSection, setActiveSection] = React.useState<FinanceWorkspaceSection>("overview");
-  const [selectedFiscalYear, setSelectedFiscalYear] = React.useState<number | null>(null);
+  const annualBudgetYearParam = searchParams.get("fiscalYear");
+  const parsedAnnualBudgetYear = annualBudgetYearParam && /^\d{1,4}$/.test(annualBudgetYearParam)
+    ? Number(annualBudgetYearParam)
+    : null;
+  const requestedAnnualBudgetYear = parsedAnnualBudgetYear !== null && parsedAnnualBudgetYear > 0
+    ? parsedAnnualBudgetYear
+    : null;
+  const [activeSection, setActiveSection] = React.useState<FinanceWorkspaceSection>(
+    searchParams.get("section") === "annualBudgets" ? "annualBudgets" : "overview",
+  );
+  const [selectedFiscalYear, setSelectedFiscalYear] = React.useState<number | null>(requestedAnnualBudgetYear);
   const annualBudgetContext = useProjectAnnualBudgets(projectId, canViewAnnualBudgets && Boolean(projectId));
 
   const visibleSections = FINANCE_SECTIONS.filter(({ id }) => {
@@ -139,6 +155,15 @@ export function ProjectFinanceTab() {
   const paymentRequestsActive = section === "paymentRequests";
   const settlementsActive = section === "settlements";
   const selectedProjectName = project.name || project.code || "-";
+
+  React.useEffect(() => {
+    if (searchParams.get("section") === "annualBudgets" && visibleSections.some(item => item.id === "annualBudgets")) {
+      setActiveSection("annualBudgets");
+    }
+    if (requestedAnnualBudgetYear !== null && requestedAnnualBudgetYear > 0) {
+      setSelectedFiscalYear(requestedAnnualBudgetYear);
+    }
+  }, [projectId, requestedAnnualBudgetYear, searchParams, visibleSectionIds]);
 
   return (
     <div className="space-y-5">
@@ -230,6 +255,9 @@ export function ProjectFinanceTab() {
             canViewAnnualBudgetClosing={canViewAnnualBudgetClosing}
             canCreateAnnualBudget={canCreateAnnualBudget}
             canEditAnnualBudget={canEditAnnualBudget}
+            canConfigureDraftApproval={canConfigureDraftAnnualBudgetApproval}
+            canDeleteAnnualBudget={canDeleteAnnualBudget}
+            canWithdrawAnnualBudget={canWithdrawAnnualBudget}
             canSubmitAnnualBudget={canSubmitAnnualBudget}
             canReviseAnnualBudget={canReviseAnnualBudget}
             canApprove={canApproveAnnualBudget}
@@ -240,6 +268,7 @@ export function ProjectFinanceTab() {
             activeSection={section}
             selectedFiscalYear={selectedFiscalYear}
             onFiscalYearChange={setSelectedFiscalYear}
+            onOpenClosing={() => setActiveSection("closing")}
           />
 
           {(canViewPaymentRequests || canReviewPaymentRequests || canReviewReversals) ? <div hidden={!paymentRequestsActive && !settlementsActive}>

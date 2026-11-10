@@ -6,6 +6,7 @@ using NEXUS.Modules.Audit.Application;
 using NEXUS.Modules.ProjectPlanning.Application;
 using NEXUS.Modules.ProjectPlanning.Application.DTOs;
 using NEXUS.Modules.ProjectPlanning.Application.Import;
+using NEXUS.Modules.ProjectPlanning.Application.Mapping;
 using NEXUS.Modules.ProjectPlanning.Domain;
 using NEXUS.Modules.ResourceManagement.Application;
 using NEXUS.Modules.ResourceManagement.Application.DTOs;
@@ -56,6 +57,7 @@ public sealed class PlanningImportServiceTests : IDisposable
         }, _userId.ToString());
 
         Assert.True(result.IsSuccess, result.Error?.Message);
+        _context.ChangeTracker.Clear();
         var version = await _context.PlanVersions
             .Include(value => value.WbsNodes)
             .Include(value => value.Activities)
@@ -70,6 +72,18 @@ public sealed class PlanningImportServiceTests : IDisposable
         Assert.Equal(new DateTime(2026, 1, 9), version.Activities.Single(value => value.Code == "1").ActualFinish);
         var root = version.WbsNodes.Single(value => value.Code == "1");
         Assert.Equal(root.Id, version.WbsNodes.Single(value => value.Code == "1.1").ParentWbsId);
+        Assert.All(version.WbsNodes, node =>
+        {
+            Assert.NotNull(node.TextFormat);
+            Assert.False(node.TextFormat!.IsSpecified);
+            Assert.Null(node.ToDto().TextFormat);
+        });
+        Assert.All(version.Activities, activity =>
+        {
+            Assert.NotNull(activity.TextFormat);
+            Assert.False(activity.TextFormat!.IsSpecified);
+            Assert.Null(activity.ToDto().TextFormat);
+        });
         var dependency = Assert.Single(version.Dependencies);
         Assert.Equal(PlanDependencyType.StartToFinish, dependency.Type);
         Assert.Equal(-2, dependency.Lag);
@@ -119,6 +133,48 @@ public sealed class PlanningImportServiceTests : IDisposable
 
         Assert.True(result.IsFailure);
         Assert.Equal(403, result.Error!.StatusCode);
+        Assert.Empty(await _context.Plans.IgnoreQueryFilters().ToListAsync());
+    }
+
+    [Fact]
+    public async Task CreateSession_RequiresPlanningEditBeforeParsingOrPersisting()
+    {
+        SetPermissions("Planning.View");
+        var service = CreateService(FixtureDocument());
+
+        var result = await service.CreateSessionAsync(new MemoryStream([1]), "fixture.mpp", _projectId, null, _userId.ToString());
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(403, result.Error!.StatusCode);
+        Assert.Empty(await _context.Set<PlanImportSession>().IgnoreQueryFilters().ToListAsync());
+    }
+
+    [Fact]
+    public async Task CommitSession_RechecksResourceCreateAfterResourceResolution()
+    {
+        SetPermissions("Planning.View", "Planning.Edit", "Resource.Create");
+        SetResources();
+        var service = CreateService(FixtureDocument());
+        var session = await service.CreateSessionAsync(new MemoryStream([1]), "fixture.mpp", _projectId, null, _userId.ToString());
+        Assert.True(session.IsSuccess, session.Error?.Message);
+
+        var resolution = await service.ResolveResourceAsync(_projectId, session.Value!.Id, "r1", new PlanImportResourceResolutionDto
+        {
+            Resolution = "CreateNew",
+            CreateResource = new CreateResourceDto { Name = "Imported Developer", Type = ResourceType.Staff }
+        }, _userId.ToString());
+        Assert.True(resolution.IsSuccess, resolution.Error?.Message);
+
+        SetPermissions("Planning.View", "Planning.Edit");
+        var result = await service.CommitSessionAsync(_projectId, session.Value.Id, new CommitPlanImportDto
+        {
+            ProjectId = _projectId,
+            TargetPlanId = Guid.NewGuid()
+        }, _userId.ToString());
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(403, result.Error!.StatusCode);
+        _resources.Verify(resource => resource.CreateAsync(It.IsAny<CreateResourceDto>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
         Assert.Empty(await _context.Plans.IgnoreQueryFilters().ToListAsync());
     }
 
@@ -199,6 +255,7 @@ public sealed class PlanningImportServiceTests : IDisposable
         }, _userId.ToString());
 
         Assert.True(result.IsSuccess, result.Error?.Message);
+        _context.ChangeTracker.Clear();
         var version = await _context.PlanVersions
             .Include(value => value.WbsNodes)
             .Include(value => value.Activities)
@@ -206,6 +263,18 @@ public sealed class PlanningImportServiceTests : IDisposable
             .Include(value => value.Assignments)
             .Include(value => value.Calendars)
             .SingleAsync();
+        Assert.All(version.WbsNodes, node =>
+        {
+            Assert.NotNull(node.TextFormat);
+            Assert.False(node.TextFormat!.IsSpecified);
+            Assert.Null(node.ToDto().TextFormat);
+        });
+        Assert.All(version.Activities, activity =>
+        {
+            Assert.NotNull(activity.TextFormat);
+            Assert.False(activity.TextFormat!.IsSpecified);
+            Assert.Null(activity.ToDto().TextFormat);
+        });
         Assert.Equal(36, version.Activities.Count);
         Assert.Equal(5, version.Activities.Count(value => value.Type == PlanActivityType.Milestone));
         Assert.Equal(24, version.Dependencies.Count);

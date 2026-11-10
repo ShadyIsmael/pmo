@@ -12,6 +12,10 @@ public sealed record UpdateProjectAnnualBudgetDto(
 
 public sealed record ApproveProjectAnnualBudgetDto(byte[] RowVersion);
 
+public sealed record DeleteProjectAnnualBudgetDto(byte[] RowVersion);
+
+public sealed record WithdrawProjectAnnualBudgetSubmissionDto(byte[] RowVersion, byte[] ApprovalRowVersion);
+
 public sealed record SubmitProjectAnnualBudgetReviewDto(
     string? ApprovalMode,
     IReadOnlyList<PaymentRequestApproverSelectionDto>? Approvers,
@@ -46,7 +50,10 @@ public sealed record ProjectAnnualBudgetReviewEventDto(
     string? Reason,
     int? ApprovalLevel);
 
-public sealed record ProjectAnnualBudgetEligibleApproverDto(Guid UserId, string DisplayName);
+public sealed record ProjectAnnualBudgetEligibleApproverDto(Guid UserId, string DisplayName)
+{
+    public IReadOnlyList<string> EligibleRoleCategories { get; init; } = [];
+}
 
 public sealed record ProjectAnnualBudgetConfiguredApproverDto(
     Guid UserId,
@@ -114,7 +121,12 @@ public sealed record ProjectAnnualBudgetItemDto(
     bool CanSubmit,
     bool CanReview,
     bool CanRevise,
-    IReadOnlyList<ProjectAnnualBudgetReviewEventDto> ReviewHistory);
+    IReadOnlyList<ProjectAnnualBudgetReviewEventDto> ReviewHistory)
+{
+    public bool CanDeleteDraft { get; init; }
+    public bool CanWithdrawSubmission { get; init; }
+    public string? DeleteDraftBlockReason { get; init; }
+}
 
 public sealed record ProjectAnnualBudgetPageDto(
     int CurrentFiscalYear,
@@ -124,7 +136,11 @@ public sealed record ProjectAnnualBudgetPageDto(
     string ProjectCurrency,
     decimal TotalApprovedNewAllocations,
     decimal PendingSubmittedAllocations,
-    decimal? RemainingUnallocatedCeiling);
+    decimal? RemainingUnallocatedCeiling,
+    int? SuggestedFiscalYear = null,
+    decimal? SuggestedNewFunding = null,
+    string? SuggestedNewFundingSource = null,
+    int? MissingClosingFiscalYear = null);
 
 public sealed record PrepareProjectAnnualBudgetClosingDto(
     int FiscalYear,

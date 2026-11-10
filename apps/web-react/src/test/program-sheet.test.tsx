@@ -97,6 +97,23 @@ describe("program management sheet", () => {
     expect(fixtures.create.mock.calls[0]?.[0]).not.toHaveProperty("resourceId");
   });
 
+  it("creates a Program without requiring an initial Program Manager", async () => {
+    renderSheet();
+    fireEvent.change(screen.getByLabelText("Name *"), { target: { value: "Unassigned Program" } });
+    fireEvent.click(screen.getByRole("combobox", { name: "Portfolio" }));
+    fireEvent.click(screen.getByRole("option", { name: "Technology (PORT-01)" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save Program" }));
+
+    await waitFor(() => expect(fixtures.create).toHaveBeenCalledWith({
+      name: "Unassigned Program",
+      description: undefined,
+      portfolioId: "portfolio-1",
+      programManagerId: undefined,
+      status: "Planning",
+      currency: "EUR",
+    }));
+  });
+
   it("shows localized empty and authorization states for Program Manager candidates", () => {
     fixtures.managerCandidates = [];
     renderSheet();

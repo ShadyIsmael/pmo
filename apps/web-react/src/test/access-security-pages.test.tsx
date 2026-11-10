@@ -17,10 +17,10 @@ const fixtures = vi.hoisted(() => ({
     { id: "permission-finances-read", name: "ProjectFinance.View", resource: "ProjectFinance", action: "View", labelEn: "Open Project Finance", labelAr: "فتح مساحة إدارة تمويل المشروع", isActive: true, isAssignable: true, isRoleGranted: false, overrideEffect: null, isEffective: false, isProtectedAdminBaseline: false },
   ] as Array<{ id: string; name: string; resource: string; action: string; labelEn?: string; labelAr?: string; isActive: boolean; isAssignable: boolean; isRoleGranted: boolean; overrideEffect: "Allow" | "Deny" | null; isEffective: boolean; isProtectedAdminBaseline: boolean }>,
   actorPermissions: ["Users.View", "Users.ManageAccounts", "Users.ResetPassword", "Users.SetStatus", "Users.AssignRoles", "UserPermissions.Manage", "Roles.View", "Project.View"] as string[],
-  assignablePermissions: [] as Array<{ id: string; name: string; resource: string; action: string; description?: string; moduleId?: string; moduleNameEn?: string; moduleNameAr?: string; screenId?: string; screenNameEn?: string; screenNameAr?: string; scope?: "Tenant" | "Organization" | "Portfolio" | "Program" | "Project"; canDelegate?: boolean; level?: "View" | "Action"; labelEn?: string; labelAr?: string; descriptionEn?: string; descriptionAr?: string; sensitivity?: "Low" | "Medium" | "High" | "Critical"; isSensitive?: boolean; isAssignable?: boolean; isMandatoryForSystemAdmin?: boolean; allowedCategories?: string[]; requiredPermissionKeys?: string[]; isActive?: boolean }>,
+  assignablePermissions: [] as Array<{ id: string; name: string; resource: string; action: string; description?: string; moduleId?: string; moduleNameEn?: string; moduleNameAr?: string; screenId?: string; screenNameEn?: string; screenNameAr?: string; scope?: "Tenant" | "Organization" | "Portfolio" | "Program" | "Project"; canDelegate?: boolean; canDelegateToCustomRole?: boolean; level?: "View" | "Action"; labelEn?: string; labelAr?: string; descriptionEn?: string; descriptionAr?: string; sensitivity?: "Low" | "Medium" | "High" | "Critical"; isSensitive?: boolean; isAssignable?: boolean; isMandatoryForSystemAdmin?: boolean; allowedCategories?: string[]; requiredPermissionKeys?: string[]; isActive?: boolean }>,
   roles: [] as Array<{ id: string; name: string; description?: string; category?: string; isSystem: boolean; isProtectedSystemAdmin?: boolean; permissionCount: number; assignedUserCount: number }>,
   assignableRoles: [] as Array<{ id: string; name: string; description?: string; category?: string; isSystem: boolean; permissionCount: number; assignedUserCount: number }>,
-  selectedRole: null as null | { id: string; name: string; description: string; category: string; isSystem: boolean; isProtectedSystemAdmin?: boolean; permissionCount: number; assignedUserCount: number; permissions: Array<{ id: string; name: string; resource: string; action: string; moduleId?: string; moduleNameEn?: string; moduleNameAr?: string; screenId?: string; screenNameEn?: string; screenNameAr?: string; scope?: "Tenant" | "Organization" | "Portfolio" | "Program" | "Project"; canDelegate?: boolean; level?: "View" | "Action"; labelEn?: string; labelAr?: string; descriptionEn?: string; descriptionAr?: string; sensitivity?: "Low" | "Medium" | "High" | "Critical"; isSensitive?: boolean; isAssignable?: boolean; isMandatoryForSystemAdmin?: boolean; requiredPermissionKeys?: string[]; isActive?: boolean }> },
+  selectedRole: null as null | { id: string; name: string; description: string; category: string; isSystem: boolean; isProtectedSystemAdmin?: boolean; permissionCount: number; assignedUserCount: number; permissions: Array<{ id: string; name: string; resource: string; action: string; moduleId?: string; moduleNameEn?: string; moduleNameAr?: string; screenId?: string; screenNameEn?: string; screenNameAr?: string; scope?: "Tenant" | "Organization" | "Portfolio" | "Program" | "Project"; canDelegate?: boolean; canDelegateToCustomRole?: boolean; level?: "View" | "Action"; labelEn?: string; labelAr?: string; descriptionEn?: string; descriptionAr?: string; sensitivity?: "Low" | "Medium" | "High" | "Critical"; isSensitive?: boolean; isAssignable?: boolean; isMandatoryForSystemAdmin?: boolean; requiredPermissionKeys?: string[]; isActive?: boolean }> },
   savePermissions: vi.fn(),
   createUser: vi.fn(),
   resetPassword: vi.fn(),
@@ -64,8 +64,8 @@ vi.mock("../features/administration/api/admin", async (importOriginal) => {
   };
 });
 
-function renderWithI18n(element: React.ReactNode) {
-  window.localStorage.setItem("nexus-locale", "en");
+function renderWithI18n(element: React.ReactNode, locale: "en" | "ar" = "en") {
+  window.localStorage.setItem("nexus-locale", locale);
   return render(<I18nProvider>{element}</I18nProvider>);
 }
 
@@ -430,7 +430,7 @@ describe("Access & Security component pages", () => {
     expect(screen.getByRole("dialog", { name: "Edit role" })).toBeInTheDocument();
   });
 
-  it("creates a role from permissions the actor may delegate and preserves selection through search, filters, and collapse", async () => {
+  it("creates a custom role from catalog-authorized permissions and preserves selection through search, filters, and collapse", async () => {
     const user = userEvent.setup();
     fixtures.actorPermissions = ["Roles.View", "Roles.Create", "Roles.ConfigurePermissions", "Project.View", "Project.Edit"];
     fixtures.roles = [];
@@ -456,6 +456,7 @@ describe("Access & Security component pages", () => {
       sensitivity: "Low" as const,
       isSensitive: false,
       canDelegate: true,
+      canDelegateToCustomRole: true,
       isAssignable: true,
       isMandatoryForSystemAdmin: false,
       requiredPermissionKeys: [],
@@ -486,6 +487,7 @@ describe("Access & Security component pages", () => {
       sensitivity: "High" as const,
       isSensitive: true,
       canDelegate: false,
+      canDelegateToCustomRole: true,
       requiredPermissionKeys: ["Project.View"],
     };
     fixtures.assignablePermissions = [projectView, projectEdit, projectDelete];
@@ -495,16 +497,15 @@ describe("Access & Security component pages", () => {
       description: "",
       category: "Management",
       isSystem: false,
-      permissionCount: 2,
+      permissionCount: 3,
       assignedUserCount: 0,
-      permissions: [projectView, projectEdit],
+      permissions: [projectView, projectEdit, projectDelete],
     });
 
     renderWithI18n(<MemoryRouter><RolesPage /></MemoryRouter>);
     await user.click(screen.getByRole("button", { name: "New role" }));
     const editor = await screen.findByRole("dialog", { name: "New role" });
     await user.selectOptions(within(editor).getByRole("combobox", { name: "Category" }), "Management");
-    await user.click(within(editor).getByRole("button", { name: /Project Management/ }));
     await user.click(within(editor).getByRole("button", { name: /Projects/ }));
 
     const viewCheckbox = permissionCheckbox(editor, "permission-create-project-view");
@@ -512,33 +513,37 @@ describe("Access & Security component pages", () => {
     const deleteCheckbox = permissionCheckbox(editor, "permission-create-project-delete");
     expect(viewCheckbox).toBeEnabled();
     expect(editCheckbox).toBeEnabled();
-    expect(deleteCheckbox).toBeDisabled();
-    expect(within(editor).getByText("Your current access does not allow you to grant this permission.")).toBeInTheDocument();
+    expect(fixtures.actorPermissions).not.toContain(projectDelete.name);
+    expect(deleteCheckbox).toBeEnabled();
 
     await user.click(editCheckbox);
+    await user.click(deleteCheckbox);
     expect(permissionCheckbox(editor, "permission-create-project-view")).toBeChecked();
     expect(permissionCheckbox(editor, "permission-create-project-edit")).toBeChecked();
-    expect(within(editor).getByText("2 of 3 active permissions selected")).toBeInTheDocument();
+    expect(permissionCheckbox(editor, "permission-create-project-delete")).toBeChecked();
+    expect(within(editor).getByText("3 of 3 active permissions selected")).toBeInTheDocument();
 
     const search = within(editor).getByRole("textbox", { name: "Search names, keys, and descriptions..." });
     await user.type(search, "Project.Edit");
     expect(permissionCheckbox(editor, "permission-create-project-edit")).toBeChecked();
     expect(permissionCheckbox(editor, "permission-create-project-view")).toBeChecked();
 
-    const moduleToggle = within(editor).getByRole("button", { name: /Project Management/ });
-    await user.click(moduleToggle);
-    expect(moduleToggle).toHaveAttribute("aria-expanded", "false");
-    await user.click(moduleToggle);
+    const projectGroupToggle = within(editor).getByRole("button", { name: /Projects/ });
+    await user.click(projectGroupToggle);
+    expect(projectGroupToggle).toHaveAttribute("aria-expanded", "false");
+    await user.click(projectGroupToggle);
     expect(permissionCheckbox(editor, "permission-create-project-edit")).toBeChecked();
 
     await user.clear(search);
     await user.selectOptions(within(editor).getByRole("combobox", { name: "Permission level" }), "Action");
     expect(permissionCheckbox(editor, "permission-create-project-view")).toBeChecked();
     expect(permissionCheckbox(editor, "permission-create-project-edit")).toBeChecked();
+    expect(permissionCheckbox(editor, "permission-create-project-delete")).toBeChecked();
     await user.selectOptions(within(editor).getByRole("combobox", { name: "Permission level" }), "all");
     await user.selectOptions(within(editor).getByRole("combobox", { name: "Grant status" }), "assigned");
     expect(permissionCheckbox(editor, "permission-create-project-view")).toBeChecked();
     expect(permissionCheckbox(editor, "permission-create-project-edit")).toBeChecked();
+    expect(permissionCheckbox(editor, "permission-create-project-delete")).toBeChecked();
 
     await user.type(within(editor).getByLabelText("Role name"), "Project Editor");
     await user.click(within(editor).getByRole("button", { name: "Save role" }));
@@ -546,12 +551,12 @@ describe("Access & Security component pages", () => {
       roleId: null,
       input: expect.objectContaining({
         name: "Project Editor",
-        permissionIds: expect.arrayContaining([projectView.id, projectEdit.id]),
+        permissionIds: expect.arrayContaining([projectView.id, projectEdit.id, projectDelete.id]),
       }),
     })));
     const savedInput = fixtures.saveRole.mock.calls[0][0].input;
-    expect(savedInput.permissionIds).toHaveLength(2);
-    expect(savedInput.permissionIds).not.toContain(projectDelete.id);
+    expect(savedInput.permissionIds).toHaveLength(3);
+    expect(savedInput.permissionIds).toContain(projectDelete.id);
     await waitFor(() => expect(fixtures.refreshUser).toHaveBeenCalledTimes(1));
   });
 
@@ -617,7 +622,6 @@ describe("Access & Security component pages", () => {
     await user.click(screen.getByRole("button", { name: /System Admin/ }));
     await user.click(screen.getByRole("button", { name: "Edit" }));
     const editor = await screen.findByRole("dialog", { name: "Edit role" });
-    await user.click(within(editor).getByRole("button", { name: /Administration 2 of 2 selected/ }));
     await user.click(within(editor).getByRole("button", { name: /Roles & Permissions/ }));
     const viewCheckbox = within(editor).getByRole("checkbox", { name: /View role permissions/ });
     const configureCheckbox = within(editor).getByRole("checkbox", { name: /Configure role permissions/ });
@@ -652,6 +656,7 @@ describe("Access & Security component pages", () => {
       isSensitive: false,
       scope: "Project" as const,
       canDelegate: true,
+      canDelegateToCustomRole: true,
       isAssignable: true,
       requiredPermissionKeys: [],
       isActive: true,
@@ -692,7 +697,6 @@ describe("Access & Security component pages", () => {
 
     const editRole = await screen.findByRole("dialog", { name: "Edit role" });
     expect(within(editRole).getByLabelText("Role name")).toBeDisabled();
-    await user.click(within(editRole).getByRole("button", { name: /Project Management/ }));
     await user.click(within(editRole).getByRole("button", { name: /Projects/ }));
     const editPermission = within(editRole).getByRole("checkbox", { name: /Edit project data/ });
     expect(editPermission).toBeEnabled();
@@ -727,6 +731,7 @@ describe("Access & Security component pages", () => {
       descriptionEn: "Open the project workspace and review project details.",
       scope: "Project" as const,
       canDelegate: true,
+      canDelegateToCustomRole: true,
       descriptionAr: "افتح مساحة المشروع وراجع تفاصيل المشروع.",
       sensitivity: "Low" as const,
       isSensitive: false,
@@ -784,8 +789,11 @@ describe("Access & Security component pages", () => {
     await user.clear(search);
     await user.type(search, "Project.Edit");
     const editPermission = within(editor).getByRole("checkbox", { name: /Edit project records/ });
+    const editPermissionWithCanonicalKey = within(editor).getByRole("checkbox", { name: /\(Project\.Edit\)$/ });
     const requiredViewPermission = permissionCheckbox(editor, "permission-project-view");
     expect(editPermission).toBeInTheDocument();
+    expect(editPermissionWithCanonicalKey).toBe(editPermission);
+    expect(within(editor).getByText("Project.Edit")).toBeInTheDocument();
     expect(requiredViewPermission).toBeInTheDocument();
     expect(within(editor).getAllByText(/View project records/).length).toBeGreaterThan(1);
     expect(within(editor).getByText(/Requires:.*View project records/)).toBeInTheDocument();
@@ -825,6 +833,7 @@ describe("Access & Security component pages", () => {
       descriptionEn: "Open the project workspace and review project details.",
       scope: "Project" as const,
       canDelegate: true,
+      canDelegateToCustomRole: true,
       descriptionAr: "افتح مساحة المشروع وراجع تفاصيل المشروع.",
       sensitivity: "Low" as const,
       isSensitive: false,
@@ -858,6 +867,7 @@ describe("Access & Security component pages", () => {
       sensitivity: "High" as const,
       isSensitive: true,
       canDelegate: false,
+      canDelegateToCustomRole: true,
       requiredPermissionKeys: ["Project.View"],
     };
     const portfolioView = {
@@ -889,10 +899,6 @@ describe("Access & Security component pages", () => {
     const sensitivityFilter = within(editor).getByRole("combobox", { name: "Sensitivity" });
 
     await user.selectOptions(moduleFilter, "project-management");
-    const moduleToggle = within(editor).getByRole("button", { name: /Project Management/ });
-    expect(moduleToggle).toHaveAttribute("aria-expanded", "false");
-    await user.click(moduleToggle);
-    expect(moduleToggle).toHaveAttribute("aria-expanded", "true");
     const screenToggle = within(editor).getByRole("button", { name: /Projects/ });
     expect(screenToggle).toHaveAttribute("aria-expanded", "false");
     await user.click(screenToggle);
@@ -908,8 +914,11 @@ describe("Access & Security component pages", () => {
     await user.selectOptions(sensitivityFilter, "High");
     const deletePermission = within(editor).getByRole("checkbox", { name: /Delete project records/ });
     expect(deletePermission).toBeInTheDocument();
-    expect(deletePermission).toBeDisabled();
-    expect(within(editor).getByText("Your current access does not allow you to grant this permission.")).toBeInTheDocument();
+    expect(fixtures.actorPermissions).not.toContain(projectDelete.name);
+    expect(deletePermission).toBeEnabled();
+    expect(within(editor).queryByText("Your current access does not allow you to grant this permission.")).not.toBeInTheDocument();
+    await user.click(deletePermission);
+    expect(deletePermission).toBeChecked();
     expect(within(editor).queryByRole("checkbox", { name: /Edit project records/ })).not.toBeInTheDocument();
 
     await user.selectOptions(sensitivityFilter, "all");
@@ -919,14 +928,14 @@ describe("Access & Security component pages", () => {
     await user.selectOptions(grantFilter, "assigned");
     expect(within(editor).getByRole("checkbox", { name: /View project records/ })).toBeChecked();
     expect(within(editor).getByRole("checkbox", { name: /Edit project records/ })).toBeChecked();
-    expect(within(editor).queryByRole("checkbox", { name: /Delete project records/ })).not.toBeInTheDocument();
+    expect(within(editor).getByRole("checkbox", { name: /Delete project records/ })).toBeChecked();
 
     await user.selectOptions(grantFilter, "unassigned");
     expect(within(editor).queryByRole("checkbox", { name: /Edit project records/ })).not.toBeInTheDocument();
-    expect(within(editor).getByRole("checkbox", { name: /Delete project records/ })).toBeInTheDocument();
+    expect(within(editor).queryByRole("checkbox", { name: /Delete project records/ })).not.toBeInTheDocument();
   });
 
-  it("uses the controlled role categories and keeps cross-category View and Action permissions visible", async () => {
+  it("allows role administrators to grant permissions across Role Categories and saves the selection", async () => {
     const user = userEvent.setup();
     fixtures.actorPermissions = ["Roles.View", "Roles.Create", "Roles.ConfigurePermissions"];
     const permissionBase = {
@@ -939,6 +948,7 @@ describe("Access & Security component pages", () => {
       screenNameAr: "المشاريع",
       scope: "Project" as const,
       canDelegate: true,
+      canDelegateToCustomRole: true,
       sensitivity: "Low" as const,
       isSensitive: false,
       isAssignable: true,
@@ -993,6 +1003,16 @@ describe("Access & Security component pages", () => {
       allowedCategories: ["Management", "Operation"],
     };
     fixtures.assignablePermissions = [projectView, managementView, managementAction, crossCategoryAction];
+    fixtures.saveRole.mockResolvedValue({
+      id: "created-cross-category-role",
+      name: "Cross Category Reviewer",
+      description: "",
+      category: "Operation",
+      isSystem: false,
+      permissionCount: 4,
+      assignedUserCount: 0,
+      permissions: [projectView, managementView, managementAction, crossCategoryAction],
+    });
 
     renderWithI18n(<MemoryRouter><RolesPage /></MemoryRouter>);
     await user.click(screen.getByRole("button", { name: "New role" }));
@@ -1000,17 +1020,31 @@ describe("Access & Security component pages", () => {
     const category = within(editor).getByRole("combobox", { name: "Category" });
     expect([...category.querySelectorAll("option")].map((option) => option.value)).toEqual(["", "Tenant", "Organization", "Management", "Operation", "Business"]);
     await user.selectOptions(category, "Operation");
-    await user.click(within(editor).getByRole("button", { name: /Project Management/ }));
     await user.click(within(editor).getByRole("button", { name: /Projects/ }));
 
     expect(permissionCheckbox(editor, projectView.id)).toBeInTheDocument();
-    expect(permissionCheckbox(editor, managementView.id)).toBeDisabled();
-    expect(permissionCheckbox(editor, managementAction.id)).toBeDisabled();
+    expect(permissionCheckbox(editor, managementView.id)).toBeEnabled();
+    expect(permissionCheckbox(editor, managementAction.id)).toBeEnabled();
     expect(permissionCheckbox(editor, crossCategoryAction.id)).toBeEnabled();
-    expect(within(editor).getAllByText("Unavailable for Operation roles. Allowed categories: Management.")).toHaveLength(2);
+    await user.click(permissionCheckbox(editor, managementView.id));
+    await user.click(permissionCheckbox(editor, managementAction.id));
+    await user.click(permissionCheckbox(editor, crossCategoryAction.id));
+    expect(permissionCheckbox(editor, projectView.id)).toBeChecked();
+    expect(permissionCheckbox(editor, managementView.id)).toBeChecked();
+    expect(permissionCheckbox(editor, managementAction.id)).toBeChecked();
+    expect(permissionCheckbox(editor, crossCategoryAction.id)).toBeChecked();
+    await user.type(within(editor).getByLabelText("Role name"), "Cross Category Reviewer");
+    await user.click(within(editor).getByRole("button", { name: "Save role" }));
+    await waitFor(() => expect(fixtures.saveRole).toHaveBeenCalledWith(expect.objectContaining({
+      roleId: null,
+      input: expect.objectContaining({
+        category: "Operation",
+        permissionIds: expect.arrayContaining([projectView.id, managementView.id, managementAction.id, crossCategoryAction.id]),
+      }),
+    })));
   });
 
-  it("enables Project Plan create/edit from catalog delegation and category metadata", async () => {
+  it("keeps delegable Project Plan actions enabled across Role Categories", async () => {
     const user = userEvent.setup();
     fixtures.actorPermissions = ["Roles.View", "Roles.Create", "Roles.ConfigurePermissions"];
     const planningView = {
@@ -1031,6 +1065,7 @@ describe("Access & Security component pages", () => {
       descriptionEn: "View plans in the authorized project scope.",
       descriptionAr: "عرض الخطط ضمن نطاق المشروع المصرح به.",
       canDelegate: true,
+      canDelegateToCustomRole: true,
       sensitivity: "Low" as const,
       isSensitive: false,
       isAssignable: true,
@@ -1050,6 +1085,7 @@ describe("Access & Security component pages", () => {
       descriptionEn: "Edit plan activities and content in the authorized project scope.",
       descriptionAr: "تعديل أنشطة الخطة ومحتواها ضمن نطاق المشروع المصرح به.",
       canDelegate: true,
+      canDelegateToCustomRole: true,
       sensitivity: "High" as const,
       isSensitive: true,
       requiredPermissionKeys: ["Planning.View"],
@@ -1066,6 +1102,7 @@ describe("Access & Security component pages", () => {
       descriptionEn: "Create a Project Plan in the authorized project scope.",
       descriptionAr: "إنشاء خطة مشروع ضمن نطاق المشروع المصرح به.",
       canDelegate: true,
+      canDelegateToCustomRole: true,
       allowedCategories: ["Management"],
     };
     fixtures.assignablePermissions = [planningView, planningEdit, projectPlanCreate];
@@ -1075,7 +1112,6 @@ describe("Access & Security component pages", () => {
     const editor = await screen.findByRole("dialog", { name: "New role" });
     const category = within(editor).getByRole("combobox", { name: "Category" });
     await user.selectOptions(category, "Management");
-    await user.click(within(editor).getByRole("button", { name: /Project Delivery/ }));
     const planningToggle = within(editor).getAllByRole("button", { name: /Planning/ })
       .find((button) => button.getAttribute("aria-expanded") === "false");
     if (!planningToggle) throw new Error("Project Planning permissions section did not render");
@@ -1087,12 +1123,419 @@ describe("Access & Security component pages", () => {
     expect(within(editor).getByText("Edit project plans")).toBeInTheDocument();
 
     await user.selectOptions(category, "Operation");
-    expect(permissionCheckbox(editor, projectPlanCreate.id)).toBeDisabled();
+    expect(permissionCheckbox(editor, projectPlanCreate.id)).toBeEnabled();
     expect(permissionCheckbox(editor, planningEdit.id)).toBeEnabled();
-    expect(within(editor).getByText("Unavailable for Operation roles. Allowed categories: Management.")).toBeInTheDocument();
+    expect(within(editor).queryByText(/Unavailable for Operation roles/)).not.toBeInTheDocument();
   });
 
-  it("shows the server delegation restriction when a Management role cannot receive ProjectPlan.Create", async () => {
+  it("selects and saves Annual Budget permissions across Role Categories", async () => {
+    const user = userEvent.setup();
+    fixtures.actorPermissions = ["Roles.View", "Roles.Create", "Roles.ConfigurePermissions", "TenantAdministration.ManageScope"];
+    const annualBudgetView = {
+      id: "annual-budget-view",
+      name: "ProjectAnnualBudget.View",
+      resource: "ProjectAnnualBudget",
+      action: "View",
+      moduleId: "financial-management",
+      moduleNameEn: "Financial Management",
+      moduleNameAr: "الإدارة المالية",
+      screenId: "annual-budgets",
+      screenNameEn: "Annual Budgets",
+      screenNameAr: "الموازنات السنوية",
+      scope: "Project" as const,
+      level: "View" as const,
+      labelEn: "View Annual Budgets",
+      labelAr: "عرض الميزانيات السنوية",
+      descriptionEn: "View annual budgets in the authorized Project scope.",
+      descriptionAr: "عرض الميزانيات السنوية ضمن نطاق المشروع المصرح به.",
+      canDelegate: true,
+      canDelegateToCustomRole: true,
+      sensitivity: "High" as const,
+      isSensitive: true,
+      isAssignable: true,
+      isMandatoryForSystemAdmin: false,
+      requiredPermissionKeys: [],
+      isActive: true,
+      allowedCategories: ["Business", "Management", "Operation"],
+    };
+    const annualBudgetCreate = {
+      ...annualBudgetView,
+      id: "annual-budget-create",
+      name: "ProjectAnnualBudget.Create",
+      action: "Create",
+      level: "Action" as const,
+      labelEn: "Create Annual Budget",
+      labelAr: "إنشاء ميزانية سنوية",
+      descriptionEn: "Create an annual-budget draft in the authorized Project scope.",
+      descriptionAr: "إنشاء مسودة ميزانية سنوية ضمن نطاق المشروع المصرح به.",
+      requiredPermissionKeys: ["ProjectAnnualBudget.View"],
+    };
+    const annualBudgetApprove = {
+      ...annualBudgetCreate,
+      id: "annual-budget-approve",
+      name: "ProjectAnnualBudget.Approve",
+      action: "Approve",
+      labelEn: "Review annual budget",
+      labelAr: "مراجعة الميزانية السنوية",
+      descriptionEn: "Decide an assigned annual-budget review.",
+      descriptionAr: "اتخاذ قرار في مراجعة ميزانية سنوية مُسندة.",
+      requiredPermissionKeys: [],
+      allowedCategories: ["Management"],
+    };
+    fixtures.assignablePermissions = [annualBudgetView, annualBudgetCreate, annualBudgetApprove];
+    fixtures.saveRole.mockResolvedValue({
+      id: "created-annual-budget-management",
+      name: "Annual Budget Management",
+      description: "",
+      category: "Management",
+      isSystem: false,
+      permissionCount: 2,
+      assignedUserCount: 0,
+      permissions: [annualBudgetView, annualBudgetCreate],
+    });
+
+    renderWithI18n(<MemoryRouter><RolesPage /></MemoryRouter>);
+    await user.click(screen.getByRole("button", { name: "New role" }));
+    const editor = await screen.findByRole("dialog", { name: "New role" });
+    await user.selectOptions(within(editor).getByRole("combobox", { name: "Category" }), "Management");
+    const annualBudgetScreenToggle = within(editor).getAllByRole("button", { name: /Annual Budgets/ })
+      .find((button) => button.getAttribute("aria-expanded") === "false");
+    if (annualBudgetScreenToggle) await user.click(annualBudgetScreenToggle);
+
+    const viewCheckbox = permissionCheckbox(editor, annualBudgetView.id);
+    const createCheckbox = permissionCheckbox(editor, annualBudgetCreate.id);
+    const approveCheckbox = permissionCheckbox(editor, annualBudgetApprove.id);
+    expect(createCheckbox).toBeEnabled();
+    expect(approveCheckbox).toBeEnabled();
+    await user.click(createCheckbox);
+    expect(viewCheckbox).toBeChecked();
+    expect(createCheckbox).toBeChecked();
+
+    await user.selectOptions(within(editor).getByRole("combobox", { name: "Category" }), "Operation");
+    expect(createCheckbox).toBeEnabled();
+    expect(approveCheckbox).toBeEnabled();
+    await user.click(approveCheckbox);
+    expect(approveCheckbox).toBeChecked();
+    await user.type(within(editor).getByLabelText("Role name"), "Annual Budget Management");
+    await user.click(within(editor).getByRole("button", { name: "Save role" }));
+
+    await waitFor(() => expect(fixtures.saveRole).toHaveBeenCalledWith(expect.objectContaining({
+      roleId: null,
+      input: expect.objectContaining({
+        name: "Annual Budget Management",
+        category: "Operation",
+        permissionIds: expect.arrayContaining([annualBudgetApprove.id, annualBudgetCreate.id, annualBudgetView.id]),
+      }),
+    })));
+    expect(fixtures.saveRole.mock.calls[0][0].input.permissionIds).toHaveLength(3);
+    await waitFor(() => expect(fixtures.refreshUser).toHaveBeenCalledTimes(1));
+  });
+
+  it("grants delegated Budget Revisions actions to a custom role across categories without actor effective grants", async () => {
+    const user = userEvent.setup();
+    fixtures.actorPermissions = ["Roles.View", "Roles.Create", "Roles.ConfigurePermissions"];
+    const budgetRevisionView = {
+      id: "budget-revision-view",
+      name: "BudgetRevision.View",
+      resource: "BudgetRevision",
+      action: "View",
+      moduleId: "financial-management",
+      moduleNameEn: "Financial Management",
+      moduleNameAr: "\u0627\u0644\u0625\u062f\u0627\u0631\u0629 \u0627\u0644\u0645\u0627\u0644\u064a\u0629",
+      screenId: "budget-revisions",
+      screenNameEn: "Budget Revisions",
+      screenNameAr: "\u0645\u0631\u0627\u062c\u0639\u0627\u062a \u0627\u0644\u0645\u064a\u0632\u0627\u0646\u064a\u0629",
+      scope: "Project" as const,
+      level: "View" as const,
+      labelEn: "View",
+      labelAr: "\u0639\u0631\u0636",
+      descriptionEn: "View budget revisions in the authorized Project scope.",
+      descriptionAr: "\u0639\u0631\u0636 \u0645\u0631\u0627\u062c\u0639\u0627\u062a \u0627\u0644\u0645\u064a\u0632\u0627\u0646\u064a\u0629 \u0636\u0645\u0646 \u0646\u0637\u0627\u0642 \u0627\u0644\u0645\u0634\u0631\u0648\u0639 \u0627\u0644\u0645\u0635\u0631\u062d \u0628\u0647.",
+      canDelegate: true,
+      canDelegateToCustomRole: true,
+      sensitivity: "Low" as const,
+      isSensitive: false,
+      isAssignable: true,
+      isMandatoryForSystemAdmin: false,
+      requiredPermissionKeys: [],
+      isActive: true,
+      allowedCategories: ["Management"],
+    };
+    const budgetRevisionApprove = {
+      ...budgetRevisionView,
+      id: "budget-revision-approve",
+      name: "BudgetRevision.Approve",
+      action: "Approve",
+      level: "Action" as const,
+      labelEn: "Approve or reject",
+      labelAr: "\u0627\u0639\u062a\u0645\u0627\u062f \u0623\u0648 \u0631\u0641\u0636",
+      descriptionEn: "Approve or reject a submitted budget revision.",
+      descriptionAr: "\u0627\u0639\u062a\u0645\u0627\u062f \u0645\u0631\u0627\u062c\u0639\u0629 \u0645\u064a\u0632\u0627\u0646\u064a\u0629 \u0645\u0642\u062f\u0645\u0629 \u0623\u0648 \u0631\u0641\u0636\u0647\u0627.",
+      sensitivity: "High" as const,
+      isSensitive: true,
+      requiredPermissionKeys: ["BudgetRevision.View"],
+    };
+    const budgetRevisionCreate = {
+      ...budgetRevisionView,
+      id: "budget-revision-create",
+      name: "BudgetRevision.Create",
+      action: "Create",
+      level: "Action" as const,
+      labelEn: "Create",
+      labelAr: "\u0625\u0646\u0634\u0627\u0621",
+      descriptionEn: "Create a budget revision draft.",
+      descriptionAr: "\u0625\u0646\u0634\u0627\u0621 \u0645\u0633\u0648\u062f\u0629 \u0645\u0631\u0627\u062c\u0639\u0629 \u0645\u064a\u0632\u0627\u0646\u064a\u0629.",
+      sensitivity: "High" as const,
+      isSensitive: true,
+      requiredPermissionKeys: ["BudgetRevision.View"],
+    };
+    const budgetRevisionEditDraft = {
+      ...budgetRevisionCreate,
+      id: "budget-revision-edit-draft",
+      name: "BudgetRevision.EditDraft",
+      action: "EditDraft",
+      labelEn: "Edit draft",
+      labelAr: "\u062a\u0639\u062f\u064a\u0644 \u0627\u0644\u0645\u0633\u0648\u062f\u0629",
+      descriptionEn: "Edit a draft budget revision.",
+      descriptionAr: "\u062a\u0639\u062f\u064a\u0644 \u0645\u0633\u0648\u062f\u0629 \u0645\u0631\u0627\u062c\u0639\u0629 \u0627\u0644\u0645\u064a\u0632\u0627\u0646\u064a\u0629.",
+    };
+    const budgetRevisionPermissions = [budgetRevisionView, budgetRevisionApprove, budgetRevisionCreate, budgetRevisionEditDraft];
+    fixtures.assignablePermissions = budgetRevisionPermissions;
+    fixtures.saveRole.mockResolvedValue({
+      id: "created-budget-revisions-operation",
+      name: "Budget Revisions Operator",
+      description: "",
+      category: "Operation",
+      isSystem: false,
+      permissionCount: budgetRevisionPermissions.length,
+      assignedUserCount: 0,
+      permissions: budgetRevisionPermissions,
+    });
+
+    renderWithI18n(<MemoryRouter><RolesPage /></MemoryRouter>);
+    await user.click(screen.getByRole("button", { name: "New role" }));
+    const editor = await screen.findByRole("dialog", { name: "New role" });
+    await user.selectOptions(within(editor).getByRole("combobox", { name: "Category" }), "Operation");
+    const budgetRevisionsToggle = within(editor).getAllByRole("button", { name: /Budget Revisions/ })
+      .find((button) => button.getAttribute("aria-expanded") === "false");
+    if (budgetRevisionsToggle) await user.click(budgetRevisionsToggle);
+
+    for (const permission of budgetRevisionPermissions) {
+      expect(fixtures.actorPermissions).not.toContain(permission.name);
+      expect(permissionCheckbox(editor, permission.id)).toBeEnabled();
+    }
+    await user.click(permissionCheckbox(editor, budgetRevisionView.id));
+    await user.click(permissionCheckbox(editor, budgetRevisionApprove.id));
+    await user.click(permissionCheckbox(editor, budgetRevisionCreate.id));
+    await user.click(permissionCheckbox(editor, budgetRevisionEditDraft.id));
+    for (const permission of budgetRevisionPermissions) {
+      expect(permissionCheckbox(editor, permission.id)).toBeChecked();
+    }
+
+    await user.type(within(editor).getByLabelText("Role name"), "Budget Revisions Operator");
+    await user.click(within(editor).getByRole("button", { name: "Save role" }));
+    await waitFor(() => expect(fixtures.saveRole).toHaveBeenCalledWith(expect.objectContaining({
+      roleId: null,
+      input: expect.objectContaining({
+        name: "Budget Revisions Operator",
+        category: "Operation",
+        permissionIds: expect.arrayContaining(budgetRevisionPermissions.map((permission) => permission.id)),
+      }),
+    })));
+    expect(fixtures.saveRole.mock.calls[0][0].input.permissionIds).toHaveLength(budgetRevisionPermissions.length);
+    await waitFor(() => expect(fixtures.refreshUser).toHaveBeenCalledTimes(1));
+  });
+  it("allows an explicit Annual Budget grant to the protected Admin role while locking its baseline", async () => {
+    const user = userEvent.setup();
+    fixtures.actorPermissions = ["Roles.View", "Roles.ConfigurePermissions"];
+    const adminRoleView = {
+      id: "protected-admin-roles-view",
+      name: "Roles.View",
+      resource: "Roles",
+      action: "View",
+      moduleId: "administration",
+      moduleNameEn: "Administration",
+      moduleNameAr: "الإدارة",
+      screenId: "roles",
+      screenNameEn: "Roles & Permissions",
+      screenNameAr: "الأدوار والصلاحيات",
+      scope: "Tenant" as const,
+      level: "View" as const,
+      labelEn: "View role permissions",
+      labelAr: "عرض صلاحيات الأدوار",
+      descriptionEn: "View tenant role permissions.",
+      descriptionAr: "عرض صلاحيات أدوار المستأجر.",
+      sensitivity: "Low" as const,
+      isSensitive: false,
+      isAssignable: true,
+      isMandatoryForSystemAdmin: true,
+      requiredPermissionKeys: [],
+      isActive: true,
+      allowedCategories: ["Tenant"],
+    };
+    const configureRoles = {
+      ...adminRoleView,
+      id: "protected-admin-roles-configure",
+      name: "Roles.ConfigurePermissions",
+      action: "ConfigurePermissions",
+      level: "Action" as const,
+      labelEn: "Configure role permissions",
+      labelAr: "إعداد صلاحيات الأدوار",
+      sensitivity: "Critical" as const,
+      isSensitive: true,
+    };
+    const annualBudgetView = {
+      id: "protected-admin-budget-view",
+      name: "ProjectAnnualBudget.View",
+      resource: "ProjectAnnualBudget",
+      action: "View",
+      moduleId: "financial-management",
+      moduleNameEn: "Financial Management",
+      moduleNameAr: "الإدارة المالية",
+      screenId: "annual-budgets",
+      screenNameEn: "Annual Budgets",
+      screenNameAr: "الموازنات السنوية",
+      scope: "Project" as const,
+      level: "View" as const,
+      labelEn: "View Annual Budgets",
+      labelAr: "عرض الميزانيات السنوية",
+      descriptionEn: "View annual budgets in the authorized Project scope.",
+      descriptionAr: "عرض الميزانيات السنوية ضمن نطاق المشروع المصرح به.",
+      canDelegate: true,
+      sensitivity: "High" as const,
+      isSensitive: true,
+      isAssignable: true,
+      isMandatoryForSystemAdmin: false,
+      requiredPermissionKeys: [],
+      isActive: true,
+      allowedCategories: ["Business", "Management", "Operation"],
+    };
+    const annualBudgetCreate = {
+      ...annualBudgetView,
+      id: "protected-admin-budget-create",
+      name: "ProjectAnnualBudget.Create",
+      action: "Create",
+      level: "Action" as const,
+      labelEn: "Create Annual Budget",
+      labelAr: "إنشاء ميزانية سنوية",
+      descriptionEn: "Create an annual-budget draft in the authorized Project scope.",
+      descriptionAr: "إنشاء مسودة ميزانية سنوية ضمن نطاق المشروع المصرح به.",
+      requiredPermissionKeys: ["ProjectAnnualBudget.View"],
+    };
+    const annualBudgetConfigureDraftApproval = {
+      ...annualBudgetCreate,
+      id: "protected-admin-budget-configure-draft-approval",
+      name: "ProjectAnnualBudget.ConfigureDraftApproval",
+      action: "ConfigureDraftApproval",
+      labelEn: "Configure Approval",
+      labelAr: "تهيئة الاعتماد",
+      descriptionEn: "Configure the approval plan for an annual-budget draft.",
+      descriptionAr: "تهيئة خطة اعتماد مسودة الميزانية السنوية.",
+      requiredPermissionKeys: ["ProjectAnnualBudget.View"],
+      allowedCategories: ["Management"],
+    };
+    const annualBudgetDelete = {
+      ...annualBudgetCreate,
+      id: "protected-admin-budget-delete",
+      name: "ProjectAnnualBudget.Delete",
+      action: "Delete",
+      labelEn: "Delete Draft Budget",
+      labelAr: "حذف مسودة الميزانية",
+      descriptionEn: "Delete an eligible Draft annual budget that has never been submitted, provided no protected financial dependency exists.",
+      descriptionAr: "حذف مسودة ميزانية سنوية مؤهلة لم تُرسل من قبل، بشرط عدم وجود ارتباط مالي محمي.",
+      sensitivity: "Critical" as const,
+      allowedCategories: ["Management"],
+    };
+    const annualBudgetWithdraw = {
+      ...annualBudgetCreate,
+      id: "protected-admin-budget-withdraw",
+      name: "ProjectAnnualBudget.Withdraw",
+      action: "Withdraw",
+      labelEn: "Withdraw Submission",
+      labelAr: "سحب الإرسال",
+      descriptionEn: "Withdraw a Pending Approval Annual Budget submission and cancel its active approval request only when the workflow permits; preserve the prior approval history.",
+      descriptionAr: "سحب إرسال ميزانية سنوية قيد المراجعة وإلغاء طلب الاعتماد النشط عندما يسمح مسار العمل بذلك، مع الاحتفاظ بسجل الاعتماد السابق.",
+      sensitivity: "High" as const,
+      allowedCategories: ["Management"],
+    };
+    const adminRole = {
+      id: "protected-admin-role",
+      name: "System Admin",
+      description: "Protected tenant administrator",
+      category: "System",
+      isSystem: true,
+      isProtectedSystemAdmin: true,
+      permissionCount: 2,
+      assignedUserCount: 1,
+      permissions: [adminRoleView, configureRoles],
+    };
+    fixtures.roles = [adminRole];
+    fixtures.selectedRole = adminRole;
+    fixtures.assignablePermissions = [adminRoleView, configureRoles, annualBudgetView, annualBudgetCreate, annualBudgetConfigureDraftApproval, annualBudgetDelete, annualBudgetWithdraw];
+    fixtures.saveRole.mockResolvedValue({
+      ...adminRole,
+      permissionCount: 6,
+      permissions: [...adminRole.permissions, annualBudgetView, annualBudgetCreate, annualBudgetDelete, annualBudgetWithdraw],
+    });
+
+    const rendered = renderWithI18n(<MemoryRouter><RolesPage /></MemoryRouter>);
+    await user.click(screen.getByRole("button", { name: /System Admin/ }));
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    const editor = await screen.findByRole("dialog", { name: "Edit role" });
+    const roleScreenToggle = within(editor).getAllByRole("button", { name: /Roles & Permissions/ })
+      .find((button) => button.getAttribute("aria-expanded") === "false");
+    if (roleScreenToggle) await user.click(roleScreenToggle);
+    const baselineView = permissionCheckbox(editor, adminRoleView.id);
+    const baselineConfigure = permissionCheckbox(editor, configureRoles.id);
+    const annualBudgetScreenToggle = within(editor).getAllByRole("button", { name: /Annual Budgets/ })
+      .find((button) => button.getAttribute("aria-expanded") === "false");
+    if (annualBudgetScreenToggle) await user.click(annualBudgetScreenToggle);
+    const budgetView = permissionCheckbox(editor, annualBudgetView.id);
+    const budgetCreate = permissionCheckbox(editor, annualBudgetCreate.id);
+    const budgetConfigureDraftApproval = permissionCheckbox(editor, annualBudgetConfigureDraftApproval.id);
+    const budgetDelete = permissionCheckbox(editor, annualBudgetDelete.id);
+    const budgetWithdraw = permissionCheckbox(editor, annualBudgetWithdraw.id);
+
+    expect(baselineView).toBeChecked();
+    expect(baselineView).toBeDisabled();
+    expect(baselineConfigure).toBeChecked();
+    expect(baselineConfigure).toBeDisabled();
+    expect(budgetConfigureDraftApproval).toBeDisabled();
+    expect(within(editor).getByText("This first-time grant is not available for this system-managed role.")).toBeInTheDocument();
+    expect(budgetCreate).toBeEnabled();
+    expect(budgetDelete).toBeEnabled();
+    expect(budgetWithdraw).toBeEnabled();
+    expect(within(editor).getByText(annualBudgetDelete.descriptionEn)).toBeInTheDocument();
+    expect(within(editor).getByText(annualBudgetWithdraw.descriptionEn)).toBeInTheDocument();
+    await user.click(budgetCreate);
+    await user.click(budgetDelete);
+    await user.click(budgetWithdraw);
+    expect(budgetView).toBeChecked();
+
+    await user.click(within(editor).getByRole("button", { name: "Save role" }));
+    const confirmation = await screen.findByRole("alertdialog", { name: "Save permission changes?" });
+    await user.click(within(confirmation).getByRole("button", { name: "Save role" }));
+    await waitFor(() => expect(fixtures.saveRole).toHaveBeenCalledWith(expect.objectContaining({
+      roleId: adminRole.id,
+      input: expect.objectContaining({ permissionIds: expect.arrayContaining([adminRoleView.id, configureRoles.id, annualBudgetView.id, annualBudgetCreate.id, annualBudgetDelete.id, annualBudgetWithdraw.id]) }),
+    })));
+    await waitFor(() => expect(fixtures.refreshUser).toHaveBeenCalledTimes(1));
+
+    rendered.unmount();
+    renderWithI18n(<MemoryRouter><RolesPage /></MemoryRouter>, "ar");
+    await user.click(screen.getByRole("button", { name: /System Admin/ }));
+    await user.click(screen.getByRole("button", { name: "تعديل" }));
+    const arabicEditor = await screen.findByRole("dialog", { name: "تعديل الدور" });
+    const arabicAnnualBudgetScreenToggle = within(arabicEditor).getAllByRole("button", { name: /الموازنات السنوية/ })
+      .find((button) => button.getAttribute("aria-expanded") === "false");
+    if (arabicAnnualBudgetScreenToggle) await user.click(arabicAnnualBudgetScreenToggle);
+    expect(within(arabicEditor).getByText(annualBudgetDelete.labelAr)).toBeInTheDocument();
+    expect(within(arabicEditor).getByText(annualBudgetDelete.descriptionAr)).toBeInTheDocument();
+    expect(within(arabicEditor).getByText(annualBudgetWithdraw.labelAr)).toBeInTheDocument();
+    expect(within(arabicEditor).getByText(annualBudgetWithdraw.descriptionAr)).toBeInTheDocument();
+  });
+
+  it("explains when an action is disabled because its required permission cannot be granted", async () => {
     const user = userEvent.setup();
     fixtures.actorPermissions = ["Roles.View", "Roles.Create", "Roles.ConfigurePermissions"];
     fixtures.assignablePermissions = [{
@@ -1112,7 +1555,7 @@ describe("Access & Security component pages", () => {
       labelAr: "عرض خطط المشاريع",
       descriptionEn: "View plans in the authorized project scope.",
       descriptionAr: "عرض الخطط ضمن نطاق المشروع المصرح به.",
-      canDelegate: true,
+      canDelegate: false,
       sensitivity: "Low",
       isSensitive: false,
       isAssignable: true,
@@ -1137,7 +1580,8 @@ describe("Access & Security component pages", () => {
       labelAr: "إنشاء خطط المشاريع",
       descriptionEn: "Create a Project Plan in the authorized project scope.",
       descriptionAr: "إنشاء خطة مشروع ضمن نطاق المشروع المصرح به.",
-      canDelegate: false,
+      canDelegate: true,
+      canDelegateToCustomRole: true,
       sensitivity: "High",
       isSensitive: true,
       isAssignable: true,
@@ -1151,15 +1595,13 @@ describe("Access & Security component pages", () => {
     await user.click(screen.getByRole("button", { name: /New role/ }));
     const editor = await screen.findByRole("dialog", { name: "New role" });
     await user.selectOptions(within(editor).getByRole("combobox", { name: "Category" }), "Management");
-    await user.click(within(editor).getByRole("button", { name: /Project Delivery/ }));
-    const planningToggle = within(editor).getByRole("button", { name: /Planning/ });
-    await user.click(planningToggle);
+    await user.click(within(editor).getByRole("button", { name: /Planning/ }));
 
     expect(permissionCheckbox(editor, "project-plan-create-not-delegable")).toBeDisabled();
-    expect(within(editor).getByText("Your current access does not allow you to grant this permission.")).toBeInTheDocument();
+    expect(within(editor).getByText("A required permission cannot be granted with your current access, so this action is unavailable.")).toBeInTheDocument();
   });
 
-  it("preserves existing category-conflicting grants and provides an explicit removal action in Arabic", async () => {
+  it("keeps permissions editable after a Role Category change in Arabic", async () => {
     const user = userEvent.setup();
     window.localStorage.setItem("nexus-locale", "ar");
     fixtures.actorPermissions = ["Roles.View", "Roles.EditDetails", "Roles.ConfigurePermissions"];
@@ -1181,6 +1623,7 @@ describe("Access & Security component pages", () => {
       descriptionEn: "Approve project changes.",
       descriptionAr: "اعتماد تغييرات المشروع.",
       canDelegate: true,
+      canDelegateToCustomRole: true,
       sensitivity: "Medium" as const,
       isSensitive: false,
       isAssignable: true,
@@ -1202,36 +1645,24 @@ describe("Access & Security component pages", () => {
     fixtures.roles = [role];
     fixtures.selectedRole = role;
     fixtures.assignablePermissions = [permission];
-    fixtures.saveRole.mockRejectedValue(new ApiError(409, "Role category conflict", "ROLE_CATEGORY_PERMISSION_CONFLICT", {
-      error: "Role category conflict",
-      code: "ROLE_CATEGORY_PERMISSION_CONFLICT",
-      fieldName: "category",
-      details: { permissionKeys: ["Project.Approve"], selectedCategory: "Operation" },
-    }));
 
     render(<I18nProvider><MemoryRouter><RolesPage /></MemoryRouter></I18nProvider>);
     await user.click(screen.getByRole("button", { name: /Project Manager/ }));
     await user.click(screen.getByRole("button", { name: "تعديل" }));
     const editor = await screen.findByRole("dialog", { name: "تعديل الدور" });
     await user.selectOptions(within(editor).getByRole("combobox", { name: "الفئة" }), "Operation");
-    await user.click(within(editor).getByRole("button", { name: /إدارة المشاريع/ }));
-    const projectsScreenToggle = within(editor).getAllByRole("button", { name: /المشاريع/ })
+    const projectsScreenToggle = within(editor).getAllByRole("button", { name: new RegExp(permission.screenNameAr) })
       .find((button) => button.getAttribute("aria-expanded") === "false");
     if (!projectsScreenToggle) throw new Error("Project permissions section did not render");
     await user.click(projectsScreenToggle);
 
     const approval = permissionCheckbox(editor, permission.id);
     expect(approval).toBeChecked();
-    expect(approval).toBeDisabled();
-    expect(within(editor).getByText("هناك 1 صلاحية مسندة خارج فئة هذا الدور. ستظل مسندة حتى تزيلها صراحةً.")).toBeInTheDocument();
-    expect(within(editor).getByText("غير متاحة لأدوار فئة العمليات. الفئات المسموح بها: الإدارة.")).toBeInTheDocument();
-    expect(within(editor).getByRole("button", { name: "إزالة اعتماد تغييرات المشروع من هذا الدور" })).toBeEnabled();
-    await user.click(within(editor).getByRole("button", { name: "حفظ الدور" }));
-    expect(await within(editor).findByRole("alert")).toHaveTextContent(/لا يمكن التغيير من الإدارة إلى العمليات.*المشاريع: اعتماد تغييرات المشروع.*احفظ الإزالات/);
-    await user.click(within(editor).getByRole("button", { name: "إزالة اعتماد تغييرات المشروع من هذا الدور" }));
-    await waitFor(() => expect(approval).not.toBeChecked());
+    expect(approval).toBeEnabled();
+    expect(within(editor).queryByText(/غير متاحة لأدوار فئة/)).not.toBeInTheDocument();
+    await user.click(approval);
+    expect(approval).not.toBeChecked();
   });
-
   it("sets RTL document direction for the Roles & Permissions page in Arabic", async () => {
     window.localStorage.setItem("nexus-locale", "ar");
     render(<I18nProvider><MemoryRouter><RolesPage /></MemoryRouter></I18nProvider>);

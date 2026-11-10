@@ -27,6 +27,7 @@ public sealed class ProjectPlanPermissionDelegationTests
     {
         var tenantId = Guid.NewGuid();
         var actorId = Guid.NewGuid();
+        using var trustedTenant = TrustedTenantExecutionContext.Enter(tenantId);
         await using var db = CreateDatabase(tenantId);
         var actorPermissions = CreateRoleAdminPermissions();
         var service = CreateRoleService(db, tenantId, actorId, actorPermissions);
@@ -106,6 +107,7 @@ public sealed class ProjectPlanPermissionDelegationTests
     {
         var tenantId = Guid.NewGuid();
         var actorId = Guid.NewGuid();
+        using var trustedTenant = TrustedTenantExecutionContext.Enter(tenantId);
         await using var db = CreateDatabase(tenantId);
         var deniedPermission = await db.Permissions.IgnoreQueryFilters()
             .SingleAsync(permission => permission.TenantId == tenantId && permission.Name == deniedKey);
@@ -119,7 +121,8 @@ public sealed class ProjectPlanPermissionDelegationTests
             Effect = PermissionOverrideEffect.Deny,
             CreatedBy = "test"
         });
-        await db.SaveChangesAsync();
+        using (TrustedTenantExecutionContext.Enter(tenantId))
+            await db.SaveChangesAsync();
 
         var actorPermissions = CreateRoleAdminPermissions();
         var service = CreateRoleService(db, tenantId, actorId, actorPermissions);
@@ -158,10 +161,11 @@ public sealed class ProjectPlanPermissionDelegationTests
     }
 
     [Fact]
-    public async Task Project_plan_creation_is_management_only_while_plan_content_edit_allows_operation_roles()
+    public async Task Project_plan_first_grant_can_be_saved_to_any_custom_role_category()
     {
         var tenantId = Guid.NewGuid();
         var actorId = Guid.NewGuid();
+        using var trustedTenant = TrustedTenantExecutionContext.Enter(tenantId);
         await using var db = CreateDatabase(tenantId);
         var service = CreateRoleService(db, tenantId, actorId, CreateRoleAdminPermissions());
 
@@ -182,10 +186,8 @@ public sealed class ProjectPlanPermissionDelegationTests
             PermissionIds = [PermissionId("Planning.View"), PermissionId("ProjectPlan.Create")]
         }, actorId, tenantId);
 
-        Assert.True(operationCreate.IsFailure);
-        Assert.Equal("ROLE_PERMISSION_CATEGORY_NOT_ALLOWED", operationCreate.Error?.Code);
-        Assert.Equal(new[] { RoleCategories.Management },
-            Assert.IsAssignableFrom<IReadOnlyList<string>>(operationCreate.Error?.Details?["allowedCategories"]));
+        Assert.True(operationCreate.IsSuccess, operationCreate.Error?.Message);
+        Assert.Contains(operationCreate.Value!.Permissions, permission => permission.Name == "ProjectPlan.Create");
     }
 
     [Fact]
@@ -199,8 +201,11 @@ public sealed class ProjectPlanPermissionDelegationTests
             .Single(permission => permission.Name == "ProjectPlan.Create");
         // Seed permissions use stable catalog IDs across tenants; the Permission PK is global.
         foreignPermission.Id = Guid.NewGuid();
-        db.Permissions.Add(foreignPermission);
-        await db.SaveChangesAsync();
+        using (TrustedTenantExecutionContext.Enter(foreignTenantId))
+        {
+            db.Permissions.Add(foreignPermission);
+            await db.SaveChangesAsync();
+        }
 
         var service = CreateRoleService(db, tenantId, actorId, CreateRoleAdminPermissions());
         var rejected = await service.CreateAsync(new SaveRoleDto
@@ -230,7 +235,8 @@ public sealed class ProjectPlanPermissionDelegationTests
         var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
         db.Permissions.AddRange(PermissionCatalog.CreateSeedPermissions(tenantId));
-        db.SaveChanges();
+        using (TrustedTenantExecutionContext.Enter(tenantId))
+            db.SaveChanges();
         return db;
     }
 

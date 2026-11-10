@@ -201,6 +201,8 @@
     <Compile Include="Integration\MeetingReminderSchedulerTests.cs" />
     <Compile Include="Testing\NoOpMeetingNotificationPublisher.cs" />
     <ProjectReference Remove="@(ProjectReference)" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.Identity\NEXUS.Modules.Identity.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.ProjectManagement\NEXUS.Modules.ProjectManagement.csproj" />
     <ProjectReference Include="..\..\src\NEXUS.Modules.Meetings\NEXUS.Modules.Meetings.csproj" />
     <ProjectReference Include="..\..\src\NEXUS.Persistence\NEXUS.Persistence.csproj" />
   </ItemGroup>

@@ -75,6 +75,14 @@ describe("notification navigation", () => {
     expect(resolveNotificationPath("ProjectChangeRequest", id)).toBe(`/my-work/approvals/review/change-request/${id}`);
   });
 
+  it("routes Annual Budget approval notifications to public project Financials without exposing internal IDs", () => {
+    const projectInternalId = "53f762a8-cd25-4a3b-b821-f9897c1a14e0";
+    const projectPublicId = "f5d9d74f-15aa-4c2c-9df3-a8141bb37b5d";
+    expect(resolveNotificationPath("Project", projectInternalId, projectPublicId, "ProjectAnnualBudgetApproval"))
+      .toBe(`/projects/${projectPublicId}/financials?section=annualBudgets`);
+    expect(resolveNotificationPath("Project", projectInternalId, null, "ProjectAnnualBudgetApproval")).toBeNull();
+  });
+
   it("rejects external, unknown, and malformed destinations", () => {
     expect(resolveNotificationPath("https://example.com", "53f762a8-cd25-4a3b-b821-f9897c1a14e0")).toBeNull();
     expect(resolveNotificationPath("project", "not-a-guid")).toBeNull();

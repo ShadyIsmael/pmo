@@ -34,11 +34,11 @@ public sealed class PermissionCatalogArchitectureTests
         var entries = PermissionCatalog.Entries;
         var activeEntries = entries.Where(item => item.IsActive).ToArray();
 
-        Assert.Equal(171, entries.Count);
-        Assert.Equal(171, entries.Select(item => item.Key).Distinct(StringComparer.Ordinal).Count());
-        Assert.Equal(171, activeEntries.Length);
+        Assert.Equal(172, entries.Count);
+        Assert.Equal(172, entries.Select(item => item.Key).Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(172, activeEntries.Length);
         Assert.Equal(46, activeEntries.Count(item => item.Level == PermissionLevel.View));
-        Assert.Equal(125, activeEntries.Count(item => item.Level == PermissionLevel.Action));
+        Assert.Equal(126, activeEntries.Count(item => item.Level == PermissionLevel.Action));
         Assert.Empty(entries.Where(item => !item.IsActive));
         Assert.DoesNotContain("Resource.Allocate", PermissionCatalog.ByKey.Keys);
         Assert.DoesNotContain("Resource.ManageRates", PermissionCatalog.ByKey.Keys);
@@ -50,6 +50,7 @@ public sealed class PermissionCatalogArchitectureTests
     {
         var root = FindRepositoryRoot();
         var planController = File.ReadAllText(Path.Combine(root, "apps/api/src/NEXUS.Modules.ProjectPlanning/Api/PlanController.cs"));
+        var wbsController = File.ReadAllText(Path.Combine(root, "apps/api/src/NEXUS.Modules.ProjectPlanning/Api/PlanWbsController.cs"));
         var importController = File.ReadAllText(Path.Combine(root, "apps/api/src/NEXUS.Modules.ProjectPlanning/Api/PlanImportController.cs"));
         var planService = File.ReadAllText(Path.Combine(root, "apps/api/src/NEXUS.Modules.ProjectPlanning/Application/PlanService.cs"));
         var importService = File.ReadAllText(Path.Combine(root, "apps/api/src/NEXUS.Modules.ProjectPlanning/Application/PlanningImportService.cs"));
@@ -57,11 +58,14 @@ public sealed class PermissionCatalogArchitectureTests
         var importUi = File.ReadAllText(Path.Combine(root, "apps/web-react/src/features/projects/components/PlanningImportSheet.tsx"));
 
         Assert.Contains("[Authorize(Policy = \"ProjectPlan.Create\")]", planController, StringComparison.Ordinal);
+        Assert.Matches(@"\[Authorize\(Policy\s*=\s*""Planning\.Edit""\)\]\s*\[HttpPost\]\s*public async Task<IActionResult>\s+Create", wbsController);
         Assert.Contains("HasClaim(\"permission\", \"ProjectPlan.Create\")", planService, StringComparison.Ordinal);
         Assert.Contains("if (!User.HasClaim(\"permission\", \"Planning.Edit\")", importController, StringComparison.Ordinal);
         Assert.Contains("!request.TargetPlanId.HasValue && !User.HasClaim(\"permission\", \"ProjectPlan.Create\")", importController, StringComparison.Ordinal);
         Assert.Contains("HasClaim(\"permission\", \"Planning.Edit\")", importService, StringComparison.Ordinal);
         Assert.Contains("HasClaim(\"permission\", \"ProjectPlan.Create\")", importService, StringComparison.Ordinal);
+        Assert.Contains("HasClaim(\"permission\", \"Resource.Create\")", importService, StringComparison.Ordinal);
+        Assert.Matches(@"\[Authorize\(Policy\s*=\s*""Planning\.Edit""\)\]\s*\[HttpPost\(""sessions""\)\]", importController);
 
         Assert.Contains("hasPermission(user.permissions, Permissions.ProjectPlan.Create)", planningUi, StringComparison.Ordinal);
         Assert.Contains("hasPermission(user.permissions, Permissions.Planning.Edit)", planningUi, StringComparison.Ordinal);
@@ -69,6 +73,8 @@ public sealed class PermissionCatalogArchitectureTests
         Assert.Contains("editable={editable}", planningUi, StringComparison.Ordinal);
         Assert.Contains("canCreatePlan={canCreateProjectPlan}", planningUi, StringComparison.Ordinal);
         Assert.Contains("canEditPlan={canManagePlanning}", planningUi, StringComparison.Ordinal);
+        Assert.Contains("canCreateResource={canCreateImportedResources}", planningUi, StringComparison.Ordinal);
+        Assert.Contains("&& (!hasNewResourceResolution || canCreateResource)", importUi, StringComparison.Ordinal);
         Assert.Contains("const canImportAsNewPlan = canCreatePlan && canEditPlan;", importUi, StringComparison.Ordinal);
         Assert.Contains("const canImportIntoExistingPlan = canEditPlan && plans.length > 0;", importUi, StringComparison.Ordinal);
     }
@@ -220,7 +226,7 @@ public sealed class PermissionCatalogArchitectureTests
     }
 
     [Fact]
-    public void Project_plan_create_is_separate_from_plan_content_edit_and_has_narrow_role_eligibility()
+    public void Project_plan_create_is_separate_from_plan_content_edit_and_role_category_is_descriptive()
     {
         var create = PermissionCatalog.ByKey["ProjectPlan.Create"];
         var edit = PermissionCatalog.ByKey["Planning.Edit"];
@@ -231,12 +237,12 @@ public sealed class PermissionCatalogArchitectureTests
         Assert.Equal(PermissionScope.Project, create.Scope);
         Assert.Equal(PermissionLevel.Action, create.Level);
         Assert.Contains("Planning.View", create.RequiredPermissionKeys);
-        Assert.Equal(new[] { RoleCategories.Management }, create.AllowedCategories);
+        Assert.Equal(RoleCategories.Selectable, create.AllowedCategories);
 
         Assert.True(edit.IsActive);
         Assert.Equal(PermissionScope.Project, edit.Scope);
         Assert.Contains("Planning.View", edit.RequiredPermissionKeys);
-        Assert.Equal(new[] { RoleCategories.Management, RoleCategories.Operation }, edit.AllowedCategories);
+        Assert.Equal(RoleCategories.Selectable, edit.AllowedCategories);
 
         Assert.False(string.IsNullOrWhiteSpace(create.LabelEn));
         Assert.False(string.IsNullOrWhiteSpace(create.LabelAr));
@@ -261,7 +267,8 @@ public sealed class PermissionCatalogArchitectureTests
         {
             "ProjectAnnualBudget.Approve", "ProjectPaymentRequest.Approve", "PaymentSettlement.Record",
             "ProjectPaymentReversal.Approve", "ProjectAnnualBudget.CloseApprove", "ProjectApproval.Override",
-            "ProjectAnnualBudget.ManageApprovalConfiguration", "ProjectFinancialCeiling.ApproveChange"
+            "ProjectAnnualBudget.ManageApprovalConfiguration", "ProjectAnnualBudget.ConfigureDraftApproval",
+            "ProjectFinancialCeiling.ApproveChange"
         };
 
         var create = PermissionCatalog.ByKey[createKey];
@@ -289,6 +296,7 @@ public sealed class PermissionCatalogArchitectureTests
     {
         var view = PermissionCatalog.ByKey["ProjectAnnualBudget.View"];
         var manageApprovalConfiguration = PermissionCatalog.ByKey["ProjectAnnualBudget.ManageApprovalConfiguration"];
+        var configureDraftApproval = PermissionCatalog.ByKey["ProjectAnnualBudget.ConfigureDraftApproval"];
 
         Assert.Equal(PermissionScope.Project, view.Scope);
         Assert.Equal(PermissionLevel.View, view.Level);
@@ -305,8 +313,18 @@ public sealed class PermissionCatalogArchitectureTests
         Assert.False(manageApprovalConfiguration.IsTenantAdminBaseline);
         Assert.Contains(view.Key, manageApprovalConfiguration.RequiredPermissionKeys);
 
+        Assert.Equal(PermissionScope.Project, configureDraftApproval.Scope);
+        Assert.Equal(PermissionLevel.Action, configureDraftApproval.Level);
+        Assert.True(configureDraftApproval.IsActive);
+        Assert.True(configureDraftApproval.IsAssignable);
+        Assert.True(configureDraftApproval.IsSensitive);
+        Assert.False(configureDraftApproval.IsTenantAdminBaseline);
+        Assert.Contains(view.Key, configureDraftApproval.RequiredPermissionKeys);
+        Assert.Contains("ProjectAnnualBudget.EditDraft", configureDraftApproval.RequiredPermissionKeys);
+
         Assert.DoesNotContain(view.Key, ProtectedTenantAdminPolicy.MandatoryPermissionKeys);
         Assert.DoesNotContain(manageApprovalConfiguration.Key, ProtectedTenantAdminPolicy.MandatoryPermissionKeys);
+        Assert.DoesNotContain(configureDraftApproval.Key, ProtectedTenantAdminPolicy.MandatoryPermissionKeys);
 
         var projectAnnualBudgetKeys = new[]
         {
@@ -466,7 +484,11 @@ public sealed class PermissionCatalogArchitectureTests
         Assert.Contains("Program.View", completeGrant);
 
         var reviewerGrant = PermissionCatalog.EnforceDependencies(["ProjectAnnualBudget.Approve"]);
-        Assert.Contains("ProjectAnnualBudget.Approve", reviewerGrant);
+        Assert.DoesNotContain("ProjectAnnualBudget.Approve", reviewerGrant);
+        var completeReviewerGrant = PermissionCatalog.EnforceDependencies([
+            "ProjectAnnualBudget.Approve", "ProjectAnnualBudget.View"]);
+        Assert.Contains("ProjectAnnualBudget.Approve", completeReviewerGrant);
+        Assert.Contains("ProjectAnnualBudget.View", completeReviewerGrant);
 
         var unqualifiedCeilingApproval = PermissionCatalog.EnforceDependencies(["ProjectFinancialCeiling.ApproveChange"]);
         Assert.DoesNotContain("ProjectFinancialCeiling.ApproveChange", unqualifiedCeilingApproval);

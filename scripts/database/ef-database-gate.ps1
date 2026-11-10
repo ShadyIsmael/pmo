@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet('model', 'inspect', 'script', 'apply', 'reset')]
+    [ValidateSet('model', 'inspect', 'script', 'apply', 'reset', 'sync-project-plan-permissions')]
     [string] $Action,
 
     [switch] $NoBuild,

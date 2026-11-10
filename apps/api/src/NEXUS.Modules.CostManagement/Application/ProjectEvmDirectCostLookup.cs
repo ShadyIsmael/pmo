@@ -21,10 +21,13 @@ public sealed class ProjectEvmDirectCostLookup : IProjectEvmDirectCostLookup
         Guid projectId,
         string projectCurrency,
         DateTime statusDate,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        DateTime? periodFrom = null)
     {
+        var from = periodFrom?.Date;
         var entries = await _context.Set<CostEntry>().AsNoTracking()
             .Where(item => item.TenantId == tenantId && item.ProjectId == projectId && !item.IsDeleted
+                && (!from.HasValue || item.IncurredDate.Date >= from.Value)
                 && item.IncurredDate <= statusDate.Date)
             .ToListAsync(cancellationToken);
 

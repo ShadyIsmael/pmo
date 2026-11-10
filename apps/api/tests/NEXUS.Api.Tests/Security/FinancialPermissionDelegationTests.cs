@@ -111,6 +111,9 @@ public sealed class FinancialPermissionDelegationTests
     }
 
     [Theory]
+    [InlineData("ProjectAnnualBudget.ConfigureDraftApproval")]
+    [InlineData("ProjectAnnualBudget.Delete")]
+    [InlineData("ProjectAnnualBudget.Withdraw")]
     [InlineData("ProjectAnnualBudget.View")]
     [InlineData("ProjectAnnualBudget.ManageApprovalConfiguration")]
     public async Task Direct_active_deny_blocks_bootstrap_delegation_of_the_denied_key(string deniedKey)

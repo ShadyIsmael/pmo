@@ -2,9 +2,13 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Moq;
+using NEXUS.Api.Management;
+using NEXUS.Modules.Audit.Application;
 using NEXUS.Api.Tests.Testing;
 using NEXUS.Modules.Identity.Domain;
 using NEXUS.Modules.Portfolio.Domain;
+using NEXUS.Modules.ProjectManagement.Application;
 using NEXUS.Modules.ProjectManagement.Domain;
 using NEXUS.Persistence;
 using NEXUS.Persistence.Management;
@@ -25,6 +29,9 @@ public sealed class ManagementScopeResolverTests : IDisposable
     private static readonly Guid DirectProgramId = Guid.Parse("c1000000-0000-0000-0000-000000000022");
     private static readonly Guid InheritedProjectId = Guid.Parse("c1000000-0000-0000-0000-000000000030");
     private static readonly Guid DirectProjectId = Guid.Parse("c1000000-0000-0000-0000-000000000031");
+    private static readonly Guid SponsorOnlyProjectId = Guid.Parse("c1000000-0000-0000-0000-000000000032");
+    private static readonly Guid CrossTenantSponsorProjectId = Guid.Parse("c2000000-0000-0000-0000-000000000032");
+    private static readonly Guid OtherTenantId = Guid.Parse("c2000000-0000-0000-0000-000000000001");
 
     private readonly SqliteConnection _connection = new("Data Source=:memory:");
     private readonly AppDbContext _db;
@@ -63,7 +70,9 @@ public sealed class ManagementScopeResolverTests : IDisposable
             Program(DirectProgramId, "Direct Program", "DIR-G", OtherPortfolioId, UserId));
         _db.Projects.AddRange(
             Project(InheritedProjectId, "Inherited Project", "INH-P", PortfolioId, InheritedProgramId),
-            Project(DirectProjectId, "Direct Project", "DIR-PRJ", null, null));
+            Project(DirectProjectId, "Direct Project", "DIR-PRJ", null, null),
+            SponsorProject(SponsorOnlyProjectId, TenantId, "Sponsor Only Project", "SPN-PRJ"),
+            SponsorProject(CrossTenantSponsorProjectId, OtherTenantId, "Cross Tenant Sponsor Project", "X-TEN-SPN"));
         _db.SaveChanges();
 
         _resolver = new ManagementScopeResolver(_db, new NEXUS.Modules.Identity.Infrastructure.UserEffectivePermissionService(_db));
@@ -85,6 +94,55 @@ public sealed class ManagementScopeResolverTests : IDisposable
         Assert.Contains(projectContexts, x => x.Id == InheritedProjectId);
     }
 
+    [Fact]
+    public async Task SponsorAssignment_GrantsOnlyItsTenantProjectScopeWithoutAResourceMembership()
+    {
+        var snapshot = await _resolver.GetPerspectiveSnapshotAsync(UserId, TenantId);
+        var projectContexts = snapshot.AvailablePerspectives
+            .Single(x => x.Perspective == ManagementPerspective.ProjectManager).Contexts;
+
+        Assert.Contains(projectContexts, x => x.Id == SponsorOnlyProjectId);
+        Assert.Contains(SponsorOnlyProjectId, snapshot.Scope.ProjectIds);
+        Assert.True(await _resolver.CanAccessProjectAsync(UserId, TenantId, SponsorOnlyProjectId));
+        Assert.False(await _resolver.CanAccessProjectAsync(UserId, TenantId, CrossTenantSponsorProjectId));
+
+        var context = await _resolver.ResolveAsync(
+            UserId, TenantId, ManagementPerspective.ProjectManager, ManagementViewMode.Native,
+            portfolioId: null, programId: null, projectId: SponsorOnlyProjectId);
+        Assert.NotNull(context);
+        Assert.Contains(SponsorOnlyProjectId, context!.Scope.ProjectIds);
+
+        var managementContextAccessor = new ManagementContextAccessor();
+        managementContextAccessor.Set(context!);
+        var projectHttpContext = new DefaultHttpContext
+        {
+            User = new ClaimsPrincipal(new ClaimsIdentity(
+                new[]
+                {
+                    new Claim("tenantId", TenantId.ToString()),
+                    new Claim(ClaimTypes.NameIdentifier, UserId.ToString()),
+                    new Claim("permission", "Project.View")
+                }, "tests"))
+        };
+        var projectService = new ProjectService(
+            _db,
+            Mock.Of<IAuditService>(),
+            new HttpContextAccessor { HttpContext = projectHttpContext },
+            new ProjectManagerMembershipSynchronizer(_db),
+            managementContextAccessor);
+
+        var page = await projectService.GetPagedAsync(1, 20);
+        var shell = await projectService.GetShellAsync(SponsorOnlyProjectId);
+
+        Assert.Contains(page.Items, project => project.Id == SponsorOnlyProjectId);
+        Assert.True(shell.IsSuccess);
+        Assert.Equal(SponsorOnlyProjectId, shell.Value!.Id);
+        Assert.Empty(await _db.Set<NEXUS.Modules.ResourceManagement.Domain.Resource>()
+            .Where(resource => resource.UserId == UserId).ToListAsync());
+        Assert.Empty(await _db.Set<NEXUS.Modules.ResourceManagement.Domain.ProjectMember>()
+            .Where(member => member.ProjectId == SponsorOnlyProjectId).ToListAsync());
+    }
+
     private static PortfolioProgram Program(
         Guid id, string name, string code, Guid portfolioId, Guid? managerId = null) => new()
     {
@@ -98,6 +156,12 @@ public sealed class ManagementScopeResolverTests : IDisposable
         Id = id, PublicId = Guid.NewGuid(), TenantId = TenantId, Name = name, Code = code,
         PortfolioId = portfolioId, ProgramId = programId, ProjectManagerId = UserId,
         Status = "Active", CreatedBy = "tests", RowVersion = new byte[8]
+    };
+
+    private static Project SponsorProject(Guid id, Guid tenantId, string name, string code) => new()
+    {
+        Id = id, PublicId = Guid.NewGuid(), TenantId = tenantId, Name = name, Code = code,
+        SponsorId = UserId, Status = "Active", CreatedBy = "tests", RowVersion = new byte[8]
     };
 
     public void Dispose()

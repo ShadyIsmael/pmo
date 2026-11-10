@@ -26,6 +26,7 @@ public sealed class PermissionCatalogItemDto
     public bool IsActive { get; init; }
     public bool IsAssignable { get; init; }
     public bool? CanDelegate { get; init; }
+    public bool? CanDelegateToCustomRole { get; init; }
     public bool IsMandatoryForSystemAdmin { get; init; }
 }
 

@@ -89,10 +89,16 @@ The React build reports existing bundle-size and dynamic-import warnings. They d
 ## F. Outstanding gates
 
 1. Run the EF gate from a host-connected Windows process with ASPNETCORE_ENVIRONMENT=Development and the approved secure Development connection.
-2. Verify the Development environment, actual server/principal, and `Shady/NexusPmo` database identity. The exact Product Owner-authorized reset is the only no-backup exception; ordinary writes still require an independently verified backup.
+2. Verify the Development environment, actual server/principal, and `Shady/NexusPmo` database identity. Development/UAT backups are optional for resets and ordinary authorized changes; the reset remains destructive and requires explicit Product Owner authorization. Production backup and recovery safeguards remain mandatory.
 3. Supply the bootstrap secret through the approved secure environment.
 4. Apply the ten source migrations to the recreated Development database; verify __EFMigrationsHistory and physical schema.
 5. Run the complete application seed twice and compare persisted catalog, roles, Admin grants, membership, and reference data.
 6. Execute backend authorization tests, direct API Grant/Deny tests, session revocation, tenant isolation, protected Admin, and no-mutation checks against that database.
 
 **Final classification: IMPLEMENTED — VERIFICATION PENDING.** Builds and frontend tests pass, but the database remains untouched and all required live SQL/API security gates remain open.
+
+## Current role-permission delegation clarification (2026-11-09)
+
+This report’s 2026-11-02 snapshot predates the current Product Owner delegation rule. The earlier actor-possession ceiling for ordinary custom-role permissions is superseded. An actor authorized through `Roles.ConfigurePermissions` may grant or revoke any active, assignable, scoped non-Administration permission to a same-Tenant user-managed custom role regardless of target category or whether the actor holds the key. Administration-module permissions remain actor-authorized only.
+
+The clarification preserves tenant/resource boundaries, declared dependencies, Active Deny, Platform/CrossTenant/SystemOwner restrictions, protected/system-managed role safeguards, the exact 13-key protected tenant Admin exception, and last-administrator protection. No-self-escalation remains: a role assigned to the actor cannot be changed to add an effective permission beyond the permissions currently effective for the actor. Cross-category BudgetRevision grant/save/reload/revoke UAT is pending in the Master UAT Checklist. The screenshot cause was the prior actor-possession/first-grant `CanDelegate` filter: ordinary permission rows could appear disabled when the authorized role administrator did not personally hold each key. Under the clarified policy, actor possession alone must not disable an eligible non-Administration custom-role grant. A missing `Roles.ConfigurePermissions` capability, Administration-module authorization, target-role restriction, dependency, Active Deny, scope, protected-role boundary, or no-self-escalation remains a valid restriction. The earlier API build/test attempt stopped at a locked output DLL; API build and focused permission tests remain unverified, and no pass is recorded. Browser UAT remains pending. This addendum documents policy and screenshot cause; no build, test, or database operation was run for this documentation update.

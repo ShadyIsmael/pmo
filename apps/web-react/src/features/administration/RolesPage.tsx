@@ -27,6 +27,44 @@ import {
 import { getPermissionActionLabel, getPermissionDescription, getPermissionDisplayName, getPermissionModuleLabel, getPermissionResourceLabel } from "./permission-labels";
 
 const ROLE_CATEGORY_OPTIONS = ["Tenant", "Organization", "Management", "Operation", "Business"] as const;
+const BOOTSTRAP_PERMISSION_KEYS = new Set([
+  "ProjectPlan.Create",
+  "Planning.Edit",
+  "Planning.View",
+  "ProjectAnnualBudget.View",
+  "ProjectAnnualBudget.Create",
+  "ProjectAnnualBudget.EditDraft",
+  "ProjectAnnualBudget.ConfigureDraftApproval",
+  "ProjectAnnualBudget.SubmitForReview",
+  "ProjectAnnualBudget.Approve",
+  "ProjectAnnualBudget.ReviseApproved",
+  "ProjectAnnualBudget.ManageApprovalConfiguration",
+  "ProjectAnnualBudget.Delete",
+  "ProjectAnnualBudget.Withdraw",
+  "ProjectAnnualBudgetClosing.View",
+  "ProjectAnnualBudget.Close",
+  "ProjectAnnualBudget.CloseApprove",
+  "ProjectAnnualBudget.CarryForward",
+  "ProjectFinancialFoundation.View",
+  "CostUtilization.Export",
+  "ProgramFinancialRollup.View",
+  "PortfolioFinancialRollup.View",
+]);
+const PROTECTED_ADMIN_BOOTSTRAP_PERMISSION_KEYS = new Set([
+  "ProjectAnnualBudget.View",
+  "ProjectAnnualBudget.Create",
+  "ProjectAnnualBudget.EditDraft",
+  "ProjectAnnualBudget.SubmitForReview",
+  "ProjectAnnualBudget.Approve",
+  "ProjectAnnualBudget.ReviseApproved",
+  "ProjectAnnualBudget.ManageApprovalConfiguration",
+  "ProjectAnnualBudget.Delete",
+  "ProjectAnnualBudget.Withdraw",
+  "ProjectAnnualBudgetClosing.View",
+  "ProjectAnnualBudget.Close",
+  "ProjectAnnualBudget.CloseApprove",
+  "ProjectAnnualBudget.CarryForward",
+]);
 type Translate = ReturnType<typeof useI18n>["t"];
 
 function getRoleCategoryLabel(category: string | undefined, t: Translate): string {
@@ -38,21 +76,6 @@ function getRoleCategoryLabel(category: string | undefined, t: Translate): strin
 
 function isCanonicalRoleCategory(category: string | undefined): boolean {
   return Boolean(category && ROLE_CATEGORY_OPTIONS.includes(category as typeof ROLE_CATEGORY_OPTIONS[number]));
-}
-
-function isCategoryAllowed(permission: PermissionCatalogItemDto, category: string): boolean {
-  return Array.isArray(permission.allowedCategories) && permission.allowedCategories.includes(category);
-}
-
-function getCategoryUnavailableReason(permission: PermissionCatalogItemDto, category: string, locale: "en" | "ar", t: Translate): string {
-  if (!category) return t("administration.areas.roles.selectCategoryForPermissions");
-  if (!Array.isArray(permission.allowedCategories)) return t("administration.areas.roles.categoryMetadataUnavailable");
-  if (permission.allowedCategories.length === 0) return t("administration.areas.roles.noEligibleRoleCategory");
-  const allowedCategories = permission.allowedCategories.map((item) => getRoleCategoryLabel(item, t)).join(locale === "ar" ? "، " : ", ");
-  return t("administration.areas.roles.permissionUnavailableForCategory", {
-    category: getRoleCategoryLabel(category, t),
-    allowed: allowedCategories,
-  });
 }
 
 function toSaveInput(role: ManagedRoleDto, catalog: PermissionCatalogItemDto[] = []): SaveRoleInput {
@@ -97,9 +120,7 @@ export function RolesPage() {
   const [permissionLevelFilter, setPermissionLevelFilter] = React.useState("all");
   const [permissionGrantFilter, setPermissionGrantFilter] = React.useState("all");
   const [permissionSensitivityFilter, setPermissionSensitivityFilter] = React.useState("all");
-  const [expandedModules, setExpandedModules] = React.useState<Set<string>>(new Set());
   const [expandedScreens, setExpandedScreens] = React.useState<Set<string>>(new Set());
-  const [searchCollapsedModules, setSearchCollapsedModules] = React.useState<Set<string>>(new Set());
   const [searchCollapsedScreens, setSearchCollapsedScreens] = React.useState<Set<string>>(new Set());
   const [actionError, setActionError] = React.useState<string | null>(null);
   const [roleApiError, setRoleApiError] = React.useState<unknown>(null);
@@ -119,7 +140,7 @@ export function RolesPage() {
   }, [roleSearch, roles.data]);
 
   const permissionGroups = React.useMemo(() => {
-    const modules = new Map<string, { module: PermissionCatalogItemDto; screens: Map<string, { screen: PermissionCatalogItemDto; views: { permission: PermissionCatalogItemDto; contextOnly: boolean }[]; actions: { permission: PermissionCatalogItemDto; contextOnly: boolean }[] }> }>();
+    const screens = new Map<string, { screen: PermissionCatalogItemDto; views: { permission: PermissionCatalogItemDto; contextOnly: boolean }[]; actions: { permission: PermissionCatalogItemDto; contextOnly: boolean }[] }>();
     const term = permissionSearch.trim().toLocaleLowerCase();
     const catalog = permissionCatalog.data ?? [];
     const selectedIds = new Set(draft?.permissionIds ?? []);
@@ -142,24 +163,18 @@ export function RolesPage() {
       }
     }
     for (const { permission, contextOnly } of included.values()) {
-      const module = modules.get(permission.moduleId) ?? { module: permission, screens: new Map() };
-      const screen = module.screens.get(permission.screenId) ?? { screen: permission, views: [], actions: [] };
+      const screenKey = `${permission.moduleId}:${permission.screenId}`;
+      const screen = screens.get(screenKey) ?? { screen: permission, views: [], actions: [] };
       if (permission.level === "View") screen.views.push({ permission, contextOnly });
       else screen.actions.push({ permission, contextOnly });
-      module.screens.set(permission.screenId, screen);
-      modules.set(permission.moduleId, module);
+      screens.set(screenKey, screen);
     }
-    return [...modules.entries()]
-      .sort(([leftId, left], [rightId, right]) => getPermissionModuleLabel(left.module, locale).localeCompare(getPermissionModuleLabel(right.module, locale), locale, { sensitivity: "base" }) || leftId.localeCompare(rightId))
-      .map(([moduleId, group]) => [moduleId, {
-        ...group,
-        screens: [...group.screens.entries()]
-          .sort(([leftId, left], [rightId, right]) => getPermissionResourceLabel(left.screen, locale).localeCompare(getPermissionResourceLabel(right.screen, locale), locale, { sensitivity: "base" }) || leftId.localeCompare(rightId))
-          .map(([screenId, screen]) => [screenId, {
-            ...screen,
-            views: [...screen.views].sort((left, right) => getPermissionActionLabel(left.permission, locale).localeCompare(getPermissionActionLabel(right.permission, locale), locale, { sensitivity: "base" }) || left.permission.name.localeCompare(right.permission.name)),
-            actions: [...screen.actions].sort((left, right) => getPermissionActionLabel(left.permission, locale).localeCompare(getPermissionActionLabel(right.permission, locale), locale, { sensitivity: "base" }) || left.permission.name.localeCompare(right.permission.name)),
-          }] as const),
+    return [...screens.entries()]
+      .sort(([leftId, left], [rightId, right]) => getPermissionResourceLabel(left.screen, locale).localeCompare(getPermissionResourceLabel(right.screen, locale), locale, { sensitivity: "base" }) || leftId.localeCompare(rightId))
+      .map(([screenId, screen]) => [screenId, {
+        ...screen,
+        views: [...screen.views].sort((left, right) => getPermissionActionLabel(left.permission, locale).localeCompare(getPermissionActionLabel(right.permission, locale), locale, { sensitivity: "base" }) || left.permission.name.localeCompare(right.permission.name)),
+        actions: [...screen.actions].sort((left, right) => getPermissionActionLabel(left.permission, locale).localeCompare(getPermissionActionLabel(right.permission, locale), locale, { sensitivity: "base" }) || left.permission.name.localeCompare(right.permission.name)),
       }] as const);
   }, [draft?.permissionIds, locale, permissionCatalog.data, permissionGrantFilter, permissionLevelFilter, permissionModuleFilter, permissionSearch, permissionSensitivityFilter]);
 
@@ -219,7 +234,6 @@ export function RolesPage() {
     setPermissionLevelFilter("all");
     setPermissionGrantFilter("all");
     setPermissionSensitivityFilter("all");
-    setSearchCollapsedModules(new Set());
     setSearchCollapsedScreens(new Set());
   }
 
@@ -230,9 +244,9 @@ export function RolesPage() {
     const selected = new Set(draft.permissionIds);
     const byKey = new Map(catalog.map((item) => [item.name, item]));
     if (checked) {
-      if (!canGrantPermission(permission, draft.category)) return;
+      if (!canGrantPermissionToRole(permission, currentRole)) return;
       const dependencies = (permission.requiredPermissionKeys ?? []).map((dependency) => byKey.get(dependency));
-      if (dependencies.some((dependency) => !dependency || (!canGrantPermission(dependency, draft.category) && !selected.has(dependency.id)))) return;
+      if (dependencies.some((dependency) => !dependency || (!canGrantPermissionToRole(dependency, currentRole) && !selected.has(dependency.id)))) return;
       selected.add(permission.id);
       dependencies.forEach((dependency) => { if (dependency) selected.add(dependency.id); });
     } else if (permission.level === "View") {
@@ -262,9 +276,9 @@ export function RolesPage() {
     if (checked) {
       const byKey = new Map(catalog.map((item) => [item.name, item]));
       for (const item of items) {
-        if (!canGrantPermission(item, draft.category)) continue;
+        if (!canGrantPermissionToRole(item, currentRole)) continue;
         const dependencies = (item.requiredPermissionKeys ?? []).map((dependency) => byKey.get(dependency));
-        if (dependencies.some((dependency) => !dependency || (!canGrantPermission(dependency, draft.category) && !selected.has(dependency.id)))) continue;
+        if (dependencies.some((dependency) => !dependency || (!canGrantPermissionToRole(dependency, currentRole) && !selected.has(dependency.id)))) continue;
         selected.add(item.id);
         dependencies.forEach((dependency) => { if (dependency) selected.add(dependency.id); });
       }
@@ -284,22 +298,6 @@ export function RolesPage() {
       dependentActions.forEach((item) => selected.delete(item.id));
     }
     setDraft((current) => current ? { ...current, permissionIds: [...selected] } : current);
-  }
-
-  function toggleModule(moduleId: string) {
-    if (permissionSearch.trim()) {
-      setSearchCollapsedModules((current) => {
-        const next = new Set(current);
-        if (next.has(moduleId)) next.delete(moduleId); else next.add(moduleId);
-        return next;
-      });
-      return;
-    }
-    setExpandedModules((current) => {
-      const next = new Set(current);
-      if (next.has(moduleId)) next.delete(moduleId); else next.add(moduleId);
-      return next;
-    });
   }
 
   function toggleScreen(screenId: string) {
@@ -370,21 +368,7 @@ export function RolesPage() {
       }
     } catch (error) {
       setRoleApiError(error);
-      if (error instanceof ApiError && error.code === "ROLE_CATEGORY_PERMISSION_CONFLICT") {
-        const conflictKeys = getCategoryConflictPermissionKeys(error);
-        const knownPermissions = [...catalog, ...(roleDetails.data?.permissions ?? [])];
-        const labelsByKey = new Map(knownPermissions.map((permission) => [permission.name, `${getPermissionResourceLabel(permission, locale)}: ${getPermissionActionLabel(permission, locale)}`]));
-        const permissionLabels = conflictKeys.map((key) => labelsByKey.get(key) ?? key);
-        const categoryChangeContext = {
-          currentCategory: getRoleCategoryLabel(roleDetails.data?.category, t),
-          selectedCategory: getRoleCategoryLabel(draft.category, t),
-        };
-        setActionError(permissionLabels.length > 0
-          ? t("administration.areas.roles.categoryChangeConflict", { ...categoryChangeContext, permissions: permissionLabels.join(locale === "ar" ? "، " : ", ") })
-          : t("administration.areas.roles.categoryChangeConflictFallback", categoryChangeContext));
-      } else {
-        setActionError(error instanceof ApiError ? error.message : t("administration.areas.roles.saveError"));
-      }
+      setActionError(error instanceof ApiError ? error.message : t("administration.areas.roles.saveError"));
     }
   }
 
@@ -423,22 +407,11 @@ export function RolesPage() {
   const pendingPermissionAdds = catalog.filter((permission) => permissionIds.has(permission.id) && !baselinePermissionIds.has(permission.id));
   const pendingPermissionRemovals = (currentRole?.permissions ?? []).filter((permission) => baselinePermissionIds.has(permission.id) && !permissionIds.has(permission.id));
   const catalogByName = new Map(catalog.map((permission) => [permission.name, permission]));
-  const knownRolePermissions = new Map(catalog.map((permission) => [permission.id, permission]));
-  (currentRole?.permissions ?? []).forEach((permission) => {
-    const catalogPermission = knownRolePermissions.get(permission.id);
-    knownRolePermissions.set(permission.id, {
-      ...catalogPermission,
-      ...permission,
-      allowedCategories: permission.allowedCategories ?? catalogPermission?.allowedCategories ?? [],
+  const canGrantWithDependencies = (permission: PermissionCatalogItemDto) => canGrantPermissionToRole(permission, currentRole)
+    && (permission.requiredPermissionKeys ?? []).every((key) => {
+      const dependency = catalogByName.get(key);
+      return Boolean(dependency && (canGrantPermissionToRole(dependency, currentRole) || permissionIds.has(dependency.id)));
     });
-  });
-  const categoryConflictCount = draft
-    ? [...permissionIds].filter((id) => {
-      const permission = knownRolePermissions.get(id);
-      return permission && !isCategoryAllowed(permission, draft.category);
-    }).length
-    : 0;
-
   return (
     <div className="space-y-6">
       <PageHeader
@@ -489,7 +462,7 @@ export function RolesPage() {
                     {currentRole.isSystem && !currentRole.isProtectedSystemAdmin ? <p className="rounded-md border bg-muted/40 p-3 text-sm text-muted-foreground">{t("administration.areas.roles.systemRoleProtected")}</p> : null}
                     <section className="space-y-3" aria-labelledby="role-permissions-heading"><h3 id="role-permissions-heading" className="text-sm font-semibold">{t("administration.areas.roles.permissions")}</h3>
                       {currentRole.permissions.length === 0 ? <p className="rounded-md border p-4 text-sm text-muted-foreground">{t("administration.areas.roles.noRolePermissions")}</p>
-                        : <div className="space-y-3">{permissionGroupsForRole(currentRole.permissions, locale).map(([moduleId, group]) => <section key={moduleId} className="space-y-2 rounded-lg border p-3"><h4 className="text-sm font-semibold">{getPermissionModuleLabel(group.module, locale)}</h4>{group.screens.map(([screenId, screen]) => <div key={screenId} className="rounded-md bg-muted/30 p-3"><h5 className="text-sm font-medium">{getPermissionResourceLabel(screen.screen, locale)}</h5><div className="mt-2 flex flex-wrap gap-2">{[...screen.views, ...screen.actions].map((permission) => <Badge key={permission.id} variant={permission.isSensitive ? "destructive" : "secondary"}>{getPermissionDisplayName(permission, locale)}{getPermissionScopeLabel(permission, t) ? <span className="ms-1 border-s ps-1 text-xs opacity-75">{getPermissionScopeLabel(permission, t)}</span> : null}</Badge>)}</div></div>)}</section>)}</div>}
+                        : <div className="space-y-3">{permissionGroupsForRole(currentRole.permissions, locale).map(([screenId, group]) => <section key={screenId} className="space-y-2 rounded-lg border p-3"><h4 className="text-sm font-semibold">{getPermissionResourceLabel(group.screen, locale)}</h4><div className="flex flex-wrap gap-2">{[...group.views, ...group.actions].map((permission) => <Badge key={permission.id} variant={permission.isSensitive ? "destructive" : "secondary"}>{getPermissionDisplayName(permission, locale)}{getPermissionScopeLabel(permission, t) ? <span className="ms-1 border-s ps-1 text-xs opacity-75">{getPermissionScopeLabel(permission, t)}</span> : null}</Badge>)}</div></section>)}</div>}
                     </section>
                     {!currentRole.isSystem ? <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">{currentRole.assignedUserCount > 0 ? <span className="text-xs text-muted-foreground">{t("administration.areas.roles.deleteBlocked")}</span> : <span /> }<Button type="button" size="sm" variant="outline" className="border-destructive/40 text-destructive hover:border-destructive hover:text-destructive" onClick={() => void handleDelete()} disabled={!canDelete || isSaving || currentRole.assignedUserCount > 0} aria-label={t("administration.areas.roles.deleteRole")}><Trash2 className="me-1.5 h-4 w-4" />{t("administration.areas.roles.deleteRole")}</Button></div> : null}
                   </>
@@ -523,9 +496,8 @@ export function RolesPage() {
             </div>
             {currentRole?.isProtectedSystemAdmin ? <p className="rounded-md border bg-muted/40 p-3 text-sm text-muted-foreground">{t("administration.areas.roles.protectedAdminBaseline")}</p> : null}
             {currentRole?.isSystem && !currentRole.isProtectedSystemAdmin ? <p className="rounded-md border bg-muted/40 p-3 text-sm text-muted-foreground">{t("administration.areas.roles.systemRoleProtected")}</p> : null}
-            {categoryConflictCount > 0 ? <p role="status" className="rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm text-muted-foreground">{t("administration.areas.roles.categoryConflictSummary", { count: categoryConflictCount })}</p> : null}
             <section className="space-y-3 border-t pt-4" aria-labelledby="role-editor-permissions-heading">
-              <div className="flex flex-wrap items-center justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><h3 id="role-editor-permissions-heading" className="text-sm font-semibold">{t("administration.areas.roles.permissions")}</h3>{hasUnsavedChanges ? <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-300">{t("administration.areas.roles.unsavedChanges")}</Badge> : null}</div><p className="mt-1 text-xs text-muted-foreground">{t("administration.areas.roles.permissionSummary", { selected: selectedCatalogPermissionCount, total: catalog.length })}</p></div><div className="w-full sm:max-w-xs"><Input value={permissionSearch} onChange={(event) => { setPermissionSearch(event.target.value); setSearchCollapsedModules(new Set()); setSearchCollapsedScreens(new Set()); }} placeholder={t("administration.areas.roles.searchPermissions")} aria-label={t("administration.areas.roles.searchPermissions")} /></div></div>
+              <div className="flex flex-wrap items-center justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><h3 id="role-editor-permissions-heading" className="text-sm font-semibold">{t("administration.areas.roles.permissions")}</h3>{hasUnsavedChanges ? <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-300">{t("administration.areas.roles.unsavedChanges")}</Badge> : null}</div><p className="mt-1 text-xs text-muted-foreground">{t("administration.areas.roles.permissionSummary", { selected: selectedCatalogPermissionCount, total: catalog.length })}</p></div><div className="w-full sm:max-w-xs"><Input value={permissionSearch} onChange={(event) => { setPermissionSearch(event.target.value); setSearchCollapsedScreens(new Set()); }} placeholder={t("administration.areas.roles.searchPermissions")} aria-label={t("administration.areas.roles.searchPermissions")} /></div></div>
               <fieldset className="grid gap-3 rounded-lg border bg-muted/10 p-3 sm:grid-cols-2 xl:grid-cols-4">
                 <legend className="px-1 text-xs font-semibold text-muted-foreground">{t("administration.areas.roles.permissionFilters")}</legend>
                 <div className="space-y-1.5"><Label htmlFor="role-permission-module-filter">{t("administration.areas.roles.moduleFilter")}</Label><select id="role-permission-module-filter" value={permissionModuleFilter} onChange={(event) => setPermissionModuleFilter(event.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><option value="all">{t("administration.areas.roles.allModules")}</option>{permissionModules.map(([moduleId, permission]) => <option key={moduleId} value={moduleId}>{getPermissionModuleLabel(permission, locale)}</option>)}</select></div>
@@ -552,54 +524,38 @@ export function RolesPage() {
               {!canConfigurePermissions ? null : permissionCatalog.isLoading ? <p className="py-5 text-center text-sm text-muted-foreground">{t("common.loading")}</p>
                 : permissionCatalog.isError ? <div className="flex flex-col items-center gap-3 py-5"><p role="alert" className="text-sm text-destructive">{t("administration.areas.roles.permissionCatalogError")}</p><Button type="button" size="sm" variant="outline" onClick={() => void permissionCatalog.refetch()}>{t("common.retry")}</Button></div>
                   : permissionGroups.length === 0 ? <p className="py-5 text-center text-sm text-muted-foreground">{t("administration.areas.roles.noMatchingPermissions")}</p>
-                    : <div className="space-y-3">{permissionGroups.map(([moduleId, group]) => {
-                      const moduleItems = group.screens.flatMap(([, screen]) => [...screen.views, ...screen.actions]).filter((entry) => !entry.contextOnly).map((entry) => entry.permission);
-                      const moduleSelected = moduleItems.filter((permission) => permissionIds.has(permission.id)).length;
-                      const moduleAllSelected = moduleItems.length > 0 && moduleSelected === moduleItems.length;
-                      const moduleCanToggle = moduleAllSelected
-                        ? moduleItems.some((permission) => permissionIds.has(permission.id) && (!currentRole?.isProtectedSystemAdmin || !permission.isMandatoryForSystemAdmin))
-                        : moduleItems.some((permission) => !permissionIds.has(permission.id) && canGrantPermission(permission, draft.category));
-                      const moduleCatalogItems = catalog.filter((permission) => permission.moduleId === moduleId);
-                      const moduleGranted = moduleCatalogItems.filter((permission) => permissionIds.has(permission.id)).length;
-                      const moduleExpanded = permissionSearch.trim() ? !searchCollapsedModules.has(moduleId) : expandedModules.has(moduleId);
-                      return <section key={moduleId} className="rounded-lg border p-3">
+                    : <div className="space-y-3">{permissionGroups.map(([screenId, screen]) => {
+                      const screenRows = [...screen.views, ...screen.actions];
+                      const screenItems = screenRows.filter((entry) => !entry.contextOnly).map((entry) => entry.permission);
+                      const screenSelected = screenItems.filter((permission) => permissionIds.has(permission.id)).length;
+                      const screenAllSelected = screenItems.length > 0 && screenSelected === screenItems.length;
+                      const screenCanToggle = screenAllSelected
+                        ? screenItems.some((permission) => permissionIds.has(permission.id) && (!currentRole?.isProtectedSystemAdmin || !permission.isMandatoryForSystemAdmin))
+                        : screenItems.some((permission) => !permissionIds.has(permission.id) && canGrantWithDependencies(permission));
+                      const screenExpanded = permissionSearch.trim() ? !searchCollapsedScreens.has(screenId) : expandedScreens.has(screenId);
+                      return <section key={screenId} className="rounded-lg border p-3">
                         <div className="flex items-center gap-3">
-                          {moduleItems.length > 0 ? <GroupCheckbox checked={moduleAllSelected} indeterminate={moduleSelected > 0 && moduleSelected < moduleItems.length} disabled={isSaving || !canConfigurePermissions || !moduleCanToggle} label={t("administration.areas.roles.selectGroupPermissions", { group: getPermissionModuleLabel(group.module, locale) })} onChange={(checked) => void togglePermissionGroup(moduleItems, checked)} /> : null}
-                          <button type="button" className="flex min-w-0 flex-1 items-center justify-between gap-3 text-start" onClick={() => toggleModule(moduleId)} aria-expanded={moduleExpanded} aria-controls={moduleExpanded ? `role-permission-module-${moduleId}` : undefined}>
-                            <span className="truncate text-sm font-semibold">{getPermissionModuleLabel(group.module, locale)}</span><span className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground"><span>{t("administration.areas.roles.moduleGrantCount", { granted: moduleGranted, total: moduleCatalogItems.length })}</span>{moduleItems.length > 0 ? <span>{t("administration.areas.roles.selectionCount", { selected: moduleSelected, total: moduleItems.length })}</span> : null}<ChevronDown className={`h-4 w-4 transition-transform ${moduleExpanded ? "rotate-180" : ""}`} /></span>
+                          {screenItems.length > 0 ? <GroupCheckbox checked={screenAllSelected} indeterminate={screenSelected > 0 && screenSelected < screenItems.length} disabled={isSaving || !canConfigurePermissions || !screenCanToggle} label={t("administration.areas.roles.selectGroupPermissions", { group: getPermissionResourceLabel(screen.screen, locale) })} onChange={(checked) => void togglePermissionGroup(screenItems, checked)} /> : null}
+                          <button type="button" className="flex min-w-0 flex-1 items-center justify-between gap-3 text-start" onClick={() => toggleScreen(screenId)} aria-expanded={screenExpanded} aria-controls={screenExpanded ? `role-permission-group-${screenId}` : undefined}>
+                            <span className="truncate text-sm font-semibold">{getPermissionResourceLabel(screen.screen, locale)}</span><span className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">{screenItems.length > 0 ? t("administration.areas.roles.selectionCount", { selected: screenSelected, total: screenItems.length }) : t("administration.areas.roles.requiredContext")}<ChevronDown className={`h-4 w-4 transition-transform ${screenExpanded ? "rotate-180" : ""}`} /></span>
                           </button>
                         </div>
-                        {moduleExpanded ? <div id={`role-permission-module-${moduleId}`} className="mt-3 space-y-3 border-s ps-4">{group.screens.map(([screenId, screen]) => {
-                          const screenRows = [...screen.views, ...screen.actions];
-                          const screenItems = screenRows.filter((entry) => !entry.contextOnly).map((entry) => entry.permission);
-                          const screenSelected = screenItems.filter((permission) => permissionIds.has(permission.id)).length;
-                          const screenAllSelected = screenItems.length > 0 && screenSelected === screenItems.length;
-                          const screenCanToggle = screenAllSelected
-                            ? screenItems.some((permission) => permissionIds.has(permission.id) && (!currentRole?.isProtectedSystemAdmin || !permission.isMandatoryForSystemAdmin))
-                            : screenItems.some((permission) => !permissionIds.has(permission.id) && canGrantPermission(permission, draft.category));
-                          const screenExpanded = permissionSearch.trim() ? !searchCollapsedScreens.has(screenId) : expandedScreens.has(screenId);
-                          return <section key={screenId} className="rounded-md bg-muted/20 p-3">
-                            <div className="flex items-center gap-3">
-                              {screenItems.length > 0 ? <GroupCheckbox checked={screenAllSelected} indeterminate={screenSelected > 0 && screenSelected < screenItems.length} disabled={isSaving || !canConfigurePermissions || !screenCanToggle} label={t("administration.areas.roles.selectGroupPermissions", { group: getPermissionResourceLabel(screen.screen, locale) })} onChange={(checked) => void togglePermissionGroup(screenItems, checked)} /> : null}
-                              <button type="button" className="flex min-w-0 flex-1 items-center justify-between gap-3 text-start" onClick={() => toggleScreen(screenId)} aria-expanded={screenExpanded} aria-controls={screenExpanded ? `role-permission-screen-${moduleId}-${screenId}` : undefined}>
-                                <span className="truncate text-sm font-medium">{getPermissionResourceLabel(screen.screen, locale)}</span><span className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">{screenItems.length > 0 ? t("administration.areas.roles.selectionCount", { selected: screenSelected, total: screenItems.length }) : t("administration.areas.roles.requiredContext") }<ChevronDown className={`h-4 w-4 transition-transform ${screenExpanded ? "rotate-180" : ""}`} /></span>
-                              </button>
-                            </div>
-                            {screenExpanded ? <div id={`role-permission-screen-${moduleId}-${screenId}`} className="mt-3 space-y-1 border-s ps-4">
-                              {screenRows.map(({ permission, contextOnly }) => {
-                                const selected = permissionIds.has(permission.id);
-                                const unavailableDependency = (permission.requiredPermissionKeys ?? []).some((key) => {
-                                  const dependency = catalogByName.get(key);
-                                  return !dependency || (!canGrantPermission(dependency, draft.category) && !permissionIds.has(dependency.id));
-                                });
-                                const categoryUnavailable = !isCategoryAllowed(permission, draft.category);
-                                const cannotGrant = !canGrantPermission(permission, draft.category) && !selected;
-                                const categoryUnavailableLabel = categoryUnavailable ? getCategoryUnavailableReason(permission, draft.category, locale, t) : undefined;
-                                return <PermissionRow key={permission.id} permission={permission} locale={locale} selected={selected} disabled={isSaving || !canConfigurePermissions || categoryUnavailable || (!selected && (cannotGrant || unavailableDependency))} locked={Boolean(currentRole?.isProtectedSystemAdmin && permission.isMandatoryForSystemAdmin)} lockedLabel={t("administration.areas.roles.mandatoryAdminPermission")} viewLabel={permission.level === "View" ? t("administration.areas.roles.viewAccess") : t("administration.areas.roles.action")} sensitiveLabel={t("administration.areas.roles.sensitiveAction")} legacyLabel={t("administration.areas.roles.legacyCompatibilityPermission")} unavailableLabel={t("administration.areas.roles.permissionCannotBeDelegated")} dependencyUnavailableLabel={t("administration.areas.roles.permissionDependencyCannotBeDelegated")} dependencyLabel={t("administration.areas.roles.requiresPermissions")} dependencyLabels={(permission.requiredPermissionKeys ?? []).map((key) => { const dependency = catalogByName.get(key); return dependency ? `${getPermissionResourceLabel(dependency, locale)}: ${getPermissionActionLabel(dependency, locale)}` : key; })} categoryUnavailableLabel={categoryUnavailableLabel} removeConflictLabel={t("administration.areas.roles.removeCategoryConflict")} removeConflictAriaLabel={t("administration.areas.roles.removeCategoryConflictForPermission", { permission: getPermissionDisplayName(permission, locale) })} canRemoveConflict={selected && categoryUnavailable && !isSaving && canConfigurePermissions && !(currentRole?.isProtectedSystemAdmin && permission.isMandatoryForSystemAdmin)} contextOnly={contextOnly} contextOnlyLabel={t("administration.areas.roles.requiredContext")} scopeLabel={getPermissionScopeLabel(permission, t)} cannotGrant={cannotGrant} dependencyCannotBeGranted={unavailableDependency} onChange={(checked) => void togglePermission(permission, checked)} />;
-                              })}
-                            </div> : null}
-                          </section>;
-                        })}</div> : null}
+                        {screenExpanded ? <div id={`role-permission-group-${screenId}`} className="mt-3 space-y-1 border-s ps-4">
+                          {screenRows.map(({ permission, contextOnly }) => {
+                            const selected = permissionIds.has(permission.id);
+                            const unavailableDependency = (permission.requiredPermissionKeys ?? []).some((key) => {
+                              const dependency = catalogByName.get(key);
+                              return !dependency || (!canGrantPermissionToRole(dependency, currentRole) && !permissionIds.has(dependency.id));
+                            });
+                            const dependencyUnavailableForSystemRole = (permission.requiredPermissionKeys ?? []).some((key) => {
+                              const dependency = catalogByName.get(key);
+                              return Boolean(dependency && !permissionIds.has(dependency.id) && isBootstrapPermissionBlockedForRole(dependency, currentRole));
+                            });
+                            const unavailableForSystemRole = !selected && isBootstrapPermissionBlockedForRole(permission, currentRole);
+                            const cannotGrant = !canGrantPermissionToRole(permission, currentRole) && !selected;
+                            return <PermissionRow key={permission.id} permission={permission} locale={locale} selected={selected} disabled={isSaving || !canConfigurePermissions || (!selected && (cannotGrant || unavailableDependency || unavailableForSystemRole || dependencyUnavailableForSystemRole))} locked={Boolean(currentRole?.isProtectedSystemAdmin && permission.isMandatoryForSystemAdmin)} lockedLabel={t("administration.areas.roles.mandatoryAdminPermission")} viewLabel={permission.level === "View" ? t("administration.areas.roles.viewAccess") : t("administration.areas.roles.action")} sensitiveLabel={t("administration.areas.roles.sensitiveAction")} legacyLabel={t("administration.areas.roles.legacyCompatibilityPermission")} unavailableLabel={t("administration.areas.roles.permissionCannotBeDelegated")} dependencyUnavailableLabel={t("administration.areas.roles.permissionDependencyCannotBeDelegated")} systemRoleUnavailableLabel={t("administration.areas.roles.permissionUnavailableForSystemRole")} dependencyLabel={t("administration.areas.roles.requiresPermissions")} dependencyLabels={(permission.requiredPermissionKeys ?? []).map((key) => { const dependency = catalogByName.get(key); return dependency ? `${getPermissionResourceLabel(dependency, locale)}: ${getPermissionActionLabel(dependency, locale)}` : key; })} contextOnly={contextOnly} contextOnlyLabel={t("administration.areas.roles.requiredContext")} scopeLabel={getPermissionScopeLabel(permission, t)} cannotGrant={cannotGrant} dependencyCannotBeGranted={unavailableDependency} unavailableForSystemRole={unavailableForSystemRole} dependencyUnavailableForSystemRole={dependencyUnavailableForSystemRole} onChange={(checked) => void togglePermission(permission, checked)} />;
+                          })}
+                        </div> : null}
                       </section>;
                     })}</div>}
             </section>
@@ -615,24 +571,18 @@ export function RolesPage() {
   );
 }
 
-function canGrantPermission(permission: PermissionCatalogItemDto, category: string): boolean {
-  return permission.canDelegate === true && isCategoryAllowed(permission, category);
+function canGrantPermission(permission: PermissionCatalogItemDto, role: ManagedRoleDto | null | undefined): boolean {
+  const canDelegate = role?.isSystem ? permission.canDelegate : permission.canDelegateToCustomRole;
+  return canDelegate === true && permission.isAssignable && permission.isActive;
 }
 
-function getCategoryConflictPermissionKeys(error: ApiError): string[] {
-  const problem = toRecord(error.details);
-  if (!problem) return [];
-  const details = toRecord(problem.details);
-  const parameters = toRecord(problem.parameters);
-  const candidates = [details?.permissionKeys, parameters?.permissionKeys, problem.permissionKeys];
-  const value = candidates.find(Array.isArray);
-  return Array.isArray(value) ? value.filter((key): key is string => typeof key === "string") : [];
+function isBootstrapPermissionBlockedForRole(permission: PermissionCatalogItemDto, role: ManagedRoleDto | null | undefined): boolean {
+  if (!role?.isSystem || !BOOTSTRAP_PERMISSION_KEYS.has(permission.name)) return false;
+  return !role.isProtectedSystemAdmin || !PROTECTED_ADMIN_BOOTSTRAP_PERMISSION_KEYS.has(permission.name);
 }
 
-function toRecord(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : undefined;
+function canGrantPermissionToRole(permission: PermissionCatalogItemDto, role: ManagedRoleDto | null | undefined): boolean {
+  return canGrantPermission(permission, role) && !isBootstrapPermissionBlockedForRole(permission, role);
 }
 
 function getPermissionScopeLabel(permission: PermissionCatalogItemDto, t: (key: string) => string): string | undefined {
@@ -644,26 +594,20 @@ function getPermissionScopeLabel(permission: PermissionCatalogItemDto, t: (key: 
 }
 
 function permissionGroupsForRole(permissions: PermissionCatalogItemDto[], locale: "en" | "ar") {
-  const grouped = new Map<string, { module: PermissionCatalogItemDto; screens: Map<string, { screen: PermissionCatalogItemDto; views: PermissionCatalogItemDto[]; actions: PermissionCatalogItemDto[] }> }>();
+  const grouped = new Map<string, { screen: PermissionCatalogItemDto; views: PermissionCatalogItemDto[]; actions: PermissionCatalogItemDto[] }>();
   for (const permission of permissions) {
-    const module = grouped.get(permission.moduleId) ?? { module: permission, screens: new Map() };
-    const screen = module.screens.get(permission.screenId) ?? { screen: permission, views: [], actions: [] };
+    const screenId = `${permission.moduleId}:${permission.screenId}`;
+    const screen = grouped.get(screenId) ?? { screen: permission, views: [], actions: [] };
     if (permission.level === "View") screen.views.push(permission);
     else screen.actions.push(permission);
-    module.screens.set(permission.screenId, screen);
-    grouped.set(permission.moduleId, module);
+    grouped.set(screenId, screen);
   }
   return [...grouped.entries()]
-    .sort(([leftId, left], [rightId, right]) => getPermissionModuleLabel(left.module, locale).localeCompare(getPermissionModuleLabel(right.module, locale), locale, { sensitivity: "base" }) || leftId.localeCompare(rightId))
-    .map(([moduleId, group]) => [moduleId, {
-      module: group.module,
-      screens: [...group.screens.entries()]
-        .sort(([leftId, left], [rightId, right]) => getPermissionResourceLabel(left.screen, locale).localeCompare(getPermissionResourceLabel(right.screen, locale), locale, { sensitivity: "base" }) || leftId.localeCompare(rightId))
-        .map(([screenId, screen]) => [screenId, {
-          ...screen,
-          views: [...screen.views].sort((left, right) => getPermissionActionLabel(left, locale).localeCompare(getPermissionActionLabel(right, locale), locale, { sensitivity: "base" }) || left.name.localeCompare(right.name)),
-          actions: [...screen.actions].sort((left, right) => getPermissionActionLabel(left, locale).localeCompare(getPermissionActionLabel(right, locale), locale, { sensitivity: "base" }) || left.name.localeCompare(right.name)),
-        }] as const),
+    .sort(([leftId, left], [rightId, right]) => getPermissionResourceLabel(left.screen, locale).localeCompare(getPermissionResourceLabel(right.screen, locale), locale, { sensitivity: "base" }) || leftId.localeCompare(rightId))
+    .map(([screenId, screen]) => [screenId, {
+      ...screen,
+      views: [...screen.views].sort((left, right) => getPermissionActionLabel(left, locale).localeCompare(getPermissionActionLabel(right, locale), locale, { sensitivity: "base" }) || left.name.localeCompare(right.name)),
+      actions: [...screen.actions].sort((left, right) => getPermissionActionLabel(left, locale).localeCompare(getPermissionActionLabel(right, locale), locale, { sensitivity: "base" }) || left.name.localeCompare(right.name)),
     }] as const);
 }
 
@@ -703,12 +647,11 @@ function PermissionRow({
   dependencyLabels,
   unavailableLabel,
   dependencyUnavailableLabel,
-  categoryUnavailableLabel,
-  removeConflictLabel,
-  removeConflictAriaLabel,
-  canRemoveConflict,
+  systemRoleUnavailableLabel,
   cannotGrant,
   dependencyCannotBeGranted,
+  unavailableForSystemRole,
+  dependencyUnavailableForSystemRole,
   contextOnly,
   contextOnlyLabel,
   scopeLabel,
@@ -727,12 +670,11 @@ function PermissionRow({
   dependencyLabels: string[];
   unavailableLabel: string;
   dependencyUnavailableLabel: string;
-  categoryUnavailableLabel?: string;
-  removeConflictLabel: string;
-  removeConflictAriaLabel: string;
-  canRemoveConflict: boolean;
+  systemRoleUnavailableLabel: string;
   cannotGrant: boolean;
   dependencyCannotBeGranted: boolean;
+  unavailableForSystemRole: boolean;
+  dependencyUnavailableForSystemRole: boolean;
   contextOnly: boolean;
   contextOnlyLabel: string;
   scopeLabel?: string;
@@ -743,7 +685,7 @@ function PermissionRow({
   const infoId = `role-permission-info-${permission.id}`;
   return <div className="space-y-1">
     <label htmlFor={`role-permission-${permission.id}`} className="flex min-h-11 cursor-pointer items-start gap-3 rounded-md px-2 py-2 text-sm hover:bg-accent/60 focus-within:ring-2 focus-within:ring-ring">
-      <input id={`role-permission-${permission.id}`} type="checkbox" checked={selected} disabled={disabled || locked} aria-label={`${getPermissionResourceLabel(permission, locale)}: ${getPermissionActionLabel(permission, locale)}`} aria-describedby={description || dependencyLabels.length > 0 || cannotGrant || dependencyCannotBeGranted || categoryUnavailableLabel ? infoId : undefined} onChange={(event) => onChange(event.target.checked)} className="mt-0.5 h-4 w-4 shrink-0 accent-primary" />
+      <input id={`role-permission-${permission.id}`} type="checkbox" checked={selected} disabled={disabled || locked} aria-label={`${getPermissionResourceLabel(permission, locale)}: ${getPermissionActionLabel(permission, locale)} (${permission.name})`} aria-describedby={description || dependencyLabels.length > 0 || cannotGrant || dependencyCannotBeGranted || unavailableForSystemRole || dependencyUnavailableForSystemRole || locked ? infoId : undefined} onChange={(event) => onChange(event.target.checked)} className="mt-0.5 h-4 w-4 shrink-0 accent-primary" />
       <span id={infoId} className="min-w-0 flex-1">
         <span className="flex flex-wrap items-center gap-2">
           <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{viewLabel}</span>
@@ -758,10 +700,9 @@ function PermissionRow({
         {dependencyLabels.length > 0 ? <span className="mt-1 block text-xs text-primary">{dependencyLabel}: {dependencyList}</span> : null}
         {cannotGrant && !selected ? <span className="mt-1 block text-xs text-muted-foreground">{unavailableLabel}</span> : null}
         {dependencyCannotBeGranted && !selected ? <span className="mt-1 block text-xs text-muted-foreground">{dependencyUnavailableLabel}</span> : null}
-        {categoryUnavailableLabel ? <span className="mt-1 block text-xs text-muted-foreground">{categoryUnavailableLabel}</span> : null}
+        {(unavailableForSystemRole || dependencyUnavailableForSystemRole) && !selected ? <span className="mt-1 block text-xs text-muted-foreground">{systemRoleUnavailableLabel}</span> : null}
         <span dir="ltr" className="mt-1 block break-all text-start font-mono text-[10px] text-muted-foreground/75">{permission.name}</span>
       </span>
     </label>
-    {canRemoveConflict ? <Button type="button" size="sm" variant="outline" className="ms-9" aria-label={removeConflictAriaLabel} onClick={() => onChange(false)}>{removeConflictLabel}</Button> : null}
   </div>;
 }

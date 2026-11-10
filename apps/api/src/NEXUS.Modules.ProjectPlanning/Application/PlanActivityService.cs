@@ -73,6 +73,12 @@ public class PlanActivityService : IPlanActivityService
             return Result<PlanActivityDto>.Failure(Error.Validation("Actual Finish requires Actual Start"));
         }
 
+        if (dto.SchedulingMode == PlanSchedulingMode.Manual && dto.StartDate.HasValue && dto.EndDate.HasValue &&
+            dto.EndDate.Value.Date < dto.StartDate.Value.Date)
+        {
+            return Result<PlanActivityDto>.Failure(Error.Validation("End date must be on or after start date"));
+        }
+
         if (RequiresConstraintDate(dto.ConstraintType) && !dto.ConstraintDate.HasValue)
             return Result<PlanActivityDto>.Failure(Error.Validation($"{dto.ConstraintType} requires a constraint date"));
 
@@ -182,6 +188,12 @@ public class PlanActivityService : IPlanActivityService
         if (dto.ActualFinish.HasValue && !dto.ActualStart.HasValue)
         {
             return Result<PlanActivityDto>.Failure(Error.Validation("Actual Finish requires Actual Start"));
+        }
+
+        if (dto.SchedulingMode == PlanSchedulingMode.Manual && dto.StartDate.HasValue && dto.EndDate.HasValue &&
+            dto.EndDate.Value.Date < dto.StartDate.Value.Date)
+        {
+            return Result<PlanActivityDto>.Failure(Error.Validation("End date must be on or after start date"));
         }
 
         if (RequiresConstraintDate(dto.ConstraintType) && !dto.ConstraintDate.HasValue)
@@ -410,219 +422,193 @@ public class PlanActivityService : IPlanActivityService
 
     public async Task<Result<PlanActivityDto>> MoveAsync(Guid planId, Guid activityId, MovePlanActivityDto dto, string userId, CancellationToken cancellationToken = default)
     {
-        var activity = await _context.Set<PlanActivity>()
-            .FirstOrDefaultAsync(item => item.Id == activityId && !item.IsDeleted, cancellationToken);
+        var activity = await _context.Set<PlanActivity>().FirstOrDefaultAsync(item => item.Id == activityId && !item.IsDeleted, cancellationToken);
         if (activity is null) return Result<PlanActivityDto>.Failure(Error.NotFound("Activity not found"));
-
         var editError = await GetEditErrorAsync(activity, planId, cancellationToken);
         if (editError is not null) return Result<PlanActivityDto>.Failure(editError);
-        var previousSummaryIds = await _summaryRollup.RecalculateAsync(activity.PlanVersionId, userId, cancellationToken: cancellationToken);
         if (dto.TargetActivityId == activityId) return Result<PlanActivityDto>.Failure(Error.Validation("An activity cannot be moved relative to itself"));
 
-        var nodes = await _context.Set<PlanWbsNode>()
-            .Where(node => node.PlanVersionId == activity.PlanVersionId && !node.IsDeleted)
-            .ToListAsync(cancellationToken);
-        var sourceNode = activity.WbsId.HasValue ? nodes.FirstOrDefault(node => node.Id == activity.WbsId.Value) : null;
-        var targetActivity = dto.TargetActivityId.HasValue
-            ? await _context.Set<PlanActivity>().FirstOrDefaultAsync(item => item.Id == dto.TargetActivityId.Value && !item.IsDeleted, cancellationToken)
-            : null;
-        if (dto.TargetActivityId.HasValue && targetActivity is null)
-            return Result<PlanActivityDto>.Failure(Error.NotFound("Drop target activity not found"));
-        if (targetActivity is not null && targetActivity.PlanVersionId != activity.PlanVersionId)
-            return Result<PlanActivityDto>.Failure(Error.Validation("Activities must belong to the same plan version"));
+        var nodes = await _context.Set<PlanWbsNode>().Where(node => node.PlanVersionId == activity.PlanVersionId && !node.IsDeleted).ToListAsync(cancellationToken);
+        var activities = await _context.Set<PlanActivity>().Where(item => item.PlanVersionId == activity.PlanVersionId && !item.IsDeleted).ToListAsync(cancellationToken);
+        var sourceNode = ResolveActivityWbsNode(activity, nodes, out var sourceNodeError);
+        if (sourceNodeError is not null) return Result<PlanActivityDto>.Failure(Error.Validation(sourceNodeError));
 
-        var targetNode = targetActivity?.WbsId is Guid targetWbsId
-            ? nodes.FirstOrDefault(node => node.Id == targetWbsId)
-            : null;
-        if (targetActivity is not null && targetActivity.WbsId.HasValue && targetNode is null)
-            return Result<PlanActivityDto>.Failure(Error.Validation("Drop target WBS node is not in this plan version"));
+        var targetActivity = dto.TargetActivityId.HasValue ? activities.FirstOrDefault(item => item.Id == dto.TargetActivityId.Value) : null;
+        if (dto.TargetActivityId.HasValue && targetActivity is null) return Result<PlanActivityDto>.Failure(Error.NotFound("Drop target activity not found"));
+        string? targetNodeError = null;
+        var targetActivityNode = targetActivity is null ? null : ResolveActivityWbsNode(targetActivity, nodes, out targetNodeError);
+        if (targetNodeError is not null) return Result<PlanActivityDto>.Failure(Error.Validation(targetNodeError));
 
-        if (sourceNode is null)
-        {
-            if (dto.Position == PlanActivityMovePosition.Child || targetActivity?.WbsId is not null)
-                return Result<PlanActivityDto>.Failure(Error.Validation("This activity is not linked to a movable WBS node"));
-            if (targetActivity is null || targetActivity.WbsId is not null)
-                return Result<PlanActivityDto>.Failure(Error.Validation("A root activity can only move relative to another root activity"));
-            if (dto.RowVersion.Length == 0)
-                return Result<PlanActivityDto>.Failure(Error.Conflict("The activity version is required. Reload and try again."));
+        var explicitTargetNode = dto.TargetWbsId.HasValue ? nodes.FirstOrDefault(node => node.Id == dto.TargetWbsId.Value) : null;
+        if (dto.TargetWbsId.HasValue && explicitTargetNode is null)
+            return Result<PlanActivityDto>.Failure(Error.Validation("The target WBS node must belong to the active plan version."));
+        var isBeforeOrAfter = dto.Position is PlanActivityMovePosition.Before or PlanActivityMovePosition.After;
+        if (!isBeforeOrAfter && dto.Position != PlanActivityMovePosition.Child)
+            return Result<PlanActivityDto>.Failure(Error.Validation("Choose a valid activity move position."));
 
-            var rootActivities = await _context.Set<PlanActivity>()
-                .Where(item => item.PlanVersionId == activity.PlanVersionId && !item.IsDeleted && item.WbsId == null)
-                .OrderBy(item => item.SortOrder).ThenBy(item => item.Code)
-                .ToListAsync(cancellationToken);
-            var sourceIndex = rootActivities.FindIndex(item => item.Id == activity.Id);
-            var targetIndex = rootActivities.FindIndex(item => item.Id == targetActivity!.Id);
-            if (sourceIndex < 0 || targetIndex < 0)
-                return Result<PlanActivityDto>.Failure(Error.Validation("The activity is not in the current root structure"));
-            var historyBefore = rootActivities.ToDictionary(item => item.Id, PlanGridCommandHistoryService.CaptureActivityFields);
-            rootActivities.RemoveAt(sourceIndex);
-            targetIndex = rootActivities.FindIndex(item => item.Id == targetActivity!.Id);
-            rootActivities.Insert(Math.Clamp(dto.Position == PlanActivityMovePosition.Before ? targetIndex : targetIndex + 1, 0, rootActivities.Count), activity);
-            var originalValues = System.Text.Json.JsonSerializer.Serialize(activity.ToDto());
-            for (var index = 0; index < rootActivities.Count; index++) rootActivities[index].SortOrder = index;
-            _context.Entry(activity).Property(item => item.RowVersion).OriginalValue = dto.RowVersion;
-            await using var reorderTransaction = await _context.Database.BeginTransactionAsync(cancellationToken);
-            try
-            {
-                await _context.SaveChangesAsync(cancellationToken);
-                await _auditService.LogAsync(new AuditEntry
-                {
-                    EntityType = "PlanActivity", EntityId = activity.Id, Action = "Move", UserId = TryParseGuid(userId),
-                    OriginalValues = originalValues,
-                    NewValues = System.Text.Json.JsonSerializer.Serialize(new { activity.Id, dto.Position, dto.TargetActivityId }),
-                    Timestamp = DateTime.UtcNow, CreatedBy = userId
-                }, cancellationToken);
-                if (_commandHistory is not null)
-                {
-                    using var collection = _commandHistory.BeginCollection("MoveActivity");
-                    foreach (var item in rootActivities)
-                        await _commandHistory.RecordActivityUpdateAsync(planId, activity.PlanVersionId, userId, historyBefore[item.Id], item, cancellationToken);
-                    await _commandHistory.CommitCollectionAsync(planId, activity.PlanVersionId, userId, cancellationToken);
-                }
-                await reorderTransaction.CommitAsync(cancellationToken);
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                await reorderTransaction.RollbackAsync(cancellationToken);
-                return Result<PlanActivityDto>.Failure(Error.Conflict("The activity was modified by another user. Reload and try again."));
-            }
-            catch
-            {
-                await reorderTransaction.RollbackAsync(cancellationToken);
-                throw;
-            }
-            return Result<PlanActivityDto>.Success(await BuildComputedDtoAsync(activity, cancellationToken));
-        }
+        var sourceIsNodeRow = sourceNode is not null && GetPrimaryActivityId(sourceNode, activities) == activity.Id;
+        var sourceEntryId = sourceIsNodeRow ? sourceNode!.Id : activity.Id;
+        var oldParentWbsId = sourceIsNodeRow ? sourceNode!.ParentWbsId : activity.WbsId;
+        Guid? destinationParentWbsId;
+        Guid targetEntryId;
+        PlanWbsNode? targetVersionNode;
 
-        // A WBS node can legally contain more than one activity. In that case
-        // Before/After reorders the activities inside the node while preserving
-        // the node hierarchy; moving the node itself is reserved for a drop
-        // whose target belongs to a different WBS node.
-        if (targetActivity is not null && targetActivity.WbsId == sourceNode.Id && (dto.Position is PlanActivityMovePosition.Before or PlanActivityMovePosition.After))
-        {
-            if (dto.RowVersion.Length == 0)
-                return Result<PlanActivityDto>.Failure(Error.Conflict("The activity version is required. Reload and try again."));
-
-            var activitiesInNode = await _context.Set<PlanActivity>()
-                .Where(item => item.PlanVersionId == activity.PlanVersionId && !item.IsDeleted && item.WbsId == sourceNode.Id)
-                .OrderBy(item => item.SortOrder).ThenBy(item => item.Code)
-                .ToListAsync(cancellationToken);
-            var sourceIndex = activitiesInNode.FindIndex(item => item.Id == activity.Id);
-            var targetIndex = activitiesInNode.FindIndex(item => item.Id == targetActivity.Id);
-            if (sourceIndex < 0 || targetIndex < 0)
-                return Result<PlanActivityDto>.Failure(Error.Validation("The activity is not in the current WBS structure"));
-
-            var historyBefore = activitiesInNode.ToDictionary(item => item.Id, PlanGridCommandHistoryService.CaptureActivityFields);
-            var originalValues = System.Text.Json.JsonSerializer.Serialize(activity.ToDto());
-            activitiesInNode.RemoveAt(sourceIndex);
-            targetIndex = activitiesInNode.FindIndex(item => item.Id == targetActivity.Id);
-            activitiesInNode.Insert(Math.Clamp(dto.Position == PlanActivityMovePosition.Before ? targetIndex : targetIndex + 1, 0, activitiesInNode.Count), activity);
-            for (var index = 0; index < activitiesInNode.Count; index++) activitiesInNode[index].SortOrder = index;
-            _context.Entry(activity).Property(item => item.RowVersion).OriginalValue = dto.RowVersion;
-            await using var reorderTransaction = await _context.Database.BeginTransactionAsync(cancellationToken);
-            try
-            {
-                await _context.SaveChangesAsync(cancellationToken);
-                await _auditService.LogAsync(new AuditEntry
-                {
-                    EntityType = "PlanActivity", EntityId = activity.Id, Action = "Move", UserId = TryParseGuid(userId),
-                    OriginalValues = originalValues,
-                    NewValues = System.Text.Json.JsonSerializer.Serialize(new { activity.Id, dto.Position, dto.TargetActivityId, sourceWbsId = sourceNode.Id }),
-                    Timestamp = DateTime.UtcNow, CreatedBy = userId
-                }, cancellationToken);
-                if (_commandHistory is not null)
-                {
-                    using var collection = _commandHistory.BeginCollection("MoveActivity");
-                    foreach (var item in activitiesInNode)
-                        await _commandHistory.RecordActivityUpdateAsync(planId, activity.PlanVersionId, userId, historyBefore[item.Id], item, cancellationToken);
-                    await _commandHistory.CommitCollectionAsync(planId, activity.PlanVersionId, userId, cancellationToken);
-                }
-                await reorderTransaction.CommitAsync(cancellationToken);
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                await reorderTransaction.RollbackAsync(cancellationToken);
-                return Result<PlanActivityDto>.Failure(Error.Conflict("The plan structure was modified by another user. Reload and try again."));
-            }
-            catch
-            {
-                await reorderTransaction.RollbackAsync(cancellationToken);
-                throw;
-            }
-            return Result<PlanActivityDto>.Success(await BuildComputedDtoAsync(activity, cancellationToken));
-        }
-
-        if (dto.WbsRowVersion.Length == 0)
-            return Result<PlanActivityDto>.Failure(Error.Conflict("The WBS version is required. Reload and try again."));
-
-        Guid? parentWbsId;
         if (dto.Position == PlanActivityMovePosition.Child)
         {
-            parentWbsId = dto.TargetWbsId ?? targetNode?.Id;
-            if (!parentWbsId.HasValue && dto.TargetActivityId.HasValue)
-                return Result<PlanActivityDto>.Failure(Error.Validation("Choose a valid WBS parent"));
-            if (parentWbsId.HasValue && nodes.All(node => node.Id != parentWbsId.Value))
-                return Result<PlanActivityDto>.Failure(Error.Validation("The target WBS node must belong to this plan version"));
+            destinationParentWbsId = explicitTargetNode?.Id ?? targetActivityNode?.Id;
+            if (!destinationParentWbsId.HasValue)
+                return Result<PlanActivityDto>.Failure(Error.Validation("Choose a valid WBS node as the parent."));
+            targetEntryId = destinationParentWbsId.Value;
+            targetVersionNode = nodes.First(node => node.Id == destinationParentWbsId.Value);
+        }
+        else if (explicitTargetNode is not null)
+        {
+            if (targetActivityNode is not null && targetActivityNode.Id != explicitTargetNode.Id)
+                return Result<PlanActivityDto>.Failure(Error.Validation("The activity and WBS drop targets do not match."));
+            targetVersionNode = explicitTargetNode;
+            if (targetActivity is not null && GetPrimaryActivityId(explicitTargetNode, activities) != targetActivity.Id)
+            {
+                targetEntryId = targetActivity.Id;
+                destinationParentWbsId = explicitTargetNode.Id;
+            }
+            else
+            {
+                targetEntryId = explicitTargetNode.Id;
+                destinationParentWbsId = explicitTargetNode.ParentWbsId;
+            }
+        }
+        else if (targetActivity is not null)
+        {
+            if (targetActivityNode is null)
+            {
+                targetEntryId = targetActivity.Id;
+                destinationParentWbsId = null;
+                targetVersionNode = null;
+            }
+            else
+            {
+                targetVersionNode = targetActivityNode;
+                if (GetPrimaryActivityId(targetActivityNode, activities) == targetActivity.Id)
+                {
+                    targetEntryId = targetActivityNode.Id;
+                    destinationParentWbsId = targetActivityNode.ParentWbsId;
+                }
+                else
+                {
+                    targetEntryId = targetActivity.Id;
+                    destinationParentWbsId = targetActivityNode.Id;
+                }
+            }
+        }
+        else return Result<PlanActivityDto>.Failure(Error.Validation("Choose a target activity or WBS row."));
+
+        if (destinationParentWbsId.HasValue && nodes.All(node => node.Id != destinationParentWbsId.Value))
+            return Result<PlanActivityDto>.Failure(Error.Validation("The target parent must belong to the active plan version."));
+        if (isBeforeOrAfter && targetEntryId == sourceEntryId)
+            return Result<PlanActivityDto>.Failure(Error.Validation("An activity cannot be moved relative to itself."));
+        if (sourceIsNodeRow && destinationParentWbsId.HasValue && WouldCreateWbsCycle(sourceNode!.Id, destinationParentWbsId.Value, nodes))
+            return Result<PlanActivityDto>.Failure(Error.Validation("An activity cannot be moved under itself or one of its descendants."));
+
+        if (sourceIsNodeRow)
+        {
+            if (dto.WbsRowVersion is null || dto.WbsRowVersion.Length == 0 || !sourceNode!.RowVersion.SequenceEqual(dto.WbsRowVersion))
+                return Result<PlanActivityDto>.Failure(Error.Conflict("The WBS structure changed. Reload and try again."));
         }
         else
         {
-            if (targetNode is null)
-                return Result<PlanActivityDto>.Failure(Error.Validation("Before/after drops require a target activity with a WBS node"));
-            parentWbsId = targetNode.ParentWbsId;
+            if (dto.RowVersion is null || dto.RowVersion.Length == 0 || !activity.RowVersion.SequenceEqual(dto.RowVersion))
+                return Result<PlanActivityDto>.Failure(Error.Conflict("The activity was modified by another user. Reload and try again."));
+            if (sourceNode is not null && (dto.WbsRowVersion is null || dto.WbsRowVersion.Length == 0 || !sourceNode.RowVersion.SequenceEqual(dto.WbsRowVersion)))
+                return Result<PlanActivityDto>.Failure(Error.Conflict("The WBS structure changed. Reload and try again."));
         }
+        if (targetVersionNode is not null &&
+            (dto.TargetWbsRowVersion is null || dto.TargetWbsRowVersion.Length == 0 || !targetVersionNode.RowVersion.SequenceEqual(dto.TargetWbsRowVersion)))
+            return Result<PlanActivityDto>.Failure(Error.Conflict("The target WBS structure changed. Reload and try again."));
 
-        if (sourceNode.Id == parentWbsId || (parentWbsId.HasValue && WouldCreateWbsCycle(sourceNode.Id, parentWbsId.Value, nodes)))
-            return Result<PlanActivityDto>.Failure(Error.Validation("An activity cannot be moved under itself or one of its descendants"));
-
-        var originalNodeValues = System.Text.Json.JsonSerializer.Serialize(sourceNode.ToDto());
-        var historyBeforeNodes = nodes.ToDictionary(node => node.Id, PlanGridCommandHistoryService.CaptureWbsFields);
-        var oldParent = sourceNode.ParentWbsId;
-        var siblings = nodes.Where(node => node.ParentWbsId == parentWbsId && node.Id != sourceNode.Id)
-            .OrderBy(node => node.SortOrder).ThenBy(node => node.Code).ToList();
-        var insertIndex = siblings.Count;
-        if (dto.Position is PlanActivityMovePosition.Before or PlanActivityMovePosition.After)
+        var destinationSiblings = BuildSiblingOrderItems(destinationParentWbsId, nodes, activities).Where(item => item.Id != sourceEntryId).ToList();
+        var insertIndex = destinationSiblings.Count;
+        if (isBeforeOrAfter)
         {
-            var targetIndex = siblings.FindIndex(node => node.Id == targetNode!.Id);
-            if (targetIndex < 0) return Result<PlanActivityDto>.Failure(Error.Validation("The target is no longer in the current WBS structure"));
+            var targetIndex = destinationSiblings.FindIndex(item => item.Id == targetEntryId);
+            if (targetIndex < 0)
+                return Result<PlanActivityDto>.Failure(Error.Validation("The target is no longer in the current sibling structure. Refresh the plan and try again."));
             insertIndex = dto.Position == PlanActivityMovePosition.Before ? targetIndex : targetIndex + 1;
         }
         else if (dto.SortOrder.HasValue)
         {
-            insertIndex = Math.Clamp(dto.SortOrder.Value, 0, siblings.Count);
+            insertIndex = Math.Clamp(dto.SortOrder.Value, 0, destinationSiblings.Count);
         }
-        siblings.Insert(insertIndex, sourceNode);
-        sourceNode.ParentWbsId = parentWbsId;
-        for (var index = 0; index < siblings.Count; index++) siblings[index].SortOrder = index;
 
-        if (oldParent != parentWbsId)
+        var previousSummaryIds = await _summaryRollup.RecalculateAsync(activity.PlanVersionId, userId, cancellationToken: cancellationToken);
+        var historyBeforeNodes = nodes.ToDictionary(node => node.Id, PlanGridCommandHistoryService.CaptureWbsFields);
+        var historyBeforeActivities = activities.ToDictionary(item => item.Id, PlanGridCommandHistoryService.CaptureActivityFields);
+        var originalValues = sourceIsNodeRow ? System.Text.Json.JsonSerializer.Serialize(sourceNode!.ToDto()) : System.Text.Json.JsonSerializer.Serialize(activity.ToDto());
+
+        if (sourceIsNodeRow)
         {
-            var oldSiblings = nodes.Where(node => node.ParentWbsId == oldParent && node.Id != sourceNode.Id)
-                .OrderBy(node => node.SortOrder).ThenBy(node => node.Code).ToList();
-            for (var index = 0; index < oldSiblings.Count; index++) oldSiblings[index].SortOrder = index;
+            sourceNode!.ParentWbsId = destinationParentWbsId;
+            sourceNode.UpdatedBy = userId;
+        }
+        else
+        {
+            activity.WbsId = destinationParentWbsId;
+            activity.UpdatedBy = userId;
+        }
+
+        var sourceOrderItem = new MoveOrderItem(sourceEntryId, sourceIsNodeRow ? sourceNode!.SortOrder : activity.SortOrder,
+            sourceIsNodeRow ? sourceNode!.Code : activity.Code, sourceIsNodeRow ? sourceNode : null, sourceIsNodeRow ? null : activity);
+        destinationSiblings.Insert(Math.Clamp(insertIndex, 0, destinationSiblings.Count), sourceOrderItem);
+        ReindexSiblingOrderItems(destinationSiblings, userId);
+        if (oldParentWbsId != destinationParentWbsId)
+        {
+            var oldSiblings = BuildSiblingOrderItems(oldParentWbsId, nodes, activities).Where(item => item.Id != sourceEntryId).ToList();
+            ReindexSiblingOrderItems(oldSiblings, userId);
+        }
+
+        if (targetVersionNode is not null)
+        {
+            targetVersionNode.UpdatedBy = userId;
+            _context.Entry(targetVersionNode).Property(node => node.UpdatedBy).IsModified = true;
+            _context.Entry(targetVersionNode).Property(node => node.RowVersion).OriginalValue = dto.TargetWbsRowVersion;
+        }
+        if (sourceNode is not null && !sourceIsNodeRow)
+        {
+            sourceNode.UpdatedBy = userId;
+            _context.Entry(sourceNode).Property(node => node.UpdatedBy).IsModified = true;
+            _context.Entry(sourceNode).Property(node => node.RowVersion).OriginalValue = dto.WbsRowVersion;
+        }
+        else if (sourceIsNodeRow)
+        {
+            _context.Entry(sourceNode!).Property(node => node.RowVersion).OriginalValue = dto.WbsRowVersion;
+        }
+        else
+        {
+            _context.Entry(activity).Property(item => item.RowVersion).OriginalValue = dto.RowVersion;
         }
 
         await _summaryRollup.RecalculateAsync(activity.PlanVersionId, userId, previousSummaryIds, cancellationToken);
-
-        _context.Entry(sourceNode).Property(node => node.RowVersion).OriginalValue = dto.WbsRowVersion;
-        if (targetNode is not null && targetNode.Id != sourceNode.Id && dto.TargetWbsRowVersion.Length > 0)
-            _context.Entry(targetNode).Property(node => node.RowVersion).OriginalValue = dto.TargetWbsRowVersion;
-
         await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
         try
         {
             await _context.SaveChangesAsync(cancellationToken);
             await _auditService.LogAsync(new AuditEntry
             {
-                EntityType = "PlanActivity", EntityId = activity.Id, Action = "Move", UserId = TryParseGuid(userId),
-                OriginalValues = originalNodeValues,
-                NewValues = System.Text.Json.JsonSerializer.Serialize(new { activity.Id, oldParent, parentWbsId, dto.Position, dto.TargetActivityId }),
-                Timestamp = DateTime.UtcNow, CreatedBy = userId
+                EntityType = sourceIsNodeRow ? "PlanWbsNode" : "PlanActivity",
+                EntityId = sourceIsNodeRow ? sourceNode!.Id : activity.Id,
+                Action = "Move",
+                UserId = TryParseGuid(userId),
+                OriginalValues = originalValues,
+                NewValues = System.Text.Json.JsonSerializer.Serialize(new { activity.Id, sourceEntryId, targetEntryId, oldParentWbsId, destinationParentWbsId, dto.Position }),
+                Timestamp = DateTime.UtcNow,
+                CreatedBy = userId
             }, cancellationToken);
             if (_commandHistory is not null)
             {
                 using var collection = _commandHistory.BeginCollection("MoveActivity");
                 foreach (var node in nodes)
                     await _commandHistory.RecordWbsUpdateAsync(planId, activity.PlanVersionId, userId, historyBeforeNodes[node.Id], node, cancellationToken);
+                foreach (var item in activities)
+                    await _commandHistory.RecordActivityUpdateAsync(planId, activity.PlanVersionId, userId, historyBeforeActivities[item.Id], item, cancellationToken);
                 await _commandHistory.CommitCollectionAsync(planId, activity.PlanVersionId, userId, cancellationToken);
             }
             await transaction.CommitAsync(cancellationToken);
@@ -630,16 +616,84 @@ public class PlanActivityService : IPlanActivityService
         catch (DbUpdateConcurrencyException)
         {
             await transaction.RollbackAsync(cancellationToken);
-            return Result<PlanActivityDto>.Failure(Error.Conflict("The plan structure was modified by another user. Reload and try again."));
+            return Result<PlanActivityDto>.Failure(Error.Conflict("The plan structure was modified concurrently. Reload and try again."));
         }
         catch
         {
             await transaction.RollbackAsync(cancellationToken);
             throw;
         }
+
         return Result<PlanActivityDto>.Success(await BuildComputedDtoAsync(activity, cancellationToken));
     }
 
+    private static Guid? GetPrimaryActivityId(PlanWbsNode node, IReadOnlyCollection<PlanActivity> activities)
+    {
+        if (node.ActivityId.HasValue && activities.Any(item => item.Id == node.ActivityId.Value))
+            return node.ActivityId.Value;
+        return activities.Where(item => item.WbsId == node.Id)
+            .OrderBy(item => item.SortOrder).ThenBy(item => item.Code, StringComparer.Ordinal).ThenBy(item => item.Id)
+            .Select(item => (Guid?)item.Id).FirstOrDefault();
+    }
+
+    private static PlanWbsNode? ResolveActivityWbsNode(PlanActivity activity, IReadOnlyCollection<PlanWbsNode> nodes, out string? error)
+    {
+        error = null;
+        var nodeByWbsId = activity.WbsId.HasValue ? nodes.FirstOrDefault(node => node.Id == activity.WbsId.Value) : null;
+        var reverseMatches = nodes.Where(node => node.ActivityId == activity.Id).Take(2).ToList();
+        if (reverseMatches.Count > 1)
+        {
+            error = "This activity is linked from more than one WBS node. An administrator must repair the association before moving it.";
+            return null;
+        }
+        if (activity.WbsId.HasValue && nodeByWbsId is null)
+        {
+            error = "This activity points to a WBS node that is missing, deleted, or outside the active plan version. Refresh the plan; an administrator must repair the association before moving it.";
+            return null;
+        }
+        var reverseMatch = reverseMatches.SingleOrDefault();
+        if (nodeByWbsId is not null && reverseMatch is not null && nodeByWbsId.Id != reverseMatch.Id)
+        {
+            error = "This activity's WBS links disagree. An administrator must repair the association before moving it.";
+            return null;
+        }
+        return nodeByWbsId ?? reverseMatch;
+    }
+
+    private static List<MoveOrderItem> BuildSiblingOrderItems(Guid? parentWbsId, IReadOnlyCollection<PlanWbsNode> nodes, IReadOnlyCollection<PlanActivity> activities)
+    {
+        var parentNode = parentWbsId.HasValue ? nodes.FirstOrDefault(node => node.Id == parentWbsId.Value) : null;
+        var primaryActivityId = parentNode is null ? null : GetPrimaryActivityId(parentNode, activities);
+        var representedActivityIds = parentWbsId.HasValue
+            ? primaryActivityId.HasValue ? new HashSet<Guid> { primaryActivityId.Value } : new HashSet<Guid>()
+            : nodes.Where(node => node.ActivityId.HasValue).Select(node => node.ActivityId!.Value).ToHashSet();
+        return nodes.Where(node => node.ParentWbsId == parentWbsId)
+            .Select(node => new MoveOrderItem(node.Id, node.SortOrder, node.Code, node, null))
+            .Concat(activities.Where(item => item.WbsId == parentWbsId && !representedActivityIds.Contains(item.Id))
+                .Select(item => new MoveOrderItem(item.Id, item.SortOrder, item.Code, null, item)))
+            .OrderBy(item => item.SortOrder).ThenBy(item => item.Code, StringComparer.Ordinal).ThenBy(item => item.Id)
+            .ToList();
+    }
+
+    private static void ReindexSiblingOrderItems(IReadOnlyList<MoveOrderItem> items, string userId)
+    {
+        for (var index = 0; index < items.Count; index++)
+        {
+            var item = items[index];
+            if (item.Node is not null && item.Node.SortOrder != index)
+            {
+                item.Node.SortOrder = index;
+                item.Node.UpdatedBy = userId;
+            }
+            else if (item.Activity is not null && item.Activity.SortOrder != index)
+            {
+                item.Activity.SortOrder = index;
+                item.Activity.UpdatedBy = userId;
+            }
+        }
+    }
+
+    private sealed record MoveOrderItem(Guid Id, int SortOrder, string Code, PlanWbsNode? Node, PlanActivity? Activity);
     private static bool WouldCreateWbsCycle(Guid nodeId, Guid parentId, IReadOnlyCollection<PlanWbsNode> nodes)
     {
         var byId = nodes.ToDictionary(node => node.Id);

@@ -4,13 +4,16 @@ using Microsoft.EntityFrameworkCore;
 using Moq;
 using NEXUS.Modules.ProjectPlanning.Domain;
 using NEXUS.Modules.ProjectPlanning.Application;
+using NEXUS.Modules.ProjectPlanning.Application.DTOs;
 using NEXUS.Modules.ProjectPlanning.Domain.Scheduling;
 using NEXUS.Modules.ProjectManagement.Application;
 using NEXUS.Modules.ProjectManagement.Domain;
 using NEXUS.Modules.ResourceManagement.Domain;
 using NEXUS.Modules.Audit.Application;
+using NEXUS.Modules.Audit.Domain;
 using NEXUS.Api.Tests.Testing;
 using NEXUS.Persistence;
+using NEXUS.SharedKernel;
 using System.Security.Claims;
 using Xunit;
 
@@ -298,6 +301,129 @@ public class ProjectPlanningPersistenceTests : IDisposable
 
         Assert.Equal(root.Id, loaded.ParentWbsId);
         Assert.Equal(version.Id, loaded.PlanVersionId);
+    }
+
+    [Fact]
+    public async Task Wbs_CreateWithoutFormatting_PersistsUnspecifiedSentinelsForRootChildAndSiblings()
+    {
+        SetTenant(_tenantA, _userA);
+        var plan = NewPlan();
+        _context.Plans.Add(plan);
+        await _context.SaveChangesAsync();
+        var version = NewWorkingVersion(plan);
+        _context.PlanVersions.Add(version);
+        await _context.SaveChangesAsync();
+
+        var audit = new Mock<IAuditService>();
+        audit.Setup(service => service.LogAsync(It.IsAny<AuditEntry>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+        var wbsService = new PlanWbsService(_context, audit.Object, _accessor.Object);
+
+        var rootResult = await wbsService.CreateAsync(plan.Id, new CreatePlanWbsNodeDto
+        {
+            Code = "1",
+            Name = "Phase 1"
+        }, _userA.ToString());
+        Assert.True(rootResult.IsSuccess, rootResult.Error?.Message);
+        Assert.Null(rootResult.Value!.TextFormat);
+
+        var firstChildResult = await wbsService.CreateAsync(plan.Id, new CreatePlanWbsNodeDto
+        {
+            Code = "1.1",
+            Name = "First work package",
+            ParentWbsId = rootResult.Value.Id
+        }, _userA.ToString());
+        var secondChildResult = await wbsService.CreateAsync(plan.Id, new CreatePlanWbsNodeDto
+        {
+            Code = "1.2",
+            Name = "Second work package",
+            ParentWbsId = rootResult.Value.Id
+        }, _userA.ToString());
+        Assert.True(firstChildResult.IsSuccess, firstChildResult.Error?.Message);
+        Assert.True(secondChildResult.IsSuccess, secondChildResult.Error?.Message);
+        Assert.Null(firstChildResult.Value!.TextFormat);
+        Assert.Null(secondChildResult.Value!.TextFormat);
+
+        _context.ChangeTracker.Clear();
+        var storedNodes = await _context.PlanWbsNodes
+            .IgnoreQueryFilters()
+            .Where(node => node.PlanVersionId == version.Id)
+            .OrderBy(node => node.ParentWbsId)
+            .ThenBy(node => node.SortOrder)
+            .ToListAsync();
+
+        Assert.Equal(new[] { "1", "1.1", "1.2" }, storedNodes.Select(node => node.Code));
+        Assert.Null(storedNodes[0].ParentWbsId);
+        Assert.Equal(storedNodes[0].Id, storedNodes[1].ParentWbsId);
+        Assert.Equal(storedNodes[0].Id, storedNodes[2].ParentWbsId);
+        Assert.Equal(new[] { 0, 1 }, storedNodes.Skip(1).Select(node => node.SortOrder));
+        Assert.All(storedNodes, node =>
+        {
+            Assert.NotNull(node.TextFormat);
+            Assert.False(node.TextFormat!.IsSpecified);
+            Assert.False(node.TextFormat.IsBold);
+            Assert.False(node.TextFormat.IsItalic);
+            Assert.False(node.TextFormat.IsUnderline);
+            Assert.Null(node.TextFormat.TextColorToken);
+            Assert.Null(node.TextFormat.HighlightColorToken);
+            Assert.Null(node.TextFormat.FontSizeToken);
+        });
+    }
+
+    [Fact]
+    public async Task Wbs_ExplicitFormatting_RoundTripsAndCanBeCleared()
+    {
+        SetTenant(_tenantA, _userA);
+        var plan = NewPlan();
+        _context.Plans.Add(plan);
+        await _context.SaveChangesAsync();
+        var version = NewWorkingVersion(plan);
+        _context.PlanVersions.Add(version);
+        await _context.SaveChangesAsync();
+
+        var audit = new Mock<IAuditService>();
+        audit.Setup(service => service.LogAsync(It.IsAny<AuditEntry>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+        var wbsService = new PlanWbsService(_context, audit.Object, _accessor.Object);
+        var created = await wbsService.CreateAsync(plan.Id, new CreatePlanWbsNodeDto
+        {
+            Code = "1",
+            Name = "Formatted phase",
+            TextFormat = new PlanTextFormatDto
+            {
+                IsBold = true,
+                TextColorToken = PlanTextColorToken.Teal
+            }
+        }, _userA.ToString());
+
+        Assert.True(created.IsSuccess, created.Error?.Message);
+        Assert.True(created.Value!.TextFormat?.IsBold == true);
+        Assert.Equal(PlanTextColorToken.Teal, created.Value.TextFormat?.TextColorToken);
+        _context.ChangeTracker.Clear();
+
+        var stored = await _context.PlanWbsNodes.IgnoreQueryFilters().SingleAsync(node => node.Id == created.Value.Id);
+        Assert.True(stored.TextFormat?.IsSpecified == true);
+        Assert.True(stored.TextFormat?.IsBold == true);
+        Assert.Equal(PlanTextColorToken.Teal, stored.TextFormat?.TextColorToken);
+
+        var clearedResult = await wbsService.UpdateAsync(plan.Id, stored.Id, new UpdatePlanWbsNodeDto
+        {
+            Code = stored.Code,
+            Name = stored.Name,
+            SortOrder = stored.SortOrder,
+            RowVersion = stored.RowVersion,
+            TextFormat = null
+        }, _userA.ToString());
+
+        Assert.True(clearedResult.IsSuccess, clearedResult.Error?.Message);
+        Assert.Null(clearedResult.Value!.TextFormat);
+        _context.ChangeTracker.Clear();
+
+        var cleared = await _context.PlanWbsNodes.IgnoreQueryFilters().SingleAsync(node => node.Id == stored.Id);
+        Assert.NotNull(cleared.TextFormat);
+        Assert.False(cleared.TextFormat!.IsSpecified);
+        Assert.False(cleared.TextFormat.IsBold);
+        Assert.Null(cleared.TextFormat.TextColorToken);
     }
 
     [Fact]

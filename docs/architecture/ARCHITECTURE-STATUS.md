@@ -167,7 +167,7 @@ NEXUS PMO is in the **Foundation Phase** -- a functional shell with working dash
 | Tenant isolation | Implemented in source; live database/runtime coverage pending | Authenticated tenant claims are validated per request; query filters fail closed on missing or malformed context |
 | Mock data embedded in UI | High | Frontend shows fake data; no API integration verified |
 | External identity integration | Medium | Local password and session authentication are implemented; enterprise identity provider integration remains deferred |
-| Live migration state | High until verified | EF migrations are present and applied by Development initialization; the target database's current history and physical schema must be verified before reset. Only explicit Product Owner-authorized Development `Shady/NexusPmo` reset is exempt from the backup requirement; all EF migrations and the full seed remain required. |
+| Live migration state | High until verified | EF migrations are present and applied by Development initialization; the target database's current history and physical schema must be verified before a change. Development/UAT backups are optional, but every operation still requires exact target, migration, and schema checks. A destructive Development `Shady/NexusPmo` reset still requires explicit Product Owner authorization, all EF migrations, and the full seed. |
 | Plugin framework is manifest-only | High | No runtime plugin loading |
 | Final test execution | High until verified | Source and test projects exist; the requested consolidated verification pass is pending |
 | Docker/.NET version mismatch | Resolved | SDK 10.0 images building net10.0 code (ADR-005) |

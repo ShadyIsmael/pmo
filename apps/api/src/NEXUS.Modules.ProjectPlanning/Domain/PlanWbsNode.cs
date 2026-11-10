@@ -25,5 +25,5 @@ public class PlanWbsNode : BaseEntity
     public Guid? DeliverableId { get; set; }
 
     /// <summary>Optional structured display formatting for the WBS row.</summary>
-    public PlanTextFormat? TextFormat { get; set; }
+    public PlanTextFormat? TextFormat { get; set; } = PlanTextFormat.Unspecified();
 }

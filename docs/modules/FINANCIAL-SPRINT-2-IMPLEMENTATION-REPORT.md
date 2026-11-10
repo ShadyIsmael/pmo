@@ -147,7 +147,7 @@ Source review confirms that create derives the FY through the authenticated Tena
 | Migrations applied | **None** | No migration was applied to any database. |
 | Physical schema verification | **NO / NOT RUN** | Development target was not inspected. |
 | Persistence tests | **NOT RUN** | Deferred; no runtime or UAT tests were run. |
-| Database deployment | **NOT PERFORMED** | Requires verified Development identity/history, physical schema, independent backup, reviewed SQL, and separate authorization. |
+| Database deployment | **NOT PERFORMED** | Requires verified Development identity/history, physical schema, reviewed SQL, and separate authorization. A backup is optional for Development/UAT and does not gate deployment. |
 
 **Sprint 2 source technical closure is achieved. Database delivery and end-to-end verification remain pending; no Development database was changed.**
 

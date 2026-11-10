@@ -1,17 +1,18 @@
 import type { NotificationListItem } from "@api/notifications";
 
-const localizedMeetingNotificationTypes = new Set([
+const bilingualNotificationTypes = new Set([
   "meetingreminder",
   "meetinginvitation",
   "meetingstarted",
   "meetingminutespublished",
   "meetingminutescomment",
   "meetingminutescommentreply",
+  "projectannualbudgetapproval",
 ]);
 
-/** Selects the locale half of the approved bilingual Meeting notification payload. */
+/** Selects the locale half of supported bilingual notification payloads. */
 export function getLocalizedNotificationContent(notification: Pick<NotificationListItem, "type" | "title" | "body">, locale: string) {
-  if (!localizedMeetingNotificationTypes.has(notification.type.toLowerCase())) {
+  if (!bilingualNotificationTypes.has(notification.type.toLowerCase())) {
     return { title: notification.title, body: notification.body };
   }
   return {

@@ -17,20 +17,23 @@ const PAGE_SIZE = 10;
 
 export type FinanceWorkspaceSection = "overview" | "annualBudgets" | "paymentRequests" | "settlements" | "closing" | "auditTrail";
 
-export function ProjectFinancialWorkspace({ projectId, canViewPaymentRequests, canViewAnnualBudgetClosing, canCreateAnnualBudget, canEditAnnualBudget, canSubmitAnnualBudget, canReviseAnnualBudget, canApprove, canPrepareClosing, canApproveClosing, canCarryForward, projectCurrency, activeSection, selectedFiscalYear, onFiscalYearChange }: {
+export function ProjectFinancialWorkspace({ projectId, canViewPaymentRequests, canViewAnnualBudgetClosing, canCreateAnnualBudget, canEditAnnualBudget, canConfigureDraftApproval, canDeleteAnnualBudget, canWithdrawAnnualBudget, canSubmitAnnualBudget, canReviseAnnualBudget, canApprove, canPrepareClosing, canApproveClosing, canCarryForward, projectCurrency, activeSection, selectedFiscalYear, onFiscalYearChange, onOpenClosing }: {
   projectId: string; canApprove: boolean; projectCurrency: string | null;
   canViewPaymentRequests: boolean; canViewAnnualBudgetClosing: boolean;
-  canCreateAnnualBudget: boolean; canEditAnnualBudget: boolean; canSubmitAnnualBudget: boolean; canReviseAnnualBudget: boolean;
+  canCreateAnnualBudget: boolean; canEditAnnualBudget: boolean; canConfigureDraftApproval: boolean; canDeleteAnnualBudget: boolean; canWithdrawAnnualBudget: boolean; canSubmitAnnualBudget: boolean; canReviseAnnualBudget: boolean;
   canPrepareClosing: boolean; canApproveClosing: boolean; canCarryForward: boolean;
   activeSection: FinanceWorkspaceSection;
   selectedFiscalYear: number | null;
   onFiscalYearChange: (year: number) => void;
+  onOpenClosing: () => void;
 }) {
   return <div className="space-y-4">
     <section hidden={activeSection !== "annualBudgets"}>
-      <ProjectAnnualBudgetWorkspace projectId={projectId} canCreate={canCreateAnnualBudget} canEdit={canEditAnnualBudget}
+      <ProjectAnnualBudgetWorkspace projectId={projectId} canCreate={canCreateAnnualBudget} canEdit={canEditAnnualBudget} canConfigureDraftApproval={canConfigureDraftApproval}
+        canDelete={canDeleteAnnualBudget} canWithdraw={canWithdrawAnnualBudget}
         canSubmit={canSubmitAnnualBudget} canRevise={canReviseAnnualBudget} canApprove={canApprove}
         canViewPaymentRequests={canViewPaymentRequests} canViewAnnualBudgetClosing={canViewAnnualBudgetClosing}
+        canPrepareClosing={canPrepareClosing} onOpenClosing={onOpenClosing}
         projectCurrency={projectCurrency} enabled={activeSection === "annualBudgets"}
         selectedFiscalYear={selectedFiscalYear} onFiscalYearChange={onFiscalYearChange} />
     </section>
@@ -178,6 +181,7 @@ function financialEntityLabel(t: (key: string) => string, entityType: string) {
     PaymentSettlement: "projects.financialActivitySettlement",
     ProjectPaymentRequest: "projects.paymentRequestsTitle",
     ProjectPaymentReversal: "projects.paymentReversalsTitle",
+    ProjectAnnualBudget: "projects.annualBudgetTitle",
     ProjectAnnualBudgetClosing: "projects.yearEndClosingTitle",
     ProjectPaymentRequestFundingTransfer: "projects.yearEndClosingReservedCarryForward",
   };
@@ -208,6 +212,8 @@ function financialActionLabel(t: (key: string) => string, entityType: string, ac
     "ProjectAnnualBudget:Created": "projects.financialActivityAnnualBudgetCreated",
     "ProjectAnnualBudget:Updated": "projects.financialActivityAnnualBudgetUpdated",
     "ProjectAnnualBudget:Approved": "projects.financialActivityAnnualBudgetApproved",
+    "ProjectAnnualBudget:DeletedDraft": "projects.financialActivityAnnualBudgetDeleted",
+    "ProjectAnnualBudget:SubmissionWithdrawn": "projects.financialActivityAnnualBudgetSubmissionWithdrawn",
     "ProjectAnnualBudgetClosing:YearEndClosingPrepared": "projects.financialActivityYearEndClosingPrepared",
     "ProjectAnnualBudgetClosing:YearEndClosingSubmitted": "projects.financialActivityYearEndClosingSubmitted",
     "ProjectAnnualBudgetClosing:YearEndClosingApproved": "projects.financialActivityYearEndClosingApproved",

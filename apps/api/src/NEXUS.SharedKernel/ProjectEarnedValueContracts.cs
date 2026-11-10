@@ -97,7 +97,8 @@ public interface IProjectEvmLaborCostLookup
         IReadOnlyList<ProjectEvmAssignmentInput> assignments,
         CancellationToken cancellationToken = default,
         IReadOnlyCollection<Guid>? includedPlanActivityIds = null,
-        bool includeUnassignedProjectActuals = false);
+        bool includeUnassignedProjectActuals = false,
+        DateTime? periodFrom = null);
 }
 
 public sealed record ProjectEvmDirectCostSummary(
@@ -112,5 +113,6 @@ public interface IProjectEvmDirectCostLookup
         Guid projectId,
         string projectCurrency,
         DateTime statusDate,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        DateTime? periodFrom = null);
 }

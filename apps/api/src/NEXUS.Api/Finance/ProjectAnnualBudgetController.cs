@@ -32,14 +32,6 @@ public sealed class ProjectAnnualBudgetController(
             tenantId, projectId, itemId, requestId, actorId, cancellationToken));
     }
 
-    [HttpGet("eligible-approvers")]
-    [Authorize(Policy = "ProjectAnnualBudget.SubmitForReview")]
-    public async Task<IActionResult> GetEligibleApprovers(Guid projectId, CancellationToken cancellationToken)
-    {
-        if (!TryGetScope(projectId, out var tenantId, out var actorId)) return ScopeFailure();
-        return ToActionResult(await workflow.GetEligibleApproversAsync(tenantId, projectId, actorId, cancellationToken));
-    }
-
     [HttpGet("approval-configuration")]
     [Authorize(Policy = "ProjectAnnualBudget.View")]
     [Authorize(Policy = "ProjectSettings.View")]
@@ -144,6 +136,34 @@ public sealed class ProjectAnnualBudgetController(
     {
         if (!TryGetIdentityScope(out var tenantId, out var actorId)) return ScopeFailure();
         return ToActionResult(await workflow.ApproveAsync(
+            tenantId, projectId, itemId, actorId, ActorName(), dto, cancellationToken));
+    }
+
+    [HttpDelete("{itemId:guid}")]
+    [Authorize(Policy = "ProjectAnnualBudget.Delete")]
+    public async Task<IActionResult> DeleteDraft(
+        Guid projectId,
+        Guid itemId,
+        [FromBody] DeleteProjectAnnualBudgetDto dto,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetScope(projectId, out var tenantId, out var actorId)) return ScopeFailure();
+        if (management.Current?.EffectiveReadOnly == true) return Forbid();
+        return ToActionResult(await workflow.DeleteDraftAsync(
+            tenantId, projectId, itemId, actorId, ActorName(), dto, cancellationToken));
+    }
+
+    [HttpPost("{itemId:guid}/withdraw")]
+    [Authorize(Policy = "ProjectAnnualBudget.Withdraw")]
+    public async Task<IActionResult> WithdrawSubmission(
+        Guid projectId,
+        Guid itemId,
+        [FromBody] WithdrawProjectAnnualBudgetSubmissionDto dto,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetScope(projectId, out var tenantId, out var actorId)) return ScopeFailure();
+        if (management.Current?.EffectiveReadOnly == true) return Forbid();
+        return ToActionResult(await workflow.WithdrawSubmissionAsync(
             tenantId, projectId, itemId, actorId, ActorName(), dto, cancellationToken));
     }
 

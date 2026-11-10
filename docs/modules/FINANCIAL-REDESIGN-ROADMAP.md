@@ -18,7 +18,7 @@ The earlier source-level schema freeze has been released for the approved Sprint
 
 The original `20261029155617_InitialFopxPmBaseline` was preserved. Because the current Development connection, expected server/database, and environment inputs are unavailable, its applied status cannot be independently checked. The Sprint 2 migration is therefore additive and keeps the prior source history intact. A new empty database receives the complete model by applying the baseline and then the Sprint 2 migration. Re-squashing to one initial migration requires verified evidence that no target database has applied the original baseline.
 
-The Development connection, explicit expected server/database, and `ASPNETCORE_ENVIRONMENT` inputs remain absent. No database identity, migration history, backup, or physical schema was verified. No database changes or backup operations were performed. Use the repository gate for read-only inspection and a separately authorized, backed-up Development deployment.
+The Development connection, explicit expected server/database, and `ASPNETCORE_ENVIRONMENT` inputs remain absent. No database identity, migration history, backup, or physical schema was verified. No database changes or backup operations were performed. Use the repository gate for read-only inspection and a separately authorized Development deployment; a backup is optional for Development/UAT and does not gate the write.
 
 ## 2. Delivery sequence and approval gates
 
@@ -32,10 +32,10 @@ The Development connection, explicit expected server/database, and `ASPNETCORE_E
 | Sprint 5 | Project Year-End Closing, immutable closing statements, and approved free/reserved Carry Forward source workflow. | Source implementation is recorded in [Sprint 5 Year-End Closing](FINANCIAL-SPRINT-5-YEAR-END-CLOSING.md); persistence reconciliation and runtime verification remain deferred. |
 | Sprint 6 | Read-only Program/Portfolio reporting from unique, authorized descendant Projects. | Source implementation is recorded in [Sprint 6 Program/Portfolio Rollup](FINANCIAL-SPRINT-6-PROGRAM-PORTFOLIO-FINANCIAL-ROLLUP.md); no independent parent budgets or persisted rollups. |
 | Sprint 7A | Consolidated technical closure. | Reconcile Sprint 3-5 pending EF model work with the designated owner; build/snapshot/script review and documented database workflow. Sprint 6 currently adds no schema. |
-| Sprint 7B | Consolidated runtime UAT and financial reconciliation. | Execute authorized database, permission, browser, performance, and concurrency scenarios after identity, schema, backup, and deployment gates pass. |
+| Sprint 7B | Consolidated runtime UAT and financial reconciliation. | Execute authorized database, permission, browser, performance, and concurrency scenarios after identity, schema, migration, and deployment gates pass. Backups are optional for Development/UAT. |
 | Later enterprise scope | Add only business-justified capabilities outside the coherent MVP. | Separate Product Owner request and approval; no implied authorization from this roadmap. |
 
-Before any Development database update, follow `AGENTS.md`, `current repository database safeguards`, and `docs/development/ef-core-database-workflow.md`: identify the actual context/startup/migration assembly and Development target, inspect model and migration history, review generated SQL, and verify target identity. Ordinary writes require an independently verified backup. The sole reset exception is explicit Product Owner authorization for Development `Shady/NexusPmo`; that exact reset requires no backup but still requires live environment/server/database verification, every EF migration, and the full seed before closure. Do not modify Production or any other database; never reset migration history, remove migrations, or rewrite applied migrations. Current target and backup evidence are unavailable.
+Before any Development/UAT database update, follow `AGENTS.md`, `current repository database safeguards`, and `docs/development/ef-core-database-workflow.md`: identify the actual context/startup/migration assembly and target, inspect model and migration history, review generated SQL, and verify environment and database identity. Backups are optional; do not require independent backup storage or `RESTORE VERIFYONLY`. A destructive reset still requires explicit Product Owner authorization for Development `Shady/NexusPmo`, live environment/server/database verification, every EF migration, and the full seed before closure. Do not modify Production or any other database; preserve mandatory Production backup and recovery safeguards; never reset migration history, remove migrations, or rewrite applied migrations. Current target and backup evidence are unavailable.
 
 ## 3. Earlier proposed design work packages
 
@@ -61,7 +61,7 @@ Current handovers: [Sprint 2 Payment Requests](FINANCIAL-SPRINT-2-IMPLEMENTATION
 
 - Source inventory covers current project financial records and consumers without rewriting historical records.
 - Product Owner approval for Part 1/Sprint 1 and remaining D1-D17 statuses are recorded.
-- Development DB identity, migration history, schema, backup, and persistence-test evidence are marked unavailable until the gate can verify them.
+- Development DB identity, migration history, schema, and persistence-test evidence are marked unavailable until the gate can verify them. Backup evidence is optional for Development/UAT and does not gate the write.
 
 **Complexity:** Medium.  
 **Risks / migration considerations:** `NEXUS_EF_DEVELOPMENT_CONNECTION_STRING`, `ASPNETCORE_ENVIRONMENT=Development`, and explicit expected server/database inputs were absent at the last preflight. Do not infer a target or apply migrations. Continue safe source implementation only; the schema dependency is separately tracked above.
@@ -87,10 +87,10 @@ Current handovers: [Sprint 2 Payment Requests](FINANCIAL-SPRINT-2-IMPLEMENTATION
 - Financial Activity reads Finance events only through the shared append-only audit service and requires `Finances.Read` plus project/tenant scope.
 - A failed financial audit append cannot commit its corresponding protected budget, configuration, or settlement change.
 - Existing financial operations/routes remain available; Program/Portfolio Finance is unchanged.
-- Database/runtime acceptance is not claimed until Development identity, migrations/schema, backup, applied migration, and persistence-test evidence are verified.
+- Database/runtime acceptance is not claimed until Development identity, migrations/schema, applied migration, and persistence-test evidence are verified. Report any explicitly requested backup separately; it is optional for Development/UAT.
 
 **Complexity:** High.  
-**Risks / migration considerations:** Development identity, history, schema, and backup are unverified. Keep database application blocked until the delivery gate verifies the target and backup. The current source chain is additive; do not treat the initial migration alone as the full Sprint 2 schema.
+**Risks / migration considerations:** Development identity, history, and schema are unverified. Keep database application blocked until the delivery gate verifies the target and required migration/schema checks. A backup is optional for Development/UAT. The current source chain is additive; do not treat the initial migration alone as the full Sprint 2 schema.
 
 ### Sprint 2 - Payment Requests and approval workflow
 

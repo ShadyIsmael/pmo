@@ -85,7 +85,7 @@ The repository already contains many concurrent changes; this list identifies th
 ## Remaining work and handoff
 
 - Sprint 7A: P0 repeatable full-dependency API build reliability, P0 IKVM/MPP adapter isolation without removing Microsoft Project import, P0 consolidated Sprint 3-6 EF/model/migration/snapshot readiness, P1 genuine financial nullability/compiler fixes, and query-plan/index review. `BuildProjectReferences=false` alone is not build evidence. Sprint 6 itself adds no EF schema requirement.
-- Sprint 7B: after the required target/schema/backup/authorization gates, execute the added aggregation, authorization, mixed-currency, hierarchy, performance, localization, and source-to-Project reconciliation UAT cases. Runtime UAT is not part of Sprint 6.
+- Sprint 7B: after the required target, schema, and authorization checks, execute the added aggregation, authorization, mixed-currency, hierarchy, performance, localization, and source-to-Project reconciliation UAT cases. Backups are optional for Development/UAT. Runtime UAT is not part of Sprint 6.
 - Separate P2 follow-up: Roles & Permissions cleanup (duplicate entries, categories, EN/AR labels); do not change permission keys or grants as part of Sprint 6.
 - Historical hierarchy-as-of reporting and currency conversion remain out of scope. Current hierarchy can change the parent under which a Project appears in current reports; immutable closing snapshots preserve Project financial facts but not a historical parent assignment.
 

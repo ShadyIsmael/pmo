@@ -47,6 +47,10 @@ public sealed class PlanningImportService : IPlanningImportService
         string userId,
         CancellationToken cancellationToken = default)
     {
+        var permissionError = GetCommitPermissionError(createsPlan: false);
+        if (permissionError is not null)
+            return Result<PlanImportSessionDto>.Failure(permissionError);
+
         if (projectId == Guid.Empty)
             return Result<PlanImportSessionDto>.Failure(Error.Validation("A project is required"));
 
@@ -204,6 +208,9 @@ public sealed class PlanningImportService : IPlanningImportService
         var review = BuildSessionReview(session, document, candidates, state);
         if (review.BlockingIssueCount > 0)
             return Result<PlanImportResultDto>.Failure(Error.Conflict("Resolve all blocking import issues before committing"));
+        if (state.Resources.Values.Any(resource => string.Equals(resource.Resolution, "CreateNew", StringComparison.OrdinalIgnoreCase))
+            && _httpContextAccessor.HttpContext?.User?.HasClaim("permission", "Resource.Create") != true)
+            return Result<PlanImportResultDto>.Failure(Error.Forbidden("Resource creation permission is required to create imported Resources."));
         if (request.ProjectId == Guid.Empty) request.ProjectId = projectId;
         if (request.ProjectId != projectId) return Result<PlanImportResultDto>.Failure(Error.Validation("The import project does not match the review session"));
         if (!request.TargetPlanId.HasValue && request.NewPlanType is null)
@@ -843,7 +850,7 @@ public sealed class PlanningImportService : IPlanningImportService
                 Code = code,
                 Name = Truncate(task.Name, 250),
                 ActivityId = activityId,
-                TextFormat = task.TextFormat?.Clone(),
+                TextFormat = task.TextFormat?.Clone() ?? PlanTextFormat.Unspecified(),
                 CreatedBy = userId
             };
             var activity = new PlanActivity
@@ -867,7 +874,7 @@ public sealed class PlanningImportService : IPlanningImportService
                 SortOrder = task.SortOrder,
                 Progress = task.PercentComplete,
                 WbsId = nodeId,
-                TextFormat = task.TextFormat?.Clone(),
+                TextFormat = task.TextFormat?.Clone() ?? PlanTextFormat.Unspecified(),
                 CreatedBy = userId
             };
             version.WbsNodes.Add(node);

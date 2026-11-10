@@ -7,25 +7,40 @@ using NEXUS.Modules.ResourceManagement.Application;
 using NEXUS.Modules.ResourceManagement.Application.DTOs;
 using NEXUS.Modules.ResourceManagement.Domain;
 using NEXUS.SharedKernel;
+using NEXUS.SharedKernel.Management;
+using NEXUS.SharedKernel.Helpers;
 using Xunit;
 
 namespace NEXUS.Modules.ResourceManagement.Tests;
 
 public class AllocationServiceTests : TestBase
 {
-    private static AllocationService CreateService(TestDbContext context)
+    private static AllocationService CreateService(TestDbContext context, IReadOnlySet<Guid>? allowedProjectIds = null)
     {
         var auditMock = new Mock<IAuditService>();
         auditMock.Setup(a => a.LogAsync(It.IsAny<AuditEntry>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success());
-        return new AllocationService(context, auditMock.Object);
+        var projectIds = allowedProjectIds ?? context.ResourceAllocations
+            .Where(allocation => allocation.ProjectId.HasValue)
+            .Select(allocation => allocation.ProjectId!.Value)
+            .ToHashSet();
+        var management = new Mock<IManagementContextAccessor>();
+        management.SetupGet(accessor => accessor.Current).Returns(new ManagementContext(
+            Guid.NewGuid(),
+            TenantConstants.DemoTenantId,
+            ManagementPerspective.ProjectManager,
+            ManagementViewMode.Native,
+            null,
+            null,
+            null,
+            new ManagementScope(new HashSet<Guid>(), new HashSet<Guid>(), projectIds)));
+        return new AllocationService(context, auditMock.Object, management.Object);
     }
 
     [Fact]
     public async Task CreateAsync_WithValidData_ReturnsSuccess()
     {
         using var context = CreateContext();
-        var service = CreateService(context);
         var dto = new CreateAllocationDto
         {
             ResourceId = ResourceAliceId,
@@ -38,6 +53,7 @@ public class AllocationServiceTests : TestBase
             Status = ResourceAllocation.StatusConfirmed,
             IsBillable = true
         };
+        var service = CreateService(context, new HashSet<Guid> { dto.ProjectId!.Value });
 
         var result = await service.CreateAsync(dto, "11111111-1111-1111-1111-111111111111");
 
@@ -317,6 +333,47 @@ public class AllocationServiceTests : TestBase
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().HaveCount(1);
         result.Value[0].ResourceId.Should().Be(ResourceAliceId);
+    }
+
+    [Fact]
+    public async Task GetConflictsAsync_ExcludesOverlapsOutsideManagementProjectScope()
+    {
+        using var context = CreateContext();
+        var allowedProjectId = Guid.Parse("F3000000-0000-0000-0000-000000000001");
+        var outOfScopeProjectId = Guid.Parse("F3000000-0000-0000-0000-000000000002");
+        context.ResourceAllocations.RemoveRange(context.ResourceAllocations);
+        context.ResourceAllocations.AddRange(
+            new ResourceAllocation
+            {
+                Id = Guid.NewGuid(),
+                TenantId = TenantConstants.DemoTenantId,
+                ResourceId = ResourceAliceId,
+                ProjectId = allowedProjectId,
+                StartDate = new DateTime(2026, 1, 5),
+                EndDate = new DateTime(2026, 1, 15),
+                Status = ResourceAllocation.StatusConfirmed
+            },
+            new ResourceAllocation
+            {
+                Id = Guid.NewGuid(),
+                TenantId = TenantConstants.DemoTenantId,
+                ResourceId = ResourceAliceId,
+                ProjectId = outOfScopeProjectId,
+                StartDate = new DateTime(2026, 1, 5),
+                EndDate = new DateTime(2026, 1, 15),
+                Status = ResourceAllocation.StatusConfirmed
+            });
+        await context.SaveChangesAsync();
+        var service = CreateService(context, new HashSet<Guid> { allowedProjectId });
+
+        var result = await service.GetConflictsAsync(
+            ResourceAliceId,
+            new DateTime(2026, 1, 8),
+            new DateTime(2026, 1, 12),
+            null);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().ContainSingle().Which.ProjectId.Should().Be(allowedProjectId);
     }
 
     [Fact]

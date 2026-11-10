@@ -103,7 +103,7 @@ WHERE b.database_name = DB_NAME()
 ORDER BY b.backup_finish_date DESC;
 ```
 
-Backup history is only evidence of recorded media, not recovery proof. A pre-write backup must be independently available and verified; for a new empty validation database the gate's `apply` action creates a unique copy-only backup and runs `RESTORE VERIFYONLY` before applying migrations.
+Backup history is only evidence of recorded media, not recovery proof. Under the current Development/UAT policy, a backup is optional and its absence does not block `apply`. When explicitly requested, `--backup-directory` makes the gate create a unique copy-only backup and run `RESTORE VERIFYONLY`; otherwise omit that option. Target identity, reviewed SQL/hash, migration, and schema checks remain required.
 
 ## Isolated validation procedure — not executed
 
@@ -142,10 +142,10 @@ Backup history is only evidence of recorded media, not recovery proof. A pre-wri
 
    Review every table, key, FK, index, check constraint, `rowversion`, `ALTER COLUMN`, delete action, and seed/data operation; record the exact SHA-256.
 
-7. Database application requires a separate Product Owner authorization. Only then use `apply` with the exact reviewed file/hash and a SQL Server-accessible backup directory:
+7. Database application requires a separate Product Owner authorization. Only then use `apply` with the exact reviewed file/hash. A backup is optional for Development/UAT; supply `--backup-directory` only when an optional backup was explicitly requested:
 
    ```powershell
-   .\scripts\database\ef-database-gate.ps1 apply --environment Development --expected-server '<verified server name>' --expected-database 'NexusPmo_BaselineValidation' --script-file 'scripts/database/NexusPmo_BaselineValidation.sql' --approved-sha256 '<reviewed SHA-256>' --backup-directory '<SQL Server-accessible backup directory>'
+   .\scripts\database\ef-database-gate.ps1 apply --environment Development --expected-server '<verified server name>' --expected-database 'NexusPmo_BaselineValidation' --script-file 'scripts/database/NexusPmo_BaselineValidation.sql' --approved-sha256 '<reviewed SHA-256>'
    ```
 
 8. Re-run `inspect` and confirm the two expected migrations are applied, there are no history-only or pending migrations, the current model is synchronized, and the physical schema matches. Run persistence tests only after separate authorization; they were not run in this sprint.
@@ -191,6 +191,6 @@ The gate restricts `inspect`, `script`, and `apply` to the explicitly named Deve
 - Physical schema verified: **No**.
 - Persistence tests: **Not run**.
 - Browser UAT: **Not run**.
-- Remaining blockers: missing Tenant entity/schema; SQL Server version compatibility unknown for `ISJSON(..., VALUE)`; target connectivity/history/schema/backup unverified; full-chain deployment SQL not generated; secure bootstrap incomplete; API build blocked by IKVM task-host error.
+- Remaining blockers: missing Tenant entity/schema; SQL Server version compatibility unknown for `ISJSON(..., VALUE)`; target connectivity/history/schema unverified; full-chain deployment SQL not generated; secure bootstrap incomplete; API build blocked by IKVM task-host error. Backup status is informational and is not a Development/UAT gate.
 
 **Conclusion: BLOCKED — SPECIFIC TECHNICAL REASONS.**

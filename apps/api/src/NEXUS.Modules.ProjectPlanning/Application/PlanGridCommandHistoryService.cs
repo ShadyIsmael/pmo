@@ -697,7 +697,7 @@ public sealed class PlanGridCommandHistoryService : IPlanGridCommandHistoryServi
             case nameof(PlanActivity.EstimateHours): activity.EstimateHours = Read<decimal?>(value); break;
             case nameof(PlanActivity.Progress): activity.Progress = Read<decimal?>(value); break;
             case nameof(PlanActivity.WbsId): activity.WbsId = Read<Guid?>(value); break;
-            case "TextFormat": activity.TextFormat = Read<PlanTextFormat?>(value)?.Clone(); break;
+            case "TextFormat": activity.TextFormat = Read<PlanTextFormat?>(value)?.Clone() ?? PlanTextFormat.Unspecified(); break;
         }
     }
 
@@ -709,7 +709,7 @@ public sealed class PlanGridCommandHistoryService : IPlanGridCommandHistoryServi
             case nameof(PlanWbsNode.Name): node.Name = Read<string>(value); break;
             case nameof(PlanWbsNode.ParentWbsId): node.ParentWbsId = Read<Guid?>(value); break;
             case nameof(PlanWbsNode.SortOrder): node.SortOrder = Read<int>(value); break;
-            case "TextFormat": node.TextFormat = Read<PlanTextFormat?>(value)?.Clone(); break;
+            case "TextFormat": node.TextFormat = Read<PlanTextFormat?>(value)?.Clone() ?? PlanTextFormat.Unspecified(); break;
         }
     }
 

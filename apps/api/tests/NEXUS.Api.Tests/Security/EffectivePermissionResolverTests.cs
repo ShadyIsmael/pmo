@@ -20,15 +20,18 @@ public sealed class EffectivePermissionResolverTests
         Assert.DoesNotContain("Project.View", denyThenAllow);
     }
 
-    [Fact]
-    public void Direct_deny_wins_over_all_role_allows_and_a_direct_allow()
+    [Theory]
+    [InlineData("ProjectAnnualBudget.ConfigureDraftApproval")]
+    [InlineData("ProjectAnnualBudget.Delete")]
+    [InlineData("ProjectAnnualBudget.Withdraw")]
+    public void Direct_deny_wins_over_all_role_allows_and_a_direct_allow_for_annual_budget_lifecycle(string permission)
     {
         var effective = EffectivePermissionResolver.Resolve(
-            ["ProjectAnnualBudget.Create", "ProjectAnnualBudget.Create"],
-            [("ProjectAnnualBudget.Create", PermissionOverrideEffect.Allow),
-                ("ProjectAnnualBudget.Create", PermissionOverrideEffect.Deny)]);
+            [permission, permission],
+            [(permission, PermissionOverrideEffect.Allow),
+                (permission, PermissionOverrideEffect.Deny)]);
 
-        Assert.DoesNotContain("ProjectAnnualBudget.Create", effective);
+        Assert.DoesNotContain(permission, effective);
     }
 
     [Fact]

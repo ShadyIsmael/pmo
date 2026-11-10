@@ -181,9 +181,9 @@ public sealed class DocumentService : IDocumentService
         // SQL Server providers, while array.Contains is translated to IN (...)
         // and remains server-side (including the empty-scope case).
         var projectIds = scope.Scope.ProjectIds.ToArray();
-        return query.Where(d => d.IsTemplate
+        return query.Where(d => (d.IsTemplate && !d.ProjectId.HasValue)
             || (d.ProjectId.HasValue && projectIds.Contains(d.ProjectId.Value))
-            || (!d.ProjectId.HasValue && d.OwnerId == scope.UserId));
+            || (!d.IsTemplate && !d.ProjectId.HasValue && d.OwnerId == scope.UserId));
     }
 
     private bool CanUseProject(Guid? projectId) =>

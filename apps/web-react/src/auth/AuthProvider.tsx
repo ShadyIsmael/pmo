@@ -17,7 +17,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [queryClient, setQueryClient] = React.useState(createSessionQueryClient);
   const queryClientRef = React.useRef(queryClient);
   const transitionId = React.useRef(0);
-  const authorizationRefreshInFlight = React.useRef(false);
+  const authorizationRefreshSession = React.useRef<string | null>(null);
 
   const resetSessionCache = React.useCallback(() => {
     void queryClientRef.current.cancelQueries();
@@ -173,14 +173,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   React.useEffect(() => {
     const refreshAfterForbidden = () => {
-      if (statusRef.current !== "authenticated" || authorizationRefreshInFlight.current) return;
-      authorizationRefreshInFlight.current = true;
-      // A server-side denial can mean a grant was revoked while this tab was open.
-      // Hide permission-gated UI until the authoritative permission set is reloaded.
-      setUser((currentUser) => currentUser ? { ...currentUser, permissions: [] } : currentUser);
+      const activeSessionId = getClientSessionId();
+      if (statusRef.current !== "authenticated" || !activeSessionId
+        || authorizationRefreshSession.current === activeSessionId) return;
+      // A 403 can be a stable endpoint permission or scope denial. Refresh the
+      // authoritative user permissions at most once per local session so a
+      // query remount/re-fetch cycle cannot become a permission-refresh loop.
+      authorizationRefreshSession.current = activeSessionId;
+      // Keep current UI state in place during refresh. Clearing permissions
+      // here toggles permission-gated queries off and on, causing unrelated
+      // query observers to remount and repeat their requests.
       void refreshUser()
-        .catch(() => undefined)
-        .finally(() => { authorizationRefreshInFlight.current = false; });
+        .catch(() => undefined);
     };
     window.addEventListener("nexus:authorization-denied", refreshAfterForbidden);
     return () => window.removeEventListener("nexus:authorization-denied", refreshAfterForbidden);

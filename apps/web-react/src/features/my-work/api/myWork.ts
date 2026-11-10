@@ -138,6 +138,38 @@ export interface PendingProjectChangeApprovalDto {
   requiredApprovalCount: number;
 }
 
+export interface PendingAnnualBudgetApprovalDto {
+  requestId: string;
+  budgetId: string;
+  projectPublicId: string;
+  projectName: string;
+  projectCode: string;
+  fiscalYear: number;
+  financialReference: string;
+  amount: number;
+  currency: string;
+  approvalMode: "Sequential" | "Parallel";
+  requestedAtUtc: string;
+  actionableAtUtc: string;
+  requestedByName: string;
+}
+
+const pendingAnnualBudgetApprovalSchema = z.array(z.object({
+  requestId: z.string().min(1),
+  budgetId: z.string().min(1),
+  projectPublicId: z.string().uuid(),
+  projectName: z.string().min(1),
+  projectCode: z.string(),
+  fiscalYear: z.number().int().positive(),
+  financialReference: z.string(),
+  amount: z.number().finite(),
+  currency: z.string().min(1),
+  approvalMode: z.enum(["Sequential", "Parallel"]),
+  requestedAtUtc: z.string().min(1),
+  actionableAtUtc: z.string().min(1),
+  requestedByName: z.string(),
+}));
+
 export interface ProjectChangeRequestDecisionDto {
   id: string;
   number: number;
@@ -252,6 +284,17 @@ export function usePendingProjectChangeRequests(enabled = true) {
   return useQuery({
     queryKey: ["projectChangeRequests", "pendingForMe"],
     queryFn: () => api.get<PendingProjectChangeApprovalDto[]>("/api/project-change-requests/pending-for-me"),
+    enabled,
+    staleTime: 15_000,
+  });
+}
+
+export function usePendingAnnualBudgetApprovals(enabled = true) {
+  return useQuery({
+    queryKey: ["annualBudgetApprovals", "pendingForMe"],
+    queryFn: async () => pendingAnnualBudgetApprovalSchema.parse(
+      await api.get<unknown>("/api/my-work/annual-budget-approvals"),
+    ) as PendingAnnualBudgetApprovalDto[],
     enabled,
     staleTime: 15_000,
   });

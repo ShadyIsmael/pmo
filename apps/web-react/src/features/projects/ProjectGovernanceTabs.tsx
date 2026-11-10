@@ -161,6 +161,13 @@ export function ProjectStatusReportsTab() {
   const progressTouched = React.useRef(false);
   const currentProgress = useProjectStatusReportCurrentProgress(projectId, today, formOpen, periodFrom, periodTo);
   const financialSummary = useProjectFinancialSummary(projectId, periodFrom, periodTo, Boolean(formOpen));
+  const formatFinancialAmount = (amount: number | null | undefined) =>
+    amount == null || !financialSummary.data?.currencyCode
+      ? "—"
+      : formatCurrency(amount, financialSummary.data.currencyCode);
+  const financialBudgetStatus = financialSummary.data
+    ? t(`projects.financialSummaryBudgetStatus.${financialSummary.data.budgetStatus}`)
+    : "";
   const risks = useRisks({ projectId, pageSize: 100 }, Boolean(formOpen));
   const issues = useProjectIssues(projectId, Boolean(formOpen && canViewIssues));
   const workItemStatusesQuery = useWorkItemStatuses(Boolean(formOpen || detailId));
@@ -405,20 +412,25 @@ export function ProjectStatusReportsTab() {
           <section className="space-y-4 rounded-xl border p-4">
             <div className="flex items-center gap-2 border-b pb-3"><FileText className="h-4 w-4 text-primary" aria-hidden="true" /><h3 className="text-sm font-semibold">{t("projects.financialSummarySection")}</h3></div>
             {financialSummary.isLoading ? (
-              <div className="grid gap-3 sm:grid-cols-3 md:grid-cols-5">{[1, 2, 3, 4, 5].map((i) => <Card key={i}><CardContent className="p-3"><Skeleton className="h-8 w-full" /><Skeleton className="mt-2 h-5 w-3/4" /></CardContent></Card>)}</div>
+              <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-4 xl:grid-cols-7">{[1, 2, 3, 4, 5, 6, 7].map((i) => <Card key={i}><CardContent className="p-3"><Skeleton className="h-8 w-full" /><Skeleton className="mt-2 h-5 w-3/4" /></CardContent></Card>)}</div>
             ) : financialSummary.isError ? (
               <p className="text-sm text-destructive">{t("projects.financialSummaryLoadFailed")}</p>
+            ) : !financialSummary.data?.hasFinancialData ? (
+              <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">{t("projects.financialSummaryEmpty")}</p>
             ) : (
-              <div className="grid gap-3 sm:grid-cols-3 md:grid-cols-5">
-                <Card><CardContent className="p-3"><div className="text-[11px] text-muted-foreground">{t("projects.approvedBudget")}</div><div className="mt-1 text-sm font-semibold tabular-nums">{financialSummary.data?.approvedBudget == null ? "—" : formatCurrency(financialSummary.data?.approvedBudget ?? 0, financialSummary.data?.currencyCode ?? project.currency)}</div></CardContent></Card>
-                <Card><CardContent className="p-3"><div className="text-[11px] text-muted-foreground">{t("projects.actualPaid")}</div><div className="mt-1 text-sm font-semibold tabular-nums">{formatCurrency(financialSummary.data?.actualPaid ?? 0, financialSummary.data?.currencyCode ?? project.currency)}</div></CardContent></Card>
-                <Card><CardContent className="p-3"><div className="text-[11px] text-muted-foreground">{t("projects.outstandingPlannedPayments")}</div><div className="mt-1 text-sm font-semibold tabular-nums">{formatCurrency(financialSummary.data?.outstandingPlannedPayments ?? 0, financialSummary.data?.currencyCode ?? project.currency)}</div></CardContent></Card>
-                <Card><CardContent className="p-3"><div className="text-[11px] text-muted-foreground">{t("projects.paymentsDueWithinPeriod")}</div><div className="mt-1 text-sm font-semibold tabular-nums">{formatCurrency(financialSummary.data?.paymentsDueWithinPeriod ?? 0, financialSummary.data?.currencyCode ?? project.currency)}</div></CardContent></Card>
-                <Card><CardContent className="p-3"><div className="text-[11px] text-muted-foreground">{t("projects.remainingUnpaidAtPeriodEnd")}</div><div className="mt-1 text-sm font-semibold tabular-nums">{formatCurrency(financialSummary.data?.remainingUnpaidAtPeriodEnd ?? 0, financialSummary.data?.currencyCode ?? project.currency)}</div></CardContent></Card>
+              <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-4 xl:grid-cols-7">
+                <Card><CardContent className="p-3"><div className="text-[11px] text-muted-foreground">{t("projects.approvedAnnualBudget")}</div><div className="mt-1 text-sm font-semibold tabular-nums">{formatFinancialAmount(financialSummary.data.approvedBudget)}</div></CardContent></Card>
+                <Card><CardContent className="p-3"><div className="text-[11px] text-muted-foreground">{t("projects.expenditure")}</div><div className="mt-1 text-sm font-semibold tabular-nums">{formatFinancialAmount(financialSummary.data.expenditure)}</div></CardContent></Card>
+                <Card><CardContent className="p-3"><div className="text-[11px] text-muted-foreground">{t("projects.committedCost")}</div><div className="mt-1 text-sm font-semibold tabular-nums">{formatFinancialAmount(financialSummary.data.committedCost)}</div></CardContent></Card>
+                <Card><CardContent className="p-3"><div className="text-[11px] text-muted-foreground">{t("projects.actualPaid")}</div><div className="mt-1 text-sm font-semibold tabular-nums">{formatFinancialAmount(financialSummary.data.actualPaid)}</div></CardContent></Card>
+                <Card><CardContent className="p-3"><div className="text-[11px] text-muted-foreground">{t("projects.outstandingPlannedPayments")}</div><div className="mt-1 text-sm font-semibold tabular-nums">{formatFinancialAmount(financialSummary.data.outstandingPlannedPayments)}</div></CardContent></Card>
+                <Card><CardContent className="p-3"><div className="text-[11px] text-muted-foreground">{t("projects.paymentsDueWithinPeriod")}</div><div className="mt-1 text-sm font-semibold tabular-nums">{formatFinancialAmount(financialSummary.data.paymentsDueWithinPeriod)}</div></CardContent></Card>
+                <Card><CardContent className="p-3"><div className="text-[11px] text-muted-foreground">{t("projects.remainingUnpaidAtPeriodEnd")}</div><div className="mt-1 text-sm font-semibold tabular-nums">{formatFinancialAmount(financialSummary.data.remainingUnpaidAtPeriodEnd)}</div></CardContent></Card>
               </div>
             )}
             <p className="mt-2 text-xs text-muted-foreground">{t("projects.financialSummaryPeriod", { from: formatDate(financialSummary.data?.periodFrom ?? periodFrom), to: formatDate(financialSummary.data?.periodTo ?? periodTo) })}</p>
-            <p className="mt-0.5 text-[11px] text-muted-foreground">{t("projects.budgetStatusLabel", { status: financialSummary.data?.budgetStatus ?? "" })}</p>
+            {financialSummary.data?.hasFinancialData && financialSummary.data.dataStatus !== "available" ? <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">{financialSummary.data.dataStatus === "partial" ? t("projects.financialSummaryPartial") : t("projects.financialSummaryUnavailable")}</p> : null}
+            <p className="mt-0.5 text-[11px] text-muted-foreground">{t("projects.budgetStatusLabel", { status: financialBudgetStatus })}</p>
           </section>
 
           <section className="space-y-4 rounded-xl border p-4">

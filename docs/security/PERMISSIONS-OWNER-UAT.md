@@ -45,13 +45,13 @@
 
 ## User and role administration
 
-- [ ] An active same-tenant user with effective `TenantAdministration.ManageScope` can open Roles & Permissions and edit role permission assignments even without `Roles.ConfigurePermissions`; the permission list remains capped at that user's effective grants.
+- [ ] An active same-tenant user with `TenantAdministration.ManageScope` but without `Roles.View` cannot read role data through the API, and without `Roles.ConfigurePermissions` cannot create or change role permission assignments. `TenantAdministration.ManageScope` alone never substitutes for the exact role-operation capability. For a bootstrap-policy grant, verify that `Roles.ConfigurePermissions` and `TenantAdministration.ManageScope` are both effective.
 - [ ] After a permitted grant change, reload the role and the affected user's `/api/auth/me` permissions; confirm the new effective key appears and a subsequent API request uses it without waiting for token expiry.
-- [ ] Tenant scope alone cannot create/delete roles, edit role details, assign user roles, or change direct user overrides. Direct API attempts are denied.
+- [ ] Tenant scope alone cannot view roles, create/delete roles, edit role details, configure role permissions, assign user roles, or change direct user overrides. Direct API attempts are denied unless the exact operation capability is also present; bootstrap-policy grants additionally require tenant scope.
 - [ ] A Tenant Administrator cannot add a permission outside their own effective set, cannot change another tenant's role, and cannot remove the last valid role-management capability from their own account.
 - [ ] A user with only `users.write` cannot open the role permission editor or use role permission APIs; `Roles.Manage` is inactive and is absent from effective claims.
 - [ ] For the existing Admin regression, capture the before-state and verify any approved recovery adds only the missing `Roles.View`, `Roles.Create`, `Roles.EditDetails`, and `Roles.ConfigurePermissions` keys needed by the requested controls; preserve all other `RolePermissions` and `UserOverrides` and record an audit event. Add `Roles.Delete` only under separate authorization; do not use `users.write` as a runtime bypass.
-- [ ] A direct `Deny` override for `TenantAdministration.ManageScope` removes the role-administration bridge immediately; confirm the screen and API both deny access.
+- [ ] A direct `Deny` override for `TenantAdministration.ManageScope` blocks the separate bootstrap delegation path immediately, even when `Roles.ConfigurePermissions` is effective; confirm the bootstrap grant is denied. It does not replace or remove the exact role-operation checks.
 - [ ] `Users.ManageAccounts` can create accounts and edit profile fields, but cannot change activation state.
 - [ ] `Users.SetStatus` can activate/deactivate another tenant user and writes the correct before/after audit record; self-status changes fail.
 - [ ] `Users.AssignRoles` can change role assignments only within the actor's effective delegation boundary; profile fields stay read-only for role-only administrators.

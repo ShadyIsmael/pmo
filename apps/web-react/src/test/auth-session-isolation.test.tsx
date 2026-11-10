@@ -192,10 +192,11 @@ describe("authenticated session isolation", () => {
     expectNoBrowserTokenStorage();
   });
 
-  it("refreshes frontend permissions immediately after a protected API returns 403", async () => {
+  it("refreshes frontend permissions once per session after repeated protected API 403 responses", async () => {
     const initiallyAllowedUser = { ...adminUser, permissions: ["Project.Edit"] };
     const revokedUser = { ...restrictedUser, permissions: [] };
     let meRequests = 0;
+    let deniedRequests = 0;
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const requestUrl = String(input);
       if (requestUrl.endsWith("/api/auth/csrf")) return response({ csrfToken: "csrf-session-token" });
@@ -203,8 +204,10 @@ describe("authenticated session isolation", () => {
         meRequests += 1;
         return response(meRequests === 1 ? initiallyAllowedUser : revokedUser);
       }
-      if (requestUrl.endsWith("/api/protected-edit"))
+      if (requestUrl.endsWith("/api/protected-edit")) {
+        deniedRequests += 1;
         return response({ error: "Permission revoked" }, 403);
+      }
       throw new Error(`Unexpected API request: ${requestUrl}`);
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -214,7 +217,9 @@ describe("authenticated session isolation", () => {
       return (
         <>
           {user?.permissions.includes("Project.Edit") ? <span>edit-enabled</span> : null}
-          <button onClick={() => { void api.get("/api/protected-edit").catch(() => undefined); }}>Request edit</button>
+          <button onClick={() => {
+            void Promise.all(Array.from({ length: 21 }, () => api.get("/api/protected-edit").catch(() => undefined)));
+          }}>Request edit</button>
         </>
       );
     }
@@ -225,6 +230,11 @@ describe("authenticated session isolation", () => {
     await screen.findByText("edit-enabled");
     fireEvent.click(screen.getByRole("button", { name: "Request edit" }));
     await waitFor(() => expect(screen.queryByText("edit-enabled")).not.toBeInTheDocument());
+    await waitFor(() => expect(deniedRequests).toBe(21));
+    expect(meRequests).toBe(2);
+
+    fireEvent.click(screen.getByRole("button", { name: "Request edit" }));
+    await waitFor(() => expect(deniedRequests).toBe(42));
     expect(meRequests).toBe(2);
   });
 

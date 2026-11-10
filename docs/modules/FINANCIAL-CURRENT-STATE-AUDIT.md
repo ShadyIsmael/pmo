@@ -5,6 +5,8 @@
 **Repository:** `C:\Projects\pmo`  
 **Scope:** Active API and domain code, `apps/web-react`, finance persistence mappings and migration source, and relevant module documentation. The retired `apps/web` application is excluded under ADR-009 and `AGENTS.md`.
 
+**Source correction (2026-11-08):** This is a historical snapshot. The tenant-wide `GlobalFinancialSummaryService`, interface, and DTOs listed below were removed during the P1 Annual Budget workflow recovery after a repository-wide consumer check found no route, DI registration, UI caller, test, or other active source reference. See [Finance Legacy Cleanup](FINANCIAL-LEGACY-CLEANUP.md) and the [P1 recovery report](../finance/P1-PROJECT-ANNUAL-BUDGET-WORKFLOW-RECOVERY.md).
+
 **Related proposal:** [Target Business Model](FINANCIAL-TARGET-BUSINESS-MODEL.md) and [Redesign Roadmap](FINANCIAL-REDESIGN-ROADMAP.md).
 
 ## Executive summary
@@ -28,7 +30,7 @@ This was a source and documentation review. No tests, builds, scanners, database
 | Area | Observed implementation |
 |---|---|
 | API | `apps/api/src/NEXUS.Modules.CostManagement/Api/`: budget, budget revision, cost, commitment, and payment obligation controllers. Finance policies expose read/write operations. |
-| Application services | `BudgetService`, `BudgetRevisionService`, `CostService`, `CommitmentService`, `PaymentObligationService`, `PaymentDueNotificationService`, `GlobalFinancialSummaryService`, `ProjectFinancialLookup`, `ProjectEvmDirectCostLookup`, and `BudgetAuthority`. |
+| Application services at review date | `BudgetService`, `BudgetRevisionService`, `CostService`, `CommitmentService`, `PaymentObligationService`, `PaymentDueNotificationService`, `ProjectFinancialLookup`, `ProjectEvmDirectCostLookup`, and `BudgetAuthority`. `GlobalFinancialSummaryService` is retired; see the dated source correction above. |
 | Persistence/domain | `Budget`, `BudgetRevision`, `CostEntry`, `CostCategory`, `CostApproval`, `Invoice`, `PurchaseCommitment`, `PaymentObligation`, `PaymentSettlement`, and `PaymentNotificationDispatch`, registered through `AppDbContext`. |
 | Active frontend | `apps/web-react`: cost/finance overview, budget allocations, actual costs, forecasts, planned payments, project finance tab, and budget revision UI. `apps/web` is retired and out of scope. |
 | Other financial read models | Project overview/EVM, project status report snapshot, Program management, Portfolio management, and legacy Program/Portfolio services each produce financial views using separate calculations. |
@@ -41,7 +43,7 @@ These are the primary implementation files traced for the findings below; they a
 | Concern | Primary source files |
 |---|---|
 | Budget, revisions, costs, commitments, and payment APIs | `apps/api/src/NEXUS.Modules.CostManagement/Api/BudgetController.cs`, `BudgetRevisionController.cs`, `CostController.cs`, `CommitmentController.cs`, `PaymentObligationController.cs` |
-| Finance services, workflow and calculation paths | `apps/api/src/NEXUS.Modules.CostManagement/Application/BudgetService.cs`, `BudgetRevisionService.cs`, `BudgetAuthority.cs`, `CostService.cs`, `CommitmentService.cs`, `PaymentObligationService.cs`, `ProjectFinancialLookup.cs`, `GlobalFinancialSummaryService.cs`, `ProjectEvmDirectCostLookup.cs`, `FinanceWorkflowIntegration.cs`, `PaymentDueNotificationService.cs`, `PaymentDueNotificationScheduler.cs`, `ModuleRegistration/CostManagementModuleRegistration.cs` |
+| Finance services, workflow and calculation paths at review date | `apps/api/src/NEXUS.Modules.CostManagement/Application/BudgetService.cs`, `BudgetRevisionService.cs`, `BudgetAuthority.cs`, `CostService.cs`, `CommitmentService.cs`, `PaymentObligationService.cs`, `ProjectFinancialLookup.cs`, `ProjectEvmDirectCostLookup.cs`, `FinanceWorkflowIntegration.cs`, `PaymentDueNotificationService.cs`, `PaymentDueNotificationScheduler.cs`, `ModuleRegistration/CostManagementModuleRegistration.cs`. The retired tenant-wide summary service is omitted from the source links. |
 | Finance entities | `apps/api/src/NEXUS.Modules.CostManagement/Domain/Budget.cs`, `BudgetRevision.cs`, `CostEntry.cs`, `CostCategory.cs`, `CostApproval.cs`, `PurchaseCommitment.cs`, `Invoice.cs`, `PaymentObligation.cs`, `PaymentSettlement.cs`, `PaymentNotificationDispatch.cs` |
 | EF model and explicit payment/snapshot mappings | `apps/api/src/NEXUS.Persistence/AppDbContext.cs`, `apps/api/src/NEXUS.Persistence/Configurations/PaymentObligationConfiguration.cs`, `PaymentSettlementConfiguration.cs`, `PaymentNotificationDispatchConfiguration.cs`, `ProjectStatusReportConfiguration.cs` |
 | Finance and report migration sources | `apps/api/src/NEXUS.Persistence/Migrations/20261026160000_AddPlannedPaymentLifecycle.cs`, `20261026170000_AddPaymentTenantScopedRelationships.cs`, `20261027202734_AddStatusReportPaymentSnapshotFields.cs` |
@@ -81,7 +83,7 @@ Classifications describe behavior evidenced in the source, not feature names or 
 | Currency and precision | **Partial / Defective** | Most money columns are `decimal(19,4)` and planned payment input explicitly rejects precision beyond four places. Cost and commitment input do not consistently validate scale. Currency is often project currency, but several summaries normalize missing currency to GBP while other management paths default to USD. No FX conversion is performed in program/portfolio summaries, which group currency separately. |
 | Audit/history | **Partial / Requires redesign** | Finance services write audit entries for common create/update/delete actions, usually after the business `SaveChanges`, so audit failure can occur after the business change has committed. Soft deletion and mutable cost/commitment rows are not an append-only adjustment ledger. Settlement rows are immutable through current API but lack reversal. Audit trail docs note settlements/notifications are not fully represented in project audit views. |
 
-## Calculations currently in use
+## Calculations recorded at the 2026-10-29 review (historical)
 
 These are distinct implementations, not one shared contract:
 

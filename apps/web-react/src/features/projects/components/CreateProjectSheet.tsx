@@ -156,6 +156,7 @@ export function ProjectSheet({ open, onOpenChange, project, onCreated, embedded 
   const updateMutation = useUpdateProject(project?.publicId ?? "");
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
   const isSubmittingRef = React.useRef(false);
+  const initialAnnualBudgetWasEdited = React.useRef(false);
 
   const { data: userLookup, isLoading: usersLoading, error: usersError } = useProjectWorkflowUserLookup(open);
   const { data: projectManagers, isLoading: managersLoading, isFetching: managersFetching, error: managersError, refetch: refetchProjectManagers } = useProjectManagerCandidateLookup(open && !isEdit);
@@ -187,12 +188,24 @@ export function ProjectSheet({ open, onOpenChange, project, onCreated, embedded 
     defaultValues: isEdit && project ? toEditDefaultValues(project) : createDefaultValues(baseCurrencyCode),
   });
   const selectedProgramId = form.watch("programId");
+  const budgetValue = form.watch("budget");
+  const canCreateInitialAnnualBudget = !isEdit
+    && hasPermission(user?.permissions ?? [], Permissions.ProjectAnnualBudget.Create);
 
   React.useEffect(() => {
     if (!open) return;
+    initialAnnualBudgetWasEdited.current = false;
     form.reset(isEdit && project ? toEditDefaultValues(project) : createDefaultValues(baseCurrencyCode));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, project]);
+
+  React.useEffect(() => {
+    if (!open || !canCreateInitialAnnualBudget || initialAnnualBudgetWasEdited.current) return;
+    const suggestedAmount = typeof budgetValue === "number" && Number.isFinite(budgetValue)
+      ? budgetValue
+      : undefined;
+    form.setValue("initialAnnualBudgetAmount", suggestedAmount, { shouldDirty: suggestedAmount !== undefined });
+  }, [budgetValue, canCreateInitialAnnualBudget, form, open]);
 
   React.useEffect(() => {
     if (!open || isEdit || !baseCurrencyCode || form.getValues("currency")) return;
@@ -202,6 +215,10 @@ export function ProjectSheet({ open, onOpenChange, project, onCreated, embedded 
   const onSubmit = async (data: ProjectFormData) => {
     if (isSubmittingRef.current) return;
     if (!isEdit && data.initialAnnualBudgetAmount !== undefined) {
+      if (!currencies?.some(currency => currency.code.toUpperCase() === data.currency.trim().toUpperCase())) {
+        form.setError("currency", { type: "manual", message: t("projects.financialCurrencyUnavailable") });
+        return;
+      }
       if (data.initialAnnualBudgetAmount < 0) {
         form.setError("initialAnnualBudgetAmount", { type: "manual", message: t("projects.initialAnnualBudgetMustBeNonNegative") });
         return;
@@ -251,7 +268,7 @@ export function ProjectSheet({ open, onOpenChange, project, onCreated, embedded 
           priority: data.priority,
           projectManagerId: data.projectManagerId || undefined,
           budget: data.budget === undefined || data.budget === null ? undefined : Number(data.budget),
-          initialAnnualBudgetAmount: data.initialAnnualBudgetAmount === undefined ? undefined : Number(data.initialAnnualBudgetAmount),
+          initialAnnualBudgetAmount: canCreateInitialAnnualBudget && data.initialAnnualBudgetAmount !== undefined ? Number(data.initialAnnualBudgetAmount) : undefined,
         };
         const result = await createMutation.mutateAsync(payload);
         if (result?.publicId) {
@@ -538,14 +555,15 @@ export function ProjectSheet({ open, onOpenChange, project, onCreated, embedded 
                 </div>
               )}
             </div>
-            {!isEdit && hasPermission(user?.permissions ?? [], Permissions.ProjectAnnualBudget.Create) ? <div className="rounded-md border p-4">
+            {canCreateInitialAnnualBudget ? <div className="rounded-md border p-4">
               <div className="space-y-1">
                 <h4 className="text-sm font-medium">{t("projects.initialAnnualBudgetTitle")}</h4>
                 <p className="text-xs text-muted-foreground">{t("projects.initialAnnualBudgetDescription")}</p>
+                <p className="text-xs text-muted-foreground">{t("projects.initialAnnualBudgetSuggestedFromCeiling")}</p>
               </div>
               <div className="mt-3 max-w-sm space-y-1.5">
                 <Label htmlFor="project-initial-annual-budget">{t("projects.annualBudgetFunding")}</Label>
-                <Input id="project-initial-annual-budget" type="number" min="0" step="0.0001" value={form.watch("initialAnnualBudgetAmount") ?? ""} onChange={event => form.setValue("initialAnnualBudgetAmount", event.target.value === "" ? undefined : Number(event.target.value), { shouldValidate: true })} aria-invalid={Boolean(form.formState.errors.initialAnnualBudgetAmount)} aria-describedby={form.formState.errors.initialAnnualBudgetAmount ? "project-initial-budget-error" : undefined} />
+                <Input id="project-initial-annual-budget" type="number" min="0" step="0.0001" value={form.watch("initialAnnualBudgetAmount") ?? ""} onChange={event => { initialAnnualBudgetWasEdited.current = true; form.setValue("initialAnnualBudgetAmount", event.target.value === "" ? undefined : Number(event.target.value), { shouldValidate: true }); }} aria-invalid={Boolean(form.formState.errors.initialAnnualBudgetAmount)} aria-describedby={form.formState.errors.initialAnnualBudgetAmount ? "project-initial-budget-error" : undefined} />
                 <FieldError id="project-initial-budget-error" message={form.formState.errors.initialAnnualBudgetAmount?.message} />
                 <p className="text-xs text-muted-foreground">{t("projects.initialAnnualBudgetHint", { currency: form.watch("currency") || "" })}</p>
               </div>

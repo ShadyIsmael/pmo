@@ -69,7 +69,7 @@ The focused migration is **not generated** and the snapshot is **not synchronize
 
 The source migration chain confirms the repository's historical model, but it does not prove the physical Development database matches that chain. The five current source migrations are `20261029155617_InitialFopxPmBaseline`, `20261029181208_ProjectPaymentRequestPersistence`, `20261029183557_AddTenantRegistry`, `20261030122718_AddProjectAnnualBudgetFoundation`, and `20261030161223_AddProjectPaymentRequestAnnualBudgetAssociation`. The actual Development identity, applied history, physical schema, and independent backup remain unverified.
 
-The history/source migrations and physical Development schema were not inspected in this Sprint for deployment readiness. The established documented database workflow must verify exact target identity, actual applied history, physical schema, and independent verified backup before deployment. Existing financial history must not be assigned to a Payment Request or Fiscal Year during this migration.
+The history/source migrations and physical Development schema were not inspected in this Sprint for deployment readiness. The established documented database workflow must verify exact target identity, actual applied history, and physical schema before deployment. A backup may be created when explicitly requested, but independent backup storage and `RESTORE VERIFYONLY` are not Development/UAT prerequisites. Existing financial history must not be assigned to a Payment Request or Fiscal Year during this migration.
 
 | Database gate field | Current evidence |
 |---|---|

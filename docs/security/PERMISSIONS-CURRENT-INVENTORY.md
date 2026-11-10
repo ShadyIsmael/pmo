@@ -4,6 +4,8 @@
 **Status:** Audit only; Product Owner review required  
 **Implementation changes:** None made
 
+**Delegation policy supersession (2026-11-09):** This 2026-11-01 inventory is a historical audit snapshot. The old role-grant ceiling limiting custom-role permissions to keys already held by the actor is superseded for ordinary active, assignable, scoped non-Administration permissions. See `PERMISSIONS-ROLE-DELEGATION.md` and `PERMISSIONS-TWO-LEVEL-UX.md` for the current rule and retained protections.
+
 ## Executive Summary
 
 The current source-seeded permission catalog contains **103 unique Resource.Action keys**. The seed list contains 103 definitions and the tenant/resource/action database index is unique, so there are **0 exact duplicate key definitions** in the source catalog. For the two-level review, 27 keys are classified as view/read capabilities and 76 as operation capabilities. This is a key count, not a count of every button, modal command, or low-level UI event.

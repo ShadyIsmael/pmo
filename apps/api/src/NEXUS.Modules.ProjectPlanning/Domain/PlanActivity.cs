@@ -54,5 +54,5 @@ public class PlanActivity : BaseEntity
     public Guid? WbsId { get; set; }
 
     /// <summary>Optional structured display formatting for the activity row.</summary>
-    public PlanTextFormat? TextFormat { get; set; }
+    public PlanTextFormat? TextFormat { get; set; } = PlanTextFormat.Unspecified();
 }

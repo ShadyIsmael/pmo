@@ -258,6 +258,7 @@ export function AccountNotificationsPage() {
     MeetingMinutesShared: t("account.notifications.meetingMinutesShared"), MeetingCompleted: t("account.notifications.meetingCompleted"),
     MeetingMinutesComment: t("account.notifications.meetingMinutesComment"), MeetingMinutesCommentReply: t("account.notifications.meetingMinutesCommentReply"),
     RiskActionFollowUpDue: t("account.notifications.riskActionFollowUpDue"),
+    ProjectAnnualBudgetApproval: t("account.notifications.projectAnnualBudgetApproval"),
   };
   const pushUnavailable = !preferences.data?.pushAvailable || !isFirebaseMessagingConfigured();
   const messageIsError = messageKey === "account.notifications.pushUnavailable" || messageKey === "account.notifications.emailUnavailable" || messageKey?.endsWith("Failed") === true || messageKey?.endsWith("Status") === true;

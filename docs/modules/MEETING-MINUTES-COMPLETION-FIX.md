@@ -23,6 +23,8 @@ The exact HTTP response from the Product Owner's original browser session was no
 
 The React workspace keeps Minutes editing hidden before completion. Completed Meetings default to Minutes & Follow-up; Meeting Details remains selectable and both panels retain their mounted state. Only a successful `200/null` response displays an empty Draft. Loading, forbidden, not-found, and failed responses remain distinct, with retryable localized errors.
 
+The `GET /api/meetings/{id}/minutes` controller returns an explicit JSON `null` with status 200 when the service reports a valid completed Meeting without Minutes. This avoids ASP.NET Core's null object-result formatter turning `Ok(null)` into 204, which the shared React API client represents as `undefined` and React Query rejects.
+
 ## Identity, permissions, and data protection
 
 - Public Meeting IDs remain in supported routes. The detail response's internal ID is used only for authenticated API requests.

@@ -18,7 +18,7 @@ public sealed class PlanImportController : ControllerBase
 
     public PlanImportController(IPlanningImportService importService) => _importService = importService;
 
-    [Authorize(Policy = "Planning.View")]
+    [Authorize(Policy = "Planning.Edit")]
     [HttpPost("sessions")]
     [Consumes("multipart/form-data")]
     [RequestSizeLimit(MaximumFileSize)]

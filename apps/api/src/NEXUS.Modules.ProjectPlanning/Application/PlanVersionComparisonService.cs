@@ -225,7 +225,7 @@ public sealed class PlanVersionComparisonService : IPlanVersionComparisonService
         ("Wbs", activity.WbsId.HasValue && wbsKeys.TryGetValue(activity.WbsId.Value, out var wbs) ? wbs : null),
         ("TextFormat", TextFormatSnapshot(activity.TextFormat)));
 
-    private static object? TextFormatSnapshot(PlanTextFormat? format) => format is null ? null : new
+    private static object? TextFormatSnapshot(PlanTextFormat? format) => format is null || !format.IsSpecified ? null : new
     {
         format.IsBold,
         format.IsItalic,

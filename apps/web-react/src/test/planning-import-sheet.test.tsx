@@ -40,13 +40,13 @@ const session: PlanImportSessionDto = {
 function renderSheet(
   commit = vi.fn().mockResolvedValue({ planId: "plan-imported", versionNumber: 2, statistics: { tasks: 2, milestones: 1 } }),
   translator = t,
-  permissions = { canCreatePlan: true, canEditPlan: true },
+  permissions: { canCreatePlan: boolean; canEditPlan: boolean; canCreateResource?: boolean } = { canCreatePlan: true, canEditPlan: true },
   availablePlans = plans,
 ) {
   const onOpenChange = vi.fn();
   const onImported = vi.fn();
   const commitMutation = { mutateAsync: commit, isPending: false };
-  render(<I18nProvider><PlanningImportSheet projectId="project-1" plans={availablePlans} selectedPlanId={availablePlans[0]?.id ?? ""} canCreatePlan={permissions.canCreatePlan} canEditPlan={permissions.canEditPlan} commitMutation={commitMutation} t={translator} onOpenChange={onOpenChange} onImported={onImported} /></I18nProvider>);
+  render(<I18nProvider><PlanningImportSheet projectId="project-1" plans={availablePlans} selectedPlanId={availablePlans[0]?.id ?? ""} canCreatePlan={permissions.canCreatePlan} canEditPlan={permissions.canEditPlan} canCreateResource={permissions.canCreateResource ?? true} commitMutation={commitMutation} t={translator} onOpenChange={onOpenChange} onImported={onImported} /></I18nProvider>);
   return { commit, onOpenChange, onImported };
 }
 
@@ -203,6 +203,24 @@ describe("planning import sheet", () => {
     await waitFor(() => expect(resolveResource).toHaveBeenCalledWith("project-1", "import-1", "resource-source-2", expect.objectContaining({ resolution: "CreateNew" })));
     expect(await screen.findAllByText("Will create on import")).toHaveLength(2);
     expect(screen.getByText("1 to create")).toBeInTheDocument();
+  });
+
+  it("blocks creating imported Resources and committing them without Resource.Create", async () => {
+    const reviewSession: PlanImportSessionDto = {
+      ...session,
+      resources: [{ sourceId: "resource-source-3", name: "Imported Analyst", matchStatus: "Unmatched", assignmentCount: 0, resolution: "CreateNew", candidates: [] }],
+    };
+    vi.spyOn(planningApiFull, "importSession").mockResolvedValue(reviewSession);
+    const commit = vi.fn();
+    renderSheet(commit, localizedT("en"), { canCreatePlan: false, canEditPlan: true, canCreateResource: false });
+    await chooseFileAndPreview("en");
+    fireEvent.click(screen.getByRole("tab", { name: "Resources (1)" }));
+
+    expect(screen.getAllByRole("note").some((note) => note.textContent?.includes("Creating Resource records from an import requires Resource.Create"))).toBe(true);
+    expect(screen.getByRole("button", { name: "Will create on import" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Import Working version" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Import Working version" }));
+    expect(commit).not.toHaveBeenCalled();
   });
 
   it("renders assignment task and resource names instead of source identifiers", async () => {

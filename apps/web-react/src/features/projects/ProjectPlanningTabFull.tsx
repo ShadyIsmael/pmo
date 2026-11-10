@@ -60,6 +60,11 @@ export function ProjectPlanningTabFull() {
   const canManagePlanning = canPerformPlanningWrites(hasManagePlanningPermission, canMutate, effectiveReadOnly);
   const hasCreateProjectPlanPermission = Boolean(user && hasPermission(user.permissions, Permissions.ProjectPlan.Create));
   const canCreateProjectPlan = canPerformPlanningWrites(hasCreateProjectPlanPermission, canMutate, effectiveReadOnly);
+  const canCreateImportedResources = canPerformPlanningWrites(
+    Boolean(user && hasPermission(user.permissions, Permissions.Resources.Create)),
+    canMutate,
+    effectiveReadOnly,
+  );
   const canViewStatusReports = Boolean(user && hasPermission(user.permissions, Permissions.StatusReport.View));
   const baselineUnavailableReason = getPlanningBaselineUnavailableReason(
     Boolean(user && hasPermission(user.permissions, Permissions.Planning.Lifecycle)),
@@ -490,6 +495,7 @@ export function ProjectPlanningTabFull() {
   selectedPlanId={planId}
   canCreatePlan={canCreateProjectPlan}
   canEditPlan={canManagePlanning}
+  canCreateResource={canCreateImportedResources}
   commitMutation={mutations.commitImport}
   t={t}
   onOpenChange={setImportOpen}

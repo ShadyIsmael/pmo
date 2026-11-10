@@ -755,13 +755,17 @@ export interface ProjectFinancialSummaryDto {
   projectId: string;
   periodFrom: string;
   periodTo: string;
-  currencyCode: string;
+  currencyCode?: string | null;
   approvedBudget?: number | null;
   budgetStatus: string;
-  actualPaid: number;
-  outstandingPlannedPayments: number;
-  paymentsDueWithinPeriod: number;
-  remainingUnpaidAtPeriodEnd: number;
+  expenditure?: number | null;
+  committedCost?: number | null;
+  actualPaid?: number | null;
+  outstandingPlannedPayments?: number | null;
+  paymentsDueWithinPeriod?: number | null;
+  remainingUnpaidAtPeriodEnd?: number | null;
+  hasFinancialData: boolean;
+  dataStatus: string;
 }
 
 export interface ProjectPlanPerformanceDto {

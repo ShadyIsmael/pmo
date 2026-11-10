@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Routing;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using NEXUS.Api.Finance;
 using NEXUS.Modules.CostManagement.Api;
 using NEXUS.Modules.Identity.Api;
 using NEXUS.Modules.Identity.Application;
@@ -37,16 +38,73 @@ public sealed class PermissionAuthorizationContractTests
     [Theory]
     [InlineData("ProjectPaymentRequest.Approve")]
     [InlineData("PaymentSettlement.Record")]
+    [InlineData("ProjectAnnualBudget.ConfigureDraftApproval")]
     public void Financial_action_policy_requires_only_its_exact_canonical_permission(string permissionKey)
     {
         var options = new AuthorizationOptions();
-        options.AddCanonicalFinancialActionPolicies();
+        options.AddCanonicalFinancialPolicies();
 
         var policy = options.GetPolicy(permissionKey);
         Assert.NotNull(policy);
         var requirement = Assert.Single(policy!.Requirements.OfType<ClaimsAuthorizationRequirement>());
         Assert.Equal("permission", requirement.ClaimType);
         Assert.Equal(new[] { permissionKey }, requirement.AllowedValues);
+    }
+
+    [Fact]
+    public async Task Annual_budget_draft_approval_save_resolves_and_enforces_all_endpoint_permissions()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAuthorization(options => options.AddCanonicalFinancialPolicies());
+        using var provider = services.BuildServiceProvider();
+        var authorization = provider.GetRequiredService<AspNetAuthorizationService>();
+        var policyProvider = provider.GetRequiredService<IAuthorizationPolicyProvider>();
+        var controllerType = typeof(ProjectAnnualBudgetDraftApprovalConfigurationController);
+        var save = controllerType.GetMethod(nameof(ProjectAnnualBudgetDraftApprovalConfigurationController.Save));
+        Assert.NotNull(save);
+
+        var authorizeData = controllerType.GetCustomAttributes<AuthorizeAttribute>(inherit: true)
+            .Concat(save!.GetCustomAttributes<AuthorizeAttribute>(inherit: true))
+            .Cast<IAuthorizeData>()
+            .ToArray();
+        var endpointPolicy = await AuthorizationPolicy.CombineAsync(policyProvider, authorizeData);
+        Assert.NotNull(endpointPolicy);
+
+        var expectedPolicies = new[]
+        {
+            "ProjectAnnualBudget.View",
+            "ProjectAnnualBudget.EditDraft",
+            "ProjectAnnualBudget.ConfigureDraftApproval"
+        };
+        Assert.Equal(expectedPolicies.Order(), authorizeData
+            .Where(data => !string.IsNullOrWhiteSpace(data.Policy))
+            .Select(data => data.Policy!)
+            .Order());
+
+        var configurePermission = PermissionCatalog.ByKey["ProjectAnnualBudget.ConfigureDraftApproval"];
+        Assert.True(configurePermission.IsActive);
+        Assert.Equal(PermissionScope.Project, configurePermission.Scope);
+        Assert.Equal(PermissionLevel.Action, configurePermission.Level);
+        Assert.Equal(
+            new[] { "ProjectAnnualBudget.View", "ProjectAnnualBudget.EditDraft" },
+            configurePermission.RequiredPermissionKeys);
+
+        var allRequiredPermissions = expectedPolicies;
+        Assert.True((await authorization.AuthorizeAsync(
+            PrincipalWith(allRequiredPermissions), resource: null, policy: endpointPolicy!)).Succeeded);
+        Assert.False((await authorization.AuthorizeAsync(
+            PrincipalWith(["ProjectAnnualBudget.View", "ProjectAnnualBudget.EditDraft"]), resource: null, policy: endpointPolicy!)).Succeeded);
+        Assert.False((await authorization.AuthorizeAsync(
+            PrincipalWith(["ProjectAnnualBudget.View", "ProjectAnnualBudget.ConfigureDraftApproval"]), resource: null, policy: endpointPolicy!)).Succeeded);
+        Assert.False((await authorization.AuthorizeAsync(
+            PrincipalWith(["ProjectAnnualBudget.EditDraft", "ProjectAnnualBudget.ConfigureDraftApproval"]), resource: null, policy: endpointPolicy!)).Succeeded);
+
+        var deniedConfigure = EffectivePermissionResolver.Resolve(
+            allRequiredPermissions,
+            [("ProjectAnnualBudget.ConfigureDraftApproval", PermissionOverrideEffect.Deny)]);
+        Assert.False((await authorization.AuthorizeAsync(
+            PrincipalWith(deniedConfigure), resource: null, policy: endpointPolicy!)).Succeeded);
     }
 
     [Theory]

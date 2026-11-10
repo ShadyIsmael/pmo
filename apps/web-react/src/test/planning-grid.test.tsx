@@ -1,8 +1,10 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type * as React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { planningApiFull, usePlanningAssignmentsFull, type PlanActivityDto, type PlanAssignmentDto, type PlanDependencyDto, type PlanWbsNodeDto } from "@features/projects/api/planningFull";
 import { PlanningGrid } from "@features/projects/components/PlanningGrid";
+import { buildPlanWorkspaceRows } from "@features/projects/lib/plan-workspace-rows";
 import { ConfirmProvider } from "@components/ui/ConfirmProvider";
 import { I18nProvider } from "@i18n/messages";
 import { PLAN_ROW_HEIGHT } from "@features/projects/lib/gantt-constants";
@@ -15,6 +17,10 @@ vi.mock("@features/projects/api/planningFull", () => ({
   usePlanningTablePreferencesFull: () => ({ data: undefined }),
   useSavePlanningTablePreferencesFull: () => ({ mutateAsync: vi.fn().mockResolvedValue(undefined) }),
   useResetPlanningTablePreferencesFull: () => ({ isPending: false, mutateAsync: vi.fn().mockResolvedValue(undefined) }),
+  planningKeys: {
+    wbs: (projectId: string, planId: string) => ["planning-full", "wbs", projectId, planId],
+    activities: (projectId: string, planId: string) => ["planning-full", "activities", projectId, planId],
+  },
 }));
 
 const t = (key: string) => key;
@@ -192,7 +198,10 @@ afterEach(() => {
 });
 
 function renderWithProviders(ui: React.ReactElement) {
-  return render(ui, { wrapper: ({ children }: { children: React.ReactNode }) => <I18nProvider><ConfirmProvider translate={t}>{children}</ConfirmProvider></I18nProvider> });
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  return render(ui, { wrapper: ({ children }: { children: React.ReactNode }) => <QueryClientProvider client={queryClient}><I18nProvider><ConfirmProvider translate={t}>{children}</ConfirmProvider></I18nProvider></QueryClientProvider> });
 }
 
 describe("planning grid row and ribbon behavior", () => {
@@ -327,21 +336,61 @@ describe("planning grid row and ribbon behavior", () => {
     ]) })));
   });
 
-  it.each(["Automatic", "Manual"] as const)("validates a delayed Start according to %s scheduling", async (mode) => {
-    const task: PlanActivityDto = { ...activity("date-task", "date-wbs"), schedulingMode: mode, startDate: "2026-01-15", endDate: "2026-01-15" };
+  it.each(["Automatic", "Manual"] as const)("rejects a Start after Finish when the task began in %s mode", async (mode) => {
+    const task: PlanActivityDto = { ...activity("date-task", "date-wbs"), schedulingMode: mode, startDate: "2026-01-15", endDate: "2026-01-20" };
     const mutations = makeMutations();
     renderWithProviders(<PlanningGrid projectId="project-1" planId="plan-1" wbs={[wbsNode("date-wbs", task.id, 0)]} activities={[task]} dependencies={[]} mutations={mutations} editable showBaseline={false} ribbonTab="task" t={t} onEdit={vi.fn()} />);
     const row = screen.getByText(task.name).closest("tr")!;
     fireEvent.doubleClick(within(row).getAllByText("2026-01-15")[0]);
     const editor = screen.getByPlaceholderText("dd/mm/yyyy");
-    fireEvent.change(editor, { target: { value: "02/11/2026" } });
+    fireEvent.change(editor, { target: { value: "22/01/2026" } });
     fireEvent.keyDown(editor, { key: "Enter" });
-    if (mode === "Automatic") {
-      await waitFor(() => expect(mutations.updateActivity.mutateAsync).toHaveBeenCalledWith(expect.objectContaining({ body: expect.objectContaining({ startDate: "2026-11-02", schedulingMode: mode }) })));
-    } else {
-      expect(await screen.findByRole("alert")).toHaveTextContent("planning.invalidDateRange");
-      expect(mutations.updateActivity.mutateAsync).not.toHaveBeenCalled();
-    }
+    expect(await screen.findByRole("alert")).toHaveTextContent("planning.invalidDateRange");
+    expect(mutations.updateActivity.mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("saves an inline Start date edit in Manual mode while preserving Finish and duration", async () => {
+    const updateActivity = vi.fn().mockResolvedValue(undefined);
+    const mutations = { ...makeMutations(), updateActivity: { mutateAsync: updateActivity } };
+    const task: PlanActivityDto = { ...activity("task-1", "wbs-1"), schedulingMode: "Automatic", startDate: "2026-01-15T08:00:00Z", endDate: "2026-01-20T17:00:00Z", duration: 3 };
+    renderWithProviders(<PlanningGrid projectId="project-1" planId="plan-1" wbs={[wbsNode("wbs-1", task.id, 0)]} activities={[task]} dependencies={[]} mutations={mutations} editable showBaseline={false} ribbonTab="task" t={t} onEdit={vi.fn()} />);
+
+    fireEvent.doubleClick(screen.getByText("2026-01-15"));
+    const input = screen.getByDisplayValue("15/01/2026");
+    fireEvent.change(input, { target: { value: "10/01/2026" } });
+    fireEvent.blur(input);
+
+    await waitFor(() => expect(updateActivity).toHaveBeenCalledWith(expect.objectContaining({
+      id: task.id,
+      body: expect.objectContaining({
+        startDate: "2026-01-10",
+        endDate: task.endDate,
+        duration: task.duration,
+        schedulingMode: "Manual",
+      }),
+    })));
+  });
+
+  it("switches an inline Finish date edit from Automatic to Manual scheduling", async () => {
+    const updateActivity = vi.fn().mockResolvedValue(undefined);
+    const mutations = { ...makeMutations(), updateActivity: { mutateAsync: updateActivity } };
+    const task: PlanActivityDto = { ...activity("task-1", "wbs-1"), schedulingMode: "Automatic", startDate: "2026-01-10T08:00:00Z", endDate: "2026-01-20T17:00:00Z", duration: 3 };
+    renderWithProviders(<PlanningGrid projectId="project-1" planId="plan-1" wbs={[wbsNode("wbs-1", task.id, 0)]} activities={[task]} dependencies={[]} mutations={mutations} editable showBaseline={false} ribbonTab="task" t={t} onEdit={vi.fn()} />);
+
+    fireEvent.doubleClick(screen.getByText("2026-01-20"));
+    const input = screen.getByDisplayValue("20/01/2026");
+    fireEvent.change(input, { target: { value: "25/01/2026" } });
+    fireEvent.blur(input);
+
+    await waitFor(() => expect(updateActivity).toHaveBeenCalledWith(expect.objectContaining({
+      id: task.id,
+      body: expect.objectContaining({
+        startDate: task.startDate,
+        endDate: "2026-01-25",
+        duration: task.duration,
+        schedulingMode: "Manual",
+      }),
+    })));
   });
 
   it("keeps the original planning row height and spacing", () => {
@@ -458,19 +507,33 @@ describe("planning grid row and ribbon behavior", () => {
     expect(updateActivity).not.toHaveBeenCalled();
   });
 
-  it("inserts a task from the ribbon into the table ordering and selects the new row", async () => {
-    const first = activity("task-1", "wbs-1");
+  it("inserts a Task below a Milestone through the persisted move command", async () => {
+    const first = { ...activity("mile-1", "wbs-1"), type: "Milestone" as const, duration: 0 };
     const initialWbs = [wbsNode("wbs-1", first.id, 0)];
-    const mutations = makeMutations();
+    const moveActivity = vi.fn().mockResolvedValue(undefined);
+    const mutations = {
+      ...makeMutations(),
+      createWbs: { mutateAsync: vi.fn().mockImplementation(async () => wbsNode("created-wbs", "created-activity", 1)) },
+      createActivity: { mutateAsync: vi.fn().mockImplementation(async () => ({ ...activity("created-activity", "created-wbs"), sortOrder: 1 })) },
+      moveActivity: { mutateAsync: moveActivity, isPending: false },
+    };
     const props = { projectId: "project-1", planId: "plan-1", wbs: initialWbs, activities: [first], dependencies: [], mutations, editable: true, showBaseline: false, ribbonTab: "task" as const, t, onEdit: vi.fn(), onDelete: vi.fn() };
     const { rerender } = renderWithProviders(<PlanningGrid {...props} />);
 
-    fireEvent.click(screen.getByText("Task task-1"));
-    fireEvent.click(screen.getByRole("button", { name: "planning.insertAbove" }));
+    fireEvent.click(screen.getByText("Task mile-1"));
+    fireEvent.click(screen.getByRole("button", { name: "planning.insertBelow" }));
 
-    await waitFor(() => expect(mutations.createActivity.mutateAsync).toHaveBeenCalledWith(expect.objectContaining({ wbsId: "created-wbs", sortOrder: -1 })));
-    expect(mutations.createWbs.mutateAsync).toHaveBeenCalledWith(expect.objectContaining({ parentWbsId: null, sortOrder: -1 }));
-    rerender(<PlanningGrid {...props} wbs={[...initialWbs, wbsNode("created-wbs", "created-activity", -1)]} activities={[activity("created-activity", "created-wbs"), first]} />);
+    await waitFor(() => expect(mutations.createActivity.mutateAsync).toHaveBeenCalledWith(expect.objectContaining({ type: "Task", wbsId: "created-wbs", sortOrder: 1 })));
+    expect(mutations.createWbs.mutateAsync).toHaveBeenCalledWith(expect.objectContaining({ parentWbsId: null, sortOrder: 1 }));
+    expect(moveActivity).toHaveBeenCalledWith(expect.objectContaining({
+      id: "created-activity",
+      body: expect.objectContaining({ targetActivityId: first.id, position: "After", wbsRowVersion: "wbs-created-wbs", targetWbsRowVersion: "wbs-wbs-1" }),
+    }));
+    rerender(<PlanningGrid {...props} wbs={[...initialWbs, wbsNode("created-wbs", "created-activity", 1)]} activities={[{ ...activity("created-activity", "created-wbs"), sortOrder: 1 }, first]} />);
+    const renderedRows = screen.getAllByTestId("planning-grid-row");
+    expect(renderedRows.some((row) => row.textContent?.includes("mile-1"))).toBe(true);
+    expect(renderedRows.some((row) => row.textContent?.includes("created-activity"))).toBe(true);
+    expect(renderedRows.findIndex((row) => row.textContent?.includes("mile-1"))).toBeLessThan(renderedRows.findIndex((row) => row.textContent?.includes("created-activity")));
     expect(screen.getByText("Task created-activity").closest("tr")).toHaveAttribute("aria-selected", "true");
   });
 
@@ -493,6 +556,47 @@ describe("planning grid row and ribbon behavior", () => {
       id: first.id,
       body: expect.objectContaining({ targetActivityId: second.id, position: "Child", rowVersion: first.rowVersion, wbsRowVersion: "wbs-wbs-1", targetWbsRowVersion: "wbs-wbs-2" }),
     })));
+  });
+
+  it("keeps a legacy row visible and explains when its WBS link is missing", async () => {
+    const orphan = activity("orphan", "missing-wbs");
+    const target = activity("target", "wbs-target");
+    const moveActivity = vi.fn().mockResolvedValue(undefined);
+    const mutations = { ...makeMutations(), moveActivity: { mutateAsync: moveActivity, isPending: false } };
+    renderWithProviders(<PlanningGrid projectId="project-1" planId="plan-1" wbs={[wbsNode("wbs-target", target.id, 0)]} activities={[orphan, target]} dependencies={[]} mutations={mutations} editable showBaseline={false} ribbonTab="task" t={t} onEdit={vi.fn()} onDelete={vi.fn()} />);
+
+    const orphanRow = screen.getByText("Task orphan").closest("tr");
+    const targetRow = screen.getByText("Task target").closest("tr");
+    expect(orphanRow).not.toBeNull();
+    expect(targetRow).not.toBeNull();
+    const orphanHandle = within(orphanRow!).getByRole("button", { name: "planning.moveActivity" });
+    const dataTransfer = { effectAllowed: "", dropEffect: "", setData: vi.fn() };
+    fireEvent.dragStart(orphanHandle, { dataTransfer });
+    fireEvent.dragOver(targetRow!, { dataTransfer, clientY: 0 });
+    fireEvent.drop(targetRow!, { dataTransfer });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("planning.moveMissingWbsLink");
+    expect(screen.getByText("Task orphan")).toBeInTheDocument();
+    expect(moveActivity).not.toHaveBeenCalled();
+  });
+
+  it("keeps the row visible and reports a failed move request", async () => {
+    const source = activity("source", "wbs-source");
+    const target = activity("target", "wbs-target");
+    const moveActivity = vi.fn().mockRejectedValue(new Error("move request failed"));
+    const mutations = { ...makeMutations(), moveActivity: { mutateAsync: moveActivity, isPending: false } };
+    renderWithProviders(<PlanningGrid projectId="project-1" planId="plan-1" wbs={[wbsNode("wbs-source", source.id, 0), wbsNode("wbs-target", target.id, 1)]} activities={[source, target]} dependencies={[]} mutations={mutations} editable showBaseline={false} ribbonTab="task" t={t} onEdit={vi.fn()} onDelete={vi.fn()} />);
+
+    const sourceHandle = within(screen.getByText("Task source").closest("tr")!).getByRole("button", { name: "planning.moveActivity" });
+    const targetRow = screen.getByText("Task target").closest("tr")!;
+    const dataTransfer = { effectAllowed: "", dropEffect: "", setData: vi.fn() };
+    fireEvent.dragStart(sourceHandle, { dataTransfer });
+    fireEvent.dragOver(targetRow, { dataTransfer, clientY: 0 });
+    fireEvent.drop(targetRow, { dataTransfer });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("move request failed");
+    expect(screen.getByText("Task source")).toBeInTheDocument();
+    expect(moveActivity).toHaveBeenCalledTimes(1);
   });
 
   it("indents and outdents the selected WBS task node through the hierarchy ribbon", async () => {
@@ -551,7 +655,7 @@ describe("planning grid row and ribbon behavior", () => {
     const nextTask = activity("next-task", "next-wbs");
     const childTask = activity("child-task", "child-wbs");
     const previous = { ...wbsNode("previous-wbs", previousTask.id, 0), parentWbsId: "root-wbs" };
-    const selected = { ...wbsNode("selected-wbs", selectedTask.id, 1), parentWbsId: "root-wbs", children: [wbsNode("child-wbs", childTask.id, 0)] };
+    const selected = { ...wbsNode("selected-wbs", selectedTask.id, 1), parentWbsId: "root-wbs", children: [{ ...wbsNode("child-wbs", childTask.id, 0), parentWbsId: "selected-wbs" }] };
     const next = { ...wbsNode("next-wbs", nextTask.id, 2), parentWbsId: "root-wbs" };
     const root: PlanWbsNodeDto = { ...wbsNode("root-wbs", rootTask.id, 0), children: [previous, selected, next] };
     renderWithProviders(<PlanningGrid projectId="project-1" planId="plan-1" wbs={[root]} activities={[rootTask, previousTask, selectedTask, nextTask, childTask]} dependencies={[]} mutations={makeMutations()} editable showBaseline={false} ribbonTab="task" t={t} onEdit={vi.fn()} onDelete={vi.fn()} />);
@@ -606,24 +710,25 @@ describe("planning grid row and ribbon behavior", () => {
   });
 
   it("reorders a secondary activity within its WBS and can attach a root task under a WBS", async () => {
-    const first = activity("task-1", "shared-wbs");
-    const second = activity("task-2", "shared-wbs");
-    const node = { ...wbsNode("shared-wbs", first.id, 0), children: [] };
+    const parent = activity("parent-task", "shared-wbs");
+    const first = { ...activity("task-1", "shared-wbs"), sortOrder: 1 };
+    const second = { ...activity("task-2", "shared-wbs"), sortOrder: 2 };
+    const node = { ...wbsNode("shared-wbs", parent.id, 0), children: [] };
     const reorderMutations = makeMutations();
-    renderWithProviders(<PlanningGrid projectId="project-1" planId="plan-1" wbs={[node]} activities={[first, second]} dependencies={[]} mutations={reorderMutations} editable showBaseline={false} ribbonTab="task" t={t} onEdit={vi.fn()} onDelete={vi.fn()} />);
+    renderWithProviders(<PlanningGrid projectId="project-1" planId="plan-1" wbs={[node]} activities={[parent, first, second]} dependencies={[]} mutations={reorderMutations} editable showBaseline={false} ribbonTab="task" t={t} onEdit={vi.fn()} onDelete={vi.fn()} />);
 
     fireEvent.click(screen.getByText("Task task-2"));
     fireEvent.click(screen.getByRole("button", { name: "planning.moveUp" }));
-    await waitFor(() => expect(reorderMutations.bulkUpdateActivities.mutateAsync).toHaveBeenCalledWith(expect.objectContaining({ items: expect.arrayContaining([
-      expect.objectContaining({ activityId: second.id, update: expect.objectContaining({ sortOrder: 0 }) }),
-      expect.objectContaining({ activityId: first.id, update: expect.objectContaining({ sortOrder: 1 }) }),
-    ]) })));
+    await waitFor(() => expect(reorderMutations.moveActivity.mutateAsync).toHaveBeenCalledWith(expect.objectContaining({
+      id: second.id,
+      body: expect.objectContaining({ targetActivityId: first.id, position: "Before", rowVersion: second.rowVersion, wbsRowVersion: "wbs-shared-wbs", targetWbsRowVersion: "wbs-shared-wbs" }),
+    })));
 
     cleanup();
-    const rootTask = activity("root-task", "unused");
+    const rootTask = { ...activity("root-task", "unused"), sortOrder: 1 };
     rootTask.wbsId = undefined;
     const attachMutations = makeMutations();
-    renderWithProviders(<PlanningGrid projectId="project-1" planId="plan-1" wbs={[node]} activities={[first, rootTask]} dependencies={[]} mutations={attachMutations} editable showBaseline={false} ribbonTab="task" t={t} onEdit={vi.fn()} onDelete={vi.fn()} />);
+    renderWithProviders(<PlanningGrid projectId="project-1" planId="plan-1" wbs={[node]} activities={[parent, rootTask]} dependencies={[]} mutations={attachMutations} editable showBaseline={false} ribbonTab="task" t={t} onEdit={vi.fn()} onDelete={vi.fn()} />);
     fireEvent.click(screen.getByText("Task root-task"));
     fireEvent.click(screen.getByRole("button", { name: "planning.indent" }));
     await waitFor(() => expect(attachMutations.updateActivity.mutateAsync).toHaveBeenCalledWith(expect.objectContaining({ id: rootTask.id, body: expect.objectContaining({ wbsId: node.id }) })));
@@ -758,6 +863,37 @@ describe("planning grid row and ribbon behavior", () => {
     expect(screen.getByRole("img", { name: "planning.milestone" })).toBeInTheDocument();
     const row = screen.getByText("Task mile-1").closest("tr");
     expect(row).toHaveAttribute("data-row-kind", "milestone");
+  });
+
+  it("keeps linked and loose Task/Milestone rows in one stable root and child order", () => {
+    const rootTask = activity("root-task", "wbs-root-task");
+    const rootMilestone = { ...activity("root-milestone", "wbs-root-milestone"), type: "Milestone" as const, duration: 0 };
+    const childMilestone = { ...activity("child-milestone", "wbs-child-milestone"), type: "Milestone" as const, duration: 0 };
+    const childTask = activity("child-task", "wbs-child-task");
+    const looseRootTask = { ...activity("loose-root-task", ""), wbsId: undefined, sortOrder: 2 };
+    const reverseLinkedMilestone = { ...activity("reverse-linked-milestone", ""), type: "Milestone" as const, duration: 0, wbsId: undefined, sortOrder: 3 };
+    const rootTaskNode: PlanWbsNodeDto = {
+      ...wbsNode("wbs-root-task", rootTask.id, 0),
+      children: [
+        { ...wbsNode("wbs-child-milestone", childMilestone.id, 0), parentWbsId: "wbs-root-task" },
+        { ...wbsNode("wbs-child-task", childTask.id, 1), parentWbsId: "wbs-root-task" },
+      ],
+    };
+    const reverseNode = { ...wbsNode("wbs-reverse", reverseLinkedMilestone.id, 3), activityId: reverseLinkedMilestone.id };
+    const rows = buildPlanWorkspaceRows(
+      [rootTaskNode, wbsNode("wbs-root-milestone", rootMilestone.id, 1), reverseNode],
+      [rootTask, rootMilestone, childMilestone, childTask, looseRootTask, reverseLinkedMilestone],
+    );
+
+    expect(rows.map((row) => row.activity?.id)).toEqual([
+      rootTask.id,
+      childMilestone.id,
+      childTask.id,
+      rootMilestone.id,
+      looseRootTask.id,
+      reverseLinkedMilestone.id,
+    ]);
+    expect(rows.map((row) => row.rowNumber)).toEqual([1, 2, 3, 4, 5, 6]);
   });
 
   it("adds a subtask under the selected WBS-linked row from the ribbon and context menu", async () => {

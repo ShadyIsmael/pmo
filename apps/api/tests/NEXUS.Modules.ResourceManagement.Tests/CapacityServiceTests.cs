@@ -4,16 +4,32 @@ using NEXUS.Modules.Organization.Domain;
 using NEXUS.Modules.ResourceManagement.Application;
 using NEXUS.Modules.ResourceManagement.Application.DTOs;
 using NEXUS.Modules.ResourceManagement.Domain;
+using NEXUS.SharedKernel.Management;
 using NEXUS.SharedKernel.Helpers;
+using Moq;
 using Xunit;
 
 namespace NEXUS.Modules.ResourceManagement.Tests;
 
 public class CapacityServiceTests : TestBase
 {
-    private static CapacityService CreateService(TestDbContext context)
+    private static CapacityService CreateService(TestDbContext context, IReadOnlySet<Guid>? allowedProjectIds = null)
     {
-        return new CapacityService(context);
+        var projectIds = allowedProjectIds ?? context.ResourceAllocations
+            .Where(allocation => allocation.ProjectId.HasValue)
+            .Select(allocation => allocation.ProjectId!.Value)
+            .ToHashSet();
+        var management = new Mock<IManagementContextAccessor>();
+        management.SetupGet(accessor => accessor.Current).Returns(new ManagementContext(
+            Guid.NewGuid(),
+            TenantConstants.DemoTenantId,
+            ManagementPerspective.ProjectManager,
+            ManagementViewMode.Native,
+            null,
+            null,
+            null,
+            new ManagementScope(new HashSet<Guid>(), new HashSet<Guid>(), projectIds)));
+        return new CapacityService(context, managementContext: management.Object);
     }
 
     private static ProjectTeamCapacityMemberInputDto TeamMember(
@@ -689,6 +705,71 @@ public class CapacityServiceTests : TestBase
         var result = await service.GetAvailabilityAsync(filter);
 
         result.Items.Should().BeInDescendingOrder(i => i.AvailableCapacityHours);
+    }
+
+    [Fact]
+    public async Task CapacityQueries_ExcludeAllocationsOutsideManagementProjectScope()
+    {
+        using var context = CreateContext();
+        var allowedProjectId = Guid.Parse("F3000000-0000-0000-0000-000000000001");
+        var outOfScopeProjectId = Guid.Parse("F3000000-0000-0000-0000-000000000002");
+        context.ResourceAllocations.RemoveRange(context.ResourceAllocations);
+        context.ResourceAllocations.AddRange(
+            new ResourceAllocation
+            {
+                Id = Guid.NewGuid(),
+                TenantId = TenantConstants.DemoTenantId,
+                ResourceId = ResourceAliceId,
+                ProjectId = allowedProjectId,
+                ProjectRoleId = ProjectRoleDevId,
+                AllocationSource = ResourceAllocation.SourceProjectPlan,
+                PlannedHours = 10m,
+                StartDate = new DateTime(2026, 1, 5),
+                EndDate = new DateTime(2026, 1, 12),
+                Status = ResourceAllocation.StatusConfirmed
+            },
+            new ResourceAllocation
+            {
+                Id = Guid.NewGuid(),
+                TenantId = TenantConstants.DemoTenantId,
+                ResourceId = ResourceAliceId,
+                ProjectId = outOfScopeProjectId,
+                ProjectRoleId = ProjectRoleDevId,
+                AllocationSource = ResourceAllocation.SourceProjectPlan,
+                PlannedHours = 1000m,
+                StartDate = new DateTime(2026, 1, 5),
+                EndDate = new DateTime(2026, 1, 12),
+                Status = ResourceAllocation.StatusConfirmed
+            });
+        await context.SaveChangesAsync();
+
+        var service = CreateService(context, new HashSet<Guid> { allowedProjectId });
+        var filter = new CapacityFilterDto
+        {
+            PeriodType = "Month",
+            StartDate = new DateTime(2026, 1, 1),
+            EndDate = new DateTime(2026, 2, 1),
+            ResourceId = ResourceAliceId
+        };
+
+        var matrix = await service.GetMatrixAsync(filter);
+        var matrixAllocations = matrix.Value.Rows.Single().Cells.SelectMany(cell => cell.Allocations).ToList();
+        matrixAllocations.Should().ContainSingle().Which.ProjectId.Should().Be(allowedProjectId);
+
+        var availability = await service.GetAvailabilityAsync(filter);
+        availability.Items.Single(resource => resource.ResourceId == ResourceAliceId).AvailableCapacityHours.Should().BeGreaterThan(0m);
+
+        var demand = await service.GetDemandVsCapacityAsync(filter);
+        demand.Value.Groups.Single(group => group.GroupType == "ProjectRole").DemandHours.Should().Be(10m);
+
+        var gantt = await service.GetGanttDataAsync(filter);
+        gantt.Value.Should().ContainSingle().Which.ProjectId.Should().Be(allowedProjectId);
+
+        var resourceAvailability = await service.GetResourceAvailabilityAsync(
+            ResourceAliceId,
+            new DateTime(2026, 1, 5),
+            new DateTime(2026, 1, 12));
+        resourceAvailability.Value.AvailableCapacityHours.Should().BeGreaterThan(0m);
     }
 
     [Fact]

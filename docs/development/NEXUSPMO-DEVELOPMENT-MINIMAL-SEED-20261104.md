@@ -4,9 +4,11 @@
 **Requested target:** Development SQL Server `Shady`, database `NexusPmo`  
 **Outcome:** **BLOCKED - seed not executed**
 
+**Policy supersession (2026-11-10):** The backup blocker below records the policy and environment at the time of this report. Development/UAT backups are now optional, so lack of an independent backup destination does not block future authorized work. The exact environment and database identity, migration/schema checks, secure bootstrap secret, and any required explicit authorization remain necessary. This update does not change the recorded 2026-11-04 outcome: no seed or database write occurred.
+
 ## Scope and actions
 
-The request was to initialize the existing manually cleared Development database with `--seed-minimal-only`, run it twice, and verify the resulting Admin and empty business-data baseline. No database reset, clear, migration, seed, SQL write, or Demo Seed was run. The EF offline model gate passed. The script executor could not connect to SQL Server (`Access is denied`), so read-only live inspection was completed in the local SSMS host session instead. That session confirmed the target identity, migration history, and table row inventory. The standalone seed remains blocked by the independent-backup requirement: SQL Server reports only drive `C:`, which also contains the database files, and no approved separate backup destination was available.
+The request was to initialize the existing manually cleared Development database with `--seed-minimal-only`, run it twice, and verify the resulting Admin and empty business-data baseline. No database reset, clear, migration, seed, SQL write, or Demo Seed was run. The EF offline model gate passed. The script executor could not connect to SQL Server (`Access is denied`), so read-only live inspection was completed in the local SSMS host session instead. That session confirmed the target identity, migration history, and table row inventory. At the time of this report, the standalone seed was blocked by the then-current independent-backup requirement: SQL Server reported only drive `C:`, which also contained the database files, and no approved separate backup destination was available.
 
 ## Seed and permission source review
 
@@ -44,8 +46,8 @@ Read-only partition metadata inventory of all non-system tables returned only `d
 
 ## Blockers
 
-1. The standalone seed is a database write. Repository policy requires an independently verified backup. Only `C:` is available to SQL Server and it contains the database files; the prior same-volume backup does not qualify. No approved separate destination was available. The reset-only no-backup exception does not apply because this task prohibits reset and requests a standalone seed.
+1. **Historical blocker at the time of this task:** standalone Development seeds then required an independently verified backup. Only `C:` was available to SQL Server and it contained the database files; the prior same-volume backup did not qualify, and no approved separate destination was available. The 2026-11-10 policy update supersedes that backup prerequisite for future Development/UAT operations.
 2. The exact live target and migration history were verified read-only through SSMS, but the repeatable EF database gate could not connect from the script executor. Full physical-schema verification therefore remains incomplete.
 3. `NEXUS_ADMIN_BOOTSTRAP_PASSWORD` was not configured in the execution shell. No secret was generated, exposed, or stored, so a new Admin could not be initialized.
 
-**Completion status:** Minimal Admin seed is **not complete**. Seed runs: **0**; idempotency: **not verified**; active Admins: **0**; Admin role membership: **0**; persisted permissions: **0**; business and demo records: **0**; live migrations pending: **0**. No database was modified. Resume when the independent backup destination, approved gate connectivity, and secure bootstrap secret are available.
+**Completion status:** Minimal Admin seed is **not complete**. Seed runs: **0**; idempotency: **not verified**; active Admins: **0**; Admin role membership: **0**; persisted permissions: **0**; business and demo records: **0**; live migrations pending: **0**. No database was modified. Future authorized work may resume when approved gate connectivity and the secure bootstrap secret are available; a backup remains optional for Development/UAT.

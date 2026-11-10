@@ -212,11 +212,13 @@ target and confirm `Shady` / `NexusPmo`. Set
 Development connection and set `ASPNETCORE_ENVIRONMENT=Development`; do not print the
 connection string. The recovery command rechecks the target and pending migrations.
 
-The backup directory must already exist, be writable by the SQL Server service, and
-use a volume or network share independent from every database data/log volume. The
-command stops before changing data if the target or backup check fails. Build into a
-separate temporary output directory so a currently running API does not need to be
-stopped or overwritten:
+Development and UAT database operations do not require a backup, independent
+backup storage, or `RESTORE VERIFYONLY`; a missing backup must not block an
+authorized operation. This recovery command is Development-only: it still requires
+the exact supported Development environment and verified SQL target and rechecks
+pending migrations. Create a backup only when explicitly requested, using the
+tool's optional backup setting. Build into a separate temporary output directory
+so a currently running API does not need to be stopped or overwritten:
 
 ```powershell
 $env:ASPNETCORE_ENVIRONMENT = 'Development'
@@ -226,16 +228,15 @@ Push-Location apps/api/src/NEXUS.Api
 dotnet (Join-Path $recoveryBuild 'NEXUS.Api.dll') `
   --recover-development-admin-password `
   --admin-recovery-expected-sql-server Shady `
-  --admin-recovery-expected-sql-database NexusPmo `
-  --admin-recovery-backup-directory '<absolute SQL Server-writable path on independent storage>'
+  --admin-recovery-expected-sql-database NexusPmo
 Pop-Location
 ```
 
 The interactive console asks twice for a temporary password and twice for the
 permanent password to use after the forced change. Characters are not echoed. The
-command hashes both passwords through the registered `IPasswordHasher<User>`, backs
-up and verifies the Development database before recovery, then verifies temporary
-login, the required first-password change, and login with the permanent password.
+command hashes both passwords through the registered `IPasswordHasher<User>`, then
+verifies temporary login, the required first-password change, and login with the
+permanent password.
 After it completes, the Admin is using that permanent password and no longer has a
 pending first-login change. Do not pass either password in command arguments or
 environment variables.
@@ -310,32 +311,31 @@ npm run docker:down
 
 ## Common Development Tasks
 
-### Reset the disposable Development/UAT database
+### Reset the disposable Development database
 
-The only no-backup reset exception is the exact Development target SQL Server
-`Shady` / database `NexusPmo`. It requires explicit Product Owner authorization
+The repository reset command remains limited to the exact Development target SQL
+Server `Shady` / database `NexusPmo`. It requires explicit Product Owner authorization
 recorded in the active task/conversation, an authorization reference in the gate
 command, exact target/environment verification, all EF migrations, and the Minimal
 Seed (`--seed-minimal-only`) before completion. The unchanged Demo Seed (`--seed-only`)
-is separate and is not used for a clean Admin-bootstrap reset. Follow the [documented EF Core database workflow](ef-core-database-workflow.md).
-This exception does not apply to standalone seed, permission reconciliation, Admin
-password recovery, ordinary migration apply, or any other database write; those
-operations retain their verified-backup requirements.
+is separate and is not used for a clean Admin-bootstrap reset. The optional-backup
+policy does not authorize destructive work; the reset still requires explicit
+Product Owner authorization and every target/model/migration/schema check. The reset
+procedure does not apply to UAT or any other target. Follow the [documented EF Core database workflow](ef-core-database-workflow.md).
 
 ### Apply Migrations
 
 Use the repository gate to inspect the explicit Development target, generate and
-review its SQL, verify a SQL Server-accessible backup, and apply only the approved
-hash. See the [EF Core database workflow](ef-core-database-workflow.md). Do not
+review its SQL, and apply only the approved hash. A backup is optional; do not
+require independent storage or `RESTORE VERIFYONLY`. See the [EF Core database workflow](ef-core-database-workflow.md). Do not
 use `dotnet ef database update` as a substitute for that gate.
 
 ### Seed Database
 
-For a standalone seed or reseed, verify the exact Development target and complete
-the ordinary verified-backup gate before writing. A seed run required as the
-immediate continuation of an explicitly Product Owner-authorized reset of
-`Shady/NexusPmo` is covered by that reset's no-backup exception; see the reset
-procedure above.
+For a standalone seed/reseed where the tool supports the environment, verify the
+exact Development or UAT environment and database target before writing. A backup
+is optional and its absence does not block the authorized operation. The mandatory Minimal Seed run that follows the exact
+Product Owner-authorized reset of `Shady/NexusPmo` is described above.
 
 ```bash
 dotnet run --project apps/api/src/NEXUS.Api/NEXUS.Api.csproj -- --seed-identity
@@ -351,9 +351,7 @@ and approved reference catalogs. It refuses to run over existing users or busine
 records. It does not create projects, portfolios, programs, teams, financial records,
 handovers, demo users, vendors, resources, work items, risks, issues, meetings, or
 documents. The `--seed-only` Demo Seed remains a separate, unchanged operation and
-must not be used for a clean Admin-bootstrap reset. The no-backup reset exception
-remains unavailable for execution until the protected EF delivery-gate skill is
-updated through the authorized policy-maintenance process.
+must not be used for a clean Admin-bootstrap reset.
 
 The focused Minimal Seed regression tests use the EF InMemory provider and do not
 connect to SQL Server:
@@ -366,12 +364,17 @@ Ordinary identity reseeding leaves existing role grants and direct user Allow/De
 overrides unchanged. New seeded `admin` roles receive the explicit tenant-scoped
 Administration snapshot documented in the [final permission catalog](../security/PERMISSIONS-FINAL-CATALOG.md).
 To add missing approved Administration grants to an existing deterministic seeded
-Admin role, first verify the exact Development database target and an independent,
-verified backup as described in the [EF Core database workflow](ef-core-database-workflow.md),
-then run the identity seed with `ASPNETCORE_ENVIRONMENT=Development` and
-`NEXUS_RECONCILE_SEEDED_ADMIN_ROLE_PERMISSIONS=true`. This opt-in is add-only,
-audited, and proceeds only when the seeded role has exactly its active seeded Admin
-user as its sole member. It does not change overrides; direct Deny still wins.
+Admin role, first verify the exact Development database target as described in the
+[EF Core database workflow](ef-core-database-workflow.md); a backup is optional and
+its absence does not block this operation. Then run the identity seed with `ASPNETCORE_ENVIRONMENT=Development` and
+`dotnet run --project apps/api/src/NEXUS.Api/NEXUS.Api.csproj -- --seed-identity`.
+The seed is transactional and add-only for an existing protected Admin: it restores
+the source-defined mandatory baseline and approved Project Settings grants while
+preserving other role grants, memberships, and direct Allow/Deny overrides. The
+source does not read a `NEXUS_RECONCILE_SEEDED_ADMIN_ROLE_PERMISSIONS` toggle, and
+baseline grant additions from this seed path do not currently create a separate
+audit entry. Active Deny remains unchanged and continues to apply to ordinary
+permissions.
 
 ### Run Tests
 

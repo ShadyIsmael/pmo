@@ -14,17 +14,31 @@ internal static class BootstrapPermissionDelegationPolicy
     private static readonly string[] PermissionKeys =
     [
         // A scoped tenant role administrator can make Project Planning available
-        // to eligible Management/Operation roles without receiving those rights.
-        // Recipient category, dependency, Project scope, and Active Deny checks
-        // are enforced by the catalog, role service, and effective resolver.
+        // to custom roles without receiving those rights. Dependencies, Project
+        // scope, and Active Deny remain enforced by the catalog and resolver.
         "ProjectPlan.Create",
         "Planning.Edit",
         "Planning.View",
 
-        // A tenant administrator may delegate the annual-budget View dependency
-        // without receiving it personally on a fresh tenant.
+        // A tenant role administrator may explicitly configure the complete
+        // project-scoped Annual Budget and Closing permission set without
+        // receiving those workflow permissions personally. Dependencies,
+        // Active Deny, and Project scope remain independently enforced by the
+        // catalog, role service, and effective resolver.
         "ProjectAnnualBudget.View",
+        "ProjectAnnualBudget.Create",
+        "ProjectAnnualBudget.EditDraft",
+        "ProjectAnnualBudget.ConfigureDraftApproval",
+        "ProjectAnnualBudget.SubmitForReview",
+        "ProjectAnnualBudget.Approve",
+        "ProjectAnnualBudget.ReviseApproved",
         "ProjectAnnualBudget.ManageApprovalConfiguration",
+        "ProjectAnnualBudget.Delete",
+        "ProjectAnnualBudget.Withdraw",
+        "ProjectAnnualBudgetClosing.View",
+        "ProjectAnnualBudget.Close",
+        "ProjectAnnualBudget.CloseApprove",
+        "ProjectAnnualBudget.CarryForward",
         "ProjectFinancialFoundation.View",
         "CostUtilization.Export",
         "ProgramFinancialRollup.View",
@@ -32,6 +46,26 @@ internal static class BootstrapPermissionDelegationPolicy
     ];
 
     public static IReadOnlySet<string> Keys { get; } = PermissionKeys.ToHashSet(StringComparer.Ordinal);
+
+    private static readonly HashSet<string> ProtectedAdminAnnualBudgetPermissionKeys =
+    [
+        "ProjectAnnualBudget.View",
+        "ProjectAnnualBudget.Create",
+        "ProjectAnnualBudget.EditDraft",
+        "ProjectAnnualBudget.SubmitForReview",
+        "ProjectAnnualBudget.Approve",
+        "ProjectAnnualBudget.ReviseApproved",
+        "ProjectAnnualBudget.ManageApprovalConfiguration",
+        "ProjectAnnualBudget.Delete",
+        "ProjectAnnualBudget.Withdraw",
+        "ProjectAnnualBudgetClosing.View",
+        "ProjectAnnualBudget.Close",
+        "ProjectAnnualBudget.CloseApprove",
+        "ProjectAnnualBudget.CarryForward"
+    ];
+
+    public static bool CanAddToProtectedTenantAdminRole(string permissionKey) =>
+        ProtectedAdminAnnualBudgetPermissionKeys.Contains(permissionKey);
 
     public static async Task<IReadOnlySet<string>> GetDelegableKeysAsync(
         DbContext context,
@@ -59,6 +93,7 @@ internal static class BootstrapPermissionDelegationPolicy
             .Where(key => PermissionCatalog.ByKey.TryGetValue(key, out var definition)
                 && definition.IsActive
                 && definition.IsAssignable
+                && definition.Scope is not (PermissionScope.Platform or PermissionScope.CrossTenant or PermissionScope.SystemOwner)
                 && !deniedKeys.Contains(key, StringComparer.Ordinal))
             .ToHashSet(StringComparer.Ordinal);
     }

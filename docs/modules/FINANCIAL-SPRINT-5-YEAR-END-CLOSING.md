@@ -39,11 +39,12 @@ The legacy Planned Payments / `PaymentObligation` settlement path also resolves 
 
 | Action | Permissions | Additional enforcement |
 |---|---|---|
-| Read statements/history | `finances.read` | Authenticated Tenant and Project scope |
-| Prepare, submit, cancel | `finances.write` + `ProjectAnnualBudget.Close` | Scoped Project access; preparer owns draft; active eligible approvers selected |
-| Approve/reject | `finances.write` + `ProjectAnnualBudget.CloseApprove` | Assigned active Project Team member; preparer separation-of-duties check |
-| Approve free/reserved carry | `finances.write` + `ProjectAnnualBudget.CarryForward` in addition to the relevant close permission | Rechecked at submission and final approval |
-| Approve/open destination Annual Budget | Existing separate `ProjectAnnualBudget.Approve` | Completed source closing must exist when carry forward is present |
+| Read statements/history | `ProjectAnnualBudgetClosing.View` | Authenticated Tenant and in-scope Project; no legacy finance alias |
+| Read eligible closing approvers | `ProjectAnnualBudget.Close` | Active linked Project Team users with the effective closing-approval permission |
+| Prepare, submit, cancel | `ProjectAnnualBudget.Close` | Scoped Project access; preparer owns draft; active eligible approvers selected |
+| Approve/reject | `ProjectAnnualBudget.CloseApprove` | Assigned active Project Team member; preparer separation-of-duties and approval-order checks |
+| Approve free/reserved carry | `ProjectAnnualBudget.CarryForward` in addition to the relevant close permission | Rechecked at submission and final approval |
+| Approve destination Annual Budget | `ProjectAnnualBudget.Approve` | Separate Annual Budget review after a completed source closing opens its Draft |
 
 The keys are in the Permission Catalog and Roles & Permissions labels. No existing role grant is changed or automatically expanded. Initial delegation remains an explicit authorization-policy dependency; without a valid grant, sensitive actions fail closed.
 

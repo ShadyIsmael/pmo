@@ -1,20 +1,22 @@
 # Role Category Eligibility and Migration Notes
 
-**Status:** Source implementation and static seed inventory, 2026-11-05. No Development database inventory or data migration was performed.
+**Historical status (2026-11-05):** Source eligibility implementation and static seed inventory. No Development database inventory or data migration was performed.
 
-## Contract
+**Current Product Owner decision (2026-11-09):** Role Category-based eligibility restrictions for ordinary permission grants are temporarily suspended. Role Category remains descriptive metadata; the API compatibility field AllowedCategories lists every selectable custom-role category. Existing role grants are preserved, and no category/grant migration or database write is part of this change. Do not reintroduce grant-category restrictions without explicit Product Owner approval.
+**Historical runtime correction, 2026-11-08:** A read-only Development check verified all 11 canonical Project Annual Budget/Closing catalog entries and their stored IDs/names. Applicable Management category eligibility was already represented by `AllowedCategories`; the non-selectable checkboxes were caused by missing first-grant `CanDelegate` entries. The exact Annual Budget/Closing bootstrap key set is now exposed to authorized Tenant role administrators, with a protected tenant Admin recipient exception and all existing category, dependency, Deny, scope, baseline, and last-admin checks preserved. No catalog sync, grant write, migration, or seed occurred. See the [P0 recovery evidence](../finance/P1-PROJECT-ANNUAL-BUDGET-WORKFLOW-RECOVERY.md).
 
-Custom roles use one controlled category: `Tenant`, `Organization`, `Management`, `Operation`, or `Business`. `System` is reserved for code-defined system roles and cannot be selected for a custom role. Existing system-role categories remain protected through normal role administration.
+**Historical source addition, 2026-11-09:** `ProjectAnnualBudget.Delete` and `ProjectAnnualBudget.Withdraw` were registered as distinct Project-scoped action permissions. The source addition described Management eligibility at that time; the current contract below supersedes that category restriction. Their Development persistence and runtime access were not verified by the earlier 11-key inventory; no permission grants or database writes were made for those additions.
 
-Each permission has a code-backed, explicit multi-category `AllowedCategories` list in `PermissionRoleCategoryPolicy`. The API returns this metadata with the permission catalog. A role's category limits which permissions can be newly assigned to it; the category itself does not grant runtime capability, tenant/organization/project scope, or workflow assignment. Existing actor delegation limits, permission dependencies, Active Deny, and scope checks remain authoritative.
+## Current contract (2026-11-09)
 
-Project planning follows this category map: `Planning.View` and `Planning.Edit` allow Management and Operation roles; `ProjectPlan.Create` allows Management roles only. The Roles & Permissions editor combines `CanDelegate` with `AllowedCategories`: a permission outside the selected category stays visible but disabled with the localized allowed-category explanation; a category-eligible permission can still be disabled when the actor lacks delegation authority or has an applicable direct Deny.
+Custom roles retain the selectable descriptive categories Tenant, Organization, Management, Operation, and Business. System is reserved for protected system roles, and system-role categories remain protected through normal role administration.
 
-Role creation validates category and every submitted permission on the server. For existing roles, unchanged legacy categories and their grants are preserved so an administrator can explicitly remove incompatible grants. A category change is rejected with the conflicting permission keys until the grants have been reviewed and removed; the API does not silently revoke them. Protected Tenant Admin remains in the reserved System category, and its mandatory Administration baseline is still non-removable.
+Category no longer restricts ordinary custom-role permission grants. An administrator authorized through `Roles.ConfigurePermissions` may grant or revoke any active, assignable, scoped non-Administration permission to a same-Tenant user-managed custom role regardless of recipient category or whether the actor holds that permission. This supersedes the earlier actor-possession ceiling for ordinary permissions. Administration-module permissions remain actor-authorized only. Tenant/role boundaries, dependencies, resource scope, Active Deny, platform/global boundaries, protected/system-managed role rules, and no-self-escalation remain enforced.
 
-Portfolio, Program, and Project manager eligibility is based on an active same-tenant user with an active assigned Management-category role, plus the existing entity-specific effective permissions and `Handover.Approve`. Lookups, create/assignment services, and incoming-manager acceptance recheck this rule. Resource profiles remain relevant only to Project Team membership and Resource Allocation.
+The historical Project Plan category map is not active. `Planning.View`, `Planning.Edit`, and `ProjectPlan.Create` follow the same category-neutral and actor-possession-neutral rule when granted to a user-managed custom role. For a role assigned to the actor, a change cannot add an effective permission beyond the permissions currently effective for the actor. The separate protected Admin and Administration-module rules still apply.
 
-## Source-only seeded-role inventory
+Portfolio, Program, and Project manager eligibility may continue to require an active Management-category role. Annual Budget approval candidate eligibility may continue to require a System or Management category with effective ProjectAnnualBudget.Approve. These are independent domain eligibility rules, not permission grant filters, and remain unchanged.
+## Historical source-only seeded-role inventory (2026-11-05)
 
 The `SeedDataProvider` currently defines eight system roles. The protected Admin (`admin`, `System`) is excluded from category-conflict counts because its protected System policy is handled separately. The other seven roles contain 253 distinct role-to-permission grants in the seed source; 162 grants do not match the role's current category policy.
 
@@ -33,12 +35,14 @@ The three manager roles have no source conflicts after `TimeTracking.ViewOwn` an
 
 These figures describe checked-in seed definitions only. They do not establish active Development roles, current grant rows, assigned users, direct Allow/Deny overrides, or effective permissions. No explicit Development EF connection was configured for a read-only inventory during this task, so persisted conflict counts remain unknown.
 
-## Safe migration approach
+## Deferred migration notes (inactive during category suspension)
+The numbered approach below documents the earlier category migration proposal. It is deferred while category-based permission grant restrictions are suspended. Do not use the historical seed conflict table to remove or remap grants; no category/grant migration is required by this change.
+
 
 1. Before changing persisted categories or grants, run the documented read-only Development inspection and export active role IDs, system-role keys, category values, role grants, assigned users, direct Allow/Deny overrides, and current manager assignments/history. Compare existing effective permissions and manager candidate sets with the proposed result.
 2. Prepare a per-role, per-permission conflict manifest. A role owner must approve any category mapping and each grant decision. Do not infer a category from a role name, copy grants between roles, or remove grants as part of a routine seed.
 3. For a custom role, explicitly remove conflicting grants through the role service while keeping its current category; change its category only after every retained grant is allowed. For protected system roles with legacy categories, any remapping requires a separate reviewed, tenant-scoped, audited application migration. Normal role administration cannot change a system-role category.
-4. Preserve role IDs, system-role identities, user-role assignments, direct overrides, audit history, manager fields, and assignment-history rows. Any approved database write still requires the repository's exact Development target and verified-backup gate. Do not apply direct SQL updates.
+4. Preserve role IDs, system-role identities, user-role assignments, direct overrides, audit history, manager fields, and assignment-history rows. Any approved Development/UAT database write still requires the repository's exact environment and target identity, migration, and schema checks; a backup is optional and its absence is not a gate. Do not apply direct SQL updates. Production backup and recovery requirements remain unchanged.
 5. Recheck effective permission sets, dependencies, Active Deny, tenant/resource scope, role membership, and the Portfolio/Program/Project manager candidate sets. Complete the related [Master UAT scenarios](../quality/MASTER-UAT-CHECKLIST.md) before closing runtime rollout.
 
 No EF schema migration, database write, reseed, reset, direct SQL write, or browser UAT was performed for this source change.
@@ -53,7 +57,7 @@ No EF schema migration, database write, reseed, reset, direct SQL write, or brow
 
 ## Source references
 
-- Category policy: `apps/api/src/NEXUS.Modules.Identity/Application/RoleCategoryPolicy.cs`
+- Category policy: `apps/api/src/NEXUS.Modules.Identity/Application/RoleCategories.cs`
 - Role enforcement and conflict response: `apps/api/src/NEXUS.Modules.Identity/Infrastructure/RoleAdministrationService.cs`
 - Manager-candidate policy: `docs/modules/MANAGER-ASSIGNMENT-SYSTEM-USERS.md`
 - Permission and role delegation architecture: `docs/architecture/permission-model.md` and `docs/security/PERMISSIONS-ROLE-DELEGATION.md`

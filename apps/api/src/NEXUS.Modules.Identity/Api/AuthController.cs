@@ -57,9 +57,17 @@ public class AuthController : ControllerBase
         if (result.IsFailure)
             return StatusCode(result.Error?.StatusCode ?? StatusCodes.Status401Unauthorized, AuthProblemDetails.ToProblem(result.Error));
 
+        var response = result.Value;
+        if (response is null)
+            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
+            {
+                Title = "The authentication response could not be generated.",
+                Status = StatusCodes.Status500InternalServerError
+            });
+
         if (cookieMode)
         {
-            if (!TrySetRefreshCookie(result.Value.RefreshToken))
+            if (!TrySetRefreshCookie(response.RefreshToken))
                 return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
                 {
                     Title = "The authentication session could not be established.",
@@ -67,10 +75,10 @@ public class AuthController : ControllerBase
                 });
 
             // Browser clients receive the refresh credential only in the HttpOnly cookie.
-            result.Value.RefreshToken = null;
+            response.RefreshToken = null;
         }
 
-        return Ok(result.Value);
+        return Ok(response);
     }
 
     [AllowAnonymous]
@@ -94,19 +102,27 @@ public class AuthController : ControllerBase
         if (result.IsFailure)
             return StatusCode(result.Error?.StatusCode ?? StatusCodes.Status401Unauthorized, AuthProblemDetails.ToProblem(result.Error));
 
+        var response = result.Value;
+        if (response is null)
+            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
+            {
+                Title = "The authentication response could not be generated.",
+                Status = StatusCodes.Status500InternalServerError
+            });
+
         if (cookieMode)
         {
-            if (!TrySetRefreshCookie(result.Value.RefreshToken))
+            if (!TrySetRefreshCookie(response.RefreshToken))
                 return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
                 {
                     Title = "The authentication session could not be refreshed.",
                     Status = StatusCodes.Status500InternalServerError
                 });
 
-            result.Value.RefreshToken = null;
+            response.RefreshToken = null;
         }
 
-        return Ok(result.Value);
+        return Ok(response);
     }
 
     [AllowAnonymous]

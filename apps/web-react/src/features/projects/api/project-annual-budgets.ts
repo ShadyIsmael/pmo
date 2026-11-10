@@ -27,8 +27,11 @@ export interface ProjectAnnualBudget {
   closedBy: string | null;
   isClosed: boolean;
   canEdit: boolean;
+  canDeleteDraft?: boolean;
+  deleteDraftBlockReason?: string | null;
+  canWithdrawSubmission?: boolean;
   canApprove: boolean;
-  reviewStatus: "Draft" | "Pending" | "Returned" | "Approved" | "RevisionPending" | "RevisionReturned";
+  reviewStatus: "Draft" | "Pending" | "Returned" | "Rejected" | "Approved" | "RevisionPending" | "RevisionReturned";
   approvalMode: "Sequential" | "Parallel" | null;
   reviewRequestId: string | null;
   reviewRowVersion: string | null;
@@ -49,11 +52,16 @@ export interface ProjectAnnualBudgetPage {
   totalApprovedNewAllocations: number;
   pendingSubmittedAllocations: number;
   remainingUnallocatedCeiling: number | null;
+  suggestedFiscalYear: number | null;
+  suggestedNewFunding: number | null;
+  suggestedNewFundingSource: string | null;
+  missingClosingFiscalYear: number | null;
 }
 
 export interface ProjectAnnualBudgetEligibleApprover {
   userId: string;
   displayName: string;
+  eligibleRoleCategories?: string[];
 }
 
 export interface ProjectAnnualBudgetConfiguredApprover extends ProjectAnnualBudgetEligibleApprover {
@@ -80,6 +88,25 @@ export interface ProjectAnnualBudgetApprovalConfiguration {
   canOverride: boolean;
 }
 
+export interface ProjectAnnualBudgetDraftApprovalConfiguration {
+  projectId: string;
+  projectName: string;
+  configurationSource: "ProjectSettings" | "DraftOverride";
+  projectApprovalMode: "Sequential" | "Parallel" | "Both" | null;
+  approvalMode: "Sequential" | "Parallel" | null;
+  allowedModes: ("Sequential" | "Parallel")[];
+  configuredApprovers: ProjectAnnualBudgetConfiguredApprover[];
+  eligibleApprovers: (ProjectAnnualBudgetEligibleApprover & { selectionBlockReason?: string | null })[];
+  budgetRowVersion: string;
+  projectSettingsRowVersion: string;
+  projectSettingsConfigurationRowVersion: string | null;
+  overrideReason: string | null;
+  updatedAtUtc?: string | null;
+  isValid: boolean;
+  validationIssues: string[];
+  canSave: boolean;
+}
+
 export interface AnnualBudgetApproverSelection {
   userId: string;
   position: number | null;
@@ -96,11 +123,16 @@ const annualBudgetsKey = (projectId: string) => ["project-annual-budgets", proje
 const approvalConfigurationKey = (projectId: string) => ["project-annual-budget-approval-configuration", projectId] as const;
 
 function invalidateAnnualBudgetViews(queryClient: ReturnType<typeof useQueryClient>, projectId: string) {
-  void queryClient.invalidateQueries({ queryKey: annualBudgetsKey(projectId) });
-  void queryClient.invalidateQueries({ queryKey: approvalConfigurationKey(projectId) });
-  void queryClient.invalidateQueries({ queryKey: ["project-payment-requests", projectId] });
-  void queryClient.invalidateQueries({ queryKey: ["project-financial-activity", projectId] });
-  void queryClient.invalidateQueries({ queryKey: ["project-financial-activity-facets", projectId] });
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: annualBudgetsKey(projectId) }),
+    queryClient.invalidateQueries({ queryKey: approvalConfigurationKey(projectId) }),
+    queryClient.invalidateQueries({ queryKey: ["project-annual-budget-draft-approval-configuration", projectId] }),
+    queryClient.invalidateQueries({ queryKey: ["project-payment-requests", projectId] }),
+    queryClient.invalidateQueries({ queryKey: ["project-financial-foundation", projectId] }),
+    queryClient.invalidateQueries({ queryKey: ["project-annual-budget-closings", projectId] }),
+    queryClient.invalidateQueries({ queryKey: ["project-financial-activity", projectId] }),
+    queryClient.invalidateQueries({ queryKey: ["project-financial-activity-facets", projectId] }),
+  ]);
 }
 
 export function useProjectAnnualBudgets(projectId: string, enabled = true) {
@@ -135,6 +167,32 @@ export function useUpdateProjectAnnualBudget(projectId: string) {
   });
 }
 
+export function useDeleteProjectAnnualBudgetDraft(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { id: string; rowVersion: string }) =>
+      api.delete<void>(
+        `/api/projects/${encodeURIComponent(projectId)}/annual-budgets/${encodeURIComponent(input.id)}`,
+        { rowVersion: input.rowVersion },
+      ),
+    onSuccess: () => invalidateAnnualBudgetViews(queryClient, projectId),
+  });
+}
+
+export function useWithdrawProjectAnnualBudgetSubmission(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { id: string; rowVersion: string; approvalRowVersion: string }) => {
+      const { id, ...body } = input;
+      return api.post<ProjectAnnualBudget>(
+        `/api/projects/${encodeURIComponent(projectId)}/annual-budgets/${encodeURIComponent(id)}/withdraw`,
+        body,
+      );
+    },
+    onSuccess: () => invalidateAnnualBudgetViews(queryClient, projectId),
+  });
+}
+
 export function useApproveProjectAnnualBudget(projectId: string) {
   const queryClient = useQueryClient();
   return useMutation({
@@ -146,15 +204,6 @@ export function useApproveProjectAnnualBudget(projectId: string) {
       );
     },
     onSuccess: () => invalidateAnnualBudgetViews(queryClient, projectId),
-  });
-}
-
-export function useProjectAnnualBudgetEligibleApprovers(projectId: string, enabled = true) {
-  return useQuery({
-    queryKey: ["project-annual-budget-eligible-approvers", projectId],
-    queryFn: () => api.get<ProjectAnnualBudgetEligibleApprover[]>(`/api/projects/${encodeURIComponent(projectId)}/annual-budgets/eligible-approvers`),
-    enabled: Boolean(projectId) && enabled,
-    staleTime: 30_000,
   });
 }
 
@@ -185,18 +234,50 @@ export function useSaveProjectAnnualBudgetApprovalConfiguration(projectId: strin
   });
 }
 
+const draftApprovalConfigurationKey = (projectId: string, itemId: string) =>
+  ["project-annual-budget-draft-approval-configuration", projectId, itemId] as const;
+
+export function useProjectAnnualBudgetDraftApprovalConfiguration(projectId: string, itemId: string, enabled = true) {
+  return useQuery({
+    queryKey: draftApprovalConfigurationKey(projectId, itemId),
+    queryFn: () => api.get<ProjectAnnualBudgetDraftApprovalConfiguration>(
+      `/api/projects/${encodeURIComponent(projectId)}/annual-budgets/${encodeURIComponent(itemId)}/approval-configuration`,
+    ),
+    enabled: Boolean(projectId && itemId) && enabled,
+    staleTime: 15_000,
+  });
+}
+
+export function useSaveProjectAnnualBudgetDraftApprovalConfiguration(projectId: string, itemId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: {
+      approvalMode: "Sequential" | "Parallel";
+      approverUserIds: string[];
+      budgetRowVersion: string;
+      projectSettingsRowVersion: string;
+      projectSettingsConfigurationRowVersion: string | null;
+      overrideReason: string;
+    }) => api.put<ProjectAnnualBudgetDraftApprovalConfiguration>(
+      `/api/projects/${encodeURIComponent(projectId)}/annual-budgets/${encodeURIComponent(itemId)}/approval-configuration`,
+      input,
+    ),
+    onSuccess: () => invalidateAnnualBudgetViews(queryClient, projectId),
+  });
+}
+
 export function useSubmitProjectAnnualBudgetReview(projectId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: {
       id: string;
-      approvalMode: "Sequential" | "Parallel" | null;
-      approvers: AnnualBudgetApproverSelection[];
+      approvalMode?: "Sequential" | "Parallel" | null;
+      approvers?: AnnualBudgetApproverSelection[];
       rowVersion: string;
-      customizeForThisSubmission: boolean;
-      overrideReason: string | null;
-      approvalConfigurationRowVersion: string | null;
-      projectSettingsRowVersion: string | null;
+      customizeForThisSubmission?: boolean;
+      overrideReason?: string | null;
+      approvalConfigurationRowVersion?: string | null;
+      projectSettingsRowVersion?: string | null;
     }) => {
       const { id, ...body } = input;
       return api.post<ProjectAnnualBudget>(`/api/projects/${encodeURIComponent(projectId)}/annual-budgets/${encodeURIComponent(id)}/submit`, body);
@@ -208,7 +289,7 @@ export function useSubmitProjectAnnualBudgetReview(projectId: string) {
 export function useDecideProjectAnnualBudgetReview(projectId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: { id: string; requestId: string; decision: "Approved" | "Returned"; reason?: string; budgetRowVersion: string; approvalRowVersion: string }) => {
+    mutationFn: (input: { id: string; requestId: string; decision: "Approved" | "Rejected" | "Returned"; reason?: string; budgetRowVersion: string; approvalRowVersion: string }) => {
       const { id, requestId, ...body } = input;
       return api.post<ProjectAnnualBudget>(`/api/projects/${encodeURIComponent(projectId)}/annual-budgets/${encodeURIComponent(id)}/review/${encodeURIComponent(requestId)}`, body);
     },

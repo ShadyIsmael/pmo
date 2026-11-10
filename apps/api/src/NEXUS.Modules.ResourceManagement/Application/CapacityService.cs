@@ -4,6 +4,7 @@ using NEXUS.Modules.Organization.Domain;
 using NEXUS.Modules.ResourceManagement.Application.DTOs;
 using NEXUS.Modules.ResourceManagement.Domain;
 using NEXUS.SharedKernel;
+using NEXUS.SharedKernel.Management;
 
 namespace NEXUS.Modules.ResourceManagement.Application;
 
@@ -11,11 +12,16 @@ public class CapacityService : ICapacityService
 {
     private readonly DbContext _context;
     private readonly IHttpContextAccessor? _httpContextAccessor;
+    private readonly IManagementContextAccessor? _managementContext;
 
-    public CapacityService(DbContext context, IHttpContextAccessor? httpContextAccessor = null)
+    public CapacityService(
+        DbContext context,
+        IHttpContextAccessor? httpContextAccessor = null,
+        IManagementContextAccessor? managementContext = null)
     {
         _context = context;
         _httpContextAccessor = httpContextAccessor;
+        _managementContext = managementContext;
     }
 
     /// <summary>
@@ -30,12 +36,22 @@ public class CapacityService : ICapacityService
         return principal.HasClaim("permission", "Resource.ViewCostRate");
     }
 
+    private IQueryable<ResourceAllocation> ApplyManagementScope(IQueryable<ResourceAllocation> query)
+    {
+        var projectIds = _managementContext?.Current?.Scope.ProjectIds;
+        if (projectIds is null) return query.Where(_ => false);
+        if (projectIds.Count == 0) return query.Where(allocation => allocation.ProjectId == null);
+        var scopedProjectIds = projectIds.ToArray();
+        return query.Where(allocation => allocation.ProjectId == null || scopedProjectIds.Contains(allocation.ProjectId.Value));
+    }
+
     public Task<Result<CapacityMatrixDto>> GetMatrixAsync(CapacityFilterDto filter, CancellationToken cancellationToken = default)
-        => GetMatrixCoreAsync(filter, null, cancellationToken);
+        => GetMatrixCoreAsync(filter, null, applyManagementScope: true, cancellationToken: cancellationToken);
 
     private async Task<Result<CapacityMatrixDto>> GetMatrixCoreAsync(
         CapacityFilterDto filter,
         IReadOnlyDictionary<Guid, ProjectTeamCapacityMemberInputDto>? teamMembers,
+        bool applyManagementScope,
         CancellationToken cancellationToken)
     {
         var startDate = filter.StartDate ?? new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1);
@@ -67,11 +83,13 @@ public class CapacityService : ICapacityService
         if (resources.Count == 0)
             return Result<CapacityMatrixDto>.Success(new CapacityMatrixDto { Periods = periods });
 
-        var allocations = await _context.Set<ResourceAllocation>()
+        var allocationsQuery = _context.Set<ResourceAllocation>()
             .Include(a => a.Resource)
             .Where(a => a.Status != ResourceAllocation.StatusCancelled && !a.IsDeleted &&
-                a.StartDate < endDate && (a.EndDate > startDate || (a.AllocationSource == ResourceAllocation.SourceProjectPlan && a.EndDate >= startDate)))
-            .ToListAsync(cancellationToken);
+                a.StartDate < endDate && (a.EndDate > startDate || (a.AllocationSource == ResourceAllocation.SourceProjectPlan && a.EndDate >= startDate)));
+        if (applyManagementScope)
+            allocationsQuery = ApplyManagementScope(allocationsQuery);
+        var allocations = await allocationsQuery.ToListAsync(cancellationToken);
 
         var calendars = await _context.Set<WorkingCalendar>()
             .Include(calendar => calendar.Holidays)
@@ -405,7 +423,7 @@ public class CapacityService : ICapacityService
             StartDate = startDate,
             EndDate = endDate,
             IncludeProposed = true
-        }, activeMembers, cancellationToken);
+        }, activeMembers, applyManagementScope: false, cancellationToken: cancellationToken);
         if (matrixResult.IsFailure || matrixResult.Value is null)
             return Result<ProjectTeamCapacityOverviewDto>.Failure(matrixResult.Error ?? Error.Validation("Capacity data is unavailable."));
 
@@ -458,7 +476,7 @@ public class CapacityService : ICapacityService
         var total = await resourcesQuery.CountAsync(cancellationToken);
         var resources = await resourcesQuery.ToListAsync(cancellationToken);
 
-        var allAllocations = await _context.Set<ResourceAllocation>()
+        var allAllocations = await ApplyManagementScope(_context.Set<ResourceAllocation>())
             .Where(a => a.Status != ResourceAllocation.StatusCancelled && !a.IsDeleted &&
                 a.StartDate < endDate && (a.EndDate > startDate || (a.AllocationSource == ResourceAllocation.SourceProjectPlan && a.EndDate >= startDate)))
             .ToListAsync(cancellationToken);
@@ -557,7 +575,7 @@ public class CapacityService : ICapacityService
         var startDate = filter.StartDate ?? new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1);
         var endDate = filter.EndDate ?? startDate.AddMonths(1);
 
-        var allocations = await _context.Set<ResourceAllocation>()
+        var allocations = await ApplyManagementScope(_context.Set<ResourceAllocation>())
             .Include(a => a.Resource)
             .Where(a => a.Status != ResourceAllocation.StatusCancelled && !a.IsDeleted &&
                 a.StartDate < endDate && (a.EndDate > startDate || (a.AllocationSource == ResourceAllocation.SourceProjectPlan && a.EndDate >= startDate)))
@@ -650,7 +668,7 @@ public class CapacityService : ICapacityService
         var startDate = filter.StartDate ?? new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1);
         var endDate = filter.EndDate ?? startDate.AddMonths(3);
 
-        var query = _context.Set<ResourceAllocation>()
+        var query = ApplyManagementScope(_context.Set<ResourceAllocation>())
             .Include(a => a.Resource)
             .Where(a => a.Status != ResourceAllocation.StatusCancelled && !a.IsDeleted &&
                 a.StartDate < endDate && (a.EndDate > startDate || (a.AllocationSource == ResourceAllocation.SourceProjectPlan && a.EndDate >= startDate)));
@@ -671,7 +689,7 @@ public class CapacityService : ICapacityService
         var resource = await _context.Set<Resource>().FirstOrDefaultAsync(r => r.Id == resourceId && !r.IsDeleted, cancellationToken);
         if (resource is null) return Result<ResourceAvailabilityDto>.Failure(Error.NotFound("Resource not found"));
 
-        var allocations = await _context.Set<ResourceAllocation>()
+        var allocations = await ApplyManagementScope(_context.Set<ResourceAllocation>())
             .Where(a => a.ResourceId == resourceId && a.Status != ResourceAllocation.StatusCancelled && !a.IsDeleted &&
                 a.StartDate < endDate && (a.EndDate > startDate || (a.AllocationSource == ResourceAllocation.SourceProjectPlan && a.EndDate >= startDate)))
             .ToListAsync(cancellationToken);

@@ -49,7 +49,7 @@ public static class SeedDataProvider
         int RetiredLegacyOverrides,
         int AddedProtectedAdminRoleGrants,
         int RemovedProtectedAdminDenyOverrides,
-        string VerifiedBackupPath);
+        string? VerifiedBackupPath);
 
     public sealed record InitialDelegationPermissionBootstrapResult(
         string Server,
@@ -59,6 +59,209 @@ public static class SeedDataProvider
         int AddedProjectSettingsAdminGrants,
         int AuthorizedAdminUsers,
         Guid AuthorizedAdminUserId);
+
+    public sealed record ProjectPlanPermissionCatalogSyncResult(
+        string Server,
+        string Database,
+        int DatabaseId,
+        int AddedCatalogPermissions,
+        int NormalizedCatalogPermissions,
+        IReadOnlyList<string> ChangedKeys,
+        IReadOnlyList<string> UnchangedKeys);
+
+    /// <summary>
+    /// Synchronizes only the three canonical Project Planning catalog rows needed for the
+    /// create/edit permission split. This operation never changes role grants, memberships,
+    /// user permission overrides, or protected system roles.
+    /// </summary>
+    public static async Task<ProjectPlanPermissionCatalogSyncResult> SynchronizeProjectPlanPermissionsAsync(
+        AppDbContext context,
+        bool isDevelopment,
+        string expectedServer,
+        string expectedDatabase,
+        CancellationToken cancellationToken = default)
+    {
+        if (!isDevelopment || !string.Equals(Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT"), "Development", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Project Plan permission catalog synchronization is available only in the Development environment.");
+        if (!string.Equals(expectedServer, "Shady", StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(expectedDatabase, "NexusPmo", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Project Plan permission catalog synchronization is restricted to the verified Development Shady/NexusPmo database.");
+        if (context.Database.ProviderName != "Microsoft.EntityFrameworkCore.SqlServer")
+            throw new InvalidOperationException("Project Plan permission catalog synchronization requires the SQL Server provider.");
+        if (context.Database.HasPendingModelChanges())
+            throw new InvalidOperationException("The EF model has pending migration changes; run the repository database gate first.");
+
+        var pendingMigrations = (await context.Database.GetPendingMigrationsAsync(cancellationToken)).ToArray();
+        if (pendingMigrations.Length > 0)
+            throw new InvalidOperationException($"Development schema migrations are pending; run the database gate first: {string.Join(", ", pendingMigrations)}.");
+
+        var connection = context.Database.GetDbConnection();
+        var openedHere = connection.State != ConnectionState.Open;
+        if (openedHere)
+            await connection.OpenAsync(cancellationToken);
+
+        string actualServer;
+        string actualDatabase;
+        int databaseId;
+        try
+        {
+            await using var identityCommand = connection.CreateCommand();
+            identityCommand.CommandText = "SELECT CAST(SERVERPROPERTY('ServerName') AS nvarchar(128)), DB_NAME(), DB_ID();";
+            await using var reader = await identityCommand.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken))
+                throw new InvalidOperationException("SQL Server did not return the connected Development database identity.");
+
+            actualServer = reader.GetString(0);
+            actualDatabase = reader.GetString(1);
+            databaseId = Convert.ToInt32(reader.GetValue(2));
+            if (!string.Equals(actualServer, expectedServer, StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(actualDatabase, expectedDatabase, StringComparison.OrdinalIgnoreCase)
+                || databaseId <= 0)
+                throw new InvalidOperationException($"Connected SQL target '{actualServer}/{actualDatabase}' (database ID {databaseId}) does not match the explicitly verified Development target '{expectedServer}/{expectedDatabase}'.");
+        }
+        finally
+        {
+            if (openedHere)
+                await connection.CloseAsync();
+        }
+
+        var requiredKeys = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "Planning.View",
+            "Planning.Edit",
+            "ProjectPlan.Create"
+        };
+        var planningView = PermissionCatalog.ByKey["Planning.View"];
+        var planningEdit = PermissionCatalog.ByKey["Planning.Edit"];
+        var projectPlanCreate = PermissionCatalog.ByKey["ProjectPlan.Create"];
+        if (!requiredKeys.All(key => PermissionCatalog.ByKey.TryGetValue(key, out var definition) && definition.IsActive && definition.IsAssignable))
+            throw new InvalidOperationException("The canonical Project Plan permission set is incomplete, inactive, or not assignable.");
+        if (planningEdit.Scope != PermissionScope.Project
+            || projectPlanCreate.Scope != PermissionScope.Project
+            || !planningEdit.RequiredPermissionKeys.Contains("Planning.View", StringComparer.Ordinal)
+            || !projectPlanCreate.RequiredPermissionKeys.Contains("Planning.View", StringComparer.Ordinal))
+            throw new InvalidOperationException("Planning.Edit and ProjectPlan.Create must remain Project-scoped and depend on Planning.View.");
+
+        var targetPermissions = PermissionCatalog.CreateSeedPermissions(TenantId)
+            .Where(permission => requiredKeys.Contains(permission.Name))
+            .ToArray();
+        if (targetPermissions.Length != requiredKeys.Count
+            || targetPermissions.Select(permission => permission.Name).Distinct(StringComparer.Ordinal).Count() != requiredKeys.Count)
+            throw new InvalidOperationException("Canonical seed rows do not exactly match the three approved Project Plan permission keys.");
+
+        await using var transaction = await context.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        await AcquireSqlServerAdminMutationLockAsync(context, transaction, TenantId, cancellationToken);
+
+        var targetIds = targetPermissions.Select(permission => permission.Id).ToArray();
+        var candidateRows = await context.Permissions
+            .IgnoreQueryFilters()
+            .Where(permission => targetIds.Contains(permission.Id)
+                || requiredKeys.Contains(permission.Name)
+                || (permission.Resource == "Planning" && (permission.Action == "View" || permission.Action == "Edit"))
+                || (permission.Resource == "ProjectPlan" && permission.Action == "Create"))
+            .ToListAsync(cancellationToken);
+
+        var changed = new List<Permission>();
+        var originalValues = new List<object>();
+        var addedKeys = new List<string>();
+        var addedCatalogPermissions = 0;
+        var normalizedCatalogPermissions = 0;
+        foreach (var seedPermission in targetPermissions.OrderBy(permission => permission.Name, StringComparer.Ordinal))
+        {
+            var matches = candidateRows
+                .Where(permission => permission.Id == seedPermission.Id
+                    || string.Equals(permission.Name, seedPermission.Name, StringComparison.Ordinal)
+                    || (permission.Resource == seedPermission.Resource && permission.Action == seedPermission.Action))
+                .DistinctBy(permission => permission.Id)
+                .ToArray();
+            if (matches.Length > 1)
+                throw new InvalidOperationException($"Duplicate or conflicting persisted catalog rows were found for '{seedPermission.Name}'; no changes were made.");
+
+            if (matches.Length == 0)
+            {
+                context.Permissions.Add(seedPermission);
+                candidateRows.Add(seedPermission);
+                changed.Add(seedPermission);
+                addedKeys.Add(seedPermission.Name);
+                addedCatalogPermissions++;
+                continue;
+            }
+
+            var persisted = matches[0];
+            var persistedKey = $"{persisted.Resource}.{persisted.Action}";
+            if (persisted.Id != seedPermission.Id
+                || persisted.TenantId != TenantId
+                || !string.Equals(persistedKey, seedPermission.Name, StringComparison.Ordinal))
+                throw new InvalidOperationException($"Persisted catalog identity for '{seedPermission.Name}' conflicts with the canonical Development entry; no changes were made.");
+            if (persisted.IsDeleted)
+                throw new InvalidOperationException($"Canonical permission '{seedPermission.Name}' is soft-deleted; restoration requires explicit review.");
+
+            if (!string.Equals(persisted.Name, seedPermission.Name, StringComparison.Ordinal)
+                || !string.Equals(persisted.Description, seedPermission.Description, StringComparison.Ordinal))
+            {
+                originalValues.Add(new { persisted.Id, persisted.Name, persisted.Description });
+                persisted.Name = seedPermission.Name;
+                persisted.Description = seedPermission.Description;
+                persisted.UpdatedAt = DateTime.UtcNow;
+                persisted.UpdatedBy = "System";
+                changed.Add(persisted);
+                normalizedCatalogPermissions++;
+            }
+        }
+
+        var changedKeys = changed.Select(permission => permission.Name).OrderBy(key => key, StringComparer.Ordinal).ToArray();
+        var unchangedKeys = requiredKeys.Except(changedKeys, StringComparer.Ordinal).OrderBy(key => key, StringComparer.Ordinal).ToArray();
+        if (changed.Count > 0)
+        {
+            context.AuditEntries.Add(new AuditEntry
+            {
+                TenantId = TenantId,
+                EntityType = "PermissionCatalog",
+                EntityId = changed[0].Id,
+                Action = "PermissionCatalog.ProjectPlanEntriesSynchronized",
+                OriginalValues = JsonSerializer.Serialize(new { Permissions = originalValues }),
+                NewValues = JsonSerializer.Serialize(new { Added = addedKeys.OrderBy(key => key, StringComparer.Ordinal), Synchronized = changedKeys }),
+                ChangedFields = "PermissionCatalog",
+                Description = "Synchronized only Planning.View, Planning.Edit, and ProjectPlan.Create catalog entries; role grants, memberships, user overrides, and protected system roles were not modified.",
+                Source = AuditSources.System,
+                UserName = "Scoped Development Project Plan permission catalog synchronization",
+                CreatedBy = "System"
+            });
+            await context.SaveChangesAsync(cancellationToken);
+        }
+
+        var verifiedRows = await context.Permissions
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(permission => targetIds.Contains(permission.Id)
+                || requiredKeys.Contains(permission.Name)
+                || (permission.Resource == "Planning" && (permission.Action == "View" || permission.Action == "Edit"))
+                || (permission.Resource == "ProjectPlan" && permission.Action == "Create"))
+            .ToArrayAsync(cancellationToken);
+        foreach (var seedPermission in targetPermissions)
+        {
+            var matches = verifiedRows.Where(permission => permission.Name == seedPermission.Name
+                    || (permission.Resource == seedPermission.Resource && permission.Action == seedPermission.Action))
+                .ToArray();
+            if (matches.Length != 1
+                || matches[0].Id != seedPermission.Id
+                || matches[0].TenantId != TenantId
+                || matches[0].IsDeleted
+                || !string.Equals(matches[0].Name, seedPermission.Name, StringComparison.Ordinal)
+                || !string.Equals(matches[0].Description, seedPermission.Description, StringComparison.Ordinal))
+                throw new InvalidOperationException($"Post-sync verification failed for canonical permission '{seedPermission.Name}'.");
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return new ProjectPlanPermissionCatalogSyncResult(
+            actualServer,
+            actualDatabase,
+            databaseId,
+            addedCatalogPermissions,
+            normalizedCatalogPermissions,
+            changedKeys,
+            unchangedKeys);
+    }
 
     /// <summary>
     /// Adds only missing permission catalog rows needed by Project Settings and the explicit
@@ -317,15 +520,12 @@ public static class SeedDataProvider
         bool isDevelopment,
         string expectedServer,
         string expectedDatabase,
-        string backupDirectory,
         CancellationToken cancellationToken = default)
     {
         if (!isDevelopment)
             throw new InvalidOperationException("Development Admin password recovery is available only in the Development environment.");
         if (string.IsNullOrWhiteSpace(expectedServer) || string.IsNullOrWhiteSpace(expectedDatabase))
             throw new InvalidOperationException("Pass the expected SQL Server and database returned by the Development EF gate.");
-        if (string.IsNullOrWhiteSpace(backupDirectory) || !Path.IsPathFullyQualified(backupDirectory) || !Directory.Exists(backupDirectory))
-            throw new InvalidOperationException("Pass an existing absolute backup directory that the SQL Server service can write to.");
         if (context.Database.ProviderName != "Microsoft.EntityFrameworkCore.SqlServer")
             throw new InvalidOperationException("Development Admin password recovery requires the SQL Server provider.");
         if (context.Database.HasPendingModelChanges())
@@ -357,20 +557,6 @@ public static class SeedDataProvider
                     || databaseId <= 0)
                     throw new InvalidOperationException($"Connected SQL target '{actualServer}/{actualDatabase}' (database ID {databaseId}) does not match the explicitly verified Development target '{expectedServer}/{expectedDatabase}'.");
             }
-
-            var backupRoot = Path.GetPathRoot(Path.GetFullPath(backupDirectory));
-            var databaseRoots = new List<string>();
-            await using (var filesCommand = connection.CreateCommand())
-            {
-                filesCommand.CommandText = "SELECT physical_name FROM sys.database_files WHERE type_desc IN ('ROWS', 'LOG');";
-                await using var reader = await filesCommand.ExecuteReaderAsync(cancellationToken);
-                while (await reader.ReadAsync(cancellationToken))
-                    databaseRoots.Add(Path.GetPathRoot(reader.GetString(0)) ?? string.Empty);
-            }
-            if (string.IsNullOrWhiteSpace(backupRoot)
-                || databaseRoots.Count == 0
-                || databaseRoots.Any(root => string.Equals(root, backupRoot, StringComparison.OrdinalIgnoreCase)))
-                throw new InvalidOperationException("The backup directory must be on a verified volume or network share separate from the Development database data and log files.");
         }
         finally
         {
@@ -379,17 +565,14 @@ public static class SeedDataProvider
         }
     }
 
-    public static Task<string> CreateVerifiedDevelopmentAdminRecoveryBackupAsync(
+    public static Task<string?> CreateOptionalDevelopmentAdminRecoveryBackupAsync(
         AppDbContext context,
         string expectedServer,
         string expectedDatabase,
-        string backupDirectory,
+        string? backupDirectory,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(backupDirectory) || !Path.IsPathFullyQualified(backupDirectory) || !Directory.Exists(backupDirectory))
-            throw new InvalidOperationException("Pass an existing absolute backup directory that the SQL Server service can write to.");
-
-        return CreateAndVerifyIndependentDevelopmentBackupAsync(
+        return CreateAndVerifyDevelopmentBackupAsync(
             context,
             expectedServer,
             expectedDatabase,
@@ -408,15 +591,13 @@ public static class SeedDataProvider
         AppDbContext context,
         string expectedServer,
         string expectedDatabase,
-        string backupDirectory,
+        string? backupDirectory,
         CancellationToken cancellationToken = default)
     {
         if (!string.Equals(Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT"), "Development", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Canonical permission reconciliation is available only in the Development environment.");
         if (string.IsNullOrWhiteSpace(expectedServer) || string.IsNullOrWhiteSpace(expectedDatabase))
             throw new InvalidOperationException("Pass the SQL Server and database identities returned by the Development EF gate.");
-        if (string.IsNullOrWhiteSpace(backupDirectory) || !Path.IsPathFullyQualified(backupDirectory))
-            throw new InvalidOperationException("Pass an absolute SQL Server-accessible backup directory on independent storage.");
         if (context.Database.ProviderName != "Microsoft.EntityFrameworkCore.SqlServer")
             throw new InvalidOperationException("Canonical permission reconciliation requires the SQL Server provider.");
 
@@ -426,7 +607,7 @@ public static class SeedDataProvider
         if (pendingMigrations.Length > 0)
             throw new InvalidOperationException($"Development schema migrations are pending; apply only after the database gate: {string.Join(", ", pendingMigrations)}.");
 
-        var verifiedBackupPath = await CreateAndVerifyIndependentDevelopmentBackupAsync(
+        var verifiedBackupPath = await CreateAndVerifyDevelopmentBackupAsync(
             context, expectedServer, expectedDatabase, backupDirectory, cancellationToken);
 
         var activeCatalog = PermissionCatalog.Entries
@@ -742,11 +923,11 @@ public static class SeedDataProvider
             verifiedBackupPath);
     }
 
-    private static async Task<string> CreateAndVerifyIndependentDevelopmentBackupAsync(
+    private static async Task<string?> CreateAndVerifyDevelopmentBackupAsync(
         AppDbContext context,
         string expectedServer,
         string expectedDatabase,
-        string backupDirectory,
+        string? backupDirectory,
         CancellationToken cancellationToken,
         string backupPurpose = "permissions")
     {
@@ -773,24 +954,10 @@ public static class SeedDataProvider
                     throw new InvalidOperationException($"Connected SQL target '{actualServer}/{actualDatabase}' (database ID {databaseId}) does not match the explicitly verified Development target '{expectedServer}/{expectedDatabase}'.");
             }
 
-            var dataFilePaths = new List<string>();
-            await using (var filesCommand = connection.CreateCommand())
-            {
-                filesCommand.CommandText = "SELECT physical_name FROM sys.database_files WHERE type_desc IN ('ROWS', 'LOG');";
-                await using var reader = await filesCommand.ExecuteReaderAsync(cancellationToken);
-                while (await reader.ReadAsync(cancellationToken))
-                    dataFilePaths.Add(reader.GetString(0));
-            }
-
-            var backupRoot = Path.GetPathRoot(backupDirectory);
-            if (string.IsNullOrWhiteSpace(backupRoot))
-                throw new InvalidOperationException("The backup directory has no verifiable volume or share root.");
-            var databaseRoots = dataFilePaths
-                .Select(Path.GetPathRoot)
-                .Where(root => !string.IsNullOrWhiteSpace(root))
-                .ToArray();
-            if (databaseRoots.Length == 0 || databaseRoots.Any(root => string.Equals(root, backupRoot, StringComparison.OrdinalIgnoreCase)))
-                throw new InvalidOperationException("The backup destination must be on a different volume or network share from every Development database data and log file.");
+            if (string.IsNullOrWhiteSpace(backupDirectory))
+                return null;
+            if (!Path.IsPathFullyQualified(backupDirectory))
+                throw new InvalidOperationException("An optional backup directory must be an absolute SQL Server-accessible path.");
 
             var backupPath = Path.Combine(backupDirectory,
                 $"NexusPmo-{backupPurpose}-{DateTime.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}.bak");

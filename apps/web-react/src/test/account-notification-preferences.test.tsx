@@ -59,6 +59,17 @@ describe("account notification preferences", () => {
     expect(screen.getByText("سيصبح تسليم البريد الإلكتروني متاحًا عند تفعيل تكامل البريد.")).toBeInTheDocument();
   });
 
+  it("shows a translated Annual Budget approval preference", () => {
+    mocks.useNotificationPreferences.mockReturnValue({ data: {
+      items: [{ type: "ProjectAnnualBudgetApproval", inAppEnabled: true, pushEnabled: false, emailEnabled: false }],
+      pushAvailable: true,
+      emailAvailable: false,
+    }, isLoading: false, isError: false });
+    render(<I18nProvider><MemoryRouter><AccountNotificationsPage /></MemoryRouter></I18nProvider>);
+    expect(screen.getByText("Project Annual Budget approval")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Project Annual Budget approval In-app" })).toBeInTheDocument();
+  });
+
   it("requests browser permission only after the user enables push", async () => {
     render(<I18nProvider><MemoryRouter><AccountNotificationsPage /></MemoryRouter></I18nProvider>);
     expect(mocks.enablePushNotifications).not.toHaveBeenCalled();

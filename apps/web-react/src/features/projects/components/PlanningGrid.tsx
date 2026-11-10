@@ -1,5 +1,6 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { Bold, Bot, Check, ChevronDown, ChevronRight, ChevronUp, ChevronsDownUp, ChevronsUpDown, Columns3, Diamond, Eraser, Filter, GripVertical, Hand, IndentDecrease, IndentIncrease, Italic, Link2, Percent, Pencil, Plus, RotateCcw, Rows3, Trash2, Underline, Users, X } from "lucide-react";
 import { Button } from "@components/ui/Button";
 import { useConfirm } from "@components/ui/ConfirmProvider";
@@ -10,8 +11,9 @@ import { cn } from "@lib/utils";
 import { calculateAnchoredOverlayPosition } from "@components/ui/AnchoredOverlay";
 import { PLANNING_ACTIVITY_TYPE } from "@lib/enums";
 import { toast } from "@hooks/use-toast";
-import { planningApiFull, usePlanningAssignmentsFull, usePlanningCalendarsFull, usePlanningResourcesFull, usePlanningTablePreferencesFull, useResetPlanningTablePreferencesFull, useSavePlanningTablePreferencesFull, type PlanActivityDto, type PlanAssignmentDto, type PlanCalendarDto, type PlanDependencyDto, type PlanPredecessorInputDto, type PlanningColumnFilterDto, type PlanWbsNodeDto, type ReplacePlanPredecessorsInput, type ResourceLookupDto } from "../api/planningFull";
-import { buildPlanWorkspaceRows, findWbsNode, visiblePlanWorkspaceRows, type PlanWorkspaceRow } from "../lib/plan-workspace-rows";
+import { ApiError } from "@api/client";
+import { planningApiFull, planningKeys, usePlanningAssignmentsFull, usePlanningCalendarsFull, usePlanningResourcesFull, usePlanningTablePreferencesFull, useResetPlanningTablePreferencesFull, useSavePlanningTablePreferencesFull, type PlanActivityDto, type PlanAssignmentDto, type PlanCalendarDto, type PlanDependencyDto, type PlanPredecessorInputDto, type PlanningColumnFilterDto, type PlanWbsNodeDto, type ReplacePlanPredecessorsInput, type ResourceLookupDto } from "../api/planningFull";
+import { buildPlanWorkspaceRows, comparePlanOrder, findWbsNode, visiblePlanWorkspaceRows, type PlanWorkspaceRow } from "../lib/plan-workspace-rows";
 import { clampPlanningGridWidth, DEFAULT_PLANNING_GRID_COLUMNS, getPlanningGridFilterKind, matchesPlanningGridFilter, normalizePlanningGridColumns, reorderPlanningGridColumn, REQUIRED_PLANNING_GRID_COLUMNS, type PlanningGridColumnId } from "../lib/planning-grid-preferences";
 import { formatPredecessor, parsePredecessor } from "../lib/predecessor-syntax";
 import { roundPlanProgress } from "../lib/plan-progress";
@@ -117,6 +119,7 @@ export function PlanningGrid({ projectId, planId, projectStartDate, wbs, activit
   onSelectionChange?: (rowId: string) => void;
   onCollapsedChange?: (collapsed: ReadonlySet<string>) => void;
 }) {
+  const queryClient = useQueryClient();
   const confirm = useConfirm();
   const [internalCollapsed, setInternalCollapsed] = React.useState<ReadonlySet<string>>(() => new Set());
   const [internalSelectedId, setInternalSelectedId] = React.useState("");
@@ -256,18 +259,31 @@ export function PlanningGrid({ projectId, planId, projectStartDate, wbs, activit
   const fullRows = React.useMemo(() => buildPlanWorkspaceRows(wbs, activities), [wbs, activities]);
   const rows = React.useMemo(() => visiblePlanWorkspaceRows(fullRows, collapsed), [fullRows, collapsed]);
   const selected = React.useMemo(() => fullRows.find((r) => r.id === selectedId), [fullRows, selectedId]);
-  const activityForWbs = React.useCallback((wbsId?: string) => {
-    if (!wbsId) return undefined;
-    const direct = fullRows.find((r) => r.wbs?.id === wbsId)?.activity;
-    if (direct) return direct;
-    const node = findWbsNode(wbs, wbsId);
-    return node?.activityId ? activities.find((a) => a.id === node.activityId) : undefined;
-  }, [fullRows, wbs, activities]);
+  const wbsNodeForActivity = (activity: PlanActivityDto) => {
+    const byWbsId = activity.wbsId ? findWbsNode(wbs, activity.wbsId) : undefined;
+    if (byWbsId) return byWbsId;
+    const findActivityLink = (nodes: PlanWbsNodeDto[]): PlanWbsNodeDto | undefined => {
+      for (const node of nodes) {
+        if (node.activityId === activity.id) return node;
+        const nested = findActivityLink(node.children ?? []);
+        if (nested) return nested;
+      }
+      return undefined;
+    };
+    return findActivityLink(wbs);
+  };
   const siblingWbsNodes = React.useCallback((parentWbsId?: string) => {
-    if (!parentWbsId) return wbs.slice().sort((a, b) => a.sortOrder - b.sortOrder || a.code.localeCompare(b.code));
-    const parent = findWbsNode(wbs, parentWbsId);
-    return (parent?.children ?? []).slice().sort((a, b) => a.sortOrder - b.sortOrder || a.code.localeCompare(b.code));
-  }, [wbs]);
+    const nodes = fullRows.flatMap((row) => row.wbs ? [row.wbs] : []);
+    const ids = new Set(nodes.map((node) => node.id));
+    const effectiveParent = (node: PlanWbsNodeDto) => node.parentWbsId && ids.has(node.parentWbsId) ? node.parentWbsId : undefined;
+    const requestedParent = parentWbsId && ids.has(parentWbsId) ? parentWbsId : undefined;
+    return nodes.filter((node) => effectiveParent(node) === requestedParent).sort(comparePlanOrder);
+  }, [fullRows]);
+  const siblingParentForRow = (row: PlanWorkspaceRow | undefined): string | null => {
+    if (row?.wbs) return row.wbs.parentWbsId && findWbsNode(wbs, row.wbs.parentWbsId) ? row.wbs.parentWbsId : null;
+    return row?.activity?.wbsId && findWbsNode(wbs, row.activity.wbsId) ? row.activity.wbsId : null;
+  };
+  const rowWbsId = (row: PlanWorkspaceRow | undefined) => row?.wbs?.id ?? (row?.activity?.wbsId && findWbsNode(wbs, row.activity.wbsId) ? row.activity.wbsId : undefined);
 
   const siblingWbsNode = (target: PlanWorkspaceRow | undefined, direction: "up" | "down") => {
     if (!target?.wbs) return undefined;
@@ -276,35 +292,46 @@ export function PlanningGrid({ projectId, planId, projectStartDate, wbs, activit
     return siblings[index + (direction === "up" ? -1 : 1)];
   };
 
-  const siblingActivity = (target: PlanWorkspaceRow | undefined, direction: "up" | "down") => {
-    if (!target?.activity) return undefined;
-    if (target.wbs) {
-      const siblings = siblingWbsNodes(target.wbs.parentWbsId);
-      const index = siblings.findIndex((node) => node.id === target.wbs!.id);
-      const step = direction === "up" ? -1 : 1;
-      for (let cursor = index + step; cursor >= 0 && cursor < siblings.length; cursor += step) {
-        const candidate = activityForWbs(siblings[cursor].id);
-        if (candidate) return candidate;
-      }
-      return undefined;
-    }
-    if (target.activity.wbsId) {
-      const siblings = activities.filter((item) => item.wbsId === target.activity!.wbsId).sort((left, right) => (left.sortOrder ?? 0) - (right.sortOrder ?? 0) || left.code.localeCompare(right.code));
-      const index = siblings.findIndex((item) => item.id === target.activity!.id);
-      return siblings[index + (direction === "up" ? -1 : 1)];
-    }
-    const roots = activities.filter((item) => !item.wbsId).sort((left, right) => (left.sortOrder ?? 0) - (right.sortOrder ?? 0) || left.code.localeCompare(right.code));
-    const index = roots.findIndex((item) => item.id === target.activity!.id);
-    return roots[index + (direction === "up" ? -1 : 1)];
+  const workspaceSiblingsForRow = (target: PlanWorkspaceRow | undefined) => {
+    if (!target || (!target.wbs && !target.activity)) return [];
+    const parentWbsId = siblingParentForRow(target);
+    return fullRows.filter((row) => parentWbsId
+      ? row.wbs?.parentWbsId === parentWbsId || (!row.wbs && row.activity?.wbsId === parentWbsId)
+      : row.depth === 0).sort((left, right) => {
+      const leftItem = left.wbs ?? left.activity;
+      const rightItem = right.wbs ?? right.activity;
+      if (!leftItem) return rightItem ? -1 : 0;
+      if (!rightItem) return 1;
+      return comparePlanOrder(leftItem, rightItem);
+    });
+  };
+  const siblingWorkspaceRow = (target: PlanWorkspaceRow | undefined, direction: "up" | "down") => {
+    if (!target) return undefined;
+    const siblings = workspaceSiblingsForRow(target);
+    const index = siblings.findIndex((row) => row.id === target.id);
+    return siblings[index + (direction === "up" ? -1 : 1)];
   };
 
   const doMove = async (activityId: string, input: { targetActivityId?: string; targetWbsId?: string; position: "Before" | "After" | "Child"; sortOrder?: number }) => {
     const activity = activities.find((a) => a.id === activityId);
     if (!activity) return;
-    const sourceNode = activity.wbsId ? findWbsNode(wbs, activity.wbsId) : undefined;
+    const sourceNode = wbsNodeForActivity(activity);
     const targetActivity = input.targetActivityId ? activities.find((a) => a.id === input.targetActivityId) : undefined;
-    const targetNode = targetActivity?.wbsId ? findWbsNode(wbs, targetActivity.wbsId) : undefined;
+    const targetNode = targetActivity ? wbsNodeForActivity(targetActivity) : input.targetWbsId ? findWbsNode(wbs, input.targetWbsId) : undefined;
+    if ((activity.wbsId && !sourceNode) || (targetActivity?.wbsId && !targetNode)) {
+      setError(t("planning.moveMissingWbsLink"));
+      return;
+    }
+    if (input.position === "Child" && !sourceNode) {
+      setError(t("planning.moveChildRequiresWbs"));
+      return;
+    }
+    if (input.position === "Child" && targetActivity && !targetNode) {
+      setError(t("planning.moveChildTargetRequiresWbs"));
+      return;
+    }
     setMoving(true);
+    setError(null);
     try {
       await mutations.moveActivity.mutateAsync({
         id: activityId,
@@ -312,6 +339,8 @@ export function PlanningGrid({ projectId, planId, projectStartDate, wbs, activit
       });
       applySelectedId(`activity:${activityId}`);
     } catch (e) {
+      void queryClient.invalidateQueries({ queryKey: planningKeys.wbs(projectId, planId) });
+      void queryClient.invalidateQueries({ queryKey: planningKeys.activities(projectId, planId) });
       setError(e instanceof Error ? e.message : t("common.error"));
     } finally {
       setMoving(false);
@@ -381,9 +410,12 @@ export function PlanningGrid({ projectId, planId, projectStartDate, wbs, activit
     }
   };
 
-  const nextWbsSortOrder = (parentWbsId?: string, excludingId?: string) => Math.max(-1, ...siblingWbsNodes(parentWbsId).filter((node) => node.id !== excludingId).map((node) => node.sortOrder)) + 1;
-  const nextActivitySortOrder = (wbsId?: string) => Math.max(-1, ...activities.filter((item) => item.wbsId === wbsId).map((item) => item.sortOrder ?? 0)) + 1;
-  const rowWbsId = (row: PlanWorkspaceRow | undefined) => row?.wbs?.id ?? row?.activity?.wbsId;
+  const nextWorkspaceSortOrder = (parentWbsId?: string | null) => {
+    const siblings = fullRows.filter((row) => parentWbsId
+      ? row.wbs?.parentWbsId === parentWbsId || (!row.wbs && row.activity?.wbsId === parentWbsId)
+      : row.depth === 0);
+    return Math.max(-1, ...siblings.map((row) => row.wbs?.sortOrder ?? row.activity?.sortOrder ?? 0)) + 1;
+  };
   const wouldCreateWbsCycle = (nodeId: string, parentWbsId: string) => {
     let current: string | undefined = parentWbsId;
     while (current) {
@@ -414,11 +446,15 @@ export function PlanningGrid({ projectId, planId, projectStartDate, wbs, activit
     const selectedRows = structuralSelection(target);
     if (selectedRows.length < 2 || selectedRows.some((row) => !row.activity || row.activity.isSummaryTask)) return null;
     const first = selectedRows[0]!;
+    // Bulk Activity updates assign Activity.SortOrder independently. Do not
+    // use them when the visible sibling sequence also contains WBS nodes.
+    const workspaceSiblings = workspaceSiblingsForRow(first);
+    if (workspaceSiblings.some((row) => row.wbs || row.activity?.wbsId !== first.activity!.wbsId)) return null;
     if (selectedRows.some((row) => row.depth !== first.depth || row.activity!.wbsId !== first.activity!.wbsId)) return null;
     const siblings = activities
       .filter((activity) => activity.wbsId === first.activity!.wbsId)
       .slice()
-      .sort((left, right) => (left.sortOrder ?? 0) - (right.sortOrder ?? 0) || left.code.localeCompare(right.code));
+      .sort(comparePlanOrder);
     const selectedIds = new Set(selectedRows.map((row) => row.activity!.id));
     const indexes = siblings.map((activity, index) => selectedIds.has(activity.id) ? index : -1).filter((index) => index >= 0);
     if (indexes.length !== selectedRows.length || indexes.some((index, offset) => index !== indexes[0]! + offset)) return null;
@@ -429,8 +465,13 @@ export function PlanningGrid({ projectId, planId, projectStartDate, wbs, activit
     const selectedRows = structuralSelection(target);
     if (selectedRows.length < 2 || selectedRows.some((row) => !row.wbs)) return null;
     const first = selectedRows[0]!;
+    // Bulk WBS updates are safe only when Activities do not share this
+    // sibling sequence; otherwise they would be reordered independently.
+    const workspaceSiblings = workspaceSiblingsForRow(first);
+    if (workspaceSiblings.some((row) => !row.wbs)) return null;
     if (selectedRows.some((row) => row.depth !== first.depth || row.wbs!.parentWbsId !== first.wbs!.parentWbsId)) return null;
     const siblings = siblingWbsNodes(first.wbs!.parentWbsId);
+    if (workspaceSiblings.length !== siblings.length || workspaceSiblings.some((row) => !siblings.some((node) => node.id === row.wbs!.id))) return null;
     const selectedIds = new Set(selectedRows.map((row) => row.wbs!.id));
     const indexes = siblings.map((node, index) => selectedIds.has(node.id) ? index : -1).filter((index) => index >= 0);
     if (indexes.length !== selectedRows.length || indexes.some((index, offset) => index !== indexes[0]! + offset)) return null;
@@ -502,7 +543,7 @@ export function PlanningGrid({ projectId, planId, projectStartDate, wbs, activit
       if (wbsGroup) {
         const parentWbsId = rowWbsId(previousIndentTarget(wbsGroup.rows[0]));
         if (!parentWbsId || wbsGroup.rows.some((row) => row.wbs!.id === parentWbsId || wouldCreateWbsCycle(row.wbs!.id, parentWbsId))) return;
-        const nextOrder = nextWbsSortOrder(parentWbsId);
+        const nextOrder = nextWorkspaceSortOrder(parentWbsId);
         await updateWbsPlacementsBulk(wbsGroup.rows.map((row, index) => ({ node: row.wbs!, parentWbsId, sortOrder: nextOrder + index })));
         return;
       }
@@ -510,7 +551,7 @@ export function PlanningGrid({ projectId, planId, projectStartDate, wbs, activit
       if (!group) return;
       const parentWbsId = rowWbsId(previousIndentTarget(group.rows[0]));
       if (!parentWbsId || group.rows.some((row) => row.activity!.wbsId === parentWbsId)) return;
-      const nextOrder = nextActivitySortOrder(parentWbsId);
+      const nextOrder = nextWorkspaceSortOrder(parentWbsId);
       await updateActivityStructureBulk(group.rows.map((row, index) => ({ activity: row.activity!, wbsId: parentWbsId, sortOrder: nextOrder + index })));
       return;
     }
@@ -518,9 +559,9 @@ export function PlanningGrid({ projectId, planId, projectStartDate, wbs, activit
     if (!parentWbsId || parentWbsId === rowWbsId(target)) return;
     if (target.wbs) {
       if (wouldCreateWbsCycle(target.wbs.id, parentWbsId)) return;
-      await updateWbsPlacement(target.wbs, parentWbsId, nextWbsSortOrder(parentWbsId, target.wbs.id));
+      await updateWbsPlacement(target.wbs, parentWbsId, nextWorkspaceSortOrder(parentWbsId));
     } else if (target.activity) {
-      await updateActivityPlacement(target.activity, parentWbsId, nextActivitySortOrder(parentWbsId));
+      await updateActivityPlacement(target.activity, parentWbsId, nextWorkspaceSortOrder(parentWbsId));
     }
   };
 
@@ -534,7 +575,7 @@ export function PlanningGrid({ projectId, planId, projectStartDate, wbs, activit
         const parent = findWbsNode(wbs, currentParent);
         if (!parent) return;
         const destinationWbsId = parent.parentWbsId ?? null;
-        const nextOrder = nextWbsSortOrder(destinationWbsId ?? undefined);
+        const nextOrder = nextWorkspaceSortOrder(destinationWbsId);
         await updateWbsPlacementsBulk(wbsGroup.rows.map((row, index) => ({ node: row.wbs!, parentWbsId: destinationWbsId, sortOrder: nextOrder + index })));
         return;
       }
@@ -545,20 +586,20 @@ export function PlanningGrid({ projectId, planId, projectStartDate, wbs, activit
       const currentNode = findWbsNode(wbs, currentWbsId);
       if (!currentNode) return;
       const destinationWbsId = currentNode.parentWbsId ?? null;
-      const nextOrder = nextActivitySortOrder(destinationWbsId ?? undefined);
+      const nextOrder = nextWorkspaceSortOrder(destinationWbsId);
       await updateActivityStructureBulk(group.rows.map((row, index) => ({ activity: row.activity!, wbsId: destinationWbsId, sortOrder: nextOrder + index })));
       return;
     }
     if (target?.wbs?.parentWbsId) {
       const parent = findWbsNode(wbs, target.wbs.parentWbsId);
-      await updateWbsPlacement(target.wbs, parent?.parentWbsId, nextWbsSortOrder(parent?.parentWbsId, target.wbs.id));
+      await updateWbsPlacement(target.wbs, parent?.parentWbsId, nextWorkspaceSortOrder(parent?.parentWbsId));
       return;
     }
     if (target?.activity?.wbsId) {
       const currentNode = findWbsNode(wbs, target.activity.wbsId);
       if (!currentNode) return;
       const destinationWbsId = currentNode.parentWbsId;
-      await updateActivityPlacement(target.activity, destinationWbsId, nextActivitySortOrder(destinationWbsId));
+      await updateActivityPlacement(target.activity, destinationWbsId, nextWorkspaceSortOrder(destinationWbsId));
     }
   };
 
@@ -590,6 +631,16 @@ export function PlanningGrid({ projectId, planId, projectStartDate, wbs, activit
       await updateActivityStructureBulk(items);
       return;
     }
+    if (target?.activity) {
+      const adjacent = siblingWorkspaceRow(target, direction);
+      if (!adjacent) return;
+      await doMove(target.activity.id, {
+        targetActivityId: adjacent.activity?.id,
+        targetWbsId: adjacent.activity ? undefined : adjacent.wbs?.id,
+        position: direction === "up" ? "Before" : "After",
+      });
+      return;
+    }
     if (target?.wbs) {
       const adjacent = siblingWbsNode(target, direction);
       if (!adjacent) return;
@@ -600,18 +651,6 @@ export function PlanningGrid({ projectId, planId, projectStartDate, wbs, activit
       applySelectedId(target.id);
       return;
     }
-    if (!target?.activity) return;
-    const siblings = activities
-      .filter((activity) => activity.wbsId === target.activity!.wbsId)
-      .slice()
-      .sort((left, right) => (left.sortOrder ?? 0) - (right.sortOrder ?? 0) || left.code.localeCompare(right.code));
-    if (siblings.length > 500) return;
-    const sourceIndex = siblings.findIndex((activity) => activity.id === target.activity!.id);
-    const adjacentIndex = sourceIndex + (direction === "up" ? -1 : 1);
-    if (sourceIndex < 0 || adjacentIndex < 0 || adjacentIndex >= siblings.length) return;
-    const reordered = siblings.slice();
-    [reordered[sourceIndex], reordered[adjacentIndex]] = [reordered[adjacentIndex]!, reordered[sourceIndex]!];
-    await updateActivityStructureBulk(reordered.flatMap((activity, index) => activity.sortOrder === index ? [] : [{ activity, wbsId: activity.wbsId ?? null, sortOrder: index }]));
   };
 
 
@@ -686,10 +725,10 @@ export function PlanningGrid({ projectId, planId, projectStartDate, wbs, activit
     : Boolean(selected?.wbs?.parentWbsId || (selected?.activity?.wbsId && findWbsNode(wbs, selected.activity.wbsId)));
   const canMoveSelectedUp = selectedStructureRows.length > 1
     ? Boolean((selectedWbsGroup && selectedWbsGroup.startIndex > 0 && selectedWbsGroup.siblings.length <= 500) || (selectedActivityGroup && selectedActivityGroup.startIndex > 0 && selectedActivityGroup.siblings.length <= 500))
-    : Boolean(selected && (selected.wbs ? siblingWbsNode(selected, "up") : siblingActivity(selected, "up")));
+    : Boolean(selected && (selected.activity ? siblingWorkspaceRow(selected, "up") : siblingWbsNode(selected, "up")));
   const canMoveSelectedDown = selectedStructureRows.length > 1
     ? Boolean((selectedWbsGroup && selectedWbsGroup.endIndex < selectedWbsGroup.siblings.length - 1 && selectedWbsGroup.siblings.length <= 500) || (selectedActivityGroup && selectedActivityGroup.endIndex < selectedActivityGroup.siblings.length - 1 && selectedActivityGroup.siblings.length <= 500))
-    : Boolean(selected && (selected.wbs ? siblingWbsNode(selected, "down") : siblingActivity(selected, "down")));
+    : Boolean(selected && (selected.activity ? siblingWorkspaceRow(selected, "down") : siblingWbsNode(selected, "down")));
   const canToggleSelectedCollapse = Boolean(selected?.wbs && selected.hasChildren);
   const canCollapseAll = collapsibleWbsIds.some((id) => !collapsed.has(id));
   const canExpandAll = collapsibleWbsIds.some((id) => collapsed.has(id));
@@ -874,7 +913,11 @@ export function PlanningGrid({ projectId, planId, projectStartDate, wbs, activit
           const other = column === "start" ? toDateInput(activity.endDate) : toDateInput(activity.startDate);
           const nextStart = (column === "start" ? value : other).slice(0, 10);
           const nextFinish = (column === "finish" ? value : other).slice(0, 10);
-          if (activity.schedulingMode === "Manual" && nextStart && nextFinish && nextFinish < nextStart) throw new Error(t("planning.invalidDateRange"));
+          if (nextStart && nextFinish && nextFinish < nextStart) throw new Error(t("planning.invalidDateRange"));
+          // A date edited directly in the plan grid is an explicit user
+          // schedule. Preserve the entered date and the other schedule fields
+          // by saving the activity in Manual mode.
+          patch.schedulingMode = "Manual";
         }
         patch[field] = value || null;
       }
@@ -1062,26 +1105,33 @@ export function PlanningGrid({ projectId, planId, projectStartDate, wbs, activit
   const createRow = async (type: "Task" | "Milestone", placement: "append" | "above" | "below" | "child", nameOverride?: string, anchorOverride?: PlanWorkspaceRow): Promise<boolean> => {
     if (!editable || creating) return false;
     const anchor = placement === "append" ? undefined : anchorOverride ?? selected;
-    let parentWbsId = anchor?.wbs?.parentWbsId;
-    let sortOrder = anchor ? anchor.wbs?.sortOrder ?? anchor.activity?.sortOrder ?? 0 : Math.max(-1, ...fullRows.filter((row) => row.depth === 0).map((row) => row.wbs?.sortOrder ?? row.activity?.sortOrder ?? 0)) + 1;
+    let parentWbsId = anchor ? siblingParentForRow(anchor) : null;
+    let sortOrder = nextWorkspaceSortOrder(parentWbsId);
     if (placement === "child") {
-      parentWbsId = rowWbsId(anchor);
+      parentWbsId = rowWbsId(anchor) ?? null;
       if (!parentWbsId) return false;
-      sortOrder = nextWbsSortOrder(parentWbsId);
+      sortOrder = nextWorkspaceSortOrder(parentWbsId);
     }
-    const placedOrder = placement === "above" ? sortOrder - 1 : placement === "below" ? sortOrder + 1 : sortOrder;
+    // Create at the end of the intended sibling set, then use the same move
+    // operation as drag/drop to place it before or after the selected row.
+    // This lets the API normalize mixed WBS/Task/Milestone sibling ordering
+    // without relying on colliding anchor.SortOrder +/- 1 values.
+    const placedOrder = sortOrder;
     const code = `${type === "Milestone" ? "M" : "T"}-${Math.random().toString(36).slice(2, 10).toUpperCase()}`;
     setCreating(true);
     setError(null);
     let createdNodeId: string | undefined;
     let createdNodeVersion: string | undefined;
+    let createdActivityId: string | undefined;
+    let activityCreateAttempted = false;
     try {
-      const node = await mutations.createWbs.mutateAsync({ code, name: nameOverride?.trim() || (type === "Milestone" ? t("planning.newMilestone") : t("planning.newTask")), parentWbsId: parentWbsId ?? null, sortOrder: placedOrder }) as PlanWbsNodeDto;
+      const node = await mutations.createWbs.mutateAsync({ code, name: nameOverride?.trim() || (type === "Milestone" ? t("planning.newMilestone") : t("planning.newTask")), parentWbsId, sortOrder: placedOrder }) as PlanWbsNodeDto;
       createdNodeId = node.id;
       createdNodeVersion = node.rowVersion;
       const isFirstActivity = activities.length === 0;
       const initialStartDate = isFirstActivity && projectStartDate ? toDateInput(projectStartDate) : undefined;
       const initialMilestoneFinishDate = isFirstActivity && type === "Milestone" ? initialStartDate : undefined;
+      activityCreateAttempted = true;
       const createdActivity = await mutations.createActivity.mutateAsync({
         code,
         name: node.name,
@@ -1094,6 +1144,22 @@ export function PlanningGrid({ projectId, planId, projectStartDate, wbs, activit
         ...(initialStartDate ? { startDate: initialStartDate } : {}),
         ...(initialMilestoneFinishDate ? { endDate: initialMilestoneFinishDate } : {}),
       }) as PlanActivityDto;
+      createdActivityId = createdActivity.id;
+      if (anchor && (placement === "above" || placement === "below")) {
+        const targetNode = anchor.activity ? wbsNodeForActivity(anchor.activity) : anchor.wbs;
+        if (anchor.activity?.wbsId && !targetNode) throw new Error(t("planning.moveMissingWbsLink"));
+        await mutations.moveActivity.mutateAsync({
+          id: createdActivity.id,
+          body: {
+            targetActivityId: anchor.activity?.id,
+            targetWbsId: anchor.activity ? undefined : anchor.wbs?.id,
+            position: placement === "above" ? "Before" : "After",
+            rowVersion: createdActivity.rowVersion,
+            wbsRowVersion: node.rowVersion,
+            targetWbsRowVersion: targetNode?.rowVersion,
+          },
+        });
+      }
       const createdRowId = `activity:${createdActivity.id}`;
       setSelectedRowIds(new Set([createdRowId]));
       setSelectedCellKeys(new Set());
@@ -1104,10 +1170,32 @@ export function PlanningGrid({ projectId, planId, projectStartDate, wbs, activit
       notifySaved();
       return true;
     } catch (e) {
-      if (createdNodeId) {
-        try { await mutations.deleteWbs.mutateAsync({ id: createdNodeId, rowVersion: createdNodeVersion ?? "" }); } catch { /* original error stands */ }
+      if (createdActivityId) {
+        // A failed response can arrive after the server committed the move.
+        // Keep the row and reload authoritative placement before the user acts
+        // again instead of compensating with a destructive delete.
+        void queryClient.invalidateQueries({ queryKey: planningKeys.wbs(projectId, planId) });
+        void queryClient.invalidateQueries({ queryKey: planningKeys.activities(projectId, planId) });
+        setError(t("planning.insertMoveFailed"));
+      } else if (activityCreateAttempted && e instanceof ApiError && e.status >= 400 && e.status < 500 && createdNodeId) {
+        // A client-side rejection confirms no Activity was created, so the
+        // WBS placeholder can be safely removed.
+        try { await mutations.deleteWbs.mutateAsync({ id: createdNodeId, rowVersion: createdNodeVersion ?? "" }); } catch { /* Keep the visible WBS node if cleanup fails. */ }
+        notifyError(e);
+      } else if (activityCreateAttempted) {
+        // The Activity request may have committed even if its response was
+        // lost, so preserve the WBS node and refresh before retrying.
+        void queryClient.invalidateQueries({ queryKey: planningKeys.wbs(projectId, planId) });
+        void queryClient.invalidateQueries({ queryKey: planningKeys.activities(projectId, planId) });
+        setError(t("planning.createActivityOutcomeUnknown"));
+      } else if (createdNodeId) {
+        // Only compensate when Activity creation was never attempted and the
+        // newly created WBS node is known to be unused.
+        try { await mutations.deleteWbs.mutateAsync({ id: createdNodeId, rowVersion: createdNodeVersion ?? "" }); } catch { /* Original error stands; the WBS row remains visible. */ }
+        notifyError(e);
+      } else {
+        notifyError(e);
       }
-      notifyError(e);
       return false;
     } finally {
       setCreating(false);

@@ -48,11 +48,11 @@ The following are not established by source inspection and remain blockers to a 
 3. Per-tenant/project record counts and monetary totals by record type, lifecycle state, and currency.
 4. Orphaned, cross-tenant, missing-currency, duplicate, soft-deleted, and conflicting financial records.
 5. Published snapshot count, source-data linkage, and any snapshots with incomplete provenance.
-6. Independently verified backup status before any future database write.
+6. If explicitly requested, backup status for the future database write; backup is optional for Development/UAT and does not gate the write.
 
 The current process has no explicit `NEXUS_EF_DEVELOPMENT_CONNECTION_STRING` or `ASPNETCORE_ENVIRONMENT`, so the read-only database gate was not run. The repository contains earlier Development identity/history evidence, but it predates the later migration sources now present in the working tree and cannot establish today's migration state. The checked-in `localhost`/`NexusPmo` Development configuration was not used to infer or select a target.
 
-Obtain the Development inventory only through an explicitly identified, read-only target and the repository's database gate. Never infer the target from localhost, health checks, or filenames. Keep credentials out of command output and reports. A database write remains prohibited until SQL is reviewed, the target is verified, the backup is independently verified, and the write is separately authorized.
+Obtain the Development inventory only through an explicitly identified, read-only target and the repository's database gate. Never infer the target from localhost, health checks, or filenames. Keep credentials out of command output and reports. A database write remains prohibited until SQL is reviewed, the target is verified, and the write is separately authorized. A backup may be created when explicitly requested, but independent backup storage and `RESTORE VERIFYONLY` are not prerequisites for Development/UAT; Production backup and recovery requirements remain unchanged.
 
 ## 5. Product Owner decisions and next gate
 
@@ -62,7 +62,7 @@ This inventory is source-only and is not a data migration plan approval. Continu
 
 ## Project Annual Budget Foundation source update - 2026-10-30
 
-The separately authorized Project Annual Budget Foundation adds a new `ProjectAnnualBudgets` table for future Project/FiscalYear planning records. It has no backfill or import from `Project.Budget`, `Budget`, `PortfolioBudget`, Payment Requests, settlements, costs, or snapshots. The actual Development table state, record counts, and migration history were not rechecked by this source task. Any deployment must preserve the pre-existing records described above and use the additive migration only after the current documented database workflow, SQL review, and independent backup gate are complete. Annual budgets do not alter legacy ceilings, active Payment Request reservation calculations, settlement history, or published snapshots.
+The separately authorized Project Annual Budget Foundation adds a new `ProjectAnnualBudgets` table for future Project/FiscalYear planning records. It has no backfill or import from `Project.Budget`, `Budget`, `PortfolioBudget`, Payment Requests, settlements, costs, or snapshots. The actual Development table state, record counts, and migration history were not rechecked by this source task. Any deployment must preserve the pre-existing records described above and use the additive migration only after the current documented database workflow and SQL review are complete. A backup is optional for Development/UAT. Annual budgets do not alter legacy ceilings, active Payment Request reservation calculations, settlement history, or published snapshots.
 
 ## Payment Request Annual Budget integration source update - 2026-10-30
 

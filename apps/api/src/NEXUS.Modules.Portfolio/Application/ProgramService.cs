@@ -12,6 +12,8 @@ namespace NEXUS.Modules.Portfolio.Application;
 
 public sealed class ProgramService : IProgramService
 {
+    private const string ActivePortfolioStatus = "Active";
+
     private readonly DbContext _db;
     private readonly IHttpContextAccessor _http;
     private readonly IManagementContextAccessor? _managementContext;
@@ -114,7 +116,7 @@ public sealed class ProgramService : IProgramService
 
         var query = _db.Set<Portfolio.Domain.Portfolio>()
             .AsNoTracking()
-            .Where(item => item.TenantId == context.TenantId && !item.IsDeleted && item.Status == "Active");
+            .Where(item => item.TenantId == context.TenantId && !item.IsDeleted && item.Status == ActivePortfolioStatus);
         query = query.Where(item => creationScope.NativePortfolioIds.Contains(item.Id)
             || (hasCreateAcross && item.OrganizationId.HasValue
                 && creationScope.OrganizationIds.Contains(item.OrganizationId.Value)));
@@ -127,7 +129,7 @@ public sealed class ProgramService : IProgramService
                 Id = item.Id,
                 Name = item.Name,
                 Code = item.Code,
-                Status = item.Status,
+                Status = ActivePortfolioStatus,
                 Currency = item.Currency
             })
             .ToListAsync(ct);
@@ -161,7 +163,7 @@ public sealed class ProgramService : IProgramService
             .AsNoTracking()
             .Where(item => item.TenantId == context.TenantId
                 && !item.IsDeleted
-                && item.Status == "Active"
+                && item.Status == ActivePortfolioStatus
                 && assignmentScope.NativePortfolioIds.Contains(item.Id))
             .OrderBy(item => item.Name)
             .ThenBy(item => item.Code)
@@ -170,7 +172,7 @@ public sealed class ProgramService : IProgramService
                 Id = item.Id,
                 Name = item.Name,
                 Code = item.Code,
-                Status = item.Status,
+                Status = ActivePortfolioStatus,
                 Currency = item.Currency
             })
             .ToListAsync(ct);
@@ -348,7 +350,7 @@ public sealed class ProgramService : IProgramService
     {
         var tenantId = TenantId();
         return tenantId != Guid.Empty && id != Guid.Empty
-            && await _db.Set<Portfolio.Domain.Portfolio>().AnyAsync(x => x.Id == id && x.TenantId == tenantId && !x.IsDeleted && x.Status == "Active", ct);
+            && await _db.Set<Portfolio.Domain.Portfolio>().AnyAsync(x => x.Id == id && x.TenantId == tenantId && !x.IsDeleted && x.Status == ActivePortfolioStatus, ct);
     }
     private async Task<bool> CanAssignPortfolioAsync(Guid id, CancellationToken ct)
     {
@@ -386,10 +388,10 @@ public sealed class ProgramService : IProgramService
                 && permissions.Contains("Portfolio.View"))
             {
                 var portfolio = await _db.Set<Portfolio.Domain.Portfolio>().AsNoTracking()
-                    .FirstOrDefaultAsync(x => x.Id == id && x.TenantId == context.TenantId && !x.IsDeleted && x.Status == "Active", ct);
-                  return portfolio is not null
-                      && portfolio.OrganizationId.HasValue
-                      && creationScope.OrganizationIds.Contains(portfolio.OrganizationId.Value);
+                    .FirstOrDefaultAsync(x => x.Id == id && x.TenantId == context.TenantId && !x.IsDeleted && x.Status == ActivePortfolioStatus, ct);
+                return creationScope is not null
+                    && portfolio?.OrganizationId is Guid organizationId
+                    && creationScope.OrganizationIds.Contains(organizationId);
             }
         }
 

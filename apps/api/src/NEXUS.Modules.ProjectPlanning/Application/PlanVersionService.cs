@@ -438,7 +438,7 @@ public sealed class PlanVersionService : IPlanVersionService
             Name = n.Name,
             ActivityId = n.ActivityId.HasValue && activityIds.TryGetValue(n.ActivityId.Value, out var activityId) ? activityId : null,
             DeliverableId = n.DeliverableId.HasValue && deliverableIds.TryGetValue(n.DeliverableId.Value, out var deliverableId) ? deliverableId : null,
-            TextFormat = n.TextFormat?.Clone(),
+            TextFormat = n.TextFormat?.Clone() ?? PlanTextFormat.Unspecified(),
             CreatedBy = userId
         }).ToList();
 
@@ -466,7 +466,7 @@ public sealed class PlanVersionService : IPlanVersionService
             EstimateHours = a.EstimateHours,
             Progress = a.Progress,
             WbsId = a.WbsId.HasValue && wbsIds.TryGetValue(a.WbsId.Value, out var wbsId) ? wbsId : null,
-            TextFormat = a.TextFormat?.Clone(),
+            TextFormat = a.TextFormat?.Clone() ?? PlanTextFormat.Unspecified(),
             CreatedBy = userId
         }).ToList();
 

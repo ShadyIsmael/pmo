@@ -80,6 +80,7 @@ See the dedicated **[Reports Catalog](reports/README.md)** for a full index of a
 - [Project Plan Desktop Parity](reports/PROJECT-PLAN-DESKTOP-PARITY.md)
 - [Vitest Focused Test Results](reports/testing/)
 - [Financial Current State Audit](modules/FINANCIAL-CURRENT-STATE-AUDIT.md)
+- [P1 Project Annual Budget Workflow Recovery](finance/P1-PROJECT-ANNUAL-BUDGET-WORKFLOW-RECOVERY.md)
 - [Dead Code Audit](development/DEAD-CODE-AUDIT.md)
 
 ---

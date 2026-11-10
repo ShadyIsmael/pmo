@@ -1,5 +1,7 @@
 # Authorization remediation plan and source status
 
+**Backup-policy supersession (2026-11-10):** Development/UAT backups are optional for migrations and other authorized changes; independent storage and `RESTORE VERIFYONLY` are not prerequisites. Exact target, migration, and schema checks remain required. Destructive reset still requires explicit Product Owner authorization. This update does not authorize a reset or permission reconciliation. Production backup and recovery safeguards remain mandatory.
+
 This file continues the existing audit plan. Source changes are present. Final build results are recorded below; runtime UAT and the requested Development database recreation remain pending.
 
 ## Source remediation
@@ -23,11 +25,11 @@ This file continues the existing audit plan. Source changes are present. Final b
 
 ## Explicit Development permission reconciliation
 
-`SeedDataProvider.RebuildCanonicalPermissionsAsync` is exposed only by `--rebuild-canonical-permissions` in Development. The command requires explicit SQL Server and database values plus a SQL Server-accessible backup directory. It independently checks `SERVERPROPERTY('ServerName')`, `DB_NAME()`, and `DB_ID()`, refuses model changes or pending migrations, creates a copy-only checksum backup on a different volume/share, and runs `RESTORE VERIFYONLY` before changes.
+`SeedDataProvider.RebuildCanonicalPermissionsAsync` is exposed only by `--rebuild-canonical-permissions` in Development. The command requires explicit SQL Server and database values and independently checks `SERVERPROPERTY('ServerName')`, `DB_NAME()`, and `DB_ID()`; it refuses model changes or pending migrations. A backup may be created when explicitly requested, but independent backup storage and `RESTORE VERIFYONLY` are not prerequisites for this Development operation. A missing backup must not block it.
 
 The transaction is tenant-scoped to the Development seed tenant. It creates missing active catalog rows, normalizes active names/descriptions, soft-deletes unknown/retired rows, removes only their role links, archives only their direct overrides, and audits each changed object. It does not add grants to existing roles or users or fan aliases into new operations. Existing active canonical grants remain unchanged.
 
-The current user instruction supersedes the source-only reconciliation for this environment: after the code and documentation are complete, drop and recreate `NexusPmo` by applying EF migrations and running the complete seed. The final build/test pass is now recorded below. The offline EF model is synchronized, but `sqlcmd -S tcp:localhost,1433 -d NexusPmo -E` failed with `Cannot generate SSPI context`, so the live identity, schema, and backup cannot be verified. **Policy addendum (2026-11-04):** a later repository policy update permits this exact Development `Shady/NexusPmo` reset without a backup only after explicit Product Owner authorization is recorded in the active task/conversation and exact target/environment checks pass. It still requires the secure Admin bootstrap secret, all EF migrations, and the full seed. The preceding status and backup references remain historical evidence from the earlier policy state.
+The then-current user instruction requested a `NexusPmo` reset by applying EF migrations and running the complete seed; that request was not executed in this report. The final build/test pass is recorded below. The offline EF model is synchronized, but `sqlcmd -S tcp:localhost,1433 -d NexusPmo -E` failed with `Cannot generate SSPI context`, so the live identity and schema could not be verified. **Policy history:** the 2026-11-04 repository update permitted the exact Development `Shady/NexusPmo` reset without a backup only after explicit Product Owner authorization and exact target/environment checks. The current 2026-11-10 policy makes backups optional for all Development/UAT operations; it retains the secure Admin bootstrap, target, migration, schema, and destructive-operation authorization gates. The current backup-policy task does not authorize or resume the reset.
 
 ## Full action coverage
 
@@ -37,7 +39,7 @@ The raw API/UI inventories are retained as candidate evidence. The business acti
 
 1. Finish all source changes and documentation; do not run build/tests or database tests during implementation.
 2. After implementation is complete, verify the offline EF model/snapshot, exact Development target, provider, migrations, and seed entrypoint.
-3. Confirm the secure Admin bootstrap value is available without exposing it, confirm explicit Product Owner authorization for the exact Development `Shady/NexusPmo` reset is recorded and referenced, and verify the live environment/server/database identity before the authorized reset. No backup is required for this exact reset exception.
+3. Before any separately authorized reset, confirm the secure Admin bootstrap value is available without exposing it, confirm explicit Product Owner authorization for the exact Development `Shady/NexusPmo` reset is recorded and referenced, and verify the live environment/server/database identity. Backup is optional; reset authorization and all safety gates remain mandatory.
 4. Invoke only the Product Owner-authorized `Shady/NexusPmo` reset through the EF gate. It applies all repository EF migrations and runs the full seed twice; verify catalog, role grants, protected Admin baseline, and absence of retired permissions afterward.
 5. Run the complete build/test set once at the end, including direct grant/deny, cross-tenant, and fresh-seed idempotency tests; record any gate that cannot execute.
 

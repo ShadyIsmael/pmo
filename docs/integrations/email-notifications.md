@@ -41,7 +41,7 @@ The mail adapter supplies a plain-text alternative and escaped HTML content from
 
 ## Schema and deployment
 
-Profile persistence and Organization attribution require an additive EF migration. Apply it through the documented database delivery gate after verifying the exact Development target, reviewing generated SQL, and confirming an independent backup. Do not reset any database. The implementation is not deployment-ready until the target schema is synchronized and the migration history and physical schema are verified.
+Profile persistence and Organization attribution require an additive EF migration. Apply it through the documented database delivery gate after verifying the exact Development target and reviewing generated SQL. A backup may be created when explicitly requested, but Development migration apply does not require independent backup storage or `RESTORE VERIFYONLY`. Do not reset any database. The implementation is not deployment-ready until the target schema is synchronized and the migration history and physical schema are verified.
 
 Configure destination allowlists through deployment-owned configuration, not tenant profiles. Store credentials through the application settings UI or another approved secret-management path. Start with the Platform or Tenant profile, verify connection, then send a test email to the signed-in administrator's own address. Configure an Organization override only when the organization has an explicit authorized need. Review delivery logs for sanitized outcomes and verify normal in-app delivery still works when SMTP is unavailable.
 

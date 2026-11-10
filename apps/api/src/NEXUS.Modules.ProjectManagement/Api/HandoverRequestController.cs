@@ -25,7 +25,9 @@ public class HandoverRequestController : ControllerBase
     {
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
         var result = await _handoverRequestService.GetPendingForMeAsync(userId, cancellationToken);
-        if (result.IsFailure) return BadRequest(new { error = result.Error?.Message });
+        if (result.IsFailure)
+            return StatusCode(result.Error?.StatusCode ?? StatusCodes.Status400BadRequest,
+                new { error = result.Error?.Message });
         return Ok(result.Value);
     }
 

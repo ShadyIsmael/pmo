@@ -77,7 +77,7 @@ TRX artifacts directory: `docs/security/code-review/p06b-artifacts/`
 - **Source intent:** `ProgramConfiguration` defines Program constraints including `(TenantId,Code)` uniqueness and `RowVersion` concurrency (per 06A). Portfolio appears aligned.
 - **Migration created/applied:** **No.** No Program uniqueness/RowVersion migration applied.
 - **Model/migration consistency validation:** **BLOCKED / not fully inspected.** Snapshot grep command failed due PowerShell quoting (`Select-String` argument parsing); I did not correct and run further EF inspection to avoid noisy/unauthorized DB work. Dirty concurrent model/snapshot state and running API make full EF verification risky.
-- **Database blockers:** cannot apply migration without independently verified Development target, reviewed SQL, duplicate/NULL `Program.Code` preflight, explicit authorization/backup policy per `AGENTS.md`, and coordinated handling of concurrent model changes.
+- **Database blockers:** cannot apply migration without verified Development environment/target, reviewed SQL, duplicate/NULL `Program.Code` preflight, explicit authorization, and coordinated handling of concurrent model changes. Development/UAT backups are optional and do not replace or add to these gates.
 
 ## 6) Remaining release blockers
 1. **NEXUS.Api.Tests does not compile cleanly for targeted P0 security/financial runs** in current tree state (untracked/broken tests + constructor/contract drift + compile errors listed above) — **P004 and major security suites BLOCKED, no TRXs**.

@@ -158,11 +158,15 @@ public sealed class ProjectFinancialSummaryDto
     public Guid ProjectId { get; init; }
     public DateTime PeriodFrom { get; init; }
     public DateTime PeriodTo { get; init; }
-    public string CurrencyCode { get; init; } = string.Empty;
+    public string? CurrencyCode { get; init; }
     public decimal? ApprovedBudget { get; init; }
     public string BudgetStatus { get; init; } = string.Empty;
-    public decimal ActualPaid { get; init; }
-    public decimal OutstandingPlannedPayments { get; init; }
-    public decimal PaymentsDueWithinPeriod { get; init; }
-    public decimal RemainingUnpaidAtPeriodEnd { get; init; }
+    public decimal? Expenditure { get; init; }
+    public decimal? CommittedCost { get; init; }
+    public decimal? ActualPaid { get; init; }
+    public decimal? OutstandingPlannedPayments { get; init; }
+    public decimal? PaymentsDueWithinPeriod { get; init; }
+    public decimal? RemainingUnpaidAtPeriodEnd { get; init; }
+    public bool HasFinancialData { get; init; }
+    public string DataStatus { get; init; } = "empty";
 }

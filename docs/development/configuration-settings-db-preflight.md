@@ -2,6 +2,8 @@
 
 **Status: Prepared, not executed.** This package contains a read-only checklist and diagnostic SQL for an owner-authorized Development database inspection. It does not establish the identity, schema, migration history, or backup state of any database.
 
+**Backup-policy update:** The historical same-volume backup observation below remains part of the preflight evidence, but Development/UAT operations no longer require independent backup storage or `RESTORE VERIFYONLY`. A backup may be created when explicitly requested; its absence is not a migration or change gate. This does not alter the target identity, SQL-version, migration, or schema checks.
+
 ## Current source baseline
 
 - Branch at review: `main`.
@@ -31,7 +33,7 @@ The tenant is an authenticated ownership boundary, not a persisted `Tenant` enti
 
 `docs/development/local-setup.md` declares SQL Server 2022+ as the supported database version, and Docker Compose uses `mcr.microsoft.com/mssql/server:2022-latest`. This establishes the project source requirement, but does not pin the actual Development database engine or database compatibility level. The repository's historical EF gate record describes a previous database inspection; it predates the current migration chain and is not current proof of target identity or schema.
 
-That historical record named `Shady` / `NexusPmo`, reported 19 migrations applied, and found backup media on the same `C:` volume as the database files without independent restore verification. Later notes say the database evidence predates subsequent Meetings migrations; the source had 22 IDs when this package was prepared and now has 23. Treat the identity, history, and backup statements as stale until the authorized preflight repeats them.
+That historical record named `Shady` / `NexusPmo`, reported 19 migrations applied, and found backup media on the same `C:` volume as the database files without independent restore verification. Later notes say the database evidence predates subsequent Meetings migrations; the source had 22 IDs when this package was prepared and now has 23. Treat identity and history as stale until the authorized preflight repeats them. The backup statement records historical evidence only and does not make an independent backup a current prerequisite.
 
 `ISJSON(ValueJson, VALUE)` requires SQL Server 2022 (16.x) or later. The `VALUE` constraint accepts any JSON value, including scalar strings, numbers, booleans, and `null`; legacy `ISJSON(ValueJson)` only accepts an object or array and would reject the scalar JSON representation used by current settings. The project does not currently establish a minimum Development database engine or compatibility level. Capture both from the verified target before migration generation. Do not change the database compatibility level as part of this migration without separate approval.
 
@@ -64,9 +66,9 @@ Do not run the SQL file until the owner authorizes Development database reads an
 3. After the gate confirms identity, fill the SQL script's two expected-target placeholders with those exact public metadata values and run it against that same database. It fails closed on a mismatch.
 4. Compare all source IDs with `dbo.__EFMigrationsHistory`, identify history-only IDs, verify the actual `Users`/`Organizations` key and FK structures, and inspect the physical settings tables if they already exist. Any history-only migration, missing source migration, or unexpected schema requires owner review before generation.
 5. Review the server version and database compatibility level. Confirm SQL Server 2022+ before using `ISJSON(..., VALUE)`; for an older engine, use the compatibility decision above without changing the serialized JSON contract.
-6. Review the latest full backup record, media path, checksums, database data-file paths, and recovery model. Backup metadata is not proof that a backup is independently stored or recoverable. Require an independently stored backup and owner-authorized `RESTORE VERIFYONLY`; a test restore to an isolated target is stronger recovery evidence.
+6. If a backup is explicitly requested, record the latest full backup metadata, media path, checksums, database data-file paths, and recovery model. Backup metadata alone is not proof of recoverability. Independent storage, `RESTORE VERIFYONLY`, and a test restore are not prerequisites for Development/UAT operations.
 7. Reconcile all concurrent module changes under one named EF owner. Establish one ordered source baseline, synchronize the snapshot, and run the offline model gate. Only then generate target-specific pending SQL and review every operation for unrelated or destructive changes.
-8. This package does not authorize migration application. Application requires separate explicit authorization, reviewed SQL/hash, a verified independent backup, and the repository's Development-only apply gate.
+8. This package does not authorize migration application. Application requires separate explicit authorization, reviewed SQL/hash, and the repository's environment-appropriate apply gate. A Development/UAT backup is optional and its absence does not block the migration.
 
 ## Diagnostic SQL
 
@@ -74,5 +76,5 @@ Use [preflight-multi-tenant-configuration-settings.sql](../../scripts/database/p
 
 ## Delivery status
 
-**READY FOR CONTROLLED DATABASE PREFLIGHT; NOT READY FOR MIGRATION GENERATION.** The read-only package is ready for separate owner authorization. Shared EF ownership is unresolved; `AppDbContext` and the snapshot are dirty; ten untracked concurrent migration pairs exist; the model snapshot lacks Settings entities; actual Development target/version/history/schema and current backup/recovery evidence are unverified; and the SQL-version decision is not established for that target. Do not generate `AddMultiTenantConfigurationSettings` until those blockers are cleared.
+**READY FOR CONTROLLED DATABASE PREFLIGHT; NOT READY FOR MIGRATION GENERATION.** The read-only package is ready for separate owner authorization. Shared EF ownership is unresolved; `AppDbContext` and the snapshot are dirty; ten untracked concurrent migration pairs exist; the model snapshot lacks Settings entities; actual Development target/version/history/schema are unverified; and the SQL-version decision is not established for that target. Do not generate `AddMultiTenantConfigurationSettings` until those blockers are cleared. Backup state is not a Development/UAT prerequisite under the current policy.
 

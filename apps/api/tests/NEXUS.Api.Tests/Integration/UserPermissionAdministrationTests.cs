@@ -38,25 +38,20 @@ public sealed class UserPermissionAdministrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public void Permission_catalog_has_explicit_valid_role_category_eligibility_for_every_active_permission()
+    public void Permission_catalog_exposes_all_selectable_categories_without_permission_specific_restrictions()
     {
-        Assert.Empty(PermissionRoleCategoryPolicy.UnmappedActivePermissionKeys());
         foreach (var permission in PermissionCatalog.Entries.Where(entry => entry.IsActive))
         {
-            Assert.NotEmpty(permission.AllowedCategories);
-            Assert.Equal(permission.AllowedCategories.Count, permission.AllowedCategories.Distinct(StringComparer.Ordinal).Count());
-            Assert.All(permission.AllowedCategories, category => Assert.Contains(category, RoleCategories.Selectable));
+            Assert.Equal(RoleCategories.Selectable, permission.AllowedCategories);
         }
 
-        Assert.Contains(RoleCategories.Management, PermissionCatalog.ByKey["Project.View"].AllowedCategories);
-        Assert.Contains(RoleCategories.Operation, PermissionCatalog.ByKey["Project.View"].AllowedCategories);
-        Assert.Contains(RoleCategories.Operation, PermissionCatalog.ByKey["ProjectAnnualBudget.SubmitForReview"].AllowedCategories);
-        Assert.DoesNotContain(RoleCategories.Operation, PermissionCatalog.ByKey["ProjectAnnualBudget.Approve"].AllowedCategories);
-        Assert.Equal(new[] { RoleCategories.Management }, PermissionCatalog.ByKey["ProjectAnnualBudget.Approve"].AllowedCategories);
+        Assert.Equal(RoleCategories.Selectable, PermissionCatalog.ByKey["Project.View"].AllowedCategories);
+        Assert.Equal(RoleCategories.Selectable, PermissionCatalog.ByKey["ProjectAnnualBudget.SubmitForReview"].AllowedCategories);
+        Assert.Equal(RoleCategories.Selectable, PermissionCatalog.ByKey["ProjectAnnualBudget.Approve"].AllowedCategories);
     }
 
     [Fact]
-    public async Task Role_category_policy_blocks_new_mismatched_grants_and_requires_explicit_removal_before_change()
+    public async Task Role_category_does_not_restrict_permission_grants_or_retained_grants_on_category_change()
     {
         var (actor, actorRole) = AddUserWithRole(_tenantId, "category-admin");
         actorRole.Permissions.Add(AddPermission(_tenantId, "Roles", "View"));
@@ -69,47 +64,32 @@ public sealed class UserPermissionAdministrationTests : IAsyncLifetime
         await _context.SaveChangesAsync();
 
         var service = CreateRoleService(actor.Id);
-        var wrongCategory = await service.CreateAsync(new SaveRoleDto
+        var crossCategory = await service.CreateAsync(new SaveRoleDto
         {
             Name = "Operations project editor",
             Category = RoleCategories.Operation,
             PermissionIds = [projectView.Id, projectEdit.Id]
         }, actor.Id, _tenantId);
-        Assert.True(wrongCategory.IsFailure);
-        Assert.Equal(400, wrongCategory.Error?.StatusCode);
-        Assert.Equal("ROLE_PERMISSION_CATEGORY_NOT_ALLOWED", wrongCategory.Error?.Code);
-        Assert.Equal("Project.Edit", wrongCategory.Error?.Details?["permissionKey"]);
-        Assert.Equal(new[] { RoleCategories.Management },
-            Assert.IsAssignableFrom<IReadOnlyList<string>>(wrongCategory.Error?.Details?["allowedCategories"]));
+        Assert.True(crossCategory.IsSuccess, crossCategory.Error?.Message);
+        Assert.Contains(crossCategory.Value!.Permissions, permission => permission.Name == "Project.Edit");
 
-        var created = await service.CreateAsync(new SaveRoleDto
+        var changedCategory = await service.UpdateAsync(crossCategory.Value!.Id, new SaveRoleDto
         {
-            Name = "Management project editor",
-            Category = RoleCategories.Management,
+            Name = crossCategory.Value.Name,
+            Category = RoleCategories.Business,
             PermissionIds = [projectView.Id, projectEdit.Id]
         }, actor.Id, _tenantId);
-        Assert.True(created.IsSuccess, created.Error?.Message);
+        Assert.True(changedCategory.IsSuccess, changedCategory.Error?.Message);
+        Assert.Contains(changedCategory.Value!.Permissions, permission => permission.Name == "Project.Edit");
 
-        var categoryConflict = await service.UpdateAsync(created.Value!.Id, new SaveRoleDto
+        var revoked = await service.UpdateAsync(crossCategory.Value.Id, new SaveRoleDto
         {
-            Name = created.Value.Name,
-            Category = RoleCategories.Operation,
-            PermissionIds = [projectView.Id, projectEdit.Id]
-        }, actor.Id, _tenantId);
-        Assert.True(categoryConflict.IsFailure);
-        Assert.Equal(409, categoryConflict.Error?.StatusCode);
-        Assert.Equal("ROLE_CATEGORY_PERMISSION_CONFLICT", categoryConflict.Error?.Code);
-        Assert.Equal(new[] { "Project.Edit" },
-            Assert.IsAssignableFrom<IReadOnlyList<string>>(categoryConflict.Error?.Details?["permissionKeys"]));
-
-        var removedConflict = await service.UpdateAsync(created.Value.Id, new SaveRoleDto
-        {
-            Name = created.Value.Name,
-            Category = RoleCategories.Management,
+            Name = crossCategory.Value.Name,
+            Category = RoleCategories.Business,
             PermissionIds = [projectView.Id]
         }, actor.Id, _tenantId);
-        Assert.True(removedConflict.IsSuccess, removedConflict.Error?.Message);
-        Assert.DoesNotContain(removedConflict.Value!.Permissions, permission => permission.Name == "Project.Edit");
+        Assert.True(revoked.IsSuccess, revoked.Error?.Message);
+        Assert.DoesNotContain(revoked.Value!.Permissions, permission => permission.Name == "Project.Edit");
 
         var legacyRole = new Role { TenantId = _tenantId, Name = "Legacy Operations", Category = "Operations", CreatedBy = "legacy-seed" };
         legacyRole.Permissions.Add(projectView);
@@ -787,7 +767,7 @@ public sealed class UserPermissionAdministrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Role_management_is_tenant_scoped_and_limits_permissions_to_actor_effective_access()
+    public async Task Role_management_is_tenant_scoped_and_keeps_administration_grants_actor_scoped()
     {
         var (actor, actorRole) = AddUserWithRole(_tenantId, "role-admin");
         var roleView = AddPermission(_tenantId, "Roles", "View");
@@ -811,6 +791,8 @@ public sealed class UserPermissionAdministrationTests : IAsyncLifetime
         Assert.True(catalog.IsSuccess);
         Assert.Contains(catalog.Value!, item => item.Id == projectView.Id);
         Assert.Contains(catalog.Value!, item => item.Id == settingsWrite.Id && item.CanDelegate == false);
+        Assert.Contains(catalog.Value!, item => item.Id == settingsWrite.Id && item.CanDelegateToCustomRole == false);
+        Assert.DoesNotContain(catalog.Value!, item => item.Scope is "Platform" or "CrossTenant" or "SystemOwner");
         Assert.DoesNotContain(catalog.Value!, item => item.Id == foreignPermission.Id);
 
         var crossTenantRole = await service.GetByIdAsync(foreignRole.Id, actor.Id, _tenantId);
@@ -826,6 +808,16 @@ public sealed class UserPermissionAdministrationTests : IAsyncLifetime
         Assert.True(escalation.IsFailure);
         Assert.Equal(403, escalation.Error?.StatusCode);
 
+        var uncataloguedGlobalPermission = AddPermission(_tenantId, "Platform", "Manage");
+        await _context.SaveChangesAsync();
+        var uncataloguedGlobalGrant = await service.CreateAsync(new SaveRoleDto
+        {
+            Name = "Uncatalogued global grant",
+            PermissionIds = [uncataloguedGlobalPermission.Id]
+        }, actor.Id, _tenantId);
+        Assert.True(uncataloguedGlobalGrant.IsFailure);
+        Assert.Equal(400, uncataloguedGlobalGrant.Error?.StatusCode);
+
         var foreignGrant = await service.CreateAsync(new SaveRoleDto
         {
             Name = "Foreign permission role",
@@ -836,7 +828,7 @@ public sealed class UserPermissionAdministrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Role_administrator_can_configure_role_permissions_within_its_delegation_ceiling()
+    public async Task Role_administrator_can_edit_custom_role_with_ordinary_permissions_outside_actor_access()
     {
         var (actor, actorRole) = AddUserWithRole(_tenantId, "tenant-admin");
         var roleView = AddPermission(_tenantId, "Roles", "View");
@@ -879,7 +871,7 @@ public sealed class UserPermissionAdministrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Authorized_role_creator_can_create_role_with_delegable_view_and_action_without_escalating()
+    public async Task Authorized_role_creator_can_create_custom_role_with_ordinary_scoped_permissions()
     {
         var (actor, actorRole) = AddUserWithRole(_tenantId, "tenant-role-admin");
         var roleView = AddPermission(_tenantId, "Roles", "View");
@@ -901,6 +893,7 @@ public sealed class UserPermissionAdministrationTests : IAsyncLifetime
         Assert.True(catalog.Value!.Single(permission => permission.Id == projectView.Id).CanDelegate == true);
         Assert.True(catalog.Value.Single(permission => permission.Id == projectEdit.Id).CanDelegate == true);
         Assert.False(catalog.Value.Single(permission => permission.Id == projectDelete.Id).CanDelegate == true);
+        Assert.True(catalog.Value.Single(permission => permission.Id == projectDelete.Id).CanDelegateToCustomRole == true);
 
         var created = await service.CreateAsync(new SaveRoleDto
         {
@@ -916,14 +909,144 @@ public sealed class UserPermissionAdministrationTests : IAsyncLifetime
         Assert.Contains(persistedRole.Permissions, permission => permission.Id == projectView.Id);
         Assert.Contains(persistedRole.Permissions, permission => permission.Id == projectEdit.Id);
 
-        var escalation = await service.CreateAsync(new SaveRoleDto
+        var expandedRole = await service.CreateAsync(new SaveRoleDto
         {
-            Name = "Unauthorized Project Role",
+            Name = "Project Deleter",
             Category = RoleCategories.Management,
             PermissionIds = [projectView.Id, projectDelete.Id]
         }, actor.Id, _tenantId);
-        Assert.True(escalation.IsFailure);
-        Assert.Equal(403, escalation.Error?.StatusCode);
+        Assert.True(expandedRole.IsSuccess, expandedRole.Error?.Message);
+        Assert.Contains(expandedRole.Value!.Permissions, permission => permission.Id == projectDelete.Id);
+    }
+
+    [Fact]
+    public async Task Budget_revision_actions_can_be_granted_saved_reloaded_and_revoked_across_role_categories()
+    {
+        var (actor, actorRole) = AddUserWithRole(_tenantId, "budget-revision-role-admin");
+        actorRole.Permissions.Add(AddPermission(_tenantId, "Roles", "View"));
+        actorRole.Permissions.Add(AddPermission(_tenantId, "Roles", "Create"));
+        actorRole.Permissions.Add(AddPermission(_tenantId, "Roles", "EditDetails"));
+        actorRole.Permissions.Add(AddPermission(_tenantId, "Roles", "ConfigurePermissions"));
+        actorRole.Permissions.Add(AddPermission(_tenantId, "Users", "ManageAccounts"));
+        actorRole.Permissions.Add(AddPermission(_tenantId, "Users", "AssignRoles"));
+
+        var budgetView = AddPermission(_tenantId, "BudgetRevision", "View");
+        var budgetApprove = AddPermission(_tenantId, "BudgetRevision", "Approve");
+        var budgetCreate = AddPermission(_tenantId, "BudgetRevision", "Create");
+        var (target, targetRole) = AddUserWithRole(_tenantId, "budget-revision-recipient");
+        targetRole.Category = RoleCategories.Operation;
+        targetRole.Permissions.Add(budgetView);
+        _context.UserPermissionOverrides.Add(new UserPermissionOverride
+        {
+            TenantId = _tenantId,
+            UserId = target.Id,
+            PermissionId = budgetApprove.Id,
+            Effect = PermissionOverrideEffect.Deny,
+            CreatedBy = "test"
+        });
+        await _context.SaveChangesAsync();
+
+        var service = CreateRoleService(actor.Id);
+        var catalog = await service.GetAssignablePermissionsAsync(actor.Id, _tenantId);
+        Assert.True(catalog.IsSuccess, catalog.Error?.Message);
+        foreach (var key in new[] { "BudgetRevision.Approve", "BudgetRevision.Create" })
+        {
+            var item = catalog.Value!.Single(permission => permission.Name == key);
+            Assert.Equal(PermissionScope.Project.ToString(), item.Scope);
+            Assert.False(item.CanDelegate);
+            Assert.True(item.CanDelegateToCustomRole);
+        }
+
+        var missingDependency = await service.CreateAsync(new SaveRoleDto
+        {
+            Name = "Budget Revision Without View",
+            PermissionIds = [budgetApprove.Id]
+        }, actor.Id, _tenantId);
+        Assert.True(missingDependency.IsFailure);
+        Assert.Equal(400, missingDependency.Error?.StatusCode);
+
+        var saved = await service.UpdateAsync(targetRole.Id, new SaveRoleDto
+        {
+            Name = targetRole.Name,
+            Category = RoleCategories.Business,
+            PermissionIds = [budgetView.Id, budgetApprove.Id, budgetCreate.Id]
+        }, actor.Id, _tenantId);
+        Assert.True(saved.IsSuccess, saved.Error?.Message);
+        Assert.Equal(RoleCategories.Business, saved.Value!.Category);
+        Assert.Contains(saved.Value.Permissions, permission => permission.Name == "BudgetRevision.Approve");
+        Assert.Contains(saved.Value.Permissions, permission => permission.Name == "BudgetRevision.Create");
+
+        var reloaded = await service.GetByIdAsync(targetRole.Id, actor.Id, _tenantId);
+        Assert.True(reloaded.IsSuccess, reloaded.Error?.Message);
+        Assert.Contains(reloaded.Value!.Permissions, permission => permission.Name == "BudgetRevision.Create");
+        var effective = await new UserEffectivePermissionService(_context).GetEffectivePermissionsAsync(target.Id, _tenantId);
+        Assert.Contains("BudgetRevision.Create", effective);
+        Assert.DoesNotContain("BudgetRevision.Approve", effective);
+
+        var revoked = await service.UpdateAsync(targetRole.Id, new SaveRoleDto
+        {
+            Name = targetRole.Name,
+            Category = RoleCategories.Business,
+            PermissionIds = [budgetView.Id, budgetApprove.Id]
+        }, actor.Id, _tenantId);
+        Assert.True(revoked.IsSuccess, revoked.Error?.Message);
+        Assert.DoesNotContain(revoked.Value!.Permissions, permission => permission.Name == "BudgetRevision.Create");
+        effective = await new UserEffectivePermissionService(_context).GetEffectivePermissionsAsync(target.Id, _tenantId);
+        Assert.DoesNotContain("BudgetRevision.Create", effective);
+        Assert.DoesNotContain("BudgetRevision.Approve", effective);
+
+        var additionalUser = new User
+        {
+            TenantId = _tenantId,
+            FirstName = "Additional",
+            LastName = "Recipient",
+            Email = $"additional-recipient-{Guid.NewGuid():N}@test.local",
+            CreatedBy = "test"
+        };
+        _context.Users.Add(additionalUser);
+        await _context.SaveChangesAsync();
+        var roleAssignment = await CreateUserAdministrationService(actor.Id).UpdateAsync(additionalUser.Id, new UpdateUserDto
+        {
+            Email = additionalUser.Email,
+            FirstName = additionalUser.FirstName,
+            LastName = additionalUser.LastName,
+            IsActive = additionalUser.IsActive,
+            Roles = [targetRole.Name]
+        }, actor.Id.ToString("D"));
+        Assert.True(roleAssignment.IsFailure);
+        Assert.Equal(403, roleAssignment.Error?.StatusCode);
+    }
+
+    [Fact]
+    public async Task Custom_role_permission_edit_cannot_escalate_actor_through_a_role_they_hold()
+    {
+        var (actor, actorRole) = AddUserWithRole(_tenantId, "self-escalation-admin");
+        actorRole.Permissions.Add(AddPermission(_tenantId, "Roles", "View"));
+        var roleConfigure = AddPermission(_tenantId, "Roles", "ConfigurePermissions");
+        actorRole.Permissions.Add(roleConfigure);
+        var budgetView = AddPermission(_tenantId, "BudgetRevision", "View");
+        var budgetCreate = AddPermission(_tenantId, "BudgetRevision", "Create");
+        actorRole.Permissions.Add(budgetView);
+        await _context.SaveChangesAsync();
+
+        var result = await CreateRoleService(actor.Id).UpdateAsync(actorRole.Id, new SaveRoleDto
+        {
+            Name = actorRole.Name,
+            Category = actorRole.Category,
+            PermissionIds = [
+                actorRole.Permissions.Single(permission => permission.Resource == "Roles" && permission.Action == "View").Id,
+                roleConfigure.Id,
+                budgetView.Id,
+                budgetCreate.Id
+            ]
+        }, actor.Id, _tenantId);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(403, result.Error?.StatusCode);
+        Assert.DoesNotContain(await _context.Roles.Include(role => role.Permissions)
+            .Where(role => role.Id == actorRole.Id)
+            .SelectMany(role => role.Permissions)
+            .ToListAsync(), permission => permission.Id == budgetCreate.Id);
     }
 
     [Fact]
@@ -967,7 +1090,7 @@ public sealed class UserPermissionAdministrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Tenant_administrator_scope_cannot_delegate_permissions_outside_the_effective_set()
+    public async Task Administration_module_permissions_still_require_actor_effective_access()
     {
         var (actor, actorRole) = AddUserWithRole(_tenantId, "tenant-admin");
         actorRole.Permissions.Add(AddPermission(_tenantId, "Settings", "View"));
@@ -1054,6 +1177,40 @@ public sealed class UserPermissionAdministrationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Role_details_editor_without_configure_permission_keeps_effective_access_visibility_ceiling()
+    {
+        var (actor, actorRole) = AddUserWithRole(_tenantId, "role-details-editor");
+        actorRole.Permissions.Add(AddPermission(_tenantId, "Roles", "View"));
+        actorRole.Permissions.Add(AddPermission(_tenantId, "Roles", "EditDetails"));
+        var projectView = AddPermission(_tenantId, "Project", "View");
+        var projectEdit = AddPermission(_tenantId, "Project", "Edit");
+        actorRole.Permissions.Add(projectView);
+
+        var targetRole = new Role { TenantId = _tenantId, Name = "out-of-scope-custom-role", CreatedBy = "test" };
+        targetRole.Permissions.Add(projectView);
+        targetRole.Permissions.Add(projectEdit);
+        _context.Roles.Add(targetRole);
+        await _context.SaveChangesAsync();
+
+        var service = CreateRoleService(actor.Id);
+        var manageable = await service.GetManageableRolesAsync(actor.Id, _tenantId);
+        Assert.True(manageable.IsSuccess);
+        Assert.DoesNotContain(manageable.Value!, role => role.Id == targetRole.Id);
+
+        var detail = await service.GetByIdAsync(targetRole.Id, actor.Id, _tenantId);
+        Assert.True(detail.IsFailure);
+        Assert.Equal(403, detail.Error?.StatusCode);
+
+        var update = await service.UpdateAsync(targetRole.Id, new SaveRoleDto
+        {
+            Name = "renamed-out-of-scope-role",
+            PermissionIds = [projectView.Id, projectEdit.Id]
+        }, actor.Id, _tenantId);
+        Assert.True(update.IsFailure);
+        Assert.Equal(403, update.Error?.StatusCode);
+    }
+
+    [Fact]
     public async Task Role_service_rejects_forged_actor_and_tenant_arguments()
     {
         var (actor, actorRole) = AddUserWithRole(_tenantId, "bound-role-admin");
@@ -1100,10 +1257,15 @@ public sealed class UserPermissionAdministrationTests : IAsyncLifetime
         var (actor, actorRole) = AddUserWithRole(_tenantId, "role-admin");
         var roleView = AddPermission(_tenantId, "Roles", "View");
         var roleDelete = AddPermission(_tenantId, "Roles", "Delete");
+        var roleConfigure = AddPermission(_tenantId, "Roles", "ConfigurePermissions");
         var projectView = AddPermission(_tenantId, "Project", "View");
+        var projectCreate = AddPermission(_tenantId, "Project", "Create");
+        var projectEdit = AddPermission(_tenantId, "Project", "Edit");
         actorRole.Permissions.Add(roleView);
         actorRole.Permissions.Add(roleDelete);
+        actorRole.Permissions.Add(roleConfigure);
         actorRole.Permissions.Add(projectView);
+        actorRole.Permissions.Add(projectCreate);
         var systemRole = new Role { TenantId = _tenantId, Name = "system-role", IsSystem = true, CreatedBy = "test" };
         systemRole.Permissions.Add(projectView);
         _context.Roles.Add(systemRole);
@@ -1113,6 +1275,33 @@ public sealed class UserPermissionAdministrationTests : IAsyncLifetime
         await _context.SaveChangesAsync();
 
         var service = CreateRoleService(actor.Id);
+        var catalog = await service.GetAssignablePermissionsAsync(actor.Id, _tenantId);
+        Assert.True(catalog.IsSuccess, catalog.Error?.Message);
+        Assert.False(catalog.Value!.Single(item => item.Id == projectEdit.Id).CanDelegate == true);
+        Assert.True(catalog.Value.Single(item => item.Id == projectEdit.Id).CanDelegateToCustomRole == true);
+
+        var unchangedSystemRolePermissions = await service.UpdateAsync(systemRole.Id, new SaveRoleDto
+        {
+            Name = systemRole.Name,
+            PermissionIds = [projectView.Id]
+        }, actor.Id, _tenantId);
+        Assert.True(unchangedSystemRolePermissions.IsSuccess, unchangedSystemRolePermissions.Error?.Message);
+
+        var actorOwnedSystemPermissionGrant = await service.UpdateAsync(systemRole.Id, new SaveRoleDto
+        {
+            Name = systemRole.Name,
+            PermissionIds = [projectView.Id, projectCreate.Id]
+        }, actor.Id, _tenantId);
+        Assert.True(actorOwnedSystemPermissionGrant.IsSuccess, actorOwnedSystemPermissionGrant.Error?.Message);
+
+        var systemRolePermissionGrant = await service.UpdateAsync(systemRole.Id, new SaveRoleDto
+        {
+            Name = systemRole.Name,
+            PermissionIds = [projectView.Id, projectCreate.Id, projectEdit.Id]
+        }, actor.Id, _tenantId);
+        Assert.True(systemRolePermissionGrant.IsFailure);
+        Assert.Equal(403, systemRolePermissionGrant.Error?.StatusCode);
+
         var renameSystemRole = await service.UpdateAsync(systemRole.Id, new SaveRoleDto
         {
             Name = "renamed-system-role",
@@ -1366,7 +1555,7 @@ public sealed class UserPermissionAdministrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Role_permission_catalog_returns_every_active_tenant_role_permission_with_scope_and_actor_delegation()
+    public async Task Role_permission_catalog_keeps_ordinary_scope_delegable_and_administration_actor_scoped()
     {
         var (actor, actorRole) = AddUserWithRole(_tenantId, "catalog-admin");
         var visibleScopes = new HashSet<PermissionScope>
@@ -1429,12 +1618,15 @@ public sealed class UserPermissionAdministrationTests : IAsyncLifetime
         Assert.True(catalog.Value.Single(item => item.Name == "Roles.View").CanDelegate == true);
         Assert.True(catalog.Value.Single(item => item.Name == "ProjectSettings.View").CanDelegate == true);
         Assert.False(catalog.Value.Single(item => item.Name == "ProjectSettings.Edit").CanDelegate == true);
+        Assert.True(catalog.Value.Single(item => item.Name == "ProjectSettings.Edit").CanDelegateToCustomRole == true);
         Assert.True(catalog.Value.Single(item => item.Name == "ProjectFinancialFoundation.View").CanDelegate == true);
+        Assert.True(catalog.Value.Single(item => item.Name == "ProjectFinancialFoundation.View").CanDelegateToCustomRole == true);
         Assert.False(catalog.Value.Single(item => item.Name == "Budget.Delete").CanDelegate == true);
+        Assert.True(catalog.Value.Single(item => item.Name == "Budget.Delete").CanDelegateToCustomRole == true);
     }
 
     [Fact]
-    public async Task Finance_bootstrap_requires_manage_tenant_scope_and_rejects_foreign_permission_ids()
+    public async Task Ordinary_scoped_permissions_are_delegable_without_manage_tenant_scope_and_foreign_ids_are_rejected()
     {
         var (actor, actorRole) = AddUserWithRole(_tenantId, "limited-delegation-admin");
         var roleView = AddPermission(_tenantId, "Roles", "View");
@@ -1466,6 +1658,11 @@ public sealed class UserPermissionAdministrationTests : IAsyncLifetime
         Assert.False(catalog.Value.Single(item => item.Name == "CostUtilization.Export").CanDelegate == true);
         Assert.False(catalog.Value.Single(item => item.Name == "ProgramFinancialRollup.View").CanDelegate == true);
         Assert.False(catalog.Value.Single(item => item.Name == "PortfolioFinancialRollup.View").CanDelegate == true);
+        Assert.All(new[]
+        {
+            "ProjectFinancialFoundation.View", "CostUtilization.Export",
+            "ProgramFinancialRollup.View", "PortfolioFinancialRollup.View"
+        }, key => Assert.True(catalog.Value.Single(item => item.Name == key).CanDelegateToCustomRole == true));
 
         var foreignPermission = AddPermission(Guid.NewGuid(), "ProjectFinancialFoundation", "View");
         await _context.SaveChangesAsync();

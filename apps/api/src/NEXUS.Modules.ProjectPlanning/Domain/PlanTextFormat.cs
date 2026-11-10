@@ -7,8 +7,8 @@ namespace NEXUS.Modules.ProjectPlanning.Domain;
 public sealed class PlanTextFormat
 {
     /// <summary>
-    /// Required by EF for an optional owned dependent so a formatted row can be
-    /// distinguished from an absent format when all user-facing values are null.
+    /// True when this value carries an explicitly supplied format. False is the
+    /// persisted sentinel for the API's absent (null) optional format.
     /// </summary>
     public bool IsSpecified { get; set; } = true;
 
@@ -18,6 +18,8 @@ public sealed class PlanTextFormat
     public PlanTextColorToken? TextColorToken { get; set; }
     public PlanHighlightColorToken? HighlightColorToken { get; set; }
     public PlanFontSizeToken? FontSizeToken { get; set; }
+
+    public static PlanTextFormat Unspecified() => new() { IsSpecified = false };
 
     public PlanTextFormat Clone() => new()
     {

@@ -83,6 +83,14 @@ Recommended later sequence:
 
 Runtime/browser UAT, service restart, and database operations remain pending Owner UAT.
 
+## P1 Annual Budget recovery cleanup addendum - 2026-11-08
+
+A repository-wide consumer scan found that `GlobalFinancialSummaryService`, `IGlobalFinancialSummaryService`, and `GlobalFinancialSummaryDtos` remained as source files even though the tenant-wide endpoint and DI registration had already been removed and this document recorded them as retired. No API route, DI registration, frontend caller, test, or other active source file referenced the service contract. The one-off `scripts/maintenance/budget-global-edit.cjs` only rewrote those retired files. The orphan service, interface, DTOs, and rewrite script were removed. No public API contract, persisted entity, migration, database record, or history was changed.
+
+The cleanup also confirmed the supported Project Annual Budget and Year-End Closing flows use the canonical project-scoped permissions. `finances.read` and `finances.write` remain unsupported in those flows; old references in the Sprint 5 and Sprint 2 historical notes were corrected. No authorization alias or broad fallback was found in the supported Annual Budget frontend/API path.
+
+The legacy `Budget`, `BudgetRevision`, `CostEntry`, `PurchaseCommitment`, and `PaymentObligation` services and records remain intentionally retained: Project EVM, Project change/reporting paths, shared workflow integration, published snapshots, and Planned Payments still consume them. Their retirement would require a separate consumer and data-retention review. This cleanup made no database connection or data change.
+
 ## Owner UAT scenarios
 
 1. Confirm the global Finance nav and old `/costs`, `/costs/budgets`, `/costs/actuals`, and `/costs/forecasts` pages are gone; open Finance from a Project's Details page.

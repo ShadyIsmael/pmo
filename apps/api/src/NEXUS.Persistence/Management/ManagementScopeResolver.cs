@@ -267,10 +267,13 @@ public sealed class ManagementScopeResolver : IManagementScopeResolver
 
     private async Task<AssignmentSet> LoadAssignmentsAsync(Guid userId, Guid tenantId, CancellationToken cancellationToken)
     {
+        var isActiveTenantUser = await _db.Set<User>().AsNoTracking()
+            .AnyAsync(user => user.Id == userId && user.TenantId == tenantId && user.IsActive && !user.IsDeleted, cancellationToken);
         var portfolios = await _db.Set<Portfolio>().AsNoTracking().Where(x => x.TenantId == tenantId && (x.OwnerId == userId || _db.Set<PortfolioManagerAssignment>().Any(a => a.TenantId == tenantId && a.PortfolioId == x.Id && a.PortfolioManagerId == userId && a.IsCurrent && !a.IsDeleted))).OrderBy(x => x.Name).ThenBy(x => x.Code).ThenBy(x => x.Id).Select(x => new ManagementEntityReference(x.Id, x.Name, x.Code)).ToListAsync(cancellationToken);
         var programs = await _db.Set<Program>().AsNoTracking().Where(x => x.TenantId == tenantId && (x.ProgramManagerId == userId || _db.Set<ProgramManagerAssignment>().Any(a => a.TenantId == tenantId && a.ProgramId == x.Id && a.ProgramManagerId == userId && a.IsCurrent && !a.IsDeleted))).OrderBy(x => x.Name).ThenBy(x => x.Code).ThenBy(x => x.Id).Select(x => new ManagementEntityReference(x.Id, x.Name, x.Code)).ToListAsync(cancellationToken);
         var today = DateTime.UtcNow.Date;
         var projects = await _db.Set<Project>().AsNoTracking().Where(x => x.TenantId == tenantId && (x.ProjectManagerId == userId
+            || (isActiveTenantUser && x.SponsorId == userId)
             || _db.Set<ProjectManagerAssignment>().Any(a => a.TenantId == tenantId && a.ProjectId == x.Id && a.ProjectManagerId == userId && a.IsCurrent && !a.IsDeleted)
             || _db.Set<ProjectMember>().Any(m => m.TenantId == tenantId && m.ProjectId == x.Id && m.Status == "Active" && !m.IsDeleted
                 && m.StartDate.Date <= today && m.EndDate.Date >= today

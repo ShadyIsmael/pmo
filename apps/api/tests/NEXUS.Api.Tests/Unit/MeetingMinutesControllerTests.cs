@@ -46,7 +46,7 @@ public sealed class MeetingMinutesControllerTests
     }
 
     [Fact]
-    public async Task GetMinutes_ReturnsOkWithNull_WhenMeetingExistsWithoutMinutes()
+    public async Task GetMinutes_ReturnsJsonNullWithOkStatus_WhenMeetingExistsWithoutMinutes()
     {
         var meetingId = Guid.NewGuid();
         var meetingService = new Mock<IMeetingService>();
@@ -58,9 +58,9 @@ public sealed class MeetingMinutesControllerTests
 
         var response = await controller.GetMinutes(meetingId, CancellationToken.None);
 
-        var ok = Assert.IsType<OkObjectResult>(response);
-        Assert.Equal(200, ok.StatusCode);
-        Assert.Null(ok.Value);
+        var json = Assert.IsType<JsonResult>(response);
+        Assert.Equal(200, json.StatusCode);
+        Assert.Null(json.Value);
     }
 
     [Fact]

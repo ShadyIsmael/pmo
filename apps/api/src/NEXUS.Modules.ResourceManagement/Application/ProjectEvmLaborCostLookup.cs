@@ -33,7 +33,8 @@ public sealed class ProjectEvmLaborCostLookup : IProjectEvmLaborCostLookup
         IReadOnlyList<ProjectEvmAssignmentInput> assignments,
         CancellationToken cancellationToken = default,
         IReadOnlyCollection<Guid>? includedPlanActivityIds = null,
-        bool includeUnassignedProjectActuals = false)
+        bool includeUnassignedProjectActuals = false,
+        DateTime? periodFrom = null)
     {
         var currency = NormalizeCurrency(projectCurrency);
         var datedAssignments = assignments.Where(item => item.PlannedHours.GetValueOrDefault() > 0m).ToList();
@@ -82,13 +83,16 @@ public sealed class ProjectEvmLaborCostLookup : IProjectEvmLaborCostLookup
         var earliestDate = validAssignments.Count == 0
             ? statusDate.Date
             : validAssignments.Min(item => item.StartDate!.Value.Date);
+        var actualPeriodFrom = periodFrom?.Date ?? DateTime.MinValue.Date;
         var actualSlices = await _actualWork.GetAsync(
             tenantId,
-            DateTime.MinValue.Date,
+            actualPeriodFrom,
             statusDate.Date,
             projectIds: [projectId],
             cancellationToken: cancellationToken);
-        var actualEntries = actualSlices.Where(item => item.ActualSeconds > 0 && item.WorkDate.Date <= statusDate.Date
+        var actualEntries = actualSlices.Where(item => item.ActualSeconds > 0
+            && item.WorkDate.Date >= actualPeriodFrom
+            && item.WorkDate.Date <= statusDate.Date
             && (includedPlanActivityIds is null
                 || item.PlanActivityId.HasValue && includedPlanActivityIds.Contains(item.PlanActivityId.Value)
                 || includeUnassignedProjectActuals && !item.PlanActivityId.HasValue))

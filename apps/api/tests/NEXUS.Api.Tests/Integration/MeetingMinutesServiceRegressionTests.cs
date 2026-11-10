@@ -279,8 +279,12 @@ public sealed class MeetingMinutesServiceRegressionTests : IDisposable
             .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
             .Options);
         db.Database.EnsureCreated();
-        db.AddRange(entities);
-        db.SaveChanges();
+        foreach (var tenantGroup in entities.OfType<ITenantEntity>().GroupBy(entity => entity.TenantId))
+        {
+            using var tenantScope = TrustedTenantExecutionContext.Enter(tenantGroup.Key);
+            db.AddRange(tenantGroup.Cast<object>());
+            db.SaveChanges();
+        }
         return db;
     }
 

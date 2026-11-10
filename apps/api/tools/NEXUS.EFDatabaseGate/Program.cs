@@ -33,15 +33,22 @@ internal static class EfDatabaseGate
         if (action == "model")
             return await CheckModelAsync();
 
-        if (action is not ("inspect" or "script" or "apply" or "reset"))
+        if (action is not ("inspect" or "script" or "apply" or "reset" or "sync-project-plan-permissions"))
         {
-            Console.Error.WriteLine("Unknown action. Use model, inspect, script, apply, or reset.");
+            Console.Error.WriteLine("Unknown action. Use model, inspect, script, apply, reset, or sync-project-plan-permissions.");
             return 1;
         }
 
         try
         {
             var options = ParseOptions(args.Skip(1).ToArray());
+            if (action == "sync-project-plan-permissions")
+            {
+                if (!SameEndpoint(Required(options, "expected-server"), "Shady")
+                    || !SameEndpoint(Required(options, "expected-database"), "NexusPmo"))
+                    throw new InvalidOperationException("Project Plan permission catalog synchronization is restricted to the verified Development Shady/NexusPmo database.");
+                Console.WriteLine($"Task authorization reference: {Required(options, "task-authorization-reference")}");
+            }
             var target = await OpenVerifiedDevelopmentTargetAsync(options, allowMissingDatabase: action == "reset");
             await using var context = target.Context;
             if (action == "reset")
@@ -62,6 +69,60 @@ internal static class EfDatabaseGate
                 Console.WriteLine("Backup verified: Not needed (read-only inspection).");
                 Console.WriteLine("Migrations applied: None (read-only inspection).");
                 return status.IsSynchronized ? 0 : 2;
+            }
+
+            if (action == "sync-project-plan-permissions")
+            {
+                if (status.HasPendingModelChanges
+                    || status.PendingMigrations.Count > 0
+                    || status.UnknownAppliedMigrations.Count > 0)
+                    throw new InvalidOperationException("Permission catalog synchronization requires a synchronized EF model/history with no pending migrations or unknown applied migrations.");
+
+                var protectedTables = new[]
+                {
+                    "dbo.Permissions",
+                    "dbo.AuditEntries",
+                    "dbo.RolePermissions",
+                    "dbo.UserRoles",
+                    "dbo.UserPermissionOverrides"
+                };
+                var relevantSchemaDifferences = status.MissingBaselineSchemaObjects
+                    .Concat(status.MissingCurrentSchemaObjects)
+                    .Where(item => protectedTables.Any(table => item.Contains(table, StringComparison.OrdinalIgnoreCase)))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+                if (relevantSchemaDifferences.Length > 0)
+                    throw new InvalidOperationException($"Permission catalog synchronization is blocked by physical-schema differences on a permission, grant, assignment, or audit table: {string.Join("; ", relevantSchemaDifferences)}.");
+
+                if (options.TryGetValue("backup-verified-path", out var suppliedBackupPath)
+                    && !string.IsNullOrWhiteSpace(suppliedBackupPath))
+                {
+                    if (!Path.IsPathFullyQualified(suppliedBackupPath))
+                        throw new InvalidOperationException("--backup-verified-path must be an absolute SQL Server-accessible file path.");
+                    var verifiedBackupPath = Path.GetFullPath(suppliedBackupPath);
+                    await VerifyExistingBackupAsync(context.Database.GetDbConnection(), verifiedBackupPath, target.Server, target.Database);
+                    Console.WriteLine($"Backup verified: Yes ({verifiedBackupPath})");
+                }
+                else
+                {
+                    Console.WriteLine("Backup verification: Not required for this explicitly authorized, catalog-only task operation.");
+                }
+
+                using var trustedTenantContext = NEXUS.SharedKernel.TrustedTenantExecutionContext.Enter(SeedDataProvider.TenantId);
+                var result = await SeedDataProvider.SynchronizeProjectPlanPermissionsAsync(
+                    context,
+                    true,
+                    target.Server,
+                    target.Database);
+                Console.WriteLine("Permission/grant/audit tables verified: Yes");
+                Console.WriteLine($"Permission catalog sync target verified: {result.Server}/{result.Database}, database ID {result.DatabaseId}.");
+                Console.WriteLine($"Catalog records inserted: {result.AddedCatalogPermissions}.");
+                Console.WriteLine($"Existing canonical catalog records normalized: {result.NormalizedCatalogPermissions}.");
+                Console.WriteLine($"Changed keys: {(result.ChangedKeys.Count == 0 ? "None" : string.Join(", ", result.ChangedKeys))}.");
+                Console.WriteLine($"Unchanged keys: {(result.UnchangedKeys.Count == 0 ? "None" : string.Join(", ", result.UnchangedKeys))}.");
+                Console.WriteLine("Role grants, role assignments, direct Allow/Deny overrides, and protected system roles: Not modified by this operation.");
+                Console.WriteLine("Migrations applied: None.");
+                return 0;
             }
 
             if (action == "script")
@@ -313,7 +374,7 @@ internal static class EfDatabaseGate
         IReadOnlyDictionary<string, string> options)
     {
         if (!SameEndpoint(server, "Shady") || !SameEndpoint(database, "NexusPmo"))
-            throw new InvalidOperationException("Product Owner-authorized no-backup reset is restricted to Development Shady/NexusPmo.");
+            throw new InvalidOperationException("Product Owner-authorized destructive reset is restricted to Development Shady/NexusPmo.");
         _ = Required(options, "product-owner-authorization");
         if (!SameEndpoint(Required(options, "confirm-reset-database"), database))
             throw new InvalidOperationException("Database reset requires --confirm-reset-database to exactly match the verified Development database name.");
@@ -446,13 +507,20 @@ internal static class EfDatabaseGate
                 $"Expected reviewed hash: {generatedDigest}. No database write was performed.");
         }
 
-        var backupDirectory = Required(options, "backup-directory");
-        var safeDatabaseName = Regex.Replace(target.Database, @"[^A-Za-z0-9._-]", "_");
-        var backupFile = Path.Combine(
-            backupDirectory,
-            $"{safeDatabaseName}-Development-{DateTime.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}.bak");
-        await CreateAndVerifyBackupAsync(context.Database.GetDbConnection(), target.Database, backupFile);
-        Console.WriteLine($"Backup verified: Yes ({backupFile})");
+        if (options.TryGetValue("backup-directory", out var backupDirectory)
+            && !string.IsNullOrWhiteSpace(backupDirectory))
+        {
+            var safeDatabaseName = Regex.Replace(target.Database, @"[^A-Za-z0-9._-]", "_");
+            var backupFile = Path.Combine(
+                backupDirectory,
+                $"{safeDatabaseName}-Development-{DateTime.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}.bak");
+            await CreateAndVerifyBackupAsync(context.Database.GetDbConnection(), target.Database, backupFile);
+            Console.WriteLine($"Optional backup verified: Yes ({backupFile})");
+        }
+        else
+        {
+            Console.WriteLine("Backup: Not requested; Development apply does not require backup storage or RESTORE VERIFYONLY.");
+        }
 
         var beforeApplyIdentity = await ReadIdentityAsync(context.Database.GetDbConnection());
         if (!SameEndpoint(beforeApplyIdentity.Server, target.Server) ||
@@ -505,7 +573,29 @@ internal static class EfDatabaseGate
             throw new InvalidOperationException("EF did not generate a migration path from an empty database; reset was stopped.");
         var cleanDatabaseScriptHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(cleanDatabaseScript)));
 
-        Console.WriteLine("Backup verified: Not needed (explicit Product Owner-authorized Development Shady/NexusPmo reset exception).");
+        if (options.TryGetValue("backup-directory", out var backupDirectory)
+            && !string.IsNullOrWhiteSpace(backupDirectory))
+        {
+            if (!target.DatabaseExistedAtProbe || target.DatabaseId is null)
+                throw new InvalidOperationException("An optional reset backup was requested, but the verified Development database does not exist to back up.");
+
+            var beforeBackupIdentity = await ReadIdentityAsync(context.Database.GetDbConnection());
+            if (!SameEndpoint(beforeBackupIdentity.Server, target.Server)
+                || !SameEndpoint(beforeBackupIdentity.Database, target.Database)
+                || beforeBackupIdentity.DatabaseId != target.DatabaseId.Value)
+                throw new InvalidOperationException("The connected database identity changed before the optional reset backup; the database was not deleted.");
+
+            var safeDatabaseName = Regex.Replace(target.Database, @"[^A-Za-z0-9._-]", "_");
+            var backupFile = Path.Combine(
+                backupDirectory,
+                $"{safeDatabaseName}-Development-reset-{DateTime.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}.bak");
+            await CreateAndVerifyBackupAsync(context.Database.GetDbConnection(), target.Database, backupFile);
+            Console.WriteLine($"Optional reset backup verified: Yes ({backupFile})");
+        }
+        else
+        {
+            Console.WriteLine("Backup: Not requested; Development backups are optional. Product Owner authorization and reset safety checks remain required.");
+        }
         Console.WriteLine($"Empty-database EF migration script SHA-256: {cleanDatabaseScriptHash}");
         Console.WriteLine($"Pre-reset applied migrations: {status.AppliedMigrations.Count}; repository migrations: {status.RepositoryMigrations.Count}");
 
@@ -877,6 +967,46 @@ internal static class EfDatabaseGate
             command.Parameters.Add(parameter);
             await command.ExecuteNonQueryAsync();
         }
+    }
+
+    private static async Task VerifyExistingBackupAsync(
+        DbConnection connection,
+        string backupFile,
+        string expectedServer,
+        string expectedDatabase)
+    {
+        await using (var headerCommand = connection.CreateCommand())
+        {
+            headerCommand.CommandText = "RESTORE HEADERONLY FROM DISK = @backupPath;";
+            var headerParameter = headerCommand.CreateParameter();
+            headerParameter.ParameterName = "@backupPath";
+            headerParameter.Value = backupFile;
+            headerCommand.Parameters.Add(headerParameter);
+            await using var reader = await headerCommand.ExecuteReaderAsync();
+            var backupSets = 0;
+            while (await reader.ReadAsync())
+            {
+                backupSets++;
+                var backupDatabase = Convert.ToString(reader["DatabaseName"]);
+                var backupServer = Convert.ToString(reader["ServerName"]);
+                var backupType = Convert.ToInt32(reader["BackupType"]);
+                if (backupType != 1
+                    || !string.Equals(backupDatabase, expectedDatabase, StringComparison.OrdinalIgnoreCase)
+                    || !string.Equals(backupServer, expectedServer, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException($"Backup file '{backupFile}' is not a full backup for the verified target {expectedServer}/{expectedDatabase}.");
+            }
+
+            if (backupSets != 1)
+                throw new InvalidOperationException($"Backup file '{backupFile}' must contain exactly one full backup set for the verified target.");
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = "RESTORE VERIFYONLY FROM DISK = @backupPath WITH CHECKSUM;";
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = "@backupPath";
+        parameter.Value = backupFile;
+        command.Parameters.Add(parameter);
+        await command.ExecuteNonQueryAsync();
     }
 
     private static async Task<SchemaComparison> CompareAppliedModelSchemaAsync(
@@ -1440,21 +1570,34 @@ internal static class EfDatabaseGate
 
             apply --environment Development --expected-server <server> --expected-database <db>
                   --script-file <reviewed-sql> --approved-sha256 <sha256>
-                  --backup-directory <SQL-Server-accessible-directory>
+                  [--backup-directory <SQL-Server-accessible-directory>]
                   [--allow-unrelated-baseline-drift-sha256 <inspect-drift-sha256>]
-              Explicit Development-only application after SQL hash approval and verified backup.
+              Explicit Development application after target and SQL hash verification. A backup is optional;
+              when requested, --backup-directory is used for a copy-only backup followed by RESTORE VERIFYONLY.
               Existing baseline drift is allowed only when its exact inspect hash is supplied and
               none of its affected dbo tables occur in the pending migration SQL.
 
             reset --environment Development --expected-server <server> --expected-database <db>
                   --confirm-reset-database <db> --product-owner-authorization <task-or-conversation-reference>
-              No-backup reset is limited to Development Shady/NexusPmo and requires explicit Product Owner
+                  [--backup-directory <SQL-Server-accessible-directory>]
+              Reset is limited to Development Shady/NexusPmo and requires explicit Product Owner
               authorization recorded in the active task/conversation. The reference is an audit pointer, not
               a substitute for that approval. The gate verifies the live target before destructive work,
               recreates through EF EnsureDeleted/Migrate, applies every migration, runs the prebuilt API's
               separate --seed-minimal-only path twice (never the demo --seed-only path), and verifies the
-              target/schema before success. No other target
-              or environment is eligible; ordinary apply retains its verified-backup requirement.
+              target/schema before success. No other target or environment is eligible. A backup may be created
+              before reset when --backup-directory is explicitly supplied; it is not required. Ordinary apply
+              also runs without a backup after target, migration, SQL-hash, and schema safety checks pass.
+
+            sync-project-plan-permissions --environment Development --expected-server Shady --expected-database NexusPmo
+                                          --task-authorization-reference <active-task-or-conversation-reference>
+                                          [--backup-verified-path <existing-backup-file>]
+              Synchronizes only Planning.View, Planning.Edit, and ProjectPlan.Create canonical catalog rows via EF.
+              Requires a synchronized model/history and matching physical permission/grant/audit tables. It never
+              changes grants, assignments, direct overrides, or protected system roles. Use only for an explicitly
+              authorized non-destructive Development catalog sync. This exact task-scoped operation does not require
+              an independent backup; when a backup path is supplied, the gate verifies its target and checksum.
+              The command does not run a Demo or Minimal Seed.
 
             Database actions require ASPNETCORE_ENVIRONMENT=Development and
             NEXUS_EF_DEVELOPMENT_CONNECTION_STRING in the process environment.

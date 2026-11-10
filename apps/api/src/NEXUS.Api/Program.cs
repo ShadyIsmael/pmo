@@ -1,4 +1,3 @@
-using System.Net;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json.Serialization;
@@ -139,10 +138,9 @@ var hasPermissionRebuildArguments = permissionRebuildExpectedServer is not null
     || permissionRebuildBackupDirectory is not null;
 if (rebuildCanonicalPermissions
     && (string.IsNullOrWhiteSpace(permissionRebuildExpectedServer)
-        || string.IsNullOrWhiteSpace(permissionRebuildExpectedDatabase)
-        || string.IsNullOrWhiteSpace(permissionRebuildBackupDirectory)))
+        || string.IsNullOrWhiteSpace(permissionRebuildExpectedDatabase)))
 {
-    throw new InvalidOperationException("--rebuild-canonical-permissions requires --expected-sql-server, --expected-sql-database, and --permission-rebuild-backup-directory.");
+    throw new InvalidOperationException("--rebuild-canonical-permissions requires --expected-sql-server and --expected-sql-database.");
 }
 if (!rebuildCanonicalPermissions && hasPermissionRebuildArguments)
     throw new InvalidOperationException("Permission rebuild target and backup options require --rebuild-canonical-permissions.");
@@ -153,10 +151,9 @@ var hasAdminRecoveryArguments = adminRecoveryExpectedServer is not null
 if (recoverDevelopmentAdminPassword
     && (string.IsNullOrWhiteSpace(adminRecoveryExpectedServer)
         || string.IsNullOrWhiteSpace(adminRecoveryExpectedDatabase)
-        || string.IsNullOrWhiteSpace(adminRecoveryBackupDirectory)
         || string.IsNullOrWhiteSpace(adminRecoveryConnectionString)))
 {
-    throw new InvalidOperationException("Admin recovery requires NEXUS_EF_DEVELOPMENT_CONNECTION_STRING, --admin-recovery-expected-sql-server, --admin-recovery-expected-sql-database, and --admin-recovery-backup-directory.");
+    throw new InvalidOperationException("Admin recovery requires NEXUS_EF_DEVELOPMENT_CONNECTION_STRING, --admin-recovery-expected-sql-server, and --admin-recovery-expected-sql-database.");
 }
 if (!recoverDevelopmentAdminPassword && hasAdminRecoveryArguments)
     throw new InvalidOperationException("Admin recovery target and backup options require --recover-development-admin-password.");
@@ -337,25 +334,13 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("BudgetRevision.Approve", policy => policy.RequireClaim("permission", "BudgetRevision.Approve"));
     options.AddPolicy("BudgetRevision.Cancel", policy => policy.RequireClaim("permission", "BudgetRevision.Cancel"));
     options.AddPolicy("BudgetRevision.Delete", policy => policy.RequireClaim("permission", "BudgetRevision.Delete"));
-    options.AddPolicy("ProjectAnnualBudget.View", policy => policy.RequireClaim("permission", "ProjectAnnualBudget.View"));
-    options.AddPolicy("ProjectFinancialFoundation.View", policy => policy.RequireClaim("permission", "ProjectFinancialFoundation.View"));
-    options.AddPolicy("ProjectAnnualBudget.Create", policy => policy.RequireClaim("permission", "ProjectAnnualBudget.Create"));
-    options.AddPolicy("ProjectAnnualBudget.EditDraft", policy => policy.RequireClaim("permission", "ProjectAnnualBudget.EditDraft"));
-    options.AddPolicy("ProjectAnnualBudget.SubmitForReview", policy => policy.RequireClaim("permission", "ProjectAnnualBudget.SubmitForReview"));
-    options.AddPolicy("ProjectAnnualBudget.Approve", policy => policy.RequireClaim("permission", "ProjectAnnualBudget.Approve"));
-    options.AddPolicy("ProjectAnnualBudget.ReviseApproved", policy => policy.RequireClaim("permission", "ProjectAnnualBudget.ReviseApproved"));
-    options.AddPolicy("ProjectAnnualBudget.ManageApprovalConfiguration", policy => policy.RequireClaim("permission", "ProjectAnnualBudget.ManageApprovalConfiguration"));
-    options.AddPolicy("ProjectAnnualBudgetClosing.View", policy => policy.RequireClaim("permission", "ProjectAnnualBudgetClosing.View"));
-    options.AddPolicy("ProjectAnnualBudget.Close", policy => policy.RequireClaim("permission", "ProjectAnnualBudget.Close"));
-    options.AddPolicy("ProjectAnnualBudget.CloseApprove", policy => policy.RequireClaim("permission", "ProjectAnnualBudget.CloseApprove"));
-    options.AddPolicy("ProjectAnnualBudget.CarryForward", policy => policy.RequireClaim("permission", "ProjectAnnualBudget.CarryForward"));
+    options.AddCanonicalFinancialPolicies();
     options.AddPolicy("ProjectPaymentRequest.View", policy => policy.RequireClaim("permission", "ProjectPaymentRequest.View"));
     options.AddPolicy("ProjectPaymentRequest.ViewOrAssignedReviewer", policy => policy.RequireClaim("permission", "ProjectPaymentRequest.View", "ProjectPaymentRequest.Approve"));
     options.AddPolicy("ProjectPaymentRequest.Create", policy => policy.RequireClaim("permission", "ProjectPaymentRequest.Create"));
     options.AddPolicy("ProjectPaymentRequest.EditDraft", policy => policy.RequireClaim("permission", "ProjectPaymentRequest.EditDraft"));
     options.AddPolicy("ProjectPaymentRequest.Submit", policy => policy.RequireClaim("permission", "ProjectPaymentRequest.Submit"));
     options.AddPolicy("ProjectPaymentRequest.Cancel", policy => policy.RequireClaim("permission", "ProjectPaymentRequest.Cancel"));
-    options.AddCanonicalFinancialActionPolicies();
     options.AddPolicy("ProjectPaymentReversal.Create", policy => policy.RequireClaim("permission", "ProjectPaymentReversal.Create"));
     options.AddPolicy("ProjectPaymentReversal.Approve", policy => policy.RequireClaim("permission", "ProjectPaymentReversal.Approve"));
     options.AddPolicy("ProjectFinancialCeiling.ApproveChange", policy => policy.RequireClaim("permission", "ProjectFinancialCeiling.ApproveChange"));
@@ -448,7 +433,9 @@ builder.Services.AddDbContext<AppDbContext>((serviceProvider, options) =>
 builder.Services.AddScoped<IAccountService, AccountService>();
 builder.Services.AddScoped<IProjectMilestoneReferenceLookup, ProjectPlanMilestoneLookup>();
 builder.Services.AddScoped<ProjectPaymentRequestWorkflow>();
+  builder.Services.AddScoped<IProjectAnnualBudgetApprovalNotificationPublisher, ProjectAnnualBudgetApprovalNotificationPublisher>();
 builder.Services.AddScoped<ProjectAnnualBudgetWorkflow>();
+builder.Services.AddScoped<ProjectAnnualBudgetDraftApprovalConfigurationService>();
 builder.Services.AddScoped<IProjectAudienceLookup, ProjectAudienceLookup>();
 builder.Services.AddScoped<IMeetingPublicIdLookup, MeetingPublicIdLookup>();
 builder.Services.AddScoped<IProjectOrganizationLookup, ProjectOrganizationLookup>();
@@ -493,20 +480,9 @@ builder.Services.AddCors(options =>
     });
 });
 
-// Trusted forwarded headers: only accept X-Forwarded-For / X-Forwarded-Proto
-// from loopback and known reverse-proxy ranges. Forwarded headers are not
-// honored unless a trusted proxy is explicitly configured via ForwardedHeaders
-// options; this prevents header spoofing from direct client connections.
-builder.Services.Configure<ForwardedHeadersOptions>(options =>
-{
-    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
-    options.KnownProxies.Clear();
-    options.KnownNetworks.Clear();
-    // Loopback is trusted for local development and reverse-proxy deployments.
-    options.KnownProxies.Add(IPAddress.Parse("127.0.0.1"));
-    options.KnownProxies.Add(IPAddress.Parse("::1"));
-    options.ForwardLimit = 2;
-});
+// Trust only the explicit loopback proxy addresses. Forwarded header handling
+// cannot be expanded by an untrusted request or by framework default networks.
+builder.Services.Configure<ForwardedHeadersOptions>(ForwardedHeadersSecurityPolicy.Configure);
 
 builder.Services.AddHealthChecks();
 
@@ -692,22 +668,22 @@ if (app.Environment.IsDevelopment())
                 context,
                 app.Environment.IsDevelopment(),
                 adminRecoveryExpectedServer!,
-                adminRecoveryExpectedDatabase!,
-                adminRecoveryBackupDirectory!);
+                adminRecoveryExpectedDatabase!);
 
             var passwordPolicy = scope.ServiceProvider.GetRequiredService<IOptions<LocalPasswordPolicyOptions>>().Value;
             var passwords = DevelopmentAdminRecoveryConsole.PromptForRecoveryFlow(
                 passwordPolicy.MinimumLength,
                 passwordPolicy.MaximumLength);
 
-            var verifiedBackupPath = await SeedDataProvider.CreateVerifiedDevelopmentAdminRecoveryBackupAsync(
+            var verifiedBackupPath = await SeedDataProvider.CreateOptionalDevelopmentAdminRecoveryBackupAsync(
                 context,
                 adminRecoveryExpectedServer!,
                 adminRecoveryExpectedDatabase!,
-                adminRecoveryBackupDirectory!);
-            app.Logger.LogInformation(
-                "Verified independent Development backup created for Admin recovery at {BackupPath}.",
-                verifiedBackupPath);
+                adminRecoveryBackupDirectory);
+            if (verifiedBackupPath is not null)
+                app.Logger.LogInformation("Optional verified Development backup created for Admin recovery at {BackupPath}.", verifiedBackupPath);
+            else
+                app.Logger.LogInformation("Development Admin recovery is proceeding without an optional backup.");
 
             var recovery = scope.ServiceProvider.GetRequiredService<DevelopmentAdminPasswordRecoveryService>();
             var temporaryPasswordExpiresAt = await recovery.RecoverTemporaryPasswordAsync(passwords.Temporary);
@@ -747,7 +723,9 @@ if (app.Environment.IsDevelopment())
             Console.WriteLine("Temporary-password login: verified; first-login password change: required and completed.");
             Console.WriteLine("Login with the new permanent password: verified.");
             Console.WriteLine($"Temporary-password expiry at recovery: {temporaryPasswordExpiresAt:O} UTC.");
-            Console.WriteLine($"Verified backup: {verifiedBackupPath}");
+            Console.WriteLine(verifiedBackupPath is null
+                ? "Optional backup: Not requested."
+                : $"Optional backup verified: {verifiedBackupPath}");
             return;
         }
 
@@ -757,13 +735,16 @@ if (app.Environment.IsDevelopment())
                 context,
                 permissionRebuildExpectedServer!,
                 permissionRebuildExpectedDatabase!,
-                permissionRebuildBackupDirectory!);
+                permissionRebuildBackupDirectory);
+            var backupStatus = result.VerifiedBackupPath is null
+                ? "no optional backup requested"
+                : $"optional backup verified at {result.VerifiedBackupPath}";
             app.Logger.LogInformation(
-                "Canonical Development permission reconciliation completed for SQL target {Server}/{Database}, Tenant {TenantId}; verified backup {BackupPath}: {AddedCatalogPermissions} catalog permissions added, {NormalizedCatalogPermissions} normalized, {RetiredLegacyPermissions} retired, {RemovedLegacyRoleGrants} legacy role grants removed, {RetiredLegacyOverrides} legacy direct overrides retired, {AddedProtectedAdminRoleGrants} protected Admin grants added, {RemovedProtectedAdminDenyOverrides} protected Admin Deny overrides archived.",
+                "Canonical Development permission reconciliation completed for SQL target {Server}/{Database}, Tenant {TenantId}; {BackupStatus}: {AddedCatalogPermissions} catalog permissions added, {NormalizedCatalogPermissions} normalized, {RetiredLegacyPermissions} retired, {RemovedLegacyRoleGrants} legacy role grants removed, {RetiredLegacyOverrides} legacy direct overrides retired, {AddedProtectedAdminRoleGrants} protected Admin grants added, {RemovedProtectedAdminDenyOverrides} protected Admin Deny overrides archived.",
                 permissionRebuildExpectedServer,
                 permissionRebuildExpectedDatabase,
                 SeedDataProvider.TenantId,
-                result.VerifiedBackupPath,
+                backupStatus,
                 result.AddedCatalogPermissions,
                 result.NormalizedCatalogPermissions,
                 result.RetiredLegacyPermissions,

@@ -4,6 +4,8 @@
 **Scope:** Meeting Minutes/Notifications and Risk Action Follow-up  
 **Decision:** **NO-GO for migration application or runtime/UAT readiness.** The migration source is reviewable, but the live Development target and migration history could not be verified. Risk follow-up also has two confirmed requirements gaps.
 
+**Backup-policy supersession (2026-11-10):** The backup gate and missing-backup status below describe the policy at the time of this 2026-11-06 report. Development/UAT backups are now optional; their absence does not block authorized operations. The exact target, migration, and schema checks and the feature gaps remain separate gates. Production backup and recovery safeguards remain mandatory.
+
 ## Executive result
 
 - Source contains **13 EF migration classes**. The offline EF model gate reports **synchronized: Yes**.
@@ -29,9 +31,9 @@
 
 ## Backup and recovery readiness
 
-The documented ordinary EF apply workflow requires a new checksummed copy-only SQL Server backup on storage visible to SQL Server, independent of the database files, followed by `RESTORE VERIFYONLY`. The no-backup exception is limited to the separately authorized reset path, which is prohibited in this task. The repository documents this backup-and-verify sequence as its pre-apply recovery gate.
+At the time of this report, the documented ordinary EF apply workflow required a new checksummed copy-only SQL Server backup on storage visible to SQL Server, independent of the database files, followed by `RESTORE VERIFYONLY`. That prerequisite is superseded by the 2026-11-10 Development/UAT policy update. The historical reset authorization boundary and current explicit authorization requirements are unchanged.
 
-Historical records are not consistent enough to establish a current acceptable backup: older documentation reports a latest full/copy-only backup on 2026-10-28, while another later record references 2026-10-31; both place the database and backup media on `C:`. No live `msdb` query, backup-file check, independent destination, or current `RESTORE VERIFYONLY` result was available. **Backup status for this apply: not verified; prerequisite remains unsatisfied.** No backup was created or overwritten.
+Historical records are not consistent enough to establish a current backup: older documentation reports a latest full/copy-only backup on 2026-10-28, while another later record references 2026-10-31; both place the database and backup media on `C:`. No live `msdb` query, backup-file check, or current `RESTORE VERIFYONLY` result was available. **Backup status for this apply: not verified at report time; no backup was created or overwritten.** Under current policy, this status is informational and does not block Development/UAT work.
 
 The live connection failure is the primary execution blocker. The expected host and database in the request and JSON configuration do not prove that the current API and inspection command resolve to the same database.
 
@@ -125,12 +127,12 @@ The telemetry review record does not identify the initiating package, exact dest
 Do not apply migrations or claim Development readiness from this execution. The authorized migration apply could not be carried out safely because:
 
 1. The execution environment cannot reach SQL Server, so the exact host/instance/database ID, effective API target, actual applied history, and physical schema are unknown.
-2. The ordinary repository apply workflow requires a freshly verified backup on storage independent of the database files. No current proof was available, and no backup was created.
+2. No qualifying backup was verified under the policy then in force. Backup absence is not a current Development/UAT blocker.
 3. It is unknown whether earlier, potentially data-sensitive migrations precede the three feature migrations in Development history.
 4. Risk follow-up does not meet the requested date-only and Organization Working Calendar behavior; a date conversion also needs a data compatibility check.
 5. API tests and a complete API build remain blocked by environment/security-review constraints; no backend runtime pass is available.
 
-The next safe execution must occur in an approved host-connected Development environment: run the repository EF `inspect` gate to capture actual identity/history/schema; verify the independently stored recovery backup required by the ordinary apply policy; review the exact generated pending SQL; apply only eligible pending migrations through the EF gate; then verify migration history and physical schema and run focused tests in an approved local/offline environment. Do not bypass the SQL/network, backup, SDK, or telemetry controls.
+The next safe execution must occur in an approved host-connected Development environment: run the repository EF `inspect` gate to capture actual identity/history/schema; review the exact generated pending SQL; apply only eligible pending migrations through the EF gate; then verify migration history and physical schema and run focused tests in an approved local/offline environment. A backup may be created when explicitly requested, but it is optional for Development/UAT and does not require independent storage or `RESTORE VERIFYONLY`. Do not bypass the SQL/network, SDK, or telemetry controls.
 
 ## Follow-up live Development inspection — 2026-11-06
 

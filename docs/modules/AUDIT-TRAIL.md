@@ -231,7 +231,7 @@ Migration `apps/api/src/NEXUS.Persistence/Migrations/20261028170000_AddProjectAu
 Before applying:
 
 1. Identify the real target database (never infer it from `localhost` or a config file name).
-2. Take an independently verified backup.
+2. A backup is optional for Development/UAT. Create one only when explicitly requested; independent storage and `RESTORE VERIFYONLY` are not prerequisites. Production backup and recovery requirements remain unchanged.
 3. Review the generated SQL script (`dotnet ef migrations script`).
 4. Apply only after explicit authorisation, then verify migration history and physical schema.
 5. Expect the trail to be empty for historical activity except backfilled `Project`

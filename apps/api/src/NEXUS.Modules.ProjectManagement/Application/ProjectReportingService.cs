@@ -3,10 +3,12 @@ using Microsoft.EntityFrameworkCore;
 using NEXUS.Modules.Audit.Application;
 using NEXUS.Modules.Audit.Domain;
 using NEXUS.Modules.CostManagement.Domain;
+using NEXUS.Modules.Organization.Application.Settings;
 using NEXUS.Modules.ProjectManagement.Application.DTOs;
 using NEXUS.Modules.ProjectManagement.Domain;
 using NEXUS.Modules.ProjectPlanning.Domain;
 using NEXUS.SharedKernel;
+using NEXUS.SharedKernel.Management;
 
 namespace NEXUS.Modules.ProjectManagement.Application;
 
@@ -20,19 +22,28 @@ public sealed class ProjectReportingService : IProjectReportingService
     private readonly IProjectEvmPlanLookup _planLookup;
     private readonly IProjectEvmLaborCostLookup _laborCostLookup;
     private readonly IProjectEvmDirectCostLookup _directCostLookup;
+    private readonly IManagementContextAccessor? _managementContextAccessor;
+    private readonly ITenantFiscalYearService? _tenantFiscalYear;
+    private readonly IFiscalYearCalendarService? _fiscalYearCalendar;
 
     public ProjectReportingService(
         DbContext context,
         IAuditService audit,
         IProjectEvmPlanLookup planLookup,
         IProjectEvmLaborCostLookup laborCostLookup,
-        IProjectEvmDirectCostLookup directCostLookup)
+        IProjectEvmDirectCostLookup directCostLookup,
+        IManagementContextAccessor? managementContextAccessor = null,
+        ITenantFiscalYearService? tenantFiscalYear = null,
+        IFiscalYearCalendarService? fiscalYearCalendar = null)
     {
         _context = context;
         _audit = audit;
         _planLookup = planLookup;
         _laborCostLookup = laborCostLookup;
         _directCostLookup = directCostLookup;
+        _managementContextAccessor = managementContextAccessor;
+        _tenantFiscalYear = tenantFiscalYear;
+        _fiscalYearCalendar = fiscalYearCalendar;
     }
 
     public async Task<Result<ProjectReportingOptionsDto>> GetOptionsAsync(Guid projectId, CancellationToken cancellationToken = default)
@@ -408,23 +419,100 @@ public sealed class ProjectReportingService : IProjectReportingService
         DateTime periodTo,
         CancellationToken cancellationToken = default)
     {
-        var project = await GetProjectAsync(projectId, cancellationToken);
-        if (project is null) return Result<ProjectFinancialSummaryDto>.Failure(Error.NotFound("Project not found"));
+        var management = _managementContextAccessor?.Current;
+        if (management is null || management.TenantId == Guid.Empty)
+            return Result<ProjectFinancialSummaryDto>.Failure(Error.Forbidden("A valid tenant management context is required."));
+        if (!management.Scope.ProjectIds.Contains(projectId))
+            return Result<ProjectFinancialSummaryDto>.Failure(Error.NotFound("Project not found"));
 
         var from = periodFrom.Date;
         var to = periodTo.Date;
-        var currency = project.Currency;
+        if (from == DateTime.MinValue.Date || to == DateTime.MinValue.Date || from > to)
+            return Result<ProjectFinancialSummaryDto>.Failure(Error.Validation("The reporting period must include valid dates in chronological order."));
 
-        var approvedBudget = project.Budget;
-        var budgetStatus = approvedBudget.HasValue && approvedBudget.Value > 0m ? "Approved" : "Not set";
+        var project = await GetProjectAsync(projectId, cancellationToken);
+        if (project is null || project.TenantId != management.TenantId)
+            return Result<ProjectFinancialSummaryDto>.Failure(Error.NotFound("Project not found"));
 
-        var obligations = await _context.Set<PaymentObligation>().AsNoTracking()
-            .Where(item => !item.IsDeleted
-                && item.ProjectId == projectId
-                && string.Equals(item.Currency, currency, StringComparison.OrdinalIgnoreCase))
+        var currency = NormalizeCurrency(project.Currency);
+        var validCurrency = IsValidCurrency(currency);
+        var fromDate = DateOnly.FromDateTime(from);
+        var toDate = DateOnly.FromDateTime(to);
+        var hasDataQualityGap = !validCurrency;
+
+        var annualBudgets = await _context.Set<ProjectAnnualBudget>().AsNoTracking()
+            .Where(item => item.ProjectId == projectId
+                && item.FiscalYearStartDate <= toDate
+                && item.FiscalYearEndDate >= fromDate)
             .ToListAsync(cancellationToken);
 
-        var obligationIds = obligations.Select(item => item.Id).ToList();
+        var fiscalStartMonth = _tenantFiscalYear is null
+            ? (int?)null
+            : await _tenantFiscalYear.GetStartMonthAsync(project.TenantId, cancellationToken);
+        var matchingApprovedBudgets = annualBudgets.Where(item =>
+                item.Status == ProjectAnnualBudgetStatuses.Approved
+                && NormalizeCurrency(item.Currency) == currency
+                && item.FiscalYearStartDate <= item.FiscalYearEndDate
+                && IsFiscalBudgetBoundaryValid(item, fiscalStartMonth))
+            .ToArray();
+        var annualBudgetCountByYear = annualBudgets
+            .Where(item => item.Status == ProjectAnnualBudgetStatuses.Approved
+                && NormalizeCurrency(item.Currency) == currency)
+            .GroupBy(item => item.FiscalYear)
+            .ToDictionary(group => group.Key, group => group.Count());
+        var hasDuplicateAnnualBudget = annualBudgetCountByYear.Values.Any(count => count > 1);
+        var hasForeignCurrencyBudget = annualBudgets.Any(item => item.Status == ProjectAnnualBudgetStatuses.Approved
+            && NormalizeCurrency(item.Currency) != currency);
+        var hasInvalidBudgetPeriod = annualBudgets.Any(item => item.Status == ProjectAnnualBudgetStatuses.Approved
+            && (item.FiscalYearStartDate > item.FiscalYearEndDate || !IsFiscalBudgetBoundaryValid(item, fiscalStartMonth)));
+        hasDataQualityGap |= hasDuplicateAnnualBudget || hasForeignCurrencyBudget || hasInvalidBudgetPeriod;
+
+        var budgetCoverageComplete = !hasDuplicateAnnualBudget
+            && HasFullAnnualBudgetCoverage(fromDate, toDate, matchingApprovedBudgets);
+        var approvedBudget = matchingApprovedBudgets.Length == 0 || hasDuplicateAnnualBudget
+            ? (decimal?)null
+            : matchingApprovedBudgets.Sum(item => item.TotalAnnualBudget);
+        var budgetStatus = hasDuplicateAnnualBudget
+            ? "unavailable"
+            : budgetCoverageComplete ? "approved"
+            : approvedBudget.HasValue ? "partial" : annualBudgets.Count > 0 ? "notApproved" : "unavailable";
+
+        var directCosts = validCurrency
+            ? await _directCostLookup.GetAsync(management.TenantId, projectId, currency, to, cancellationToken, from)
+            : new ProjectEvmDirectCostSummary(0m, false, false);
+        var laborCosts = validCurrency
+            ? await _laborCostLookup.GetAsync(management.TenantId, projectId, currency, to, [], cancellationToken,
+                includeUnassignedProjectActuals: true, periodFrom: from)
+            : new ProjectEvmLaborCostSummary(null, null, null, null, null, null, "INVALID_PROJECT_CURRENCY", false);
+        var hasExpenditureData = directCosts.HasData || laborCosts.HasActualLaborData;
+        var hasExpenditureGap = directCosts.HasCurrencyMismatch
+            || (laborCosts.HasActualLaborData && laborCosts.ActualLaborCost is null);
+        hasDataQualityGap |= hasExpenditureGap;
+        decimal? expenditure = !validCurrency || hasExpenditureGap
+            ? null
+            : directCosts.Amount + (laborCosts.HasActualLaborData ? laborCosts.ActualLaborCost.GetValueOrDefault() : 0m);
+
+        var purchaseCommitments = await _context.Set<PurchaseCommitment>().AsNoTracking()
+            .Where(item => item.ProjectId == projectId && item.CommitmentDate.Date <= to)
+            .ToListAsync(cancellationToken);
+        var activeCommitments = purchaseCommitments.Where(item =>
+            !string.Equals(item.Status, "Cancelled", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(item.Status, "Closed", StringComparison.OrdinalIgnoreCase)).ToArray();
+        var hasCommitmentCurrencyMismatch = activeCommitments.Any(item => NormalizeCurrency(item.Currency) != currency);
+        hasDataQualityGap |= hasCommitmentCurrencyMismatch;
+        var committedCost = !validCurrency || hasCommitmentCurrencyMismatch
+            ? (decimal?)null
+            : activeCommitments.Where(item => NormalizeCurrency(item.Currency) == currency).Sum(item => item.Amount);
+
+        var obligations = await _context.Set<PaymentObligation>().AsNoTracking()
+            .Where(item => item.ProjectId == projectId && !item.IsDeleted)
+            .ToListAsync(cancellationToken);
+
+        var matchingObligations = obligations.Where(item => NormalizeCurrency(item.Currency) == currency).ToArray();
+        var hasObligationCurrencyMismatch = obligations.Any(item => NormalizeCurrency(item.Currency) != currency);
+        hasDataQualityGap |= hasObligationCurrencyMismatch;
+
+        var obligationIds = matchingObligations.Select(item => item.Id).ToArray();
 
         var settlements = await _context.Set<PaymentSettlement>().AsNoTracking()
             .Where(item => !item.IsDeleted
@@ -433,47 +521,106 @@ public sealed class ProjectReportingService : IProjectReportingService
                 && item.SettlementDate.Date <= to)
             .ToListAsync(cancellationToken);
 
-        var settledByObligation = settlements
+        var unknownCurrencySettlement = settlements.Any(item => item.Currency is null
+            || NormalizeCurrency(item.Currency) != currency);
+        hasDataQualityGap |= unknownCurrencySettlement;
+
+        var knownCurrencySettlements = settlements.Where(item => NormalizeCurrency(item.Currency) == currency).ToArray();
+        var settledByObligation = knownCurrencySettlements
             .GroupBy(item => item.PaymentObligationId!.Value)
             .ToDictionary(group => group.Key, group => group.Sum(item => item.Amount));
 
         decimal settled(PaymentObligation o) => settledByObligation.TryGetValue(o.Id, out var amount) ? amount : 0m;
 
-        var actualPaid = obligations.Sum(item => settled(item));
+        var hasFinancialData = annualBudgets.Count > 0 || hasExpenditureData || purchaseCommitments.Count > 0
+            || obligations.Count > 0 || settlements.Count > 0;
+        var actualPaid = unknownCurrencySettlement
+            ? (decimal?)null
+            : knownCurrencySettlements.Where(item => item.SettlementDate.Date >= from && item.SettlementDate.Date <= to)
+                .Sum(item => item.Amount);
 
-        var outstandingPlannedPayments = obligations
+        var outstandingPlannedPayments = matchingObligations
             .Select(item => Math.Max(0m, item.Amount - settled(item)))
             .Where(amount => amount > 0m)
             .Sum();
 
-        var paymentsDueWithinPeriod = obligations
+        var paymentsDueWithinPeriod = matchingObligations
             .Where(item => {
                 var outstanding = Math.Max(0m, item.Amount - settled(item));
                 return outstanding > 0m && item.DueDate.Date >= from && item.DueDate.Date <= to;
             })
             .Sum(item => Math.Max(0m, item.Amount - settled(item)));
 
-        var remainingUnpaidAtPeriodEnd = obligations
+        var remainingUnpaidAtPeriodEnd = matchingObligations
             .Where(item => {
                 var outstanding = Math.Max(0m, item.Amount - settled(item));
                 return outstanding > 0m && item.DueDate.Date <= to;
             })
             .Sum(item => Math.Max(0m, item.Amount - settled(item)));
 
+        var hasMoneyData = matchingApprovedBudgets.Length > 0 || hasExpenditureData && !hasExpenditureGap
+            || activeCommitments.Any(item => NormalizeCurrency(item.Currency) == currency)
+            || matchingObligations.Length > 0 || knownCurrencySettlements.Length > 0;
+        var dataStatus = !hasFinancialData ? "empty"
+            : !validCurrency || (hasDataQualityGap && !hasMoneyData) ? "unavailable"
+            : hasDataQualityGap || !budgetCoverageComplete ? "partial"
+            : "available";
+
         return Result<ProjectFinancialSummaryDto>.Success(new ProjectFinancialSummaryDto
         {
             ProjectId = projectId,
             PeriodFrom = from,
             PeriodTo = to,
-            CurrencyCode = currency,
+            CurrencyCode = validCurrency ? currency : null,
             ApprovedBudget = approvedBudget,
             BudgetStatus = budgetStatus,
+            Expenditure = expenditure ?? (validCurrency && hasFinancialData && !hasExpenditureData ? 0m : null),
+            CommittedCost = committedCost,
             ActualPaid = actualPaid,
-            OutstandingPlannedPayments = outstandingPlannedPayments,
-            PaymentsDueWithinPeriod = paymentsDueWithinPeriod,
-            RemainingUnpaidAtPeriodEnd = remainingUnpaidAtPeriodEnd,
+            OutstandingPlannedPayments = unknownCurrencySettlement || !validCurrency ? null : outstandingPlannedPayments,
+            PaymentsDueWithinPeriod = unknownCurrencySettlement || !validCurrency ? null : paymentsDueWithinPeriod,
+            RemainingUnpaidAtPeriodEnd = unknownCurrencySettlement || !validCurrency ? null : remainingUnpaidAtPeriodEnd,
+            HasFinancialData = hasFinancialData,
+            DataStatus = dataStatus,
         });
     }
+
+    private bool IsFiscalBudgetBoundaryValid(ProjectAnnualBudget budget, int? fiscalYearStartMonth)
+    {
+        if (!fiscalYearStartMonth.HasValue || _fiscalYearCalendar is null) return true;
+        try
+        {
+            var period = _fiscalYearCalendar.ForFiscalYear(budget.FiscalYear, fiscalYearStartMonth.Value);
+            return period.StartDate == budget.FiscalYearStartDate && period.EndDate == budget.FiscalYearEndDate;
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return false;
+        }
+    }
+
+    private static bool HasFullAnnualBudgetCoverage(
+        DateOnly from,
+        DateOnly to,
+        IReadOnlyList<ProjectAnnualBudget> budgets)
+    {
+        if (budgets.Count == 0) return false;
+        var cursor = from.DayNumber;
+        var endExclusive = to.DayNumber + 1;
+        foreach (var budget in budgets.OrderBy(item => item.FiscalYearStartDate).ThenBy(item => item.FiscalYearEndDate))
+        {
+            if (budget.FiscalYearEndDate.DayNumber < cursor) continue;
+            if (budget.FiscalYearStartDate.DayNumber > cursor) return false;
+            cursor = Math.Max(cursor, budget.FiscalYearEndDate.DayNumber + 1);
+            if (cursor >= endExclusive) return true;
+        }
+        return false;
+    }
+
+    private static string NormalizeCurrency(string? currency) => currency?.Trim().ToUpperInvariant() ?? string.Empty;
+
+    private static bool IsValidCurrency(string currency) => currency.Length == 3
+        && currency.All(character => character is >= 'A' and <= 'Z');
 
     private Task<Project?> GetProjectAsync(Guid projectId, CancellationToken cancellationToken) =>
         _context.Set<Project>().AsNoTracking().FirstOrDefaultAsync(item => item.Id == projectId && !item.IsDeleted, cancellationToken);

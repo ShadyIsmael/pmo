@@ -1,5 +1,7 @@
 # Project Settings Permissions: Database and Runtime Closure
 
+**Backup-policy supersession (2026-11-10):** Backup and connectivity statuses below are historical observations from the 2026-11-04 execution. Development/UAT operations do not require backups, independent storage, or `RESTORE VERIFYONLY`; a missing backup does not block authorized work. The exact target, migration, schema, and separate authorization checks remain required. Production backup and recovery safeguards remain mandatory.
+
 > **Current closure status (2026-11-04): BLOCKED for authenticated financial configuration UAT.** The API builds and starts, `/health` returns 200, and the live Development database/migration/schema identity is verified. No authenticated settings request or SQL save/reload was made. The database has no `ProjectAnnualBudget.ManageApprovalConfiguration` or `ProjectAnnualBudget.Approve` grants, so end-to-end setup and submission could not be completed.
 
 ## Current verification (2026-11-04)
@@ -68,7 +70,7 @@ These are source-level findings; they do not establish persisted catalog rows, e
 
 The process, user, and machine environments had no `NEXUS_EF_DEVELOPMENT_CONNECTION_STRING` or `ASPNETCORE_ENVIRONMENT` override, and no relevant user-secret connection key was configured. The Development configuration contains an integrated-auth connection setting. For the read-only gate attempt, its value was loaded into the gate process environment only; it was not printed or persisted. `inspect --environment Development --expected-server Shady --expected-database NexusPmo` failed before identity/history queries with SQL TCP provider **“Access is denied.”** A read-only `sqlcmd` diagnostic to `tcp:localhost,1433` independently failed with **“An attempt was made to access a socket in a way forbidden by its access permissions”** followed by login timeout. This is an executor socket-access restriction; it is not evidence that the SQL target or credentials are valid or invalid.
 
-Only C: and a Temp alias on C: were visible to the executor. Because the SQL target, database file locations, and a SQL Server-accessible backup destination could not be verified, the backup gate remains closed. No backup, seed, migration, reset, or other database write was attempted.
+Only C: and a Temp alias on C: were visible to the executor. The SQL target, database file locations, and backup destination could not be reverified in that execution. No backup, seed, migration, reset, or other database write was attempted. The unavailable backup destination is historical evidence and does not block Development/UAT operations under the current policy.
 
 ## Runtime and regression verification
 
@@ -83,9 +85,9 @@ Only C: and a Temp alias on C: were visible to the executor. Because the SQL tar
 
 ## Earlier blocker and next safe step (historical)
 
-The configured Development connection could be supplied to the gate without exposing a secret, but this executor cannot open the local SQL TCP socket. Run the read-only EF gate from a host-connected PowerShell process that can reach SQL Server, verify the exact `Shady` / `NexusPmo` identity and migration state, and establish a SQL Server-accessible verified backup before any standalone seed write. Then run only the approved identity seed and verify the exact catalog rows, additive `tenant.admin` grants, unrelated-role preservation, and explicit Deny behavior. Follow with authenticated API and Side Sheet UAT for all five requested actor scenarios. Do not report closure until those persisted and runtime checks pass.
+The configured Development connection could be supplied to the gate without exposing a secret, but this executor could not open the local SQL TCP socket. Run the read-only EF gate from a host-connected PowerShell process that can reach SQL Server and verify the exact `Shady` / `NexusPmo` identity, migration state, and physical schema before separately authorized work. A backup may be created when explicitly requested, but it is not a Development/UAT prerequisite. Then run only the approved identity seed and verify the exact catalog rows, additive `tenant.admin` grants, unrelated-role preservation, and explicit Deny behavior. Follow with authenticated API and Side Sheet UAT for all five requested actor scenarios. Do not report closure until those persisted and runtime checks pass.
 
-**Policy supersession note (2026-11-04):** The backup prerequisite above applies to the standalone identity-seed/reconciliation task described here. It does not apply to the full seed that immediately follows the exact Product Owner-authorized Development `Shady/NexusPmo` reset; all other seed writes retain the verified-backup requirement.
+**Policy supersession note (2026-11-10):** This report's earlier backup prerequisite applied under the policy in force during the recorded task. Development/UAT backups are now optional for standalone seed, reconciliation, migration, and other authorized operations; missing backup media, independent storage, or `RESTORE VERIFYONLY` does not block them. Destructive reset still requires explicit Product Owner authorization and all exact target, migration, and schema gates.
 
 ## Skills applied
 

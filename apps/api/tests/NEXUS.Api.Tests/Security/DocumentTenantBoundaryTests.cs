@@ -31,6 +31,8 @@ public sealed class DocumentTenantBoundaryTests : IDisposable
     private readonly Guid _documentOtherOrg = Guid.NewGuid();
     private readonly Guid _documentB = Guid.NewGuid();
     private readonly Guid _unlinkedDocumentA = Guid.NewGuid();
+    private readonly Guid _linkedTemplateOtherScope = Guid.NewGuid();
+    private readonly Guid _unlinkedSharedTemplate = Guid.NewGuid();
     private readonly Guid _categoryA = Guid.NewGuid();
     private readonly Guid _categoryB = Guid.NewGuid();
 
@@ -55,7 +57,9 @@ public sealed class DocumentTenantBoundaryTests : IDisposable
             NewDocument(_documentA, _tenantA, _projectA, _userA, "Project A document", _categoryA),
             NewDocument(_documentOtherOrg, _tenantA, _projectOtherOrg, _userA, "Other organization document", _categoryA),
             NewDocument(_documentB, _tenantB, null, _userB, "Tenant B document", _categoryB),
-            NewDocument(_unlinkedDocumentA, _tenantA, null, _userA, "Unlinked owner document", _categoryA));
+            NewDocument(_unlinkedDocumentA, _tenantA, null, _userA, "Unlinked owner document", _categoryA),
+            NewTemplate(_linkedTemplateOtherScope, _tenantA, _projectOtherOrg, _userA, "Other project template", _categoryA),
+            NewTemplate(_unlinkedSharedTemplate, _tenantA, null, _userB, "Shared tenant template", _categoryA));
         _db.SaveChanges();
 
         _storage.Setup(provider => provider.SaveAsync(
@@ -100,6 +104,25 @@ public sealed class DocumentTenantBoundaryTests : IDisposable
         Assert.Contains(paged.Items, item => item.Id == _unlinkedDocumentA);
         Assert.DoesNotContain(paged.Items, item => item.Id == _documentOtherOrg);
         Assert.DoesNotContain(paged.Items, item => item.Id == _documentB);
+    }
+
+    [Fact]
+    public async Task Project_linked_templates_follow_project_scope_while_unlinked_templates_are_shared_within_tenant()
+    {
+        var projectAService = CreateService(ScopedContext(_tenantA, _userA, _projectA));
+        var projectAItems = await projectAService.GetPagedAsync(new DocumentListQuery());
+        var linkedTemplateDetail = await projectAService.GetByIdAsync(_linkedTemplateOtherScope);
+        var linkedTemplateDownload = await projectAService.GetDownloadAsync(_linkedTemplateOtherScope, null);
+
+        Assert.DoesNotContain(projectAItems.Items, item => item.Id == _linkedTemplateOtherScope);
+        Assert.True(linkedTemplateDetail.IsFailure);
+        Assert.True(linkedTemplateDownload.IsFailure);
+        Assert.Contains(projectAItems.Items, item => item.Id == _unlinkedSharedTemplate);
+        _storage.Verify(provider => provider.GetAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+
+        var otherProjectService = CreateService(ScopedContext(_tenantA, _userA, _projectOtherOrg));
+        var otherProjectItems = await otherProjectService.GetPagedAsync(new DocumentListQuery());
+        Assert.Contains(otherProjectItems.Items, item => item.Id == _linkedTemplateOtherScope);
     }
 
     [Fact]
@@ -211,6 +234,13 @@ public sealed class DocumentTenantBoundaryTests : IDisposable
         Status = "Active",
         CreatedBy = "test"
     };
+
+    private static Document NewTemplate(Guid id, Guid tenantId, Guid? projectId, Guid ownerId, string name, Guid categoryId)
+    {
+        var document = NewDocument(id, tenantId, projectId, ownerId, name, categoryId);
+        document.IsTemplate = true;
+        return document;
+    }
 
     private static DocumentMutationDto NewMutation(Guid projectId, Guid categoryId) => new(
         "Uploaded document",

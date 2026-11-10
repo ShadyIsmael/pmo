@@ -79,7 +79,7 @@ public class AllocationService : IAllocationService
 
     public async Task<Result<List<AllocationDto>>> GetConflictsAsync(Guid resourceId, DateTime startDate, DateTime endDate, decimal? excludeAllocationId, CancellationToken cancellationToken = default)
     {
-        var query = _context.Set<ResourceAllocation>()
+        var query = ApplyManagementScope(_context.Set<ResourceAllocation>())
             .Include(a => a.Resource)
             .Where(a => a.ResourceId == resourceId && a.Status != ResourceAllocation.StatusCancelled && !a.IsDeleted);
 

@@ -19,8 +19,8 @@ vi.mock("../features/projects/ProjectFinanceOverview", () => ({
 }));
 
 vi.mock("../features/projects/ProjectFinancialWorkspace", () => ({
-  ProjectFinancialWorkspace: ({ activeSection, selectedFiscalYear, canCreateAnnualBudget, canApprove, canPrepareClosing, canApproveClosing, canCarryForward }: { activeSection: string; selectedFiscalYear: number | null; canCreateAnnualBudget: boolean; canApprove: boolean; canPrepareClosing: boolean; canApproveClosing: boolean; canCarryForward: boolean }) =>
-    <div data-testid="finance-workspace" data-section={activeSection} data-year={selectedFiscalYear ?? ""} data-can-create-budget={String(canCreateAnnualBudget)} data-can-approve-budget={String(canApprove)} data-can-prepare-closing={String(canPrepareClosing)} data-can-approve-closing={String(canApproveClosing)} data-can-carry-forward={String(canCarryForward)} />,
+  ProjectFinancialWorkspace: ({ activeSection, selectedFiscalYear, canCreateAnnualBudget, canApprove, canPrepareClosing, canApproveClosing, canCarryForward, canViewAnnualBudgetClosing, onOpenClosing }: { activeSection: string; selectedFiscalYear: number | null; canCreateAnnualBudget: boolean; canApprove: boolean; canPrepareClosing: boolean; canApproveClosing: boolean; canCarryForward: boolean; canViewAnnualBudgetClosing: boolean; onOpenClosing: () => void }) =>
+    <div data-testid="finance-workspace" data-section={activeSection} data-year={selectedFiscalYear ?? ""} data-can-create-budget={String(canCreateAnnualBudget)} data-can-approve-budget={String(canApprove)} data-can-prepare-closing={String(canPrepareClosing)} data-can-approve-closing={String(canApproveClosing)} data-can-carry-forward={String(canCarryForward)}>{canPrepareClosing && canViewAnnualBudgetClosing ? <button type="button" onClick={onOpenClosing}>Open Fiscal Year Closing</button> : null}</div>,
 }));
 
 vi.mock("../features/projects/ProjectPaymentRequests", () => ({
@@ -174,6 +174,15 @@ describe("Project Finance workspace navigation", () => {
     expect(workspace).toHaveAttribute("data-can-approve-closing", "false");
     expect(workspace).toHaveAttribute("data-can-carry-forward", "false");
     expect(screen.queryByRole("button", { name: "Payment Requests" })).not.toBeInTheDocument();
+  });
+
+  it("routes an authorized missing-close action into the existing Fiscal Year Closing section", () => {
+    fixtures.permissions = ["ProjectAnnualBudget.View", "ProjectAnnualBudget.Close", "ProjectAnnualBudgetClosing.View"];
+    renderFinance();
+
+    fireEvent.click(screen.getByRole("button", { name: "Open Fiscal Year Closing" }));
+    expect(screen.getByTestId("finance-workspace")).toHaveAttribute("data-section", "closing");
+    expect(screen.getByRole("button", { name: "Fiscal Year Closing" })).toHaveAttribute("aria-current", "page");
   });
 
   it("explicitly denies the retired ProjectPaymentRequest.Manage alias", () => {

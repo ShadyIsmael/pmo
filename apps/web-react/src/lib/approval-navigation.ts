@@ -42,6 +42,17 @@ export function getApprovalReviewPath(type: ApprovalReviewType, approvalId: stri
   return `/my-work/approvals/review/${type}/${encodeURIComponent(approvalId)}`;
 }
 
+export function getAnnualBudgetProjectReviewPath(projectPublicId: string, fiscalYear: number): string | null {
+  const sectionPath = getAnnualBudgetProjectSectionPath(projectPublicId);
+  if (!sectionPath || !Number.isInteger(fiscalYear) || fiscalYear < 1 || fiscalYear > 9999) return null;
+  return `${sectionPath}&fiscalYear=${fiscalYear}`;
+}
+
+export function getAnnualBudgetProjectSectionPath(projectPublicId: string): string | null {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(projectPublicId)) return null;
+  return `/projects/${encodeURIComponent(projectPublicId)}/financials?section=annualBudgets`;
+}
+
 export function getApprovalReviewApiPath(type: ApprovalReviewType, approvalId: string): string {
   const id = encodeURIComponent(approvalId);
   return `${APPROVAL_REVIEW_CONTRACTS[type].endpoint}/${id}/review`;

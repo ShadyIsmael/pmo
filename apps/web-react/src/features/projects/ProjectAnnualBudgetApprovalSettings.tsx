@@ -101,8 +101,11 @@ export function ProjectAnnualBudgetApprovalSettings({ projectId, canManage, enab
               {data.eligibleApprovers.length === 0 ? <p role="status" className="text-sm text-muted-foreground">{t("projects.annualBudgetNoEligibleApprovers")}</p> : null}
               <ul className="space-y-2">{data.eligibleApprovers.map(user => {
                 const index = approvers.indexOf(user.userId);
+                const roleLabels = (user.eligibleRoleCategories ?? []).flatMap(category => category === "System"
+                  ? [t("administration.areas.roles.systemCategory")]
+                  : category === "Management" ? [t("administration.areas.roles.categoryOptions.management")] : []);
                 return <li key={user.userId} className="flex items-center justify-between gap-2 rounded border p-2">
-                  <label className="flex min-w-0 items-center gap-2 text-sm"><input type="checkbox" checked={index >= 0} onChange={event => setApprovers(current => event.target.checked ? [...current, user.userId] : current.filter(id => id !== user.userId))} /><span className="truncate">{user.displayName}</span></label>
+                  <label className="flex min-w-0 items-center gap-2 text-sm"><input type="checkbox" checked={index >= 0} onChange={event => setApprovers(current => event.target.checked ? [...current, user.userId] : current.filter(id => id !== user.userId))} /><span className="truncate">{user.displayName}</span>{roleLabels.length ? <span className="shrink-0 text-xs text-muted-foreground">({roleLabels.join(", ")})</span> : null}</label>
                   {mode === "Sequential" && index >= 0 ? <div className="flex items-center gap-1"><span className="min-w-5 text-center text-xs text-muted-foreground">{index + 1}</span><Button type="button" size="sm" variant="ghost" aria-label={t("projects.yearEndClosingMoveApproverUp", { name: user.displayName })} disabled={index === 0} onClick={() => move(user.userId, -1)}><ArrowUp className="size-4" /></Button><Button type="button" size="sm" variant="ghost" aria-label={t("projects.yearEndClosingMoveApproverDown", { name: user.displayName })} disabled={index === approvers.length - 1} onClick={() => move(user.userId, 1)}><ArrowDown className="size-4" /></Button></div> : null}
                 </li>;
               })}</ul>

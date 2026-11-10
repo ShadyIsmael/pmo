@@ -5,8 +5,8 @@ namespace NEXUS.Modules.ProjectPlanning.Application.Mapping;
 
 public static class PlanTextFormatMapping
 {
-    public static PlanTextFormat? ToEntity(this PlanTextFormatDto? dto) => dto is null
-        ? null
+    public static PlanTextFormat ToEntity(this PlanTextFormatDto? dto) => dto is null
+        ? PlanTextFormat.Unspecified()
         : new PlanTextFormat
         {
             IsBold = dto.IsBold,
@@ -17,7 +17,7 @@ public static class PlanTextFormatMapping
             FontSizeToken = dto.FontSizeToken
         };
 
-    public static PlanTextFormatDto? ToDto(this PlanTextFormat? format) => format is null
+    public static PlanTextFormatDto? ToDto(this PlanTextFormat? format) => format is null || !format.IsSpecified
         ? null
         : new PlanTextFormatDto
         {

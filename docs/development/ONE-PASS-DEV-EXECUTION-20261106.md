@@ -2,9 +2,11 @@
 
 ## Outcome
 
+**Backup-policy supersession (2026-11-10):** The backup status and gate described in this historical execution report reflect the earlier policy. Development/UAT backups are optional; missing independent storage or `RESTORE VERIFYONLY` does not block authorized work. Exact target, migration, and schema checks remain required. The 16 physical-schema differences recorded here remain a deployment blocker until reviewed. Production backup and recovery safeguards remain mandatory.
+
 Meeting Minutes/navigation, Meeting notification triggers, and Risk Action follow-up notification source changes are implemented in the current worktree. EF model validation, API builds, persistence design-time build, React typecheck, and React production build passed.
 
-**Development deployment is not complete.** The managed execution environment could not reach the authorized Windows host/SQL Server, so the live database identity, independent backup gate, applied migration history, physical schema, and runtime behavior could not be verified. No database write or migration application was performed. Backend test assemblies compiled, but the testhost handshake failed before any test ran. The latest Vitest command was not run after automatic review blocked its telemetry egress.
+**Development deployment was not complete at report time.** The managed execution environment could not reach the authorized Windows host/SQL Server, so the live database identity, applied migration history, physical schema, and runtime behavior could not be verified. No independent backup was verified under the then-current policy. No database write or migration application was performed. Backend test assemblies compiled, but the testhost handshake failed before any test ran. The latest Vitest command was not run after automatic review blocked its telemetry egress.
 
 ## Feature changes
 
@@ -124,10 +126,10 @@ This follow-up supersedes the earlier statements above that the Development iden
 - The target-specific SQL generated from live history was reviewed; SHA-256: `E7868EF5CD5EFC2CCF28A3B1C896A4FB1BCD8DB9ECB4FD7ACBC756D723C0D65B` (temporary review file, not checked in). Forward operations add GUID public-ID columns with `NEWID()` defaults, nullable `OwnerUserId`/`ReferencePublicId` columns, and unique indexes. No forward `DROP`, `DELETE`, `UPDATE`, `ALTER COLUMN`, or foreign-key operation is present. `NEWID()` defaults populate existing rows for non-null IDs. Current counts are 1 Risk Action, 1 Risk, 1 Meeting, 0 Meeting Minutes comments, and 0 Notifications. Rollback drops the new columns/indexes and would discard values written after application.
 - The connected schema matches the last applied migration model (zero missing objects). Against the current repository model, the gate reports 25 differences: nine are the exact pending columns/indexes above; sixteen additional current-model differences affect only `IntegrationConnections`, `IntegrationWebhooks`, and `Programs`. These include bounded-string expectations versus physical `nvarchar(max)`, `Programs.RowVersion` expected as `rowversion` versus physical `varbinary(max)`, and related indexes. They are disjoint from the pending SQL, but need a reviewed compatibility plan before the full current model can be declared physically synchronized; no patch or migration was invented for them.
 
-### Backup gate and database action
+### Backup status and database action
 
-- The target database files are on `C:`. The authorized Windows host exposes only one fixed disk, a single 512 GB NVMe volume; no separate disk or mapped network share is available. A backup on `C:` would not satisfy the independent-backup requirement. No backup was created or claimed verified.
-- No migration, seed, schema patch, or other database write was performed. The EF gate's post-apply check cannot report full physical synchronization while the sixteen additional differences remain. The apply path was not run because a qualifying independent backup destination is unavailable and the full-schema check has unresolved differences. The three pending migrations are source-reviewed and additive, but deployment is not complete.
+- At the time of this report, the target database files were on `C:` and no separate disk or mapped network share was available. No backup was created or claimed verified; that missing independent destination is historical evidence, not a current Development/UAT gate.
+- No migration, seed, schema patch, or other database write was performed. The EF gate's post-apply check cannot report full physical synchronization while the sixteen additional differences remain. The apply path was not run because the full-schema check had unresolved differences. The three pending migrations are source-reviewed and additive, but deployment is not complete.
 - Persistence tests against Development SQL Server, API runtime, notification delivery, and browser UAT were not run.
 
 ### Updated build/test evidence
@@ -153,4 +155,4 @@ This follow-up supersedes the earlier statements above that the Development iden
 | Minimal Seed / idempotency | Not run; migration-only task, no reset or seed requested. |
 | Physical schema verified | Yes against the last applied migration; No against the full current model (16 additional differences remain; nine pending objects are also absent). |
 | Persistence tests against Development SQL Server | Not run. |
-| Blockers | No independent backup destination; 16 current-model physical differences on `IntegrationConnections`, `IntegrationWebhooks`, and `Programs` need a reviewed compatibility plan. |
+| Blockers | 16 current-model physical differences on `IntegrationConnections`, `IntegrationWebhooks`, and `Programs` need a reviewed compatibility plan. The historical missing-backup status is not a current Development/UAT blocker. |

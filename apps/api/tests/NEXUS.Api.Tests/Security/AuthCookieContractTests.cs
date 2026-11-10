@@ -72,6 +72,27 @@ public sealed class AuthCookieContractTests
     }
 
     [Fact]
+    public async Task Cookie_login_returns_server_error_when_success_has_no_refresh_token()
+    {
+        var authentication = new Mock<IAuthenticationService>();
+        authentication
+            .Setup(service => service.LoginAsync(It.IsAny<LoginCommand>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<LoginResponseDto>.Success(AuthResponse(null)));
+        var context = BrowserRequestContext();
+        var controller = CreateController(authentication.Object, context);
+
+        var result = await controller.Login(
+            new LoginCommand("admin@example.test", "test-password", Guid.NewGuid().ToString()),
+            ValidAntiforgery().Object,
+            CancellationToken.None);
+
+        var error = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(StatusCodes.Status500InternalServerError, error.StatusCode);
+        Assert.Equal("The authentication session could not be established.", Assert.IsType<ProblemDetails>(error.Value).Title);
+        Assert.False(context.Response.Headers.ContainsKey("Set-Cookie"));
+    }
+
+    [Fact]
     public async Task Refresh_uses_only_the_host_cookie_and_rotates_it_without_disclosing_the_secret()
     {
         var rotatedSecret = "rotated-refresh-secret-for-contract-test";
@@ -104,6 +125,29 @@ public sealed class AuthCookieContractTests
         Assert.Contains("path=/", cookie, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("domain=", cookie, StringComparison.OrdinalIgnoreCase);
         authentication.Verify(service => service.RefreshAsync("body-token-must-be-ignored", It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Cookie_refresh_returns_server_error_when_success_has_no_rotated_refresh_token()
+    {
+        var authentication = new Mock<IAuthenticationService>();
+        authentication
+            .Setup(service => service.RefreshAsync(RefreshSecret, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<LoginResponseDto>.Success(AuthResponse(null)));
+        var context = new DefaultHttpContext();
+        context.Request.Headers.Cookie = $"{RefreshCookieName}={RefreshSecret}";
+        context.Request.Headers["X-Nexus-Auth-Mode"] = "cookie";
+        var controller = CreateController(authentication.Object, context);
+
+        var result = await controller.Refresh(
+            null,
+            ValidAntiforgery().Object,
+            CancellationToken.None);
+
+        var error = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(StatusCodes.Status500InternalServerError, error.StatusCode);
+        Assert.Equal("The authentication session could not be refreshed.", Assert.IsType<ProblemDetails>(error.Value).Title);
+        Assert.False(context.Response.Headers.ContainsKey("Set-Cookie"));
     }
 
     [Fact]
@@ -307,7 +351,7 @@ public sealed class AuthCookieContractTests
         return antiforgery;
     }
 
-    private static LoginResponseDto AuthResponse(string refreshToken) => new()
+    private static LoginResponseDto AuthResponse(string? refreshToken) => new()
     {
         Token = "access-jwt-for-contract-test",
         RefreshToken = refreshToken,

@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Outlet, Route, Routes } from "react-router-dom";
 import { I18nProvider } from "../i18n/messages";
-import type { ProjectStatusReportDto, ProjectStatusReportListDto } from "../features/projects/api/projects";
+import type { ProjectFinancialSummaryDto, ProjectStatusReportDto, ProjectStatusReportListDto } from "../features/projects/api/projects";
 import { ProjectStatusReportsTab } from "../features/projects/ProjectGovernanceTabs";
 
 const reportMocks = vi.hoisted(() => ({
@@ -23,6 +23,7 @@ const reportMocks = vi.hoisted(() => ({
   currentProgressFetching: false,
   currentProgressError: false,
   currentProgressRefetch: vi.fn(),
+  financialSummary: { data: undefined as ProjectFinancialSummaryDto | undefined, isLoading: false, isError: false },
 }));
 
 vi.mock("../api/workItems", () => ({ useWorkItemStatuses: () => ({ data: [], isLoading: false }) }));
@@ -36,7 +37,7 @@ vi.mock("../features/projects/api/projects", () => ({
   useUpdateProjectStatusReport: () => ({ mutateAsync: reportMocks.update, isPending: false }),
   usePublishProjectStatusReport: () => ({ mutateAsync: reportMocks.publish, isPending: false }),
   useDeleteProjectStatusReport: () => ({ mutateAsync: reportMocks.remove, isPending: false }),
-  useProjectFinancialSummary: () => ({ data: undefined, isLoading: false, isError: false }),
+  useProjectFinancialSummary: () => reportMocks.financialSummary,
   useProjectIssues: () => ({ data: [], isLoading: false, isError: false }),
 }));
 
@@ -141,9 +142,52 @@ beforeEach(() => {
   reportMocks.currentProgressFetching = false;
   reportMocks.currentProgressError = false;
   reportMocks.currentProgressRefetch.mockReset();
+  reportMocks.financialSummary = { data: undefined, isLoading: false, isError: false };
 });
 
 describe("project status report source parity", () => {
+  it("shows the authorized reporting-period finance summary and keeps its source currency", async () => {
+    reportMocks.financialSummary = {
+      data: {
+        projectId: "project-1", periodFrom: "2026-11-01", periodTo: "2026-11-08", currencyCode: "EUR",
+        approvedBudget: 500_000, budgetStatus: "approved", expenditure: 3_200, committedCost: 15_000,
+        actualPaid: 1_100, outstandingPlannedPayments: 2_400, paymentsDueWithinPeriod: 800,
+        remainingUnpaidAtPeriodEnd: 2_400, hasFinancialData: true, dataStatus: "available",
+      },
+      isLoading: false,
+      isError: false,
+    };
+    renderStatusReports();
+    fireEvent.click(screen.getByRole("button", { name: "New Report" }));
+
+    const editor = screen.getByRole("dialog", { name: "New Report" });
+    expect(within(editor).getByText("Approved Annual Budget")).toBeInTheDocument();
+    expect(within(editor).getByText("Expenditure")).toBeInTheDocument();
+    expect(within(editor).getByText("Commitments")).toBeInTheDocument();
+    expect(within(editor).getAllByText(/€/)).toHaveLength(7);
+    expect(within(editor).getByText("Budget: Approved for the full period")).toBeInTheDocument();
+  });
+
+  it("distinguishes an empty finance period from an API failure", async () => {
+    reportMocks.financialSummary = {
+      data: {
+        projectId: "project-1", periodFrom: "2026-11-01", periodTo: "2026-11-08", currencyCode: "USD",
+        budgetStatus: "unavailable", hasFinancialData: false, dataStatus: "empty",
+      },
+      isLoading: false,
+      isError: false,
+    };
+    const first = renderStatusReports();
+    fireEvent.click(screen.getByRole("button", { name: "New Report" }));
+    expect(screen.getByText("No financial records are available for this reporting period.")).toBeInTheDocument();
+    first.unmount();
+
+    reportMocks.financialSummary = { data: undefined, isLoading: false, isError: true };
+    renderStatusReports();
+    fireEvent.click(screen.getByRole("button", { name: "New Report" }));
+    expect(screen.getByText("Could not load financial summary.")).toBeInTheDocument();
+  });
+
   it("prefills editable project values once and saves the user's final snapshot values", async () => {
     renderStatusReports();
     fireEvent.click(screen.getByRole("button", { name: "New Report" }));

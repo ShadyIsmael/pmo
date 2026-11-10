@@ -7,13 +7,17 @@ import { ManagementProvider } from "@api/management";
 import { MyWorkApprovalsPage } from "@features/my-work/MyWorkApprovalsPage";
 import { useAcceptHandoverRequest, useAcceptManagerHandover, useApproveProjectChangeRequest } from "@features/my-work/api/myWork";
 
-const approvalsAuth = vi.hoisted(() => ({ permissions: ["ChangeRequest.Approve", "Handover.Approve"] as string[] }));
+const approvalsAuth = vi.hoisted(() => ({
+  permissions: ["ChangeRequest.Approve", "Handover.Approve"] as string[],
+  roles: [{ id: "management-reviewer", name: "Project Manager", category: "Management" }],
+}));
 
-vi.mock("@auth/AuthProvider", () => ({ useAuth: () => ({ user: { id: "approver-1", permissions: approvalsAuth.permissions }, status: "authenticated" }) }));
+vi.mock("@auth/AuthProvider", () => ({ useAuth: () => ({ user: { id: "approver-1", permissions: approvalsAuth.permissions, roles: approvalsAuth.roles }, status: "authenticated" }) }));
 
 afterEach(() => {
   vi.unstubAllGlobals();
   approvalsAuth.permissions = ["ChangeRequest.Approve", "Handover.Approve"];
+  approvalsAuth.roles = [{ id: "management-reviewer", name: "Project Manager", category: "Management" }];
 });
 
 function renderApprovalsPage(client: QueryClient) {
@@ -112,7 +116,7 @@ describe("project handover approvals", () => {
     renderApprovalsPage(client);
 
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent("Project and manager handover approvals could not be loaded.");
+    expect(alert).toHaveTextContent("Failed to load data.");
     fireEvent.click(within(alert).getByRole("button", { name: "Retry" }));
     await waitFor(() => expect(handoverCalls).toBe(2));
     expect(await screen.findByText("No pending approvals")).toBeInTheDocument();
@@ -156,7 +160,7 @@ describe("project handover approvals", () => {
     renderApprovalsPage(client);
 
     await screen.findByText("Core Modernization");
-    expect(screen.getByRole("link", { name: "Review request" })).toHaveAttribute("href", "/my-work/approvals/review/project-handover/handover-1");
+    expect(screen.getByRole("link", { name: "Review Details" })).toHaveAttribute("href", "/my-work/approvals/review/project-handover/handover-1");
     fireEvent.click(screen.getByRole("button", { name: "Approve" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("This handover request is no longer pending. The approvals list has been refreshed.");

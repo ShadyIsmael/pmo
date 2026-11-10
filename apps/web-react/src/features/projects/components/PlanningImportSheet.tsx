@@ -32,6 +32,7 @@ export function PlanningImportSheet({
   selectedPlanId,
   canCreatePlan,
   canEditPlan,
+  canCreateResource,
   commitMutation,
   t,
   onOpenChange,
@@ -42,6 +43,7 @@ export function PlanningImportSheet({
   selectedPlanId: string;
   canCreatePlan: boolean;
   canEditPlan: boolean;
+  canCreateResource: boolean;
   commitMutation: CommitMutation;
   t: Message;
   onOpenChange: (open: boolean) => void;
@@ -70,7 +72,9 @@ export function PlanningImportSheet({
   const canParse = validFile && (mode === "new"
     ? canImportAsNewPlan && Boolean(newPlanType)
     : canImportIntoExistingPlan && Boolean(targetPlanId));
-  const canCommitImport = mode === "new" ? canImportAsNewPlan : canImportIntoExistingPlan;
+  const hasNewResourceResolution = Boolean(session?.resources.some((resource) => resource.resolution === "CreateNew"));
+  const canCommitImport = (mode === "new" ? canImportAsNewPlan : canImportIntoExistingPlan)
+    && (!hasNewResourceResolution || canCreateResource);
   const totalRows = session ? session.statistics.tasks + session.statistics.milestones : 0;
   const resourceResolutionCounts = session?.resources.reduce((counts, resource) => {
     const resolution = resource.resolution;
@@ -228,7 +232,7 @@ export function PlanningImportSheet({
 
         {!session && !busy && !hasAvailableImportMode ? <p role="note" className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground">{t("planning.import.noAvailableMode")}</p> : null}
         {canEditPlan && !canCreatePlan && hasAvailableImportMode ? <p role="note" className="text-xs text-muted-foreground">{t("planning.import.newPlanRequiresBothPermissions")}</p> : null}
-        {session && !canCommitImport ? <p role="note" className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground">{mode === "new" ? t("planning.import.newPlanRequiresBothPermissions") : t("planning.import.editPermissionRequired")}</p> : null}
+        {session && !canCommitImport ? <p role="note" className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground">{hasNewResourceResolution && !canCreateResource ? t("planning.import.resourceCreatePermissionRequired") : mode === "new" ? t("planning.import.newPlanRequiresBothPermissions") : t("planning.import.editPermissionRequired")}</p> : null}
 
         {session && !busy ? <div className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/20 px-3 py-2">
@@ -260,14 +264,14 @@ export function PlanningImportSheet({
             </TabsList>
             <TabsContent value="overview" className="space-y-3"><NoticeList title={t("planning.import.warnings")} notices={session.warnings} t={t} /><NoticeList title={t("planning.import.unsupported")} notices={session.unsupportedFields} t={t} /></TabsContent>
             <TabsContent value="tasks"><div className="max-h-[32rem] overflow-auto rounded border"><Table><TableHeader><TableRow><TableHead>{t("planning.import.columns.wbs")}</TableHead><TableHead>{t("planning.import.columns.name")}</TableHead><TableHead>{t("planning.import.columns.duration")}</TableHead><TableHead>{t("planning.import.columns.start")}</TableHead><TableHead>{t("planning.import.columns.finish")}</TableHead><TableHead>{t("planning.import.columns.complete")}</TableHead><TableHead>{t("planning.import.columns.constraintType")}</TableHead><TableHead>{t("planning.import.columns.deadline")}</TableHead><TableHead>{t("planning.import.columns.resources")}</TableHead></TableRow></TableHeader><TableBody>{session.tasks.map((task) => <TableRow key={task.sourceId}><TableCell className="text-xs">{task.code}</TableCell><TableCell><div className="flex items-center gap-1" style={{ paddingInlineStart: `${Math.max(0, task.outlineLevel - 1) * 14}px` }}>{task.isMilestone ? <span aria-hidden>◆</span> : null}<span className="text-xs font-medium">{task.name}</span></div></TableCell><TableCell className="text-xs">{task.durationDays}d</TableCell><TableCell className="text-xs">{dateOnly(task.start)}</TableCell><TableCell className="text-xs">{dateOnly(task.finish)}</TableCell><TableCell className="text-xs">{roundPlanProgress(task.percentComplete) ?? 0}%</TableCell><TableCell className="text-xs">{t(`planning.constraintTypes.${task.constraintType}`)}</TableCell><TableCell className="text-xs">{dateOnly(task.deadline)}</TableCell><TableCell className="max-w-48 text-xs">{task.resources.join(", ") || "—"}</TableCell></TableRow>)}</TableBody></Table></div></TabsContent>
-            <TabsContent value="resources"><div className="overflow-auto rounded border"><Table><TableHeader><TableRow><TableHead>{t("planning.import.resourceColumns.source")}</TableHead><TableHead>{t("planning.import.resourceColumns.match")}</TableHead><TableHead>{t("planning.import.resourceColumns.candidates")}</TableHead><TableHead>{t("planning.import.resourceColumns.action")}</TableHead></TableRow></TableHeader><TableBody>{session.resources.map((resource) => {
+            <TabsContent value="resources" className="space-y-2">{!canCreateResource ? <p role="note" className="rounded-md border bg-muted/20 p-3 text-xs text-muted-foreground">{t("planning.import.resourceCreatePermissionRequired")}</p> : null}<div className="overflow-auto rounded border"><Table><TableHeader><TableRow><TableHead>{t("planning.import.resourceColumns.source")}</TableHead><TableHead>{t("planning.import.resourceColumns.match")}</TableHead><TableHead>{t("planning.import.resourceColumns.candidates")}</TableHead><TableHead>{t("planning.import.resourceColumns.action")}</TableHead></TableRow></TableHeader><TableBody>{session.resources.map((resource) => {
               const resolution = resource.resolution;
               const resolutionLabel = resolution === "MapExisting" ? "matched" : resolution === "CreateNew" ? "createSelected" : resolution === "Ignore" ? "ignored" : "needsReview";
               return <TableRow key={resource.sourceId} tabIndex={-1} ref={(node) => { const key = reviewRowKey("resources", resource.sourceId); if (node) reviewRows.current.set(key, node); else reviewRows.current.delete(key); }} className={reviewTarget?.tab === "resources" && reviewTarget.sourceId === resource.sourceId ? "outline outline-2 outline-primary/40 -outline-offset-2" : undefined}>
                 <TableCell><div className="text-xs font-medium">{resource.name}</div><div className="text-[10px] text-muted-foreground">{resource.email || t("planning.import.noEmail")} · {t("planning.import.assignmentCount", { count: resource.assignmentCount })}</div></TableCell>
                 <TableCell><Badge status={resolution === "MapExisting" ? "Matched" : resolution === "Ignore" ? "Ignored" : resolution === "CreateNew" ? "New" : "NeedsReview"}>{resolution === "MapExisting" ? <CheckCircle2 className="h-3 w-3" /> : resolution === "Unresolved" ? <AlertTriangle className="h-3 w-3" /> : null}{t(`planning.import.resourceResolutions.${resolutionLabel}`)}</Badge></TableCell>
                 <TableCell className="min-w-56">{resource.candidates.length ? <Select value={resource.nexusResourceId || "none"} onValueChange={(value) => { if (value !== "none") void resolve("resource", resource.sourceId, { resolution: "MapExisting", resourceId: value }); }}><SelectTrigger disabled={resolving} aria-label={`${t("planning.import.selectResource")}: ${resource.name}`} className="h-8 text-xs"><SelectValue placeholder={t("planning.import.selectResource")} /></SelectTrigger><SelectContent><SelectItem value="none">{t("planning.import.selectResource")}</SelectItem>{resource.candidates.map((candidate) => <SelectItem key={candidate.id} value={candidate.id}>{candidate.name}{candidate.email ? ` · ${candidate.email}` : ""}</SelectItem>)}</SelectContent></Select> : <span className="text-xs text-muted-foreground">{t("planning.import.noCandidates")}</span>}</TableCell>
-                <TableCell className="whitespace-nowrap"><div className="flex gap-1"><Button type="button" size="sm" variant={resolution === "CreateNew" ? "secondary" : "outline"} disabled={resolving} onClick={() => void resolve("resource", resource.sourceId, { resolution: "CreateNew", createResource: { name: resource.name, type: "Staff", status: "Active", email: resource.email } })}>{resolution === "CreateNew" ? t("planning.import.createSelectedResource") : t("planning.import.createResource")}</Button><Button type="button" size="sm" variant={resolution === "Ignore" ? "secondary" : "ghost"} disabled={resolving || resolution === "Ignore"} onClick={() => void resolve("resource", resource.sourceId, { resolution: "Ignore" })}>{resolution === "Ignore" ? t("planning.import.ignored") : t("planning.import.ignore")}</Button></div></TableCell>
+                <TableCell className="whitespace-nowrap"><div className="flex gap-1"><Button type="button" size="sm" variant={resolution === "CreateNew" ? "secondary" : "outline"} disabled={resolving || !canCreateResource} onClick={() => void resolve("resource", resource.sourceId, { resolution: "CreateNew", createResource: { name: resource.name, type: "Staff", status: "Active", email: resource.email } })}>{resolution === "CreateNew" ? t("planning.import.createSelectedResource") : t("planning.import.createResource")}</Button><Button type="button" size="sm" variant={resolution === "Ignore" ? "secondary" : "ghost"} disabled={resolving || resolution === "Ignore"} onClick={() => void resolve("resource", resource.sourceId, { resolution: "Ignore" })}>{resolution === "Ignore" ? t("planning.import.ignored") : t("planning.import.ignore")}</Button></div></TableCell>
               </TableRow>;
             })}</TableBody></Table></div></TabsContent>
             <TabsContent value="assignments"><div className="overflow-auto rounded border"><Table><TableHeader><TableRow><TableHead>{t("planning.import.assignmentColumns.task")}</TableHead><TableHead>{t("planning.import.assignmentColumns.resource")}</TableHead><TableHead>{t("planning.import.assignmentColumns.work")}</TableHead><TableHead>{t("planning.import.assignmentColumns.allocation")}</TableHead><TableHead>{t("planning.import.assignmentColumns.dates")}</TableHead><TableHead>{t("planning.import.assignmentColumns.status")}</TableHead><TableHead /></TableRow></TableHeader><TableBody>{session.assignments.map((assignment) => {

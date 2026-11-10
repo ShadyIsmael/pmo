@@ -16,7 +16,7 @@ Collect finance persistence and verification dependencies deferred from Sprints 
 | P0 | IKVM / MPP Adapter Stabilization | Investigate dependency isolation while preserving Microsoft Project import functionality. Do not remove IKVM or replace the adapter prematurely. |
 | P0 | EF Readiness | Reconcile Sprint 3-6 persistence changes, baseline/source migrations, current model, and snapshot under the designated owner; generate and review SQL only through the documented EF Core workflow. |
 | P1 | Financial Nullability | Resolve genuine compiler and nullability issues found during authorized consolidated builds. |
-| P1 | Runtime UAT | Execute only in Sprint 7B after target, schema, backup, and authorization gates pass. |
+| P1 | Runtime UAT | Execute only in Sprint 7B after target identity, schema, and authorization gates pass; a Development/UAT backup is optional and is not a prerequisite. |
 | P2 | Roles & Permissions Cleanup | Separate follow-up initiative for duplicate entries, inaccurate categories, and inconsistent EN/AR labels; preserve permission keys and role grants. |
 
 These workstreams are handoff priorities only. Financial Sprint 6 does not start Sprint 7A/7B or perform their builds, EF work, database operations, or UAT.
@@ -41,7 +41,7 @@ These workstreams are handoff priorities only. Financial Sprint 6 does not start
 
 ## Sprint 7B runtime/UAT gates
 
-Before any Development database deployment, separately verify actual runtime identity, environment/configuration source, physical schema, applied migration history, and relevant existing data; verify an independent backup and restore readiness; review the approved deployment/rollback plan; and obtain explicit authorization. The previous `Invalid object name 'Tenants'` log is not by itself evidence of which database is active or which migration strategy is safe.
+Before any Development database deployment, separately verify actual runtime identity, environment/configuration source, physical schema, applied migration history, and relevant existing data; review the deployment plan and obtain explicit authorization. A backup may be created if explicitly requested, but missing independent backup storage or `RESTORE VERIFYONLY` evidence does not block Development/UAT operations. The previous `Invalid object name 'Tenants'` log is not by itself evidence of which database is active or which migration strategy is safe.
 
 After an authorized isolated runtime target exists, execute consolidated API/database/browser/permission/financial tests from the Master UAT Checklist. Include settlement/reversal concurrent execution under SQL Server; source inspection alone cannot establish runtime concurrency safety. No production write is included.
 

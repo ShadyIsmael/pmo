@@ -81,8 +81,9 @@ public sealed class ProjectPublicIdRoutingMiddlewareTests
         var tenantId = Guid.NewGuid();
         var userId = Guid.NewGuid();
         var project = new Project { Id = Guid.NewGuid(), PublicId = Guid.NewGuid(), TenantId = tenantId, Name = "Project A", Code = "A" };
-        await using var db = CreateDb(project);
         var context = AuthenticatedContext(tenantId, userId);
+        AppDbContext.ConfigureTenantResolution(new HttpContextAccessor { HttpContext = context });
+        await using var db = CreateDb(project);
         context.Request.Path = $"/api/projects/{project.PublicId:D}/plans";
         context.Request.Method = HttpMethods.Post;
         context.Request.RouteValues["projectId"] = project.PublicId.ToString("D");
@@ -114,6 +115,7 @@ public sealed class ProjectPublicIdRoutingMiddlewareTests
 
         Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
         Assert.False(controllerReached);
+        AppDbContext.ConfigureTenantResolution(new HttpContextAccessor());
     }
 
     [Fact]

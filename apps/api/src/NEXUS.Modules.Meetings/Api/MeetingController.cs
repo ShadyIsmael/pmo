@@ -232,7 +232,17 @@ public sealed class MeetingController : ControllerBase
 
     [HttpGet("{id:guid}/minutes")]
     [Authorize(Policy = MeetingPermissions.View)]
-    public async Task<IActionResult> GetMinutes(Guid id, CancellationToken cancellationToken) => ToActionResult(await _meetingService.GetMinutesAsync(id, cancellationToken));
+    public async Task<IActionResult> GetMinutes(Guid id, CancellationToken cancellationToken)
+    {
+        var result = await _meetingService.GetMinutesAsync(id, cancellationToken);
+        if (result.IsFailure) return ToActionResult(result.Error);
+
+        // MVC's object-result null formatter can turn Ok(null) into HTTP 204.
+        // React Query requires a defined value, so preserve this endpoint's 200/null contract explicitly.
+        return result.Value is null
+            ? new JsonResult(null) { StatusCode = StatusCodes.Status200OK }
+            : Ok(result.Value);
+    }
 
     [HttpPost("{id:guid}/minutes")]
     [Authorize(Policy = MeetingPermissions.Manage)]

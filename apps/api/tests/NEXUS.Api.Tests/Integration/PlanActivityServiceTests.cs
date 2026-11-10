@@ -853,6 +853,146 @@ public class PlanActivityServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Update_ManualStartDateEdit_PersistsManualModeAndEnteredDateAfterReload()
+    {
+        var planId = await CreatePlanAsync();
+        await _activityService.CreateAsync(planId, new CreatePlanActivityDto { Code = "FIRST", Name = "First task" }, _userA.ToString());
+        var created = (await _activityService.CreateAsync(planId, new CreatePlanActivityDto
+        {
+            Code = "EDIT-START",
+            Name = "Edit start",
+            SchedulingMode = PlanSchedulingMode.Automatic,
+            StartDate = new DateTime(2026, 1, 12, 8, 0, 0),
+            Duration = 3
+        }, _userA.ToString())).Value!;
+        Assert.Equal(PlanSchedulingMode.Automatic, created.SchedulingMode);
+        Assert.NotNull(created.EndDate);
+
+        var enteredStart = created.EndDate!.Value.Date.AddDays(-1);
+        var result = await _activityService.UpdateAsync(planId, created.Id, new UpdatePlanActivityDto
+        {
+            Code = created.Code,
+            Name = created.Name,
+            Type = created.Type,
+            SchedulingMode = PlanSchedulingMode.Manual,
+            ConstraintType = created.ConstraintType,
+            ConstraintDate = created.ConstraintDate,
+            Deadline = created.Deadline,
+            StartDate = enteredStart,
+            EndDate = created.EndDate,
+            ActualStart = created.ActualStart,
+            ActualFinish = created.ActualFinish,
+            CalendarId = created.CalendarId,
+            Duration = created.Duration,
+            EstimateHours = created.EstimateHours,
+            Progress = created.Progress,
+            WbsId = created.WbsId,
+            SortOrder = created.SortOrder,
+            RowVersion = created.RowVersion
+        }, _userA.ToString());
+
+        Assert.True(result.IsSuccess, result.Error?.Message);
+        Assert.Equal(PlanSchedulingMode.Manual, result.Value!.SchedulingMode);
+        Assert.Equal(enteredStart, result.Value.StartDate);
+        Assert.Equal(created.EndDate, result.Value.EndDate);
+        Assert.Equal(created.Duration, result.Value.Duration);
+
+        _context.ChangeTracker.Clear();
+        var reloaded = await _context.PlanActivities.AsNoTracking().SingleAsync(value => value.Id == created.Id);
+        Assert.Equal(PlanSchedulingMode.Manual, reloaded.SchedulingMode);
+        Assert.Equal(enteredStart, reloaded.StartDate);
+        Assert.Equal(created.EndDate, reloaded.EndDate);
+        Assert.Equal(created.Duration, reloaded.Duration);
+    }
+
+    [Fact]
+    public async Task Update_ManualFinishDateEdit_PersistsEnteredDateAndPreservesStartAndDurationAfterReload()
+    {
+        var planId = await CreatePlanAsync();
+        await _activityService.CreateAsync(planId, new CreatePlanActivityDto { Code = "FIRST", Name = "First task" }, _userA.ToString());
+        var created = (await _activityService.CreateAsync(planId, new CreatePlanActivityDto
+        {
+            Code = "EDIT-FINISH",
+            Name = "Edit finish",
+            SchedulingMode = PlanSchedulingMode.Automatic,
+            StartDate = new DateTime(2026, 1, 12, 8, 0, 0),
+            Duration = 3
+        }, _userA.ToString())).Value!;
+        Assert.Equal(PlanSchedulingMode.Automatic, created.SchedulingMode);
+        Assert.NotNull(created.StartDate);
+
+        var enteredFinish = created.StartDate!.Value.Date.AddDays(5);
+        var result = await _activityService.UpdateAsync(planId, created.Id, new UpdatePlanActivityDto
+        {
+            Code = created.Code,
+            Name = created.Name,
+            Type = created.Type,
+            SchedulingMode = PlanSchedulingMode.Manual,
+            ConstraintType = created.ConstraintType,
+            ConstraintDate = created.ConstraintDate,
+            Deadline = created.Deadline,
+            StartDate = created.StartDate,
+            EndDate = enteredFinish,
+            ActualStart = created.ActualStart,
+            ActualFinish = created.ActualFinish,
+            CalendarId = created.CalendarId,
+            Duration = created.Duration,
+            EstimateHours = created.EstimateHours,
+            Progress = created.Progress,
+            WbsId = created.WbsId,
+            SortOrder = created.SortOrder,
+            RowVersion = created.RowVersion
+        }, _userA.ToString());
+
+        Assert.True(result.IsSuccess, result.Error?.Message);
+        Assert.Equal(PlanSchedulingMode.Manual, result.Value!.SchedulingMode);
+        Assert.Equal(created.StartDate, result.Value.StartDate);
+        Assert.Equal(enteredFinish, result.Value.EndDate);
+        Assert.Equal(created.Duration, result.Value.Duration);
+
+        _context.ChangeTracker.Clear();
+        var reloaded = await _context.PlanActivities.AsNoTracking().SingleAsync(value => value.Id == created.Id);
+        Assert.Equal(PlanSchedulingMode.Manual, reloaded.SchedulingMode);
+        Assert.Equal(created.StartDate, reloaded.StartDate);
+        Assert.Equal(enteredFinish, reloaded.EndDate);
+        Assert.Equal(created.Duration, reloaded.Duration);
+    }
+
+    [Fact]
+    public async Task Update_ManualScheduleWithFinishBeforeStart_ReturnsValidationErrorWithoutChangingStoredSchedule()
+    {
+        var planId = await CreatePlanAsync();
+        var created = (await _activityService.CreateAsync(planId, new CreatePlanActivityDto
+        {
+            Code = "INVALID-RANGE",
+            Name = "Invalid range",
+            SchedulingMode = PlanSchedulingMode.Manual,
+            StartDate = new DateTime(2026, 1, 10),
+            EndDate = new DateTime(2026, 1, 20),
+            Duration = 3
+        }, _userA.ToString())).Value!;
+
+        var result = await _activityService.UpdateAsync(planId, created.Id, new UpdatePlanActivityDto
+        {
+            Code = created.Code,
+            Name = created.Name,
+            Type = created.Type,
+            SchedulingMode = PlanSchedulingMode.Manual,
+            StartDate = new DateTime(2026, 1, 21),
+            EndDate = created.EndDate,
+            Duration = created.Duration,
+            RowVersion = created.RowVersion
+        }, _userA.ToString());
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("VALIDATION_ERROR", result.Error!.Code, ignoreCase: true);
+        var stored = await _context.PlanActivities.AsNoTracking().SingleAsync(value => value.Id == created.Id);
+        Assert.Equal(created.StartDate, stored.StartDate);
+        Assert.Equal(created.EndDate, stored.EndDate);
+        Assert.Equal(PlanSchedulingMode.Manual, stored.SchedulingMode);
+    }
+
+    [Fact]
     public async Task Update_ActualDates_PersistWithoutChangingPlannedSchedule()
     {
         var planId = await CreatePlanAsync();

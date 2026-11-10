@@ -145,7 +145,7 @@ export function ProjectFinanceOverview({ projectId, selectedFiscalYear, active, 
       key: "carry-forward",
       label: t("projects.financeKpiCarryForward"),
       value: metricValue(carryForward, currency),
-      hint: budget?.status === "Approved" ? t("projects.annualBudgetCarryForwardHint") : undefined,
+      hint: budget?.status === "Approved" ? t("projects.annualBudgetOpeningCarryForwardHint") : undefined,
     },
   ];
   const visibleMetrics = metrics.filter(({ key }) => {

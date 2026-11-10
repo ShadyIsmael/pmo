@@ -53,6 +53,29 @@ public sealed class PlanVersionComparisonServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Comparison_TreatsUnspecifiedPersistedTextFormatAsAbsent()
+    {
+        await AddPlanAsync(_planId);
+        var from = AddVersion(_planId, _tenantA, 1, PlanVersionStatus.Approved);
+        var to = AddVersion(_planId, _tenantA, 2, PlanVersionStatus.Superseded);
+        AddModel(from, "Original", includeSecondActivity: false);
+        AddModel(to, "Original", includeSecondActivity: false);
+        to.WbsNodes.Single(node => node.Code == "1").TextFormat = PlanTextFormat.Unspecified();
+        to.Activities.Single(activity => activity.Code == "A1").TextFormat = PlanTextFormat.Unspecified();
+        await _context.SaveChangesAsync();
+
+        var result = await _service.CompareAsync(_planId, from.Id, to.Id);
+
+        Assert.True(result.IsSuccess, result.Error?.Message);
+        var wbs = Assert.Single(result.Value!.Wbs, change => change.Key == "1");
+        var activity = Assert.Single(result.Value.Activities, change => change.Key == "activity:A1");
+        Assert.Equal("Unchanged", wbs.ChangeType);
+        Assert.Equal("Unchanged", activity.ChangeType);
+        Assert.DoesNotContain("TextFormat", wbs.Fields.Keys);
+        Assert.DoesNotContain("TextFormat", activity.Fields.Keys);
+    }
+
+    [Fact]
     public async Task Comparison_ReturnsAddedRemovedModifiedAndFieldLevelValues()
     {
         await AddPlanAsync(_planId);

@@ -23,6 +23,12 @@ public sealed class ProjectAnnualBudget : BaseEntity
     public string Currency { get; set; } = string.Empty;
     public decimal NewApprovedFunding { get; set; }
 
+    /// <summary>
+    /// Optional pre-submission approval plan for this Draft only. Null means that
+    /// the current Project Settings defaults remain authoritative.
+    /// </summary>
+    public string? DraftApprovalConfigurationJson { get; set; }
+
     /// <summary>Reserved for a separately approved carry-forward workflow; Sprint 1 keeps it at zero.</summary>
     public decimal ApprovedCarryForward { get; set; }
 

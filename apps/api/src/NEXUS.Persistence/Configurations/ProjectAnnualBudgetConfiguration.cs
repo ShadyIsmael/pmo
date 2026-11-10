@@ -34,6 +34,7 @@ public sealed class ProjectAnnualBudgetConfiguration : IEntityTypeConfiguration<
         builder.Property(item => item.FinancialReference).HasMaxLength(100).IsRequired();
         builder.Property(item => item.Currency).HasMaxLength(3).IsRequired();
         builder.Property(item => item.Status).HasMaxLength(16).IsRequired();
+        builder.Property(item => item.DraftApprovalConfigurationJson).HasColumnType("nvarchar(max)");
         // Match the persistence-wide monetary convention; the API validates the same scale.
         builder.Property(item => item.NewApprovedFunding).HasPrecision(19, 4);
         builder.Property(item => item.ApprovedCarryForward).HasPrecision(19, 4);

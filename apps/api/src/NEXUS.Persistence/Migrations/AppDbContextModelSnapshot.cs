@@ -236,6 +236,9 @@ namespace NEXUS.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("DraftApprovalConfigurationJson")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("Currency")
                         .HasColumnType("nvarchar(max)");
 

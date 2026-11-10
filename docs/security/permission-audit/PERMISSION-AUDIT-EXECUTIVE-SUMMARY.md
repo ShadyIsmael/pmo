@@ -16,7 +16,7 @@ Static inventories contain **602 HTTP method attributes** in **855 API source C#
 ## Current blockers
 
 - SQL Server identity verification failed in this execution session with `Cannot generate SSPI context`; no database read or write succeeded.
-- The EF gate includes a guarded `reset` path for only `Shady` / `NexusPmo`. Its project builds, and the offline EF model check reports synchronization with 9 repository migrations. No live database was opened. Under the current policy, a reset requires successful target identity verification and explicit Product Owner authorization; no backup is required for this exact target, while ordinary database writes retain the backup gate.
+- The EF gate includes a guarded `reset` path for only `Shady` / `NexusPmo`. Its project builds, and the offline EF model check reports synchronization with 9 repository migrations. No live database was opened. A destructive reset requires successful target identity verification and explicit Product Owner authorization. Development/UAT backups are optional for reset and ordinary database operations; exact target, migration, and schema checks remain required.
 - Persisted Permission rows, RolePermissions, direct overrides, and effective runtime grants remain uninspected.
 - API solution and React production builds passed. The React test suite had 724 passes and 38 failures; the API authorization test project failed before tests executed. Direct runtime and browser verification remain pending. See `SECURITY-TEST-RESULTS.md`; no runtime UAT claim is made here.
 
@@ -39,7 +39,7 @@ Positive, negative, and cross-tenant/project scope scenarios are recorded in `do
 | Migrations applied | None in this execution. |
 | Physical schema verified | Not run. |
 | Persistence tests | Not run against SQL Server; the API test project did not execute. |
-| Blocker | Current Development identity, explicit Product Owner reset authorization, and secure Admin bootstrap readiness are required before the exact `Shady/NexusPmo` reset and EF seed; the reset-specific backup waiver applies only to this target. |
+| Blocker | Current Development identity, explicit Product Owner reset authorization, and secure Admin bootstrap readiness are required before the exact `Shady/NexusPmo` reset and EF seed. Development/UAT backups are optional; destructive reset still requires explicit Product Owner authorization and all target, migration, and schema checks. |
 
 ## Existing audit deliverables
 

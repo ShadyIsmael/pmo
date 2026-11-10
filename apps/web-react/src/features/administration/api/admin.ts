@@ -33,6 +33,7 @@ export interface PermissionCatalogItemDto {
   descriptionAr: string;
   scope: string;
   canDelegate?: boolean | null;
+  canDelegateToCustomRole?: boolean | null;
   sensitivity: "Low" | "Medium" | "High" | "Critical";
   isSensitive: boolean;
   requiredPermissionKeys: string[];
