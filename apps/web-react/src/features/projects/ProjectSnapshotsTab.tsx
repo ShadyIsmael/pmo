@@ -7,6 +7,7 @@ import { Button } from "@components/ui/Button";
 import { PageHeader } from "@components/layout/PageHeader";
 import { useProjectSnapshot, useProjectSnapshots, type ProjectSnapshotCollectionItem, type ProjectSnapshotDataDto, type ProjectSnapshotDto, type ProjectSnapshotSummaryDto } from "./api/projects";
 import { useProjectEnumLabels } from "./lib/project-labels";
+import { projectLifecycleLabel, useProjectLifecycleOptions } from "./api/project-lifecycle";
 import { formatDateTime } from "@lib/utils";
 import { formatNumberValue } from "@lib/formatting/number";
 import { getRiskLevelTextClass, getRiskStatusTextClass, getStatusTextClass, getStatusTone, statusToneDotClasses } from "@lib/status-presentation";
@@ -59,6 +60,7 @@ export function ProjectSnapshotsTab() {
   const { t, locale } = useI18n();
   const snapshotsQuery = useProjectSnapshots(projectId, !snapshotId && Boolean(projectId));
   const snapshotQuery = useProjectSnapshot(projectId, snapshotId ?? "", Boolean(snapshotId && projectId));
+  const lifecycleOptions = useProjectLifecycleOptions({ enabled: Boolean(snapshotId && projectId), projectId });
 
   if (!projectId) {
     return <SnapshotMessage icon="error" title={t("projects.snapshotScopeUnavailable")} />;
@@ -69,7 +71,11 @@ export function ProjectSnapshotsTab() {
     if (snapshotQuery.isError || !snapshotQuery.data) {
       return <SnapshotMessage icon="error" title={t("projects.snapshotLoadError")} projectId={projectId} />;
     }
-    return <SnapshotPreview snapshot={snapshotQuery.data} projectId={projectId} />;
+    return <>
+      {lifecycleOptions.isLoading ? <p role="status" className="mb-3 text-xs text-muted-foreground">{t("projects.lifecycle.phaseLookupLoading")} · {t("projects.lifecycle.statusLookupLoading")}</p> : null}
+      {lifecycleOptions.isError ? <div className="mb-3 flex flex-wrap items-center gap-2"><p role="alert" className="text-xs text-destructive">{t("projects.lifecycle.lookupError")}</p><Button type="button" size="sm" variant="outline" onClick={() => void lifecycleOptions.refetch()}>{t("projects.lifecycle.retry")}</Button></div> : null}
+      <SnapshotPreview snapshot={snapshotQuery.data} projectId={projectId} lifecycleOptions={lifecycleOptions} />
+    </>;
   }
 
   const rows = snapshotsQuery.data ?? [];
@@ -82,6 +88,8 @@ export function ProjectSnapshotsTab() {
       />
 
       {snapshotsQuery.isLoading ? <SnapshotListLoading t={t} /> : null}
+      {lifecycleOptions.isLoading ? <p role="status" className="text-xs text-muted-foreground">{t("projects.lifecycle.phaseLookupLoading")} · {t("projects.lifecycle.statusLookupLoading")}</p> : null}
+      {lifecycleOptions.isError ? <div className="flex flex-wrap items-center gap-2"><p role="alert" className="text-xs text-destructive">{t("projects.lifecycle.lookupError")}</p><Button type="button" size="sm" variant="outline" onClick={() => void lifecycleOptions.refetch()}>{t("projects.lifecycle.retry")}</Button></div> : null}
       {snapshotsQuery.isError ? <SnapshotMessage icon="error" title={t("projects.snapshotListLoadError")} onRetry={() => void snapshotsQuery.refetch()} /> : null}
       {!snapshotsQuery.isLoading && !snapshotsQuery.isError && rows.length === 0 ? <SnapshotMessage icon="empty" title={t("projects.noSnapshots")} description={t("projects.noSnapshotsDescription")} /> : null}
       {!snapshotsQuery.isLoading && !snapshotsQuery.isError && rows.length > 0 ? <SnapshotList rows={rows} projectId={projectId} /> : null}
@@ -131,10 +139,14 @@ function SnapshotListMeta({ label, value }: { label: string; value: string }) {
   return <div className="flex min-w-0 items-baseline gap-1.5"><dt className="shrink-0 text-muted-foreground">{label}:</dt><dd className="min-w-0 break-words font-medium text-foreground">{value}</dd></div>;
 }
 
-function SnapshotPreview({ snapshot, projectId }: { snapshot: ProjectSnapshotDto; projectId: string }) {
+function SnapshotPreview({ snapshot, projectId, lifecycleOptions }: { snapshot: ProjectSnapshotDto; projectId: string; lifecycleOptions: ReturnType<typeof useProjectLifecycleOptions> }) {
   const { t, locale, formatDate, formatCurrency } = useI18n();
-  const { statusLabel, priorityLabel, healthLabel, healthStatusLabel } = useProjectEnumLabels();
+  const { priorityLabel, healthLabel, healthStatusLabel } = useProjectEnumLabels();
   const notRecorded = t("projects.snapshotValueUnavailable");
+  const status = lifecycleOptions.data?.statuses.find((item) => item.code.toLocaleUpperCase() === snapshot.status?.toLocaleUpperCase());
+  const phase = lifecycleOptions.data?.phases.find((item) => item.code.toLocaleUpperCase() === snapshot.phase?.toLocaleUpperCase());
+  const statusLabel = projectLifecycleLabel(status, locale, snapshot.status || notRecorded);
+  const phaseLabel = projectLifecycleLabel(phase, locale, snapshot.phase || notRecorded);
   const snapshotProjectIdentity = [snapshot.name, snapshot.code ? `(${snapshot.code})` : undefined].filter(Boolean).join(" ");
   const snapshotTypeKey = `projects.snapshotTypes.${snapshot.snapshotType}`;
   const snapshotType = t(snapshotTypeKey) === snapshotTypeKey ? t("projects.unknownSnapshotType") : t(snapshotTypeKey);
@@ -153,7 +165,7 @@ function SnapshotPreview({ snapshot, projectId }: { snapshot: ProjectSnapshotDto
         <Badge variant="secondary"><Lock className="me-1 h-3 w-3" />{t("projects.readOnlySnapshot")}</Badge>
         <Badge variant="outline">{snapshotType}</Badge>
         <Badge variant="outline">{t("projects.snapshotNumber")} #{formatNumberValue(snapshot.snapshotNumber, locale)}</Badge>
-        <SnapshotStatusIndicator status={snapshot.status} label={statusLabel(snapshot.status)} />
+        <SnapshotStatusIndicator status={snapshot.status} label={statusLabel} />
         <SnapshotStatusIndicator status={snapshot.health} label={healthLabel(snapshot.health)} />
       </div>
 
@@ -174,9 +186,9 @@ function SnapshotPreview({ snapshot, projectId }: { snapshot: ProjectSnapshotDto
       <SnapshotDetailGroup title={t("projects.snapshotProjectDetails")}>
         <SnapshotDetailField label={t("projects.project")} value={snapshot.name} t={t} />
         <SnapshotDetailField label={t("projects.code")} value={snapshot.code} t={t} />
-        <SnapshotDetailField label={t("common.status")} value={statusLabel(snapshot.status)} valueClassName={getStatusTextClass(snapshot.status)} t={t} />
+        <SnapshotDetailField label={t("common.status")} value={statusLabel} valueClassName={getStatusTextClass(snapshot.status)} t={t} />
         <SnapshotDetailField label={t("projects.priority")} value={priorityLabel(snapshot.priority)} t={t} />
-        <SnapshotDetailField label={t("projects.phase")} value={snapshot.phase} t={t} />
+        <SnapshotDetailField label={t("projects.phase")} value={phaseLabel} t={t} />
         <SnapshotDetailField label={t("projects.health")} value={healthLabel(snapshot.health)} valueClassName={getStatusTextClass(snapshot.health)} t={t} />
         <SnapshotDetailField label={t("projects.snapshotFields.ragStatus")} value={snapshot.ragStatus ? healthStatusLabel(snapshot.ragStatus) : undefined} valueClassName={snapshot.ragStatus ? getStatusTextClass(snapshot.ragStatus) : undefined} t={t} />
         <SnapshotDetailField label={t("projects.confidenceLevel")} value={snapshot.confidenceLevel} t={t} />
@@ -222,7 +234,7 @@ function SnapshotPreview({ snapshot, projectId }: { snapshot: ProjectSnapshotDto
 
       <SnapshotCollections snapshot={snapshot} />
     </article>
-    <SnapshotPrintDocument snapshot={snapshot} projectIdentity={snapshotProjectIdentity || notRecorded} />
+    <SnapshotPrintDocument snapshot={snapshot} projectIdentity={snapshotProjectIdentity || notRecorded} statusLabel={statusLabel} phaseLabel={phaseLabel} />
   </>;
 }
 
@@ -240,9 +252,9 @@ function SnapshotNavigationLink({ to, Icon, children, className = "", iconClassN
   </Link>;
 }
 
-function SnapshotPrintDocument({ snapshot, projectIdentity }: { snapshot: ProjectSnapshotDto; projectIdentity: string }) {
+function SnapshotPrintDocument({ snapshot, projectIdentity, statusLabel, phaseLabel }: { snapshot: ProjectSnapshotDto; projectIdentity: string; statusLabel: string; phaseLabel: string }) {
   const { t, locale, formatDate, formatCurrency } = useI18n();
-  const { statusLabel, priorityLabel, healthLabel, healthStatusLabel } = useProjectEnumLabels();
+  const { priorityLabel, healthLabel, healthStatusLabel } = useProjectEnumLabels();
   const notRecorded = t("projects.snapshotValueUnavailable");
   const typeKey = `projects.snapshotTypes.${snapshot.snapshotType}`;
   const snapshotType = t(typeKey) === typeKey ? t("projects.unknownSnapshotType") : t(typeKey);
@@ -259,7 +271,7 @@ function SnapshotPrintDocument({ snapshot, projectIdentity }: { snapshot: Projec
       <div className="snapshot-print-classification">
         <p>{snapshotType}</p>
         <p>{t("projects.snapshotNumber")} #{formatNumberValue(snapshot.snapshotNumber, locale)}</p>
-        <p><SnapshotStatusIndicator status={snapshot.status} label={statusLabel(snapshot.status)} /> · <SnapshotStatusIndicator status={snapshot.health} label={healthLabel(snapshot.health)} /></p>
+        <p><SnapshotStatusIndicator status={snapshot.status} label={statusLabel} /> · <SnapshotStatusIndicator status={snapshot.health} label={healthLabel(snapshot.health)} /></p>
       </div>
     </header>
 
@@ -292,9 +304,9 @@ function SnapshotPrintDocument({ snapshot, projectIdentity }: { snapshot: Projec
     <SnapshotDetailGroup title={t("projects.snapshotProjectDetails")} includeUnavailable>
       <SnapshotDetailField label={t("projects.project")} value={snapshot.name} t={t} />
       <SnapshotDetailField label={t("projects.code")} value={snapshot.code} t={t} />
-      <SnapshotDetailField label={t("common.status")} value={statusLabel(snapshot.status)} valueClassName={getStatusTextClass(snapshot.status)} t={t} />
+      <SnapshotDetailField label={t("common.status")} value={statusLabel} valueClassName={getStatusTextClass(snapshot.status)} t={t} />
       <SnapshotDetailField label={t("projects.priority")} value={priorityLabel(snapshot.priority)} t={t} />
-      <SnapshotDetailField label={t("projects.phase")} value={snapshot.phase} t={t} />
+      <SnapshotDetailField label={t("projects.phase")} value={phaseLabel} t={t} />
       <SnapshotDetailField label={t("projects.health")} value={healthLabel(snapshot.health)} valueClassName={getStatusTextClass(snapshot.health)} t={t} />
       <SnapshotDetailField label={t("projects.snapshotFields.ragStatus")} value={snapshot.ragStatus ? healthStatusLabel(snapshot.ragStatus) : undefined} valueClassName={snapshot.ragStatus ? getStatusTextClass(snapshot.ragStatus) : undefined} t={t} />
       <SnapshotDetailField label={t("projects.confidenceLevel")} value={snapshot.confidenceLevel} t={t} />

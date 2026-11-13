@@ -10,6 +10,10 @@ vi.mock("../features/projects/api/projects", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../features/projects/api/projects")>();
   return { ...actual, useProjectSnapshots: mocks.useProjectSnapshots, useProjectSnapshot: mocks.useProjectSnapshot };
 });
+vi.mock("../features/projects/api/project-lifecycle", () => ({
+  useProjectLifecycleOptions: () => ({ data: { phases: [{ id: "phase-execution", code: "Execution", nameEn: "Execution stage", nameAr: "مرحلة التنفيذ", displayOrder: 1, isDefault: false, isActive: true }], statuses: [{ id: "status-active", code: "Active", nameEn: "In delivery", nameAr: "قيد التنفيذ", displayOrder: 1, isDefault: false, isActive: true }] }, isLoading: false, isError: false, refetch: vi.fn() }),
+  projectLifecycleLabel: (option: { nameEn?: string; nameAr?: string; code: string } | undefined, locale: string, fallback?: string | null) => option ? (locale === "ar" ? option.nameAr || option.nameEn || option.code : option.nameEn || option.nameAr || option.code) : fallback || "",
+}));
 
 function ProjectOutlet() {
   return <Outlet context={{ projectId: "project-1", project: { id: "project-1", name: "Migration", code: "PRJ-1" } }} />;
@@ -59,6 +63,8 @@ describe("project snapshot report workspace", () => {
     expect(preview.getByText("Historical snapshot for Migration (PRJ-1)")).toBeInTheDocument();
     expect(preview.getByText("Manager handover")).toBeInTheDocument();
     expect(preview.getByText("Read-only snapshot")).toBeInTheDocument();
+    expect(preview.getAllByText("In delivery").length).toBeGreaterThan(0);
+    expect(preview.getByText("Execution stage")).toBeInTheDocument();
     expect(preview.getByText("Jordan Lee")).toBeInTheDocument();
     expect(preview.getByText("Engineer")).toBeInTheDocument();
     expect(preview.getByText("60%")).toBeInTheDocument();

@@ -149,6 +149,10 @@ public sealed class ProgramManagementService : IProgramManagementService
                 Name = project.Name,
                 Code = project.Code,
                 Status = project.Status,
+                StatusNameEn = project.StatusNameEn,
+                StatusNameAr = project.StatusNameAr,
+                ReportingCategory = project.ReportingCategory,
+                AttentionLevel = project.AttentionLevel,
                 Health = project.Health,
                 ProjectManagerName = managers.GetValueOrDefault(project.ProjectManagerId ?? Guid.Empty),
                 StartDate = project.StartDate,
@@ -168,10 +172,10 @@ public sealed class ProgramManagementService : IProgramManagementService
         var summary = new ProgramManagementSummaryDto
         {
             TotalProjects = projects.Count,
-            ActiveProjects = projects.Count(project => IsActiveStatus(project.Status)),
-            CompletedProjects = projects.Count(project => IsCompletedStatus(project.Status)),
+            ActiveProjects = projects.Count(project => project.ReportingCategory == ProjectStatusReportingCategories.InProgress),
+            CompletedProjects = projects.Count(project => project.ReportingCategory == ProjectStatusReportingCategories.Completed),
             ProjectsAtRisk = projectViews.Count(project => project.RequiresAttention),
-            CriticalProjects = projects.Count(project => IsCriticalProject(project)),
+            CriticalProjects = projects.Count(IsCriticalProject),
             AverageProjectProgress = projects.Count == 0 ? null : Math.Round(projects.Average(project => project.Progress), 2),
             ProjectHealthDistribution = projects.GroupBy(project => string.IsNullOrWhiteSpace(project.Health) ? "Unknown" : project.Health)
                 .OrderBy(group => group.Key).ToDictionary(group => group.Key, group => group.Count(), StringComparer.OrdinalIgnoreCase)
@@ -214,7 +218,7 @@ public sealed class ProgramManagementService : IProgramManagementService
                 Id = program.Id,
                 Name = program.Name,
                 Code = program.Code,
-                Status = ComputeProgramStatus(projectViews),
+                Status = ComputeProgramStatus(projects),
                 Health = ComputeProgramHealth(projectViews),
                 ProgramManagerName = managers.GetValueOrDefault(program.ProgramManagerId ?? Guid.Empty),
                 PortfolioId = program.PortfolioId,
@@ -265,10 +269,22 @@ public sealed class ProgramManagementService : IProgramManagementService
     {
         var ids = programIds.Distinct().ToArray();
         if (ids.Length == 0) return [];
-        return await _db.Set<ProjectEntity>().AsNoTracking()
+        var rows = await _db.Set<ProjectEntity>().AsNoTracking()
             .Where(project => project.ProgramId.HasValue && ids.Contains(project.ProgramId.Value))
-            .Select(project => new ProjectRow(project.Id, project.PublicId, project.ProgramId!.Value, project.Name, project.Code, project.Status, project.Health, project.Priority, project.ProjectManagerId, project.StartDate, project.EndDate, project.Progress, project.Currency))
+            .Select(project => new ProjectRow(project.Id, project.TenantId, project.PublicId, project.ProgramId!.Value, project.Name, project.Code, project.Status,
+                null, null, project.ProjectStatusId, project.Health, project.Priority, project.ProjectManagerId, project.StartDate, project.EndDate, project.Progress, project.Currency,
+                ProjectStatusReportingCategories.InProgress, ProjectStatusAttentionLevels.None))
             .ToListAsync(cancellationToken);
+        var semantics = await StatusSemanticsAsync(rows.Select(project => project.ProjectStatusId), rows.FirstOrDefault()?.TenantId, cancellationToken);
+        return rows.Select(project => semantics.TryGetValue(project.ProjectStatusId ?? Guid.Empty, out var value)
+            ? project with
+            {
+                StatusNameEn = value.NameEn,
+                StatusNameAr = value.NameAr,
+                ReportingCategory = value.ReportingCategory,
+                AttentionLevel = value.AttentionLevel
+            }
+            : project).ToList();
     }
 
     private async Task<List<ScheduleRow>> ScheduleRowsAsync(IEnumerable<Guid> projectIds, CancellationToken cancellationToken)
@@ -452,10 +468,11 @@ public sealed class ProgramManagementService : IProgramManagementService
         TargetResolutionDate = issue.TargetResolutionDate
     };
 
-    private static bool ProjectNeedsAttention(ProjectRow project) => string.Equals(project.Health, "Red", StringComparison.OrdinalIgnoreCase) || project.Status.Contains("risk", StringComparison.OrdinalIgnoreCase) || project.Status.Contains("delay", StringComparison.OrdinalIgnoreCase) || string.Equals(project.Status, "OnHold", StringComparison.OrdinalIgnoreCase);
-    private static bool IsCriticalProject(ProjectRow project) => string.Equals(project.Priority, "Critical", StringComparison.OrdinalIgnoreCase) || string.Equals(project.Health, "Red", StringComparison.OrdinalIgnoreCase);
-    private static bool IsActiveStatus(string status) => !IsCompletedStatus(status) && !string.Equals(status, "Cancelled", StringComparison.OrdinalIgnoreCase) && !string.Equals(status, "Archived", StringComparison.OrdinalIgnoreCase);
-    private static bool IsCompletedStatus(string status) => string.Equals(status, "Completed", StringComparison.OrdinalIgnoreCase) || string.Equals(status, "Closed", StringComparison.OrdinalIgnoreCase) || string.Equals(status, "Done", StringComparison.OrdinalIgnoreCase);
+    private static bool ProjectNeedsAttention(ProjectRow project) => string.Equals(project.Health, "Red", StringComparison.OrdinalIgnoreCase)
+        || project.AttentionLevel is ProjectStatusAttentionLevels.NeedsAttention or ProjectStatusAttentionLevels.Critical;
+    private static bool IsCriticalProject(ProjectRow project) => string.Equals(project.Priority, "Critical", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(project.Health, "Red", StringComparison.OrdinalIgnoreCase)
+        || project.AttentionLevel == ProjectStatusAttentionLevels.Critical;
     private static bool IsOpenRisk(RiskRow risk) => risk.Status is not RiskStatus.Mitigated and not RiskStatus.Closed;
     private static bool IsOpenIssue(IssueRow issue) => !string.Equals(issue.Status, "Closed", StringComparison.OrdinalIgnoreCase) && !string.Equals(issue.Status, "Resolved", StringComparison.OrdinalIgnoreCase) && !string.Equals(issue.Status, "Cancelled", StringComparison.OrdinalIgnoreCase);
     private static bool IsDelayed(ScheduleRow schedule) => schedule.BaselineEndDate.HasValue && schedule.ForecastEndDate.HasValue && schedule.ForecastEndDate > schedule.BaselineEndDate;
@@ -474,11 +491,11 @@ public sealed class ProgramManagementService : IProgramManagementService
         return "Unknown";
     }
 
-    private static string ComputeProgramStatus(IReadOnlyList<ProgramProjectManagementDto> projects)
+    private static string ComputeProgramStatus(IReadOnlyList<ProjectRow> projects)
     {
         if (projects.Count == 0) return "Active";
-        if (projects.All(p => string.Equals(p.Status, "Completed", StringComparison.OrdinalIgnoreCase) || string.Equals(p.Status, "Closed", StringComparison.OrdinalIgnoreCase) || string.Equals(p.Status, "Done", StringComparison.OrdinalIgnoreCase))) return "Completed";
-        if (projects.Any(p => string.Equals(p.Status, "OnHold", StringComparison.OrdinalIgnoreCase))) return "On Hold";
+        if (projects.All(project => project.ReportingCategory == ProjectStatusReportingCategories.Completed)) return "Completed";
+        if (projects.Any(project => project.AttentionLevel is ProjectStatusAttentionLevels.NeedsAttention or ProjectStatusAttentionLevels.Critical)) return "On Hold";
         return "Active";
     }
     private static string ReportFreshness(DateTime reportDate, DateTime now) => ManagementReportingRules.Freshness(reportDate, now);
@@ -493,7 +510,24 @@ public sealed class ProgramManagementService : IProgramManagementService
     }
     private static int MilestoneSort(MilestoneRow milestone, DateTime now) => MilestoneState(milestone, now) switch { "Overdue" => 0, "DueSoon" => 1, "OnTrack" => 2, _ => 3 };
 
-    private sealed record ProjectRow(Guid Id, Guid PublicId, Guid ProgramId, string Name, string Code, string Status, string Health, string Priority, Guid? ProjectManagerId, DateTime? StartDate, DateTime? EndDate, decimal Progress, string Currency);
+    private async Task<Dictionary<Guid, ProjectStatusSemantics>> StatusSemanticsAsync(IEnumerable<Guid?> statusIds, Guid? tenantId, CancellationToken cancellationToken)
+    {
+        var ids = statusIds.Where(id => id.HasValue).Select(id => id!.Value).Distinct().ToArray();
+        if (ids.Length == 0 || tenantId is not Guid validTenantId || validTenantId == Guid.Empty)
+            return [];
+        var rows = await _db.Set<ProjectStatusCatalogEntry>().AsNoTracking()
+            .Where(status => status.TenantId == validTenantId && ids.Contains(status.Id) && !status.IsDeleted)
+            .Select(status => new ProjectStatusSemanticsRow(status.Id, status.NameEn, status.NameAr, status.ReportingCategory, status.AttentionLevel))
+            .ToListAsync(cancellationToken);
+        return rows.ToDictionary(status => status.Id, status => new ProjectStatusSemantics(
+            status.NameEn, status.NameAr, status.ReportingCategory, status.AttentionLevel));
+    }
+
+    private sealed record ProjectStatusSemanticsRow(Guid Id, string NameEn, string NameAr, string ReportingCategory, string AttentionLevel);
+    private sealed record ProjectStatusSemantics(string NameEn, string NameAr, string ReportingCategory, string AttentionLevel);
+    private sealed record ProjectRow(Guid Id, Guid TenantId, Guid PublicId, Guid ProgramId, string Name, string Code, string Status,
+        string? StatusNameEn, string? StatusNameAr, Guid? ProjectStatusId, string Health, string Priority, Guid? ProjectManagerId,
+        DateTime? StartDate, DateTime? EndDate, decimal Progress, string Currency, string ReportingCategory, string AttentionLevel);
     private sealed record ScheduleRow(Guid ProjectId, DateTime? BaselineEndDate, DateTime? ForecastEndDate, DateTime UpdatedAt);
     private sealed record MilestoneRow(Guid Id, Guid ProjectId, string Name, DateTime? DueDate, DateTime? CompletedDate, string? Status);
     private sealed record RiskRow(Guid Id, Guid ProjectId, string Title, RiskLevel RiskLevel, RiskStatus Status, DateTime? IdentifiedDate);

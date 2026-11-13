@@ -25,13 +25,27 @@ export const endpoints = {
     categories: "/api/documents/categories",
     versions: (documentId: string) => `${id("/api/documents", documentId)}/versions`,
     archive: (documentId: string) => `${id("/api/documents", documentId)}/archive`,
+    activate: (documentId: string) => `${id("/api/documents", documentId)}/activate`,
     download: (documentId: string) => `${id("/api/documents", documentId)}/download`,
     preview: (documentId: string) => `${id("/api/documents", documentId)}/preview`,
+  },
+  documentCategories: {
+    root: "/api/document-categories",
+    detail: (categoryId: string) => id("/api/document-categories", categoryId),
+    status: (categoryId: string) => `${id("/api/document-categories", categoryId)}/status`,
+    templateOptions: "/api/document-categories/template-options",
   },
   projects: {
     root: "/api/projects",
     paymentObligationLookup: "/api/projects/workflow-lookups/payment-obligations",
     detail: (v: string) => id("/api/projects", v),
+    phaseGateReadiness: (projectId: string, targetPhaseId?: string) => {
+      const base = `${id("/api/projects", projectId)}/phase-gate/readiness`;
+      return targetPhaseId ? `${base}?targetPhaseId=${encodeURIComponent(targetPhaseId)}` : base;
+    },
+    phaseGateRequirementDocument: (projectId: string, requirementSnapshotId: string) =>
+      `${id("/api/projects", projectId)}/phase-gate/requirements/${encodeURIComponent(requirementSnapshotId)}/document`,
+    phaseGateChange: (projectId: string) => `${id("/api/projects", projectId)}/phase-gate/change-phase`,
     shell: (v: string) => `${id("/api/projects", v)}/shell`,
     overview: (v: string) => `${id("/api/projects", v)}/overview`,
     workflows: (v: string) => `${id("/api/projects", v)}/workflows`,
@@ -111,6 +125,13 @@ export const endpoints = {
   },
   organization: {
     directory: "/api/organizations",
+    phaseGateTransitions: (organizationId: string) => `/api/organizations/${encodeURIComponent(organizationId)}/phase-gate-requirements/transitions`,
+    phaseGateRequirements: (organizationId: string, sourcePhaseId: string, targetPhaseId: string) =>
+      `/api/organizations/${encodeURIComponent(organizationId)}/phase-gate-requirements?sourcePhaseId=${encodeURIComponent(sourcePhaseId)}&targetPhaseId=${encodeURIComponent(targetPhaseId)}`,
+    phaseGateRequirementHistory: (organizationId: string, sourcePhaseId: string, targetPhaseId: string) =>
+      `/api/organizations/${encodeURIComponent(organizationId)}/phase-gate-requirements/history?sourcePhaseId=${encodeURIComponent(sourcePhaseId)}&targetPhaseId=${encodeURIComponent(targetPhaseId)}`,
+    phaseGateTemplatesByCategory: (organizationId: string, sourcePhaseId: string, categoryId?: string) =>
+      `/api/organizations/${encodeURIComponent(organizationId)}/phase-gate-requirements/templates-by-category?sourcePhaseId=${encodeURIComponent(sourcePhaseId)}${categoryId ? `&categoryId=${encodeURIComponent(categoryId)}` : ""}`,
     settingsGrantTargets: "/api/organizations/settings-access/users",
     settingsGrants: (id: string) => `/api/organizations/${encodeURIComponent(id)}/settings-access/grants`,
     revokeSettingsGrant: (id: string, userId: string) => `/api/organizations/${encodeURIComponent(id)}/settings-access/grants/${encodeURIComponent(userId)}/revoke`,

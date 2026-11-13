@@ -12,11 +12,13 @@ public static class ProjectMapping
             Id = project.Id,
             PublicId = project.PublicId,
             TenantId = project.TenantId,
+            RowVersion = project.RowVersion,
             Name = project.Name,
             Code = project.Code,
             Description = project.Description,
             ProgramId = project.ProgramId,
             Status = project.Status,
+            StatusId = project.ProjectStatusId,
             Priority = project.Priority,
             ProjectManagerId = project.ProjectManagerId,
             SponsorId = project.SponsorId,
@@ -37,6 +39,7 @@ public static class ProjectMapping
             ConfidenceLevel = project.ConfidenceLevel,
             WorkingCalendarId = project.WorkingCalendarId,
             Phase = project.Phase,
+            PhaseId = project.ProjectPhaseId,
             RiskRating = project.RiskRating,
             BusinessCase = project.BusinessCase,
             Notes = project.Notes,
@@ -58,6 +61,9 @@ public static class ProjectMapping
             Name = project.Name,
             Code = project.Code,
             Status = project.Status,
+            StatusId = project.ProjectStatusId,
+            Phase = project.Phase,
+            PhaseId = project.ProjectPhaseId,
             Health = project.Health,
             RagStatus = project.RagStatus,
             Progress = project.Progress,
@@ -102,7 +108,8 @@ public static class ProjectMapping
             Code = dto.Code,
             Description = dto.Description,
             ProgramId = dto.ProgramId,
-            Status = dto.Status,
+            ProjectStatusId = dto.StatusId,
+            ProjectPhaseId = dto.PhaseId,
             Priority = dto.Priority,
             Category = dto.Category,
             ProjectManagerId = dto.ProjectManagerId,
@@ -130,7 +137,7 @@ public static class ProjectMapping
         if (dto.Code != null) project.Code = dto.Code;
         if (dto.Description != null) project.Description = dto.Description;
         if (dto.ProgramId.HasValue) project.ProgramId = dto.ProgramId;
-        if (dto.Status != null) project.Status = dto.Status;
+        // Status changes must use the separately authorized Project Status action.
         if (dto.Priority != null) project.Priority = dto.Priority;
         if (dto.Category != null) project.Category = dto.Category;
         // Project manager ownership is assigned at creation or changed only through the

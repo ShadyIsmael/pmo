@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using NEXUS.Modules.ProjectManagement.Application;
 using NEXUS.Modules.ProjectManagement.Application.Validators;
+using NEXUS.Modules.Documents.Application;
 using NEXUS.SharedKernel;
 using NEXUS.Modules.WorkflowEngine.Application.Contracts;
 
@@ -14,6 +15,11 @@ public static class ProjectManagementModuleRegistration
         services.AddScoped<ProjectManagerMembershipSynchronizer>();
         services.AddScoped<ProjectSponsorMembershipSynchronizer>();
         services.AddScoped<IProjectService>(sp => sp.GetRequiredService<ProjectService>());
+        services.AddScoped<ProjectLifecycleCatalogService>();
+        services.AddScoped<IProjectLifecycleCatalogService>(sp => sp.GetRequiredService<ProjectLifecycleCatalogService>());
+        services.AddScoped<IOrganizationLifecycleHandler>(sp => sp.GetRequiredService<ProjectLifecycleCatalogService>());
+        services.AddScoped<IProjectPhaseGateReadinessService, ProjectPhaseGateReadinessService>();
+        services.AddScoped<IArchivedProjectTemplateReferenceValidator, ProjectPhaseGateArchivedTemplateReferenceValidator>();
         services.AddScoped<IProjectReferenceLookup>(sp => sp.GetRequiredService<ProjectService>());
         services.AddScoped<IProjectPublicIdLookup>(sp => sp.GetRequiredService<ProjectService>());
         services.AddScoped<IPaymentObligationProjectLookupService, PaymentObligationProjectLookupService>();

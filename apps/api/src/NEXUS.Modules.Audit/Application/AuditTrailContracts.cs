@@ -25,6 +25,8 @@ public static class AuditModuleMap
         ["ProjectPerson"] = ProjectManagement,
         ["ProjectStakeholder"] = ProjectManagement,
         ["ProjectSnapshot"] = ProjectManagement,
+        ["ProjectPhase"] = ProjectManagement,
+        ["ProjectPhaseGateEvidence"] = ProjectManagement,
         ["ProjectBaselineVersion"] = ProjectManagement,
         ["ProjectChangeRequest"] = Governance,
         ["ProjectStatusReport"] = Governance,
@@ -163,7 +165,9 @@ public sealed record AuditTrailAccess(bool IncludeFinancialDetail, IReadOnlySet<
             ["ProjectHandoverRequest"] = "Handover.View",
             ["ProjectStakeholder"] = "Stakeholders.Read",
             ["ProjectPerson"] = "Project.View",
-            ["ProjectMember"] = "Project.View"
+            ["ProjectMember"] = "Project.View",
+            ["ProjectPhase"] = "Project.View",
+            ["ProjectPhaseGateEvidence"] = "Document.View"
         };
 
     private static readonly string[] GovernancePermissionKeys =

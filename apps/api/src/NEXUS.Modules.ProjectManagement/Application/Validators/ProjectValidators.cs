@@ -16,10 +16,6 @@ public class CreateProjectValidator : AbstractValidator<CreateProjectDto>
             .MaximumLength(50).WithMessage("Project code cannot exceed 50 characters")
             .When(x => !string.IsNullOrWhiteSpace(x.Code));
 
-        RuleFor(x => x.Status)
-            .NotEmpty().WithMessage("Status is required")
-            .Must(BeValidStatus).WithMessage("Invalid status value");
-
         RuleFor(x => x.Priority)
             .NotEmpty().WithMessage("Priority is required")
             .Must(BeValidPriority).WithMessage("Invalid priority value");
@@ -39,12 +35,6 @@ public class CreateProjectValidator : AbstractValidator<CreateProjectDto>
         RuleFor(x => x.Budget)
             .GreaterThanOrEqualTo(0).When(x => x.Budget.HasValue)
             .WithMessage("Budget must be non-negative");
-    }
-
-    private static bool BeValidStatus(string? status)
-    {
-        var validStatuses = new[] { "Initiation", "Planning", "InProgress", "OnHold", "Completed", "Cancelled", "Closed" };
-        return status != null && validStatuses.Contains(status);
     }
 
     private static bool BeValidPriority(string? priority)
@@ -71,10 +61,6 @@ public class UpdateProjectValidator : AbstractValidator<UpdateProjectDto>
         RuleFor(x => x.Code)
             .MaximumLength(50).WithMessage("Project code cannot exceed 50 characters")
             .When(x => x.Code != null);
-
-        RuleFor(x => x.Status)
-            .Must(BeValidStatus).WithMessage("Invalid status value")
-            .When(x => x.Status != null);
 
         RuleFor(x => x.Priority)
             .Must(BeValidPriority).WithMessage("Invalid priority value")
@@ -108,12 +94,6 @@ public class UpdateProjectValidator : AbstractValidator<UpdateProjectDto>
             RuleFor(x => x.Handover!.HandoverNotes)
                 .MaximumLength(2000).WithMessage("Handover notes cannot exceed 2000 characters");
         });
-    }
-
-    private static bool BeValidStatus(string? status)
-    {
-        var validStatuses = new[] { "Initiation", "Planning", "InProgress", "OnHold", "Completed", "Cancelled", "Closed" };
-        return status != null && validStatuses.Contains(status);
     }
 
     private static bool BeValidPriority(string? priority)

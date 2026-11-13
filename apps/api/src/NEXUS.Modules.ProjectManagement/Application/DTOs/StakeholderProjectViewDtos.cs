@@ -14,6 +14,8 @@ public sealed class StakeholderProjectViewDto
     public string Name { get; init; } = string.Empty;
     public string? Description { get; init; }
     public string Status { get; init; } = string.Empty;
+    public string? StatusNameEn { get; init; }
+    public string? StatusNameAr { get; init; }
     public string Health { get; init; } = string.Empty;
     public decimal Progress { get; init; }
     public DateTime? StartDate { get; init; }

@@ -29,7 +29,10 @@ public sealed class HomeController(
 
         var projectQuery = canViewProjects ? GetProjectQuery(portfolioId, programId, projectId) : null;
         var activeProjectQuery = projectQuery?.Where(project =>
-            project.Status != "Completed" && project.Status != "Cancelled" && project.Status != "Closed");
+            project.ProjectStatusId == null
+            || db.ProjectStatusCatalogEntries.Any(status => status.TenantId == project.TenantId
+                && status.Id == project.ProjectStatusId
+                && status.ReportingCategory == ProjectStatusReportingCategories.InProgress));
         var activeProjectsCount = activeProjectQuery is null
             ? 0
             : await activeProjectQuery.CountAsync(cancellationToken);

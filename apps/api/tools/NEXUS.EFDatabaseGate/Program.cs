@@ -16,6 +16,8 @@ return await EfDatabaseGate.RunAsync(args);
 internal static class EfDatabaseGate
 {
     private const string ConnectionEnvironmentVariable = "NEXUS_EF_DEVELOPMENT_CONNECTION_STRING";
+    private const string DevelopmentServer = "Shady";
+    private const string DevelopmentDatabase = "NexusPmo";
     private const string MinimalSeedCapabilityProbe = "--supports-seed-minimal-only";
     private const string MinimalSeedCapabilityMarker = "NEXUS_MINIMAL_SEED_MODE=1";
     private const string DevelopmentFallback =
@@ -184,6 +186,13 @@ internal static class EfDatabaseGate
 
         var expectedServer = Required(options, "expected-server");
         var expectedDatabase = Required(options, "expected-database");
+        if (!SameEndpoint(expectedServer, DevelopmentServer) ||
+            !SameEndpoint(expectedDatabase, DevelopmentDatabase))
+        {
+            throw new InvalidOperationException(
+                $"This EF gate is restricted to the approved Development target {DevelopmentServer}/{DevelopmentDatabase}. No database connection was opened.");
+        }
+
         var suppliedConnectionString = Environment.GetEnvironmentVariable(ConnectionEnvironmentVariable);
         if (string.IsNullOrWhiteSpace(suppliedConnectionString))
             throw new InvalidOperationException($"Set {ConnectionEnvironmentVariable} through a secure environment or secret store.");
@@ -201,6 +210,7 @@ internal static class EfDatabaseGate
             runtimeConfiguration.GetConnectionString("DefaultConnection") ?? DevelopmentFallback;
         var supplied = new SqlConnectionStringBuilder(suppliedConnectionString);
         var configured = new SqlConnectionStringBuilder(runtimeConnectionString);
+        EnsureWindowsAuthentication(supplied, configured);
         if (!SameEndpoint(supplied.DataSource, configured.DataSource) ||
             !SameEndpoint(supplied.InitialCatalog, configured.InitialCatalog))
         {
@@ -224,6 +234,7 @@ internal static class EfDatabaseGate
 
             Console.WriteLine($"Environment: Development");
             Console.WriteLine($"Target Development DB verified: Yes (server={actual.Server}; database={actual.Database}; databaseId={actual.DatabaseId})");
+            Console.WriteLine("Windows Authentication: Yes (Integrated Security configured and SQL connection opened)");
             return (context, actual.Server, actual.Database, actual.DatabaseId, true);
         }
         catch (Exception ex) when (allowMissingDatabase && FindSqlException(ex)?.Number == 4060)
@@ -243,6 +254,33 @@ internal static class EfDatabaseGate
         {
             await context.DisposeAsync();
             throw;
+        }
+    }
+
+    private static void EnsureWindowsAuthentication(
+        SqlConnectionStringBuilder supplied,
+        SqlConnectionStringBuilder configured)
+    {
+        if (!supplied.IntegratedSecurity || !configured.IntegratedSecurity)
+        {
+            throw new InvalidOperationException(
+                "Development database operations require Windows Authentication (Integrated Security) in both the supplied connection and the effective API Development configuration. No database connection was opened.");
+        }
+
+        if (supplied.Authentication != SqlAuthenticationMethod.NotSpecified ||
+            configured.Authentication != SqlAuthenticationMethod.NotSpecified)
+        {
+            throw new InvalidOperationException(
+                "Development database operations accept Windows Integrated Security only; alternate and token-based authentication modes are not accepted. No database connection was opened.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(supplied.UserID) ||
+            !string.IsNullOrEmpty(supplied.Password) ||
+            !string.IsNullOrWhiteSpace(configured.UserID) ||
+            !string.IsNullOrEmpty(configured.Password))
+        {
+            throw new InvalidOperationException(
+                "SQL username/password fields are not accepted by the Development database gate. Use Windows Authentication. No database connection was opened.");
         }
     }
 

@@ -88,9 +88,10 @@ public class ProjectController : ControllerBase
         [FromQuery] string? status = null,
         [FromQuery] string? priority = null,
         [FromQuery] Guid? portfolioId = null,
+        [FromQuery] Guid? statusId = null,
         CancellationToken cancellationToken = default)
     {
-        var result = await _projectService.GetPagedAsync(page, pageSize, status, priority, portfolioId, cancellationToken);
+        var result = await _projectService.GetPagedAsync(page, pageSize, status, priority, portfolioId, cancellationToken, statusId);
         return Ok(result);
     }
 
@@ -287,6 +288,24 @@ public class ProjectController : ControllerBase
         if (result.IsFailure)
             return result.Error?.StatusCode switch
             {
+                404 => NotFound(new { error = result.Error.Message }),
+                409 => Conflict(new { error = result.Error.Message }),
+                _ => BadRequest(new { error = result.Error?.Message })
+            };
+        return Ok(result.Value);
+    }
+
+    [Authorize(Policy = "ProjectStatus.Change")]
+    [HttpPost("{id:guid}/status")]
+    public async Task<IActionResult> ChangeStatus(Guid id, [FromBody] ChangeProjectStatusDto dto, CancellationToken cancellationToken)
+    {
+        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? string.Empty;
+        var result = await _projectService.ChangeStatusAsync(id, dto, userId, cancellationToken);
+        if (result.IsFailure)
+            return result.Error?.StatusCode switch
+            {
+                401 => Unauthorized(new { error = result.Error.Message }),
+                403 => Forbid(),
                 404 => NotFound(new { error = result.Error.Message }),
                 409 => Conflict(new { error = result.Error.Message }),
                 _ => BadRequest(new { error = result.Error?.Message })

@@ -11,19 +11,27 @@ import { ApiError, getApiFieldError } from "@api/client";
 import { useI18n } from "@i18n/messages";
 import { useCurrencies, useCreateCurrency, useUpdateCurrency, useDeleteCurrency, type CurrencyDto, type SaveCurrencyInput } from "./api/admin";
 import { useAuth } from "@auth/AuthProvider";
-import { DirectoryAccessPermissions, hasAnyPermission, hasPermission, Permissions } from "@lib/permissions";
+import { DirectoryAccessPermissions, hasAnyPermission, hasPermission, Permissions, ProjectLifecycleCatalogAccessPermissions } from "@lib/permissions";
 import { brand } from "@lib/brand";
 import * as React from "react";
 
 export function ReferenceDataPage() {
   const { t } = useI18n();
+  const { user } = useAuth();
   const area = "administration.areas.referenceData";
+  const canViewGeneralReferenceData = Boolean(user && hasPermission(user.permissions, Permissions.ReferenceData.View));
   const items = [
     { id: "project-roles", href: "/administration/reference-data/project-roles", icon: UsersRound, title: t(`${area}.projectRoles.title`), description: t(`${area}.projectRoles.description`) },
     { id: "vendor-categories", href: "/administration/reference-data/vendor-categories", icon: Tag, title: t(`${area}.vendorCategories.title`), description: t(`${area}.vendorCategories.description`) },
+    { id: "document-categories", href: "/administration/reference-data/document-categories", icon: Tag, title: t(`${area}.documentCategories.title`), description: t(`${area}.documentCategories.description`) },
+    { id: "project-lifecycle", href: "/administration/reference-data/project-lifecycle", icon: ListFilter, title: t(`${area}.projectLifecycle.title`), description: t(`${area}.projectLifecycle.description`) },
     { id: "work-item-statuses", href: "/administration/reference-data/work-item-statuses", icon: ListFilter, title: t(`${area}.workItemStatuses.title`), description: t(`${area}.workItemStatuses.description`) },
     { id: "currencies", href: "/administration/currencies", icon: Coins, title: t(`${area}.currencies.title`), description: t(`${area}.currencies.description`) },
-  ];
+  ].filter((item) => item.id === "document-categories"
+    ? Boolean(user && hasPermission(user.permissions, Permissions.DocumentCategory.View))
+    : item.id === "project-lifecycle"
+      ? hasAnyPermission(user?.permissions ?? [], ProjectLifecycleCatalogAccessPermissions)
+    : canViewGeneralReferenceData);
   return (
     <div className="space-y-6">
       <PageHeader title={t(`${area}.title`)} description={t(`${area}.description`)} />

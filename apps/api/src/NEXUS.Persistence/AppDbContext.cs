@@ -76,6 +76,13 @@ public class AppDbContext : DbContext
     public DbSet<ProjectMember> ProjectMembers => Set<ProjectMember>();
     public DbSet<ProjectMemberRole> ProjectMemberRoles => Set<ProjectMemberRole>();
     public DbSet<ProjectPhase> ProjectPhases => Set<ProjectPhase>();
+    public DbSet<ProjectPhaseCatalogEntry> ProjectPhaseCatalogEntries => Set<ProjectPhaseCatalogEntry>();
+    public DbSet<ProjectStatusCatalogEntry> ProjectStatusCatalogEntries => Set<ProjectStatusCatalogEntry>();
+    public DbSet<ProjectPhaseTransitionRule> ProjectPhaseTransitionRules => Set<ProjectPhaseTransitionRule>();
+    public DbSet<ProjectStatusTransitionRule> ProjectStatusTransitionRules => Set<ProjectStatusTransitionRule>();
+    public DbSet<ProjectPhaseGateSnapshot> ProjectPhaseGateSnapshots => Set<ProjectPhaseGateSnapshot>();
+    public DbSet<ProjectPhaseGateRequirementSnapshot> ProjectPhaseGateRequirementSnapshots => Set<ProjectPhaseGateRequirementSnapshot>();
+    public DbSet<ProjectPhaseGateEvidence> ProjectPhaseGateEvidence => Set<ProjectPhaseGateEvidence>();
     public DbSet<ProjectStakeholder> ProjectStakeholders => Set<ProjectStakeholder>();
     public DbSet<StakeholderInvitation> StakeholderInvitations => Set<StakeholderInvitation>();
     public DbSet<WorkBreakdownStructure> WorkBreakdownStructures => Set<WorkBreakdownStructure>();
@@ -197,6 +204,13 @@ public class AppDbContext : DbContext
     public DbSet<DocumentCategory> DocumentCategories => Set<DocumentCategory>();
     public DbSet<DocumentReview> DocumentReviews => Set<DocumentReview>();
 
+    public DbSet<OrganizationPhaseGateConfiguration> OrganizationPhaseGateConfigurations =>
+        Set<OrganizationPhaseGateConfiguration>();
+    public DbSet<OrganizationPhaseGateConfigurationVersion> OrganizationPhaseGateConfigurationVersions =>
+        Set<OrganizationPhaseGateConfigurationVersion>();
+    public DbSet<OrganizationPhaseGateRequirement> OrganizationPhaseGateRequirements =>
+        Set<OrganizationPhaseGateRequirement>();
+
     public DbSet<ReportDefinition> ReportDefinitions => Set<ReportDefinition>();
     public DbSet<ReportSchedule> ReportSchedules => Set<ReportSchedule>();
     public DbSet<ReportExport> ReportExports => Set<ReportExport>();
@@ -233,6 +247,17 @@ public class AppDbContext : DbContext
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
         modelBuilder.Entity<Document>().HasIndex(document => document.CategoryId);
         modelBuilder.Entity<Document>().HasIndex(document => document.SourceTemplateId);
+        modelBuilder.Entity<Document>().HasIndex(document => document.OrganizationId);
+        modelBuilder.Entity<Document>()
+            .HasOne<Organization>()
+            .WithMany()
+            .HasForeignKey(document => document.OrganizationId)
+            .OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<Document>()
+            .HasOne(document => document.SourceTemplateVersion)
+            .WithMany()
+            .HasForeignKey(document => document.SourceTemplateVersionId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         // SQLite has no rowversion type: a byte[] concurrency token configured with
         // IsRowVersion() is store-generated and SQLite never fills it, so inserts would

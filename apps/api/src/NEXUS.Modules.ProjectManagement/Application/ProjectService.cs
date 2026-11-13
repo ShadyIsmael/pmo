@@ -16,6 +16,7 @@ using NEXUS.SharedKernel;
 using NEXUS.SharedKernel.Helpers;
 using NEXUS.SharedKernel.Management;
 using PortfolioEntity = NEXUS.Modules.Portfolio.Domain.Portfolio;
+using OrganizationEntity = NEXUS.Modules.Organization.Domain.Organization;
 using System.Security.Claims;
 using System.Text.Json;
 
@@ -32,8 +33,10 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
     private readonly IProjectPlanProgressLookup? _planProgressLookup;
     private readonly IUserEffectivePermissionService? _effectivePermissions;
     private readonly ITenantFiscalYearService? _tenantFiscalYear;
+    private readonly IProjectOrganizationLookup? _projectOrganizationLookup;
+    private readonly IProjectLifecycleCatalogService? _lifecycleCatalog;
 
-    public ProjectService(DbContext context, IAuditService auditService, IHttpContextAccessor httpContextAccessor, ProjectManagerMembershipSynchronizer membershipSynchronizer, IManagementContextAccessor? managementContext = null, IProjectPlanProgressLookup? planProgressLookup = null, IUserEffectivePermissionService? effectivePermissions = null, ITenantFiscalYearService? tenantFiscalYear = null)
+    public ProjectService(DbContext context, IAuditService auditService, IHttpContextAccessor httpContextAccessor, ProjectManagerMembershipSynchronizer membershipSynchronizer, IManagementContextAccessor? managementContext = null, IProjectPlanProgressLookup? planProgressLookup = null, IUserEffectivePermissionService? effectivePermissions = null, ITenantFiscalYearService? tenantFiscalYear = null, IProjectOrganizationLookup? projectOrganizationLookup = null, IProjectLifecycleCatalogService? lifecycleCatalog = null)
     {
         _context = context;
         _auditService = auditService;
@@ -44,6 +47,8 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
         _planProgressLookup = planProgressLookup;
         _effectivePermissions = effectivePermissions;
         _tenantFiscalYear = tenantFiscalYear;
+        _projectOrganizationLookup = projectOrganizationLookup;
+        _lifecycleCatalog = lifecycleCatalog;
     }
 
     public async Task<ProjectReference?> FindAsync(Guid projectId, CancellationToken cancellationToken = default)
@@ -116,10 +121,11 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
         return Result<ProjectDto>.Success(dto);
     }
 
-    public async Task<PagedResult<ProjectSummaryDto>> GetPagedAsync(int page, int pageSize, string? status = null, string? priority = null, Guid? portfolioId = null, CancellationToken cancellationToken = default)
+    public async Task<PagedResult<ProjectSummaryDto>> GetPagedAsync(int page, int pageSize, string? status = null, string? priority = null, Guid? portfolioId = null, CancellationToken cancellationToken = default, Guid? statusId = null)
     {
         var query = InScope(_context.Set<Project>().AsNoTracking());
         if (!string.IsNullOrWhiteSpace(status)) query = query.Where(p => p.Status == status);
+        if (statusId.HasValue) query = query.Where(p => p.ProjectStatusId == statusId.Value);
         if (!string.IsNullOrWhiteSpace(priority)) query = query.Where(p => p.Priority == priority);
         if (portfolioId.HasValue) query = query.Where(p => p.PortfolioId == portfolioId.Value);
         var total = await query.CountAsync(cancellationToken);
@@ -133,6 +139,21 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
                 Name = p.Name,
                 Code = p.Code,
                 Status = p.Status,
+                StatusId = p.ProjectStatusId,
+                StatusNameEn = _context.Set<ProjectStatusCatalogEntry>()
+                    .Where(item => item.Id == p.ProjectStatusId && item.TenantId == p.TenantId && !item.IsDeleted)
+                    .Select(item => item.NameEn).FirstOrDefault(),
+                StatusNameAr = _context.Set<ProjectStatusCatalogEntry>()
+                    .Where(item => item.Id == p.ProjectStatusId && item.TenantId == p.TenantId && !item.IsDeleted)
+                    .Select(item => item.NameAr).FirstOrDefault(),
+                Phase = p.Phase,
+                PhaseId = p.ProjectPhaseId,
+                PhaseNameEn = _context.Set<ProjectPhaseCatalogEntry>()
+                    .Where(item => item.Id == p.ProjectPhaseId && item.TenantId == p.TenantId && !item.IsDeleted)
+                    .Select(item => item.NameEn).FirstOrDefault(),
+                PhaseNameAr = _context.Set<ProjectPhaseCatalogEntry>()
+                    .Where(item => item.Id == p.ProjectPhaseId && item.TenantId == p.TenantId && !item.IsDeleted)
+                    .Select(item => item.NameAr).FirstOrDefault(),
                 Health = p.Health,
                 RagStatus = p.RagStatus,
                 Progress = p.Progress,
@@ -155,6 +176,8 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
                 WorkingCalendarId = p.WorkingCalendarId
             })
             .ToListAsync(cancellationToken);
+
+        await PopulateLifecycleSummaryDataAsync(summaries, cancellationToken);
 
         if (_planProgressLookup is not null && summaries.Count > 0)
         {
@@ -202,7 +225,29 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
 
         var hierarchy = await ResolveHierarchyAsync(dto.ProgramId, dto.PortfolioId, dto.Currency, cancellationToken);
         if (hierarchy.Error is not null) return Result<ProjectDto>.Failure(hierarchy.Error);
+        var lifecycleOrganizationId = await ResolveLifecycleOrganizationIdAsync(hierarchy.PortfolioId, dto.DepartmentId, cancellationToken);
+        if (!lifecycleOrganizationId.HasValue)
+            return Result<ProjectDto>.Failure(Error.Validation(
+                "Project ownership must resolve to an active Organization in the current tenant through its Program, Portfolio, or Department."));
+        if (_lifecycleCatalog is not null)
+        {
+            var lifecycleActorId = _managementContext?.Current?.UserId ?? TryParseGuid(userId) ?? Guid.Empty;
+            if (lifecycleActorId == Guid.Empty)
+                return Result<ProjectDto>.Failure(Error.Forbidden("A valid actor is required to provision the protected Project phase."));
+            var preInitiation = await _lifecycleCatalog.EnsurePreInitiationPhaseAsync(
+                tenantId, lifecycleOrganizationId, lifecycleActorId, cancellationToken);
+            if (preInitiation.IsFailure)
+                return Result<ProjectDto>.Failure(preInitiation.Error!);
+        }
+        var lifecycleSelection = await ResolveLifecycleSelectionAsync(
+            tenantId, lifecycleOrganizationId, dto.PhaseId, dto.StatusId, dto.Status, cancellationToken);
+        if (lifecycleSelection.Error is not null) return Result<ProjectDto>.Failure(lifecycleSelection.Error);
         var project = dto.ToEntity(userId);
+        project.ProjectPhaseId = lifecycleSelection.Phase!.Id;
+        project.ProjectStatusId = lifecycleSelection.Status!.Id;
+        // Retain the stable catalog codes for older read integrations. Lifecycle behavior uses the IDs.
+        project.Phase = lifecycleSelection.Phase.Code;
+        project.Status = lifecycleSelection.Status.Code;
         project.Currency = hierarchy.Currency!;
         project.PortfolioId = hierarchy.PortfolioId;
         project.Code = finalCode;
@@ -494,6 +539,8 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
         }
         if (dto.Handover is not null)
             return Result<ProjectDto>.Failure(Error.Conflict("Project Update does not accept Handover data. Use the authorized Handover workflow."));
+        if (dto.Status is not null)
+            return Result<ProjectDto>.Failure(Error.Conflict("Project Status changes must use the authorized Project Status action."));
 
         // Creation is the existing setup/approval boundary; Status is not a draft approval gate.
         if (dto.Budget.HasValue && dto.Budget != project.Budget)
@@ -506,6 +553,20 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
         if (hierarchy.Error is not null) return Result<ProjectDto>.Failure(hierarchy.Error);
         if (dto.Currency != null && !await IsValidCurrencyAsync(dto.Currency.Trim(), cancellationToken))
             return Result<ProjectDto>.Failure(Error.Validation("Currency must be an active configured currency"));
+
+        var candidateProgramId = dto.ProgramId ?? project.ProgramId;
+        var candidateDepartmentId = dto.DepartmentId ?? project.DepartmentId;
+        var ownershipReassigned = candidateProgramId != project.ProgramId
+            || hierarchy.PortfolioId != project.PortfolioId
+            || candidateDepartmentId != project.DepartmentId;
+        if (ownershipReassigned)
+        {
+            var reassignedOrganizationId = await ResolveLifecycleOrganizationIdAsync(
+                hierarchy.PortfolioId, candidateDepartmentId, cancellationToken);
+            if (!reassignedOrganizationId.HasValue)
+                return Result<ProjectDto>.Failure(Error.Validation(
+                    "Project ownership reassignment must resolve to an active Organization in the current tenant through its Program, Portfolio, or Department."));
+        }
 
         var previousSponsorId = project.SponsorId;
         var nextSponsorId = dto.ClearSponsor ? null : dto.SponsorId ?? project.SponsorId;
@@ -550,6 +611,99 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
             Timestamp = DateTime.UtcNow,
             CreatedBy = userId
         }, cancellationToken);
+
+        var resultDto = project.ToDto();
+        await ResolveProjectNamesAsync(resultDto, cancellationToken);
+        return Result<ProjectDto>.Success(resultDto);
+    }
+
+    public async Task<Result<ProjectDto>> ChangeStatusAsync(
+        Guid id,
+        ChangeProjectStatusDto dto,
+        string userId,
+        CancellationToken cancellationToken = default)
+    {
+        var project = await InScope(_context.Set<Project>())
+            .FirstOrDefaultAsync(item => item.Id == id && !item.IsDeleted, cancellationToken);
+        if (project is null) return Result<ProjectDto>.Failure(Error.NotFound("Project not found."));
+        if (!Guid.TryParse(userId, out var actorId) || actorId == Guid.Empty)
+            return Result<ProjectDto>.Failure(Error.Unauthorized("A valid user identity is required."));
+        if (_effectivePermissions is null)
+            return Result<ProjectDto>.Failure(Error.Forbidden("Project Status authorization is unavailable."));
+        var permissions = await _effectivePermissions.GetEffectivePermissionsAsync(actorId, project.TenantId, cancellationToken);
+        if (!permissions.Contains("ProjectStatus.Change"))
+            return Result<ProjectDto>.Failure(Error.Forbidden("ProjectStatus.Change is required to change Project Status."));
+        if (dto.TargetStatusId == Guid.Empty)
+            return Result<ProjectDto>.Failure(Error.Validation("A target Project Status is required.", "targetStatusId"));
+        if (!project.ProjectStatusId.HasValue)
+            return Result<ProjectDto>.Failure(Error.Conflict("This project has no linked lifecycle Status. Resolve its legacy Status mapping before changing it."));
+
+        var source = await _context.Set<ProjectStatusCatalogEntry>().AsNoTracking()
+            .FirstOrDefaultAsync(item => item.Id == project.ProjectStatusId.Value
+                && item.TenantId == project.TenantId && !item.IsDeleted, cancellationToken);
+        var target = await _context.Set<ProjectStatusCatalogEntry>()
+            .FirstOrDefaultAsync(item => item.Id == dto.TargetStatusId && item.TenantId == project.TenantId
+                && item.IsActive && !item.IsDeleted, cancellationToken);
+        if (source is null || target is null)
+            return Result<ProjectDto>.Failure(Error.Validation("The current or selected Project Status is unavailable."));
+        if (source.Id == target.Id)
+            return Result<ProjectDto>.Failure(Error.Validation("The project already has the selected Status."));
+
+        var organizationId = _projectOrganizationLookup is null
+            ? null
+            : await _projectOrganizationLookup.ResolveOrganizationIdAsync(project.TenantId, project.Id, cancellationToken);
+        if (source.OrganizationId.HasValue && source.OrganizationId != organizationId)
+            return Result<ProjectDto>.Failure(Error.Conflict("The project's current Status belongs to a different Organization scope."));
+        if (target.OrganizationId.HasValue && target.OrganizationId != organizationId)
+            return Result<ProjectDto>.Failure(Error.Validation("The target Status belongs to a different Organization scope."));
+        var reason = dto.Reason?.Trim();
+        if (reason?.Length > 2000)
+            return Result<ProjectDto>.Failure(Error.Validation("The Status change reason cannot exceed 2,000 characters.", "reason"));
+
+        var previousStatusId = source.Id;
+        var previousStatusCode = source.Code;
+        var previousLegacyStatus = project.Status;
+        project.ProjectStatusId = target.Id;
+        project.Status = target.Code;
+        project.UpdatedBy = userId;
+        await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+            await _auditService.LogAsync(new AuditEntry
+            {
+                EntityType = "Project",
+                EntityId = project.Id,
+                Action = "StatusChanged",
+                TenantId = project.TenantId,
+                UserId = actorId,
+                UserName = CurrentUserName,
+                Changes = JsonSerializer.Serialize(new
+                {
+                    status = new
+                    {
+                        fromId = previousStatusId, from = previousStatusCode,
+                        toId = target.Id, to = target.Code, legacyFrom = previousLegacyStatus
+                    },
+                    reason
+                }),
+                OriginalValues = JsonSerializer.Serialize(new { id = previousStatusId, code = previousStatusCode, legacyCode = previousLegacyStatus }),
+                NewValues = JsonSerializer.Serialize(new { id = target.Id, code = target.Code, reason }),
+                Timestamp = DateTime.UtcNow,
+                CreatedBy = userId
+            }, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+            return Result<ProjectDto>.Failure(Error.Conflict("Project Status changed concurrently. Reload the project and try again."));
+        }
+        catch
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+            throw;
+        }
 
         var resultDto = project.ToDto();
         await ResolveProjectNamesAsync(resultDto, cancellationToken);
@@ -654,6 +808,170 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
             var department = await _context.Set<Department>().FirstOrDefaultAsync(d => d.Id == dto.DepartmentId.Value, cancellationToken);
             dto.DepartmentName = department?.Name;
         }
+
+        Guid? lifecycleOrganizationId = null;
+        if (_projectOrganizationLookup is not null)
+            lifecycleOrganizationId = await _projectOrganizationLookup.ResolveOrganizationIdAsync(dto.TenantId, dto.Id, cancellationToken);
+        else
+            lifecycleOrganizationId = await ResolveLifecycleOrganizationIdAsync(dto.PortfolioId, dto.DepartmentId, cancellationToken);
+
+        if (dto.StatusId.HasValue)
+        {
+            var status = await _context.Set<ProjectStatusCatalogEntry>().AsNoTracking()
+                .FirstOrDefaultAsync(item => item.Id == dto.StatusId.Value && item.TenantId == dto.TenantId
+                    && !item.IsDeleted && (item.OrganizationId == null || item.OrganizationId == lifecycleOrganizationId), cancellationToken);
+            dto.StatusNameEn = status?.NameEn;
+            dto.StatusNameAr = status?.NameAr;
+            dto.ReportingCategory = status?.ReportingCategory;
+            dto.AttentionLevel = status?.AttentionLevel;
+        }
+
+        if (dto.PhaseId.HasValue)
+        {
+            var phase = await _context.Set<ProjectPhaseCatalogEntry>().AsNoTracking()
+                .FirstOrDefaultAsync(item => item.Id == dto.PhaseId.Value && item.TenantId == dto.TenantId
+                    && !item.IsDeleted && (item.OrganizationId == null || item.OrganizationId == lifecycleOrganizationId), cancellationToken);
+            dto.PhaseNameEn = phase?.NameEn;
+            dto.PhaseNameAr = phase?.NameAr;
+        }
+    }
+
+    private async Task PopulateLifecycleSummaryDataAsync(
+        IReadOnlyCollection<ProjectSummaryDto> summaries,
+        CancellationToken cancellationToken)
+    {
+        if (summaries.Count == 0) return;
+        var statusIds = summaries.Where(item => item.StatusId.HasValue).Select(item => item.StatusId!.Value).Distinct().ToArray();
+        var phaseIds = summaries.Where(item => item.PhaseId.HasValue).Select(item => item.PhaseId!.Value).Distinct().ToArray();
+        var tenantId = GetCurrentTenantId();
+        var statuses = statusIds.Length == 0 ? [] : await _context.Set<ProjectStatusCatalogEntry>().AsNoTracking()
+            .Where(item => item.TenantId == tenantId && !item.IsDeleted && statusIds.Contains(item.Id))
+            .ToListAsync(cancellationToken);
+        var phases = phaseIds.Length == 0 ? [] : await _context.Set<ProjectPhaseCatalogEntry>().AsNoTracking()
+            .Where(item => item.TenantId == tenantId && !item.IsDeleted && phaseIds.Contains(item.Id))
+            .ToListAsync(cancellationToken);
+        var scope = _managementContext?.Current?.Scope;
+        foreach (var summary in summaries)
+        {
+            Guid? organizationId = null;
+            if (scope is not null && scope.ProjectOrganizationIds.TryGetValue(summary.Id, out var scopedOrganizationId)
+                && scopedOrganizationId != Guid.Empty)
+                organizationId = scopedOrganizationId;
+            else if (_projectOrganizationLookup is not null)
+                organizationId = await _projectOrganizationLookup.ResolveOrganizationIdAsync(tenantId, summary.Id, cancellationToken);
+
+            var status = summary.StatusId.HasValue
+                ? statuses.FirstOrDefault(item => item.Id == summary.StatusId.Value
+                    && (item.OrganizationId is null || item.OrganizationId == organizationId))
+                : null;
+            summary.StatusNameEn = status?.NameEn;
+            summary.StatusNameAr = status?.NameAr;
+            summary.ReportingCategory = status?.ReportingCategory;
+            summary.AttentionLevel = status?.AttentionLevel;
+
+            var phase = summary.PhaseId.HasValue
+                ? phases.FirstOrDefault(item => item.Id == summary.PhaseId.Value
+                    && (item.OrganizationId is null || item.OrganizationId == organizationId))
+                : null;
+            summary.PhaseNameEn = phase?.NameEn;
+            summary.PhaseNameAr = phase?.NameAr;
+        }
+    }
+
+    private async Task<Guid?> ResolveLifecycleOrganizationIdAsync(Guid? portfolioId, Guid? departmentId, CancellationToken cancellationToken)
+    {
+        var tenantId = GetCurrentTenantId();
+        Guid? organizationId = null;
+        if (portfolioId.HasValue)
+        {
+            organizationId = await _context.Set<PortfolioEntity>().AsNoTracking()
+                .Where(portfolio => portfolio.Id == portfolioId.Value && portfolio.TenantId == tenantId && !portfolio.IsDeleted)
+                .Select(portfolio => portfolio.OrganizationId)
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+
+        if (!organizationId.HasValue && departmentId.HasValue)
+        {
+            organizationId = await (
+                from department in _context.Set<Department>().AsNoTracking()
+                join businessUnit in _context.Set<BusinessUnit>().AsNoTracking()
+                    on new { department.TenantId, department.BusinessUnitId }
+                    equals new { businessUnit.TenantId, BusinessUnitId = businessUnit.Id }
+                where department.Id == departmentId.Value && department.TenantId == tenantId
+                    && department.IsActive && !department.IsDeleted && businessUnit.IsActive && !businessUnit.IsDeleted
+                select (Guid?)businessUnit.OrganizationId)
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+
+        if (!organizationId.HasValue) return null;
+        return await _context.Set<OrganizationEntity>().AsNoTracking()
+            .Where(organization => organization.Id == organizationId.Value && organization.TenantId == tenantId
+                && organization.IsActive && !organization.IsDeleted)
+            .Select(organization => (Guid?)organization.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    private async Task<(Error? Error, ProjectPhaseCatalogEntry? Phase, ProjectStatusCatalogEntry? Status)> ResolveLifecycleSelectionAsync(
+        Guid tenantId,
+        Guid? organizationId,
+        Guid? requestedPhaseId,
+        Guid? requestedStatusId,
+        string? legacyStatus,
+        CancellationToken cancellationToken)
+    {
+        var phaseRows = await _context.Set<ProjectPhaseCatalogEntry>().AsNoTracking()
+            .Where(item => item.TenantId == tenantId && !item.IsDeleted && item.IsActive
+                && (item.OrganizationId == null || item.OrganizationId == organizationId))
+            .ToListAsync(cancellationToken);
+        var statusRows = await _context.Set<ProjectStatusCatalogEntry>().AsNoTracking()
+            .Where(item => item.TenantId == tenantId && !item.IsDeleted && item.IsActive
+                && (item.OrganizationId == null || item.OrganizationId == organizationId))
+            .ToListAsync(cancellationToken);
+
+        var phases = phaseRows.GroupBy(item => item.NormalizedCode, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.OrderByDescending(item => organizationId.HasValue && item.OrganizationId == organizationId).First())
+            .ToArray();
+        var statuses = statusRows.GroupBy(item => item.NormalizedCode, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.OrderByDescending(item => organizationId.HasValue && item.OrganizationId == organizationId).First())
+            .ToArray();
+
+        var defaultPhases = phases.Where(item => item.IsDefault).ToArray();
+        var defaultStatuses = statuses.Where(item => item.IsDefault).ToArray();
+        if (defaultPhases.Length != 1 || defaultStatuses.Length != 1)
+            return (Error.Validation("One active default phase and one active default status must be configured for the project scope."), null, null);
+
+        var phase = requestedPhaseId.HasValue
+            ? phases.SingleOrDefault(item => item.Id == requestedPhaseId.Value)
+            : defaultPhases[0];
+        if (phase is null)
+            return (Error.Validation("The selected project phase is unavailable in the authorized project scope.", "phaseId"), null, null);
+
+        if (requestedStatusId.HasValue && !string.IsNullOrWhiteSpace(legacyStatus))
+            return (Error.Validation("Provide a Project Status ID or a legacy status code, not both.", "statusId"), null, null);
+        var normalizedLegacy = legacyStatus?.Trim();
+        ProjectStatusCatalogEntry? status;
+        if (requestedStatusId.HasValue)
+        {
+            status = statuses.SingleOrDefault(item => item.Id == requestedStatusId.Value);
+        }
+        else if (!string.IsNullOrWhiteSpace(normalizedLegacy))
+        {
+            var legacyMatches = statuses.Where(item =>
+                string.Equals(item.Code, normalizedLegacy, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(item.NameEn, normalizedLegacy, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(item.NameAr, normalizedLegacy, StringComparison.OrdinalIgnoreCase)).ToArray();
+            status = legacyMatches.Length == 1 ? legacyMatches[0] : null;
+            if (legacyMatches.Length > 1)
+                return (Error.Validation("The legacy Project Status is ambiguous; select a catalog Status ID.", "statusId"), null, null);
+        }
+        else
+        {
+            status = defaultStatuses[0];
+        }
+
+        if (status is null)
+            return (Error.Validation("The selected Project Status is unavailable in the authorized project scope.", "statusId"), null, null);
+        return (null, phase, status);
     }
 
     private async Task<(Error? Error, Guid? PortfolioId, string? Currency)> ResolveHierarchyAsync(Guid? programId, Guid? portfolioId, string? requestedCurrency, CancellationToken ct, Project? existing = null)
@@ -777,67 +1095,11 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
         return Result.Success();
     }
 
-    public async Task<Result> ArchiveAsync(Guid id, string userId, CancellationToken cancellationToken = default)
-    {
-        var project = await _context.Set<Project>().FirstOrDefaultAsync(p => p.Id == id && !p.IsDeleted, cancellationToken);
-        if (project is null) return Result.Failure(Error.NotFound("Project not found"));
+    public Task<Result> ArchiveAsync(Guid id, string userId, CancellationToken cancellationToken = default) =>
+        Task.FromResult(Result.Failure(Error.Conflict("Fixed Archive status mutation is retired. Use the authorized Project Status action.")));
 
-        if (project.Status == "Completed" || project.Status == "Cancelled" || project.Status == "Closed")
-            return Result.Failure(Error.Validation("Cannot archive a project that is already completed, cancelled, or closed"));
-
-        var oldStatus = project.Status;
-        project.Status = "OnHold";
-        project.UpdatedBy = userId;
-        await _context.SaveChangesAsync(cancellationToken);
-
-        await _auditService.LogAsync(new AuditEntry
-        {
-            EntityType = "Project",
-            EntityId = project.Id,
-            Action = "Archive",
-            TenantId = project.TenantId,
-            UserId = TryParseGuid(userId),
-            UserName = CurrentUserName,
-            Changes = JsonSerializer.Serialize(new { status = new { from = oldStatus, to = "OnHold" } }),
-            OriginalValues = oldStatus,
-            NewValues = "OnHold",
-            Timestamp = DateTime.UtcNow,
-            CreatedBy = userId
-        }, cancellationToken);
-
-        return Result.Success();
-    }
-
-    public async Task<Result> ReactivateAsync(Guid id, string userId, CancellationToken cancellationToken = default)
-    {
-        var project = await _context.Set<Project>().FirstOrDefaultAsync(p => p.Id == id && !p.IsDeleted, cancellationToken);
-        if (project is null) return Result.Failure(Error.NotFound("Project not found"));
-
-        if (project.Status != "OnHold")
-            return Result.Failure(Error.Validation("Only archived (OnHold) projects can be reactivated"));
-
-        var oldStatus = project.Status;
-        project.Status = "InProgress";
-        project.UpdatedBy = userId;
-        await _context.SaveChangesAsync(cancellationToken);
-
-        await _auditService.LogAsync(new AuditEntry
-        {
-            EntityType = "Project",
-            EntityId = project.Id,
-            Action = "Reactivate",
-            TenantId = project.TenantId,
-            UserId = TryParseGuid(userId),
-            UserName = CurrentUserName,
-            Changes = JsonSerializer.Serialize(new { status = new { from = oldStatus, to = "InProgress" } }),
-            OriginalValues = oldStatus,
-            NewValues = "InProgress",
-            Timestamp = DateTime.UtcNow,
-            CreatedBy = userId
-        }, cancellationToken);
-
-        return Result.Success();
-    }
+    public Task<Result> ReactivateAsync(Guid id, string userId, CancellationToken cancellationToken = default) =>
+        Task.FromResult(Result.Failure(Error.Conflict("Fixed Reactivate status mutation is retired. Use the authorized Project Status action.")));
 
     public async Task<Result<IReadOnlyList<ProjectMemberDto>>> GetTeamAsync(Guid projectId, CancellationToken cancellationToken = default)
     {

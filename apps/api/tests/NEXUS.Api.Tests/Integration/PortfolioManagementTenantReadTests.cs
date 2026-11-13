@@ -172,7 +172,7 @@ public sealed class PortfolioManagementTenantReadTests : IDisposable
         _db.UserRoles.Add(new UserRole { TenantId = _tenantA, UserId = _ownerA, RoleId = adminRole.Id, CreatedBy = "test" });
         _db.SaveChanges();
 
-        var resolver = new ManagementScopeResolver(_db, new NEXUS.Modules.Identity.Infrastructure.UserEffectivePermissionService(_db));
+        var resolver = new ManagementScopeResolver(_db, new NEXUS.Modules.Identity.Infrastructure.UserEffectivePermissionService(_db), new NEXUS.Persistence.ProjectOrganizationLookup(_db));
 
         Assert.True(await resolver.IsTenantAdministratorAsync(_ownerA, _tenantA));
         Assert.False(await resolver.IsTenantAdministratorAsync(_ownerB, _tenantA));

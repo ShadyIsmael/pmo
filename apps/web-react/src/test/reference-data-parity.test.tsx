@@ -1,13 +1,15 @@
 import * as React from "react";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "../i18n/messages";
+import arMessages from "../i18n/messages/ar.json";
 import { ApiError } from "../api/client";
 import { VendorCategoriesPage } from "../features/administration/VendorCategoriesPage";
 import { ProjectRolesPage } from "../features/administration/ProjectRolesPage";
 import { WorkItemStatusesPage } from "../features/administration/WorkItemStatusesPage";
 import { ReferenceDataPage } from "../features/administration/AdminPages";
+import { DocumentCategoriesPage } from "../features/administration/DocumentCategoriesPage";
 
 const mocks = vi.hoisted(() => ({
   useAuth: vi.fn(),
@@ -34,12 +36,28 @@ const mocks = vi.hoisted(() => ({
   createStatusHook: vi.fn(),
   updateStatusHook: vi.fn(),
   deactivateStatusHook: vi.fn(),
+  managedDocumentCategories: vi.fn(),
+  createDocumentCategory: vi.fn(),
+  updateDocumentCategory: vi.fn(),
+  setDocumentCategoryStatus: vi.fn(),
+  createDocumentCategoryHook: vi.fn(),
+  updateDocumentCategoryHook: vi.fn(),
+  setDocumentCategoryStatusHook: vi.fn(),
+  useManagement: vi.fn(),
+  confirm: vi.fn(),
 }));
 
 vi.mock("@auth/AuthProvider", () => ({ useAuth: mocks.useAuth }));
 vi.mock("@components/ui/ConfirmProvider", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@components/ui/ConfirmProvider")>()),
-  useConfirm: () => vi.fn().mockResolvedValue(true),
+  useConfirm: () => mocks.confirm,
+}));
+vi.mock("@api/management", () => ({ useManagement: mocks.useManagement }));
+vi.mock("../features/projects/api/documents", () => ({
+  useManagedDocumentCategories: mocks.managedDocumentCategories,
+  useCreateDocumentCategory: mocks.createDocumentCategoryHook,
+  useUpdateDocumentCategory: mocks.updateDocumentCategoryHook,
+  useSetDocumentCategoryStatus: mocks.setDocumentCategoryStatusHook,
 }));
 vi.mock("../features/administration/api/admin", () => ({
   useVendorCategories: mocks.categories,
@@ -90,6 +108,17 @@ function renderWorkItemStatusesPage(permissions = ["Settings.View", "ReferenceDa
   return render(<I18nProvider><MemoryRouter initialEntries={["/administration/reference-data/work-item-statuses"]}><WorkItemStatusesPage /></MemoryRouter></I18nProvider>);
 }
 
+const managedDocumentCategories = [
+  { id: "document-category-1", organizationId: "org-a", nameEn: "Policies", nameAr: "السياسات", description: "Approved policy documents", usageCount: 2, isActive: true, canManage: true },
+  { id: "document-category-2", organizationId: "org-a", nameEn: "Archived Forms", nameAr: "النماذج المؤرشفة", description: "", usageCount: 0, isActive: false, canManage: true },
+];
+
+function renderDocumentCategoriesPage(locale: "en" | "ar" = "en", permissions = ["DocumentCategory.View", "DocumentCategory.Create", "DocumentCategory.Edit", "DocumentCategory.ActivateDeactivate"]) {
+  window.localStorage.setItem("nexus-locale", locale);
+  mocks.useAuth.mockReturnValue({ user: { id: "category-admin", permissions }, status: "authenticated" });
+  return render(<I18nProvider><MemoryRouter initialEntries={["/administration/reference-data/document-categories"]}><DocumentCategoriesPage /></MemoryRouter></I18nProvider>);
+}
+
 describe("Vendor Categories source parity", () => {
   beforeEach(() => {
     mocks.useAuth.mockReset().mockReturnValue({ user: { id: "admin-1", permissions: ["Settings.View", "ReferenceData.View", "ReferenceData.Create", "ReferenceData.Edit", "ReferenceData.Delete"] }, status: "authenticated" });
@@ -118,16 +147,112 @@ describe("Vendor Categories source parity", () => {
     mocks.createStatusHook.mockReturnValue({ mutateAsync: mocks.createStatus, isPending: false });
     mocks.updateStatusHook.mockReturnValue({ mutateAsync: mocks.updateStatus, isPending: false });
     mocks.deactivateStatusHook.mockReturnValue({ mutateAsync: mocks.deactivateStatus, isPending: false });
+    mocks.managedDocumentCategories.mockReset().mockReturnValue({ data: managedDocumentCategories, isLoading: false, isError: false, refetch: mocks.refetch });
+    mocks.createDocumentCategory.mockReset().mockResolvedValue(undefined);
+    mocks.updateDocumentCategory.mockReset().mockResolvedValue(undefined);
+    mocks.setDocumentCategoryStatus.mockReset().mockResolvedValue(undefined);
+    mocks.createDocumentCategoryHook.mockReturnValue({ mutateAsync: mocks.createDocumentCategory, isPending: false });
+    mocks.updateDocumentCategoryHook.mockReturnValue({ mutateAsync: mocks.updateDocumentCategory, isPending: false });
+    mocks.setDocumentCategoryStatusHook.mockReturnValue({ mutateAsync: mocks.setDocumentCategoryStatus, isPending: false });
+    mocks.useManagement.mockReset().mockReturnValue({ canMutate: true, loading: false, snapshot: {
+      scope: { organizationIds: ["org-a", "org-b"], organizationReferences: [{ id: "org-a", name: "Alpha Organization" }, { id: "org-b", name: "Beta Organization" }] },
+      selectedContext: null,
+    } });
+    mocks.confirm.mockReset().mockResolvedValue(true);
     vi.stubGlobal("confirm", vi.fn().mockReturnValue(true));
   });
 
-  it("presents the Reference Data source hub with links to all four canonical sections", () => {
+  it("presents the Reference Data source hub with a permission-gated Document Categories link", () => {
+    mocks.useAuth.mockReturnValue({ user: { id: "admin-1", permissions: ["ReferenceData.View", "DocumentCategory.View"] }, status: "authenticated" });
     render(<I18nProvider><MemoryRouter initialEntries={["/administration/reference-data"]}><ReferenceDataPage /></MemoryRouter></I18nProvider>);
 
     expect(screen.getByRole("link", { name: /Project Roles/ })).toHaveAttribute("href", "/administration/reference-data/project-roles");
     expect(screen.getByRole("link", { name: /Vendor Categories/ })).toHaveAttribute("href", "/administration/reference-data/vendor-categories");
+    expect(screen.getByRole("link", { name: /Document Categories/ })).toHaveAttribute("href", "/administration/reference-data/document-categories");
     expect(screen.getByRole("link", { name: /Work Item Statuses/ })).toHaveAttribute("href", "/administration/reference-data/work-item-statuses");
     expect(screen.getByRole("link", { name: /Currencies/ })).toHaveAttribute("href", "/administration/currencies");
+  });
+
+  it("does not show Document Categories on the Reference Data hub without category View", () => {
+    mocks.useAuth.mockReturnValue({ user: { id: "reader-1", permissions: ["ReferenceData.View"] }, status: "authenticated" });
+    render(<I18nProvider><MemoryRouter initialEntries={["/administration/reference-data"]}><ReferenceDataPage /></MemoryRouter></I18nProvider>);
+    expect(screen.queryByRole("link", { name: /Document Categories/ })).not.toBeInTheDocument();
+  });
+
+  it("navigates from the Reference Data card to the Document Categories screen", () => {
+    mocks.useAuth.mockReturnValue({ user: { id: "admin-1", permissions: ["DocumentCategory.View"] }, status: "authenticated" });
+    render(<I18nProvider><MemoryRouter initialEntries={["/administration/reference-data"]}><Routes>
+      <Route path="/administration/reference-data" element={<ReferenceDataPage />} />
+      <Route path="/administration/reference-data/document-categories" element={<DocumentCategoriesPage />} />
+    </Routes></MemoryRouter></I18nProvider>);
+
+    fireEvent.click(screen.getByRole("link", { name: /Document Categories/ }));
+    expect(screen.getByRole("heading", { level: 1, name: "Document categories" })).toBeInTheDocument();
+  });
+
+  it("localizes the Document Categories hub link in Arabic and sets RTL direction", async () => {
+    window.localStorage.setItem("nexus-locale", "ar");
+    mocks.useAuth.mockReturnValue({ user: { id: "admin-1", permissions: ["DocumentCategory.View"] }, status: "authenticated" });
+    render(<I18nProvider><MemoryRouter initialEntries={["/administration/reference-data"]}><ReferenceDataPage /></MemoryRouter></I18nProvider>);
+
+    const title = arMessages.administration.areas.referenceData.documentCategories.title;
+    expect(screen.getByRole("link", { name: new RegExp(title) })).toHaveAttribute("href", "/administration/reference-data/document-categories");
+    await waitFor(() => expect(document.documentElement.dir).toBe("rtl"));
+  });
+
+  it("loads categories only for an authorized selected Organization and renders localized names and RTL", async () => {
+    const { unmount } = renderDocumentCategoriesPage();
+    const organizationSelect = screen.getByRole("combobox", { name: "Organization" });
+    fireEvent.change(organizationSelect, { target: { value: "org-a" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Search categories" }), { target: { value: "policies" } });
+    await waitFor(() => expect(mocks.managedDocumentCategories).toHaveBeenCalledWith({ organizationId: "org-a", search: "policies", includeInactive: true }, true));
+    expect(screen.getByText("Policies")).toBeInTheDocument();
+    expect(screen.getByText("Used by 2 templates")).toBeInTheDocument();
+    expect(screen.getByText("Inactive")).toBeInTheDocument();
+    unmount();
+
+    renderDocumentCategoriesPage("ar");
+    fireEvent.change(screen.getByRole("combobox", { name: "المؤسسة" }), { target: { value: "org-a" } });
+    await waitFor(() => expect(document.documentElement.dir).toBe("rtl"));
+    expect(screen.getByText("السياسات")).toBeInTheDocument();
+  });
+
+  it("creates bilingual categories in the selected Organization and keeps duplicate errors in the side sheet", async () => {
+    mocks.createDocumentCategory.mockRejectedValue(new ApiError(409, "Duplicate category", "CONFLICT"));
+    renderDocumentCategoriesPage();
+    fireEvent.change(screen.getByRole("combobox", { name: "Organization" }), { target: { value: "org-a" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create category" }));
+    const sheet = screen.getByRole("dialog", { name: "Create category" });
+    fireEvent.change(within(sheet).getByLabelText("English name"), { target: { value: "  Governance  " } });
+    fireEvent.change(within(sheet).getByLabelText("Arabic name"), { target: { value: "الحوكمة" } });
+    fireEvent.change(within(sheet).getByLabelText("Description"), { target: { value: "  Governance documents  " } });
+    fireEvent.click(within(sheet).getByRole("button", { name: "Save category" }));
+
+    await waitFor(() => expect(mocks.createDocumentCategory).toHaveBeenCalledWith({ organizationId: "org-a", nameEn: "Governance", nameAr: "الحوكمة", description: "Governance documents" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("A category with these names already exists in this organization.");
+    expect(screen.getByRole("dialog", { name: "Create category" })).toBeInTheDocument();
+  });
+
+  it("edits a category and requires confirmation before deactivation", async () => {
+    renderDocumentCategoriesPage();
+    fireEvent.change(screen.getByRole("combobox", { name: "Organization" }), { target: { value: "org-a" } });
+    fireEvent.click(screen.getByRole("button", { name: "Edit category Policies" }));
+    const sheet = screen.getByRole("dialog", { name: "Edit category" });
+    fireEvent.change(within(sheet).getByLabelText("English name"), { target: { value: "Policy Library" } });
+    fireEvent.click(within(sheet).getByRole("button", { name: "Save category" }));
+    await waitFor(() => expect(mocks.updateDocumentCategory).toHaveBeenCalledWith({ id: "document-category-1", input: { nameEn: "Policy Library", nameAr: "السياسات", description: "Approved policy documents" } }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Deactivate category Policies" }));
+    await waitFor(() => expect(mocks.confirm).toHaveBeenCalledWith(expect.objectContaining({ title: "Deactivate category", destructive: true })));
+    await waitFor(() => expect(mocks.setDocumentCategoryStatus).toHaveBeenCalledWith({ id: "document-category-1", isActive: false }));
+  });
+
+  it("shows only the exact category operations granted to the current role", () => {
+    renderDocumentCategoriesPage("en", ["DocumentCategory.View", "DocumentCategory.Create"]);
+    fireEvent.change(screen.getByRole("combobox", { name: "Organization" }), { target: { value: "org-a" } });
+    expect(screen.getByRole("button", { name: "Create category" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Edit category Policies" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Deactivate category Policies" })).not.toBeInTheDocument();
   });
 
   it("sorts by display order, uses semantic text-only status colors, and hides management actions without a mutation permission", () => {

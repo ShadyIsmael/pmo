@@ -9,7 +9,9 @@ public class Project : BaseEntity
     public string Code { get; set; } = string.Empty;
     public string? Description { get; set; }
     public Guid? ProgramId { get; set; }
-    public string Status { get; set; } = "Initiation";
+    /// <summary>Legacy code projection retained for existing integrations; ProjectStatusId is authoritative.</summary>
+    public string Status { get; set; } = string.Empty;
+    public Guid? ProjectStatusId { get; set; }
     public string Priority { get; set; } = "Medium";
     public string? Category { get; set; }
     public Guid? ProjectManagerId { get; set; }
@@ -34,7 +36,9 @@ public class Project : BaseEntity
     public string Health { get; set; } = "Unknown";
     public string RagStatus { get; set; } = "Unknown";
     public string ConfidenceLevel { get; set; } = "Green";
+    /// <summary>Legacy code projection retained for existing integrations; ProjectPhaseId is authoritative.</summary>
     public string? Phase { get; set; }
+    public Guid? ProjectPhaseId { get; set; }
     public string? RiskRating { get; set; }
     public string? BusinessCase { get; set; }
     public string? Notes { get; set; }

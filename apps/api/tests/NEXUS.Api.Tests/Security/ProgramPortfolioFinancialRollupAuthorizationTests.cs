@@ -153,7 +153,7 @@ public sealed class ProgramPortfolioFinancialRollupAuthorizationTests
         {
             options.AddPolicy("Program.View", policy => policy.RequireClaim("permission", "Program.View"));
             options.AddPolicy("Portfolio.View", policy => policy.RequireClaim("permission", "Portfolio.View"));
-            options.AddCanonicalFinancialActionPolicies();
+            options.AddCanonicalFinancialPolicies();
         });
         return services.BuildServiceProvider().GetRequiredService<AspNetAuthorizationService>();
     }

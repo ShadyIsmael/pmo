@@ -30,6 +30,18 @@
     <FocusedFiscalYearConfiguration Condition="'$(FocusedFiscalYearConfiguration)' == ''">false</FocusedFiscalYearConfiguration>
     <FocusedAccountApi Condition="'$(FocusedAccountApi)' == ''">false</FocusedAccountApi>
     <FocusedMeetingMinutes Condition="'$(FocusedMeetingMinutes)' == ''">false</FocusedMeetingMinutes>
+    <FocusedDocumentMandatoryPersistence Condition="'$(FocusedDocumentMandatoryPersistence)' == ''">false</FocusedDocumentMandatoryPersistence>
+  </PropertyGroup>
+
+  <!-- VSTest testhost watches its parent process for exit. In restricted Windows
+       execution contexts that OpenProcess call fails with Win32 error 5 (Access is
+       denied), crashing testhost before discovery. Microsoft.TestPlatform.TestHost
+       emits RuntimeHostConfigurationOption MSTest.EnableParentProcessQuery=true by
+       default; setting its override property here (before the package targets are
+       imported) makes the generated runtimeconfig use false without duplicating the
+       option. Disabling the query lets the runner own testhost lifetime instead. -->
+  <PropertyGroup>
+    <_MSTestEnableParentProcessQuery>false</_MSTestEnableParentProcessQuery>
   </PropertyGroup>
 
   <ItemGroup>
@@ -59,6 +71,7 @@
     <ProjectReference Include="..\..\src\NEXUS.Modules.Identity\NEXUS.Modules.Identity.csproj" />
     <ProjectReference Include="..\..\src\NEXUS.Modules.Integrations\NEXUS.Modules.Integrations.csproj" />
     <ProjectReference Include="..\..\src\NEXUS.Modules.PluginManagement\NEXUS.Modules.PluginManagement.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.Organization\NEXUS.Modules.Organization.csproj" />
     <ProjectReference Include="..\..\src\NEXUS.Modules.RiskManagement\NEXUS.Modules.RiskManagement.csproj" />
     <ProjectReference Include="..\..\src\NEXUS.Modules.ProjectManagement\NEXUS.Modules.ProjectManagement.csproj" />
     <ProjectReference Include="..\..\src\NEXUS.Modules.ProjectPlanning\NEXUS.Modules.ProjectPlanning.csproj" />
@@ -316,6 +329,14 @@
     <ProjectReference Remove="@(ProjectReference)" />
     <ProjectReference Include="..\..\src\NEXUS.Api\NEXUS.Api.csproj" />
     <ProjectReference Include="..\..\src\NEXUS.Modules.Identity\NEXUS.Modules.Identity.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(FocusedDocumentMandatoryPersistence)' == 'true'">
+    <Compile Remove="**\*.cs" />
+    <Compile Include="Integration\DocumentMandatoryPersistenceTests.cs" />
+    <ProjectReference Remove="@(ProjectReference)" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.Documents\NEXUS.Modules.Documents.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Persistence\NEXUS.Persistence.csproj" />
   </ItemGroup>
 
 </Project>

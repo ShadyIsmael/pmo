@@ -95,7 +95,7 @@ C4Context
 - MS Project, Jira, Ticketing: plugins/jira-integration/plugin.json, plugins/microsoft-project/plugin.json, plugins/internal-ticketing/plugin.json (all manifest-based placeholders)
 - AI provider: `Program.cs:117` registers AIPlanning module; `docs/architecture/module-catalogue.md:525-546` documents AI planning entities
 - Notifications: `NotificationService`, durable `NotificationDelivery` rows, a leased background worker, per-device attempts, and an FCM adapter are implemented; Email remains deferred.
-- File storage: `IStorageProvider` interface documented, `LocalStorageProvider` placeholder
+- File storage: `IStorageProvider` contract with a private local filesystem provider for Development; external File Server integration remains deferred
 - ERP: plugins/erp-integration-placeholder/plugin.json
 - Enterprise identity: plugins/enterprise-identity-placeholder/plugin.json
 
@@ -451,11 +451,11 @@ All 19 modules. Evidence cross-referenced from `docs/architecture/module-catalog
 | **Maturity** | In-App and asynchronous Push foundation implemented; runtime FCM requires valid server configuration and browser consent; Email is deferred |
 
 ### 8.14 Documents
-| **Responsibility** | Document metadata, versioning, categories, reviews, file storage |
+| **Responsibility** | Shared document metadata/versioning and the organization-owned approved-template catalog |
 | **Entities** | Document, DocumentVersion, DocumentCategory, DocumentReview |
-| **API endpoints** | GET/POST/DELETE /api/documents, upload/download |
+| **API endpoints** | API-mediated document list/create, version, archive, organization selection, preview, and download |
 | **Dependencies** | Project Management, Identity |
-| **Maturity** | Implemented (entities verified; storage is LocalStorageProvider placeholder) |
+| **Maturity** | Source includes organization-owned templates and the private local Development provider; additive database migration is not applied and runtime verification remains pending |
 
 ### 8.15 Reporting
 | **Responsibility** | Report definitions, scheduling, export (PDF/Excel/CSV) |
@@ -761,7 +761,7 @@ A fresh Development seed creates the protected `admin@nexus.com` user. Role temp
 
 | Interface | Responsibility | Current Implementation | Status |
 |-----------|---------------|----------------------|--------|
-| `IStorageProvider` | File storage for documents | `LocalStorageProvider` | Placeholder |
+| `IStorageProvider` | File storage for documents | Private `LocalStorageProvider` for Development | Implemented in source; external File Server deferred |
 | `ISyncProvider` | External system sync (Jira, etc.) | Not verified | Placeholder |
 | `IAIProvider` | AI planning/analysis provider | Not verified | Placeholder |
 
@@ -1045,9 +1045,9 @@ C4Deployment
 - **Not verified** in application code -- no feature flag evaluation logic found.
 
 ### File Storage
-- **`IStorageProvider`** interface documented in integration architecture.
-- **`LocalStorageProvider`** placeholder -- no real file storage implementation verified.
-- Document entity stores `StoragePath` for file reference.
+- **`IStorageProvider`** and private `LocalStorageProvider` provide stream storage, read, metadata/existence, and delete operations behind an opaque key.
+- New local files are stored outside `wwwroot` under `Storage:DocumentsRoot`; `Storage:Provider` selects the DI-registered provider ID and `Storage:MaxUploadBytes` bounds uploads.
+- New `DocumentVersion` rows record provider-neutral provider ID, opaque key, and checksum; new writes leave legacy `StoragePath` fields null, while safe reads remain available for existing rows. External File Server connectivity is deferred.
 
 ---
 
@@ -1067,7 +1067,7 @@ C4Deployment
 | **Approvals** | Implemented | 18 approval requests seeded, multi-level, delegation |
 | **Notifications** | Partially Implemented | Canonical in-app and durable asynchronous Push foundation; Firebase configuration and browser consent required for runtime delivery; Email deferred |
 | **Reporting** | Implemented | Entities for definitions, schedules, exports exist |
-| **Documents** | Partially Implemented | Entities exist; storage is LocalStorageProvider placeholder |
+| **Documents** | Source implementation available | Shared Project Documents and organization-owned templates use provider-neutral metadata and private local storage; database migration and authenticated runtime UAT remain pending |
 | **Audit** | Implemented | AuditEntry and AuditActivity entities seeded |
 | **MS Project** | Placeholder | Plugin manifest only; no MPP parsing |
 | **Jira** | Placeholder | Plugin manifest only; no REST client |

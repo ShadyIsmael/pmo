@@ -40,12 +40,14 @@ public sealed class ProjectStatusReportService : IProjectStatusReportService
     private readonly TimeProvider _timeProvider;
     private readonly IStakeholderInvitationService? _stakeholderInvitations;
     private readonly ILogger<ProjectStatusReportService>? _logger;
+    private readonly IProjectOrganizationLookup? _projectOrganizationLookup;
 
     public ProjectStatusReportService(DbContext context, IAuditService auditService, IHttpContextAccessor httpContextAccessor,
         IProjectReportingService projectReportingService, IProjectPlanProgressLookup planProgressLookup, ICapacityService capacityService,
         IProjectStatusReportWorkflowProvisioningService workflowProvisioning, IWorkflowInstanceService workflowInstances,
         IWorkflowExecutionService workflowExecution, IManagementContextAccessor managementContextAccessor, TimeProvider? timeProvider = null,
-        IStakeholderInvitationService? stakeholderInvitations = null, ILogger<ProjectStatusReportService>? logger = null)
+        IStakeholderInvitationService? stakeholderInvitations = null, ILogger<ProjectStatusReportService>? logger = null,
+        IProjectOrganizationLookup? projectOrganizationLookup = null)
     {
         _context = context;
         _auditService = auditService;
@@ -60,6 +62,7 @@ public sealed class ProjectStatusReportService : IProjectStatusReportService
         _timeProvider = timeProvider ?? TimeProvider.System;
         _stakeholderInvitations = stakeholderInvitations;
         _logger = logger;
+        _projectOrganizationLookup = projectOrganizationLookup;
     }
 
     public async Task<Result<PagedResult<ProjectStatusReportListDto>>> GetPagedAsync(Guid projectId, int page, int pageSize, CancellationToken cancellationToken = default)
@@ -176,6 +179,8 @@ public sealed class ProjectStatusReportService : IProjectStatusReportService
     {
         var project = await _context.Set<Project>().FirstOrDefaultAsync(x => x.Id == projectId, cancellationToken);
         if (project is null) return Result<ProjectStatusReportDto>.Failure(Error.NotFound("Project not found"));
+        var lifecycleStatus = await ResolveReportLifecycleStatusAsync(project, dto.ProjectLifecycleStatusAtReport, cancellationToken);
+        if (lifecycleStatus.IsFailure) return Result<ProjectStatusReportDto>.Failure(lifecycleStatus.Error!);
         var today = await GetBusinessTodayAsync(projectId, cancellationToken);
         var automaticDate = _timeProvider.GetUtcNow().UtcDateTime.Date;
         var validation = ValidateDraft(today, dto.PeriodFrom, dto.PeriodTo, dto.OverallProgressPercent);
@@ -193,7 +198,7 @@ public sealed class ProjectStatusReportService : IProjectStatusReportService
             PeriodTo = dto.PeriodTo,
             StatusDate = automaticDate,
             ReportState = ProjectStatusReportState.Draft,
-            ProjectLifecycleStatusAtReport = string.IsNullOrWhiteSpace(dto.ProjectLifecycleStatusAtReport) ? project.Status : dto.ProjectLifecycleStatusAtReport,
+            ProjectLifecycleStatusAtReport = lifecycleStatus.Value,
             OverallHealth = string.IsNullOrWhiteSpace(dto.OverallHealth) ? UsableHealth(project.Health) : dto.OverallHealth,
             OverallProgressPercent = dto.OverallProgressPercent ?? planProgress ?? project.Progress,
             ScheduleHealth = null,
@@ -228,12 +233,14 @@ public sealed class ProjectStatusReportService : IProjectStatusReportService
 
         var project = await _context.Set<Project>().FirstOrDefaultAsync(item => item.Id == projectId && item.TenantId == report.TenantId && !item.IsDeleted, cancellationToken);
         if (project is null) return Result<ProjectStatusReportDto>.Failure(Error.NotFound("Project not found"));
+        var lifecycleStatus = await ResolveReportLifecycleStatusAsync(project, dto.ProjectLifecycleStatusAtReport, cancellationToken);
+        if (lifecycleStatus.IsFailure) return Result<ProjectStatusReportDto>.Failure(lifecycleStatus.Error!);
 
         var today = await GetBusinessTodayAsync(projectId, cancellationToken);
         var automaticDate = _timeProvider.GetUtcNow().UtcDateTime.Date;
         var validation = ValidateDraft(today, dto.PeriodFrom, dto.PeriodTo, dto.OverallProgressPercent);
         if (validation is not null) return Result<ProjectStatusReportDto>.Failure(validation);
-        ApplyDraftContent(report, dto, automaticDate);
+        ApplyDraftContent(report, dto, automaticDate, lifecycleStatus.Value!);
         if (report.OverallProgressPercent is null)
             report.OverallProgressPercent = await _planProgressLookup.GetAsync(projectId, cancellationToken) ?? project.Progress;
         var utilization = await GetResourceUtilizationAsync(project, dto.PeriodFrom, dto.PeriodTo, cancellationToken);
@@ -278,13 +285,16 @@ public sealed class ProjectStatusReportService : IProjectStatusReportService
             if (report.ReportState != ProjectStatusReportState.Draft)
                 return Result<ProjectStatusReportDto>.Failure(Error.Conflict("This status report has already left Draft."));
 
-            _context.Entry(report).Property(item => item.RowVersion).OriginalValue = dto.RowVersion;
-            if (HasDraftContentChanged(report, dto)
-                && _httpContextAccessor.HttpContext?.User.HasClaim("permission", "StatusReport.Edit") != true)
-                return Result<ProjectStatusReportDto>.Failure(Error.Forbidden("Editing a Draft while publishing also requires StatusReport.Edit."));
-            ApplyDraftContent(report, dto, _timeProvider.GetUtcNow().UtcDateTime.Date);
             var project = await _context.Set<Project>().FirstOrDefaultAsync(item => item.Id == projectId && item.TenantId == report.TenantId && !item.IsDeleted, cancellationToken);
             if (project is null) return Result<ProjectStatusReportDto>.Failure(Error.NotFound("Project not found"));
+            var lifecycleStatus = await ResolveReportLifecycleStatusAsync(project, dto.ProjectLifecycleStatusAtReport, cancellationToken);
+            if (lifecycleStatus.IsFailure) return Result<ProjectStatusReportDto>.Failure(lifecycleStatus.Error!);
+
+            _context.Entry(report).Property(item => item.RowVersion).OriginalValue = dto.RowVersion;
+            if (HasDraftContentChanged(report, dto, lifecycleStatus.Value!)
+                && _httpContextAccessor.HttpContext?.User.HasClaim("permission", "StatusReport.Edit") != true)
+                return Result<ProjectStatusReportDto>.Failure(Error.Forbidden("Editing a Draft while publishing also requires StatusReport.Edit."));
+            ApplyDraftContent(report, dto, _timeProvider.GetUtcNow().UtcDateTime.Date, lifecycleStatus.Value!);
 
             var today = await GetBusinessTodayAsync(projectId, cancellationToken);
             var capturedAt = _timeProvider.GetUtcNow().UtcDateTime;
@@ -775,13 +785,13 @@ public sealed class ProjectStatusReportService : IProjectStatusReportService
         }, cancellationToken);
     }
 
-    private static void ApplyDraftContent(ProjectStatusReport report, UpdateProjectStatusReportDto dto, DateTime automaticDate)
+    private static void ApplyDraftContent(ProjectStatusReport report, UpdateProjectStatusReportDto dto, DateTime automaticDate, string lifecycleStatusCode)
     {
         report.ReportDate = automaticDate.Date;
         report.PeriodFrom = dto.PeriodFrom;
         report.PeriodTo = dto.PeriodTo;
         report.StatusDate = automaticDate.Date;
-        report.ProjectLifecycleStatusAtReport = dto.ProjectLifecycleStatusAtReport;
+        report.ProjectLifecycleStatusAtReport = lifecycleStatusCode;
         report.OverallHealth = dto.OverallHealth;
         report.OverallProgressPercent = dto.OverallProgressPercent;
         report.ScheduleHealth = null;
@@ -797,10 +807,65 @@ public sealed class ProjectStatusReportService : IProjectStatusReportService
         report.SupportNeeded = dto.SupportNeeded;
     }
 
-    private static bool HasDraftContentChanged(ProjectStatusReport report, UpdateProjectStatusReportDto dto) =>
+    private async Task<Result<string>> ResolveReportLifecycleStatusAsync(
+        Project project,
+        string? requestedStatus,
+        CancellationToken cancellationToken)
+    {
+        Guid? organizationId = null;
+        if (_projectOrganizationLookup is not null)
+        {
+            organizationId = await _projectOrganizationLookup.ResolveOrganizationIdAsync(
+                project.TenantId, project.Id, cancellationToken);
+        }
+        else if (_managementContextAccessor.Current?.Scope.ProjectOrganizationIds.TryGetValue(project.Id, out var scopedOrganizationId) == true
+            && scopedOrganizationId != Guid.Empty)
+        {
+            organizationId = scopedOrganizationId;
+        }
+
+        var statuses = await _context.Set<ProjectStatusCatalogEntry>().AsNoTracking()
+            .Where(item => item.TenantId == project.TenantId
+                && !item.IsDeleted
+                && (item.OrganizationId == null || item.OrganizationId == organizationId))
+            .OrderBy(item => item.DisplayOrder)
+            .ToListAsync(cancellationToken);
+
+        var currentStatus = project.ProjectStatusId.HasValue
+            ? statuses.FirstOrDefault(item => item.Id == project.ProjectStatusId.Value)
+            : null;
+        if (string.IsNullOrWhiteSpace(requestedStatus) && project.ProjectStatusId.HasValue)
+        {
+            return currentStatus is null
+                ? Result<string>.Failure(Error.Validation("The project's current status is unavailable in its lifecycle catalog scope."))
+                : Result<string>.Success(currentStatus.Code);
+        }
+
+        var requestedCode = string.IsNullOrWhiteSpace(requestedStatus) ? project.Status : requestedStatus;
+        var normalizedCode = requestedCode?.Trim().ToUpperInvariant();
+        var selectedStatus = string.IsNullOrWhiteSpace(normalizedCode)
+            ? null
+            : statuses.Where(item => item.IsActive
+                    && (string.Equals(item.NormalizedCode, normalizedCode, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(item.Code, requestedCode?.Trim(), StringComparison.OrdinalIgnoreCase))
+                )
+                .OrderByDescending(item => item.OrganizationId.HasValue)
+                .FirstOrDefault();
+
+        if (selectedStatus is null && currentStatus is not null
+            && (string.Equals(currentStatus.NormalizedCode, normalizedCode, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(currentStatus.Code, requestedCode?.Trim(), StringComparison.OrdinalIgnoreCase)))
+            selectedStatus = currentStatus;
+
+        return selectedStatus is null
+            ? Result<string>.Failure(Error.Validation("Select an active project status from the in-scope lifecycle catalog."))
+            : Result<string>.Success(selectedStatus.Code);
+    }
+
+    private static bool HasDraftContentChanged(ProjectStatusReport report, UpdateProjectStatusReportDto dto, string lifecycleStatusCode) =>
         report.PeriodFrom.Date != dto.PeriodFrom.Date
         || report.PeriodTo.Date != dto.PeriodTo.Date
-        || !string.Equals(report.ProjectLifecycleStatusAtReport, dto.ProjectLifecycleStatusAtReport, StringComparison.Ordinal)
+        || !string.Equals(report.ProjectLifecycleStatusAtReport, lifecycleStatusCode, StringComparison.Ordinal)
         || !string.Equals(report.OverallHealth, dto.OverallHealth, StringComparison.Ordinal)
         || report.OverallProgressPercent != dto.OverallProgressPercent
         || !string.Equals(report.CostHealth, dto.CostHealth, StringComparison.Ordinal)
@@ -810,7 +875,9 @@ public sealed class ProjectStatusReportService : IProjectStatusReportService
         || !string.Equals(report.ChallengesConcerns, dto.ChallengesConcerns, StringComparison.Ordinal)
         || !string.Equals(report.NextPeriodPriorities, dto.NextPeriodPriorities, StringComparison.Ordinal)
         || !string.Equals(report.ActionsNeeded, dto.ActionsNeeded, StringComparison.Ordinal)
-        || !string.Equals(report.SupportNeeded, dto.SupportNeeded, StringComparison.Ordinal);    private static string? UsableHealth(string? value) =>
+        || !string.Equals(report.SupportNeeded, dto.SupportNeeded, StringComparison.Ordinal);
+
+    private static string? UsableHealth(string? value) =>
         HealthValues.FirstOrDefault(item => string.Equals(item, value, StringComparison.OrdinalIgnoreCase));
 
     private static Error? ValidateDraft(DateTime today, DateTime periodFrom, DateTime periodTo, decimal? progress)

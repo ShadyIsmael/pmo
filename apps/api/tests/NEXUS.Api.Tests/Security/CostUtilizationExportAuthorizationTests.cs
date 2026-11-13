@@ -102,7 +102,7 @@ public sealed class CostUtilizationExportAuthorizationTests
         services.AddAuthorization(options =>
         {
             options.AddPolicy("Resource.View", policy => policy.RequireClaim("permission", "Resource.View"));
-            options.AddCanonicalFinancialActionPolicies();
+            options.AddCanonicalFinancialPolicies();
         });
         return services.BuildServiceProvider().GetRequiredService<AspNetAuthorizationService>();
     }

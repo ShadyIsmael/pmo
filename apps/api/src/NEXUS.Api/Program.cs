@@ -355,6 +355,26 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("Project.Create", policy => policy.RequireClaim("permission", "Project.Create"));
     options.AddPolicy("Project.Edit", policy => policy.RequireClaim("permission", "Project.Edit"));
     options.AddPolicy("Project.Delete", policy => policy.RequireClaim("permission", "Project.Delete"));
+    options.AddPolicy("ProjectLifecycle.OptionsLookup", policy => policy.RequireAssertion(context =>
+        context.User.HasClaim("permission", "Project.Create")
+        || context.User.HasClaim("permission", "Project.Edit")
+        || context.User.HasClaim("permission", "Project.View")
+        || context.User.HasClaim("permission", "StatusReport.View")
+        || context.User.HasClaim("permission", "StatusReport.Create")
+        || context.User.HasClaim("permission", "StatusReport.Edit")
+        || context.User.HasClaim("permission", "StatusReport.Publish")
+        || context.User.HasClaim("permission", "ProjectStatus.Change")
+        || context.User.HasClaim("permission", "ProjectPhase.Change")));
+    options.AddPolicy("ProjectLifecyclePhase.View", policy => policy.RequireClaim("permission", "ProjectLifecyclePhase.View"));
+    options.AddPolicy("ProjectLifecyclePhase.Create", policy => policy.RequireClaim("permission", "ProjectLifecyclePhase.Create"));
+    options.AddPolicy("ProjectLifecyclePhase.Edit", policy => policy.RequireClaim("permission", "ProjectLifecyclePhase.Edit"));
+    options.AddPolicy("ProjectLifecyclePhase.ActivateDeactivate", policy => policy.RequireClaim("permission", "ProjectLifecyclePhase.ActivateDeactivate"));
+    options.AddPolicy("ProjectLifecycleStatus.View", policy => policy.RequireClaim("permission", "ProjectLifecycleStatus.View"));
+    options.AddPolicy("ProjectLifecycleStatus.Create", policy => policy.RequireClaim("permission", "ProjectLifecycleStatus.Create"));
+    options.AddPolicy("ProjectLifecycleStatus.Edit", policy => policy.RequireClaim("permission", "ProjectLifecycleStatus.Edit"));
+    options.AddPolicy("ProjectLifecycleStatus.ActivateDeactivate", policy => policy.RequireClaim("permission", "ProjectLifecycleStatus.ActivateDeactivate"));
+    options.AddPolicy("ProjectStatus.Change", policy => policy.RequireClaim("permission", "ProjectStatus.Change"));
+    options.AddPolicy("ProjectPhase.Change", policy => policy.RequireClaim("permission", "ProjectPhase.Change"));
     options.AddPolicy("StatusReport.View", policy => policy.RequireClaim("permission", "StatusReport.View"));
     options.AddPolicy("StatusReport.Create", policy => policy.RequireClaim("permission", "StatusReport.Create"));
     options.AddPolicy("StatusReport.Edit", policy => policy.RequireClaim("permission", "StatusReport.Edit"));
@@ -414,6 +434,13 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy(DocumentPermissions.Edit, policy => policy.RequireClaim("permission", DocumentPermissions.Edit));
     options.AddPolicy(DocumentPermissions.Archive, policy => policy.RequireClaim("permission", DocumentPermissions.Archive));
     options.AddPolicy(DocumentPermissions.TemplateManage, policy => policy.RequireClaim("permission", DocumentPermissions.TemplateManage));
+    options.AddPolicy(DocumentCategoryPermissions.View, policy => policy.RequireClaim("permission", DocumentCategoryPermissions.View));
+    options.AddPolicy(DocumentCategoryPermissions.Create, policy => policy.RequireClaim("permission", DocumentCategoryPermissions.Create));
+    options.AddPolicy(DocumentCategoryPermissions.Edit, policy => policy.RequireClaim("permission", DocumentCategoryPermissions.Edit));
+    options.AddPolicy(DocumentCategoryPermissions.ActivateDeactivate, policy => policy.RequireClaim("permission", DocumentCategoryPermissions.ActivateDeactivate));
+    options.AddPolicy(DocumentCategoryPermissions.TemplateOptionsLookupPolicy, policy =>
+        policy.RequireClaim("permission", DocumentPermissions.Create)
+            .RequireClaim("permission", DocumentPermissions.TemplateManage));
     options.AddPolicy("Workflow.View", policy => policy.RequireClaim("permission", "Workflow.View"));
     options.AddPolicy("Workflow.Manage", policy => policy.RequireClaim("permission", "Workflow.Manage"));
     options.AddPolicy("Workflow.Publish", policy => policy.RequireClaim("permission", "Workflow.Publish"));
@@ -531,6 +558,7 @@ builder.Services.AddScoped<AssignmentRecoveryService>();
 builder.Services.AddIdentityModule();
 builder.Services.AddScoped<DevelopmentAdminPasswordRecoveryService>();
 builder.Services.AddOrganizationModule();
+builder.Services.AddPhaseGatePersistence();
 builder.Services.AddScoped<IFiscalYearConfigurationChangeGuard, FiscalYearConfigurationChangeGuard>();
 builder.Services.AddPortfolioModule();
 builder.Services.AddProjectManagementModule();

@@ -6,9 +6,11 @@ using NEXUS.Api.Management;
 using NEXUS.Modules.Approvals.Domain;
 using NEXUS.Modules.Audit.Application;
 using NEXUS.Modules.CostManagement.Application;
+using NEXUS.Modules.CostManagement.Application.DTOs;
 using NEXUS.Modules.CostManagement.Domain;
 using NEXUS.Modules.Identity.Application;
 using NEXUS.Modules.Identity.Domain;
+using NEXUS.Modules.Organization.Application.Settings;
 using NEXUS.Modules.ProjectManagement.Domain;
 using NEXUS.Modules.ResourceManagement.Domain;
 using NEXUS.Persistence;
@@ -409,7 +411,9 @@ public sealed class ProjectAnnualBudgetAssignedInboxTests
         notificationPublisher.Setup(service => service.QueueActionableStepsAsync(
                 It.IsAny<Project>(), It.IsAny<ProjectAnnualBudget>(), It.IsAny<ApprovalRequest>(),
                 It.IsAny<IReadOnlyCollection<PaymentRequestApproverAssignment>>(),
-                It.IsAny<IReadOnlyCollection<ApprovalAction>>(), It.IsAny<CancellationToken>()))
+                It.IsAny<IReadOnlyCollection<ApprovalAction>>(),
+                It.IsAny<IReadOnlySet<Guid>>(),
+                It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success());
         return new ProjectAnnualBudgetWorkflow(context, fiscal, new FiscalYearCalendarService(), permissions,
             management, audit.Object, notificationPublisher.Object, scopeResolver.Object);

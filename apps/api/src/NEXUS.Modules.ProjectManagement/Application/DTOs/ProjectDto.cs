@@ -8,11 +8,18 @@ public class ProjectDto
     public Guid Id { get; set; }
     public Guid PublicId { get; set; }
     public Guid TenantId { get; set; }
+    public byte[] RowVersion { get; set; } = Array.Empty<byte>();
     public string Name { get; set; } = string.Empty;
     public string Code { get; set; } = string.Empty;
     public string? Description { get; set; }
     public Guid? ProgramId { get; set; }
+    /// <summary>Legacy catalog code projection. Use StatusId and localized names for lifecycle behavior and display.</summary>
     public string Status { get; set; } = string.Empty;
+    public Guid? StatusId { get; set; }
+    public string? StatusNameEn { get; set; }
+    public string? StatusNameAr { get; set; }
+    public string? ReportingCategory { get; set; }
+    public string? AttentionLevel { get; set; }
     public required string Priority { get; set; }
     public Guid? ProjectManagerId { get; set; }
     public string? ProjectManagerName { get; set; }
@@ -36,6 +43,9 @@ public class ProjectDto
     public string RagStatus { get; set; } = string.Empty;
     public string ConfidenceLevel { get; set; } = string.Empty;
     public string? Phase { get; set; }
+    public Guid? PhaseId { get; set; }
+    public string? PhaseNameEn { get; set; }
+    public string? PhaseNameAr { get; set; }
     public string? RiskRating { get; set; }
     public string? BusinessCase { get; set; }
     public string? Notes { get; set; }
@@ -77,7 +87,10 @@ public class CreateProjectDto
     public string Code { get; set; } = string.Empty;
     public string? Description { get; set; }
     public Guid? ProgramId { get; set; }
-    public string Status { get; set; } = "Initiation";
+    public Guid? PhaseId { get; set; }
+    public Guid? StatusId { get; set; }
+    /// <summary>Compatibility input resolved against active catalog codes/names; never used as an unrestricted value.</summary>
+    public string? Status { get; set; }
     public string Priority { get; set; } = "Medium";
     public string? Category { get; set; }
     public Guid? ProjectManagerId { get; set; }
@@ -95,6 +108,8 @@ public class CreateProjectDto
     public string ConfidenceLevel { get; set; } = "Green";
     public Guid? WorkingCalendarId { get; set; }
 }
+
+public sealed record ChangeProjectStatusDto(Guid TargetStatusId, string? Reason);
 
 public class UpdateProjectDto
 {
@@ -197,6 +212,15 @@ public class ProjectSummaryDto
     public string Name { get; set; } = string.Empty;
     public string Code { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
+    public Guid? StatusId { get; set; }
+    public string? StatusNameEn { get; set; }
+    public string? StatusNameAr { get; set; }
+    public string? ReportingCategory { get; set; }
+    public string? AttentionLevel { get; set; }
+    public string? Phase { get; set; }
+    public Guid? PhaseId { get; set; }
+    public string? PhaseNameEn { get; set; }
+    public string? PhaseNameAr { get; set; }
     public string Health { get; set; } = string.Empty;
     public string RagStatus { get; set; } = string.Empty;
     public decimal Progress { get; set; }

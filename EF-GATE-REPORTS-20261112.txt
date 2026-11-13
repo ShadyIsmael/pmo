@@ -1,0 +1,35 @@
+## JSON Report Contents
+
+### Model Check Report
+{
+  "reportVersion": 1,
+  "operation": "preflight-model",
+  "gateAction": "model",
+  "environment": "Development",
+  "expectedServer": "Shady",
+  "expectedDatabase": "NexusPmo",
+  "startedUtc": "2026-11-12T13:32:34.6367036Z",
+  "completedUtc": "2026-11-12T13:32:53.3087112Z",
+  "exitCode": 0,
+  "authorizationReferenceSha256": null,
+  "output": "Context: NEXUS.Persistence.AppDbContext\r\nMigration assembly: NEXUS.Persistence\r\nRepository migrations: 25\r\n  20261029155617_InitialFopxPmBaseline\r\n  20261029181208_ProjectPaymentRequestPersistence\r\n  20261029183557_AddTenantRegistry\r\n  20261030122718_AddProjectAnnualBudgetFoundation\r\n  20261030161223_AddProjectPaymentRequestAnnualBudgetAssociation\r\n  20261031000210_AddFinancialPersistenceSprints3to6\r\n  20261031142036_AlignResourceProjectTeamsAndInvitations\r\n  20261101114229_AddProjectAnnualBudgetApprovalConfiguration\r\n  20261101213237_SynchronizePlanningPhysicalSchema\r\n  20261102190318_AddStableSystemRoleIdentity\r\n  20261105184921_AddRiskActionPublicIdForFollowUp\r\n  20261105201430_AddRiskActionSystemUserOwners\r\n  20261105214717_AddMeetingNotificationPublicIdentifiers\r\n  20261107193155_AddUniversalEmailNotificationProfiles\r\n  20261107193416_AddTenantScopedEmailProfileUniqueness\r\n  20261108170000_RepairProgramRowVersion\r\n  20261109135500_AddDraftAnnualBudgetApprovalConfigurationJson\r\n  20261110170000_AddOrganizationDocumentTemplateStorageMetadata\r\n  20261110180235_AddOrganizationPhaseGateConfiguration\r\n  20261110190107_AddProjectPhaseGateLifecycle\r\n  20261110210000_AddOrganizationManagedDocumentCategories\r\n  20261111134000_AddDocumentIsMandatory\r\n  20261111173858_AddProjectLifecycleCatalogs\r\n  20261111224116_AddProjectStatusReportingSemantics\r\n  20261112094313_AddDocumentCategoryToProjectPhase\r\nEF Model synchronized: Yes\r\nDatabase connection: Not opened (offline model check).\r\n",
+  "connectionStringRecorded": false
+}
+
+
+### Inspection Report (Timeout)
+{
+  "reportVersion": 1,
+  "operation": "preflight-inspect",
+  "gateAction": "inspect",
+  "environment": "Development",
+  "expectedServer": "Shady",
+  "expectedDatabase": "NexusPmo",
+  "startedUtc": "2026-11-12T13:32:53.3986536Z",
+  "completedUtc": "2026-11-12T13:33:42.2938672Z",
+  "exitCode": 1,
+  "authorizationReferenceSha256": null,
+  "output": "Environment: Development\r\nTarget Development DB verified: Yes (server=Shady; database=NexusPmo; databaseId=5)\r\nWindows Authentication: Yes (Integrated Security configured and SQL connection opened)\r\n\r\nEF database gate failed (SqlException): Execution Timeout Expired.  The timeout period elapsed prior to completion of the operation or the server is not responding.\r\n",
+  "connectionStringRecorded": false
+}
+

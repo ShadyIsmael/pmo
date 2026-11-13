@@ -9,6 +9,8 @@ const localizedMessages = {
 } as const;
 
 const codeMessageKeys: Record<string, keyof typeof enMessages.apiErrors> = {
+  UNSUPPORTED_FILE_TYPE: "unsupportedFileType",
+  DOCUMENT_TEMPLATE_FILE_TYPE_MISMATCH: "documentTemplateFileTypeMismatch",
   VALIDATION_ERROR: "validation",
   BUSINESS_VALIDATION_ERROR: "businessValidation",
   RESOURCE_WORKING_CALENDAR_UNAVAILABLE: "resourceWorkingCalendarUnavailable",
@@ -238,6 +240,16 @@ export function getLocalizedApiErrorMessage(
 ): string {
   if (status >= 500)
     return localizedMessages[locale].internal;
+  if (code === "DOCUMENT_TEMPLATE_FILE_TYPE_MISMATCH") {
+    const parameters = typeof details === "object" && details !== null
+      ? details as Record<string, unknown>
+      : {};
+    const expected = formatParameter(parameters[locale === "ar" ? "expectedTypeAr" : "expectedType"], locale);
+    const detected = formatParameter(parameters[locale === "ar" ? "detectedTypeAr" : "detectedType"], locale);
+    return localizedMessages[locale].documentTemplateFileTypeMismatch
+      .replace("{detectedType}", detected)
+      .replace("{expectedType}", expected);
+  }
   const codeKey = code && codeMessageKeys[code];
   const isGenericCode = !codeKey || [
     "VALIDATION_ERROR",

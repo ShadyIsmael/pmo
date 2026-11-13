@@ -11,7 +11,7 @@ import { Skeleton } from "@components/ui/Skeleton";
 import { ConfirmDialog } from "@components/ui/ConfirmDialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@components/ui/DropdownMenu";
 import { SideSheet, SideSheetBody } from "@components/ui/SideSheet";
-import { useArchiveProject, useReactivateProject, useDeleteProject, type ProjectDto } from "../api/projects";
+import { useDeleteProject, type ProjectDto } from "../api/projects";
 import { EditProjectSheet } from "./CreateProjectSheet";
 import { useProjectEnumLabels } from "../lib/project-labels";
 import { useManagement } from "@api/management";
@@ -19,6 +19,8 @@ import { hasAnyPermission, hasPermission, Permissions } from "@lib/permissions";
 import { useAuth } from "@auth/AuthProvider";
 import { toast } from "@hooks/use-toast";
 import { ProjectSettingsPanel } from "../ProjectSettingsTab";
+import { ProjectPhaseGateSideSheet } from "./ProjectPhaseGateSideSheet";
+import { ProjectStatusChangeSideSheet } from "./ProjectStatusChangeSideSheet";
 
 interface ProjectHeaderProps {
   project: ProjectDto;
@@ -50,15 +52,15 @@ const TABS = [
 
 export function ProjectHeader({ project, statusOverride, healthOverride, onChangeRequest, onHandover, canInitiateHandover, projectSettingsOpen, onProjectSettingsOpenChange }: ProjectHeaderProps) {
   const { t, locale, formatCurrency } = useI18n();
-  const { statusLabel, healthStatusLabel, priorityLabel } = useProjectEnumLabels();
+  const { healthStatusLabel, priorityLabel } = useProjectEnumLabels();
   const { user } = useAuth();
   const { canMutate, effectiveReadOnly } = useManagement();
   const navigate = useNavigate();
-  const archive = useArchiveProject();
-  const reactivate = useReactivateProject();
   const remove = useDeleteProject();
   const [editOpen, setEditOpen] = React.useState(false);
   const [deleteOpen, setDeleteOpen] = React.useState(false);
+  const [phaseGateOpen, setPhaseGateOpen] = React.useState(false);
+  const [statusChangeOpen, setStatusChangeOpen] = React.useState(false);
   const [localProjectSettingsOpen, setLocalProjectSettingsOpen] = React.useState(false);
   const settingsSheetOpen = projectSettingsOpen ?? localProjectSettingsOpen;
   const setSettingsSheetOpen = React.useCallback((open: boolean) => {
@@ -83,26 +85,22 @@ export function ProjectHeader({ project, statusOverride, healthOverride, onChang
   const canManageReporting = Boolean(user && hasPermission(user.permissions, Permissions.StatusReport.ManageConfiguration) && canMutate && !effectiveReadOnly);
   const canManageChangeRequests = Boolean(user && hasPermission(user.permissions, Permissions.ChangeRequest.Manage) && canMutate && !effectiveReadOnly);
   const canManageHandovers = canInitiateHandover ?? Boolean(user && hasPermission(user.permissions, Permissions.Handover.Manage) && canMutate && !effectiveReadOnly);
-  const displayStatus = statusOverride || project.status;
+  const canViewPhaseGate = Boolean(user
+    && hasPermission(user.permissions, Permissions.Project.View)
+    && hasPermission(user.permissions, Permissions.Document.View));
+  const canChangePhase = Boolean(user
+    && hasPermission(user.permissions, Permissions.Project.View)
+    && hasPermission(user.permissions, Permissions.ProjectPhase.Change)
+    && canMutate && !effectiveReadOnly);
+  const canOpenPhaseGate = canViewPhaseGate || canChangePhase;
+  const canChangeStatus = Boolean(user
+    && hasPermission(user.permissions, Permissions.ProjectStatus.Change)
+    && canMutate && !effectiveReadOnly);
+  const displayStatus = statusOverride
+    || (locale === "ar" ? project.statusNameAr : project.statusNameEn)
+    || project.status;
   const displayHealth = healthOverride || project.health || project.ragStatus;
-
-  async function handleArchive() {
-    try {
-      await archive.mutateAsync(project.publicId);
-      toast({ title: t("projects.archiveSuccess") });
-    } catch (err) {
-      toast({ title: t("common.error"), description: err instanceof Error ? err.message : undefined, variant: "destructive" });
-    }
-  }
-
-  async function handleReactivate() {
-    try {
-      await reactivate.mutateAsync(project.publicId);
-      toast({ title: t("projects.reactivateSuccess") });
-    } catch (err) {
-      toast({ title: t("common.error"), description: err instanceof Error ? err.message : undefined, variant: "destructive" });
-    }
-  }
+  const displayProjectPhase = (locale === "ar" ? project.phaseNameAr : project.phaseNameEn) || project.phase;
 
   async function handleDelete() {
     await remove.mutateAsync(project.publicId);
@@ -122,20 +120,20 @@ export function ProjectHeader({ project, statusOverride, healthOverride, onChang
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <Badge status={displayStatus} className="text-[10px]">{statusLabel(displayStatus)}</Badge>
+            <Badge variant="outline" className="text-[10px]">{displayStatus}</Badge>
             {displayHealth ? (
               <Badge status={displayHealth} className="text-[10px]">
                 <span className="me-1.5 h-1.5 w-1.5 rounded-full bg-current" />
                 {healthStatusLabel(displayHealth)}
               </Badge>
             ) : null}
+            {displayProjectPhase ? <Badge variant="outline" aria-label={t("projects.phaseGate.currentPhase")} className="text-[10px]">{displayProjectPhase}</Badge> : null}
             {project.priority ? <Badge status={project.priority} className="text-[10px]">{priorityLabel(project.priority)}</Badge> : null}
             {project.portfolioName ? <span className="truncate text-xs text-muted-foreground">{project.portfolioName}</span> : null}
           </div>
           <h1 className="mt-2 truncate text-2xl font-bold tracking-tight">{project.name}</h1>
           <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
             <span className="font-semibold text-foreground">{project.code}</span>
-            {project.phase ? ` · ${project.phase}` : ""}
             {project.description ? ` · ${project.description}` : ""}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
@@ -178,6 +176,14 @@ export function ProjectHeader({ project, statusOverride, healthOverride, onChang
                   {t("projects.changeRequest")}
                 </DropdownMenuItem>
               ) : null}
+              {canChangeStatus ? <DropdownMenuItem onSelect={() => setStatusChangeOpen(true)}>
+                <ArrowRightLeft className="me-2 h-4 w-4" />
+                {t("projects.lifecycle.changeStatus")}
+              </DropdownMenuItem> : null}
+              {canOpenPhaseGate ? <DropdownMenuItem onSelect={() => setPhaseGateOpen(true)}>
+                <ArrowRightLeft className="me-2 h-4 w-4" />
+                {t(canChangePhase ? "projects.phaseGate.changePhaseAction" : "projects.phaseGate.openPhaseGate")}
+              </DropdownMenuItem> : null}
               <DropdownMenuItem onSelect={() => navigate(`/projects/${project.publicId}/plan`)}>
                 <GanttChartSquare className="me-2 h-4 w-4" />
                 {t("projects.plan")}
@@ -196,19 +202,12 @@ export function ProjectHeader({ project, statusOverride, healthOverride, onChang
                   {t("projects.handover")}
                 </DropdownMenuItem>
               ) : null}
-              {canMutate && (canEdit || canDelete) ? (
+              {canDelete ? (
                 <>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onSelect={() => void handleArchive()}>{t("projects.archive")}</DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => void handleReactivate()}>{t("projects.reactivate")}</DropdownMenuItem>
-                  {canDelete ? (
-                    <>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem className="text-destructive" onSelect={() => setDeleteOpen(true)}>
-                        {t("projects.delete")}
-                      </DropdownMenuItem>
-                    </>
-                  ) : null}
+                  <DropdownMenuItem className="text-destructive" onSelect={() => setDeleteOpen(true)}>
+                    {t("projects.delete")}
+                  </DropdownMenuItem>
                 </>
               ) : null}
             </DropdownMenuContent>
@@ -252,6 +251,9 @@ export function ProjectHeader({ project, statusOverride, healthOverride, onChang
         </SideSheetBody> : null}
       </SideSheet> : null}
 
+      {canOpenPhaseGate ? <ProjectPhaseGateSideSheet open={phaseGateOpen} onOpenChange={setPhaseGateOpen} project={project} /> : null}
+      {canChangeStatus ? <ProjectStatusChangeSideSheet open={statusChangeOpen} onOpenChange={setStatusChangeOpen} project={project} /> : null}
+
       {editOpen && canEdit ? <EditProjectSheet
         open={editOpen}
         onOpenChange={setEditOpen}
@@ -272,12 +274,12 @@ export function ProjectHeader({ project, statusOverride, healthOverride, onChang
         destructive
         onConfirm={handleDelete}
       />
-      {(archive.isError || reactivate.isError || remove.isError) && (
+      {remove.isError && (
         <p role="alert" className="text-sm text-destructive">
           {t("common.errorLoading")}
         </p>
       )}
-      {(archive.isPending || reactivate.isPending || remove.isPending) ? (
+      {remove.isPending ? (
         <div className="flex items-center gap-2 text-xs text-muted-foreground" role="status">
           <Skeleton className="h-4 w-4 rounded-full" />
           {t("common.saving")}

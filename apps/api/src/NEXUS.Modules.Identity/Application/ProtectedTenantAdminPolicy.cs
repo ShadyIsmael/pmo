@@ -6,6 +6,12 @@ namespace NEXUS.Modules.Identity.Application;
 /// Defines the protected, tenant-scoped System Admin baseline. The catalog's
 /// Administration module classification and explicit baseline flag are authoritative;
 /// labels and UI placement alone never add a permission to this baseline.
+///
+/// In addition, every active Tenant-scoped permission in the catalog is automatically
+/// inherited by the protected Admin role. This invariant survives future catalog
+/// additions without manual SQL or repeated recovery tasks, because SeedDataProvider
+/// reconciliation (in SeedDataProvider.cs) synchronizes the protected Admin baseline
+/// against the current permission catalog every seed cycle.
 /// </summary>
 public static class ProtectedTenantAdminPolicy
 {
@@ -23,7 +29,9 @@ public static class ProtectedTenantAdminPolicy
         GetRequiredActiveTenantKeys(PermissionCatalog.Entries, ApprovedPortfolioProgramKeys);
 
     public static IReadOnlySet<string> MandatoryPermissionKeys =>
-        TenantAdministrationPermissionKeys
+        // Mandatory = all active Tenant-scoped permissions (auto-inherited by protected Admin)
+        // + approved Portfolio/Program baseline keys
+        GetAllTenantPermissionKeys(PermissionCatalog.Entries)
             .Concat(PortfolioProgramPermissionKeys)
             .ToHashSet(StringComparer.Ordinal);
 
@@ -37,6 +45,26 @@ public static class ProtectedTenantAdminPolicy
     public static bool IsEffectiveTenantAdmin(IReadOnlySet<string> permissions) =>
         TenantAdminRecoveryPermissionKeys.All(permissions.Contains);
 
+    /// <summary>
+    /// Returns ALL active Tenant-scoped permission keys from the catalog.
+    /// This is the auto-inherited baseline for the protected Admin role.
+    /// </summary>
+    public static IReadOnlySet<string> GetAllTenantPermissionKeys(
+        IEnumerable<PermissionCatalogEntry> entries)
+    {
+        return entries
+            .Where(entry => entry.IsActive
+                && entry.Scope == PermissionScope.Tenant)
+            .Select(entry => entry.Key)
+            .ToHashSet(StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// Returns the intersection of active Tenant-scoped keys and the legacy
+    /// (administration-module-or-IsTenantAdminBaseline) set, preserved for
+    /// backward-compatibility with any code that still references
+    /// TenantAdministrationPermissionKeys directly.
+    /// </summary>
     public static IReadOnlySet<string> GetTenantAdministrationPermissionKeys(
         IEnumerable<PermissionCatalogEntry> entries)
     {

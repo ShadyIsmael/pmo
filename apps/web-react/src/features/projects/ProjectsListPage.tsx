@@ -22,41 +22,11 @@ import { useCurrencyFormatter } from "./lib/currency";
 import { useAuth } from "@auth/AuthProvider";
 import { hasPermission, Permissions } from "@lib/permissions";
 import { getStatusTone, statusToneClasses } from "@lib/status-presentation";
+import { projectLifecycleLabel, useProjectLifecycleOptions } from "./api/project-lifecycle";
 
 const ProjectAdvancedSearch = React.lazy(() => import("./components/ProjectAdvancedSearch").then((module) => ({ default: module.ProjectAdvancedSearch })));
 
-const STATUS_TAB_VALUES = ["all", "active", "atRisk", "delayed", "onHold", "completed", "cancelled"] as const;
 const PROJECT_TABLE_COLUMNS = "minmax(15.5rem, 2.2fr) minmax(5rem, 0.8fr) minmax(7rem, 1fr) 2rem minmax(7rem, 1fr) minmax(6.5rem, 0.9fr) minmax(9rem, 1.4fr) minmax(7rem, 1fr) 1.75rem";
-
-type StatusTab = (typeof STATUS_TAB_VALUES)[number];
-
-const STATUS_TABS: ReadonlyArray<{ value: StatusTab; translationKey: string }> = STATUS_TAB_VALUES.map((value) => ({
-  value,
-  translationKey: `statusTabs.${value}`,
-}));
-
-function isStatusTab(value: string): value is StatusTab {
-  return (STATUS_TAB_VALUES as readonly string[]).includes(value);
-}
-
-function statusMatches(project: ProjectSummaryDto, tab: StatusTab): boolean {
-  switch (tab) {
-    case "all":
-      return true;
-    case "active":
-      return project.status !== "Completed" && project.status !== "Cancelled";
-    case "atRisk":
-      return project.status !== "Completed" && project.status !== "Cancelled" && project.health === "Amber";
-    case "delayed":
-      return project.status !== "Completed" && project.status !== "Cancelled" && project.health === "Red";
-    case "onHold":
-      return project.status === "OnHold";
-    case "completed":
-      return project.status === "Completed";
-    case "cancelled":
-      return project.status === "Cancelled";
-  }
-}
 
 function AdvancedSearchFallback({ activeFilterCount }: { activeFilterCount: number }) {
   const { t } = useI18n();
@@ -75,7 +45,6 @@ export function ProjectsListPage() {
   const { user } = useAuth();
   const canCreateProject = Boolean(user && hasPermission(user.permissions, Permissions.Project.Create));
   const [createOpen, setCreateOpen] = React.useState(false);
-  const [filterStatus, setFilterStatus] = React.useState<StatusTab>("all");
   const [view, setView] = React.useState<string>("table");
   const [exporting, setExporting] = React.useState<"excel" | "pdf" | null>(null);
 
@@ -97,18 +66,18 @@ export function ProjectsListPage() {
     page: 1,
     pageSize: 50,
   });
+  const lifecycleOptions = useProjectLifecycleOptions({ enabled: Boolean(user && hasPermission(user.permissions, Permissions.Project.View)) });
 
   const currencyFormatter = useCurrencyFormatter();
-  const { statusLabel, healthLabel } = useProjectEnumLabels();
+  const { healthLabel } = useProjectEnumLabels();
 
   const items = data?.items ?? [];
-
-  const tabCounts = STATUS_TABS.reduce<Record<string, number>>((acc, tab) => {
-    acc[tab.value] = items.filter((p) => statusMatches(p, tab.value)).length;
-    return acc;
-  }, {});
-
-  const tabbed = items.filter((p) => statusMatches(p, filterStatus));
+  const lifecycleStatuses = lifecycleOptions.data?.statuses ?? [];
+  const statusLabel = (code?: string | null, nameEn?: string | null, nameAr?: string | null) => {
+    if (!code) return "";
+    const status = lifecycleStatuses.find((item) => item.code.toLocaleUpperCase() === code.toLocaleUpperCase());
+    return status ? projectLifecycleLabel(status, locale, code) : (locale === "ar" ? nameAr || nameEn : nameEn || nameAr) || code;
+  };
 
   const activeFilterCount =
     (filterName.trim() ? 1 : 0) +
@@ -143,10 +112,10 @@ export function ProjectsListPage() {
     setFilterHealths((prev) => (prev.includes(health) ? prev.filter((h) => h !== health) : [...prev, health]));
   }
 
-  const filtered = tabbed.filter((p: ProjectSummaryDto) => {
+  const filtered = items.filter((p: ProjectSummaryDto) => {
     if (filterName.trim() && !p.name.toLowerCase().includes(filterName.toLowerCase())) return false;
     if (filterCode.trim() && !p.code.toLowerCase().includes(filterCode.toLowerCase())) return false;
-    if (filterStatuses.length > 0 && !filterStatuses.includes(p.status)) return false;
+    if (filterStatuses.length > 0 && !filterStatuses.some((status) => status.toLocaleUpperCase() === p.status.toLocaleUpperCase())) return false;
     if (filterHealths.length > 0 && !filterHealths.includes(p.health)) return false;
     if (filterProgressMin.trim() && (p.planProgress == null || p.planProgress < parseFloat(filterProgressMin))) return false;
     if (filterProgressMax.trim() && (p.planProgress == null || p.planProgress > parseFloat(filterProgressMax))) return false;
@@ -170,20 +139,12 @@ export function ProjectsListPage() {
     try {
       const { fetchFilteredProjects, generateProjectsExcel, generateProjectsPdf } = await import("@lib/export/project-export");
 
-      const tabFilter =
-        filterStatus === "atRisk" ? { statuses: undefined as string[] | undefined, healths: ["Amber"] as string[] | undefined } :
-        filterStatus === "delayed" ? { statuses: undefined, healths: ["Red"] } :
-        filterStatus === "onHold" ? { statuses: ["OnHold"], healths: undefined } :
-        filterStatus === "completed" ? { statuses: ["Completed"], healths: undefined } :
-        filterStatus === "cancelled" ? { statuses: ["Cancelled"], healths: undefined } :
-        { statuses: undefined, healths: undefined };
-
       const exportItems = await fetchFilteredProjects({
         name: filterName.trim() || undefined,
         code: filterCode.trim() || undefined,
-        statuses: filterStatuses.length > 0 ? filterStatuses : tabFilter.statuses,
-        includeAllStatuses: filterStatus === "all" && filterStatuses.length === 0,
-        healths: filterHealths.length > 0 ? filterHealths : tabFilter.healths,
+        statuses: filterStatuses.length > 0 ? filterStatuses : undefined,
+        includeAllStatuses: filterStatuses.length === 0,
+        healths: filterHealths.length > 0 ? filterHealths : undefined,
         progressMin: filterProgressMin.trim() ? parseFloat(filterProgressMin) : undefined,
         progressMax: filterProgressMax.trim() ? parseFloat(filterProgressMax) : undefined,
         budgetMin: filterBudgetMin.trim() ? parseFloat(filterBudgetMin) : undefined,
@@ -207,7 +168,7 @@ export function ProjectsListPage() {
       const rows = exportItems.map((p) => [
         p.name,
         p.code,
-        statusLabel(p.status),
+        statusLabel(p.status, p.statusNameEn, p.statusNameAr),
         healthLabel(p.health),
         p.planProgress == null ? "—" : `${Math.round(p.planProgress)}%`,
         currencyFormatter.format(p.budget, p.currency),
@@ -219,13 +180,9 @@ export function ProjectsListPage() {
         await generateProjectsExcel({ headers, rows });
       } else {
         const filterParts: string[] = [];
-        if (filterStatus !== "all") {
-          const activeTab = STATUS_TABS.find((f) => f.value === filterStatus);
-          if (activeTab) filterParts.push(`${t("common.status")}: ${t(`projects.${activeTab.translationKey}`)}`);
-        }
         if (filterName.trim()) filterParts.push(`${t("common.project")}: "${filterName.trim()}"`);
         if (filterCode.trim()) filterParts.push(`${t("common.code")}: "${filterCode.trim()}"`);
-        if (filterStatuses.length > 0) filterParts.push(`${t("common.status")}: ${filterStatuses.map(statusLabel).join(", ")}`);
+        if (filterStatuses.length > 0) filterParts.push(`${t("common.status")}: ${filterStatuses.map((code) => statusLabel(code)).join(", ")}`);
         if (filterHealths.length > 0) filterParts.push(`${t("common.health")}: ${filterHealths.map(healthLabel).join(", ")}`);
         if (filterProgressMin.trim() || filterProgressMax.trim()) {
           const range = [filterProgressMin.trim() || "0", filterProgressMax.trim() || "100"].join(" - ");
@@ -352,17 +309,6 @@ export function ProjectsListPage() {
         />
       </div>
 
-      <Tabs value={filterStatus} onValueChange={(value) => { if (isStatusTab(value)) setFilterStatus(value); }}>
-        <TabsList className="flex flex-wrap">
-          {STATUS_TABS.map((tab) => (
-            <TabsTrigger key={tab.value} value={tab.value}>
-              {t(`projects.${tab.translationKey}`)}
-              <span className="ml-1.5 rounded-full bg-muted px-1.5 text-[10px] font-medium text-muted-foreground">{tabCounts[tab.value]}</span>
-            </TabsTrigger>
-          ))}
-        </TabsList>
-      </Tabs>
-
       <React.Suspense fallback={<AdvancedSearchFallback activeFilterCount={activeFilterCount} />}>
         <ProjectAdvancedSearch
           filterName={filterName}
@@ -371,6 +317,10 @@ export function ProjectsListPage() {
           setFilterCode={setFilterCode}
           filterStatuses={filterStatuses}
           toggleStatus={toggleStatus}
+          statusOptions={lifecycleStatuses}
+          statusOptionsLoading={lifecycleOptions.isLoading}
+          statusOptionsError={lifecycleOptions.isError}
+          retryStatusOptions={() => void lifecycleOptions.refetch()}
           filterHealths={filterHealths}
           toggleHealth={toggleHealth}
           filterProgressMin={filterProgressMin}
@@ -420,7 +370,7 @@ export function ProjectsListPage() {
                   <Link key={project.publicId} to={`/projects/${project.publicId}`} className="nexus-table-row group grid gap-2 px-4 py-3 text-sm even:bg-muted/10 last:border-b-0" style={{ gridTemplateColumns: PROJECT_TABLE_COLUMNS }}>
                     <div className="min-w-0 truncate font-medium text-foreground group-hover:text-primary">{project.name}</div>
                     <div className="min-w-0 truncate text-center text-xs text-muted-foreground tabular-nums">{project.code}</div>
-                    <div className="flex min-w-0 justify-center truncate"><ProjectStatusBadge status={project.status}>{statusLabel(project.status)}</ProjectStatusBadge></div>
+                    <div className="flex min-w-0 justify-center truncate"><ProjectStatusBadge status={project.status}>{statusLabel(project.status, project.statusNameEn, project.statusNameAr)}</ProjectStatusBadge></div>
                     <div className="flex items-center justify-center"><span className={`h-2.5 w-2.5 shrink-0 rounded-full ${getHealthDotColor(project.health)}`} title={healthLabel(project.health)} aria-label={healthLabel(project.health)} role="img" /></div>
                     <div className="flex min-w-0 items-center justify-center gap-2" title={t("projects.progressSourceWorkingPlan")}>
                       {project.planProgress != null ? <Progress value={Math.round(project.planProgress)} className="h-1.5 w-12 shrink-0" /> : null}
@@ -460,7 +410,7 @@ export function ProjectsListPage() {
                       </div>
                     </CardHeader>
                     <CardContent className="space-y-3">
-                      <div className="flex items-center gap-2"><ProjectStatusBadge status={project.status}>{statusLabel(project.status)}</ProjectStatusBadge></div>
+                      <div className="flex items-center gap-2"><ProjectStatusBadge status={project.status}>{statusLabel(project.status, project.statusNameEn, project.statusNameAr)}</ProjectStatusBadge></div>
                       <div className="space-y-1">
                         <div className="flex items-center justify-between gap-2 text-xs">
                           <span className="text-muted-foreground">{t("projects.progressSourceWorkingPlan")}</span>

@@ -34,6 +34,10 @@ The tool compares its connection endpoint with the effective Development API con
 
 The inspection reports current model/snapshot status, all source migration IDs, applied history IDs, migrations pending in the target, history entries missing from source, and missing mapped tables, columns, foreign keys, and indexes. A non-zero exit code means a required check failed or remains pending.
 
+## Restricted execution and Windows host access
+
+If a restricted execution context fails before SQL identity/history checks with `TCP Provider: Access is denied`, treat that as an execution-context boundary. Do not repeatedly probe `localhost` or a SQL Server alias, change firewall/authentication settings, or run manual SQL. Run the same EF gate's read-only `inspect -NoBuild` once from an approved Windows host context, with the Development environment and the securely loaded connection string that matches the API's effective Development configuration. Verify `SERVERPROPERTY('ServerName')`, `DB_NAME()`, and database ID from the successful gate output. Only that successful inspection may establish the target or produce target-specific pending SQL. Review and apply through the same EF gate; if host-side execution is unavailable or fails, stop without writing and report the blocker. A host-side inspection succeeded on 2026-11-12 for Development `Shady` / `NexusPmo` (database ID 5), while restricted execution returned `Access is denied`; this verified that the SQL Server endpoint was reachable from the approved host context.
+
 ## Review and apply
 
 Inspect the generated SQL file, migration ordering, and data effects. Pay special attention to drops, destructive type changes, data updates, constraints, indexes, and transaction boundaries. The review script is based on the target database's last applied migration.
@@ -90,6 +94,21 @@ Report these fields on every database-related task:
 - Remaining blockers.
 
 Do not call the task fully complete when a required Development database update or verification remains blocked.
+
+## Current lifecycle verification — 2026-11-12
+
+- Read-only host-side `inspect -NoBuild` verified Development SQL Server `Shady`, database `NexusPmo`, database ID `5`, using the effective Windows-authenticated Development connection. The restricted execution attempt still fails before identity/history with `TCP Provider: Access is denied`.
+- `20261111173858_AddProjectLifecycleCatalogs` is present in `__EFMigrationsHistory`; the target has 23 applied repository migrations and 0 pending. The offline model gate reports 23 repository migrations and `EF Model synchronized: Yes`.
+- Overall physical-schema comparison remains `No` for 15 pre-existing differences on `IntegrationConnections`, `IntegrationWebhooks`, and `Programs`, fingerprint `7A6D2E074284D56438749F563AF4AEF3BD2DEE4E3687DC54F9ADF467C095E9FB`. No lifecycle migration is pending. No write, target-specific SQL generation, backup, seed, or persistence test occurred during this inspection.
+
+## Development deployment record — 2026-11-11
+
+- Requested action: apply pending Development migrations. Environment `Development`; live identity `Shady` / `NexusPmo`, database ID `5`.
+- Offline `model` gate: 23 repository migrations; `EF Model synchronized: Yes`; no database connection.
+- Read-only `inspect`: 22 applied, 1 pending (`20261111173858_AddProjectLifecycleCatalogs`). Target-specific SQL: `artifacts/ef-review/development-pending.sql`, SHA-256 `9806B75F63C93AFB4ADA5DE3F686C106DFEA5DD297E2C810A42CDF852F96B821`. Review found catalog table creates, bilingual seed inserts, legacy `LEGACY-*` mapping, additive project/Phase Gate ID columns, index/constraint replacements, and no `DROP TABLE` / `DELETE` / `TRUNCATE`.
+- Pre-existing baseline drift (15 objects) fingerprint `7A6D2E074284D56438749F563AF4AEF3BD2DEE4E3687DC54F9ADF467C095E9FB` on `IntegrationConnections`, `IntegrationWebhooks`, and `Programs` only; disjoint from pending SQL. Apply used the documented unrelated-drift exception.
+- Backup status: Not requested.
+- `apply` exit 0: migration recorded; 23 applied; 0 pending; post-apply schema verified excluding the same acknowledged baseline drift. Minimal Seed not run. Persistence tests not run (available lifecycle tests use in-memory EF).
 
 ## Development deployment record — 2026-10-31
 

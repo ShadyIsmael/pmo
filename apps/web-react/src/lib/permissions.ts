@@ -18,6 +18,24 @@ export const Permissions = {
     Edit: "Project.Edit",
     Delete: "Project.Delete",
   },
+  ProjectPhase: {
+    Change: "ProjectPhase.Change",
+  },
+  ProjectLifecyclePhase: {
+    View: "ProjectLifecyclePhase.View",
+    Create: "ProjectLifecyclePhase.Create",
+    Edit: "ProjectLifecyclePhase.Edit",
+    ActivateDeactivate: "ProjectLifecyclePhase.ActivateDeactivate",
+  },
+  ProjectLifecycleStatus: {
+    View: "ProjectLifecycleStatus.View",
+    Create: "ProjectLifecycleStatus.Create",
+    Edit: "ProjectLifecycleStatus.Edit",
+    ActivateDeactivate: "ProjectLifecycleStatus.ActivateDeactivate",
+  },
+  ProjectStatus: {
+    Change: "ProjectStatus.Change",
+  },
   ProjectSettings: {
     View: "ProjectSettings.View",
     Edit: "ProjectSettings.Edit",
@@ -112,6 +130,12 @@ export const Permissions = {
     Edit: "Document.Edit",
     Archive: "Document.Archive",
     TemplateManage: "Document.TemplateManage",
+  },
+  DocumentCategory: {
+    View: "DocumentCategory.View",
+    Create: "DocumentCategory.Create",
+    Edit: "DocumentCategory.Edit",
+    ActivateDeactivate: "DocumentCategory.ActivateDeactivate",
   },
   Users: {
     View: "Users.View",
@@ -277,6 +301,16 @@ export const Permissions = {
 
 export const DirectoryAccessPermissions = [Permissions.Directory.View];
 export const ReferenceDataAccessPermissions = [Permissions.ReferenceData.View];
+export const ProjectLifecycleCatalogAccessPermissions = [
+  Permissions.ProjectLifecyclePhase.View,
+  Permissions.ProjectLifecyclePhase.Create,
+  Permissions.ProjectLifecyclePhase.Edit,
+  Permissions.ProjectLifecyclePhase.ActivateDeactivate,
+  Permissions.ProjectLifecycleStatus.View,
+  Permissions.ProjectLifecycleStatus.Create,
+  Permissions.ProjectLifecycleStatus.Edit,
+  Permissions.ProjectLifecycleStatus.ActivateDeactivate,
+];
 
 export type Permission = (typeof Permissions)[keyof typeof Permissions][keyof typeof Permissions[keyof typeof Permissions]];
 

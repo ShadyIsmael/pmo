@@ -22,11 +22,14 @@ import {
   useProgramLookup,
 } from "../lib/project-lookups";
 import { useProjectEnumLabels } from "../lib/project-labels";
-import { PROJECT_HEALTHS, PROJECT_PRIORITIES, PROJECT_STATUSES } from "@lib/enums";
+import { PROJECT_HEALTHS, PROJECT_PRIORITIES } from "@lib/enums";
 import { cn, toDateInput } from "@lib/utils";
 import { ApiError, getApiFieldError } from "@api/client";
 import { useAuth } from "@auth/AuthProvider";
 import { hasPermission, Permissions } from "@lib/permissions";
+import { useManagement } from "@api/management";
+import { ProjectPhaseGateSideSheet } from "./ProjectPhaseGateSideSheet";
+import { projectLifecycleLabel, useChangeProjectStatus, useProjectLifecycleOptions, type ProjectLifecycleOption } from "../api/project-lifecycle";
 
 const projectSchema = z
   .object({
@@ -34,7 +37,8 @@ const projectSchema = z
     code: z.string().trim().max(50, "Code cannot exceed 50 characters").optional().or(z.literal("")),
     description: z.string().trim().optional(),
     programId: z.string().optional(),
-    status: z.enum(PROJECT_STATUSES).default("Initiation"),
+    phaseId: z.string().optional(),
+    statusId: z.string().optional(),
     priority: z.enum(PROJECT_PRIORITIES).default("Medium"),
     confidenceLevel: z.enum(PROJECT_HEALTHS).default("Green"),
     category: z.string().optional(),
@@ -100,7 +104,8 @@ function createDefaultValues(defaultCurrency = ""): ProjectFormData {
     code: generateAutoProjectCode(),
     description: "",
     programId: "",
-    status: "Initiation",
+    phaseId: "",
+    statusId: "",
     priority: "Medium",
     confidenceLevel: "Green",
     category: "",
@@ -124,7 +129,8 @@ function toEditDefaultValues(project: ProjectDto): ProjectFormData {
     code: project.code || "",
     description: project.description ?? "",
     programId: project.programId ?? "",
-    status: (project.status as ProjectFormData["status"]) || "Initiation",
+    phaseId: project.phaseId ?? "",
+    statusId: project.statusId ?? "",
     priority: (project.priority as ProjectFormData["priority"]) || "Medium",
     confidenceLevel: (project.confidenceLevel as ProjectFormData["confidenceLevel"]) || "Green",
     category: "",
@@ -143,27 +149,50 @@ function toEditDefaultValues(project: ProjectDto): ProjectFormData {
   };
 }
 
+// The protected initial phase is identified by its backend code, never by a
+// hardcoded label. Codes are normalized so PRE_INITIATION and PRE-INITIATION match.
+function isPreInitiationPhase(option: ProjectLifecycleOption) {
+  return option.code.trim().toUpperCase().replace(/_/g, "-") === "PRE-INITIATION";
+}
+
 function FieldError({ id, message }: { id?: string; message?: string }) {
   if (!message) return null;
   return <p id={id} role="alert" className="text-xs text-destructive">{message}</p>;
 }
 
 export function ProjectSheet({ open, onOpenChange, project, onCreated, embedded = false, onHandover, canInitiateHandover = false }: ProjectSheetProps) {
-  const { t, formatCurrency } = useI18n();
+  const { t, locale, formatCurrency } = useI18n();
   const { user } = useAuth();
+  const { canMutate, effectiveReadOnly } = useManagement();
   const isEdit = !!project;
+  const canChangeProjectPhase = Boolean(user
+    && hasPermission(user.permissions, Permissions.ProjectPhase.Change)
+    && canMutate && !effectiveReadOnly);
+  const canChangeProjectStatus = Boolean(user
+    && hasPermission(user.permissions, Permissions.ProjectStatus.Change)
+    && canMutate && !effectiveReadOnly);
   const createMutation = useCreateProject();
   const updateMutation = useUpdateProject(project?.publicId ?? "");
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
+  const [showValidationSummary, setShowValidationSummary] = React.useState(false);
+  const [phaseGateOpen, setPhaseGateOpen] = React.useState(false);
+  const [statusTargetId, setStatusTargetId] = React.useState("");
+  const [statusChangeReason, setStatusChangeReason] = React.useState("");
+  const [statusChangeError, setStatusChangeError] = React.useState<string | null>(null);
+  const [statusChangeSaved, setStatusChangeSaved] = React.useState(false);
+  const formRef = React.useRef<HTMLFormElement>(null);
   const isSubmittingRef = React.useRef(false);
   const initialAnnualBudgetWasEdited = React.useRef(false);
 
   const { data: userLookup, isLoading: usersLoading, error: usersError } = useProjectWorkflowUserLookup(open);
   const { data: projectManagers, isLoading: managersLoading, isFetching: managersFetching, error: managersError, refetch: refetchProjectManagers } = useProjectManagerCandidateLookup(open && !isEdit);
   const { data: portfolioData, error: portfoliosError } = usePortfolioLookup(open);
-  const { data: programData, error: programsError } = useProgramLookup(open);
+  const [lookupPortfolioId, setLookupPortfolioId] = React.useState("");
+  const { data: programData, error: programsError } = useProgramLookup(open, lookupPortfolioId);
   const { data: departmentUnits, error: departmentsError } = useDepartmentLookup(open);
   const { data: currencies, error: currenciesError } = useProjectCurrencyLookup(open);
+  const canLoadLifecycleOptions = Boolean(user && hasPermission(user.permissions, isEdit ? Permissions.Project.Edit : Permissions.Project.Create));
+  const changeProjectStatus = useChangeProjectStatus(project?.publicId ?? "");
 
   const userOptions = toUserSelectOptions(userLookup ?? []);
   const projectManagerOptions = toUserSelectOptions(projectManagers ?? []);
@@ -187,17 +216,74 @@ export function ProjectSheet({ open, onOpenChange, project, onCreated, embedded 
     resolver: zodResolver(projectSchema) as never,
     defaultValues: isEdit && project ? toEditDefaultValues(project) : createDefaultValues(baseCurrencyCode),
   });
-  const selectedProgramId = form.watch("programId");
   const budgetValue = form.watch("budget");
+  const watchedPortfolioId = form.watch("portfolioId") ?? "";
+  const watchedDepartmentId = form.watch("departmentId") ?? "";
+  const createPhaseScopeKey = `${watchedPortfolioId}::${watchedDepartmentId}`;
   const canCreateInitialAnnualBudget = !isEdit
     && hasPermission(user?.permissions ?? [], Permissions.ProjectAnnualBudget.Create);
+
+  // Create mode asks the backend for the single protected Pre-Initiation option that
+  // applies to the selected portfolio/department scope. No Organization or project
+  // identifier is sent: the backend resolves the Organization from the scope.
+  const lifecycleOptions = useProjectLifecycleOptions({
+    enabled: open && canLoadLifecycleOptions,
+    projectId: isEdit ? project?.publicId : undefined,
+    ...(isEdit
+      ? {}
+      : {
+        purpose: "create" as const,
+        portfolioId: watchedPortfolioId || undefined,
+        departmentId: watchedDepartmentId || undefined,
+      }),
+  });
+
+  // Only the protected Pre-Initiation record is an acceptable initial phase. A single
+  // active default option is tolerated for standalone/tenant contexts; anything else
+  // is reported as unavailable instead of silently choosing an arbitrary phase.
+  const initialPhaseOption = React.useMemo(() => {
+    if (isEdit) return undefined;
+    const activePhases = (lifecycleOptions.data?.phases ?? []).filter(option => option.isActive !== false);
+    const protectedPhase = activePhases.find(isPreInitiationPhase);
+    if (protectedPhase) return protectedPhase;
+    const activeDefaults = activePhases.filter(option => option.isDefault);
+    return activeDefaults.length === 1 ? activeDefaults[0] : undefined;
+  }, [isEdit, lifecycleOptions.data]);
 
   React.useEffect(() => {
     if (!open) return;
     initialAnnualBudgetWasEdited.current = false;
+    setShowValidationSummary(false);
+    setErrorMessage(null);
+    setLookupPortfolioId(isEdit && project ? project.portfolioId ?? "" : "");
     form.reset(isEdit && project ? toEditDefaultValues(project) : createDefaultValues(baseCurrencyCode));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, project]);
+
+  React.useEffect(() => {
+    if (!open || isEdit || !lifecycleOptions.data) return;
+    const initialStatus = lifecycleOptions.data.statuses.find(option => option.isDefault);
+    if (!form.getValues("statusId") && initialStatus) form.setValue("statusId", initialStatus.id, { shouldValidate: true });
+  }, [form, isEdit, lifecycleOptions.data, open]);
+
+  // Keep the real form phaseId aligned with the resolved record. The scope key is a
+  // dependency so a portfolio/department switch clears the previous id immediately,
+  // before the new lookup resolves, and never leaves a stale id to submit.
+  React.useEffect(() => {
+    if (isEdit || !open) return;
+    const resolvedPhaseId = initialPhaseOption?.id ?? "";
+    if (form.getValues("phaseId") !== resolvedPhaseId) {
+      form.setValue("phaseId", resolvedPhaseId, { shouldValidate: false });
+    }
+  }, [createPhaseScopeKey, form, initialPhaseOption, isEdit, open]);
+
+  React.useEffect(() => {
+    if (!open) return;
+    setStatusTargetId("");
+    setStatusChangeReason("");
+    setStatusChangeError(null);
+    setStatusChangeSaved(false);
+  }, [open, project?.statusId]);
 
   React.useEffect(() => {
     if (!open || !canCreateInitialAnnualBudget || initialAnnualBudgetWasEdited.current) return;
@@ -212,27 +298,52 @@ export function ProjectSheet({ open, onOpenChange, project, onCreated, embedded 
     form.setValue("currency", baseCurrencyCode, { shouldValidate: true });
   }, [baseCurrencyCode, form, isEdit, open]);
 
+  const resolvedCreatePhaseId = isEdit ? "" : initialPhaseOption?.id ?? "";
+
   const onSubmit = async (data: ProjectFormData) => {
     if (isSubmittingRef.current) return;
+    // Never submit the form's possibly-stale id: the payload phase comes from the
+    // record resolved for the current portfolio/department scope.
+    if (!isEdit && !resolvedCreatePhaseId) {
+      form.setError("phaseId", { type: "manual", message: t("projects.lifecycle.phaseRequired") });
+      setShowValidationSummary(true);
+      window.setTimeout(() => formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus(), 0);
+      return;
+    }
+    if (!isEdit && !data.statusId) {
+      form.setError("statusId", { type: "manual", message: t("projects.lifecycle.statusRequired") });
+      setShowValidationSummary(true);
+      window.setTimeout(() => formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus(), 0);
+      return;
+    }
     if (!isEdit && data.initialAnnualBudgetAmount !== undefined) {
       if (!currencies?.some(currency => currency.code.toUpperCase() === data.currency.trim().toUpperCase())) {
         form.setError("currency", { type: "manual", message: t("projects.financialCurrencyUnavailable") });
+        setShowValidationSummary(true);
+        window.setTimeout(() => formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus(), 0);
         return;
       }
       if (data.initialAnnualBudgetAmount < 0) {
         form.setError("initialAnnualBudgetAmount", { type: "manual", message: t("projects.initialAnnualBudgetMustBeNonNegative") });
+        setShowValidationSummary(true);
+        window.setTimeout(() => formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus(), 0);
         return;
       }
       if (data.budget === undefined) {
         form.setError("initialAnnualBudgetAmount", { type: "manual", message: t("projects.initialAnnualBudgetRequiresCeiling") });
+        setShowValidationSummary(true);
+        window.setTimeout(() => formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus(), 0);
         return;
       }
       if (data.initialAnnualBudgetAmount > data.budget) {
         form.setError("initialAnnualBudgetAmount", { type: "manual", message: t("projects.initialAnnualBudgetExceedsCeiling") });
+        setShowValidationSummary(true);
+        window.setTimeout(() => formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus(), 0);
         return;
       }
     }
     isSubmittingRef.current = true;
+    setShowValidationSummary(false);
     setErrorMessage(null);
     form.clearErrors();
     try {
@@ -256,7 +367,6 @@ export function ProjectSheet({ open, onOpenChange, project, onCreated, embedded 
           ...base,
           clearSponsor: Boolean(project.sponsorId && !data.sponsorId),
           name: data.name,
-          status: data.status,
           priority: data.priority,
           confidenceLevel: data.confidenceLevel,
         };
@@ -265,6 +375,8 @@ export function ProjectSheet({ open, onOpenChange, project, onCreated, embedded 
         const payload: CreateProjectDto = {
           ...base,
           name: data.name,
+          phaseId: resolvedCreatePhaseId,
+          statusId: data.statusId!,
           priority: data.priority,
           projectManagerId: data.projectManagerId || undefined,
           budget: data.budget === undefined || data.budget === null ? undefined : Number(data.budget),
@@ -303,22 +415,64 @@ export function ProjectSheet({ open, onOpenChange, project, onCreated, embedded 
         }
       }
       setErrorMessage(hasFieldErrors ? null : apiMessage);
+      if (hasFieldErrors) {
+        setShowValidationSummary(true);
+        window.setTimeout(() => formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus(), 0);
+      }
     } finally {
       isSubmittingRef.current = false;
     }
   };
 
-  const { statusLabel, priorityLabel, healthLabel } = useProjectEnumLabels();
+  const currentPhaseOption = lifecycleOptions.data?.phases.find(option => option.id === project?.phaseId);
+  const currentStatusOption = lifecycleOptions.data?.statuses.find(option => option.id === project?.statusId);
+  const currentPhaseLabel = projectLifecycleLabel(currentPhaseOption, locale, project?.phase);
+  const currentStatusLabel = projectLifecycleLabel(currentStatusOption, locale, project?.status);
+  const availableStatuses = (lifecycleOptions.data?.statuses ?? [])
+    .filter(option => option.isActive !== false
+      && option.id !== project?.statusId
+      && option.code.toLocaleUpperCase() !== project?.status?.toLocaleUpperCase());
+  const submitStatusChange = async () => {
+    const selectedStatus = availableStatuses.find(option => option.id === statusTargetId);
+    if (!project || !selectedStatus || changeProjectStatus.isPending) return;
+    setStatusChangeError(null);
+    setStatusChangeSaved(false);
+    try {
+      await changeProjectStatus.mutateAsync({
+        targetStatusId: selectedStatus.id,
+        ...(statusChangeReason.trim() ? { reason: statusChangeReason.trim() } : {}),
+      });
+      setStatusTargetId("");
+      setStatusChangeReason("");
+      setStatusChangeSaved(true);
+    } catch {
+      setStatusChangeError(t("projects.lifecycle.statusChangeFailed"));
+    }
+  };
 
-  const statusOptions = PROJECT_STATUSES.map((value) => ({ value, label: statusLabel(value) }));
+  const { priorityLabel, healthLabel } = useProjectEnumLabels();
+
   const priorityOptions = PROJECT_PRIORITIES.map((value) => ({ value, label: priorityLabel(value) }));
   const confidenceOptions = PROJECT_HEALTHS.map((value) => ({ value, label: healthLabel(value) }));
 
   const isSubmitting = createMutation.isPending || updateMutation.isPending;
+  const initialPhaseUnresolved = !isEdit
+    && (lifecycleOptions.isLoading || lifecycleOptions.isError || !initialPhaseOption);
 
+  const focusFirstInvalid = () => window.setTimeout(() => formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus(), 0);
+  const validationMessage = (message?: string) => {
+    if (!message) return undefined;
+    const keys: Record<string, string> = {
+      "Name is required": "projects.validation.nameRequired", "Name cannot exceed 200 characters": "projects.validation.nameTooLong",
+      "Code cannot exceed 50 characters": "projects.validation.codeTooLong", "Currency must be a 3-letter code": "projects.validation.currencyInvalid",
+      "Budget must be non-negative": "projects.validation.budgetNonNegative", "End date must be on or after the start date": "projects.validation.endDateOrder",
+    };
+    return keys[message] ? t(keys[message]) : message;
+  };
   const formContent = (
-    <form onSubmit={form.handleSubmit(onSubmit as never)} className="flex min-h-0 flex-1 flex-col">
+    <form noValidate ref={formRef} onSubmit={form.handleSubmit(onSubmit as never, () => { setShowValidationSummary(true); focusFirstInvalid(); })} className="flex min-h-0 flex-1 flex-col">
         <ProjectSheetBody embedded={embedded} className="space-y-5">
+          {showValidationSummary && <div role="alert" className="rounded-md border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">{t("projects.createValidationSummary")}</div>}
           {errorMessage && (
             <div role="alert" className="flex items-center gap-2 rounded-md border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
               <AlertCircle className="h-4 w-4 shrink-0" />
@@ -334,26 +488,27 @@ export function ProjectSheet({ open, onOpenChange, project, onCreated, embedded 
 
           <section className="space-y-4">
             <div className="space-y-1">
-              <h3 className="text-sm font-semibold">{t("projects.basicInformation")}</h3>
+              <h3 className="text-base font-semibold">{t("projects.createSections.basic")}</h3>
+              <p className="text-xs text-muted-foreground">{t("projects.createRequiredHint")}</p>
               <p className="text-xs text-muted-foreground">{t("projects.basicInformationDescription")}</p>
             </div>
 
             <div className="grid gap-5 sm:grid-cols-2">
               <div className="space-y-1.5">
-                <Label>{t("projects.code")}</Label>
-                <Input placeholder={t("projects.code")} value={form.watch("code") ?? ""} onChange={(e) => form.setValue("code", e.target.value)} disabled={!isEdit} readOnly={!isEdit} aria-invalid={Boolean(form.formState.errors.code)} aria-describedby={form.formState.errors.code ? "project-code-error" : undefined} />
-                <FieldError id="project-code-error" message={form.formState.errors.code?.message} />
+                <Label htmlFor="project-code">{t("projects.code")}</Label>
+                <Input id="project-code" dir="ltr" placeholder={t("projects.code")} value={form.watch("code") ?? ""} onChange={(e) => form.setValue("code", e.target.value)} disabled={!isEdit} readOnly={!isEdit} aria-invalid={Boolean(form.formState.errors.code)} aria-describedby={form.formState.errors.code ? "project-code-error" : undefined} />
+                <FieldError id="project-code-error" message={validationMessage(form.formState.errors.code?.message)} />
               </div>
               <div className="space-y-1.5">
-                <Label>{t("projects.name")} <span className="text-destructive">*</span></Label>
-                <Input placeholder={t("projects.name")} value={form.watch("name") ?? ""} onChange={(e) => form.setValue("name", e.target.value, { shouldValidate: true })} aria-invalid={Boolean(form.formState.errors.name)} aria-describedby={form.formState.errors.name ? "project-name-error" : undefined} />
-                <FieldError id="project-name-error" message={form.formState.errors.name?.message} />
+                <Label htmlFor="project-name">{t("projects.name")} <span className="text-destructive">*</span></Label>
+                <Input id="project-name" aria-required="true" placeholder={t("projects.name")} value={form.watch("name") ?? ""} onChange={(e) => form.setValue("name", e.target.value, { shouldValidate: true })} aria-invalid={Boolean(form.formState.errors.name)} aria-describedby={form.formState.errors.name ? "project-name-error" : undefined} />
+                <FieldError id="project-name-error" message={validationMessage(form.formState.errors.name?.message)} />
               </div>
             </div>
 
             <div className="space-y-1.5">
-              <Label>{t("projects.projectDescription")}</Label>
-              <Textarea placeholder={t("projects.projectDescription")} rows={3} value={form.watch("description") ?? ""} onChange={(e) => form.setValue("description", e.target.value)} />
+              <Label htmlFor="project-description">{t("projects.projectDescription")}</Label>
+              <Textarea id="project-description" placeholder={t("projects.projectDescription")} rows={3} value={form.watch("description") ?? ""} onChange={(e) => form.setValue("description", e.target.value)} />
             </div>
           </section>
 
@@ -364,25 +519,16 @@ export function ProjectSheet({ open, onOpenChange, project, onCreated, embedded 
             </div>
 
             <div className="grid gap-5 sm:grid-cols-2">
-              {isEdit && (
-                <div className="space-y-1.5">
-                  <Label>{t("common.status")}</Label>
-                  <Select value={form.watch("status") ?? "Initiation"} onValueChange={(v) => form.setValue("status", v as ProjectFormData["status"])}>
-                    <SelectTrigger><SelectValue placeholder={t("common.select")} /></SelectTrigger>
-                    <SelectContent>{statusOptions.map((opt) => (<SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>))}</SelectContent>
-                  </Select>
-                </div>
-              )}
               <div className="space-y-1.5">
                 <Label>{t("projects.priority")}</Label>
                 <Select value={form.watch("priority") ?? "Medium"} onValueChange={(v) => form.setValue("priority", v as ProjectFormData["priority"])}>
-                  <SelectTrigger><SelectValue placeholder={t("common.select")} /></SelectTrigger>
+                  <SelectTrigger aria-label={t("projects.priority")}><SelectValue placeholder={t("common.select")} /></SelectTrigger>
                   <SelectContent>{priorityOptions.map((opt) => (<SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>))}</SelectContent>
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label>{t("projects.category")}</Label>
-                <Input placeholder={t("projects.category")} value={form.watch("category") ?? ""} onChange={(e) => form.setValue("category", e.target.value)} />
+                <Label htmlFor="project-category">{t("projects.category")}</Label>
+                <Input id="project-category" placeholder={t("projects.category")} value={form.watch("category") ?? ""} onChange={(e) => form.setValue("category", e.target.value)} />
               </div>
             </div>
           </section>
@@ -398,11 +544,51 @@ export function ProjectSheet({ open, onOpenChange, project, onCreated, embedded 
           )}
 
           <section className="space-y-4">
-            <div className="space-y-1">
-              <h3 className="text-sm font-semibold">{t("projects.ownershipHierarchy")}</h3>
-              <p className="text-xs text-muted-foreground">{t("projects.ownershipHierarchyDescription")}</p>
+            <div className="space-y-1"><h3 className="text-base font-semibold">{t("projects.createSections.hierarchy")}</h3><p className="text-xs text-muted-foreground">{t("projects.ownershipHierarchyDescription")}</p></div>
+            <div className="grid gap-5 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label>{t("projects.portfolio")}</Label>
+                <SearchableSelect aria-label={t("projects.portfolio")} emptyText={t("common.noResults")} loadingText={t("common.loading")}
+                  options={portfolioOptions}
+                  value={form.watch("portfolioId") ?? ""}
+                  onValueChange={(value) => {
+                    const currentProgram = programLookupMap[form.getValues("programId") ?? ""];
+                    form.setValue("portfolioId", value, { shouldDirty: true });
+                    setLookupPortfolioId(value);
+                    if (form.getValues("programId") && (!currentProgram || currentProgram.portfolioId !== value)) form.setValue("programId", "", { shouldDirty: true });
+                    if (!isEdit && !form.getValues("programId")) form.setValue("currency", portfolioCurrencyMap[value] || baseCurrencyCode, { shouldValidate: true });
+                  }}
+                  placeholder={t("projects.portfolio")}
+                  searchPlaceholder={t("projects.portfolio")}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>{t("projects.program")}</Label>
+                <SearchableSelect aria-label={t("projects.program")} emptyText={t("common.noResults")} loadingText={t("common.loading")}
+                  options={programOptions}
+                  value={form.watch("programId") ?? ""}
+                  onValueChange={(value) => {
+                    form.setValue("programId", value);
+                    const selected = (programLookupMap as Record<string, { portfolioId: string; currency?: string }>)[value];
+                    if (selected) {
+                      form.setValue("portfolioId", selected.portfolioId, { shouldValidate: true });
+                      setLookupPortfolioId(selected.portfolioId);
+                      if (!isEdit) form.setValue("currency", selected.currency || portfolioCurrencyMap[selected.portfolioId] || baseCurrencyCode, { shouldValidate: true });
+                    }
+                  }}
+                  placeholder={t("projects.program")}
+                  searchPlaceholder={t("projects.program")}
+                />
+              </div>
             </div>
 
+            <div className="space-y-1.5">
+              <Label>{t("projects.department")}</Label>
+              <SearchableSelect aria-label={t("projects.department")} loadingText={t("common.loading")} options={departmentOptions} value={form.watch("departmentId") ?? ""} onValueChange={(v) => form.setValue("departmentId", v)} placeholder={t("projects.department")} searchPlaceholder={t("projects.department")} emptyText={t("common.noResults")} />
+            </div>
+          </section>
+
+          <section className="space-y-4"><h3 className="text-base font-semibold">{t("projects.createSections.governance")}</h3>
             <div className="grid gap-5 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label>{t("projects.projectManager")}</Label>
@@ -440,7 +626,8 @@ export function ProjectSheet({ open, onOpenChange, project, onCreated, embedded 
                       </div>
                     ) : (
                       <>
-                        <SearchableSelect options={projectManagerOptions} value={form.watch("projectManagerId") ?? ""} onValueChange={(v) => form.setValue("projectManagerId", v)} placeholder={t("projects.projectManager")} searchPlaceholder={t("projects.projectManager")} loading={managersLoading} emptyText={t("projects.noEligibleProjectManagers")} />
+                        <SearchableSelect aria-label={t("projects.projectManager")} aria-invalid={Boolean(form.formState.errors.projectManagerId)} aria-describedby={form.formState.errors.projectManagerId ? "project-manager-error" : undefined} loadingText={t("common.loading")} options={projectManagerOptions} value={form.watch("projectManagerId") ?? ""} onValueChange={(v) => form.setValue("projectManagerId", v)} placeholder={t("projects.projectManager")} searchPlaceholder={t("projects.projectManager")} loading={managersLoading} emptyText={t("projects.noEligibleProjectManagers")} />
+                        <FieldError id="project-manager-error" message={validationMessage(form.formState.errors.projectManagerId?.message)} />
                         {!managersLoading && projectManagerOptions.length === 0 ? <p className="text-xs text-muted-foreground">{t("projects.initialManagerResourceIndependence")}</p> : null}
                         <p className="text-xs text-muted-foreground">{t("managerHandover.setInitialManager")}</p>
                       </>
@@ -451,70 +638,31 @@ export function ProjectSheet({ open, onOpenChange, project, onCreated, embedded 
               <div className="space-y-1.5">
                 <Label>{t("projects.sponsor")}</Label>
                 <div className="flex items-center gap-2">
-                  <div className="min-w-0 flex-1"><SearchableSelect options={userOptions} value={form.watch("sponsorId") ?? ""} onValueChange={(v) => form.setValue("sponsorId", v)} placeholder={t("projects.sponsor")} searchPlaceholder={t("projects.sponsor")} loading={usersLoading} emptyText={t("common.noResults")} /></div>
+                  <div className="min-w-0 flex-1"><SearchableSelect aria-label={t("projects.sponsor")} loadingText={t("common.loading")} options={userOptions} value={form.watch("sponsorId") ?? ""} onValueChange={(v) => form.setValue("sponsorId", v)} placeholder={t("projects.sponsor")} searchPlaceholder={t("projects.sponsor")} loading={usersLoading} emptyText={t("common.noResults")} /></div>
                   {isEdit && form.watch("sponsorId") ? <Button type="button" variant="outline" size="sm" onClick={() => form.setValue("sponsorId", "", { shouldDirty: true })}>{t("projects.clearSponsor")}</Button> : null}
                 </div>
                 <p className="text-xs text-muted-foreground">{t("projects.sponsorResourceRequirement")}</p>
               </div>
             </div>
 
-            <div className="grid gap-5 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label>{t("projects.portfolio")}</Label>
-                <SearchableSelect
-                  options={portfolioOptions}
-                  value={form.watch("portfolioId") ?? ""}
-                  onValueChange={(value) => {
-                    form.setValue("portfolioId", value);
-                    if (!isEdit && !form.getValues("programId")) form.setValue("currency", portfolioCurrencyMap[value] || baseCurrencyCode, { shouldValidate: true });
-                  }}
-                  placeholder={t("projects.portfolio")}
-                  searchPlaceholder={t("projects.portfolio")}
-                  disabled={!!selectedProgramId}
-                />
-                {selectedProgramId ? <p className="text-xs text-muted-foreground">{t("projects.portfolioDerivedFromProgram")}</p> : null}
-              </div>
-              <div className="space-y-1.5">
-                <Label>{t("projects.program")}</Label>
-                <SearchableSelect
-                  options={programOptions}
-                  value={form.watch("programId") ?? ""}
-                  onValueChange={(value) => {
-                    form.setValue("programId", value);
-                    const selected = (programLookupMap as Record<string, { portfolioId: string; currency?: string }>)[value];
-                    if (selected) {
-                      form.setValue("portfolioId", selected.portfolioId, { shouldValidate: true });
-                      if (!isEdit) form.setValue("currency", selected.currency || portfolioCurrencyMap[selected.portfolioId] || baseCurrencyCode, { shouldValidate: true });
-                    }
-                  }}
-                  placeholder={t("projects.program")}
-                  searchPlaceholder={t("projects.program")}
-                />
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label>{t("projects.department")}</Label>
-              <SearchableSelect options={departmentOptions} value={form.watch("departmentId") ?? ""} onValueChange={(v) => form.setValue("departmentId", v)} placeholder={t("projects.department")} searchPlaceholder={t("projects.department")} emptyText={t("common.noResults")} />
-            </div>
           </section>
 
           <section className="space-y-4">
             <div className="space-y-1">
-              <h3 className="text-sm font-semibold">{t("projects.scheduleSection")}</h3>
+              <h3 className="text-sm font-semibold">{t("projects.createSections.scheduleFinance")}</h3>
               <p className="text-xs text-muted-foreground">{t("projects.scheduleSectionDescription")}</p>
             </div>
 
             <div className="grid gap-5 sm:grid-cols-2">
               <div className="space-y-1.5">
-                <Label>{t("projects.plannedStartDate")}</Label>
-                <Input type="date" value={form.watch("startDate") ?? ""} onChange={(e) => form.setValue("startDate", e.target.value)} aria-invalid={Boolean(form.formState.errors.startDate)} aria-describedby={form.formState.errors.startDate ? "project-start-date-error" : undefined} />
-                <FieldError id="project-start-date-error" message={form.formState.errors.startDate?.message} />
+                <Label htmlFor="project-start-date">{t("projects.plannedStartDate")}</Label>
+                <Input id="project-start-date" dir="ltr" type="date" value={form.watch("startDate") ?? ""} onChange={(e) => form.setValue("startDate", e.target.value)} aria-invalid={Boolean(form.formState.errors.startDate)} aria-describedby={form.formState.errors.startDate ? "project-start-date-error" : undefined} />
+                <FieldError id="project-start-date-error" message={validationMessage(form.formState.errors.startDate?.message)} />
               </div>
               <div className="space-y-1.5">
-                <Label>{t("projects.plannedEndDate")}</Label>
-                <Input type="date" value={form.watch("endDate") ?? ""} onChange={(e) => form.setValue("endDate", e.target.value)} aria-invalid={Boolean(form.formState.errors.endDate)} aria-describedby={form.formState.errors.endDate ? "project-end-date-error" : undefined} />
-                <FieldError id="project-end-date-error" message={form.formState.errors.endDate?.message} />
+                <Label htmlFor="project-end-date">{t("projects.plannedEndDate")}</Label>
+                <Input id="project-end-date" dir="ltr" type="date" value={form.watch("endDate") ?? ""} onChange={(e) => form.setValue("endDate", e.target.value)} aria-invalid={Boolean(form.formState.errors.endDate)} aria-describedby={form.formState.errors.endDate ? "project-end-date-error" : undefined} />
+                <FieldError id="project-end-date-error" message={validationMessage(form.formState.errors.endDate?.message)} />
               </div>
             </div>
           </section>
@@ -527,16 +675,16 @@ export function ProjectSheet({ open, onOpenChange, project, onCreated, embedded 
 
             <div className="grid gap-5 sm:grid-cols-2">
               <div className="space-y-1.5">
-                <Label>{t("projects.currency")}</Label>
+                <Label>{t("projects.currency")} <span className="text-destructive">*</span></Label>
                 <Select value={form.watch("currency") ?? ""} onValueChange={(v) => form.setValue("currency", v)}>
-                  <SelectTrigger aria-invalid={Boolean(form.formState.errors.currency)} aria-describedby={form.formState.errors.currency ? "project-currency-error" : undefined}><SelectValue placeholder={t("common.select")} /></SelectTrigger>
+                  <SelectTrigger aria-label={t("projects.currency")} aria-required="true" aria-invalid={Boolean(form.formState.errors.currency)} aria-describedby={form.formState.errors.currency ? "project-currency-error" : undefined}><SelectValue placeholder={t("common.select")} /></SelectTrigger>
                   <SelectContent>
                     {currencyOptions.map((currency) => (
                       <SelectItem key={currency.id} value={currency.code}>{currency.code} — {currency.name}{currency.symbol ? ` (${currency.symbol})` : ""}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                <FieldError id="project-currency-error" message={form.formState.errors.currency?.message} />
+                <FieldError id="project-currency-error" message={validationMessage(form.formState.errors.currency?.message)} />
               </div>
               {isEdit ? (
                 <div className="space-y-1.5">
@@ -548,9 +696,9 @@ export function ProjectSheet({ open, onOpenChange, project, onCreated, embedded 
                 </div>
               ) : (
                 <div className="space-y-1.5">
-                  <Label>{t("projects.projectLifetimeCeiling")}</Label>
-                  <Input type="number" step="0.01" min="0" placeholder="0" value={form.watch("budget") ?? ""} onChange={(event) => form.setValue("budget", event.target.value === "" ? undefined : Number(event.target.value) as unknown as number)} aria-invalid={Boolean(form.formState.errors.budget)} aria-describedby={form.formState.errors.budget ? "project-budget-error" : undefined} />
-                  <FieldError id="project-budget-error" message={form.formState.errors.budget?.message} />
+                  <Label htmlFor="project-budget">{t("projects.projectLifetimeCeiling")}</Label>
+                  <Input id="project-budget" dir="ltr" type="number" step="0.01" min="0" placeholder="0" value={form.watch("budget") ?? ""} onChange={(event) => form.setValue("budget", event.target.value === "" ? undefined : Number(event.target.value) as unknown as number)} aria-invalid={Boolean(form.formState.errors.budget)} aria-describedby={form.formState.errors.budget ? "project-budget-error" : undefined} />
+                  <FieldError id="project-budget-error" message={validationMessage(form.formState.errors.budget?.message)} />
                   <p className="text-xs text-muted-foreground">{t("projects.budgetCeilingHint")}</p>
                 </div>
               )}
@@ -563,8 +711,8 @@ export function ProjectSheet({ open, onOpenChange, project, onCreated, embedded 
               </div>
               <div className="mt-3 max-w-sm space-y-1.5">
                 <Label htmlFor="project-initial-annual-budget">{t("projects.annualBudgetFunding")}</Label>
-                <Input id="project-initial-annual-budget" type="number" min="0" step="0.0001" value={form.watch("initialAnnualBudgetAmount") ?? ""} onChange={event => { initialAnnualBudgetWasEdited.current = true; form.setValue("initialAnnualBudgetAmount", event.target.value === "" ? undefined : Number(event.target.value), { shouldValidate: true }); }} aria-invalid={Boolean(form.formState.errors.initialAnnualBudgetAmount)} aria-describedby={form.formState.errors.initialAnnualBudgetAmount ? "project-initial-budget-error" : undefined} />
-                <FieldError id="project-initial-budget-error" message={form.formState.errors.initialAnnualBudgetAmount?.message} />
+                <Input id="project-initial-annual-budget" dir="ltr" type="number" min="0" step="0.0001" value={form.watch("initialAnnualBudgetAmount") ?? ""} onChange={event => { initialAnnualBudgetWasEdited.current = true; form.setValue("initialAnnualBudgetAmount", event.target.value === "" ? undefined : Number(event.target.value), { shouldValidate: true }); }} aria-invalid={Boolean(form.formState.errors.initialAnnualBudgetAmount)} aria-describedby={form.formState.errors.initialAnnualBudgetAmount ? "project-initial-budget-error" : undefined} />
+                <FieldError id="project-initial-budget-error" message={validationMessage(form.formState.errors.initialAnnualBudgetAmount?.message)} />
                 <p className="text-xs text-muted-foreground">{t("projects.initialAnnualBudgetHint", { currency: form.watch("currency") || "" })}</p>
               </div>
             </div> : null}
@@ -572,19 +720,84 @@ export function ProjectSheet({ open, onOpenChange, project, onCreated, embedded 
 
           <section className="space-y-4">
             <div className="space-y-1">
-              <h3 className="text-sm font-semibold">{t("projects.initiationSummary")}</h3>
+              <h3 className="text-base font-semibold">{t("projects.createSections.lifecycle")}</h3>
+              {!isEdit ? <p className="text-xs text-muted-foreground">{t("projects.createLifecycleDescription")}</p> : null}
+            </div>
+            {lifecycleOptions.isLoading ? <p role="status" className="text-sm text-muted-foreground">{isEdit ? `${t("projects.lifecycle.phaseLookupLoading")} · ${t("projects.lifecycle.statusLookupLoading")}` : t("projects.lifecycle.statusLookupLoading")}</p> : null}
+            {isEdit && lifecycleOptions.isError ? <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"><span>{t("projects.lifecycle.lookupError")}</span><Button type="button" size="sm" variant="outline" onClick={() => void lifecycleOptions.refetch()}>{t("projects.lifecycle.retry")}</Button></div> : null}
+            {!isEdit ? <div className="grid gap-5 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label>{t("projects.lifecycle.phase")}</Label>
+                <input type="hidden" name="phaseId" data-testid="project-phase-id" value={form.watch("phaseId") ?? ""} readOnly />
+                {lifecycleOptions.isLoading ? (
+                  <p role="status" className="text-sm text-muted-foreground">{t("projects.lifecycle.phaseLookupLoading")}</p>
+                ) : lifecycleOptions.isError ? (
+                  <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+                    <span>{t("projects.lifecycle.lookupError")}</span>
+                    <Button type="button" size="sm" variant="outline" onClick={() => void lifecycleOptions.refetch()}>{t("projects.lifecycle.retry")}</Button>
+                  </div>
+                ) : initialPhaseOption ? (
+                  <p data-testid="project-initial-phase" aria-readonly="true" className="rounded-md border bg-muted/30 px-3 py-2 text-sm font-medium">{projectLifecycleLabel(initialPhaseOption, locale)}</p>
+                ) : (
+                  <p className="text-sm text-muted-foreground">{t("projects.lifecycle.createPhaseUnavailable")}</p>
+                )}
+                <p className="text-xs text-muted-foreground">{t("projects.lifecycle.createInitialPhaseHint")}</p>
+                <FieldError id="project-phase-error" message={validationMessage(form.formState.errors.phaseId?.message)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="project-status">{t("projects.lifecycle.status")}</Label>
+                <Select value={form.watch("statusId") ?? ""} onValueChange={(value) => form.setValue("statusId", value, { shouldValidate: true })}>
+                  <SelectTrigger id="project-status" aria-label={t("projects.lifecycle.status")} aria-invalid={Boolean(form.formState.errors.statusId)} aria-describedby={form.formState.errors.statusId ? "project-status-error" : undefined} disabled={lifecycleOptions.isLoading || lifecycleOptions.isError || !lifecycleOptions.data?.statuses.length}><SelectValue placeholder={t("projects.lifecycle.chooseStatus")} /></SelectTrigger>
+                  <SelectContent>{(lifecycleOptions.data?.statuses ?? []).filter(option => option.isActive !== false).map(option => <SelectItem key={option.id} value={option.id}>{projectLifecycleLabel(option, locale)}</SelectItem>)}</SelectContent>
+                </Select>
+                {!lifecycleOptions.isLoading && !lifecycleOptions.isError && !lifecycleOptions.data?.statuses.length ? <p className="text-xs text-muted-foreground">{t("projects.lifecycle.noStatusesAvailable")}</p> : null}
+                <FieldError id="project-status-error" message={validationMessage(form.formState.errors.statusId?.message)} />
+              </div>
+            </div> : project ? <div className="grid gap-5 sm:grid-cols-2">
+              <div className="space-y-2 rounded-lg border bg-muted/10 p-4">
+                <p className="text-xs text-muted-foreground">{t("projects.lifecycle.currentPhase")}</p>
+                <p className="font-medium">{currentPhaseLabel || t("common.notAvailable")}</p>
+                {canChangeProjectPhase ? <Button type="button" size="sm" variant="outline" onClick={() => setPhaseGateOpen(true)}>{t("projects.lifecycle.changePhase")}</Button> : null}
+              </div>
+              <div className="space-y-3 rounded-lg border bg-muted/10 p-4">
+                <div><p className="text-xs text-muted-foreground">{t("projects.lifecycle.currentStatus")}</p><p className="font-medium">{currentStatusLabel || t("common.notAvailable")}</p></div>
+                {canChangeProjectStatus ? <>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="project-status-target">{t("projects.lifecycle.changeStatus")}</Label>
+                    <Select value={statusTargetId} onValueChange={(value) => { setStatusTargetId(value); setStatusChangeError(null); setStatusChangeSaved(false); }}>
+                      <SelectTrigger id="project-status-target" aria-label={t("projects.lifecycle.changeStatus")} disabled={lifecycleOptions.isLoading || lifecycleOptions.isError || availableStatuses.length === 0}><SelectValue placeholder={t("projects.lifecycle.chooseStatus")} /></SelectTrigger>
+                      <SelectContent>{availableStatuses.map((status) => <SelectItem key={status.id} value={status.id}>{projectLifecycleLabel(status, locale)}</SelectItem>)}</SelectContent>
+                    </Select>
+                    {!lifecycleOptions.isLoading && !lifecycleOptions.isError && availableStatuses.length === 0 ? <p className="text-xs text-muted-foreground">{t("projects.lifecycle.noOtherStatusesAvailable")}</p> : null}
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="project-status-reason">{t("projects.lifecycle.reason")}</Label>
+                    <Textarea id="project-status-reason" rows={2} maxLength={2000} value={statusChangeReason} onChange={(event) => setStatusChangeReason(event.target.value)} placeholder={t("projects.lifecycle.statusChangeReasonHint")} />
+                  </div>
+                  {statusChangeError ? <p role="alert" className="text-sm text-destructive">{statusChangeError}</p> : null}
+                  {statusChangeSaved ? <p role="status" className="text-sm text-success">{t("projects.lifecycle.statusUpdated")}</p> : null}
+                  <Button type="button" size="sm" disabled={!statusTargetId || !availableStatuses.some((status) => status.id === statusTargetId) || changeProjectStatus.isPending || lifecycleOptions.isLoading || lifecycleOptions.isError} onClick={() => void submitStatusChange()}>{changeProjectStatus.isPending ? t("projects.lifecycle.savingStatus") : t("projects.lifecycle.saveStatusChange")}</Button>
+                </> : null}
+              </div>
+            </div> : null}
+          </section>
+
+          <section className="space-y-4">
+            <div className="space-y-1">
+              <h3 className="text-base font-semibold">{t("projects.createSections.review")}</h3>
+              {!isEdit && <p className="text-xs text-muted-foreground">{t("projects.createReviewDescription")}</p>}
               <p className="text-xs text-muted-foreground">{t("projects.initiationSummaryDescription")}</p>
             </div>
 
             <div className="space-y-1.5">
-              <Label>{t("projects.businessCase")}</Label>
-              <Textarea placeholder={t("projects.businessCase")} rows={3} value={form.watch("businessCase") ?? ""} onChange={(e) => form.setValue("businessCase", e.target.value)} />
+              <Label htmlFor="project-business-case">{t("projects.businessCase")}</Label>
+              <Textarea id="project-business-case" placeholder={t("projects.businessCase")} rows={3} value={form.watch("businessCase") ?? ""} onChange={(e) => form.setValue("businessCase", e.target.value)} />
             </div>
 
             {isEdit && (
               <div className="space-y-1.5">
-                <Label>{t("projects.notes")}</Label>
-                <Textarea placeholder={t("projects.notes")} rows={2} value={form.watch("notes") ?? ""} onChange={(e) => form.setValue("notes", e.target.value)} />
+                <Label htmlFor="project-notes">{t("projects.notes")}</Label>
+                <Textarea id="project-notes" placeholder={t("projects.notes")} rows={2} value={form.watch("notes") ?? ""} onChange={(e) => form.setValue("notes", e.target.value)} />
               </div>
             )}
           </section>
@@ -592,26 +805,32 @@ export function ProjectSheet({ open, onOpenChange, project, onCreated, embedded 
 
         <ProjectSheetFooter embedded={embedded}>
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>{t("common.cancel")}</Button>
-          <Button type="submit" disabled={isSubmitting}>
-            {isSubmitting ? (<><Loader2 className="mr-2 h-4 w-4 animate-spin" />{isEdit ? t("projects.updating") : t("common.creating")}</>) : isEdit ? t("projects.update") : t("projects.create")}
+          <Button type="submit" disabled={isSubmitting || initialPhaseUnresolved}>
+            {isSubmitting ? (<><Loader2 className="me-2 h-4 w-4 animate-spin" />{isEdit ? t("projects.updating") : t("common.creating")}</>) : isEdit ? t("projects.update") : t("projects.create")}
           </Button>
         </ProjectSheetFooter>
       </form>
   );
 
   if (embedded)
-    return <div className="overflow-hidden rounded-lg border border-border bg-card">{formContent}</div>;
+    return <>
+      <div className="overflow-hidden rounded-lg border border-border bg-card">{formContent}</div>
+      {isEdit && project ? <ProjectPhaseGateSideSheet open={phaseGateOpen} onOpenChange={setPhaseGateOpen} project={project} /> : null}
+    </>;
 
   return (
-    <SideSheet
-      open={open}
-      onOpenChange={onOpenChange}
-      title={isEdit ? t("projects.edit") : t("projects.create")}
-      description={isEdit ? t("projects.editDescription") : t("projects.createDescription")}
-      size="lg"
-    >
-      {formContent}
-    </SideSheet>
+    <>
+      <SideSheet
+        open={open}
+        onOpenChange={onOpenChange}
+        title={isEdit ? t("projects.edit") : t("projects.create")}
+        description={isEdit ? t("projects.editDescription") : t("projects.createDescription")}
+        size="lg"
+      >
+        {formContent}
+      </SideSheet>
+      {isEdit && project ? <ProjectPhaseGateSideSheet open={phaseGateOpen} onOpenChange={setPhaseGateOpen} project={project} /> : null}
+    </>
   );
 }
 

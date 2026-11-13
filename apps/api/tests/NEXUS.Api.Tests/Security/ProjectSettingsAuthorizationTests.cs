@@ -481,7 +481,7 @@ public sealed class ProjectSettingsAuthorizationTests
             permissionService.Object,
             management,
             Mock.Of<IAuditService>(),
-            new NoopProjectAnnualBudgetApprovalNotificationPublisher(),
+            Mock.Of<IProjectAnnualBudgetApprovalNotificationPublisher>(),
             Mock.Of<IManagementScopeResolver>());
 
         var result = await workflow.GetApprovalConfigurationAsync(tenantId, projectId, actorId, CancellationToken.None);
@@ -902,7 +902,7 @@ public sealed class ProjectSettingsAuthorizationTests
             effectivePermissionService,
             management,
             auditService ?? Mock.Of<IAuditService>(),
-            new NoopProjectAnnualBudgetApprovalNotificationPublisher(),
+            Mock.Of<IProjectAnnualBudgetApprovalNotificationPublisher>(),
             Mock.Of<IManagementScopeResolver>());
     }
 }

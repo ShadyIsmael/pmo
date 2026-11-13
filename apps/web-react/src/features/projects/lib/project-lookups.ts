@@ -169,10 +169,10 @@ export function usePortfolioLookup(enabled = true, scopeKey = "") {
   });
 }
 
-export function useProgramLookup(enabled = true) {
+export function useProgramLookup(enabled = true, portfolioId = "") {
   return useQuery({
-    queryKey: ["programs", "lookup"],
-    queryFn: () => api.get<{ items: ProgramLookupDto[] }>(endpoints.programs.projectLookup, { pageSize: 200 }),
+    queryKey: ["programs", "lookup", portfolioId],
+    queryFn: () => api.get<{ items: ProgramLookupDto[] }>(endpoints.programs.projectLookup, { pageSize: 200, ...(portfolioId ? { portfolioId } : {}) }),
     staleTime: 60_000,
     enabled,
   });

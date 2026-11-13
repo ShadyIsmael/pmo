@@ -26,6 +26,18 @@ const reportMocks = vi.hoisted(() => ({
   financialSummary: { data: undefined as ProjectFinancialSummaryDto | undefined, isLoading: false, isError: false },
 }));
 
+const lifecycleMock = vi.hoisted(() => ({
+  options: {
+    data: { phases: [], statuses: [
+      { id: "status-mobilizing", code: "Mobilizing", nameEn: "Mobilizing", nameAr: "التجهيز", displayOrder: 10, isDefault: true, isActive: true, reportingCategory: "InProgress", attentionLevel: "None" },
+      { id: "status-delivered", code: "Delivered", nameEn: "Delivered", nameAr: "تم التسليم", displayOrder: 20, isDefault: false, isActive: true, reportingCategory: "Completed", attentionLevel: "None" },
+    ] },
+    isLoading: false,
+    isError: false,
+    refetch: vi.fn(),
+  },
+}));
+
 vi.mock("../api/workItems", () => ({ useWorkItemStatuses: () => ({ data: [], isLoading: false }) }));
 vi.mock("../features/risks/api/risks", () => ({ useRisks: () => ({ data: { items: [], totalCount: 0 }, isLoading: false, isError: false }) }));
 vi.mock("../features/projects/api/projects", () => ({
@@ -44,6 +56,10 @@ vi.mock("../features/projects/api/projects", () => ({
 vi.mock("../auth/AuthProvider", () => ({ useAuth: () => ({ user: { id: "user-1", fullName: "Alex Admin", permissions: ["Project.Edit", "Project.View", "StatusReport.Export"] } }) }));
 vi.mock("../api/management", () => ({ useManagement: () => ({ canMutate: reportMocks.canMutate, effectiveReadOnly: reportMocks.readOnly }) }));
 vi.mock("../features/projects/lib/project-labels", () => ({ useProjectEnumLabels: () => ({ statusLabel: (value?: string | null) => value ?? "—", healthLabel: (value?: string | null) => value ?? "—" }) }));
+vi.mock("../features/projects/api/project-lifecycle", () => ({
+  useProjectLifecycleOptions: () => lifecycleMock.options,
+  projectLifecycleLabel: (option: { nameEn?: string; nameAr?: string; code: string } | undefined, locale: string, fallback?: string | null) => option ? (locale === "ar" ? option.nameAr || option.nameEn || option.code : option.nameEn || option.nameAr || option.code) : fallback || "",
+}));
 vi.mock("../lib/permissions", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/permissions")>();
   return { ...actual, hasPermission: (_permissions: readonly string[], permission: string) => permission === actual.Permissions.StatusReport.Create ? reportMocks.canEdit : permission === actual.Permissions.StatusReport.Edit ? reportMocks.canEdit : permission === actual.Permissions.StatusReport.Publish ? reportMocks.canPublish : permission === actual.Permissions.StatusReport.View ? reportMocks.canView : permission === actual.Permissions.StatusReport.Export ? reportMocks.canExport : false };
@@ -59,7 +75,7 @@ const draft: ProjectStatusReportDto = {
   periodTo: "2026-09-30",
   statusDate: "2026-09-30",
   reportState: "Draft",
-  projectLifecycleStatusAtReport: "Active",
+  projectLifecycleStatusAtReport: "Mobilizing",
   overallHealth: "Amber",
   overallProgressPercent: 42,
   scheduleHealth: "Amber",
@@ -95,7 +111,7 @@ const project = {
   id: "project-1",
   name: "Apollo Migration",
   code: "PRJ-100",
-  status: "Active",
+  status: "Mobilizing",
   health: "Amber",
   progress: 42 as number | null,
   projectManagerName: "Sam PM",
@@ -146,6 +162,30 @@ beforeEach(() => {
 });
 
 describe("project status report source parity", () => {
+  it("keeps narrative and status inputs when switching sections and includes them in the draft", async () => {
+    renderStatusReports();
+    fireEvent.click(screen.getByRole("button", { name: "New Report" }));
+    const editor = screen.getByRole("dialog", { name: "New Report" });
+    fireEvent.click(within(editor).getByRole("button", { name: "Report narrative" }));
+    const summary = editor.querySelector<HTMLTextAreaElement>('textarea[name="executiveSummary"]')!;
+    fireEvent.change(summary, { target: { value: "Delivery is progressing" } });
+    fireEvent.click(within(editor).getByRole("button", { name: "Project status" }));
+    fireEvent.change(editor.querySelector<HTMLInputElement>('input[name="overallProgressPercent"]')!, { target: { value: "55" } });
+    fireEvent.click(within(editor).getByRole("button", { name: "Report narrative" }));
+    expect(summary).toHaveValue("Delivery is progressing");
+    fireEvent.click(within(editor).getByRole("button", { name: "Save Draft" }));
+    await waitFor(() => expect(reportMocks.create).toHaveBeenCalledWith(expect.objectContaining({ executiveSummary: "Delivery is progressing", overallProgressPercent: 55 })));
+  });
+  it("edits report status using localized database catalog options", async () => {
+    renderStatusReports();
+    fireEvent.click(screen.getByRole("button", { name: "New Report" }));
+    const editor = screen.getByRole("dialog", { name: "New Report" });
+    fireEvent.click(within(editor).getByRole("button", { name: "Project status" }));
+    const status = editor.querySelector<HTMLSelectElement>('select[name="projectLifecycleStatusAtReport"]')!;
+    expect(within(status).getByRole("option", { name: "Mobilizing" })).toHaveValue("Mobilizing");
+    expect(within(status).getByRole("option", { name: "Delivered" })).toHaveValue("Delivered");
+    expect(within(status).queryByRole("option", { name: "Active" })).not.toBeInTheDocument();
+  });
   it("shows the authorized reporting-period finance summary and keeps its source currency", async () => {
     reportMocks.financialSummary = {
       data: {
@@ -199,7 +239,7 @@ describe("project status report source parity", () => {
     await waitFor(() => expect(progress).toHaveValue(42));
     expect(progress).not.toHaveAttribute("readOnly");
     expect(health).toHaveValue("Amber");
-    expect(status).toHaveValue("Active");
+    expect(status).toHaveValue("Mobilizing");
 
     fireEvent.change(progress, { target: { value: "63.5" } });
     fireEvent.change(health, { target: { value: "Red" } });
@@ -209,7 +249,7 @@ describe("project status report source parity", () => {
 
     fireEvent.click(within(editor).getByRole("button", { name: "Save Draft" }));
     await waitFor(() => expect(reportMocks.create).toHaveBeenCalledWith(expect.objectContaining({
-      projectLifecycleStatusAtReport: "Active",
+      projectLifecycleStatusAtReport: "Mobilizing",
       overallHealth: "Red",
       overallProgressPercent: 63.5,
       executiveSummary: "User reviewed current delivery.",

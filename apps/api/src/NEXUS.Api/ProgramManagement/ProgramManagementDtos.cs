@@ -1,3 +1,5 @@
+using NEXUS.Modules.ProjectManagement.Domain;
+
 namespace NEXUS.Api.ProgramManagement;
 
 public sealed class ProgramManagementListItemDto
@@ -82,6 +84,10 @@ public sealed class ProgramProjectManagementDto
     public string Name { get; init; } = string.Empty;
     public string Code { get; init; } = string.Empty;
     public string Status { get; init; } = string.Empty;
+    public string? StatusNameEn { get; init; }
+    public string? StatusNameAr { get; init; }
+    public string ReportingCategory { get; init; } = ProjectStatusReportingCategories.InProgress;
+    public string AttentionLevel { get; init; } = ProjectStatusAttentionLevels.None;
     public string Health { get; init; } = string.Empty;
     public string? ProjectManagerName { get; init; }
     public DateTime? StartDate { get; init; }

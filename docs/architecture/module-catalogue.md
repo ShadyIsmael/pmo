@@ -544,9 +544,9 @@ Supported event types include Project/Program/Portfolio handover, Project Change
 | Attribute | Detail |
 |-----------|--------|
 | **Namespace** | `NEXUS.Modules.Documents` |
-| **Business responsibility** | Document metadata, versioning, categories, reviews, file storage |
-| **Maturity** | Implemented (storage is LocalStorageProvider placeholder) |
-| **Evidence** | `AppDbContext.cs:117-120` (4 DbSets), `DocumentController.cs`, `IStorageProvider.cs`, `LocalStorageProvider.cs`, `DocumentRepository.cs`, `Program.cs:112` (`AddDocumentsModule()`) |
+| **Business responsibility** | Shared document metadata/versioning, organization-owned approved templates, categories, reviews, and file storage |
+| **Maturity** | Source includes versioned organization-owned templates and a private local Development provider; migration `20261110170000_AddOrganizationDocumentTemplateStorageMetadata` is not applied and authenticated database/browser verification remains pending |
+| **Evidence** | `AppDbContext.cs:117-120` (4 DbSets), `DocumentController.cs`, `IStorageProvider.cs`, `LocalStorageProvider.cs`, `DocumentRepository.cs`, `Program.cs:112` (`AddDocumentsModule()`), additive metadata migration |
 
 ### Domain Entities
 | Entity | DbSet | Verified |
@@ -561,14 +561,16 @@ Supported event types include Project/Program/Portfolio handover, Project Change
 |---------|------|----------|
 | `IDocumentService` | `Application/IDocumentService.cs` | Yes |
 | `DocumentService` | `Application/DocumentService.cs` | Yes |
-| `IStorageProvider` | `Application/IStorageProvider.cs` | Yes (interface) |
-| `LocalStorageProvider` | `Infrastructure/LocalStorageProvider.cs` | Yes (mock implementation) |
+| `IStorageProvider` | `Application/IStorageProvider.cs` | Stream storage contract, keyed registration by provider ID |
+| `LocalStorageProvider` | `Infrastructure/LocalStorageProvider.cs` | Private local implementation for Development; external File Server deferred |
 | `DocumentRepository` | `Infrastructure/DocumentRepository.cs` | Yes |
 
 ### API Endpoints
-| Endpoint | Controller File | Verified |
-|----------|----------------|----------|
-| `GET/POST/DELETE /api/documents` | `DocumentController.cs` | Yes |
+| Endpoint | Controller File | Source contract |
+|----------|----------------|-----------------|
+| `GET /api/documents`, `/categories`, `/organizations`, `/{id}` | `DocumentController.cs` | Scoped document/template lists, category and permitted organization selectors, and details |
+| `POST /api/documents`, `/{id}/versions`, `/{id}/archive`, `/{id}/activate` | `DocumentController.cs` | Permission-gated uploads, immutable version creation, non-destructive archive, and template activation |
+| `GET /api/documents/{id}/download`, `/{id}/preview` | `DocumentController.cs` | API-mediated authorized file access |
 
 ### Dependencies
 - Project Management (project reference)

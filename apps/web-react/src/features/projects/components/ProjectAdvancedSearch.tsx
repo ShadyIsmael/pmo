@@ -10,8 +10,9 @@ import { Label } from "@components/ui/Label";
 import { SearchableSelect } from "@components/ui/SearchableSelect";
 import { useI18n } from "@i18n/messages";
 import { useProjectEnumLabels } from "../lib/project-labels";
-import { ProjectHealthHelper, ProjectStatusHelper } from "@lib/enums";
+import { ProjectHealthHelper } from "@lib/enums";
 import { shouldLoadProjectLookup, toUserSelectOptions, useProjectManagerCandidateLookup } from "../lib/project-lookups";
+import { projectLifecycleLabel, type ProjectLifecycleOption } from "../api/project-lifecycle";
 
 interface ProjectAdvancedSearchProps {
   filterName: string;
@@ -20,6 +21,10 @@ interface ProjectAdvancedSearchProps {
   setFilterCode: (value: string) => void;
   filterStatuses: string[];
   toggleStatus: (status: string) => void;
+  statusOptions: ProjectLifecycleOption[];
+  statusOptionsLoading: boolean;
+  statusOptionsError: boolean;
+  retryStatusOptions: () => void;
   filterHealths: string[];
   toggleHealth: (health: string) => void;
   filterProgressMin: string;
@@ -48,6 +53,10 @@ export function ProjectAdvancedSearch({
   setFilterCode,
   filterStatuses,
   toggleStatus,
+  statusOptions,
+  statusOptionsLoading,
+  statusOptionsError,
+  retryStatusOptions,
   filterHealths,
   toggleHealth,
   filterProgressMin,
@@ -68,8 +77,8 @@ export function ProjectAdvancedSearch({
   activeFilterCount,
   onClearFilters,
 }: ProjectAdvancedSearchProps) {
-  const { t } = useI18n();
-  const { statusLabel, healthLabel } = useProjectEnumLabels();
+  const { t, locale } = useI18n();
+  const { healthLabel } = useProjectEnumLabels();
   const [open, setOpen] = React.useState(false);
   const { data: projectManagers, isLoading: projectManagersLoading } = useProjectManagerCandidateLookup(shouldLoadProjectLookup(open));
   const projectManagerOptions = toUserSelectOptions(projectManagers);
@@ -78,8 +87,6 @@ export function ProjectAdvancedSearch({
     value,
     label: healthLabel(value),
   }));
-
-  const allStatuses = ProjectStatusHelper.allValues();
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
@@ -114,20 +121,23 @@ export function ProjectAdvancedSearch({
 
               <div className="space-y-2">
                 <Label className="text-xs font-medium">{t("common.status")}</Label>
+                {statusOptionsLoading ? <p role="status" className="text-xs text-muted-foreground">{t("projects.lifecycle.statusLookupLoading")}</p> : null}
+                {statusOptionsError ? <div className="flex items-center gap-3"><p role="alert" className="text-xs text-destructive">{t("projects.lifecycle.lookupError")}</p><Button type="button" size="sm" variant="outline" onClick={retryStatusOptions}>{t("projects.lifecycle.retry")}</Button></div> : null}
                 <div className="flex flex-wrap gap-2">
-                  {allStatuses.map((status) => (
-                    <div key={status} className="flex items-center gap-2">
+                  {statusOptions.filter((status) => status.isActive !== false).map((status) => (
+                    <div key={status.id} className="flex items-center gap-2">
                       <Checkbox
-                        id={`status-${status}`}
-                        checked={filterStatuses.includes(status)}
-                        onCheckedChange={() => toggleStatus(status)}
+                        id={`status-${status.id}`}
+                        checked={filterStatuses.includes(status.code)}
+                        onCheckedChange={() => toggleStatus(status.code)}
                       />
-                      <Label htmlFor={`status-${status}`} className="cursor-pointer text-sm">
-                        {statusLabel(status)}
+                      <Label htmlFor={`status-${status.id}`} className="cursor-pointer text-sm">
+                        {projectLifecycleLabel(status, locale, status.code)}
                       </Label>
                     </div>
                   ))}
                 </div>
+                {!statusOptionsLoading && !statusOptionsError && statusOptions.length === 0 ? <p className="text-xs text-muted-foreground">{t("projects.lifecycle.noStatusesAvailable")}</p> : null}
               </div>
 
               <div className="space-y-2">

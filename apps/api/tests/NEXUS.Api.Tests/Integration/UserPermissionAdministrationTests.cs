@@ -1362,7 +1362,7 @@ public sealed class UserPermissionAdministrationTests : IAsyncLifetime
             adminRole.Permissions.Add(permission);
         await _context.SaveChangesAsync();
 
-        var omittedPermission = mandatoryPermissions["Roles.Delete"];
+        var omittedPermission = mandatoryPermissions["DocumentCategory.ActivateDeactivate"];
         var requestedIds = mandatoryPermissions.Values
             .Where(permission => permission.Id != omittedPermission.Id)
             .Select(permission => permission.Id)

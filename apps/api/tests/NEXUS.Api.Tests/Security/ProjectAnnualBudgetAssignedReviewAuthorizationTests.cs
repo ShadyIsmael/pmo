@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Infrastructure;
@@ -7,6 +8,7 @@ using NEXUS.Api.Finance;
 using NEXUS.Modules.Identity.Application;
 using NEXUS.Modules.Identity.Domain;
 using Xunit;
+using AspNetAuthorizationService = Microsoft.AspNetCore.Authorization.IAuthorizationService;
 
 namespace NEXUS.Api.Tests.Security;
 
@@ -20,7 +22,7 @@ public sealed class ProjectAnnualBudgetAssignedReviewAuthorizationTests
         services.AddAuthorization(options => options.AddCanonicalFinancialPolicies());
         using var provider = services.BuildServiceProvider();
         var policyProvider = provider.GetRequiredService<IAuthorizationPolicyProvider>();
-        var authorization = provider.GetRequiredService<IAuthorizationService>();
+        var authorization = provider.GetRequiredService<AspNetAuthorizationService>();
 
         foreach (var actionName in new[]
                  {
@@ -53,7 +55,7 @@ public sealed class ProjectAnnualBudgetAssignedReviewAuthorizationTests
         services.AddAuthorization(options => options.AddCanonicalFinancialPolicies());
         using var provider = services.BuildServiceProvider();
         var policyProvider = provider.GetRequiredService<IAuthorizationPolicyProvider>();
-        var authorization = provider.GetRequiredService<IAuthorizationService>();
+        var authorization = provider.GetRequiredService<AspNetAuthorizationService>();
         var endpointPolicy = await ResolveEndpointPolicy(policyProvider, action!);
 
         Assert.True((await authorization.AuthorizeAsync(

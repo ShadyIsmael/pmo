@@ -18,17 +18,20 @@ public sealed class StakeholderProjectReadService : IStakeholderProjectReadServi
     private readonly IResourceReferenceLookup _resources;
     private readonly IUserReferenceLookup _users;
     private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly IProjectOrganizationLookup? _projectOrganizationLookup;
 
     public StakeholderProjectReadService(
         DbContext context,
         IResourceReferenceLookup resources,
         IUserReferenceLookup users,
-        IHttpContextAccessor httpContextAccessor)
+        IHttpContextAccessor httpContextAccessor,
+        IProjectOrganizationLookup? projectOrganizationLookup = null)
     {
         _context = context;
         _resources = resources;
         _users = users;
         _httpContextAccessor = httpContextAccessor;
+        _projectOrganizationLookup = projectOrganizationLookup;
     }
 
     public async Task<Result<PagedResult<StakeholderProjectViewDto>>> GetMyProjectsAsync(
@@ -127,6 +130,26 @@ public sealed class StakeholderProjectReadService : IStakeholderProjectReadServi
             .ThenByDescending(report => report.CreatedAt)
             .ToListAsync(cancellationToken);
 
+        var statusIds = projects.Where(project => project.ProjectStatusId.HasValue)
+            .Select(project => project.ProjectStatusId!.Value).Distinct().ToArray();
+        var tenantIds = projects.Select(project => project.TenantId).Distinct().ToArray();
+        var statusCatalog = statusIds.Length == 0
+            ? []
+            : await _context.Set<ProjectStatusCatalogEntry>().AsNoTracking()
+                .Where(status => statusIds.Contains(status.Id) && tenantIds.Contains(status.TenantId) && !status.IsDeleted)
+                .ToListAsync(cancellationToken);
+        var organizationByProject = new Dictionary<Guid, Guid?>();
+        if (_projectOrganizationLookup is not null && statusCatalog.Any(status => status.OrganizationId.HasValue))
+        {
+            foreach (var project in projects.Where(project => project.ProjectStatusId.HasValue
+                && statusCatalog.Any(status => status.Id == project.ProjectStatusId.Value
+                    && status.TenantId == project.TenantId && status.OrganizationId.HasValue)))
+            {
+                organizationByProject[project.Id] = await _projectOrganizationLookup.ResolveOrganizationIdAsync(
+                    project.TenantId, project.Id, cancellationToken);
+            }
+        }
+
         var milestones = await _context.Set<Milestone>().AsNoTracking()
             .Where(milestone => projectIds.Contains(milestone.ProjectId))
             .OrderBy(milestone => milestone.DueDate.HasValue ? 0 : 1)
@@ -138,6 +161,12 @@ public sealed class StakeholderProjectReadService : IStakeholderProjectReadServi
         {
             var projectReports = reports.Where(report => report.ProjectId == project.Id).ToList();
             var latest = projectReports.FirstOrDefault();
+            organizationByProject.TryGetValue(project.Id, out var organizationId);
+            var status = project.ProjectStatusId.HasValue
+                ? statusCatalog.FirstOrDefault(item => item.Id == project.ProjectStatusId.Value
+                    && item.TenantId == project.TenantId
+                    && (item.OrganizationId is null || item.OrganizationId == organizationId))
+                : null;
             return new StakeholderProjectViewDto
             {
                 Id = project.Id,
@@ -146,6 +175,8 @@ public sealed class StakeholderProjectReadService : IStakeholderProjectReadServi
                 Name = project.Name,
                 Description = project.Description,
                 Status = project.Status,
+                StatusNameEn = status?.NameEn,
+                StatusNameAr = status?.NameAr,
                 Health = project.Health,
                 Progress = project.Progress,
                 StartDate = project.StartDate,

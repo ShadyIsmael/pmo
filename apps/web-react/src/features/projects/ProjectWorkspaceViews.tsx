@@ -30,13 +30,16 @@ function queryError(query: { error: unknown }): string | null {
   return query.error instanceof Error ? query.error.message : query.error ? "Request failed" : null;
 }
 
-function ProjectPicker({ projects, value, onChange, label }: { projects: readonly ProjectSummaryDto[]; value: string; onChange: (value: string) => void; label: string }) {
+function ProjectPicker({ projects, value, onChange, label, locale }: { projects: readonly ProjectSummaryDto[]; value: string; onChange: (value: string) => void; label: string; locale: string }) {
   return (
     <label className="flex min-w-0 flex-col gap-1.5 text-sm">
       <span className="text-xs font-medium text-muted-foreground">{label}</span>
       <select className="h-10 min-w-[16rem] rounded-md border border-input bg-background px-3 text-sm" value={value} onChange={(event) => onChange(event.target.value)} disabled={!projects.length}>
         {!projects.length ? <option value="">—</option> : null}
-        {projects.map((project) => <option key={project.publicId} value={project.publicId}>{project.name} · {project.code}</option>)}
+        {projects.map((project) => {
+          const statusName = locale === "ar" ? project.statusNameAr || project.statusNameEn : project.statusNameEn || project.statusNameAr;
+          return <option key={project.publicId} value={project.publicId}>{project.name} · {project.code}{statusName ? ` · ${statusName}` : ""}</option>;
+        })}
       </select>
     </label>
   );
@@ -61,7 +64,7 @@ function WorkspaceError({ message }: { message: string }) {
   return <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">{message}</p>;
 }
 
-function normalizeStatus(value: string) { return value.toLowerCase().replace(/[\s_-]+/g, ""); }
+function isWorkspaceExcluded(project: ProjectSummaryDto) { return project.reportingCategory === "Excluded"; }
 
 function emptyProjectBoardTask(projectId?: string): SaveWorkItemDto {
   return { title: "", description: "", type: "Task", priority: "Medium", projectId, dueDate: "" };
@@ -74,7 +77,7 @@ export function ProjectBoardPage() {
   const { canMutate, effectiveReadOnly } = useManagement();
   const projectsQuery = useProjects({ page: 1, pageSize: 200 });
   const allProjects = projectsQuery.data?.items ?? [];
-  const projects = routeProjectId ? allProjects : allProjects.filter((project) => normalizeStatus(project.status) !== "completed");
+  const projects = routeProjectId ? allProjects : allProjects.filter((project) => !isWorkspaceExcluded(project));
   const [projectId, setProjectId] = useWorkspaceProjectId(projects, routeProjectId);
   const workItemsQuery = useFullWorkItems({ projectId, page: 1, pageSize: 200, sortBy: "dueDate", sortDirection: "asc" }, Boolean(projectId));
   const statusesQuery = useWorkItemStatuses(true);
@@ -149,7 +152,7 @@ export function ProjectBoardPage() {
     <div className="space-y-6">
       <PageHeader title={t("projects.workspaceViews.boardTitle")} description={t("projects.workspaceViews.boardDescription")} actions={canCreate && projectId ? <Button type="button" size="sm" onClick={openCreateTask}>{t("projects.workspaceViews.addTask")}</Button> : undefined} />
       {projectsQuery.isError ? <WorkspaceError message={queryError(projectsQuery) ?? t("common.errorLoading")} /> : null}
-      <ProjectPicker projects={projects} value={projectId} onChange={setProjectId} label={t("projects.workspaceViews.selectProject")} />
+      <ProjectPicker projects={projects} value={projectId} onChange={setProjectId} label={t("projects.workspaceViews.selectProject")} locale={locale} />
       {projectsQuery.isLoading || workItemsQuery.isLoading || statusesQuery.isLoading ? <WorkspaceLoading label={t("common.loading")} /> : workItemsQuery.isError || statusesQuery.isError ? <WorkspaceError message={queryError(workItemsQuery.isError ? workItemsQuery : statusesQuery) ?? t("common.errorLoading")} /> : !projectId ? <WorkspaceLoading label={t("projects.workspaceViews.noProjects")} /> : <WorkItemsKanban items={items} statuses={boardStatuses} locale={locale} canEdit={canEdit} movingItemId={movingItemId} moveError={moveError} onMove={(itemId, targetStatus) => void moveItem(itemId, targetStatus)} t={(key) => t(key)} />}
       <SideSheet open={createOpen} onOpenChange={closeCreate} title={t("projects.workspaceViews.addTask")} description={selectedProject?.name} closeLabel={t("common.close")}>
         <SideSheetBody className="space-y-4">{createError ? <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">{createError}</p> : null}<WorkItemForm draft={draft} onChange={(patch) => setDraft((current) => ({ ...current, ...patch }))} t={t} assignees={createAssignees.data ?? []} assigneesLoading={createAssignees.isLoading} assigneesError={createAssignees.isError} onRetryAssignees={() => { void createAssignees.refetch(); }} projects={selectedProject ? [selectedProject] : []} allowTypeChange={false} projectLocked /></SideSheetBody>
@@ -252,7 +255,7 @@ export function ProjectGanttPage() {
   const { t, locale } = useI18n();
   const { id: routeProjectId } = useParams<{ id: string }>();
   const projectsQuery = useProjects({ page: 1, pageSize: 200 });
-  const projects = React.useMemo(() => (projectsQuery.data?.items ?? []).filter((item) => normalizeStatus(item.status) !== "completed"), [projectsQuery.data?.items]);
+  const projects = React.useMemo(() => (projectsQuery.data?.items ?? []).filter((item) => !isWorkspaceExcluded(item)), [projectsQuery.data?.items]);
   const [projectId, setProjectId] = useWorkspaceProjectId(projects, routeProjectId);
   const plansQuery = usePlanningPlansFull(projectId, Boolean(projectId));
   const plans = React.useMemo(() => plansQuery.data ?? [], [plansQuery.data]);
@@ -295,7 +298,7 @@ export function ProjectGanttPage() {
       />
       {projectsQuery.isError || plansQuery.isError || activitiesQuery.isError ? <WorkspaceError message={queryError(projectsQuery) ?? queryError(plansQuery) ?? queryError(activitiesQuery) ?? t("common.errorLoading")} /> : null}
       <div className="flex flex-wrap items-end gap-4">
-        <ProjectPicker projects={projects} value={projectId} onChange={setProjectId} label={t("projects.workspaceViews.selectProject")} />
+        <ProjectPicker projects={projects} value={projectId} onChange={setProjectId} label={t("projects.workspaceViews.selectProject")} locale={locale} />
         <label className="flex min-w-0 flex-col gap-1.5 text-sm"><span className="text-xs font-medium text-muted-foreground">{t("projects.workspaceViews.selectPlan")}</span><select className="h-10 min-w-[16rem] rounded-md border border-input bg-background px-3 text-sm" value={planId} onChange={(event) => setSelectedPlanId(event.target.value)} disabled={!plans.length}><option value="">{plans.length ? t("projects.workspaceViews.selectPlan") : t("projects.workspaceViews.noPlans")}</option>{plans.map((plan) => <option key={plan.id} value={plan.id}>{plan.name} · {plan.status}</option>)}</select></label>
       </div>
       {filterOpen ? <Input aria-label={t("projects.workspaceViews.filterTasks")} placeholder={t("projects.workspaceViews.filterTasks")} value={filterText} onChange={(event) => setFilterText(event.target.value)} className="max-w-sm" /> : null}
@@ -321,7 +324,7 @@ export function ProjectResourceMatrixPage() {
   const { t } = useI18n();
   const projectsQuery = useProjects({ page: 1, pageSize: 200 });
   const resourcesQuery = useResources({ page: 1, pageSize: 200, isActive: true });
-  const projects = (projectsQuery.data?.items ?? []).filter((project) => !["completed", "cancelled", "archived"].includes(normalizeStatus(project.status))).slice(0, 6);
+  const projects = (projectsQuery.data?.items ?? []).filter((project) => !isWorkspaceExcluded(project)).slice(0, 6);
   const resources = resourcesQuery.data?.items ?? [];
   const isLoading = projectsQuery.isLoading || resourcesQuery.isLoading;
   const error = queryError(projectsQuery) ?? queryError(resourcesQuery);
