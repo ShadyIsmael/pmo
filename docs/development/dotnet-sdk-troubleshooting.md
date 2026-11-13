@@ -1,7 +1,7 @@
 # .NET SDK and API Build Troubleshooting
 
 **Repository:** C:/Projects/pmo  
-**Rechecked:** 2026-11-01
+**Rechecked:** 2026-11-12
 
 ## Repository SDK selection
 
@@ -60,3 +60,57 @@ DOTNET_CLI_TELEMETRY_OPTOUT controls .NET CLI telemetry only. It does not disabl
 
 - [Install .NET on Windows](https://learn.microsoft.com/en-us/dotnet/core/install/windows) — supported installer options, including /repair.
 - [.NET 10 downloads](https://dotnet.microsoft.com/en-us/download/dotnet/10.0) — official SDK installers and published integrity information.
+
+## VSTest testhost crash: parent-process access denied (fixed 2026-11-12)
+
+### Symptom
+
+`dotnet test` against `NEXUS.Api.Tests` aborted before discovery in a restricted Windows execution context. The testhost stack was:
+
+    ProcessManager.OpenProcess
+    Process.EnsureWatchingForExit
+    ProcessHelper.SetExitCallback
+    DefaultEngineInvoker.SetParentProcessExitCallback
+    System.ComponentModel.Win32Exception (5): Access is denied
+
+VSTest then either reported that it could not connect to the testhost after its timeout or ended with no tests executed. This is a runner/host permission boundary, not an assertion failure.
+
+### Root cause
+
+The testhost queries its parent process so it can stop when the parent exits. When the execution context denies `OpenProcess` on that parent, testhost crashes during startup and never begins discovery.
+
+### Fix for the current toolchain
+
+`apps/api/tests/NEXUS.Api.Tests/NEXUS.Api.Tests.csproj` sets the `Microsoft.TestPlatform.TestHost` override property before the package targets are imported:
+
+```xml
+<PropertyGroup>
+  <_MSTestEnableParentProcessQuery>false</_MSTestEnableParentProcessQuery>
+</PropertyGroup>
+```
+
+Do **not** add a literal `<RuntimeHostConfigurationOption Include="MSTest.EnableParentProcessQuery" Value="false" />` item. `Microsoft.TestPlatform.TestHost.targets` (18.0.1) unconditionally appends the same option with `Value="$(_MSTestEnableParentProcessQuery)"`, which defaults to `true`. Because package targets are imported after the project body, that later item wins and the generated runtimeconfig still contains `true`. Setting the property makes the package emit a single option with `false`.
+
+### Verification
+
+After rebuilding the test project, `apps/api/tests/NEXUS.Api.Tests/bin/Debug/net10.0/NEXUS.Api.Tests.runtimeconfig.json` must contain:
+
+```json
+"MSTest.EnableParentProcessQuery": false
+```
+
+under `runtimeOptions.configProperties`. Delete the generated runtimeconfig before one rebuild to prove the value now comes from source rather than a previous manual `bin/` edit.
+
+Verified on 2026-11-12:
+
+- `DocumentFileTypeValidatorTests`: 27 passed, 0 failed, 0 skipped; testhost started without the Win32 error.
+- Remaining focused Sprint 2 suites: 42 tests, 41 passed, 1 failed (a production-side duplicate-finding defect, not a runner failure).
+- No `Access is denied`, `Win32Exception`, or "failed to connect to testhost" entries in the run logs.
+
+VSTest still needs its normal testhost IPC (local named pipes / loopback). An execution context that denies that IPC will fail regardless of this switch; run from an approved Windows host context in that case.
+
+### Trade-off and maintenance
+
+- Disabling parent-process monitoring means testhost is not automatically torn down if the runner terminates unexpectedly. The runner or host must clean up an orphaned testhost. This is acceptable for CI/restricted-host execution but should be revisited if orphaned testhost processes are observed.
+- `_MSTestEnableParentProcessQuery` is an underscore-prefixed package-internal property. Re-verify the generated runtimeconfig after any `Microsoft.NET.Test.Sdk`, `Microsoft.TestPlatform.TestHost`, or SDK upgrade; a CI assertion on the generated value would catch a silent regression.
+- The setting is applied only to `NEXUS.Api.Tests`. The other test projects still default to `true` and can hit the same crash in the same restricted context.

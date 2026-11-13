@@ -65,16 +65,16 @@ export function ProjectAnnualBudgetApprovalSettings({ projectId, canManage, enab
   const eligibleById = new Map((data?.eligibleApprovers ?? []).map(item => [item.userId, item]));
   const configuredNames = data?.configuredApprovers.map(item => item.displayName ?? item.userId) ?? [];
 
-  return <Card>
-    <CardHeader className="pb-3">
-      <CardTitle>{t("projects.annualBudgetProjectDefaults")}</CardTitle>
+  return <Card className="overflow-hidden">
+    <CardHeader className="border-b bg-muted/30 p-5 sm:p-6">
+      <CardTitle className="text-lg">{t("projects.annualBudgetProjectDefaults")}</CardTitle>
       <p className="text-sm text-muted-foreground">{t("projects.annualBudgetProjectDefaultsDescription")}</p>
     </CardHeader>
-    <CardContent className="space-y-4">
+    <CardContent className="space-y-4 p-5 sm:p-6">
       {configuration.isLoading ? <p role="status" className="text-sm text-muted-foreground">{t("common.loading")}</p>
         : configuration.isError || !data ? <div className="flex items-center justify-between gap-3"><p role="alert" className="text-sm text-destructive">{t("projects.annualBudgetApprovalConfigurationLoadFailed")}</p><Button type="button" size="sm" variant="outline" onClick={() => void configuration.refetch()}>{t("common.retry")}</Button></div>
           : <>
-            <div className="rounded-md border p-3 text-sm">
+            <div className="rounded-xl border bg-muted/20 p-4 text-sm">
               <p><span className="font-medium">{t("projects.annualBudgetConfigurationSource")}:</span> {t("projects.annualBudgetProjectSettingsSource")}</p>
               {!data.isValid ? <div role="status" className="mt-2 space-y-1 text-warning">
                 <p className="font-medium">{t("projects.annualBudgetDefaultsInvalid")}</p>
@@ -89,7 +89,7 @@ export function ProjectAnnualBudgetApprovalSettings({ projectId, canManage, enab
               <p className="mt-2 text-muted-foreground">{t("projects.annualBudgetApprovalMethod")}: {data.approvalMode === "Sequential" ? t("projects.financeApprovalSequential") : data.approvalMode === "Parallel" ? t("projects.financeApprovalParallel") : t("projects.annualBudgetApprovalMethodInvalid")}</p>
             </div>
             {!data.financeApprovalMode ? <p role="status" className="text-sm text-muted-foreground">{t("projects.annualBudgetProjectModeRequired")}</p> : null}
-            {editing && canManage ? <div className="space-y-3 rounded-md border p-3">
+            {editing && canManage ? <div className="space-y-4 rounded-xl border p-4 sm:p-5">
               <div>
                 <Label htmlFor="annual-budget-default-mode">{t("projects.annualBudgetApprovalMethod")}</Label>
                 <select id="annual-budget-default-mode" className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm" value={mode ?? ""} onChange={event => setMode((event.target.value || null) as "Sequential" | "Parallel" | null)}>
@@ -104,7 +104,7 @@ export function ProjectAnnualBudgetApprovalSettings({ projectId, canManage, enab
                 const roleLabels = (user.eligibleRoleCategories ?? []).flatMap(category => category === "System"
                   ? [t("administration.areas.roles.systemCategory")]
                   : category === "Management" ? [t("administration.areas.roles.categoryOptions.management")] : []);
-                return <li key={user.userId} className="flex items-center justify-between gap-2 rounded border p-2">
+                return <li key={user.userId} className="flex items-center justify-between gap-2 rounded-lg border bg-card p-3">
                   <label className="flex min-w-0 items-center gap-2 text-sm"><input type="checkbox" checked={index >= 0} onChange={event => setApprovers(current => event.target.checked ? [...current, user.userId] : current.filter(id => id !== user.userId))} /><span className="truncate">{user.displayName}</span>{roleLabels.length ? <span className="shrink-0 text-xs text-muted-foreground">({roleLabels.join(", ")})</span> : null}</label>
                   {mode === "Sequential" && index >= 0 ? <div className="flex items-center gap-1"><span className="min-w-5 text-center text-xs text-muted-foreground">{index + 1}</span><Button type="button" size="sm" variant="ghost" aria-label={t("projects.yearEndClosingMoveApproverUp", { name: user.displayName })} disabled={index === 0} onClick={() => move(user.userId, -1)}><ArrowUp className="size-4" /></Button><Button type="button" size="sm" variant="ghost" aria-label={t("projects.yearEndClosingMoveApproverDown", { name: user.displayName })} disabled={index === approvers.length - 1} onClick={() => move(user.userId, 1)}><ArrowDown className="size-4" /></Button></div> : null}
                 </li>;

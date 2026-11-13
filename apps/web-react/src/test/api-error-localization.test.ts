@@ -149,6 +149,15 @@ describe("API error localization", () => {
       .toContain("بين 1 و24");
   });
 
+  it("localizes unsupported document file type errors in both locales", () => {
+    expect(getLocalizedApiErrorMessage("UNSUPPORTED_FILE_TYPE", 400, "en")).toBe(
+      "Unsupported file type. Only Word (.doc, .docx), Excel (.xls, .xlsx), and PDF (.pdf) files are supported.",
+    );
+    expect(getLocalizedApiErrorMessage("UNSUPPORTED_FILE_TYPE", 400, "ar")).toBe(
+      "نوع الملف غير مدعوم. يُسمح برفع ملفات Word ‏(.doc, .docx) وExcel ‏(.xls, .xlsx) وPDF ‏(.pdf) فقط.",
+    );
+  });
+
   it("uses a localized network message instead of exposing fetch errors", () => {
     expect(getLocalizedApiErrorMessage("NETWORK_ERROR", 0, "en")).toContain("service could not be reached");
     expect(getLocalizedApiErrorMessage("NETWORK_ERROR", 0, "ar")).toContain("تعذر الاتصال");

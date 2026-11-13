@@ -10,6 +10,7 @@ import { getApiFieldErrors, ApiError } from "@api/client";
 import { useI18n } from "@i18n/messages";
 import { useBaseCalendars, type ResourceBaseCalendarDto } from "@features/resources/api/resources";
 import { PlatformSettingsPage } from "./AdminPages";
+import { PhaseGateRequirementsCard } from "@features/organization/PhaseGateRequirementsCard";
 import {
   useOrganizationDirectory,
   useOrganizationGrantTargets,
@@ -366,6 +367,7 @@ export function OrganizationGeneralSettingsPage() {
               </>}
         </CardContent>
       </Card>}
+      {selected && <PhaseGateRequirementsCard organizationId={selected.id} canManage={canManageSelected} />}
     </div>
   );
 }

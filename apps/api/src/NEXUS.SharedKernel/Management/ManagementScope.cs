@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace NEXUS.SharedKernel.Management;
 
 public sealed record ManagementEntityReference(Guid Id, string Name, string? Code = null);
@@ -8,6 +10,9 @@ public sealed record ManagementScope(
     IReadOnlySet<Guid> ProjectIds)
 {
     public IReadOnlySet<Guid> OrganizationIds { get; init; } = new HashSet<Guid>();
+    public IReadOnlyList<ManagementEntityReference> OrganizationReferences { get; init; } = Array.Empty<ManagementEntityReference>();
+    [JsonIgnore]
+    public IReadOnlyDictionary<Guid, Guid> ProjectOrganizationIds { get; init; } = new Dictionary<Guid, Guid>();
 
     public static ManagementScope Empty { get; } = new(
         new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>());

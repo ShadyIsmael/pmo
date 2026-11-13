@@ -26,7 +26,8 @@ public sealed class ProjectAuditController : ControllerBase
         "StatusReport.View",
         "Handover.View",
         "Stakeholders.Read",
-        "Project.View"
+        "Project.View",
+        "Document.View"
     ];
 
     private readonly IAuditService _auditService;

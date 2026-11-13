@@ -6,6 +6,9 @@ interface ExportProjectSummary {
   name: string;
   code: string;
   status: string;
+  statusNameEn?: string | null;
+  statusNameAr?: string | null;
+  reportingCategory?: "InProgress" | "Completed" | "Excluded" | null;
   health?: string;
   planProgress?: number | null;
   endDate?: string;
@@ -40,8 +43,6 @@ export interface ProjectExportParams {
   dueDateTo?: string;
 }
 
-const EXCLUDED_STATUSES = ["Completed", "Cancelled"];
-
 export async function fetchFilteredProjects(params: ProjectExportParams = {}): Promise<ExportProjectSummary[]> {
   const { status, includeAllStatuses = false, search, name, code, statuses, healths, progressMin, progressMax, budgetMin, budgetMax, forecastMin, forecastMax, projectManager, dueDateFrom, dueDateTo } = params;
 
@@ -61,12 +62,12 @@ export async function fetchFilteredProjects(params: ProjectExportParams = {}): P
     ? all
     : includeAllStatuses
       ? all
-      : all.filter((p) => !EXCLUDED_STATUSES.includes(p.status));
+      : all.filter((p) => p.reportingCategory !== "Excluded");
 
   return active.filter((p) => {
     if (name?.trim() && !p.name.toLowerCase().includes(name.toLowerCase())) return false;
     if (code?.trim() && !p.code.toLowerCase().includes(code.toLowerCase())) return false;
-    if (statuses && statuses.length > 0 && !statuses.includes(p.status)) return false;
+    if (statuses && statuses.length > 0 && !statuses.some((status) => status.toLocaleUpperCase() === p.status.toLocaleUpperCase())) return false;
     if (healths && healths.length > 0 && p.health && !healths.includes(p.health)) return false;
     if (progressMin !== undefined && (p.planProgress == null || p.planProgress < progressMin)) return false;
     if (progressMax !== undefined && (p.planProgress == null || p.planProgress > progressMax)) return false;

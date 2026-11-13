@@ -24,6 +24,8 @@ export interface ManagementScope {
   portfolioIds: string[];
   programIds: string[];
   projectIds: string[];
+  organizationIds?: string[];
+  organizationReferences?: ManagementEntityReference[];
 }
 
 export interface PerspectiveSnapshot {
@@ -38,6 +40,7 @@ export interface PerspectiveSnapshot {
     selectedPortfolioId?: string;
     selectedProgramId?: string;
     selectedProjectId?: string;
+    scope?: ManagementScope;
     effectiveReadOnly: boolean;
   };
 }

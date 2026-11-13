@@ -344,7 +344,7 @@ public sealed class MeetingNotificationPublisherTests : IDisposable
     {
         pushSender = new TestPushSender();
         var effectivePermissions = new UserEffectivePermissionService(context);
-        var managementScope = new ManagementScopeResolver(context, effectivePermissions);
+        var managementScope = new ManagementScopeResolver(context, effectivePermissions, new NEXUS.Persistence.ProjectOrganizationLookup(context));
         var notificationService = new NotificationService(context, pushSender, Options.Create(new NotificationDeliveryOptions()));
         return new MeetingNotificationPublisher(context, notificationService, effectivePermissions, managementScope);
     }

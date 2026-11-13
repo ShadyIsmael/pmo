@@ -7,6 +7,7 @@ using NEXUS.Modules.Audit.Domain;
 using NEXUS.Modules.Identity.Application;
 using NEXUS.Modules.Identity.Domain;
 using NEXUS.Modules.Organization.Domain;
+using NEXUS.SharedKernel;
 using OrganizationEntity = NEXUS.Modules.Organization.Domain.Organization;
 
 namespace NEXUS.Modules.Organization.Application;
@@ -17,12 +18,19 @@ public sealed class TenantProvisioningService : ITenantProvisioningService
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly IAuditService _audit;
 
-    public TenantProvisioningService(DbContext context, IHttpContextAccessor httpContextAccessor, IAuditService audit)
+    public TenantProvisioningService(
+        DbContext context,
+        IHttpContextAccessor httpContextAccessor,
+        IAuditService audit,
+        IEnumerable<IOrganizationLifecycleHandler> organizationLifecycleHandlers)
     {
         _context = context;
         _httpContextAccessor = httpContextAccessor;
         _audit = audit;
+        _organizationLifecycleHandlers = organizationLifecycleHandlers;
     }
+
+    private readonly IEnumerable<IOrganizationLifecycleHandler> _organizationLifecycleHandlers;
 
     public async Task<IReadOnlyList<TenantSummary>> GetAllAsync(CancellationToken cancellationToken = default) =>
         await _context.Set<Tenant>().AsNoTracking()
@@ -120,24 +128,38 @@ public sealed class TenantProvisioningService : ITenantProvisioningService
             }
         }
 
-        try
-        {
-            await _context.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-        }
-        catch (DbUpdateException)
-        {
-            await transaction.RollbackAsync(cancellationToken);
-            if (await _context.Set<Tenant>().IgnoreQueryFilters().AnyAsync(item => item.Code == normalizedCode, cancellationToken))
-                return new TenantProvisioningOperationResult(TenantProvisioningCode.DuplicateCode, Error: "The tenant code is already in use.");
-            throw;
-        }
+try
+            {
+                await _context.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+            }
+            catch (DbUpdateException)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                if (await _context.Set<Tenant>().IgnoreQueryFilters().AnyAsync(item => item.Code == normalizedCode, cancellationToken))
+                    return new TenantProvisioningOperationResult(TenantProvisioningCode.DuplicateCode, Error: "The tenant code is already in use.");
+                throw;
+            }
 
-        return new TenantProvisioningOperationResult(
-            TenantProvisioningCode.Created,
-            new TenantProvisioningResult(tenant.Id, organization.Id, tenant.Status,
-                request.InitialAdministratorUserId.HasValue ? "admin" : null));
-    }
+            // Notify lifecycle handlers (e.g., Pre-Initiation phase provisioning)
+            foreach (var handler in _organizationLifecycleHandlers)
+            {
+                try
+                {
+                    await handler.HandleOrganizationCreatedAsync(tenantId, organization.Id, actorId.Value, cancellationToken);
+                }
+                catch
+                {
+                    // Log but don't fail tenant creation if handler fails
+                    // The operation can be retried or recovered later
+                }
+            }
+
+            return new TenantProvisioningOperationResult(
+                TenantProvisioningCode.Created,
+                new TenantProvisioningResult(tenant.Id, organization.Id, tenant.Status,
+                    request.InitialAdministratorUserId.HasValue ? "admin" : null));
+        }
 
     public async Task<TenantProvisioningOperationResult> AssignAdministratorAsync(
         Guid tenantId,

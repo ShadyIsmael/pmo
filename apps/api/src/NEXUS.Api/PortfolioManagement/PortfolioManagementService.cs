@@ -175,6 +175,10 @@ public sealed class PortfolioManagementService : IPortfolioManagementService
                 IsDirectProject = project.IsDirect,
                 ProjectManagerName = managers.GetValueOrDefault(project.ManagerId ?? Guid.Empty),
                 Status = project.Status,
+                StatusNameEn = project.StatusNameEn,
+                StatusNameAr = project.StatusNameAr,
+                ReportingCategory = project.ReportingCategory,
+                AttentionLevel = project.AttentionLevel,
                 Health = string.IsNullOrWhiteSpace(project.Health) ? "Unknown" : project.Health,
                 StartDate = project.StartDate,
                 EndDate = project.EndDate,
@@ -263,10 +267,10 @@ public sealed class PortfolioManagementService : IPortfolioManagementService
                 TotalProjects = projects.Count,
                 ProgramContainedProjects = projects.Count(item => !item.IsDirect),
                 DirectPortfolioProjects = projects.Count(item => item.IsDirect),
-                ActiveProjects = projects.Count(item => IsActiveStatus(item.Status)),
-                CompletedProjects = projects.Count(item => IsCompletedStatus(item.Status)),
+                ActiveProjects = projectViews.Count(item => item.ReportingCategory == ProjectStatusReportingCategories.InProgress),
+                CompletedProjects = projectViews.Count(item => item.ReportingCategory == ProjectStatusReportingCategories.Completed),
                 AtRiskProjects = projectViews.Count(item => item.RequiresAttention),
-                CriticalProjects = projectViews.Count(item => IsCriticalProject(item)),
+                CriticalProjects = projectViews.Count(IsCriticalProject),
                 AverageProjectProgress = projects.Count == 0 ? null : Math.Round(projects.Average(item => item.Progress), 2),
                 ProgramHealthDistribution = programHealth,
                 ProjectHealthDistribution = projectHealth
@@ -324,9 +328,25 @@ public sealed class PortfolioManagementService : IPortfolioManagementService
         var programs = await _db.Set<ProgramEntity>().AsNoTracking().Where(item => portfolioIds.Contains(item.PortfolioId)).Select(item => item.Id).ToListAsync(cancellationToken);
         var rows = await _db.Set<ProjectEntity>().AsNoTracking()
             .Where(project => scopedProjectIds.Contains(project.Id) && ((project.ProgramId.HasValue && programs.Contains(project.ProgramId.Value)) || (!project.ProgramId.HasValue && project.PortfolioId.HasValue && portfolioIds.Contains(project.PortfolioId.Value))))
-            .Select(project => new ProjectRow(project.Id, project.PublicId, project.ProgramId, project.PortfolioId, project.Name, project.Code, project.Status, project.Health, project.Priority, project.ProjectManagerId, project.StartDate, project.EndDate, project.Progress, project.Currency, !project.ProgramId.HasValue))
+            .Select(project => new ProjectRow(project.Id, project.TenantId, project.PublicId, project.ProgramId, project.PortfolioId, project.Name, project.Code,
+                project.Status, null, null, project.ProjectStatusId, project.Health, project.Priority, project.ProjectManagerId, project.StartDate, project.EndDate,
+                project.Progress, project.Currency, !project.ProgramId.HasValue, project.Phase,
+                ProjectStatusReportingCategories.InProgress, ProjectStatusAttentionLevels.None))
             .ToListAsync(cancellationToken);
-        return rows.Select(project => project with { PortfolioId = project.ProgramId.HasValue ? programPortfolios.GetValueOrDefault(project.ProgramId.Value) : project.PortfolioId }).ToList();
+        var semantics = await StatusSemanticsAsync(rows.Select(project => project.ProjectStatusId), rows.FirstOrDefault()?.TenantId, cancellationToken);
+        return rows.Select(project =>
+        {
+            var scopedProject = project with { PortfolioId = project.ProgramId.HasValue ? programPortfolios.GetValueOrDefault(project.ProgramId.Value) : project.PortfolioId };
+            return semantics.TryGetValue(project.ProjectStatusId ?? Guid.Empty, out var value)
+                ? scopedProject with
+                {
+                    StatusNameEn = value.NameEn,
+                    StatusNameAr = value.NameAr,
+                    ReportingCategory = value.ReportingCategory,
+                    AttentionLevel = value.AttentionLevel
+                }
+                : scopedProject;
+        }).ToList();
     }
 
     private async Task<Guid[]> ProgramIdsForPortfoliosAsync(Guid[] portfolioIds, ManagementContext? context, CancellationToken cancellationToken)
@@ -446,7 +466,7 @@ public sealed class PortfolioManagementService : IPortfolioManagementService
     {
         var result = new List<PortfolioAttentionItemDto>();
         foreach (var program in programs.Where(item => item.ProjectsAtRisk > 0).Take(8)) result.Add(new PortfolioAttentionItemDto { Level = program.Health?.Equals("Red", StringComparison.OrdinalIgnoreCase) == true ? "Critical" : "NeedsAttention", Kind = "Program", EntityType = "Program", EntityId = program.Id, EntityName = program.Name, ProgramId = program.Id, Reason = "Program contains Projects requiring attention." });
-        foreach (var project in projects.Where(item => item.RequiresAttention).Take(10)) result.Add(new PortfolioAttentionItemDto { Level = project.Health.Equals("Red", StringComparison.OrdinalIgnoreCase) || project.RiskCondition == "Critical" ? "Critical" : "NeedsAttention", Kind = "Project", EntityType = "Project", EntityId = project.Id, EntityName = project.Name, ProgramId = project.ProgramId, ProjectId = project.Id, ProjectPublicId = project.PublicId, Reason = BuildProjectReason(project) });
+        foreach (var project in projects.Where(item => item.RequiresAttention).Take(10)) result.Add(new PortfolioAttentionItemDto { Level = project.Health.Equals("Red", StringComparison.OrdinalIgnoreCase) || project.RiskCondition == "Critical" || project.AttentionLevel == ProjectStatusAttentionLevels.Critical ? "Critical" : "NeedsAttention", Kind = "Project", EntityType = "Project", EntityId = project.Id, EntityName = project.Name, ProgramId = project.ProgramId, ProjectId = project.Id, ProjectPublicId = project.PublicId, Reason = BuildProjectReason(project) });
         foreach (var milestone in milestones.Where(item => MilestoneState(item, now) == "Overdue").Take(8)) { var project = projects.FirstOrDefault(value => value.Id == milestone.ProjectId); result.Add(new PortfolioAttentionItemDto { Level = "Critical", Kind = "Milestone", EntityType = "Project", EntityId = milestone.ProjectId, EntityName = milestone.Name, ProgramId = project?.ProgramId, ProjectId = milestone.ProjectId, ProjectPublicId = project?.PublicId, Reason = "Milestone is overdue." }); }
         foreach (var risk in risks.Where(IsOpenRisk).OrderByDescending(item => RiskRank(item.RiskLevel)).Take(8)) { var project = projects.FirstOrDefault(value => value.Id == risk.ProjectId); result.Add(new PortfolioAttentionItemDto { Level = risk.RiskLevel == RiskLevel.Critical ? "Critical" : "NeedsAttention", Kind = "Risk", EntityType = "Project", EntityId = risk.ProjectId, EntityName = risk.Title, ProjectId = risk.ProjectId, ProjectPublicId = project?.PublicId, ProgramId = project?.ProgramId, Reason = $"{risk.RiskLevel} open project risk." }); }
         foreach (var issue in issues.Where(IsOpenIssue).OrderByDescending(item => SeverityRank(item.Severity)).Take(8)) { var project = projects.FirstOrDefault(value => value.Id == issue.ProjectId); result.Add(new PortfolioAttentionItemDto { Level = SeverityRank(issue.Severity) >= 5 ? "Critical" : "NeedsAttention", Kind = "Issue", EntityType = "Project", EntityId = issue.ProjectId, EntityName = issue.Title, ProjectId = issue.ProjectId, ProjectPublicId = project?.PublicId, ProgramId = project?.ProgramId, Reason = "Open project issue requires management attention." }); }
@@ -476,8 +496,8 @@ public sealed class PortfolioManagementService : IPortfolioManagementService
         if (green > 0) return "Green";
         return projects.Any(p => string.Equals(p.Health, "Red", StringComparison.OrdinalIgnoreCase)) ? "Red" : projects.Any(p => string.Equals(p.Health, "Amber", StringComparison.OrdinalIgnoreCase)) ? "Amber" : "Green";
     }
-    private static bool IsProjectAttention(ProjectRow project, IReadOnlyList<ScheduleRow> schedules, IReadOnlyList<RiskRow> risks, IReadOnlyList<IssueRow> issues, IReadOnlyDictionary<Guid, PublishedReportRow> reports, DateTime now) => IsCriticalProject(project) || string.Equals(project.Status, "OnHold", StringComparison.OrdinalIgnoreCase) || schedules.Where(item => item.ProjectId == project.Id).Any(IsDelayed) || risks.Any(item => item.ProjectId == project.Id && IsOpenRisk(item)) || issues.Any(item => item.ProjectId == project.Id && IsOpenIssue(item)) || !reports.TryGetValue(project.Id, out var report) || ManagementReportingRules.Freshness(report.ReportDate, now) == "Stale";
-    private static bool IsProgramAttention(ProgramRow program, IReadOnlyList<ProjectRow> projects, IReadOnlyList<ScheduleRow> schedules, IReadOnlyList<RiskRow> risks) => string.Equals(program.Health, "Red", StringComparison.OrdinalIgnoreCase) || projects.Where(item => item.ProgramId == program.Id).Any(project => IsCriticalProject(project) || schedules.Where(item => item.ProjectId == project.Id).Any(IsDelayed) || risks.Any(risk => risk.ProjectId == project.Id && IsOpenRisk(risk)));
+    private static bool IsProjectAttention(ProjectRow project, IReadOnlyList<ScheduleRow> schedules, IReadOnlyList<RiskRow> risks, IReadOnlyList<IssueRow> issues, IReadOnlyDictionary<Guid, PublishedReportRow> reports, DateTime now) => IsCriticalProject(project) || project.AttentionLevel == ProjectStatusAttentionLevels.NeedsAttention || schedules.Where(item => item.ProjectId == project.Id).Any(IsDelayed) || risks.Any(item => item.ProjectId == project.Id && IsOpenRisk(item)) || issues.Any(item => item.ProjectId == project.Id && IsOpenIssue(item)) || !reports.TryGetValue(project.Id, out var report) || ManagementReportingRules.Freshness(report.ReportDate, now) == "Stale";
+    private static bool IsProgramAttention(ProgramRow program, IReadOnlyList<ProjectRow> projects, IReadOnlyList<ScheduleRow> schedules, IReadOnlyList<RiskRow> risks) => string.Equals(program.Health, "Red", StringComparison.OrdinalIgnoreCase) || projects.Where(item => item.ProgramId == program.Id).Any(project => project.AttentionLevel is ProjectStatusAttentionLevels.NeedsAttention or ProjectStatusAttentionLevels.Critical || schedules.Where(item => item.ProjectId == project.Id).Any(IsDelayed) || risks.Any(risk => risk.ProjectId == project.Id && IsOpenRisk(risk)));
     private static string ProgramDeliveryIndicator(IReadOnlyList<ProjectRow> projects, IReadOnlyList<ScheduleRow> schedules)
     {
         var comparable = schedules.Where(item => projects.Any(project => project.Id == item.ProjectId) && item.BaselineEndDate.HasValue && item.ForecastEndDate.HasValue).ToList();
@@ -489,10 +509,11 @@ public sealed class PortfolioManagementService : IPortfolioManagementService
     private static bool IsOpenRisk(RiskRow risk) => risk.Status is not RiskStatus.Mitigated and not RiskStatus.Closed;
     private static bool IsOpenIssue(IssueRow issue) => !string.Equals(issue.Status, "Closed", StringComparison.OrdinalIgnoreCase) && !string.Equals(issue.Status, "Resolved", StringComparison.OrdinalIgnoreCase) && !string.Equals(issue.Status, "Cancelled", StringComparison.OrdinalIgnoreCase);
     private static bool IsDelayed(ScheduleRow schedule) => schedule.BaselineEndDate.HasValue && schedule.ForecastEndDate.HasValue && schedule.ForecastEndDate > schedule.BaselineEndDate;
-    private static bool IsCriticalProject(PortfolioProjectDto project) => string.Equals(project.Health, "Red", StringComparison.OrdinalIgnoreCase) || string.Equals(project.Status, "Critical", StringComparison.OrdinalIgnoreCase);
-    private static bool IsCriticalProject(ProjectRow project) => string.Equals(project.Health, "Red", StringComparison.OrdinalIgnoreCase) || string.Equals(project.Priority, "Critical", StringComparison.OrdinalIgnoreCase);
-    private static bool IsActiveStatus(string status) => !IsCompletedStatus(status) && !string.Equals(status, "Cancelled", StringComparison.OrdinalIgnoreCase) && !string.Equals(status, "Archived", StringComparison.OrdinalIgnoreCase);
-    private static bool IsCompletedStatus(string status) => string.Equals(status, "Completed", StringComparison.OrdinalIgnoreCase) || string.Equals(status, "Closed", StringComparison.OrdinalIgnoreCase) || string.Equals(status, "Done", StringComparison.OrdinalIgnoreCase);
+    private static bool IsCriticalProject(PortfolioProjectDto project) => string.Equals(project.Health, "Red", StringComparison.OrdinalIgnoreCase)
+        || project.AttentionLevel == ProjectStatusAttentionLevels.Critical;
+    private static bool IsCriticalProject(ProjectRow project) => string.Equals(project.Health, "Red", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(project.Priority, "Critical", StringComparison.OrdinalIgnoreCase)
+        || project.AttentionLevel == ProjectStatusAttentionLevels.Critical;
     private static string ProgressBucket(decimal progress) => progress < 25 ? "0-24" : progress < 50 ? "25-49" : progress < 75 ? "50-74" : progress < 100 ? "75-99" : "100";
     private static string NormalizeCurrency(string? currency, string? fallback = null)
     {
@@ -503,7 +524,24 @@ public sealed class PortfolioManagementService : IPortfolioManagementService
     private static int MilestoneSort(MilestoneRow milestone, DateTime now) => MilestoneState(milestone, now) switch { "Overdue" => 0, "DueSoon" => 1, "OnTrack" => 2, "Completed" => 3, _ => 4 };
 
     private sealed record ProgramRow(Guid Id, Guid PortfolioId, string Name, string? Code, Guid? ManagerId, string? Status, string? Health, string Currency, DateTime? StartDate, DateTime? EndDate);
-    private sealed record ProjectRow(Guid Id, Guid PublicId, Guid? ProgramId, Guid? PortfolioId, string Name, string Code, string Status, string Health, string Priority, Guid? ManagerId, DateTime? StartDate, DateTime? EndDate, decimal Progress, string Currency, bool IsDirect);
+    private async Task<Dictionary<Guid, ProjectStatusSemantics>> StatusSemanticsAsync(IEnumerable<Guid?> statusIds, Guid? tenantId, CancellationToken cancellationToken)
+    {
+        var ids = statusIds.Where(id => id.HasValue).Select(id => id!.Value).Distinct().ToArray();
+        if (ids.Length == 0 || tenantId is not Guid validTenantId || validTenantId == Guid.Empty)
+            return [];
+        var rows = await _db.Set<ProjectStatusCatalogEntry>().AsNoTracking()
+            .Where(status => status.TenantId == validTenantId && ids.Contains(status.Id) && !status.IsDeleted)
+            .Select(status => new ProjectStatusSemanticsRow(status.Id, status.NameEn, status.NameAr, status.ReportingCategory, status.AttentionLevel))
+            .ToListAsync(cancellationToken);
+        return rows.ToDictionary(status => status.Id, status => new ProjectStatusSemantics(
+            status.NameEn, status.NameAr, status.ReportingCategory, status.AttentionLevel));
+    }
+
+    private sealed record ProjectStatusSemanticsRow(Guid Id, string NameEn, string NameAr, string ReportingCategory, string AttentionLevel);
+    private sealed record ProjectStatusSemantics(string NameEn, string NameAr, string ReportingCategory, string AttentionLevel);
+    private sealed record ProjectRow(Guid Id, Guid TenantId, Guid PublicId, Guid? ProgramId, Guid? PortfolioId, string Name, string Code, string Status,
+        string? StatusNameEn, string? StatusNameAr, Guid? ProjectStatusId, string Health, string Priority, Guid? ManagerId, DateTime? StartDate, DateTime? EndDate, decimal Progress,
+        string Currency, bool IsDirect, string? Phase, string ReportingCategory, string AttentionLevel);
     private sealed record ScheduleRow(Guid ProjectId, DateTime? BaselineEndDate, DateTime? ForecastEndDate, DateTime UpdatedAt);
     private sealed record MilestoneRow(Guid Id, Guid ProjectId, string Name, DateTime? DueDate, DateTime? CompletedDate, string? Status);
     private sealed record RiskRow(Guid Id, Guid ProjectId, string Title, RiskLevel RiskLevel, RiskStatus Status, DateTime? IdentifiedDate, string ProjectName = "", Guid? ProgramId = null, string? ProgramName = null);

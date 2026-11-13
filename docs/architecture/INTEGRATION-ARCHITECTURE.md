@@ -38,7 +38,9 @@ Most external-system adapters in NEXUS PMO are interfaces, mock providers, or ma
 | **File** | `Application/IStorageProvider.cs` |
 | **Purpose** | File storage abstraction for document management |
 | **Implementation** | `LocalStorageProvider` in `Infrastructure/LocalStorageProvider.cs` |
-| **Status** | Placeholder (local filesystem, not production-ready) |
+| **Status** | Private local filesystem provider is implemented for Development behind the provider contract; external File Server integration remains deferred |
+
+New document writes use server-generated opaque storage keys below the configured private `Storage:DocumentsRoot`, outside `wwwroot`. `Storage:Provider` defaults to `local`; `Storage:DocumentsRoot` defaults to `{AppContext.BaseDirectory}/App_Data/documents`; `Storage:MaxUploadBytes` defaults to 25 MiB and is capped at 100 MiB. Providers are registered by provider ID. Reads, metadata/existence checks, and deletion go through `IStorageProvider`; API authorization remains in the document service. The document model stores the provider identifier and key rather than a physical path, so a future provider can be registered without changing document or Phase Gate references.
 
 ### Notification Delivery Foundation
 

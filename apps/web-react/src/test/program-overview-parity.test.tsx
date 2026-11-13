@@ -13,7 +13,7 @@ const fixtures = vi.hoisted(() => ({
     issues: { openCount: 2, overdueCount: 1, bySeverity: { High: 1, Low: 1 } },
     resources: { activeAllocationCount: 9, activeResourceCount: 6, sharedResourceCount: 1, overAllocatedResourceCount: 1, allocatedHoursPerWeek: 210, pressure: [] },
     statusReports: { publishedProjectCount: 6, currentCount: 4, staleCount: 1, missingCount: 1, freshnessDays: 30, latestPublished: [] },
-    projects: [], projectsPage: 1, projectsTotalPages: 1,
+    projects: [] as Array<Record<string, unknown>>, projectsPage: 1, projectsTotalPages: 1,
     milestones: [{ id: "milestone-1", projectId: "project-1", publicId: "project-1", projectName: "Core Project", name: "Schedule baseline", state: "Overdue" }],
     topRisks: [], topIssues: [],
     attentionItems: [{ level: "Critical", kind: "Milestone", message: "Schedule baseline needs recovery", projectId: "project-1", publicId: "project-1", itemId: "milestone-1" }],
@@ -27,7 +27,7 @@ const fixtures = vi.hoisted(() => ({
     issues: { openCount: 1, criticalCount: 0, overdueCount: 0, byProgram: {}, byProject: {} },
     resources: { activeAllocationCount: 2, activeResourceCount: 2, sharedResourceCount: 0, crossProgramResourceCount: 0, overAllocatedResourceCount: 0, allocatedHoursPerWeek: 40, pressure: [] },
     statusReports: { publishedProjectCount: 1, currentCount: 1, staleCount: 0, missingCount: 1, freshnessDays: 30, programsWithReportingGaps: [], projectsWithReportingGaps: [], latestPublished: [] },
-    programs: [], projects: [], milestones: [], topRisks: [], topIssues: [], attentionItems: [], upcomingMeetings: [],
+    programs: [], projects: [] as Array<Record<string, unknown>>, milestones: [], topRisks: [], topIssues: [], attentionItems: [], upcomingMeetings: [],
     programsPage: 1, programsTotalPages: 1, projectsPage: 1, projectsTotalPages: 1,
   },
   portfolioRecord: { id: "portfolio-1", name: "Technology", code: "PF-001", status: "Active", ownerId: "portfolio-manager-1", ownerName: "Alex Manager", rowVersion: [1] },
@@ -129,6 +129,8 @@ describe("program management overview source parity", () => {
   beforeEach(() => {
     window.localStorage.setItem("nexus-locale", "en");
     fixtures.overview.program.status = "Active";
+    fixtures.overview.projects = [];
+    fixtures.portfolioOverview.projects = [];
     fixtures.archive.mockReset().mockResolvedValue(undefined);
     fixtures.reactivate.mockReset().mockResolvedValue(undefined);
     fixtures.permissions = [];
@@ -256,6 +258,30 @@ describe("program management overview source parity", () => {
     fireEvent.click(projectsTab);
     expect(projectsTab).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("columnheader", { name: "Project" })).toBeInTheDocument();
+  });
+
+  it("uses catalog-projected project status labels in Program and Portfolio project rows", () => {
+    fixtures.overview.projects = [{
+      id: "program-project-1", name: "Custom Status Project", code: "CSP-1", status: "CUSTOM_REVIEW",
+      statusNameEn: "Ready for Review", statusNameAr: "جاهز للمراجعة", health: "Green", progress: 25,
+      scheduleCondition: "OnTrack", forecastEndDate: "2026-12-01", currency: "USD", requiresAttention: false,
+      openRiskCount: 0, openIssueCount: 0, statusReportState: "Current",
+    }];
+    fixtures.portfolioOverview.projects = [{
+      id: "portfolio-project-1", name: "Custom Status Project", code: "CSP-1", status: "CUSTOM_REVIEW",
+      statusNameEn: "Ready for Review", statusNameAr: "جاهز للمراجعة", health: "Green", progress: 25,
+      scheduleCondition: "OnTrack", statusReportFreshness: "Current", currency: "USD", requiresAttention: false,
+      isDirectProject: true, riskCondition: "Clear",
+    }];
+
+    const programView = renderProgram();
+    fireEvent.click(screen.getByRole("tab", { name: "Projects" }));
+    expect(screen.getByText("Ready for Review")).toBeInTheDocument();
+    programView.unmount();
+
+    renderPortfolio();
+    fireEvent.click(screen.getByRole("tab", { name: "Projects" }));
+    expect(screen.getByText("Ready for Review")).toBeInTheDocument();
   });
 
   it("supports edit and reversible archive with explicit Program actions in mutable context", async () => {

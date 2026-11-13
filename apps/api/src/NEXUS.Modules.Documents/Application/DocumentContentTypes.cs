@@ -12,14 +12,10 @@ public static class DocumentContentTypes
     private static readonly Dictionary<string, string> ByExtension = new(StringComparer.OrdinalIgnoreCase)
     {
         [".pdf"] = "application/pdf",
+        [".doc"] = "application/msword",
         [".docx"] = "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        [".xls"] = "application/vnd.ms-excel",
         [".xlsx"] = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        [".pptx"] = "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        [".png"] = "image/png",
-        [".jpg"] = "image/jpeg",
-        [".jpeg"] = "image/jpeg",
-        [".txt"] = "text/plain; charset=utf-8",
-        [".csv"] = "text/csv; charset=utf-8"
     };
 
     private static readonly HashSet<string> InlinePreviewTypes = new(StringComparer.OrdinalIgnoreCase)

@@ -1,3 +1,5 @@
+using NEXUS.Modules.ProjectManagement.Domain;
+
 namespace NEXUS.Api.PortfolioManagement;
 
 public sealed class PortfolioManagementListItemDto
@@ -105,6 +107,10 @@ public sealed class PortfolioProjectDto
     public bool IsDirectProject { get; init; }
     public string? ProjectManagerName { get; init; }
     public string Status { get; init; } = string.Empty;
+    public string? StatusNameEn { get; init; }
+    public string? StatusNameAr { get; init; }
+    public string ReportingCategory { get; init; } = ProjectStatusReportingCategories.InProgress;
+    public string AttentionLevel { get; init; } = ProjectStatusAttentionLevels.None;
     public string Health { get; init; } = "Unknown";
     public DateTime? StartDate { get; init; }
     public DateTime? EndDate { get; init; }

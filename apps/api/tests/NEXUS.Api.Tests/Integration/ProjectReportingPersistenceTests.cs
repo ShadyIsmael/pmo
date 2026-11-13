@@ -146,6 +146,15 @@ public sealed class ProjectReportingPersistenceTests : IDisposable
         Assert.Equal(2, comparison.Value!.Plans.Count);
 
         var statusReportService = CreateStatusReportService(reporting);
+        var invalidStatusDraft = await statusReportService.CreateAsync(_projectId, new CreateProjectStatusReportDto
+        {
+            PeriodFrom = StatusDate.AddDays(-6),
+            PeriodTo = StatusDate,
+            ProjectLifecycleStatusAtReport = "not-configured",
+            OverallHealth = "Green",
+            OverallProgressPercent = 36.5m
+        }, _userId.ToString());
+        Assert.True(invalidStatusDraft.IsFailure);
         var created = await statusReportService.CreateAsync(_projectId, new CreateProjectStatusReportDto
         {
             ReportDate = StatusDate,
@@ -165,9 +174,26 @@ public sealed class ProjectReportingPersistenceTests : IDisposable
         Assert.True(created.IsSuccess, created.Error?.Message);
         Assert.Null(created.Value!.PerformanceSnapshot);
         Assert.Equal(ProjectStatusReportState.Draft, created.Value.ReportState);
-        Assert.Equal("Planning", created.Value.ProjectLifecycleStatusAtReport);
+        Assert.Equal("planning", created.Value.ProjectLifecycleStatusAtReport);
         Assert.Equal("Green", created.Value.OverallHealth);
         Assert.Equal(36.5m, created.Value.OverallProgressPercent);
+
+        var currentStatusId = await _context.Set<Project>().Where(project => project.Id == _projectId)
+            .Select(project => project.ProjectStatusId).SingleAsync() ?? Guid.Empty;
+        var currentCatalogStatus = await _context.Set<ProjectStatusCatalogEntry>()
+            .SingleAsync(item => item.Id == currentStatusId);
+        currentCatalogStatus.IsActive = false;
+        await _context.SaveChangesAsync();
+
+        var inactiveReplacement = await statusReportService.UpdateAsync(_projectId, created.Value.Id, new UpdateProjectStatusReportDto
+        {
+            PeriodFrom = StatusDate.AddDays(-6),
+            PeriodTo = StatusDate,
+            ProjectLifecycleStatusAtReport = "retired",
+            OverallHealth = "Amber",
+            OverallProgressPercent = 41.25m
+        }, _userId.ToString());
+        Assert.True(inactiveReplacement.IsFailure);
 
         var editedDraft = await statusReportService.UpdateAsync(_projectId, created.Value.Id, new UpdateProjectStatusReportDto
         {
@@ -175,7 +201,7 @@ public sealed class ProjectReportingPersistenceTests : IDisposable
             PeriodFrom = StatusDate.AddDays(-6),
             PeriodTo = StatusDate,
             StatusDate = StatusDate,
-            ProjectLifecycleStatusAtReport = null,
+            ProjectLifecycleStatusAtReport = "active",
             OverallHealth = "Amber",
             OverallProgressPercent = 41.25m,
             ScheduleHealth = "Amber",
@@ -186,7 +212,7 @@ public sealed class ProjectReportingPersistenceTests : IDisposable
             ExecutiveSummary = "User-edited reporting snapshot."
         }, _userId.ToString());
         Assert.True(editedDraft.IsSuccess, editedDraft.Error?.Message);
-        Assert.Null(editedDraft.Value!.ProjectLifecycleStatusAtReport);
+        Assert.Equal("active", editedDraft.Value!.ProjectLifecycleStatusAtReport);
         Assert.Equal("Amber", editedDraft.Value.OverallHealth);
         Assert.Equal(41.25m, editedDraft.Value.OverallProgressPercent);
 
@@ -247,7 +273,7 @@ public sealed class ProjectReportingPersistenceTests : IDisposable
         Assert.Equal(ProjectStatusReportState.Published, published.Value!.ReportState);
         Assert.Equal(1, published.Value.ReportingConfigurationVersionSnapshot);
         Assert.Equal("User-edited reporting snapshot.", published.Value.ExecutiveSummary);
-        Assert.Null(published.Value.ProjectLifecycleStatusAtReport);
+        Assert.Equal("active", published.Value.ProjectLifecycleStatusAtReport);
         Assert.Equal("Amber", published.Value.OverallHealth);
         Assert.Equal(41.25m, published.Value.OverallProgressPercent);
         Assert.Equal(Sections, published.Value.IncludedSectionsSnapshot);
@@ -330,12 +356,35 @@ public sealed class ProjectReportingPersistenceTests : IDisposable
             TenantId = _tenantId, CreatedBy = _userId.ToString(), Name = "Reporting test calendar",
             WorkingDaysPerWeek = 5, HoursPerDay = 8, IsDefault = true
         };
+        var activeStatusId = Guid.Parse("3df7cd91-58e5-4c5e-aedc-812f34d8a343");
+        var activeStatus = new ProjectStatusCatalogEntry
+        {
+            Id = activeStatusId, TenantId = _tenantId, Code = "active", NormalizedCode = "ACTIVE",
+            NameEn = "Active", NameAr = "نشط", IsActive = true, IsDefault = true,
+            ReportingCategory = ProjectStatusReportingCategories.InProgress,
+            AttentionLevel = ProjectStatusAttentionLevels.None, CreatedBy = _userId.ToString()
+        };
+        var planningStatus = new ProjectStatusCatalogEntry
+        {
+            TenantId = _tenantId, Code = "planning", NormalizedCode = "PLANNING",
+            NameEn = "Planning", NameAr = "تخطيط", IsActive = true, DisplayOrder = 1,
+            ReportingCategory = ProjectStatusReportingCategories.InProgress,
+            AttentionLevel = ProjectStatusAttentionLevels.None, CreatedBy = _userId.ToString()
+        };
+        var retiredStatus = new ProjectStatusCatalogEntry
+        {
+            TenantId = _tenantId, Code = "retired", NormalizedCode = "RETIRED",
+            NameEn = "Retired", NameAr = "متوقف", IsActive = false, DisplayOrder = 2,
+            ReportingCategory = ProjectStatusReportingCategories.Excluded,
+            AttentionLevel = ProjectStatusAttentionLevels.None, CreatedBy = _userId.ToString()
+        };
         var project = new Project
         {
             Id = _projectId, PublicId = Guid.NewGuid(), TenantId = _tenantId, CreatedBy = _userId.ToString(),
-            Name = "Multi-Plan Reporting Validation", Code = "MPR-TEST", Priority = "Medium", Status = "Active", Currency = "USD"
+            Name = "Multi-Plan Reporting Validation", Code = "MPR-TEST", Priority = "Medium", Status = "active", Currency = "USD",
+            ProjectStatusId = activeStatusId
         };
-        _context.AddRange(calendar, project);
+        _context.AddRange(calendar, activeStatus, planningStatus, retiredStatus, project);
         await _context.SaveChangesAsync();
 
         _executionPlans.Add(await AddExecutionPlanAsync(calendar, "Core Implementation", "Core", 1_000m, 3, 2,

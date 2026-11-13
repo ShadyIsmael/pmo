@@ -389,6 +389,8 @@ npm run test:web
 npm run test:api
 ```
 
+The API test project sets `_MSTestEnableParentProcessQuery=false`, so the generated testhost runtimeconfig contains `MSTest.EnableParentProcessQuery=false` and the testhost does not crash with Win32 error 5 when the parent process cannot be inspected. If `apps/api/tests/NEXUS.Api.Tests/bin/Debug/net10.0/NEXUS.Api.Tests.runtimeconfig.json` shows `true`, rebuild the test project; do not hand-edit files under `bin/` or `obj/`. See [.NET SDK and API Build Troubleshooting](dotnet-sdk-troubleshooting.md#vstest-testhost-crash-parent-process-access-denied-fixed-2026-11-12).
+
 ### Lint and Type Check
 
 ```bash

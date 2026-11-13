@@ -41,4 +41,5 @@ public sealed class PortfolioManagementController : ControllerBase
             ? StatusCode(result.Error?.StatusCode ?? StatusCodes.Status500InternalServerError, new { error = result.Error?.Message })
             : Ok(result.Value);
     }
+
 }

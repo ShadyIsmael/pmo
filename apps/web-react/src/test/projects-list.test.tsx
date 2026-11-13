@@ -28,7 +28,25 @@ const page = {
 
 function renderPage(fetchMock: ReturnType<typeof vi.fn>) {
   setTokens("a");
-  vi.stubGlobal("fetch", fetchMock);
+  vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+    const mockFetch = fetchMock as unknown as typeof fetch;
+    const response = await mockFetch(input, init);
+    if (String(input).includes("/api/project-lifecycle/options")) {
+      try {
+        const body = await response.clone().json();
+        if (body == null) {
+          return new Response(JSON.stringify({ phases: [
+            { id: "phase-initiation", code: "Initiation", nameEn: "Initiation", nameAr: "البدء", displayOrder: 1, isDefault: true, isActive: true },
+          ], statuses: [
+            { id: "status-active", code: "Active", nameEn: "Active", nameAr: "نشط", displayOrder: 1, isDefault: true, isActive: true, reportingCategory: "InProgress", attentionLevel: "None" },
+          ] }), { status: 200 });
+        }
+      } catch {
+        return response;
+      }
+    }
+    return response;
+  }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   return render(
     <QueryClientProvider client={client}>
@@ -91,7 +109,14 @@ describe("projects list polish", () => {
     expect(screen.getByText("Rejected")).not.toHaveClass("bg-destructive/10");
   });
 
-  it("filters by status tab client-side without refetching", async () => {
+  it("filters by localized database-backed status options without refetching", async () => {
+    const dynamicPage = {
+      ...page,
+      items: [
+        { ...page.items[0], name: "Queued Project", status: "Queued", statusNameEn: "Preparation Queue" },
+        { ...page.items[1], name: "Released Project", status: "Released", statusNameEn: "Released" },
+      ],
+    };
     const fetchMock = vi.fn().mockImplementation((input: string) => {
       if (input.includes("/api/auth/me")) {
         return Promise.resolve(new Response(JSON.stringify({ id: "u", email: "a@b.c", firstName: "A", lastName: "B", fullName: "A B", roles: [], permissions: ["Project.View", "Project.Create"] }), { status: 200 }));
@@ -99,16 +124,21 @@ describe("projects list polish", () => {
       if (input.includes("/api/me/perspectives")) {
         return Promise.resolve(new Response(JSON.stringify({ availablePerspectives: [], scope: { portfolioIds: [], programIds: [], projectIds: [] } }), { status: 200 }));
       }
-      if (input.includes("/api/projects")) return Promise.resolve(new Response(JSON.stringify(page), { status: 200 }));
+      if (input.includes("/api/project-lifecycle/options")) return Promise.resolve(new Response(JSON.stringify({ phases: [], statuses: [
+        { id: "queued", code: "Queued", nameEn: "Preparation Queue", nameAr: "قائمة التجهيز", displayOrder: 1, isDefault: true, isActive: true },
+        { id: "released", code: "Released", nameEn: "Released", nameAr: "تم الإطلاق", displayOrder: 2, isDefault: false, isActive: true },
+      ] }), { status: 200 }));
+      if (input.includes("/api/projects")) return Promise.resolve(new Response(JSON.stringify(dynamicPage), { status: 200 }));
       if (input.includes("/api/portfolios")) return Promise.resolve(new Response(JSON.stringify({ items: [] }), { status: 200 }));
       return Promise.resolve(new Response("null", { status: 200 }));
     });
     renderPage(fetchMock);
-    await waitFor(() => expect(screen.getByText("Healthy Project")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Queued Project")).toBeInTheDocument());
     const callsBefore = fetchMock.mock.calls.filter(([input]) => String(input).includes("/api/projects") && !String(input).includes("/shell")).length;
-    fireEvent.click(screen.getByRole("tab", { name: /At Risk/i }));
-    await waitFor(() => expect(screen.getByText("Risky Project")).toBeInTheDocument());
-    expect(screen.queryByText("Healthy Project")).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: /Advanced Search/ }, { timeout: 5000 }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Preparation Queue" }));
+    await waitFor(() => expect(screen.queryByText("Released Project")).not.toBeInTheDocument());
+    expect(screen.getByText("Queued Project")).toBeInTheDocument();
     const callsAfter = fetchMock.mock.calls.filter(([input]) => String(input).includes("/api/projects") && !String(input).includes("/shell")).length;
     expect(callsAfter).toBe(callsBefore);
   });
@@ -216,12 +246,12 @@ describe("projects list polish", () => {
     await waitFor(() => expect(within(sheet).getByText("USD — US Dollar ($)")).toBeInTheDocument());
     expect(within(sheet).getByPlaceholderText("Name")).toHaveValue("Created Project");
 
-    fireEvent.click(within(sheet).getAllByRole("combobox")[0]);
+    fireEvent.click(within(sheet).getByRole("combobox", { name: "Project Manager" }));
     fireEvent.click(await screen.findByRole("option", { name: "Project Manager" }));
-    fireEvent.click(within(sheet).getAllByRole("combobox")[2]);
+    fireEvent.click(within(sheet).getByRole("combobox", { name: "Portfolio" }));
     fireEvent.click(await screen.findByRole("option", { name: "Portfolio One" }));
     expect(within(sheet).getByText("GBP — British Pound (£)")).toBeInTheDocument();
-    fireEvent.click(within(sheet).getAllByRole("combobox")[3]);
+    fireEvent.click(within(sheet).getByRole("combobox", { name: "Program" }));
     fireEvent.click(await screen.findByRole("option", { name: "Program One" }));
     expect(within(sheet).getByText("JPY — Japanese Yen (¥)")).toBeInTheDocument();
     const submitButton = within(sheet).getByRole("button", { name: "New Project" });
@@ -240,7 +270,7 @@ describe("projects list polish", () => {
     renderProjectCreatePageWithManagerLookup(200, []);
     fireEvent.click(await screen.findByRole("button", { name: /^(Create|إنشاء)$/ }));
     expect(await screen.findByText("Project Managers are selected from eligible active System Users. A Resource profile or Project Team membership is not required.")).toBeInTheDocument();
-    fireEvent.click(screen.getAllByRole("combobox")[0]);
+    fireEvent.click(within(screen.getByRole("dialog", { name: "New Project" })).getByRole("combobox", { name: "Project Manager" }));
     expect(await screen.findByText("No eligible active Project Managers found.")).toBeInTheDocument();
 
     cleanup();
@@ -248,7 +278,7 @@ describe("projects list polish", () => {
     renderProjectCreatePageWithManagerLookup(200, []);
     fireEvent.click(await screen.findByRole("button", { name: /^(Create|إنشاء)$/ }));
     expect(await screen.findByText("يُختار مديرو المشروعات من مستخدمي النظام النشطين المستوفين لشروط الأهلية. لا يلزم وجود سجل مورد أو عضوية في فريق المشروع.")).toBeInTheDocument();
-    fireEvent.click(screen.getAllByRole("combobox")[0]);
+    fireEvent.click(screen.getByRole("combobox", { name: "مدير المشروع" }));
     expect(await screen.findByText("لم يتم العثور على مديري مشروعات نشطين مؤهلين.")).toBeInTheDocument();
   });
 

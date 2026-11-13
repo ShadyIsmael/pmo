@@ -46,4 +46,19 @@ public sealed class EffectivePermissionResolverTests
         Assert.Contains("Plugin.View", effective);
         Assert.Contains("Roles.View", effective);
     }
+
+    [Theory]
+    [InlineData("DocumentCategory.View")]
+    [InlineData("DocumentCategory.Create")]
+    [InlineData("DocumentCategory.Edit")]
+    [InlineData("DocumentCategory.ActivateDeactivate")]
+    public void Protected_tenant_admin_category_baseline_survives_member_deny_overrides(string permission)
+    {
+        var effective = EffectivePermissionResolver.Resolve(
+            [],
+            [(permission, PermissionOverrideEffect.Deny)],
+            ProtectedTenantAdminPolicy.MandatoryPermissionKeys);
+
+        Assert.Contains(permission, effective);
+    }
 }

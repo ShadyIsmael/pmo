@@ -63,6 +63,10 @@ Thumbs.db
 ehthumbs.db
 Desktop.ini
 
+# Python bytecode
+__pycache__/
+*.py[cod]
+
 # NuGet
 **/[Pp]ackages/[Pp]ackages.lock.json
 **/*.nupkg

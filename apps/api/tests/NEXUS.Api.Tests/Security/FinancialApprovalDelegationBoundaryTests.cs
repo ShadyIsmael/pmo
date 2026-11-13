@@ -296,6 +296,22 @@ public sealed class FinancialApprovalDelegationBoundaryTests
             var projectManager = await db.Roles.IgnoreQueryFilters().Include(role => role.Permissions)
                 .SingleAsync(role => role.SystemRoleKey == "tenant.project-manager");
 
+            var categoryManagementKeys = new[]
+            {
+                "DocumentCategory.View", "DocumentCategory.Create", "DocumentCategory.Edit",
+                "DocumentCategory.ActivateDeactivate"
+            };
+            Assert.All(categoryManagementKeys, key => Assert.Contains(admin.Permissions, permission => permission.Name == key));
+            Assert.DoesNotContain(projectManager.Permissions, permission => categoryManagementKeys.Contains(permission.Name, StringComparer.Ordinal));
+            var seededAdminUser = await db.Users.IgnoreQueryFilters().Include(user => user.UserRoles)
+                .ThenInclude(assignment => assignment.Role)
+                .SingleAsync(user => user.Id == SeededDevelopmentAdmin.UserId);
+            Assert.Contains(seededAdminUser.UserRoles, assignment =>
+                assignment.Role?.SystemRoleKey == Role.TenantAdminSystemRoleKey && assignment.Role.IsSystem);
+            var effectiveAdminPermissions = await new UserEffectivePermissionService(db)
+                .GetEffectivePermissionsAsync(seededAdminUser.Id, SeedDataProvider.TenantId);
+            Assert.All(categoryManagementKeys, key => Assert.Contains(key, effectiveAdminPermissions));
+
             Assert.DoesNotContain(admin.Permissions, permission => InitialAnnualBudgetKeys.Contains(permission.Name, StringComparer.Ordinal));
             Assert.DoesNotContain(projectManager.Permissions, permission => InitialAnnualBudgetKeys.Contains(permission.Name, StringComparer.Ordinal));
 
@@ -314,6 +330,19 @@ public sealed class FinancialApprovalDelegationBoundaryTests
             await db.SaveChangesAsync();
             db.ChangeTracker.Clear();
 
+            var categoryViewPermission = await db.Permissions.IgnoreQueryFilters().SingleAsync(permission =>
+                permission.TenantId == SeedDataProvider.TenantId && permission.Name == "DocumentCategory.View");
+            db.UserPermissionOverrides.Add(new UserPermissionOverride
+            {
+                TenantId = SeedDataProvider.TenantId,
+                UserId = SeededDevelopmentAdmin.UserId,
+                PermissionId = categoryViewPermission.Id,
+                Effect = PermissionOverrideEffect.Deny,
+                CreatedBy = "regression-test"
+            });
+            await db.SaveChangesAsync();
+            db.ChangeTracker.Clear();
+
             await SeedDataProvider.SeedIdentityOnlyAsync(db);
             db.ChangeTracker.Clear();
             admin = await db.Roles.IgnoreQueryFilters().Include(role => role.Permissions)
@@ -322,6 +351,10 @@ public sealed class FinancialApprovalDelegationBoundaryTests
                 .SingleAsync(role => role.SystemRoleKey == "tenant.project-manager");
 
             Assert.All(historicalAdminKeys, key => Assert.Contains(admin.Permissions, permission => permission.Name == key));
+            Assert.All(categoryManagementKeys, key => Assert.Contains(admin.Permissions, permission => permission.Name == key));
+            Assert.DoesNotContain(await db.UserPermissionOverrides.IgnoreQueryFilters()
+                .Where(item => item.UserId == SeededDevelopmentAdmin.UserId && item.PermissionId == categoryViewPermission.Id)
+                .ToListAsync(), item => item.Effect == PermissionOverrideEffect.Deny);
             Assert.Contains(projectManager.Permissions, permission => permission.Name == "ProjectAnnualBudget.View");
             Assert.DoesNotContain(projectManager.Permissions, permission =>
                 permission.Name is "ProjectAnnualBudget.Create" or "ProjectAnnualBudget.EditDraft" or "ProjectAnnualBudget.SubmitForReview"

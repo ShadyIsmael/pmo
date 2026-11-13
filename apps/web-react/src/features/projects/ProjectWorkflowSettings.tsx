@@ -11,7 +11,7 @@ import { useProjectWorkflowSettings, useWorkflowDefinitions, useWorkflowMutation
 
 const DOMAINS: WorkflowDomain[] = ["Task", "Risk", "Finance", "ChangeRequest"];
 
-export function ProjectWorkflowSettings({ projectId }: { projectId: string }) {
+export function ProjectWorkflowSettings({ projectId, showHeading = true }: { projectId: string; showHeading?: boolean }) {
   const { t } = useI18n();
   const confirm = useConfirm();
   const { user } = useAuth();
@@ -85,7 +85,7 @@ export function ProjectWorkflowSettings({ projectId }: { projectId: string }) {
 
   return (
     <section aria-labelledby="project-workflow-approval-configuration-title" className="space-y-4">
-      <h1 className="text-2xl font-bold tracking-tight">{t("workflows.projectSettingsTitle")}</h1>
+      {showHeading ? <h1 className="text-2xl font-bold tracking-tight">{t("workflows.projectSettingsTitle")}</h1> : null}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 id="project-workflow-approval-configuration-title" className="text-lg font-semibold">{t("projects.workflowApprovalConfigurationTitle")}</h2>
@@ -106,7 +106,7 @@ export function ProjectWorkflowSettings({ projectId }: { projectId: string }) {
           <Button variant="outline" size="sm" onClick={() => void settings.refetch()}>{t("common.retry")}</Button>
         </div>
       ) : (
-        <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-4">
+        <div className="grid gap-4 xl:grid-cols-2">
           {DOMAINS.map((domain) => {
             const current = settings.data?.domains.find((item) => item.domain === domain);
             const options = definitions[domain];
@@ -116,17 +116,17 @@ export function ProjectWorkflowSettings({ projectId }: { projectId: string }) {
               && !options.some((option) => option.id === current.workflowDefinitionId);
 
             return (
-              <Card key={domain} className="flex flex-col">
-                <CardHeader>
+              <Card key={domain} className="flex min-w-0 flex-col overflow-hidden">
+                <CardHeader className="border-b bg-muted/30 p-5">
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <CardTitle className="text-base">{labels[domain]}</CardTitle>
                       <CardDescription className="mt-1">{mode === "Custom" ? t("workflows.customWorkflow") : t("workflows.standardBehavior")}</CardDescription>
                     </div>
-                    <Settings2 className="h-4 w-4 text-muted-foreground" />
+                    <span className="rounded-lg bg-primary/10 p-2 text-primary"><Settings2 aria-hidden="true" className="h-4 w-4" /></span>
                   </div>
                 </CardHeader>
-                <CardContent className="flex flex-1 flex-col gap-4">
+                <CardContent className="flex flex-1 flex-col gap-4 p-5">
                   <select
                     className="h-10 rounded-md border border-input bg-background px-3 text-sm"
                     value={mode === "Custom" ? current?.workflowDefinitionId ?? "" : "Standard"}
@@ -151,7 +151,7 @@ export function ProjectWorkflowSettings({ projectId }: { projectId: string }) {
                             : <p className="text-xs text-muted-foreground">{t("workflows.standardBehavior")}</p>}
                   {mode === "Custom" && !canViewWorkflowDefinitions && canManage ? <Button type="button" size="sm" variant="outline" disabled={mutations.saveProjectConfiguration.isPending}
                     onClick={() => void save(domain, "Standard", undefined, current?.rowVersion)}>{t("workflows.useStandard")}</Button> : null}
-                  {domain === "ChangeRequest" ? <div className="space-y-3 rounded-md border border-border/70 p-3">
+                  {domain === "ChangeRequest" ? <div className="space-y-3 rounded-xl border border-border/70 bg-muted/20 p-4">
                     <p className="text-xs text-muted-foreground">{t("workflows.changeRequestPolicyHint")}</p>
                     {([
                       ["sponsorApprovalRequired", "projects.sponsorApprovalRequired"],

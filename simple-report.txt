@@ -1,0 +1,4 @@
+Project Lifecycle Options 404 Investigation
+Status: In Progress
+Confirmed: Project exists in DB with PublicId and Id
+Root cause: Middleware conversion issue

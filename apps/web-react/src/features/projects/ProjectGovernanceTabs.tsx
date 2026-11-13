@@ -52,7 +52,6 @@ import { MeetingsBrowser } from "@features/delivery/MeetingsBrowser";
 import { exportProjectStatusReportExcel, exportProjectStatusReportPdf, printProjectStatusReport } from "@lib/export/project-status-report-export";
 import { getEvmReasonTranslationCandidates, useProjectEnumLabels } from "./lib/project-labels";
 import { useWorkItemStatuses } from "@api/workItems";
-import { PROJECT_STATUSES } from "@lib/enums";
 import { formatDateTime } from "@lib/utils";
 import { formatNumberValue } from "@lib/formatting/number";
 import { SearchableSelect } from "@components/ui/SearchableSelect";
@@ -60,6 +59,7 @@ import { getStatusTextClass, getStatusTone, statusToneDotClasses } from "@lib/st
 import { useRisks } from "@features/risks/api/risks";
 import { formatProjectChangeRequestAmount } from "./lib/project-change-request-format";
 import { ProjectChangeRequestActionSheet } from "./components/ProjectOverviewActionSheets";
+import { projectLifecycleLabel, useProjectLifecycleOptions } from "./api/project-lifecycle";
 
 function localizedEnumValue(t: (key: string) => string, namespace: string, value?: string | null): string {
   if (!value) return "—";
@@ -139,7 +139,7 @@ export function ProjectStatusReportsTab() {
   const { projectId, project } = useProjectContext();
   const { t, locale, formatDate, formatCurrency } = useI18n();
   const confirm = useConfirm();
-  const { statusLabel, healthLabel } = useProjectEnumLabels();
+  const { healthLabel } = useProjectEnumLabels();
   const { user } = useAuth();
   const { canMutate, effectiveReadOnly } = useManagement();
   const canViewIssues = Boolean(user && hasPermission(user.permissions, Permissions.Issue.View));
@@ -156,6 +156,7 @@ export function ProjectStatusReportsTab() {
   const publish = usePublishProjectStatusReport(projectId);
   const remove = useDeleteProjectStatusReport(projectId);
   const [formOpen, setFormOpen] = React.useState(false);
+  const [reportSection, setReportSection] = React.useState<"overview" | "performance" | "narrative">("overview");
   const [formSession, setFormSession] = React.useState(0);
   const [progressDraft, setProgressDraft] = React.useState("");
   const progressTouched = React.useRef(false);
@@ -183,10 +184,22 @@ export function ProjectStatusReportsTab() {
   const canEdit = Boolean(user && hasPermission(user.permissions, Permissions.StatusReport.Edit) && canMutate && !effectiveReadOnly);
   const canPublish = Boolean(user && hasPermission(user.permissions, Permissions.StatusReport.Publish) && canMutate && !effectiveReadOnly);
   const canExport = Boolean(user && hasPermission(user.permissions, Permissions.StatusReport.Export));
+  const canReadLifecycleOptions = Boolean(user && (
+    hasPermission(user.permissions, Permissions.StatusReport.View)
+    || hasPermission(user.permissions, Permissions.StatusReport.Create)
+    || hasPermission(user.permissions, Permissions.StatusReport.Edit)
+  ));
+  const lifecycleOptions = useProjectLifecycleOptions({ enabled: canReadLifecycleOptions, projectId });
+  const lifecycleStatuses = lifecycleOptions.data?.statuses ?? [];
+  const statusLabel = (code?: string | null) => {
+    if (!code) return "—";
+    const status = lifecycleStatuses.find((item) => item.code.toLocaleUpperCase() === code.toLocaleUpperCase());
+    return status ? projectLifecycleLabel(status, locale, code) : code;
+  };
   const workflowPending = publish.isPending;
   const reports = query.data?.items ?? [];
   const lifecycleStatusDefault = editingReport ? editingReport.projectLifecycleStatusAtReport : project.status;
-  const hasNonstandardLifecycleStatus = Boolean(lifecycleStatusDefault && !PROJECT_STATUSES.some((status) => status === lifecycleStatusDefault));
+  const hasUnavailableLifecycleStatus = Boolean(lifecycleStatusDefault && !lifecycleStatuses.some((status) => status.code.toLocaleUpperCase() === lifecycleStatusDefault.toLocaleUpperCase()));
   const progressForSummary = progressTouched.current
     ? (progressDraft === "" ? null : Number(progressDraft))
     : editingReport
@@ -217,6 +230,7 @@ export function ProjectStatusReportsTab() {
   function openNewReport() {
     setActionError(null);
     setEditingReport(null);
+    setReportSection("overview");
     progressTouched.current = false;
     setProgressDraft(project.progress == null ? "" : String(project.progress));
     setFormSession((session) => session + 1);
@@ -289,7 +303,7 @@ export function ProjectStatusReportsTab() {
       periodFrom,
       periodTo,
       statusDate: today,
-      projectLifecycleStatusAtReport: String(data.get("projectLifecycleStatusAtReport") || "") || undefined,
+      projectLifecycleStatusAtReport: String(data.get("projectLifecycleStatusAtReport") || lifecycleStatusDefault || "") || undefined,
       overallHealth: String(data.get("overallHealth") || "") || undefined,
       overallProgressPercent: progressRaw === "" ? undefined : Number(progressRaw),
       executiveSummary: String(data.get("executiveSummary") || "").trim() || undefined,
@@ -347,10 +361,10 @@ export function ProjectStatusReportsTab() {
     </Card>
     <StatusReportComparisonDialog open={comparisonOpen} onOpenChange={setComparisonOpen} comparison={comparisonQuery.data} loading={comparisonQuery.isLoading} error={comparisonQuery.isError} earlierCurrency={comparisonEarlierCurrency} laterCurrency={comparisonLaterCurrency} locale={locale} t={t} formatDate={formatDate} formatCurrency={formatCurrency} />
     <SideSheet open={formOpen} onOpenChange={(next) => { setFormOpen(next); if (!next) { setEditingReport(null); setActionError(null); } }} title={editingReport ? t("projects.editStatusReport") : t("projects.newStatusReport")} description={t("projects.statusReportFormDescription")} size="xl">
-      <form key={formSession} onSubmit={(event) => void submit(event)} className="flex min-h-0 flex-1 flex-col">
-        <SideSheetBody className="space-y-4">
-          <div className="grid gap-3 xl:grid-cols-[minmax(0,1.25fr)_minmax(260px,0.75fr)]">
-            <section className="rounded-xl border p-4">
+      <form key={formSession} onSubmit={(event) => void submit(event)} onInvalidCapture={(event) => { const target = event.target as HTMLElement; if (target.closest("#status-report-overview")) { setReportSection("overview"); window.setTimeout(() => target.focus(), 0); } }} className="flex min-h-0 flex-1 flex-col">
+        <SideSheetBody className="space-y-5" dir={locale === "ar" ? "rtl" : "ltr"}>
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1.5fr)_minmax(230px,0.7fr)]">
+            <section className="rounded-2xl border bg-gradient-to-br from-primary/10 via-card to-card p-5">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-xs font-medium text-muted-foreground">{t("projects.name")}</p>
@@ -366,7 +380,7 @@ export function ProjectStatusReportsTab() {
               </div>
             </section>
 
-            <section className="rounded-xl border border-primary/20 p-4" aria-label={t("projects.overallProgress")}>
+            <section className="rounded-2xl border border-primary/20 bg-card p-5" aria-label={t("projects.overallProgress")}>
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-xs font-medium text-muted-foreground">{t("projects.overallProgress")}</p>
@@ -392,7 +406,16 @@ export function ProjectStatusReportsTab() {
             </section>
           </div>
 
-          <section className="space-y-4 rounded-xl border p-4">
+          <nav aria-label={t("projects.newStatusReport")} className="grid gap-2 sm:grid-cols-3">
+            {[
+              ["overview", "projects.statusReportSectionOverview", CalendarDays],
+              ["performance", "projects.statusReportSectionPerformance", TrendingUp],
+              ["narrative", "projects.statusReportSectionNarrative", FileText],
+            ].map(([id, label, Icon]) => { const section = id as "overview" | "performance" | "narrative"; const SectionIcon = Icon as typeof FileText; return <button key={section} type="button" aria-pressed={reportSection === section} onClick={() => setReportSection(section)} className={`flex items-center gap-3 rounded-xl border p-3 text-start text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${reportSection === section ? "border-primary/40 bg-primary/10 text-primary" : "bg-card hover:bg-muted"}`}><SectionIcon aria-hidden="true" className="h-4 w-4 shrink-0" />{t(label as string)}</button>; })}
+          </nav>
+
+          <div id="status-report-overview" hidden={reportSection !== "overview"} className="space-y-4">
+          <section id="status-report-period" className="scroll-mt-4 space-y-4 rounded-2xl border bg-card p-5">
             <div className="flex items-center gap-2 border-b pb-3"><CalendarDays className="h-4 w-4 text-primary" aria-hidden="true" /><h3 className="text-sm font-semibold">{t("projects.reportingPeriodSection")}</h3></div>
             <div className="grid gap-3 sm:grid-cols-2">
 <div><Label htmlFor="status-report-period-from">{t("projects.periodFrom")}</Label><Input id="status-report-period-from" className="mt-1" name="periodFrom" type="date" value={periodFrom} onChange={(event) => setPeriodFrom(event.currentTarget.value)} max={periodTo} required /></div>
@@ -400,16 +423,20 @@ export function ProjectStatusReportsTab() {
             </div>
           </section>
 
-          <section className="space-y-4 rounded-xl border p-4">
+          <section id="status-report-status" className="scroll-mt-4 space-y-4 rounded-2xl border bg-card p-5">
             <div className="flex items-center gap-2 border-b pb-3"><TrendingUp className="h-4 w-4 text-primary" aria-hidden="true" /><h3 className="text-sm font-semibold">{t("projects.overallStatusSection")}</h3></div>
+            {lifecycleOptions.isLoading ? <p role="status" className="text-xs text-muted-foreground">{t("projects.lifecycle.statusLookupLoading")}</p> : null}
+            {lifecycleOptions.isError ? <div className="flex items-center gap-3"><p role="alert" className="text-xs text-destructive">{t("projects.lifecycle.lookupError")}</p><Button type="button" size="sm" variant="outline" onClick={() => void lifecycleOptions.refetch()}>{t("projects.lifecycle.retry")}</Button></div> : null}
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              <div><Label htmlFor="status-report-lifecycle">{t("projects.projectStatusAtReport")}</Label><select id="status-report-lifecycle" className="input-field mt-1 w-full" name="projectLifecycleStatusAtReport" defaultValue={editingReport ? editingReport.projectLifecycleStatusAtReport ?? "" : project.status || ""}><option value="">—</option>{hasNonstandardLifecycleStatus ? <option value={lifecycleStatusDefault!}>{statusLabel(lifecycleStatusDefault)}</option> : null}{PROJECT_STATUSES.map((state) => <option key={state} value={state}>{statusLabel(state)}</option>)}</select></div>
+              <div><Label htmlFor="status-report-lifecycle">{t("projects.projectStatusAtReport")}</Label><select id="status-report-lifecycle" className="input-field mt-1 w-full" name="projectLifecycleStatusAtReport" defaultValue={lifecycleStatusDefault ?? ""} disabled={lifecycleOptions.isLoading || lifecycleOptions.isError || lifecycleStatuses.length === 0}><option value="">—</option>{hasUnavailableLifecycleStatus ? <option value={lifecycleStatusDefault!}>{statusLabel(lifecycleStatusDefault)}</option> : null}{lifecycleStatuses.filter((status) => status.isActive !== false || status.code.toLocaleUpperCase() === lifecycleStatusDefault?.toLocaleUpperCase()).map((status) => <option key={status.id} value={status.code}>{projectLifecycleLabel(status, locale, status.code)}</option>)}</select>{!lifecycleOptions.isLoading && !lifecycleOptions.isError && lifecycleStatuses.length === 0 ? <p className="mt-1 text-xs text-muted-foreground">{t("projects.lifecycle.noStatusesAvailable")}</p> : null}</div>
               <div><Label htmlFor="status-report-overall-health">{t("projects.overallHealth")}</Label><select id="status-report-overall-health" className="input-field mt-1 w-full" name="overallHealth" defaultValue={editingReport ? editingReport.overallHealth ?? "" : project.health || ""}><option value="">—</option>{"Green,Amber,Red".split(",").map((health) => <option key={health} value={health}>{healthLabel(health)}</option>)}</select></div>
               <div><Label htmlFor="status-report-progress">{t("projects.overallProgress")}</Label><Input id="status-report-progress" className="mt-1" name="overallProgressPercent" type="number" min="0" max="100" step="any" value={progressDraft} onChange={(event) => { progressTouched.current = true; setProgressDraft(event.currentTarget.value); }} /><p className="mt-1 text-[11px] leading-4 text-muted-foreground">{t("projects.statusReportProgressEditable")}</p></div>
             </div>
           </section>
 
-          <section className="space-y-4 rounded-xl border p-4">
+          </div>
+          <div hidden={reportSection !== "performance"} className="space-y-4">
+          <section id="status-report-finance" className="scroll-mt-4 space-y-4 rounded-2xl border bg-card p-5">
             <div className="flex items-center gap-2 border-b pb-3"><FileText className="h-4 w-4 text-primary" aria-hidden="true" /><h3 className="text-sm font-semibold">{t("projects.financialSummarySection")}</h3></div>
             {financialSummary.isLoading ? (
               <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-4 xl:grid-cols-7">{[1, 2, 3, 4, 5, 6, 7].map((i) => <Card key={i}><CardContent className="p-3"><Skeleton className="h-8 w-full" /><Skeleton className="mt-2 h-5 w-3/4" /></CardContent></Card>)}</div>
@@ -418,7 +445,7 @@ export function ProjectStatusReportsTab() {
             ) : !financialSummary.data?.hasFinancialData ? (
               <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">{t("projects.financialSummaryEmpty")}</p>
             ) : (
-              <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-4 xl:grid-cols-7">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 <Card><CardContent className="p-3"><div className="text-[11px] text-muted-foreground">{t("projects.approvedAnnualBudget")}</div><div className="mt-1 text-sm font-semibold tabular-nums">{formatFinancialAmount(financialSummary.data.approvedBudget)}</div></CardContent></Card>
                 <Card><CardContent className="p-3"><div className="text-[11px] text-muted-foreground">{t("projects.expenditure")}</div><div className="mt-1 text-sm font-semibold tabular-nums">{formatFinancialAmount(financialSummary.data.expenditure)}</div></CardContent></Card>
                 <Card><CardContent className="p-3"><div className="text-[11px] text-muted-foreground">{t("projects.committedCost")}</div><div className="mt-1 text-sm font-semibold tabular-nums">{formatFinancialAmount(financialSummary.data.committedCost)}</div></CardContent></Card>
@@ -433,7 +460,7 @@ export function ProjectStatusReportsTab() {
             <p className="mt-0.5 text-[11px] text-muted-foreground">{t("projects.budgetStatusLabel", { status: financialBudgetStatus })}</p>
           </section>
 
-          <section className="space-y-4 rounded-xl border p-4">
+          <section id="status-report-risks" aria-label={t("projects.topRisks")} className="scroll-mt-4 space-y-4 rounded-2xl border bg-card p-5">
             <div className="grid gap-4 lg:grid-cols-2">
               <Card>
                 <CardHeader className="flex items-center justify-between gap-2">
@@ -456,7 +483,7 @@ export function ProjectStatusReportsTab() {
             </div>
           </section>
 
-          <section className="space-y-4 rounded-xl border p-4">
+          <section id="status-report-health" className="scroll-mt-4 space-y-4 rounded-2xl border bg-card p-5">
             <div className="flex items-center gap-2 border-b pb-3"><AlertTriangle className="h-4 w-4 text-primary" aria-hidden="true" /><h3 className="text-sm font-semibold">{t("projects.healthDimensionsSection")}</h3></div>
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               <HealthField name="costHealth" label={t("projects.costHealth")} value={editingReport?.costHealth} healthLabel={healthLabel} />
@@ -477,21 +504,24 @@ export function ProjectStatusReportsTab() {
             </div>
           </section>
 
-          <section className="space-y-4 rounded-xl border p-4">
+          </div>
+          <div hidden={reportSection !== "narrative"} className="space-y-4">
+          <section id="status-report-narratives" className="scroll-mt-4 space-y-4 rounded-2xl border bg-card p-5">
             <div className="flex items-center gap-2 border-b pb-3"><FileText className="h-4 w-4 text-primary" aria-hidden="true" /><h3 className="text-sm font-semibold">{t("projects.narrativesSection")}</h3></div>
             <div className="grid gap-4 sm:grid-cols-2"><NarrativeField name="executiveSummary" label={t("projects.executiveSummary")} defaultValue={editingReport?.executiveSummary} /><NarrativeField name="keyAchievements" label={t("projects.keyAchievements")} defaultValue={editingReport?.keyAchievements} /><NarrativeField name="challengesConcerns" label={t("projects.challengesConcerns")} defaultValue={editingReport?.challengesConcerns} /><NarrativeField name="nextPeriodPriorities" label={t("projects.nextPeriodPriorities")} defaultValue={editingReport?.nextPeriodPriorities} /></div>
           </section>
 
-          <section className="space-y-4 rounded-xl border p-4">
+          <section id="status-report-actions" className="scroll-mt-4 space-y-4 rounded-2xl border bg-card p-5">
             <div className="flex items-center gap-2 border-b pb-3"><ListChecks className="h-4 w-4 text-primary" aria-hidden="true" /><h3 className="text-sm font-semibold">{t("projects.actionsNeededSection")}</h3></div>
             <NarrativeField name="actionsNeeded" label={t("projects.actionsNeeded")} defaultValue={editingReport?.actionsNeeded} />
           </section>
 
-          <section className="space-y-4 rounded-xl border p-4">
+          <section id="status-report-support" className="scroll-mt-4 space-y-4 rounded-2xl border bg-card p-5">
             <div className="flex items-center gap-2 border-b pb-3"><Headphones className="h-4 w-4 text-primary" aria-hidden="true" /><h3 className="text-sm font-semibold">{t("projects.supportNeededSection")}</h3></div>
             <NarrativeField name="supportNeeded" label={t("projects.supportNeeded")} defaultValue={editingReport?.supportNeeded} />
           </section>
 
+          </div>
           {actionError ? <p role="alert" className="flex items-start gap-2 rounded-lg border border-destructive/40 px-3 py-2 text-sm text-destructive"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />{actionError}</p> : null}
         </SideSheetBody>
         <SideSheetFooter><Button type="button" variant="outline" onClick={() => { setFormOpen(false); setEditingReport(null); }}>{t("common.cancel")}</Button><Button type="submit" disabled={create.isPending || update.isPending}>{editingReport ? t("projects.saveChanges") : t("projects.saveDraft")}</Button></SideSheetFooter>
@@ -509,7 +539,7 @@ export function ProjectStatusReportsTab() {
       exporting={exporting}
       workflowPending={workflowPending}
       isDeleting={remove.isPending}
-      onEdit={() => { if (detail.data) { setEditingReport(detail.data); progressTouched.current = detail.data.overallProgressPercent != null; setProgressDraft(detail.data.overallProgressPercent == null ? (project.progress == null ? "" : String(project.progress)) : String(detail.data.overallProgressPercent)); setPeriodFrom(detail.data.periodFrom.slice(0, 10)); setPeriodTo(detail.data.periodTo.slice(0, 10)); setFormSession((session) => session + 1); setDetailId(""); setActionError(null); setFormOpen(true); } }}
+      onEdit={() => { if (detail.data) { setEditingReport(detail.data); setReportSection("overview"); progressTouched.current = detail.data.overallProgressPercent != null; setProgressDraft(detail.data.overallProgressPercent == null ? (project.progress == null ? "" : String(project.progress)) : String(detail.data.overallProgressPercent)); setPeriodFrom(detail.data.periodFrom.slice(0, 10)); setPeriodTo(detail.data.periodTo.slice(0, 10)); setFormSession((session) => session + 1); setDetailId(""); setActionError(null); setFormOpen(true); } }}
       onPublish={() => { if (detail.data) void publishReport(detail.data); }}
       onDelete={() => { if (detail.data) void confirmDelete(detail.data.id); }}
       onExport={() => void exportReport()}

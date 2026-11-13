@@ -173,7 +173,7 @@ public sealed class ProjectAnnualBudgetApprovalNotificationPublisherTests
         EntityId = budgetId,
         EntityType = "ProjectAnnualBudget",
         Type = "ProjectAnnualBudgetReview",
-        Status = PaymentRequestStatuses.Pending,
+        Status = ApprovalRequest.StatusSubmitted,
         CurrentApproverId = currentApproverId,
         Amount = 125_000m,
         Currency = "USD",

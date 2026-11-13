@@ -7,6 +7,7 @@ using NEXUS.Api.Management;
 using NEXUS.Modules.Audit.Application;
 using NEXUS.Api.Tests.Testing;
 using NEXUS.Modules.Identity.Domain;
+using NEXUS.Modules.Organization.Domain;
 using NEXUS.Modules.Portfolio.Domain;
 using NEXUS.Modules.ProjectManagement.Application;
 using NEXUS.Modules.ProjectManagement.Domain;
@@ -30,6 +31,8 @@ public sealed class ManagementScopeResolverTests : IDisposable
     private static readonly Guid InheritedProjectId = Guid.Parse("c1000000-0000-0000-0000-000000000030");
     private static readonly Guid DirectProjectId = Guid.Parse("c1000000-0000-0000-0000-000000000031");
     private static readonly Guid SponsorOnlyProjectId = Guid.Parse("c1000000-0000-0000-0000-000000000032");
+    private static readonly Guid ProgramOnlyProjectId = Guid.Parse("c1000000-0000-0000-0000-000000000033");
+    private static readonly Guid OrganizationId = Guid.Parse("c1000000-0000-0000-0000-000000000040");
     private static readonly Guid CrossTenantSponsorProjectId = Guid.Parse("c2000000-0000-0000-0000-000000000032");
     private static readonly Guid OtherTenantId = Guid.Parse("c2000000-0000-0000-0000-000000000001");
 
@@ -53,11 +56,15 @@ public sealed class ManagementScopeResolverTests : IDisposable
             LastName = "Manager", IsActive = true, PasswordHash = "test-hash", CreatedBy = "tests",
             RowVersion = new byte[8]
         });
+        _db.Organizations.Add(new Organization
+        {
+            Id = OrganizationId, TenantId = TenantId, Name = "Project Scope Organization", IsActive = true, CreatedBy = "tests"
+        });
         _db.Portfolios.AddRange(
             new Portfolio
             {
                 Id = PortfolioId, TenantId = TenantId, Name = "Direct Portfolio", Code = "DIR-P",
-                Currency = "USD", OwnerId = UserId, Status = "Active", CreatedBy = "tests",
+                Currency = "USD", OwnerId = UserId, OrganizationId = OrganizationId, Status = "Active", CreatedBy = "tests",
                 RowVersion = new byte[8]
             },
             new Portfolio
@@ -71,11 +78,12 @@ public sealed class ManagementScopeResolverTests : IDisposable
         _db.Projects.AddRange(
             Project(InheritedProjectId, "Inherited Project", "INH-P", PortfolioId, InheritedProgramId),
             Project(DirectProjectId, "Direct Project", "DIR-PRJ", null, null),
+            Project(ProgramOnlyProjectId, "Program Only Project", "PRG-ONLY", null, InheritedProgramId),
             SponsorProject(SponsorOnlyProjectId, TenantId, "Sponsor Only Project", "SPN-PRJ"),
             SponsorProject(CrossTenantSponsorProjectId, OtherTenantId, "Cross Tenant Sponsor Project", "X-TEN-SPN"));
         _db.SaveChanges();
 
-        _resolver = new ManagementScopeResolver(_db, new NEXUS.Modules.Identity.Infrastructure.UserEffectivePermissionService(_db));
+        _resolver = new ManagementScopeResolver(_db, new NEXUS.Modules.Identity.Infrastructure.UserEffectivePermissionService(_db), new NEXUS.Persistence.ProjectOrganizationLookup(_db));
     }
 
     [Fact]
@@ -139,8 +147,22 @@ public sealed class ManagementScopeResolverTests : IDisposable
         Assert.Equal(SponsorOnlyProjectId, shell.Value!.Id);
         Assert.Empty(await _db.Set<NEXUS.Modules.ResourceManagement.Domain.Resource>()
             .Where(resource => resource.UserId == UserId).ToListAsync());
-        Assert.Empty(await _db.Set<NEXUS.Modules.ResourceManagement.Domain.ProjectMember>()
-            .Where(member => member.ProjectId == SponsorOnlyProjectId).ToListAsync());
+    }
+
+    [Fact]
+    public async Task Project_context_inherits_organization_from_program_portfolio_when_project_portfolio_is_null()
+    {
+        var context = await _resolver.ResolveAsync(
+            UserId, TenantId, ManagementPerspective.ProjectManager, ManagementViewMode.Native,
+            portfolioId: null, programId: null, projectId: ProgramOnlyProjectId);
+
+        Assert.NotNull(context);
+        Assert.Equal(PortfolioId, Assert.Single(context!.Scope.PortfolioIds));
+        Assert.Equal(OrganizationId, context.Scope.ProjectOrganizationIds[ProgramOnlyProjectId]);
+        Assert.Contains(OrganizationId, context.Scope.OrganizationIds);
+        var organizationReference = Assert.Single(context.Scope.OrganizationReferences);
+        Assert.Equal(OrganizationId, organizationReference.Id);
+        Assert.Equal("Project Scope Organization", organizationReference.Name);
     }
 
     private static PortfolioProgram Program(

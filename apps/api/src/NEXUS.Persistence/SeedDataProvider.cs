@@ -5,6 +5,7 @@ using System.Data;
 using System.Data.Common;
 using System.IO;
 using System.Reflection;
+using System.Text;
 using System.Text.Json;
 using NEXUS.Modules.Audit.Application;
 using NEXUS.Modules.Audit.Domain;
@@ -703,10 +704,17 @@ public static class SeedDataProvider
             throw new InvalidOperationException("Canonical permission reconciliation requires exactly one active, trusted tenant Admin role.");
 
         var protectedAdminRole = protectedAdminRoles[0];
-        var mandatoryPermissionRows = ProtectedTenantAdminPolicy.MandatoryPermissionKeys
+        // Mandatory permissions = all active Tenant-scoped keys (auto-inherited by protected Admin)
+        // + approved Portfolio/Program baseline keys.  This set is automatically kept in
+        // sync with the current catalog by GetAllTenantPermissionKeys below.
+        var mandatoryPermissionKeys = ProtectedTenantAdminPolicy.MandatoryPermissionKeys;
+        var mandatoryPermissionRows = mandatoryPermissionKeys
             .OrderBy(key => key, StringComparer.Ordinal)
             .Select(key =>
             {
+                // Every key in MandatoryPermissionKeys is guaranteed to exist in the catalog
+                // because GetAllTenantPermissionKeys enumerates all active Tenant entries,
+                // and the Portfolio/Program keys are validated separately.
                 var definition = PermissionCatalog.ByKey[key];
                 var pair = $"{definition.Resource}|{definition.Action}";
                 if (!persistedByPair.TryGetValue(pair, out var permission) || permission.IsDeleted)
@@ -1022,6 +1030,10 @@ public static class SeedDataProvider
         typeof(Currency),
         typeof(Skill),
         typeof(DocumentCategory),
+        typeof(ProjectPhaseCatalogEntry),
+        typeof(ProjectStatusCatalogEntry),
+        typeof(ProjectPhaseTransitionRule),
+        typeof(ProjectStatusTransitionRule),
         typeof(ConfigurationSetting),
         typeof(AuditEntry)
     ];
@@ -1174,6 +1186,7 @@ private static readonly Guid Portfolio1Id = Guid.Parse("a0000001-0000-0000-0000-
             await EnsureCurrencySeedDataAsync(context);
             await EnsureVendorAndOutsourcedSeedDataAsync(context);
             await EnsureDocumentCatalogAsync(context);
+            await EnsureProjectLifecycleCatalogAsync(context);
             // Project seed data used to be reset on every Development startup. That
             // reset cascaded into user-created Risks (and their workflow children),
             // leaving previously returned Risk IDs permanently stale after a restart.
@@ -1978,6 +1991,133 @@ private static readonly Guid Portfolio1Id = Guid.Parse("a0000001-0000-0000-0000-
         await context.SaveChangesAsync();
     }
 
+    private static async Task EnsureProjectLifecycleCatalogAsync(AppDbContext context)
+    {
+        // Only the protected Pre-Initiation phase is auto-provisioned. The legacy
+        // initiation, planning, execution, monitoring-controlling, and closure phases
+        // are intentionally not seeded any more: they reached Create Project as
+        // predefined phases that no administrator had configured. Rows already
+        // persisted by earlier migrations are left untouched here because removing
+        // them would break Project and Phase Gate references and requires Product
+        // Owner authorization. This helper therefore repairs exactly one Tenant-wide
+        // Pre-Initiation record and never inserts the other phase codes.
+        const string preInitiationCode = "pre-initiation";
+        const string preInitiationNormalizedCode = "PRE-INITIATION";
+        const string preInitiationNameEn = "Pre-Initiation";
+        const string preInitiationNameAr = "مرحلة ما قبل البدء";
+        const int preInitiationDisplayOrder = 0;
+
+        var tenantIds = await context.Tenants.IgnoreQueryFilters()
+            .Where(tenant => tenant.Status != TenantLifecycleStatus.Retired)
+            .Select(tenant => tenant.Id)
+            .ToListAsync();
+        if (!tenantIds.Contains(TenantId)) tenantIds.Add(TenantId);
+
+        var statusDefinitions = new[]
+        {
+            new { Code = "not-started", NameEn = "Not Started", NameAr = "لم يبدأ", Order = 10 },
+            new { Code = "active", NameEn = "Active", NameAr = "نشط", Order = 20 },
+            new { Code = "on-hold", NameEn = "On Hold", NameAr = "معلق", Order = 30 },
+            new { Code = "completed", NameEn = "Completed", NameAr = "مكتمل", Order = 40 },
+            new { Code = "cancelled", NameEn = "Cancelled", NameAr = "ملغى", Order = 50 }
+        };
+
+        foreach (var tenantId in tenantIds.Distinct())
+        {
+            var phases = await context.ProjectPhaseCatalogEntries.IgnoreQueryFilters()
+                .Where(item => item.TenantId == tenantId && item.OrganizationId == null)
+                .ToListAsync();
+            var statuses = await context.ProjectStatusCatalogEntries.IgnoreQueryFilters()
+                .Where(item => item.TenantId == tenantId && item.OrganizationId == null)
+                .ToListAsync();
+            var needsStatusDefault = !statuses.Any(item => item.IsActive && item.IsDefault && !item.IsDeleted);
+
+            // Prefer a live record. If none is live, reuse a soft-deleted identity
+            // instead of inserting a duplicate so existing Project/Phase Gate
+            // references keep pointing at the same phase row.
+            var preInitiation = phases
+                .Where(item => string.Equals(item.NormalizedCode, preInitiationNormalizedCode,
+                    StringComparison.OrdinalIgnoreCase))
+                .OrderBy(item => item.IsDeleted)
+                .ThenBy(item => item.Id)
+                .FirstOrDefault();
+
+            // The filtered unique default index permits one active default per Tenant
+            // scope, so a stale default in the same scope must be cleared (and saved)
+            // before the protected record becomes the default. Only that exact scope
+            // is touched; Organization-scoped defaults are independent.
+            var conflictingDefaults = phases
+                .Where(item => !item.IsDeleted && item.IsDefault
+                    && (preInitiation is null || item.Id != preInitiation.Id))
+                .ToArray();
+            foreach (var phase in conflictingDefaults)
+            {
+                phase.IsDefault = false;
+                phase.UpdatedBy = "System";
+            }
+            if (conflictingDefaults.Length > 0)
+                await context.SaveChangesAsync();
+
+            if (preInitiation is null)
+            {
+                preInitiation = new ProjectPhaseCatalogEntry
+                {
+                    TenantId = tenantId,
+                    OrganizationId = null,
+                    Code = preInitiationCode,
+                    NormalizedCode = preInitiationNormalizedCode,
+                    NameEn = preInitiationNameEn,
+                    NameAr = preInitiationNameAr,
+                    DisplayOrder = preInitiationDisplayOrder,
+                    IsDefault = true,
+                    IsActive = true,
+                    IsContinuousActivity = false,
+                    CreatedBy = "System"
+                };
+                context.ProjectPhaseCatalogEntries.Add(preInitiation);
+                phases.Add(preInitiation);
+            }
+            else
+            {
+                // Canonicalize the protected record in place: stable code, bilingual
+                // labels, order zero, active and default. Nothing else is rewritten.
+                preInitiation.IsDeleted = false;
+                preInitiation.Code = preInitiationCode;
+                preInitiation.NormalizedCode = preInitiationNormalizedCode;
+                preInitiation.NameEn = preInitiationNameEn;
+                preInitiation.NameAr = preInitiationNameAr;
+                preInitiation.DisplayOrder = preInitiationDisplayOrder;
+                preInitiation.IsActive = true;
+                preInitiation.IsDefault = true;
+                preInitiation.IsContinuousActivity = false;
+                preInitiation.UpdatedBy = "System";
+            }
+
+            foreach (var definition in statusDefinitions)
+            {
+                if (statuses.Any(item => !item.IsDeleted && string.Equals(item.NormalizedCode, definition.Code.ToUpperInvariant(), StringComparison.Ordinal))) continue;
+                var status = new ProjectStatusCatalogEntry
+                {
+                    TenantId = tenantId,
+                    Code = definition.Code,
+                    NormalizedCode = definition.Code.ToUpperInvariant(),
+                    NameEn = definition.NameEn,
+                    NameAr = definition.NameAr,
+                    DisplayOrder = definition.Order,
+                    IsDefault = needsStatusDefault && string.Equals(definition.Code, "not-started", StringComparison.Ordinal),
+                    IsActive = true,
+                    ReportingCategory = ProjectStatusReportingCategories.ForLegacyCode(definition.Code),
+                    AttentionLevel = ProjectStatusAttentionLevels.ForLegacyCode(definition.Code),
+                    CreatedBy = "System"
+                };
+                context.ProjectStatusCatalogEntries.Add(status);
+                statuses.Add(status);
+            }
+        }
+
+        await context.SaveChangesAsync();
+    }
+
     private static async Task EnsureCurrencySeedDataAsync(AppDbContext context)
     {
         var currencyDefinitions = new[]
@@ -2221,6 +2361,7 @@ private static readonly Guid Portfolio1Id = Guid.Parse("a0000001-0000-0000-0000-
             await EnsureVendorCategorySeedDataAsync(context);
             await EnsureSkillSeedDataAsync(context);
             await EnsureDocumentCatalogAsync(context);
+            await EnsureProjectLifecycleCatalogAsync(context);
 
             await EnsureMinimalSeedOutputAsync(context);
             if (transaction is not null)
@@ -2719,7 +2860,18 @@ private static readonly Guid Portfolio1Id = Guid.Parse("a0000001-0000-0000-0000-
         foreach (var definition in definitions)
         {
             if (existing.Any(c => c.Id == definition.Id)) continue;
-            context.DocumentCategories.Add(new DocumentCategory { Id = definition.Id, TenantId = TenantId, Code = definition.Code, Name = definition.Name, Description = definition.Description, SortOrder = Array.IndexOf(definitions, definition), CreatedBy = "System" });
+            context.DocumentCategories.Add(new DocumentCategory
+            {
+                Id = definition.Id,
+                TenantId = TenantId,
+                Code = definition.Code,
+                Name = definition.Name,
+                NormalizedNameEn = definition.Name.Normalize(NormalizationForm.FormKC).ToUpperInvariant(),
+                Description = definition.Description,
+                SortOrder = Array.IndexOf(definitions, definition),
+                IsActive = true,
+                CreatedBy = "System"
+            });
         }
         await context.SaveChangesAsync();
     }
