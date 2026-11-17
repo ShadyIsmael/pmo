@@ -250,15 +250,11 @@ export function AccountNotificationsPage() {
   };
 
   const eventLabels: Record<string, string> = {
-    ProjectHandover: t("account.notifications.projectHandover"), ProgramHandover: t("account.notifications.programHandover"),
-    PortfolioHandover: t("account.notifications.portfolioHandover"), PaymentDue: t("account.notifications.paymentDue"),
-    PaymentOverdue: t("account.notifications.paymentOverdue"), MeetingReminder: t("account.notifications.meetingReminder"),
-    MeetingInvitation: t("account.notifications.meetingInvitation"), MeetingStarted: t("account.notifications.meetingStarted"),
-    MeetingMinutesPublished: t("account.notifications.meetingMinutesPublished"),
-    MeetingMinutesShared: t("account.notifications.meetingMinutesShared"), MeetingCompleted: t("account.notifications.meetingCompleted"),
-    MeetingMinutesComment: t("account.notifications.meetingMinutesComment"), MeetingMinutesCommentReply: t("account.notifications.meetingMinutesCommentReply"),
-    RiskActionFollowUpDue: t("account.notifications.riskActionFollowUpDue"),
-    ProjectAnnualBudgetApproval: t("account.notifications.projectAnnualBudgetApproval"),
+    ProjectHandover: t("account.notifications.projectHandover"),
+    ProgramHandover: t("account.notifications.programHandover"),
+    PortfolioHandover: t("account.notifications.portfolioHandover"),
+    PaymentDue: t("account.notifications.paymentDue"),
+    PaymentOverdue: t("account.notifications.paymentOverdue"),
   };
   const pushUnavailable = !preferences.data?.pushAvailable || !isFirebaseMessagingConfigured();
   const messageIsError = messageKey === "account.notifications.pushUnavailable" || messageKey === "account.notifications.emailUnavailable" || messageKey?.endsWith("Failed") === true || messageKey?.endsWith("Status") === true;

@@ -142,8 +142,6 @@ public class AppDbContext : DbContext
     public DbSet<PaymentObligation> PaymentObligations => Set<PaymentObligation>();
     public DbSet<PaymentSettlement> PaymentSettlements => Set<PaymentSettlement>();
     public DbSet<PaymentNotificationDispatch> PaymentNotificationDispatches => Set<PaymentNotificationDispatch>();
-    public DbSet<ProjectPaymentRequestDetail> ProjectPaymentRequestDetails => Set<ProjectPaymentRequestDetail>();
-    public DbSet<PaymentRequestApproverAssignment> PaymentRequestApproverAssignments => Set<PaymentRequestApproverAssignment>();
 
     public DbSet<Risk> Risks => Set<Risk>();
     public DbSet<RiskAction> RiskActions => Set<RiskAction>();

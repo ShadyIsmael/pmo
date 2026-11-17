@@ -158,11 +158,9 @@ public class PaymentObligationLifecycleTests
 
         AppDbContext.ConfigureTenantResolution(CreateHttpContextAccessor(tenantId, userId));
 
-        var requestViewPermission = new Permission { TenantId = tenantId, Name = "ProjectPaymentRequest.View", Resource = "ProjectPaymentRequest", Action = "View", CreatedBy = "test" };
-        var settlementViewPermission = new Permission { TenantId = tenantId, Name = "ProjectSettlement.View", Resource = "ProjectSettlement", Action = "View", CreatedBy = "test" };
+        var financePermission = new Permission { TenantId = tenantId, Name = "finances.read", Resource = "finances", Action = "read", CreatedBy = "test" };
         var financeRole = new Role { TenantId = tenantId, Name = "Finance Viewer", CreatedBy = "test" };
-        financeRole.Permissions.Add(requestViewPermission);
-        financeRole.Permissions.Add(settlementViewPermission);
+        financeRole.Permissions.Add(financePermission);
         context.Set<User>().Add(new User
         {
             Id = userId,
@@ -659,34 +657,6 @@ public class PaymentObligationLifecycleTests
         Assert.Empty(await context.Set<PaymentObligation>().ToListAsync());
     }
 
-    [Theory]
-    [InlineData("ProjectFinance.View")]
-    [InlineData("ProjectFinance.Manage")]
-    [InlineData("finances.write")]
-    public async Task CreateAsync_RejectsBroadOrRetiredPermissionClaimsWithoutMutation(string permission)
-    {
-        var tenantId = Guid.NewGuid();
-        var projectId = Guid.NewGuid();
-        var userId = Guid.NewGuid();
-        using var context = new AppDbContext(CreateOptions());
-        var service = CreateService(context, tenantId, projectId, userId,
-            new Mock<IAuditService>().Object, permissions: [permission]);
-
-        var result = await service.CreateAsync(new CreatePaymentObligationDto
-        {
-            ProjectId = projectId,
-            PaymentReference = "DENIED-1",
-            Purpose = "Authorization regression",
-            Amount = 100m,
-            Currency = "USD",
-            DueDate = DateTime.UtcNow.AddDays(1),
-        }, userId.ToString());
-
-        Assert.True(result.IsFailure);
-        Assert.Equal(403, result.Error?.StatusCode);
-        Assert.Empty(await context.Set<PaymentObligation>().ToListAsync());
-    }
-
     private static DbContextOptions<AppDbContext> CreateOptions() =>
         new DbContextOptionsBuilder<AppDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
@@ -700,8 +670,7 @@ public class PaymentObligationLifecycleTests
         IAuditService auditService,
         Guid? validMilestoneId = null,
         string projectCurrency = "USD",
-        IManagementContextAccessor? managementContext = null,
-        IEnumerable<string>? permissions = null)
+        IManagementContextAccessor? managementContext = null)
     {
         var projectLookup = new Mock<IProjectReferenceLookup>();
         projectLookup.Setup(item => item.FindAsync(projectId, It.IsAny<CancellationToken>()))
@@ -709,19 +678,17 @@ public class PaymentObligationLifecycleTests
         var milestoneLookup = new Mock<IProjectMilestoneReferenceLookup>();
         milestoneLookup.Setup(item => item.IsActiveMilestoneForProjectAsync(projectId, It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((Guid _, Guid milestoneId, CancellationToken _) => validMilestoneId == milestoneId);
-        var accessor = CreateHttpContextAccessor(tenantId, userId, permissions ?? new[] {
-            "PaymentObligation.View", "PaymentObligation.Create", "PaymentObligation.Edit",
-            "PaymentObligation.Delete", "PaymentObligationSettlement.Record" });
+        var accessor = CreateHttpContextAccessor(tenantId, userId);
         return new PaymentObligationService(context, auditService, projectLookup.Object, milestoneLookup.Object, accessor, managementContext);
     }
 
-    private static IHttpContextAccessor CreateHttpContextAccessor(Guid tenantId, Guid userId, IEnumerable<string>? permissions = null)
+    private static IHttpContextAccessor CreateHttpContextAccessor(Guid tenantId, Guid userId)
     {
         var claims = new[]
         {
             new Claim("tenantId", tenantId.ToString()),
             new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
-        }.Concat((permissions ?? []).Select(permission => new Claim("permission", permission)));
+        };
 
         var accessor = new HttpContextAccessor
         {

@@ -6,7 +6,6 @@ import { useConfirm } from "@components/ui/ConfirmProvider";
 import { Card, CardContent, CardHeader, CardTitle } from "@components/ui/Card";
 import { Input } from "@components/ui/Input";
 import { Label } from "@components/ui/Label";
-import { ApiFieldError } from "@components/ui/ApiFieldError";
 import { Pagination } from "@components/ui/Pagination";
 import { SideSheet, SideSheetBody, SideSheetFooter } from "@components/ui/SideSheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@components/ui/Table";
@@ -14,11 +13,10 @@ import { Textarea } from "@components/ui/Textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@components/ui/Select";
 import { PageHeader } from "@components/layout/PageHeader";
 import { useI18n } from "@i18n/messages";
-import { ApiError, getApiFieldError } from "@api/client";
 import { useAuth } from "@auth/AuthProvider";
 import { hasPermission, Permissions } from "@lib/permissions";
 import { useManagement } from "@api/management";
-import { usePaymentProjectLookup } from "@features/projects/api/projects";
+import { useProjects } from "@features/projects/api/projects";
 import { usePlanningBootstrapFull } from "@features/projects/api/planningFull";
 import {
   usePaymentObligationMutations,
@@ -47,14 +45,14 @@ type SettlementForm = {
 };
 
 const today = () => new Date().toISOString().slice(0, 10);
-const emptyPayment = (projectId = "", currency?: string): PaymentForm => ({
+const emptyPayment = (projectId = "", currency = "GBP"): PaymentForm => ({
   projectId,
   milestoneId: "",
   paymentReference: "",
   purpose: "",
   description: "",
   amount: "",
-  currency: currency ?? "",
+  currency,
   dueDate: "",
   notes: "",
 });
@@ -69,35 +67,16 @@ function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error && error.message ? error.message : fallback;
 }
 
-function sameId(left: string, right: string) {
-  return left.toLowerCase() === right.toLowerCase();
-}
-
-export function PlannedPaymentsPage({ embeddedProjectId, embeddedProject, active = true }: {
-  embeddedProjectId?: string;
-  embeddedProject?: { id: string; publicId: string; name: string; code: string; currency?: string };
-  active?: boolean;
-} = {}) {
-  const { t, formatCurrency, formatNumber } = useI18n();
+export function PlannedPaymentsPage() {
+  const { t, formatCurrency } = useI18n();
   const confirm = useConfirm();
   const { user } = useAuth();
   const { canMutate, effectiveReadOnly } = useManagement();
   const [searchParams, setSearchParams] = useSearchParams();
-  const canView = Boolean(user && hasPermission(user.permissions, Permissions.PaymentObligation.View));
-  const canCreate = Boolean(user && hasPermission(user.permissions, Permissions.PaymentObligation.Create) && canMutate && !effectiveReadOnly);
-  const canEdit = Boolean(user && hasPermission(user.permissions, Permissions.PaymentObligation.Edit) && canMutate && !effectiveReadOnly);
-  const canDelete = Boolean(user && hasPermission(user.permissions, Permissions.PaymentObligation.Delete) && canMutate && !effectiveReadOnly);
-  const canRecordSettlements = Boolean(user
-    && hasPermission(user.permissions, Permissions.PaymentObligationSettlement.Record)
-    && canMutate && !effectiveReadOnly);
-  const canLoadPaymentProjectOptions = Boolean(user && (
-    canView
-    || hasPermission(user.permissions, Permissions.PaymentObligation.Create)
-    || hasPermission(user.permissions, Permissions.PaymentObligation.Edit)
-  ));
-  const projects = usePaymentProjectLookup(canLoadPaymentProjectOptions && active && !embeddedProject);
-  const projectItems = projects.data ?? [];
-  const initialProjectId = embeddedProjectId ?? searchParams.get("projectId") ?? "";
+  const canView = Boolean(user && hasPermission(user.permissions, Permissions.Finances.Read));
+  const canWrite = Boolean(user && hasPermission(user.permissions, Permissions.Finances.Write)) && canMutate && !effectiveReadOnly;
+  const projects = useProjects({ page: 1, pageSize: 100 }, canView);
+  const initialProjectId = searchParams.get("projectId") ?? "";
   const [projectId, setProjectId] = React.useState(initialProjectId);
   const [dueOnly, setDueOnly] = React.useState(false);
   const [page, setPage] = React.useState(1);
@@ -111,27 +90,17 @@ export function PlannedPaymentsPage({ embeddedProjectId, embeddedProject, active
   const [idempotencyKey, setIdempotencyKey] = React.useState(() => crypto.randomUUID());
   const [actionError, setActionError] = React.useState<string | null>(null);
 
-  const scopedProjectId = embeddedProjectId ?? projectId;
-  const project = embeddedProject ?? projectItems.find((item) => sameId(item.id, scopedProjectId) || sameId(item.publicId, scopedProjectId));
-  const paymentFormProject = projectItems.find((item) => sameId(item.id, paymentForm.projectId) || sameId(item.publicId, paymentForm.projectId))
-    ?? (embeddedProject && (sameId(embeddedProject.id, paymentForm.projectId) || sameId(embeddedProject.publicId, paymentForm.projectId)) ? embeddedProject : undefined);
-  const selectedPaymentProject = selectedPayment
-    ? projectItems.find((item) => sameId(item.id, selectedPayment.projectId) || sameId(item.publicId, selectedPayment.projectId)) ?? embeddedProject
-    : undefined;
   const payments = usePaymentObligations({
     page,
     pageSize: 20,
-    ...(project ? { projectId: project.publicId } : {}),
+    ...(projectId ? { projectId } : {}),
     ...(dueOnly ? { dueOnly: true } : {}),
-  }, canView && active && (!scopedProjectId || Boolean(project)));
-  const planningProjectId = paymentOpen
-    ? paymentFormProject?.publicId ?? ""
-    : detailsOpen
-      ? selectedPaymentProject?.publicId ?? ""
-      : project?.publicId ?? "";
-  const planning = usePlanningBootstrapFull(active ? planningProjectId : "");
+  }, canView);
+  const planningProjectId = paymentOpen ? paymentForm.projectId : detailsOpen ? selectedPayment?.projectId ?? projectId : projectId;
+  const planning = usePlanningBootstrapFull(planningProjectId);
   const mutations = usePaymentObligationMutations();
-  const settlements = usePaymentSettlements(selectedPayment?.id ?? "", detailsOpen && active);
+  const settlements = usePaymentSettlements(selectedPayment?.id ?? "", detailsOpen);
+  const project = (projects.data?.items ?? []).find((item) => item.id === projectId);
   const milestones = (planning.data?.activities ?? []).filter((activity) => activity.type === "Milestone");
   const paymentsList = payments.data?.items ?? [];
   const activePayment = paymentsList.find((item) => item.id === selectedPayment?.id) ?? selectedPayment;
@@ -140,28 +109,15 @@ export function PlannedPaymentsPage({ embeddedProjectId, embeddedProject, active
     : undefined;
 
   React.useEffect(() => {
-    if (!active) {
-      setPaymentOpen(false);
-      setSettlementOpen(false);
-      setDetailsOpen(false);
-    }
-  }, [active]);
-
-  React.useEffect(() => {
-    if (embeddedProjectId) {
-      setProjectId(embeddedProjectId);
-      return;
-    }
     const next = new URLSearchParams(searchParams);
-    if (project) next.set("projectId", project.publicId);
-    else if (projectId) next.set("projectId", projectId);
+    if (projectId) next.set("projectId", projectId);
     else next.delete("projectId");
     if (next.toString() !== searchParams.toString()) setSearchParams(next, { replace: true });
-  }, [embeddedProjectId, project, projectId, searchParams, setSearchParams]);
+  }, [projectId, searchParams, setSearchParams]);
 
   function openCreate() {
     setEditingPayment(null);
-    setPaymentForm(emptyPayment(project?.id ?? "", project?.currency ?? undefined));
+    setPaymentForm(emptyPayment(projectId, project?.currency ?? "GBP"));
     setActionError(null);
     setPaymentOpen(true);
   }
@@ -188,19 +144,14 @@ export function PlannedPaymentsPage({ embeddedProjectId, embeddedProject, active
   async function savePayment(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setActionError(null);
-    const paymentCurrency = (editingPayment?.currency ?? paymentForm.currency).trim();
-    if (!/^[A-Z]{3}$/i.test(paymentCurrency)) {
-      setActionError(t("payments.currencyUnavailable"));
-      return;
-    }
     const body = {
-      projectId: editingPayment?.projectId ?? paymentFormProject?.id ?? paymentForm.projectId,
+      projectId: paymentForm.projectId,
       milestoneId: paymentForm.milestoneId || undefined,
       paymentReference: paymentForm.paymentReference.trim(),
       purpose: paymentForm.purpose.trim(),
       description: paymentForm.description.trim() || undefined,
       amount: Number(paymentForm.amount),
-      currency: paymentCurrency.toUpperCase(),
+      currency: paymentForm.currency,
       dueDate: `${paymentForm.dueDate}T00:00:00Z`,
       notes: paymentForm.notes.trim() || undefined,
     };
@@ -260,29 +211,23 @@ export function PlannedPaymentsPage({ embeddedProjectId, embeddedProject, active
     }
   }
 
-  if (!canView && !canCreate) return <Card><CardContent className="p-6 text-sm text-muted-foreground">{t("projects.financialsPermissionRequired")}</CardContent></Card>;
-
   return (
     <div className="space-y-6">
-      {projects.isError ? <div role="alert" className="flex items-center justify-between gap-2 text-sm text-destructive"><span>{t("common.errorLoading")}</span><Button type="button" size="sm" variant="outline" onClick={() => void projects.refetch()}>{t("common.retry")}</Button></div> : null}
-      {embeddedProjectId ? <div className="flex flex-wrap items-start justify-between gap-3">
-        <div><h3 className="text-base font-semibold">{t("payments.plannedPayments")}</h3><p className="mt-1 text-sm text-muted-foreground">{t("payments.description")}</p></div>
-        {canCreate ? <Button size="sm" onClick={openCreate} disabled={!project}><Plus className="me-1.5 h-4 w-4" />{t("payments.addPayment")}</Button> : null}
-      </div> : <PageHeader
+      <PageHeader
         title={t("payments.title")}
         description={t("payments.description")}
-        actions={canCreate ? <Button size="sm" onClick={openCreate} disabled={!projectId}><Plus className="me-1.5 h-4 w-4" />{t("payments.addPayment")}</Button> : null}
-      />}
+        actions={canWrite ? <Button size="sm" onClick={openCreate} disabled={!projectId}><Plus className="me-1.5 h-4 w-4" />{t("payments.addPayment")}</Button> : null}
+      />
 
-      {!embeddedProjectId ? <Card>
+      <Card>
         <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-end">
           <div className="min-w-0 flex-1 space-y-1.5">
             <Label>{t("payments.project")}</Label>
-            <Select value={project?.id ?? projectId} onValueChange={(value) => { setProjectId(value); setPage(1); }}>
+            <Select value={projectId} onValueChange={(value) => { setProjectId(value); setPage(1); }}>
               <SelectTrigger aria-label={t("payments.project")}><SelectValue placeholder={t("payments.allProjects")} /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="">{t("payments.allProjects")}</SelectItem>
-                {projectItems.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}{item.code ? ` (${item.code})` : ""}</SelectItem>)}
+                {(projects.data?.items ?? []).map((item) => <SelectItem key={item.id} value={item.id}>{item.name} ({item.code})</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
@@ -290,13 +235,13 @@ export function PlannedPaymentsPage({ embeddedProjectId, embeddedProject, active
             <Wallet className="me-1.5 h-4 w-4" />{dueOnly ? t("payments.showAll") : t("payments.duePayments")}
           </Button>
         </CardContent>
-      </Card> : null}
+      </Card>
 
-      {canView ? <Card>
+      <Card>
         <CardHeader><CardTitle>{dueOnly ? t("payments.duePayments") : t("payments.plannedPayments")}</CardTitle></CardHeader>
         <CardContent className="p-0">
           {payments.isLoading ? <p className="p-6 text-center text-sm text-muted-foreground">{t("common.loading")}</p>
-            : payments.isError ? <div className="p-6 text-center"><p role="alert" className="text-sm text-destructive">{payments.error instanceof ApiError && payments.error.status === 403 ? t("projects.financeWorkspaceAccessDenied") : t("common.errorLoading")}</p><Button className="mt-2" size="sm" variant="outline" onClick={() => void payments.refetch()}>{t("common.retry")}</Button></div>
+            : payments.isError ? <div className="p-6 text-center"><p role="alert" className="text-sm text-destructive">{t("common.errorLoading")}</p><Button className="mt-2" size="sm" variant="outline" onClick={() => void payments.refetch()}>{t("common.retry")}</Button></div>
             : paymentsList.length === 0 ? <p className="p-6 text-center text-sm text-muted-foreground">{t("common.noResults")}</p>
             : (
               <>
@@ -341,7 +286,7 @@ export function PlannedPaymentsPage({ embeddedProjectId, embeddedProject, active
               </>
             )}
         </CardContent>
-      </Card> : <Card><CardContent className="p-6 text-sm text-muted-foreground">{t("payments.viewUnavailable")}</CardContent></Card>}
+      </Card>
 
       <SideSheet open={paymentOpen} onOpenChange={setPaymentOpen} title={editingPayment ? t("payments.editPayment") : t("payments.addPayment")}>
         <form onSubmit={(event) => void savePayment(event)} className="flex min-h-0 flex-1 flex-col">
@@ -350,21 +295,20 @@ export function PlannedPaymentsPage({ embeddedProjectId, embeddedProject, active
             <div className="space-y-1.5">
               <Label>{t("payments.project")} *</Label>
               <Select value={paymentForm.projectId} onValueChange={(value) => {
-                setPaymentForm({ ...paymentForm, projectId: value, currency: projectItems.find((item) => item.id === value)?.currency ?? "", milestoneId: "" });
+                setPaymentForm({ ...paymentForm, projectId: value, currency: (projects.data?.items ?? []).find((item) => item.id === value)?.currency ?? "GBP", milestoneId: "" });
               }}>
-                <SelectTrigger aria-label={t("payments.project")} disabled={Boolean(editingPayment)}><SelectValue placeholder={t("payments.selectProject")} /></SelectTrigger>
-                <SelectContent>{projectItems.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}{item.code ? ` (${item.code})` : ""}</SelectItem>)}</SelectContent>
+                <SelectTrigger aria-label={t("payments.project")}><SelectValue placeholder={t("payments.selectProject")} /></SelectTrigger>
+                <SelectContent>{(projects.data?.items ?? []).map((item) => <SelectItem key={item.id} value={item.id}>{item.name} ({item.code})</SelectItem>)}</SelectContent>
               </Select>
-              <ApiFieldError error={mutations.update.error ?? mutations.create.error} fieldName="projectId" />
             </div>
-            <div className="space-y-1.5"><Label htmlFor="payment-reference">{t("payments.reference")} *</Label><Input id="payment-reference" value={paymentForm.paymentReference} onChange={(event) => setPaymentForm({ ...paymentForm, paymentReference: event.target.value })} maxLength={100} required aria-invalid={Boolean(getApiFieldError(mutations.update.error ?? mutations.create.error, "paymentReference"))} aria-describedby={getApiFieldError(mutations.update.error ?? mutations.create.error, "paymentReference") ? "payment-reference-error" : undefined} /><ApiFieldError id="payment-reference-error" error={mutations.update.error ?? mutations.create.error} fieldName="paymentReference" /></div>
-            <div className="space-y-1.5"><Label htmlFor="payment-purpose">{t("payments.purpose")} *</Label><Input id="payment-purpose" value={paymentForm.purpose} onChange={(event) => setPaymentForm({ ...paymentForm, purpose: event.target.value })} maxLength={250} required aria-invalid={Boolean(getApiFieldError(mutations.update.error ?? mutations.create.error, "purpose"))} aria-describedby={getApiFieldError(mutations.update.error ?? mutations.create.error, "purpose") ? "payment-purpose-error" : undefined} /><ApiFieldError id="payment-purpose-error" error={mutations.update.error ?? mutations.create.error} fieldName="purpose" /></div>
+            <div className="space-y-1.5"><Label>{t("payments.reference")} *</Label><Input value={paymentForm.paymentReference} onChange={(event) => setPaymentForm({ ...paymentForm, paymentReference: event.target.value })} maxLength={100} required /></div>
+            <div className="space-y-1.5"><Label>{t("payments.purpose")} *</Label><Input value={paymentForm.purpose} onChange={(event) => setPaymentForm({ ...paymentForm, purpose: event.target.value })} maxLength={250} required /></div>
             <div className="space-y-1.5"><Label>{t("payments.descriptionField")}</Label><Textarea value={paymentForm.description} onChange={(event) => setPaymentForm({ ...paymentForm, description: event.target.value })} maxLength={2000} /></div>
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5"><Label htmlFor="payment-amount">{t("payments.amount")} *</Label><Input id="payment-amount" type="number" min="0.0001" step="0.0001" value={paymentForm.amount} onChange={(event) => setPaymentForm({ ...paymentForm, amount: event.target.value })} required aria-invalid={Boolean(getApiFieldError(mutations.update.error ?? mutations.create.error, "amount"))} aria-describedby={getApiFieldError(mutations.update.error ?? mutations.create.error, "amount") ? "payment-amount-error" : undefined} /><ApiFieldError id="payment-amount-error" error={mutations.update.error ?? mutations.create.error} fieldName="amount" /></div>
-              <div className="space-y-1.5"><Label>{t("payments.currency")}</Label><Input value={paymentForm.currency} readOnly aria-invalid={!paymentForm.currency} />{!paymentForm.currency ? <p role="status" className="text-xs text-muted-foreground">{t("payments.currencyUnavailable")}</p> : null}</div>
+              <div className="space-y-1.5"><Label>{t("payments.amount")} *</Label><Input type="number" min="0.0001" step="0.0001" value={paymentForm.amount} onChange={(event) => setPaymentForm({ ...paymentForm, amount: event.target.value })} required /></div>
+              <div className="space-y-1.5"><Label>{t("payments.currency")}</Label><Input value={paymentForm.currency} readOnly /></div>
             </div>
-            <div className="space-y-1.5"><Label htmlFor="payment-due-date">{t("payments.dueDate")} *</Label><Input id="payment-due-date" type="date" value={paymentForm.dueDate} onChange={(event) => setPaymentForm({ ...paymentForm, dueDate: event.target.value })} required aria-invalid={Boolean(getApiFieldError(mutations.update.error ?? mutations.create.error, "dueDate"))} aria-describedby={getApiFieldError(mutations.update.error ?? mutations.create.error, "dueDate") ? "payment-due-date-error" : undefined} /><ApiFieldError id="payment-due-date-error" error={mutations.update.error ?? mutations.create.error} fieldName="dueDate" /></div>
+            <div className="space-y-1.5"><Label>{t("payments.dueDate")} *</Label><Input type="date" value={paymentForm.dueDate} onChange={(event) => setPaymentForm({ ...paymentForm, dueDate: event.target.value })} required /></div>
             <div className="space-y-1.5">
               <Label>{t("payments.milestone")}</Label>
               <Select value={paymentForm.milestoneId} onValueChange={(value) => setPaymentForm({ ...paymentForm, milestoneId: value })}>
@@ -378,7 +322,7 @@ export function PlannedPaymentsPage({ embeddedProjectId, embeddedProject, active
             </div>
             <div className="space-y-1.5"><Label>{t("payments.notes")}</Label><Textarea value={paymentForm.notes} onChange={(event) => setPaymentForm({ ...paymentForm, notes: event.target.value })} maxLength={2000} /></div>
           </SideSheetBody>
-          <SideSheetFooter><Button type="submit" disabled={mutations.create.isPending || mutations.update.isPending || !paymentForm.projectId || !/^[A-Z]{3}$/i.test(paymentForm.currency)}>{t("common.save")}</Button></SideSheetFooter>
+          <SideSheetFooter><Button type="submit" disabled={mutations.create.isPending || mutations.update.isPending || !paymentForm.projectId}>{t("common.save")}</Button></SideSheetFooter>
         </form>
       </SideSheet>
 
@@ -406,16 +350,14 @@ export function PlannedPaymentsPage({ embeddedProjectId, embeddedProject, active
                 : <div className="space-y-2">{(settlements.data?.items ?? []).map((settlement) => (
                   <div key={settlement.id} className="flex items-start justify-between gap-3 rounded-md border p-3 text-sm">
                     <div><p className="font-medium">{settlement.paymentReference}</p><p className="text-xs text-muted-foreground">{settlement.settlementDate.slice(0, 10)}{settlement.notes ? ` · ${settlement.notes}` : ""}</p></div>
-                    <p className="shrink-0 tabular-nums">{settlement.currency
-                      ? formatCurrency(settlement.amount, settlement.currency)
-                      : `${formatNumber(settlement.amount)} ${t("projects.snapshotFields.currencyUnavailable")}`}</p>
+                    <p className="shrink-0 tabular-nums">{formatCurrency(settlement.amount, activePayment.currency)}</p>
                   </div>
                 ))}</div>}
             </div>
             <div className="flex gap-2">
-              {canRecordSettlements && activePayment.outstandingAmount > 0 ? <Button onClick={() => openSettlement(activePayment)}>{t("payments.recordPayment")}</Button> : null}
-              {canEdit ? <Button variant="outline" onClick={() => openEdit(activePayment)}>{t("payments.editPayment")}</Button> : null}
-              {canDelete && activePayment.settlements.length === 0 ? <Button variant="destructive" onClick={() => void deletePayment(activePayment)}><Trash2 className="me-1.5 h-4 w-4" />{t("payments.deletePayment")}</Button> : null}
+              {canWrite && activePayment.outstandingAmount > 0 ? <Button onClick={() => openSettlement(activePayment)}>{t("payments.recordPayment")}</Button> : null}
+              {canWrite ? <Button variant="outline" onClick={() => openEdit(activePayment)}>{t("payments.editPayment")}</Button> : null}
+              {canWrite && activePayment.settlements.length === 0 ? <Button variant="destructive" onClick={() => void deletePayment(activePayment)}><Trash2 className="me-1.5 h-4 w-4" />{t("payments.deletePayment")}</Button> : null}
             </div>
           </SideSheetBody>
         ) : null}
@@ -431,9 +373,9 @@ export function PlannedPaymentsPage({ embeddedProjectId, embeddedProject, active
               <p>{t("payments.actualPaid")}: {formatCurrency(activePayment.settledAmount, activePayment.currency)}</p>
               <p className="text-muted-foreground">{t("payments.outstandingBalance")}: {formatCurrency(activePayment.outstandingAmount, activePayment.currency)}</p>
             </div> : null}
-            <div className="space-y-1.5"><Label htmlFor="settlement-amount">{t("payments.settlementAmount")} *</Label><Input id="settlement-amount" type="number" min="0.0001" max={activePayment?.outstandingAmount} step="0.0001" value={settlementForm.amount} onChange={(event) => setSettlementForm({ ...settlementForm, amount: event.target.value })} required aria-invalid={Boolean(getApiFieldError(mutations.settle.error, "amount"))} aria-describedby={getApiFieldError(mutations.settle.error, "amount") ? "settlement-amount-error" : undefined} /><ApiFieldError id="settlement-amount-error" error={mutations.settle.error} fieldName="amount" /></div>
-            <div className="space-y-1.5"><Label htmlFor="settlement-date">{t("payments.settlementDate")} *</Label><Input id="settlement-date" type="date" value={settlementForm.settlementDate} onChange={(event) => setSettlementForm({ ...settlementForm, settlementDate: event.target.value })} required aria-invalid={Boolean(getApiFieldError(mutations.settle.error, "settlementDate"))} aria-describedby={getApiFieldError(mutations.settle.error, "settlementDate") ? "settlement-date-error" : undefined} /><ApiFieldError id="settlement-date-error" error={mutations.settle.error} fieldName="settlementDate" /></div>
-            <div className="space-y-1.5"><Label htmlFor="settlement-reference">{t("payments.transactionReference")} *</Label><Input id="settlement-reference" value={settlementForm.paymentReference} onChange={(event) => setSettlementForm({ ...settlementForm, paymentReference: event.target.value })} maxLength={100} required aria-invalid={Boolean(getApiFieldError(mutations.settle.error, "paymentReference"))} aria-describedby={getApiFieldError(mutations.settle.error, "paymentReference") ? "settlement-reference-error" : undefined} /><ApiFieldError id="settlement-reference-error" error={mutations.settle.error} fieldName="paymentReference" /></div>
+            <div className="space-y-1.5"><Label>{t("payments.settlementAmount")} *</Label><Input type="number" min="0.0001" max={activePayment?.outstandingAmount} step="0.0001" value={settlementForm.amount} onChange={(event) => setSettlementForm({ ...settlementForm, amount: event.target.value })} required /></div>
+            <div className="space-y-1.5"><Label>{t("payments.settlementDate")} *</Label><Input type="date" value={settlementForm.settlementDate} onChange={(event) => setSettlementForm({ ...settlementForm, settlementDate: event.target.value })} required /></div>
+            <div className="space-y-1.5"><Label>{t("payments.transactionReference")} *</Label><Input value={settlementForm.paymentReference} onChange={(event) => setSettlementForm({ ...settlementForm, paymentReference: event.target.value })} maxLength={100} required /></div>
             <div className="space-y-1.5"><Label>{t("payments.notes")}</Label><Textarea value={settlementForm.notes} onChange={(event) => setSettlementForm({ ...settlementForm, notes: event.target.value })} maxLength={2000} /></div>
           </SideSheetBody>
           <SideSheetFooter><Button type="submit" disabled={mutations.settle.isPending || !activePayment}>{t("payments.recordPayment")}</Button></SideSheetFooter>

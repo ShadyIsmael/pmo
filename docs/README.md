@@ -136,11 +136,10 @@ See the dedicated **[Reports Catalog](reports/README.md)** for a full index of a
 
 ---
 
-## Integrations and Plugins
-- [Email Notifications](integrations/email-notifications.md)
-- [Firebase Cloud Messaging](integrations/firebase-cloud-messaging.md)
-- [Plugin System Architecture](architecture/plugin-architecture.md)
-- [Plugins Catalog](plugins/)
+## Domain
+- [Domain Entities Reference](domain/entities.md)
+- [Project Management Core and EVM source rules](modules/PROJECT-MANAGEMENT-CORE.md)
+- [Financial Management Planned Payments](modules/FINANCIAL-MANAGEMENT-PLANNED-PAYMENTS.md)
 
 ---
 

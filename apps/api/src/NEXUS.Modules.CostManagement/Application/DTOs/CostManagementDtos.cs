@@ -145,15 +145,11 @@ public sealed class UpdateCommitmentDto
 public sealed class PaymentSettlementDto
 {
     public Guid Id { get; init; }
-    public Guid? PaymentObligationId { get; init; }
-    public Guid? ProjectPaymentRequestId { get; init; }
-    public Guid ProjectId { get; init; }
+    public Guid PaymentObligationId { get; init; }
     public Guid IdempotencyKey { get; init; }
     public decimal Amount { get; init; }
-    public string? Currency { get; init; }
     public DateTime SettlementDate { get; init; }
     public string PaymentReference { get; init; } = string.Empty;
-    public string? Description { get; init; }
     public string? Notes { get; init; }
     public DateTime CreatedAt { get; init; }
     public DateTime? UpdatedAt { get; init; }
@@ -179,7 +175,7 @@ public sealed class PaymentObligationDto
     public string Purpose { get; init; } = string.Empty;
     public string Description { get; init; } = string.Empty;
     public decimal Amount { get; init; }
-    public string Currency { get; init; } = string.Empty;
+    public string Currency { get; init; } = "GBP";
     public DateTime DueDate { get; init; }
     public string? Notes { get; init; }
     public decimal SettledAmount { get; init; }
@@ -250,14 +246,10 @@ public static class CostManagementMappings
     {
         Id = value.Id,
         PaymentObligationId = value.PaymentObligationId,
-        ProjectPaymentRequestId = value.ProjectPaymentRequestId,
-        ProjectId = value.ProjectId,
         IdempotencyKey = value.IdempotencyKey,
         Amount = value.Amount,
-        Currency = value.Currency,
         SettlementDate = value.SettlementDate,
         PaymentReference = value.PaymentReference,
-        Description = value.Description,
         Notes = value.Notes,
         CreatedAt = value.CreatedAt,
         UpdatedAt = value.UpdatedAt,

@@ -1,7 +1,15 @@
 import * as React from "react";
-import { useOutletContext, useSearchParams } from "react-router-dom";
-import { Banknote, CalendarDays, ClipboardList, History, Landmark, LayoutDashboard } from "lucide-react";
-import { Card, CardContent } from "@components/ui/Card";
+import { useNavigate, useOutletContext } from "react-router-dom";
+import { AlertTriangle, Archive, Ban, Pencil, Plus, Receipt, Trash2, TrendingDown } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@components/ui/Card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@components/ui/Table";
+import { Button } from "@components/ui/Button";
+import { useConfirm } from "@components/ui/ConfirmProvider";
+import { Input } from "@components/ui/Input";
+import { Label } from "@components/ui/Label";
+import { SideSheet, SideSheetBody, SideSheetFooter } from "@components/ui/SideSheet";
+import { Badge } from "@components/ui/Badge";
+import { Pagination } from "@components/ui/Pagination";
 import { useI18n } from "@i18n/messages";
 import { useAuth } from "@auth/AuthProvider";
 import { useManagement } from "@api/management";
@@ -32,8 +40,9 @@ const FINANCE_SECTIONS = [
 
 export function ProjectFinanceTab() {
   const { projectId, project } = useOutletContext<ProjectContext>();
-  const [searchParams] = useSearchParams();
-  const { t } = useI18n();
+  const navigate = useNavigate();
+  const { t, formatCurrency } = useI18n();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const { canMutate, effectiveReadOnly } = useManagement();
 
@@ -167,143 +176,20 @@ export function ProjectFinanceTab() {
 
   return (
     <div className="space-y-5">
-      <header className="flex flex-col gap-4 border-b pb-4 sm:flex-row sm:items-end sm:justify-between">
-        <div className="min-w-0">
-          <h1 className="text-2xl font-semibold tracking-tight">{t("projects.financeWorkspaceTitle")}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {t("projects.financeWorkspaceProjectLabel")}: {selectedProjectName}
-            {project.code && project.name ? ` (${project.code})` : ""}
-          </p>
-        </div>
-        {canViewAnnualBudgets ? <div className="w-full sm:w-56">
-          <label htmlFor="project-finance-fiscal-year" className="text-sm font-medium">
-            {t("projects.financeWorkspaceFiscalYearLabel")}
-          </label>
-          <select
-            id="project-finance-fiscal-year"
-            className="mt-1 flex h-10 w-full rounded-md border bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            value={selectedFiscalYear ?? ""}
-            disabled={annualBudgetContext.isLoading || fiscalYears.length === 0}
-            onChange={event => setSelectedFiscalYear(Number(event.target.value))}
-          >
-            {fiscalYears.length === 0 ? <option value="">
-              {annualBudgetContext.isLoading ? t("common.loading") : t("projects.financeKpiNoYearAvailable")}
-            </option> : null}
-            {fiscalYears.map(year => {
-              const fiscalYear = annualBudgetContext.data?.items.find(item => item.fiscalYear === year);
-              const label = fiscalYear?.fiscalYearLabel ?? `${t("projects.fiscalYearShort")} ${year}`;
-              return <option key={year} value={year}>{label}</option>;
-            })}
-          </select>
-        </div> : null}
-      </header>
-
-      <div className="grid gap-4 lg:grid-cols-[15rem_minmax(0,1fr)]">
-        <nav aria-label={t("projects.financeWorkspaceNavigation")}
-          className="sticky top-4 hidden self-start rounded-lg border bg-card p-2 lg:block">
-          <ul className="space-y-1">
-            {visibleSections.map(({ id, labelKey, icon: Icon }) => <li key={id}>
-              <button
-                type="button"
-                aria-current={section === id ? "page" : undefined}
-                aria-controls="project-finance-workspace"
-                onClick={() => setActiveSection(id)}
-                className={`flex min-h-10 w-full items-center gap-3 rounded-md border-s-2 px-3 py-2 text-start text-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${section === id ? "border-s-primary bg-accent font-semibold text-accent-foreground" : "border-s-transparent text-muted-foreground"}`}
-              >
-                <Icon aria-hidden="true" className="size-4 shrink-0" />
-                <span>{t(labelKey)}</span>
-              </button>
-            </li>)}
-          </ul>
-        </nav>
-
-        <main id="project-finance-workspace" aria-labelledby="project-finance-section-title"
-          className="min-w-0 space-y-5">
-          <div className="lg:hidden">
-            <label htmlFor="project-finance-section-select" className="text-sm font-medium">
-              {t("projects.financeWorkspaceMobileNavigation")}
-            </label>
-            <select
-              id="project-finance-section-select"
-              className="mt-1 flex h-10 w-full rounded-md border bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              value={section}
-              onChange={event => setActiveSection(event.target.value as FinanceWorkspaceSection)}
-            >
-              {visibleSections.map(item => <option key={item.id} value={item.id}>{t(item.labelKey)}</option>)}
-            </select>
-          </div>
-
-          <h2 id="project-finance-section-title" className="sr-only">{t(activeSectionLabel)}</h2>
-
-          {canViewFinancialFoundation ? <section hidden={!overviewActive} aria-label={t("projects.financeWorkspaceOverview")}>
-            <ProjectFinanceOverview
-              projectId={projectId}
-              selectedFiscalYear={selectedFiscalYear}
-              active={overviewActive}
-              canViewFoundation={canViewFinancialFoundation}
-              canViewAnnualBudgets={canViewAnnualBudgets}
-              canViewPaymentRequests={canViewPaymentRequests}
-              canViewAnnualBudgetClosing={canViewAnnualBudgetClosing}
-              canManage={canManage}
-              onOpenAnnualBudgets={() => setActiveSection("annualBudgets")}
-            />
-          </section> : null}
-
-          <ProjectFinancialWorkspace
-            projectId={projectId}
-            canViewPaymentRequests={canViewPaymentRequests}
-            canViewAnnualBudgetClosing={canViewAnnualBudgetClosing}
-            canCreateAnnualBudget={canCreateAnnualBudget}
-            canEditAnnualBudget={canEditAnnualBudget}
-            canConfigureDraftApproval={canConfigureDraftAnnualBudgetApproval}
-            canDeleteAnnualBudget={canDeleteAnnualBudget}
-            canWithdrawAnnualBudget={canWithdrawAnnualBudget}
-            canSubmitAnnualBudget={canSubmitAnnualBudget}
-            canReviseAnnualBudget={canReviseAnnualBudget}
-            canApprove={canApproveAnnualBudget}
-            canPrepareClosing={canPrepareAnnualBudgetClosing}
-            canApproveClosing={canApproveAnnualBudgetClosing}
-            canCarryForward={canCarryForwardAnnualBudget}
-            projectCurrency={project.currency ?? null}
-            activeSection={section}
-            selectedFiscalYear={selectedFiscalYear}
-            onFiscalYearChange={setSelectedFiscalYear}
-            onOpenClosing={() => setActiveSection("closing")}
-          />
-
-          {(canViewPaymentRequests || canReviewPaymentRequests || canReviewReversals) ? <div hidden={!paymentRequestsActive && !settlementsActive}>
-            <ProjectPaymentRequests
-              projectId={projectId}
-              canViewRequests={canViewPaymentRequests}
-              canReviewRequests={canReviewPaymentRequests}
-              canReviewReversals={canReviewReversals}
-              canCreateRequests={canCreatePaymentRequests}
-              canEditRequests={canEditPaymentRequests}
-              canSubmitRequests={canSubmitPaymentRequests}
-              canCancelRequests={canCancelPaymentRequests}
-              canApproveRequests={canApprovePaymentRequests}
-              canRecordSettlements={canRecordSettlements}
-              canCreateReversals={canCreateReversals}
-              canApproveReversals={canApproveReversals}
-              section={settlementsActive ? "settlements" : "requests"}
-              active={paymentRequestsActive || settlementsActive}
-            />
-          </div> : null}
-
-          {canViewPaymentObligations ? <div hidden={!settlementsActive}>
-            <PlannedPaymentsPage
-              embeddedProjectId={projectId}
-              embeddedProject={{
-                id: project.id,
-                publicId: project.publicId ?? projectId,
-                name: project.name ?? "",
-                code: project.code ?? "",
-                currency: project.currency,
-              }}
-              active={settlementsActive}
-            />
-          </div> : null}
-        </main>
+      <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-base font-semibold">{t("projects.financialSummary")}</h2><p className="mt-1 text-sm text-muted-foreground">{t("projects.financialSummaryDescription")}</p></div><div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={() => navigate(`/costs/payments?projectId=${encodeURIComponent(projectId)}`)}><Receipt className="me-1.5 h-4 w-4" />{t("payments.plannedPayments")}</Button>{canManage ? <><Button size="sm" variant="outline" onClick={() => openBudget()}><Plus className="me-1.5 h-4 w-4" />{t("projects.addBudgetLine")}</Button><Button size="sm" variant="outline" onClick={() => openCost()}><Plus className="me-1.5 h-4 w-4" />{t("projects.addCostEntry")}</Button><Button size="sm" onClick={() => openCommitment()}><Plus className="me-1.5 h-4 w-4" />{t("projects.addCommitment")}</Button></> : null}</div></div>
+      {actionError ? <p className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{actionError}</p> : null}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"><SummaryCard metricKey="budget-ceiling" label={t("projects.budgetCeiling")} value={money(ceiling, currency, formatCurrency)} hint={t("projects.budgetCeilingHint")} /><SummaryCard metricKey="allocated" label={t("projects.allocatedBudget")} value={money(allocated, currency, formatCurrency)} hint={t("projects.allocatedBudgetHint")} /><SummaryCard metricKey="unallocated" label={t("projects.unallocatedBudget")} value={money(unallocated, currency, formatCurrency)} tone={finite(unallocated) && unallocated <= 0 ? "text-warning" : undefined} /></div>
+      <div className="space-y-2"><div className="flex items-center justify-between gap-3 text-xs text-muted-foreground"><span>{t("projects.allocationProgress")}</span><span className="tabular-nums">{percentage(allocationPct)} · {money(allocated, currency, formatCurrency)} / {money(ceiling, currency, formatCurrency)}</span></div><Progress value={Math.min(allocationPct, 100)} className="h-2" /></div>
+      <div className="grid gap-3 lg:grid-cols-2">
+        <Card><CardHeader className="pb-3"><CardTitle className="text-xs uppercase tracking-wide text-muted-foreground">{t("projects.spendingPosition")}</CardTitle><p className="text-xs text-muted-foreground">{t("projects.spendingPositionDescription")}</p></CardHeader><CardContent className="space-y-3">
+          <div className="h-36 min-w-0" role="img" aria-label={t("projects.spendingPosition")}><ResponsiveContainer width="100%" height="100%"><BarChart data={spendingChartData} layout="vertical" margin={{ top: 0, right: 8, left: 0, bottom: 0 }}><CartesianGrid strokeDasharray="3 3" horizontal={false} /><XAxis type="number" /><YAxis type="category" dataKey="name" hide /><Tooltip formatter={(value) => money(Number(value), currency, formatCurrency)} /><Bar dataKey="actual" name={t("projects.actualSpend")} stackId="spend" fill="hsl(var(--fin-blue))" /><Bar dataKey="committed" name={t("projects.committedSpend")} stackId="spend" fill="hsl(var(--fin-amber))" /><Bar dataKey="available" name={t("projects.availableBudget")} stackId="spend" fill="hsl(var(--fin-green))" /></BarChart></ResponsiveContainer></div>
+          <div className="space-y-1.5 text-xs">{[{ key: "actualSpend", value: actual, color: "bg-fin-blue" }, { key: "committedSpend", value: committed, color: "bg-fin-amber" }, { key: "availableBudget", value: available, color: "bg-fin-green" }].map(({ key, value, color }) => <div key={key} className="flex items-center justify-between gap-3"><span className="flex items-center gap-2 text-muted-foreground"><span aria-hidden="true" className={`h-2 w-2 rounded-full ${color}`} />{t(`projects.${key}`)}</span><span data-testid={`finance-spending-${key}`} className="font-medium tabular-nums">{money(value, currency, formatCurrency)}</span></div>)}</div>
+        </CardContent></Card>
+        <Card><CardHeader className="pb-3"><CardTitle className="text-xs uppercase tracking-wide text-muted-foreground">{t("projects.forecastSection")}</CardTitle><p className="text-xs text-muted-foreground">{t("projects.forecastSectionDescription")}</p></CardHeader><CardContent className="space-y-3">
+          <div className="grid grid-cols-2 gap-3"><SummaryCard metricKey="forecast" label={t("projects.estimateAtCompletion")} value={money(forecast, currency, formatCurrency)} /><SummaryCard label={t("projects.forecastVarianceLabel")} value={money(forecastVariance, currency, formatCurrency)} tone={finite(forecastVariance) ? forecastVariance < 0 ? "text-destructive" : "text-success" : undefined} /></div>
+          <div className="grid grid-cols-2 gap-3"><SummaryCard label={t("projects.budgetUtilization")} value={percentage(utilization)} /><SummaryCard label={t("projects.originalApprovedBudget")} value={money(summary?.originalApprovedBudget, currency, formatCurrency)} /></div>
+          {forecastWarning ? <p role="status" className="flex items-start gap-2 text-xs text-warning"><AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span>{forecastWarning}</span></p> : finite(forecast) && finite(ceiling) && forecast <= ceiling ? <p className="flex items-start gap-2 text-xs text-success"><TrendingDown className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span>{t("projects.forecastWithinBudget")}</span></p> : null}
+        </CardContent></Card>
       </div>
     </div>
   );

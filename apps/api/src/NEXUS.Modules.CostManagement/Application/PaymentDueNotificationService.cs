@@ -3,7 +3,6 @@ using NEXUS.Modules.CostManagement.Domain;
 using NEXUS.Modules.Identity.Application;
 using NEXUS.Modules.Notifications.Application;
 using NEXUS.Modules.Notifications.Domain;
-using NEXUS.SharedKernel;
 
 namespace NEXUS.Modules.CostManagement.Application;
 
@@ -11,8 +10,7 @@ public sealed class PaymentDueNotificationService(
     DbContext context,
     INotificationService notificationService,
     IUserEffectivePermissionService effectivePermissions,
-    IProjectMilestoneReferenceLookup milestoneLookup,
-    IProjectOrganizationLookup? projectOrganizationLookup = null)
+    IProjectMilestoneReferenceLookup milestoneLookup)
 {
     public async Task<int> SendDueNotificationsAsync(DateTime asOfUtc, CancellationToken cancellationToken = default)
     {
@@ -26,16 +24,13 @@ public sealed class PaymentDueNotificationService(
         var createdCount = 0;
         foreach (var obligation in obligations)
         {
-            using var trustedTenant = TrustedTenantExecutionContext.Enter(obligation.TenantId);
-
             var outstanding = obligation.Amount - obligation.Settlements
                 .Where(item => item.TenantId == obligation.TenantId && !item.IsDeleted)
                 .Sum(item => item.Amount);
             if (outstanding <= 0m || obligation.DueDate.Date > notificationDate) continue;
             if (!Guid.TryParse(obligation.CreatedBy, out var recipientId)) continue;
             var permissions = await effectivePermissions.GetEffectivePermissionsAsync(recipientId, obligation.TenantId, cancellationToken);
-            if (!permissions.Contains("ProjectPaymentRequest.View")
-                || !permissions.Contains("ProjectSettlement.View")) continue;
+            if (!permissions.Contains("finances.read") && !permissions.Contains("finances.write")) continue;
 
             var notificationType = obligation.DueDate.Date < notificationDate
                 ? NotificationTypes.PaymentOverdue
@@ -70,14 +65,10 @@ public sealed class PaymentDueNotificationService(
 
             try
             {
-                var organizationId = projectOrganizationLookup is null
-                    ? null
-                    : await projectOrganizationLookup.ResolveOrganizationIdAsync(obligation.TenantId, obligation.ProjectId, cancellationToken);
                 await notificationService.SendAsync(new Notification
                 {
                     Id = notificationId,
                     TenantId = obligation.TenantId,
-                    OrganizationId = organizationId,
                     UserId = recipientId,
                     Type = notificationType,
                     ReferenceType = nameof(PaymentObligation),

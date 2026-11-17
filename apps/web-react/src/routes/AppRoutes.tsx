@@ -44,6 +44,7 @@ const RiskActionFollowUpPage = React.lazy(() => import("../features/risks/RiskAc
 const RiskDashboardPage = React.lazy(() => import("../features/risks/RiskDashboardPage").then((m) => ({ default: m.RiskDashboardPage })));
 const RiskMatrixPage = React.lazy(() => import("../features/risks/RiskMatrixPage").then((m) => ({ default: m.RiskMatrixPage })));
 const IssuesPage = React.lazy(() => import("../features/risks/IssuesPage").then((m) => ({ default: m.IssuesPage })));
+const CostsPage = React.lazy(() => import("../features/finance/CostsPage").then((m) => ({ default: m.CostsPage })));
 const PlannedPaymentsPage = React.lazy(() => import("../features/finance/PlannedPaymentsPage").then((m) => ({ default: m.PlannedPaymentsPage })));
 const WorkflowsPageFull = React.lazy(() => import("../features/workflow/WorkflowPagesFull").then((m) => ({ default: m.WorkflowsPageFull })));
 const WorkflowDefinitionPageFull = React.lazy(() => import("../features/workflow/WorkflowPagesFull").then((m) => ({ default: m.WorkflowDefinitionPageFull })));
@@ -202,7 +203,11 @@ export function AppRoutes() {
         <Route path="/risks-issues/matrix" element={<Guard permissions={Permissions.Risk.View}><Suspended><RiskMatrixPage /></Suspended></Guard>} />
         <Route path="/risks-issues" element={<Navigate to="/risks-issues/risks" replace />} />
 
-        <Route path="/costs/payments" element={<Guard permissions={Permissions.PaymentObligation.View}><Suspended><PlannedPaymentsPage /></Suspended></Guard>} />
+        <Route path="/costs" element={<Guard permissions={Permissions.Finances.Read}><Suspended><CostsPage /></Suspended></Guard>} />
+        <Route path="/costs/budgets" element={<Guard permissions={Permissions.Finances.Read}><Suspended><CostsPage /></Suspended></Guard>} />
+        <Route path="/costs/actuals" element={<Guard permissions={Permissions.Finances.Read}><Suspended><CostsPage /></Suspended></Guard>} />
+        <Route path="/costs/payments" element={<Guard permissions={Permissions.Finances.Read}><Suspended><PlannedPaymentsPage /></Suspended></Guard>} />
+        <Route path="/costs/forecasts" element={<Guard permissions={Permissions.Finances.Read}><Suspended><CostsPage /></Suspended></Guard>} />
 
         <Route path="/documents" element={<Guard permissions={Permissions.Document.View}><Suspended><DocumentsPage /></Suspended></Guard>} />
 
