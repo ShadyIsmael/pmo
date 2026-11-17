@@ -36,6 +36,16 @@ public sealed class DocumentCategoryController : ControllerBase
         return result.IsFailure ? StatusCode(result.Error?.StatusCode ?? 403, result.Error) : Ok(result.Value);
     }
 
+    [HttpGet("project-upload-options")]
+    [Authorize(Policy = DocumentPermissions.Create)]
+    public async Task<IActionResult> GetProjectUploadOptions(
+        [FromQuery] Guid projectId,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _documents.GetProjectUploadCategoryOptionsAsync(projectId, cancellationToken);
+        return result.IsFailure ? StatusCode(result.Error?.StatusCode ?? 403, result.Error) : Ok(result.Value);
+    }
+
     [HttpGet("{id:guid}")]
     [Authorize(Policy = DocumentCategoryPermissions.View)]
     public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)

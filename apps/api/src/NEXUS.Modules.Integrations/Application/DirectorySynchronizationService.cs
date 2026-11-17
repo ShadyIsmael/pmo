@@ -69,8 +69,8 @@ public sealed partial class DirectoryIntegrationService
         await using var tenantAdminMutation = changesUserAuthorization
             ? await TenantAdminMutationGuard.AcquireAsync(_context, tenantId, cancellationToken)
             : null;
-        var hadEffectiveTenantAdmin = tenantAdminMutation is not null
-            && await tenantAdminMutation.HasEffectiveTenantAdminAsync(_effectivePermissions, tenantId, cancellationToken);
+        var hadActiveTenantAdmin = tenantAdminMutation is not null
+            && await tenantAdminMutation.HasActiveTenantAdminAsync(tenantId, cancellationToken);
         var rejectedLastAdminMutation = false;
 
         var policy = await _context.Set<DirectoryProvisioningPolicy>()
@@ -150,13 +150,13 @@ public sealed partial class DirectoryIntegrationService
                 await _context.SaveChangesAsync(cancellationToken);
             }
 
-            if (hadEffectiveTenantAdmin && tenantAdminMutation is not null
-                && !await tenantAdminMutation.HasEffectiveTenantAdminAsync(_effectivePermissions, tenantId, cancellationToken))
+            if (hadActiveTenantAdmin && tenantAdminMutation is not null
+                && !await tenantAdminMutation.HasActiveTenantAdminAsync(tenantId, cancellationToken))
             {
                 rejectedLastAdminMutation = true;
                 await tenantAdminMutation.RollbackAsync(cancellationToken);
                 _context.ChangeTracker.Clear();
-                throw BadRequest("TENANT_LAST_ADMIN_PROTECTED", "Directory synchronization cannot remove the last effective tenant administrator.");
+                throw BadRequest("TENANT_LAST_ADMIN_PROTECTED", "Directory synchronization cannot remove the last active Tenant Admin assignment.");
             }
 
             run.Status = "Completed";

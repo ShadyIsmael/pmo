@@ -11,6 +11,21 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+if ([string]::IsNullOrWhiteSpace($env:ASPNETCORE_ENVIRONMENT)) {
+    $env:ASPNETCORE_ENVIRONMENT = 'Development'
+}
+elseif ($env:ASPNETCORE_ENVIRONMENT -cne 'Development') {
+    throw 'EF database gate requires ASPNETCORE_ENVIRONMENT=Development.'
+}
+
+if ([string]::IsNullOrWhiteSpace($env:DOTNET_ENVIRONMENT)) {
+    $env:DOTNET_ENVIRONMENT = 'Development'
+}
+elseif ($env:DOTNET_ENVIRONMENT -cne 'Development') {
+    throw 'EF database gate requires DOTNET_ENVIRONMENT=Development.'
+}
+
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $projectPath = Join-Path $repositoryRoot 'apps\api\tools\NEXUS.EFDatabaseGate\NEXUS.EFDatabaseGate.csproj'
 

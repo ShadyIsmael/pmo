@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Http;
 using NEXUS.Modules.Audit.Application;
 using NEXUS.Modules.Audit.Domain;
 using NEXUS.Modules.Organization.Application;
+using NEXUS.SharedKernel.Management;
 
 namespace NEXUS.Modules.Organization.Application.Settings;
 
@@ -19,6 +20,7 @@ public sealed class ConfigurationSettingsService : IConfigurationSettingsService
     private readonly ICurrencyService _currencyService;
     private readonly IOrganizationSettingsAccessService _organizationAccess;
     private readonly IFiscalYearConfigurationChangeGuard? _fiscalYearChangeGuard;
+    private readonly IManagementContextAccessor? _managementContextAccessor;
 
     public ConfigurationSettingsService(
         ISettingDefinitionCatalog catalog,
@@ -29,7 +31,8 @@ public sealed class ConfigurationSettingsService : IConfigurationSettingsService
         IAuditService auditService,
         ICurrencyService currencyService,
         IOrganizationSettingsAccessService organizationAccess,
-        IFiscalYearConfigurationChangeGuard? fiscalYearChangeGuard = null)
+        IFiscalYearConfigurationChangeGuard? fiscalYearChangeGuard = null,
+        IManagementContextAccessor? managementContextAccessor = null)
     {
         _catalog = catalog;
         _repository = repository;
@@ -40,6 +43,7 @@ public sealed class ConfigurationSettingsService : IConfigurationSettingsService
         _currencyService = currencyService;
         _organizationAccess = organizationAccess;
         _fiscalYearChangeGuard = fiscalYearChangeGuard;
+        _managementContextAccessor = managementContextAccessor;
     }
 
     public async Task<SettingsReadResponse> GetPlatformAsync(CancellationToken cancellationToken = default)
@@ -76,10 +80,9 @@ public sealed class ConfigurationSettingsService : IConfigurationSettingsService
     {
         if (!TryGetTenantId(out var tenantId))
             return Failure<SettingsReadResponse>(SettingsOperationCode.TenantContextMissing, "A trusted tenant context is required.");
-        if (!await IsAuthorizedForSettingsAsync("Settings.View"))
-            return Failure<SettingsReadResponse>(SettingsOperationCode.AccessDenied, "Settings.View permission is required.");
-        if (!await _organizationAccess.HasAccessAsync(organizationId, manage: false, cancellationToken: cancellationToken))
-            return Failure<SettingsReadResponse>(SettingsOperationCode.AccessDenied, "The authenticated user has no settings access to this organization.");
+        if (!await HasOrganizationConfigurationAccessAsync(organizationId, manage: false, cancellationToken))
+            return Failure<SettingsReadResponse>(SettingsOperationCode.AccessDenied,
+                "OrganizationConfiguration.View with an authorized Organization scope, or tenant settings access, is required.");
 
         var identity = SettingsScopeIdentity.Organization(tenantId, organizationId);
         var platform = await _repository.ReadAsync(SettingsScopeIdentity.Platform(), cancellationToken);
@@ -136,6 +139,9 @@ public sealed class ConfigurationSettingsService : IConfigurationSettingsService
         UpdateSettingRequest request,
         CancellationToken cancellationToken)
     {
+        if (_managementContextAccessor?.Current?.EffectiveReadOnly == true)
+            return Failure<EffectiveSettingDto>(SettingsOperationCode.AccessDenied,
+                "Configuration changes are unavailable in read-only management mode.");
         if (!_catalog.TryGet(key, out var definition))
             return Failure<EffectiveSettingDto>(SettingsOperationCode.UnknownSetting, "Unknown setting key.");
         if (!definition.CanOverrideAt(scope))
@@ -144,12 +150,13 @@ public sealed class ConfigurationSettingsService : IConfigurationSettingsService
             return Failure<EffectiveSettingDto>(SettingsOperationCode.ScopeNotAllowed, "Secret values cannot be stored as ordinary settings.");
         if (!TryGetTenantId(out var auditTenantId))
             return Failure<EffectiveSettingDto>(SettingsOperationCode.TenantContextMissing, "A trusted authenticated tenant context is required for audited writes.");
-        if (scope is SettingScope.Tenant or SettingScope.Organization
+        if (scope == SettingScope.Tenant
             && !await IsAuthorizedForSettingsAsync("Settings.ManageTenantConfiguration"))
             return Failure<EffectiveSettingDto>(SettingsOperationCode.AccessDenied, "Settings.ManageTenantConfiguration permission is required.");
         if (scope == SettingScope.Organization
-            && (organizationId is null || !await _organizationAccess.HasAccessAsync(organizationId.Value, manage: true, cancellationToken: cancellationToken)))
-            return Failure<EffectiveSettingDto>(SettingsOperationCode.AccessDenied, "Organization settings management access is required.");
+            && (organizationId is null || !await HasOrganizationConfigurationAccessAsync(organizationId.Value, manage: true, cancellationToken)))
+            return Failure<EffectiveSettingDto>(SettingsOperationCode.AccessDenied,
+                "OrganizationConfiguration.Manage with an authorized Organization scope, or tenant settings access, is required.");
 
         var validationError = definition.Validate(request.Value);
         if (validationError is not null) return ValidationFailure<EffectiveSettingDto>("value", validationError);
@@ -227,18 +234,22 @@ public sealed class ConfigurationSettingsService : IConfigurationSettingsService
         ResetSettingRequest request,
         CancellationToken cancellationToken)
     {
+        if (_managementContextAccessor?.Current?.EffectiveReadOnly == true)
+            return Failure<EffectiveSettingDto>(SettingsOperationCode.AccessDenied,
+                "Configuration changes are unavailable in read-only management mode.");
         if (!_catalog.TryGet(key, out var definition))
             return Failure<EffectiveSettingDto>(SettingsOperationCode.UnknownSetting, "Unknown setting key.");
         if (!definition.CanOverrideAt(scope))
             return Failure<EffectiveSettingDto>(SettingsOperationCode.ScopeNotAllowed, "This setting cannot be reset at the requested scope.");
         if (!TryGetTenantId(out var auditTenantId))
             return Failure<EffectiveSettingDto>(SettingsOperationCode.TenantContextMissing, "A trusted authenticated tenant context is required for audited writes.");
-        if (scope is SettingScope.Tenant or SettingScope.Organization
+        if (scope == SettingScope.Tenant
             && !await IsAuthorizedForSettingsAsync("Settings.ManageTenantConfiguration"))
             return Failure<EffectiveSettingDto>(SettingsOperationCode.AccessDenied, "Settings.ManageTenantConfiguration permission is required.");
         if (scope == SettingScope.Organization
-            && (organizationId is null || !await _organizationAccess.HasAccessAsync(organizationId.Value, manage: true, cancellationToken: cancellationToken)))
-            return Failure<EffectiveSettingDto>(SettingsOperationCode.AccessDenied, "Organization settings management access is required.");
+            && (organizationId is null || !await HasOrganizationConfigurationAccessAsync(organizationId.Value, manage: true, cancellationToken)))
+            return Failure<EffectiveSettingDto>(SettingsOperationCode.AccessDenied,
+                "OrganizationConfiguration.Manage with an authorized Organization scope, or tenant settings access, is required.");
         var versionError = ValidateVersion(request.ExpectedVersion);
         if (versionError is not null) return ValidationFailure<EffectiveSettingDto>("expectedVersion", versionError);
 
@@ -446,6 +457,27 @@ public sealed class ConfigurationSettingsService : IConfigurationSettingsService
         if (principal?.Identity?.IsAuthenticated != true) return false;
         var result = await _authorizationService.AuthorizeAsync(principal, resource: null, policyName: policy);
         return result.Succeeded;
+    }
+
+    private async Task<bool> HasOrganizationConfigurationAccessAsync(
+        Guid organizationId,
+        bool manage,
+        CancellationToken cancellationToken)
+    {
+        if (organizationId == Guid.Empty) return false;
+
+        // Tenant Settings permissions remain Tenant-scoped. The additional
+        // OrganizationConfiguration permission is accepted only together with the
+        // canonical Organization Admin identity and an explicit active-Organization
+        // access grant; it cannot authorize Tenant or Platform settings endpoints.
+        var tenantPolicy = manage ? "Settings.ManageTenantConfiguration" : "Settings.View";
+        if (await IsAuthorizedForSettingsAsync(tenantPolicy)
+            && await _organizationAccess.HasAccessAsync(organizationId, manage, cancellationToken))
+            return true;
+
+        var organizationPolicy = manage ? "OrganizationConfiguration.Manage" : "OrganizationConfiguration.View";
+        return await IsAuthorizedForSettingsAsync(organizationPolicy)
+            && await _organizationAccess.HasScopedOrganizationAdminAuthorityAsync(organizationId, manage, cancellationToken);
     }
 
     private ActorContext CurrentActor()

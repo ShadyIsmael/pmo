@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -24,10 +25,16 @@ public sealed class HomeController(
         [FromQuery] Guid? projectId = null,
         CancellationToken cancellationToken = default)
     {
+        if (!TryGetTrustedIdentity(out var userId, out var tenantId)) return Unauthorized();
+
+        var current = managementContext.Current;
+        if (current is null || current.UserId != userId || current.TenantId != tenantId) return Forbid();
+
         var canViewProjects = (await authorization.AuthorizeAsync(User, null, "Project.View")).Succeeded;
         var canViewRisks = (await authorization.AuthorizeAsync(User, null, "Risk.View")).Succeeded;
+        var canViewFinancials = (await authorization.AuthorizeAsync(User, null, "ProjectFinancialFoundation.View")).Succeeded;
 
-        var projectQuery = canViewProjects ? GetProjectQuery(portfolioId, programId, projectId) : null;
+        var projectQuery = canViewProjects ? GetProjectQuery(current, portfolioId, programId, projectId) : null;
         var activeProjectQuery = projectQuery?.Where(project =>
             project.ProjectStatusId == null
             || db.ProjectStatusCatalogEntries.Any(status => status.TenantId == project.TenantId
@@ -73,7 +80,7 @@ public sealed class HomeController(
                 .Select(project => new HomeProjectSummaryDto(project.Id, project.Name, project.Progress, project.Health, project.RagStatus))
                 .ToListAsync(cancellationToken);
 
-        var budgetByCurrency = activeProjectQuery is null
+        var budgetByCurrency = activeProjectQuery is null || !canViewFinancials
             ? []
             : await activeProjectQuery
                 .GroupBy(project => string.IsNullOrWhiteSpace(project.Currency) ? "—" : project.Currency)
@@ -117,11 +124,23 @@ public sealed class HomeController(
             topRisks));
     }
 
-    private IQueryable<Project> GetProjectQuery(Guid? portfolioId, Guid? programId, Guid? projectId)
+    private bool TryGetTrustedIdentity(out Guid userId, out Guid tenantId)
     {
-        var query = db.Set<Project>().AsNoTracking();
-        var scope = managementContext.Current?.Scope;
-        if (scope is not null) query = query.Where(project => scope.ProjectIds.Contains(project.Id));
+        userId = Guid.Empty;
+        tenantId = Guid.Empty;
+        return User.Identity?.IsAuthenticated == true
+            && Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out userId)
+            && userId != Guid.Empty
+            && Guid.TryParse(User.FindFirstValue("tenantId"), out tenantId)
+            && tenantId != Guid.Empty;
+    }
+
+    private IQueryable<Project> GetProjectQuery(ManagementContext context, Guid? portfolioId, Guid? programId, Guid? projectId)
+    {
+        var tenantId = context.TenantId;
+        var projectIds = context.Scope.ProjectIds;
+        var query = db.Set<Project>().AsNoTracking()
+            .Where(project => project.TenantId == tenantId && projectIds.Contains(project.Id));
         if (portfolioId.HasValue) query = query.Where(project => project.PortfolioId == portfolioId.Value);
         if (programId.HasValue) query = query.Where(project => project.ProgramId == programId.Value);
         if (projectId.HasValue) query = query.Where(project => project.Id == projectId.Value);

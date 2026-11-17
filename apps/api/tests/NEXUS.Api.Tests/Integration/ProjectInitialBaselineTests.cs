@@ -8,6 +8,7 @@ using NEXUS.Modules.ProjectManagement.Domain;
 using NEXUS.Modules.ProjectManagement.Domain.Entities;
 using NEXUS.Persistence;
 using NEXUS.SharedKernel;
+using NEXUS.SharedKernel.Management;
 using System.Security.Claims;
 using Xunit;
 
@@ -24,6 +25,7 @@ public class ProjectInitialBaselineTests : IDisposable
     private readonly AppDbContext _context;
     private readonly Mock<IHttpContextAccessor> _accessor;
     private readonly Mock<IAuditService> _auditService;
+    private readonly Mock<IManagementContextAccessor> _managementContext = new();
     private readonly ProjectBaselineService _service;
 
     private readonly Guid _tenantA = Guid.NewGuid();
@@ -46,8 +48,9 @@ public class ProjectInitialBaselineTests : IDisposable
             .Setup(a => a.LogAsync(It.IsAny<NEXUS.Modules.Audit.Domain.AuditEntry>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success());
 
-        var snapshotService = new ProjectSnapshotService(_context, _auditService.Object, _accessor.Object, new ProjectManagerMembershipSynchronizer(_context));
-        _service = new ProjectBaselineService(_context, _auditService.Object, _accessor.Object, snapshotService);
+        var snapshotService = new ProjectSnapshotService(_context, _auditService.Object, _accessor.Object,
+            new ProjectManagerMembershipSynchronizer(_context), managementContext: _managementContext.Object);
+        _service = new ProjectBaselineService(_context, _auditService.Object, _accessor.Object, snapshotService, _managementContext.Object);
     }
 
     private void SetTenant(Guid tenantId, Guid userId)
@@ -60,6 +63,16 @@ public class ProjectInitialBaselineTests : IDisposable
         }, "mock"));
         _accessor.Setup(x => x.HttpContext).Returns(httpContext);
         AppDbContext.ConfigureTenantResolution(_accessor.Object);
+        var projectIds = tenantId == _tenantA ? new HashSet<Guid> { _projectId } : new HashSet<Guid>();
+        _managementContext.SetupGet(accessor => accessor.Current).Returns(new ManagementContext(
+            userId,
+            tenantId,
+            ManagementPerspective.ProjectManager,
+            ManagementViewMode.Native,
+            null,
+            null,
+            null,
+            new ManagementScope(new HashSet<Guid>(), new HashSet<Guid>(), projectIds)));
     }
 
     private void SeedProject(Guid tenantId)

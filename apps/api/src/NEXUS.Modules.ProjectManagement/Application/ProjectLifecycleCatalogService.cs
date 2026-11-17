@@ -7,9 +7,12 @@ using Microsoft.EntityFrameworkCore;
 using NEXUS.Modules.Audit.Application;
 using NEXUS.Modules.Audit.Domain;
 using NEXUS.Modules.Documents.Domain;
+using NEXUS.Modules.Organization.Application;
 using NEXUS.Modules.ProjectManagement.Domain;
 using NEXUS.SharedKernel;
 using NEXUS.SharedKernel.Management;
+using PortfolioEntity = NEXUS.Modules.Portfolio.Domain.Portfolio;
+using ProgramEntity = NEXUS.Modules.Portfolio.Domain.Program;
 
 namespace NEXUS.Modules.ProjectManagement.Application;
 
@@ -30,6 +33,7 @@ public sealed class ProjectLifecycleCatalogService : IProjectLifecycleCatalogSer
     private readonly IHttpContextAccessor _http;
     private readonly IManagementContextAccessor? _management;
     private readonly IProjectOrganizationLookup? _projectOrganizationLookup;
+    private readonly IOrganizationSettingsAccessService? _organizationSettingsAccess;
     private readonly IAuditService _audit;
 
     public ProjectLifecycleCatalogService(
@@ -37,13 +41,15 @@ public sealed class ProjectLifecycleCatalogService : IProjectLifecycleCatalogSer
         IHttpContextAccessor http,
         IAuditService audit,
         IManagementContextAccessor? management = null,
-        IProjectOrganizationLookup? projectOrganizationLookup = null)
+        IProjectOrganizationLookup? projectOrganizationLookup = null,
+        IOrganizationSettingsAccessService? organizationSettingsAccess = null)
     {
         _context = context;
         _http = http;
         _audit = audit;
         _management = management;
         _projectOrganizationLookup = projectOrganizationLookup;
+        _organizationSettingsAccess = organizationSettingsAccess;
     }
 
     public async Task HandleOrganizationCreatedAsync(
@@ -108,20 +114,73 @@ public sealed class ProjectLifecycleCatalogService : IProjectLifecycleCatalogSer
         Guid id, byte[] rowVersion, Guid actorId, CancellationToken cancellationToken = default) =>
         SetDefaultAsync(false, id, rowVersion, actorId, cancellationToken);
 
+    public Task<Result<ProjectLifecycleOptionsDto>> GetOptionsAsync(
+        Guid? organizationId, Guid? projectId, CancellationToken cancellationToken = default) =>
+        GetOptionsAsync(organizationId, projectId, null, null, false, cancellationToken);
+
     public async Task<Result<ProjectLifecycleOptionsDto>> GetOptionsAsync(
-        Guid? organizationId, Guid? projectId, CancellationToken cancellationToken = default)
+        Guid? organizationId,
+        Guid? projectId,
+        Guid? portfolioId,
+        Guid? programId,
+        bool createPurpose,
+        CancellationToken cancellationToken = default)
     {
+        var canCreateProject = HasEffectivePermission("Project.Create");
         var canReadProjectOptions = HasAnyPermission("Project.Create", "Project.Edit");
         var canViewProjectOptions = HasEffectivePermission("Project.View");
         var canReadStatusReportOptions = projectId.HasValue && HasAnyPermission(
             "StatusReport.View", "StatusReport.Create", "StatusReport.Edit", "StatusReport.Publish");
         var canChangeProjectStatus = projectId.HasValue && HasEffectivePermission(ProjectLifecyclePermissions.StatusChange);
         var canChangeProjectPhase = projectId.HasValue && HasEffectivePermission(ProjectLifecyclePermissions.PhaseChange);
-        if (!canReadProjectOptions && !canViewProjectOptions && !canReadStatusReportOptions
+        if (createPurpose && !canCreateProject)
+            return Result<ProjectLifecycleOptionsDto>.Failure(Error.Forbidden("Project.Create permission is required for Create Project lifecycle options."));
+        if (!createPurpose && (portfolioId.HasValue || programId.HasValue))
+            return Result<ProjectLifecycleOptionsDto>.Failure(Error.Validation("Portfolio and Program scope require the Create Project lifecycle purpose."));
+        if (!createPurpose && !canReadProjectOptions && !canViewProjectOptions && !canReadStatusReportOptions
             && !canChangeProjectStatus && !canChangeProjectPhase)
             return Result<ProjectLifecycleOptionsDto>.Failure(Error.Forbidden("Project or Status Report lifecycle option permission is required."));
         if (!TryGetTrustedManagementContext(out var management))
             return Result<ProjectLifecycleOptionsDto>.Failure(Error.Forbidden("A valid tenant and management context are required."));
+
+        if (!createPurpose && !organizationId.HasValue && !projectId.HasValue)
+            return Result<ProjectLifecycleOptionsDto>.Failure(Error.Validation(
+                "Project lifecycle options require an Organization or in-scope Project context."));
+
+        var hasCreatePortfolioScope = false;
+        var createTenantStatusOnly = false;
+        if (createPurpose)
+        {
+            if (organizationId.HasValue || projectId.HasValue)
+                return Result<ProjectLifecycleOptionsDto>.Failure(Error.Validation(
+                    "Create Project lifecycle options must derive Organization from the selected Portfolio."));
+            if (programId.HasValue && !portfolioId.HasValue)
+                return Result<ProjectLifecycleOptionsDto>.Failure(Error.Validation(
+                    "A Portfolio must be selected before a Program.", "portfolioId"));
+            if (!portfolioId.HasValue)
+            {
+                // Project Status is Tenant-scoped reference data shared by every
+                // Organization, so Create Project lists it before a Portfolio (and
+                // therefore an Organization) is selected. Project Phase stays
+                // Organization-scoped and remains unavailable until then.
+                createTenantStatusOnly = true;
+            }
+            else
+            {
+                var createOrganization = await ResolveCreatePortfolioOrganizationAsync(
+                    management!, portfolioId.Value, programId, cancellationToken);
+                if (createOrganization.Error is not null)
+                    return Result<ProjectLifecycleOptionsDto>.Failure(createOrganization.Error);
+
+                organizationId = createOrganization.OrganizationId;
+                hasCreatePortfolioScope = true;
+            }
+        }
+        else if (portfolioId.HasValue || programId.HasValue)
+        {
+            return Result<ProjectLifecycleOptionsDto>.Failure(Error.Validation(
+                "Portfolio and Program scope require the Create Project lifecycle purpose."));
+        }
 
         Guid? currentPhaseId = null;
         Guid? currentStatusId = null;
@@ -158,41 +217,56 @@ public sealed class ProjectLifecycleCatalogService : IProjectLifecycleCatalogSer
         // separate Organization-list scope would incorrectly require access to
         // unrelated broad lookup data. Explicit Organization-only lookups still
         // require Organization scope membership.
-        if (organizationId.HasValue && !hasProjectScope && !CanAccessOrganization(management!, organizationId.Value))
+        if (organizationId.HasValue && !hasProjectScope && !hasCreatePortfolioScope
+            && !CanAccessOrganization(management!, organizationId.Value))
             return Result<ProjectLifecycleOptionsDto>.Failure(Error.NotFound("The selected organization was not found."));
 
-        var phaseOptionsAllowed = canReadProjectOptions || canViewProjectOptions || canChangeProjectPhase;
+        // Before a Portfolio is selected there is no Organization and therefore no
+        // Organization-scoped phase catalog to read. Create Project only needs the
+        // Tenant-scoped Status catalog at that point, and it must not fail on the
+        // Organization-scoped Pre-Initiation phase, which is provisioned later.
+        var phaseOptionsAllowed = !createTenantStatusOnly
+            && (canReadProjectOptions || canViewProjectOptions || canChangeProjectPhase);
         var statusOptionsAllowed = canReadProjectOptions || canViewProjectOptions || canReadStatusReportOptions || canChangeProjectStatus;
-        if (phaseOptionsAllowed)
-        {
-            var recovered = await EnsurePreInitiationPhaseAsync(
-                management!.TenantId, organizationId, management.UserId, cancellationToken);
-            if (recovered.IsFailure)
-                return Result<ProjectLifecycleOptionsDto>.Failure(recovered.Error!);
-        }
+        if (phaseOptionsAllowed
+            && !await HasActiveDefaultPreInitiationPhaseAsync(management!.TenantId, organizationId, cancellationToken))
+            return Result<ProjectLifecycleOptionsDto>.Failure(PreInitiationUnavailableError());
         var phaseQuery = phaseOptionsAllowed
             ? PhaseQuery(management!.TenantId).Where(item => item.IsActive)
             : PhaseQuery(management!.TenantId).Where(_ => false);
         var statusQuery = statusOptionsAllowed
             ? StatusQuery(management.TenantId).Where(item => item.IsActive || (currentStatusId.HasValue && item.Id == currentStatusId.Value))
             : StatusQuery(management.TenantId).Where(_ => false);
-        if (hasProjectScope)
+        if (hasCreatePortfolioScope)
+        {
+            // New Projects use only their selected Portfolio's Organization catalog.
+            // Tenant-level defaults and another Organization's entries are not valid fallbacks.
+            phaseQuery = phaseQuery.Where(item => item.OrganizationId == organizationId);
+            // Project Status is Tenant-scoped reference data shared by every
+            // Organization in the Tenant. Create Project must load the Tenant
+            // catalog without requiring the selected Portfolio's Organization.
+            statusQuery = statusQuery.Where(item => item.OrganizationId == null);
+        }
+        else if (hasProjectScope)
         {
             // A Project target list contains only phases explicitly configured for
             // its owning Organization. Legacy tenant-seeded rows are not targets.
             phaseQuery = phaseQuery.Where(item => item.OrganizationId == organizationId);
-            statusQuery = statusQuery.Where(item => item.OrganizationId == null || item.OrganizationId == organizationId.Value);
+            // Project Status is Tenant-scoped reference data and is shared by
+            // every Organization in the Tenant.
+            statusQuery = statusQuery.Where(item => item.OrganizationId == null);
         }
         else if (organizationId.HasValue)
         {
             phaseQuery = phaseQuery.Where(item => item.OrganizationId == null || item.OrganizationId == organizationId.Value);
-            statusQuery = statusQuery.Where(item => item.OrganizationId == null || item.OrganizationId == organizationId.Value);
+            // Project Status is Tenant-scoped reference data and is shared by
+            // every Organization in the Tenant.
+            statusQuery = statusQuery.Where(item => item.OrganizationId == null);
         }
         else
         {
-            // Without a project or explicit Organization context only tenant-wide
-            // options are exposed, plus the linked current value for historical
-            // display when a project has no resolved Organization fallback.
+            // Create mode without a selected Portfolio exposes no phase catalog;
+            // it may return the Tenant-scoped Project Status values only.
             phaseQuery = phaseQuery.Where(item => item.OrganizationId == null || (currentPhaseId.HasValue && item.Id == currentPhaseId.Value));
             statusQuery = statusQuery.Where(item => item.OrganizationId == null || (currentStatusId.HasValue && item.Id == currentStatusId.Value));
         }
@@ -240,18 +314,58 @@ public sealed class ProjectLifecycleCatalogService : IProjectLifecycleCatalogSer
         return Result<ProjectLifecycleOptionsDto>.Success(new ProjectLifecycleOptionsDto(phaseOptions, statusOptions));
     }
 
+    private async Task<(Guid? OrganizationId, Error? Error)> ResolveCreatePortfolioOrganizationAsync(
+        ManagementContext management,
+        Guid portfolioId,
+        Guid? programId,
+        CancellationToken cancellationToken)
+    {
+        var portfolio = await _context.Set<PortfolioEntity>().AsNoTracking()
+            .Where(item => item.Id == portfolioId && item.TenantId == management.TenantId
+                && !item.IsDeleted && item.Status == "Active")
+            .Select(item => new { item.Id, item.OrganizationId })
+            .FirstOrDefaultAsync(cancellationToken);
+        if (portfolio is null || !portfolio.OrganizationId.HasValue
+            || !management.Scope.PortfolioIds.Contains(portfolio.Id))
+            return (null, Error.NotFound("The selected Portfolio was not found."));
+
+        if (programId.HasValue)
+        {
+            var programIsInPortfolio = await _context.Set<ProgramEntity>().AsNoTracking()
+                .AnyAsync(item => item.Id == programId.Value && item.TenantId == management.TenantId
+                    && !item.IsDeleted && item.Status == "Active" && item.PortfolioId == portfolio.Id, cancellationToken);
+            if (!programIsInPortfolio || !management.Scope.ProgramIds.Contains(programId.Value))
+                return (null, Error.NotFound("The selected Program was not found."));
+        }
+
+        var organizationIsActive = await _context.Set<NEXUS.Modules.Organization.Domain.Organization>()
+            .AsNoTracking()
+            .AnyAsync(item => item.Id == portfolio.OrganizationId.Value
+                && item.TenantId == management.TenantId && item.IsActive && !item.IsDeleted, cancellationToken);
+        return organizationIsActive
+            ? (portfolio.OrganizationId.Value, null)
+            : (null, Error.NotFound("The selected Portfolio was not found."));
+    }
+
     private async Task<Result<IReadOnlyList<ProjectLifecycleCatalogDto>>> GetCatalogAsync(
         bool phases, Guid? organizationId, bool includeInactive, string? search, CancellationToken cancellationToken)
     {
         var permission = phases ? ProjectLifecyclePermissions.PhaseView : ProjectLifecyclePermissions.StatusView;
-        if (!HasEffectivePermission(permission))
-            return Result<IReadOnlyList<ProjectLifecycleCatalogDto>>.Failure(Error.Forbidden("Lifecycle catalog view permission is required."));
         if (!TryGetTrustedManagementContext(out var management))
             return Result<IReadOnlyList<ProjectLifecycleCatalogDto>>.Failure(Error.Forbidden("A valid tenant and management context are required."));
-        if (organizationId.HasValue && !CanAccessOrganization(management!, organizationId.Value))
+        var hasTenantLifecycleView = HasEffectivePermission(permission)
+            && (!organizationId.HasValue || CanAccessOrganization(management!, organizationId.Value));
+        var hasScopedOrganizationAdminView = await HasScopedOrganizationAdminConfigurationAsync(
+            organizationId, manage: false, cancellationToken);
+        if (organizationId.HasValue && !hasTenantLifecycleView && !hasScopedOrganizationAdminView)
             return Result<IReadOnlyList<ProjectLifecycleCatalogDto>>.Failure(Error.NotFound("The selected organization was not found."));
+        if (!hasTenantLifecycleView && !hasScopedOrganizationAdminView)
+            return Result<IReadOnlyList<ProjectLifecycleCatalogDto>>.Failure(Error.Forbidden("Lifecycle catalog view permission is required within the selected Organization scope."));
 
-        var accessibleOrganizationIds = management!.Scope.OrganizationIds.ToArray();
+        var isOrganizationAdminOnlyView = hasScopedOrganizationAdminView && !hasTenantLifecycleView;
+        var accessibleOrganizationIds = isOrganizationAdminOnlyView
+            ? new[] { organizationId!.Value }
+            : management!.Scope.OrganizationIds.ToArray();
         var query = phases
             ? PhaseQuery(management.TenantId).Where(item => item.OrganizationId == null || accessibleOrganizationIds.Contains(item.OrganizationId.Value))
             : null;
@@ -263,10 +377,8 @@ public sealed class ProjectLifecycleCatalogService : IProjectLifecycleCatalogSer
         var searchTerm = search?.Trim();
         if (phases)
         {
-            var recovered = await EnsurePreInitiationPhaseAsync(
-                management.TenantId, organizationId, management.UserId, cancellationToken);
-            if (recovered.IsFailure)
-                return Result<IReadOnlyList<ProjectLifecycleCatalogDto>>.Failure(recovered.Error!);
+            if (!await HasActiveDefaultPreInitiationPhaseAsync(management.TenantId, organizationId, cancellationToken))
+                return Result<IReadOnlyList<ProjectLifecycleCatalogDto>>.Failure(PreInitiationUnavailableError());
 
             if (!includeInactive) query = query!.Where(item => item.IsActive);
             if (!string.IsNullOrWhiteSpace(searchTerm))
@@ -278,14 +390,16 @@ public sealed class ProjectLifecycleCatalogService : IProjectLifecycleCatalogSer
                 .ThenBy(item => item.NameEn, StringComparer.OrdinalIgnoreCase)
                 .ToList();
             var ids = items.Select(item => item.Id).ToArray();
-            var referenceCounts = ids.Length == 0 ? new Dictionary<Guid, int>()
+            var referenceCounts = isOrganizationAdminOnlyView || ids.Length == 0 ? new Dictionary<Guid, int>()
                 : await _context.Set<Project>().AsNoTracking().Where(project => project.TenantId == management.TenantId
                         && !project.IsDeleted && project.ProjectPhaseId.HasValue && ids.Contains(project.ProjectPhaseId.Value))
                     .GroupBy(project => project.ProjectPhaseId!.Value)
                     .Select(group => new { Id = group.Key, Count = group.Count() })
                     .ToDictionaryAsync(group => group.Id, group => group.Count, cancellationToken);
             return Result<IReadOnlyList<ProjectLifecycleCatalogDto>>.Success(items.Select(item => ToDto(item) with
-                { ReferencedProjectCount = referenceCounts.GetValueOrDefault(item.Id) }).ToList());
+                { ReferencedProjectCount = isOrganizationAdminOnlyView
+                    ? null
+                    : referenceCounts.GetValueOrDefault(item.Id) }).ToList());
         }
 
         var statusQuery = StatusQuery(management.TenantId)
@@ -297,25 +411,37 @@ public sealed class ProjectLifecycleCatalogService : IProjectLifecycleCatalogSer
         var statusItems = await statusQuery.OrderBy(item => item.OrganizationId == organizationId ? 1 : 0)
             .ThenBy(item => item.DisplayOrder).ThenBy(item => item.NameEn).ToListAsync(cancellationToken);
         var statusIds = statusItems.Select(item => item.Id).ToArray();
-        var statusReferenceCounts = statusIds.Length == 0 ? new Dictionary<Guid, int>()
+        var statusReferenceCounts = isOrganizationAdminOnlyView || statusIds.Length == 0 ? new Dictionary<Guid, int>()
             : await _context.Set<Project>().AsNoTracking().Where(project => project.TenantId == management.TenantId
                     && !project.IsDeleted && project.ProjectStatusId.HasValue && statusIds.Contains(project.ProjectStatusId.Value))
                 .GroupBy(project => project.ProjectStatusId!.Value)
                 .Select(group => new { Id = group.Key, Count = group.Count() })
                 .ToDictionaryAsync(group => group.Id, group => group.Count, cancellationToken);
         return Result<IReadOnlyList<ProjectLifecycleCatalogDto>>.Success(statusItems.Select(item => ToDto(item) with
-            { ReferencedProjectCount = statusReferenceCounts.GetValueOrDefault(item.Id) }).ToList());
+            { ReferencedProjectCount = isOrganizationAdminOnlyView
+                ? null
+                : statusReferenceCounts.GetValueOrDefault(item.Id) }).ToList());
     }
 
     private async Task<Result<ProjectLifecycleCatalogDto>> CreateAsync(
         bool phases, ProjectLifecycleCatalogRequest request, Guid actorId, CancellationToken cancellationToken)
     {
         var permission = phases ? ProjectLifecyclePermissions.PhaseCreate : ProjectLifecyclePermissions.StatusCreate;
-        if (!HasEffectivePermission(permission))
-            return Result<ProjectLifecycleCatalogDto>.Failure(Error.Forbidden("Lifecycle catalog create permission is required."));
         if (!TryGetTrustedManagementContext(out var management) || management!.UserId != actorId)
             return Result<ProjectLifecycleCatalogDto>.Failure(Error.Forbidden("A valid tenant and management context are required."));
-        if (!await CanManageScopeAsync(request.OrganizationId, management, cancellationToken))
+        var hasTenantLifecyclePermission = HasEffectivePermission(permission);
+        var hasScopedOrganizationAdminManage = await HasScopedOrganizationAdminConfigurationAsync(
+            request.OrganizationId, manage: true, cancellationToken);
+        var hasTenantLifecycleScope = hasTenantLifecyclePermission
+            && (!request.OrganizationId.HasValue || CanAccessOrganization(management!, request.OrganizationId.Value));
+        if (!hasTenantLifecycleScope && !hasScopedOrganizationAdminManage)
+            return Result<ProjectLifecycleCatalogDto>.Failure(request.OrganizationId.HasValue
+                ? Error.NotFound("The selected Organization was not found.")
+                : Error.Forbidden("Lifecycle catalog create permission is required."));
+        if (management.EffectiveReadOnly)
+            return Result<ProjectLifecycleCatalogDto>.Failure(Error.Forbidden("Lifecycle catalog changes are unavailable in read-only management mode."));
+        if (!await CanManageScopeAsync(request.OrganizationId, management, cancellationToken,
+                allowScopedOrganizationAdmin: hasScopedOrganizationAdminManage && !hasTenantLifecycleScope))
             return Result<ProjectLifecycleCatalogDto>.Failure(Error.NotFound("The selected Organization was not found."));
         var normalized = Normalize(request, creating: true);
         if (normalized.Error is not null) return Result<ProjectLifecycleCatalogDto>.Failure(normalized.Error);
@@ -408,16 +534,29 @@ public sealed class ProjectLifecycleCatalogService : IProjectLifecycleCatalogSer
         bool phases, Guid id, ProjectLifecycleCatalogRequest request, Guid actorId, CancellationToken cancellationToken)
     {
         var permission = phases ? ProjectLifecyclePermissions.PhaseEdit : ProjectLifecyclePermissions.StatusEdit;
-        if (!HasEffectivePermission(permission)) return Result<ProjectLifecycleCatalogDto>.Failure(Error.Forbidden("Lifecycle catalog edit permission is required."));
         if (!TryGetTrustedManagementContext(out var management) || management!.UserId != actorId)
             return Result<ProjectLifecycleCatalogDto>.Failure(Error.Forbidden("A valid tenant and management context are required."));
+        if (management.EffectiveReadOnly)
+            return Result<ProjectLifecycleCatalogDto>.Failure(Error.Forbidden("Lifecycle catalog changes are unavailable in read-only management mode."));
         var normalized = Normalize(request, creating: false);
         if (normalized.Error is not null) return Result<ProjectLifecycleCatalogDto>.Failure(normalized.Error);
 
         if (phases)
         {
             var entity = await PhaseQuery(management.TenantId).FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
-            if (entity is null || !CanManageScope(management, entity.OrganizationId)) return Result<ProjectLifecycleCatalogDto>.Failure(Error.NotFound("Project phase not found."));
+            if (entity is null) return Result<ProjectLifecycleCatalogDto>.Failure(Error.NotFound("Project phase not found."));
+            var hasTenantLifecyclePermission = HasEffectivePermission(permission);
+            var hasScopedOrganizationAdminManage = await HasScopedOrganizationAdminConfigurationAsync(
+                entity.OrganizationId, manage: true, cancellationToken);
+            var hasTenantLifecycleScope = hasTenantLifecyclePermission
+                && (!entity.OrganizationId.HasValue || CanAccessOrganization(management, entity.OrganizationId.Value));
+            if (!hasTenantLifecycleScope && !hasScopedOrganizationAdminManage)
+                return Result<ProjectLifecycleCatalogDto>.Failure(entity.OrganizationId.HasValue
+                    ? Error.NotFound("Project phase not found.")
+                    : Error.Forbidden("Lifecycle catalog edit permission is required."));
+            if (!await CanManageScopeAsync(entity.OrganizationId, management, cancellationToken,
+                    allowScopedOrganizationAdmin: hasScopedOrganizationAdminManage && !hasTenantLifecycleScope))
+                return Result<ProjectLifecycleCatalogDto>.Failure(Error.NotFound("Project phase not found."));
             
             // Protect Pre-Initiation phase from modification
             if (IsPreInitiationPhase(entity))
@@ -446,7 +585,19 @@ public sealed class ProjectLifecycleCatalogService : IProjectLifecycleCatalogSer
         }
 
         var statusEntity = await StatusQuery(management.TenantId).FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
-        if (statusEntity is null || !CanManageScope(management, statusEntity.OrganizationId)) return Result<ProjectLifecycleCatalogDto>.Failure(Error.NotFound("Project status not found."));
+        if (statusEntity is null) return Result<ProjectLifecycleCatalogDto>.Failure(Error.NotFound("Project status not found."));
+        var hasTenantStatusPermission = HasEffectivePermission(permission);
+        var hasScopedOrganizationAdminStatusManage = await HasScopedOrganizationAdminConfigurationAsync(
+            statusEntity.OrganizationId, manage: true, cancellationToken);
+        var hasTenantStatusScope = hasTenantStatusPermission
+            && (!statusEntity.OrganizationId.HasValue || CanAccessOrganization(management, statusEntity.OrganizationId.Value));
+        if (!hasTenantStatusScope && !hasScopedOrganizationAdminStatusManage)
+            return Result<ProjectLifecycleCatalogDto>.Failure(statusEntity.OrganizationId.HasValue
+                ? Error.NotFound("Project status not found.")
+                : Error.Forbidden("Lifecycle catalog edit permission is required."));
+        if (!await CanManageScopeAsync(statusEntity.OrganizationId, management, cancellationToken,
+                allowScopedOrganizationAdmin: hasScopedOrganizationAdminStatusManage && !hasTenantStatusScope))
+            return Result<ProjectLifecycleCatalogDto>.Failure(Error.NotFound("Project status not found."));
         if (request.OrganizationId != statusEntity.OrganizationId) return Result<ProjectLifecycleCatalogDto>.Failure(Error.Conflict("The Organization scope of a lifecycle entry is stable."));
         if (await StatusDuplicateExistsAsync(management.TenantId, statusEntity.OrganizationId, normalized.Code!, normalized.NameEn!, normalized.NameAr!, id, cancellationToken))
             return Result<ProjectLifecycleCatalogDto>.Failure(Error.Conflict("A status with this code or bilingual name already exists in the selected scope."));
@@ -475,13 +626,26 @@ public sealed class ProjectLifecycleCatalogService : IProjectLifecycleCatalogSer
         bool phases, Guid id, bool isActive, byte[] rowVersion, Guid actorId, CancellationToken cancellationToken)
     {
         var permission = phases ? ProjectLifecyclePermissions.PhaseActivateDeactivate : ProjectLifecyclePermissions.StatusActivateDeactivate;
-        if (!HasEffectivePermission(permission)) return Result<ProjectLifecycleCatalogDto>.Failure(Error.Forbidden("Lifecycle catalog activation permission is required."));
         if (!TryGetTrustedManagementContext(out var management) || management!.UserId != actorId)
             return Result<ProjectLifecycleCatalogDto>.Failure(Error.Forbidden("A valid tenant and management context are required."));
+        if (management.EffectiveReadOnly)
+            return Result<ProjectLifecycleCatalogDto>.Failure(Error.Forbidden("Lifecycle catalog changes are unavailable in read-only management mode."));
         if (phases)
         {
             var entity = await PhaseQuery(management.TenantId).FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
-            if (entity is null || !CanManageScope(management, entity.OrganizationId)) return Result<ProjectLifecycleCatalogDto>.Failure(Error.NotFound("Project phase not found."));
+            if (entity is null) return Result<ProjectLifecycleCatalogDto>.Failure(Error.NotFound("Project phase not found."));
+            var hasTenantLifecyclePermission = HasEffectivePermission(permission);
+            var hasScopedOrganizationAdminManage = await HasScopedOrganizationAdminConfigurationAsync(
+                entity.OrganizationId, manage: true, cancellationToken);
+            var hasTenantLifecycleScope = hasTenantLifecyclePermission
+                && (!entity.OrganizationId.HasValue || CanAccessOrganization(management, entity.OrganizationId.Value));
+            if (!hasTenantLifecycleScope && !hasScopedOrganizationAdminManage)
+                return Result<ProjectLifecycleCatalogDto>.Failure(entity.OrganizationId.HasValue
+                    ? Error.NotFound("Project phase not found.")
+                    : Error.Forbidden("Lifecycle catalog activation permission is required."));
+            if (!await CanManageScopeAsync(entity.OrganizationId, management, cancellationToken,
+                    allowScopedOrganizationAdmin: hasScopedOrganizationAdminManage && !hasTenantLifecycleScope))
+                return Result<ProjectLifecycleCatalogDto>.Failure(Error.NotFound("Project phase not found."));
             
             // Protect Pre-Initiation phase from deactivation
             if (IsPreInitiationPhase(entity) && !isActive)
@@ -498,7 +662,19 @@ public sealed class ProjectLifecycleCatalogService : IProjectLifecycleCatalogSer
             return Result<ProjectLifecycleCatalogDto>.Success(ToDto(entity));
         }
         var status = await StatusQuery(management.TenantId).FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
-        if (status is null || !CanManageScope(management, status.OrganizationId)) return Result<ProjectLifecycleCatalogDto>.Failure(Error.NotFound("Project status not found."));
+        if (status is null) return Result<ProjectLifecycleCatalogDto>.Failure(Error.NotFound("Project status not found."));
+        var hasTenantStatusPermission = HasEffectivePermission(permission);
+        var hasScopedOrganizationAdminStatusManage = await HasScopedOrganizationAdminConfigurationAsync(
+            status.OrganizationId, manage: true, cancellationToken);
+        var hasTenantStatusScope = hasTenantStatusPermission
+            && (!status.OrganizationId.HasValue || CanAccessOrganization(management, status.OrganizationId.Value));
+        if (!hasTenantStatusScope && !hasScopedOrganizationAdminStatusManage)
+            return Result<ProjectLifecycleCatalogDto>.Failure(status.OrganizationId.HasValue
+                ? Error.NotFound("Project status not found.")
+                : Error.Forbidden("Lifecycle catalog activation permission is required."));
+        if (!await CanManageScopeAsync(status.OrganizationId, management, cancellationToken,
+                allowScopedOrganizationAdmin: hasScopedOrganizationAdminStatusManage && !hasTenantStatusScope))
+            return Result<ProjectLifecycleCatalogDto>.Failure(Error.NotFound("Project status not found."));
         if (!MatchesRowVersion(status.RowVersion, rowVersion)) return Result<ProjectLifecycleCatalogDto>.Failure(Error.Conflict("The status changed; reload it before updating status."));
         if (!isActive && status.IsDefault) return Result<ProjectLifecycleCatalogDto>.Failure(Error.Conflict("Choose another default status before deactivating this status."));
         if (status.IsActive != isActive)
@@ -549,14 +725,27 @@ public sealed class ProjectLifecycleCatalogService : IProjectLifecycleCatalogSer
     private async Task<Result<ProjectLifecycleCatalogDto>> SetDefaultAsync(bool phases, Guid id, byte[] rowVersion, Guid actorId, CancellationToken cancellationToken)
     {
         var permission = phases ? ProjectLifecyclePermissions.PhaseEdit : ProjectLifecyclePermissions.StatusEdit;
-        if (!HasEffectivePermission(permission)) return Result<ProjectLifecycleCatalogDto>.Failure(Error.Forbidden("Lifecycle catalog edit permission is required."));
         if (!TryGetTrustedManagementContext(out var management) || management!.UserId != actorId)
             return Result<ProjectLifecycleCatalogDto>.Failure(Error.Forbidden("A valid tenant and management context are required."));
+        if (management.EffectiveReadOnly)
+            return Result<ProjectLifecycleCatalogDto>.Failure(Error.Forbidden("Lifecycle catalog changes are unavailable in read-only management mode."));
 
         if (phases)
         {
             var selected = await PhaseQuery(management.TenantId).FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
-            if (selected is null || !CanManageScope(management, selected.OrganizationId)) return Result<ProjectLifecycleCatalogDto>.Failure(Error.NotFound("Project phase not found."));
+            if (selected is null) return Result<ProjectLifecycleCatalogDto>.Failure(Error.NotFound("Project phase not found."));
+            var hasTenantLifecyclePermission = HasEffectivePermission(permission);
+            var hasScopedOrganizationAdminManage = await HasScopedOrganizationAdminConfigurationAsync(
+                selected.OrganizationId, manage: true, cancellationToken);
+            var hasTenantLifecycleScope = hasTenantLifecyclePermission
+                && (!selected.OrganizationId.HasValue || CanAccessOrganization(management, selected.OrganizationId.Value));
+            if (!hasTenantLifecycleScope && !hasScopedOrganizationAdminManage)
+                return Result<ProjectLifecycleCatalogDto>.Failure(selected.OrganizationId.HasValue
+                    ? Error.NotFound("Project phase not found.")
+                    : Error.Forbidden("Lifecycle catalog edit permission is required."));
+            if (!await CanManageScopeAsync(selected.OrganizationId, management, cancellationToken,
+                    allowScopedOrganizationAdmin: hasScopedOrganizationAdminManage && !hasTenantLifecycleScope))
+                return Result<ProjectLifecycleCatalogDto>.Failure(Error.NotFound("Project phase not found."));
             if (!MatchesRowVersion(selected.RowVersion, rowVersion)) return Result<ProjectLifecycleCatalogDto>.Failure(Error.Conflict("The phase changed; reload it before setting the default."));
             if (!selected.IsActive) return Result<ProjectLifecycleCatalogDto>.Failure(Error.Conflict("An inactive phase cannot be the default."));
 
@@ -570,7 +759,19 @@ public sealed class ProjectLifecycleCatalogService : IProjectLifecycleCatalogSer
         }
 
         var status = await StatusQuery(management.TenantId).FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
-        if (status is null || !CanManageScope(management, status.OrganizationId)) return Result<ProjectLifecycleCatalogDto>.Failure(Error.NotFound("Project status not found."));
+        if (status is null) return Result<ProjectLifecycleCatalogDto>.Failure(Error.NotFound("Project status not found."));
+        var hasTenantStatusPermission = HasEffectivePermission(permission);
+        var hasScopedOrganizationAdminStatusManage = await HasScopedOrganizationAdminConfigurationAsync(
+            status.OrganizationId, manage: true, cancellationToken);
+        var hasTenantStatusScope = hasTenantStatusPermission
+            && (!status.OrganizationId.HasValue || CanAccessOrganization(management, status.OrganizationId.Value));
+        if (!hasTenantStatusScope && !hasScopedOrganizationAdminStatusManage)
+            return Result<ProjectLifecycleCatalogDto>.Failure(status.OrganizationId.HasValue
+                ? Error.NotFound("Project status not found.")
+                : Error.Forbidden("Lifecycle catalog edit permission is required."));
+        if (!await CanManageScopeAsync(status.OrganizationId, management, cancellationToken,
+                allowScopedOrganizationAdmin: hasScopedOrganizationAdminStatusManage && !hasTenantStatusScope))
+            return Result<ProjectLifecycleCatalogDto>.Failure(Error.NotFound("Project status not found."));
         if (!MatchesRowVersion(status.RowVersion, rowVersion)) return Result<ProjectLifecycleCatalogDto>.Failure(Error.Conflict("The status changed; reload it before setting the default."));
         if (!status.IsActive) return Result<ProjectLifecycleCatalogDto>.Failure(Error.Conflict("An inactive status cannot be the default."));
 
@@ -625,16 +826,38 @@ public sealed class ProjectLifecycleCatalogService : IProjectLifecycleCatalogSer
     private IQueryable<ProjectPhaseCatalogEntry> PhaseQuery(Guid tenantId) => _context.Set<ProjectPhaseCatalogEntry>().Where(item => item.TenantId == tenantId && !item.IsDeleted);
     private IQueryable<ProjectStatusCatalogEntry> StatusQuery(Guid tenantId) => _context.Set<ProjectStatusCatalogEntry>().Where(item => item.TenantId == tenantId && !item.IsDeleted);
 
-    private async Task<bool> CanManageScopeAsync(Guid? organizationId, ManagementContext management, CancellationToken cancellationToken)
+    private Task<bool> HasActiveDefaultPreInitiationPhaseAsync(
+        Guid tenantId, Guid? organizationId, CancellationToken cancellationToken) =>
+        PhaseQuery(tenantId).AnyAsync(item => item.OrganizationId == organizationId
+            && item.NormalizedCode == PreInitiationNormalizedCode
+            && item.IsActive && item.IsDefault, cancellationToken);
+
+    private static Error PreInitiationUnavailableError() => Error.Conflict(
+        "The protected Pre-Initiation phase is missing or misconfigured in this scope. Lifecycle setup must be repaired before reading lifecycle options.");
+
+    private async Task<bool> CanManageScopeAsync(
+        Guid? organizationId,
+        ManagementContext management,
+        CancellationToken cancellationToken,
+        bool allowScopedOrganizationAdmin = false)
     {
-        if (organizationId is null) return true;
-        if (!CanAccessOrganization(management, organizationId.Value)) return false;
+        if (organizationId is null) return !allowScopedOrganizationAdmin;
+        var hasManagementScope = CanAccessOrganization(management, organizationId.Value);
+        var hasOrganizationAdminScope = allowScopedOrganizationAdmin
+            && await HasScopedOrganizationAdminConfigurationAsync(organizationId, manage: true, cancellationToken);
+        if (!hasManagementScope && !hasOrganizationAdminScope) return false;
         return await _context.Set<NEXUS.Modules.Organization.Domain.Organization>().AnyAsync(organization =>
             organization.Id == organizationId && organization.TenantId == management.TenantId && organization.IsActive && !organization.IsDeleted, cancellationToken);
     }
 
-    private static bool CanManageScope(ManagementContext management, Guid? organizationId) =>
-        organizationId is null || CanAccessOrganization(management, organizationId.Value);
+    private Task<bool> HasScopedOrganizationAdminConfigurationAsync(
+        Guid? organizationId,
+        bool manage,
+        CancellationToken cancellationToken) =>
+        organizationId.HasValue && _organizationSettingsAccess is not null
+            ? _organizationSettingsAccess.HasScopedOrganizationAdminAuthorityAsync(
+                organizationId.Value, manage, cancellationToken)
+            : Task.FromResult(false);
 
     private static bool CanAccessOrganization(ManagementContext management, Guid organizationId) =>
         management.Scope.OrganizationIds.Contains(organizationId)

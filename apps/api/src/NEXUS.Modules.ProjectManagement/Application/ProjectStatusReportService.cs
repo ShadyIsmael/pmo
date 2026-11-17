@@ -125,7 +125,7 @@ public sealed class ProjectStatusReportService : IProjectStatusReportService
         DateTime? periodTo = null,
         CancellationToken cancellationToken = default)
     {
-        var project = await _context.Set<Project>().FirstOrDefaultAsync(item => item.Id == projectId && !item.IsDeleted, cancellationToken);
+        var project = await FindProjectInScopeAsync(projectId, cancellationToken);
         if (project is null) return Result<ProjectStatusReportCurrentProgressDto>.Failure(Error.NotFound("Project not found"));
 
         var planProgress = await _planProgressLookup.GetAsync(projectId, cancellationToken);
@@ -147,9 +147,12 @@ public sealed class ProjectStatusReportService : IProjectStatusReportService
 
     public async Task<Result<ProjectStatusReportDto>> GetByIdAsync(Guid projectId, Guid reportId, CancellationToken cancellationToken = default)
     {
+        var project = await FindProjectInScopeAsync(projectId, cancellationToken);
+        if (project is null) return Result<ProjectStatusReportDto>.Failure(Error.NotFound("Project not found"));
         var report = await _context.Set<ProjectStatusReport>().AsNoTracking()
             .Include(x => x.RiskSnapshots).Include(x => x.IssueSnapshots).Include(x => x.ChangeRequestSnapshots)
-            .FirstOrDefaultAsync(x => x.Id == reportId && x.ProjectId == projectId, cancellationToken);
+            .FirstOrDefaultAsync(x => x.Id == reportId && x.ProjectId == projectId
+                && x.TenantId == project.TenantId && !x.IsDeleted, cancellationToken);
         return report is null
             ? Result<ProjectStatusReportDto>.Failure(Error.NotFound("Status report not found"))
             : Result<ProjectStatusReportDto>.Success(MapDetail(report));
@@ -177,7 +180,7 @@ public sealed class ProjectStatusReportService : IProjectStatusReportService
 
     public async Task<Result<ProjectStatusReportDto>> CreateAsync(Guid projectId, CreateProjectStatusReportDto dto, string userId, CancellationToken cancellationToken = default)
     {
-        var project = await _context.Set<Project>().FirstOrDefaultAsync(x => x.Id == projectId, cancellationToken);
+        var project = await FindProjectInScopeAsync(projectId, cancellationToken);
         if (project is null) return Result<ProjectStatusReportDto>.Failure(Error.NotFound("Project not found"));
         var lifecycleStatus = await ResolveReportLifecycleStatusAsync(project, dto.ProjectLifecycleStatusAtReport, cancellationToken);
         if (lifecycleStatus.IsFailure) return Result<ProjectStatusReportDto>.Failure(lifecycleStatus.Error!);
@@ -226,13 +229,14 @@ public sealed class ProjectStatusReportService : IProjectStatusReportService
 
     public async Task<Result<ProjectStatusReportDto>> UpdateAsync(Guid projectId, Guid reportId, UpdateProjectStatusReportDto dto, string userId, CancellationToken cancellationToken = default)
     {
-        var report = await _context.Set<ProjectStatusReport>().FirstOrDefaultAsync(x => x.Id == reportId && x.ProjectId == projectId, cancellationToken);
+        var project = await FindProjectInScopeAsync(projectId, cancellationToken);
+        if (project is null) return Result<ProjectStatusReportDto>.Failure(Error.NotFound("Project not found"));
+        var report = await _context.Set<ProjectStatusReport>().FirstOrDefaultAsync(x => x.Id == reportId
+            && x.ProjectId == projectId && x.TenantId == project.TenantId && !x.IsDeleted, cancellationToken);
         if (report is null) return Result<ProjectStatusReportDto>.Failure(Error.NotFound("Status report not found"));
         if (report.ReportState != ProjectStatusReportState.Draft) return Result<ProjectStatusReportDto>.Failure(Error.Conflict("Published status reports are immutable"));
         if (dto.RowVersion is { Length: > 0 }) _context.Entry(report).Property(x => x.RowVersion).OriginalValue = dto.RowVersion;
 
-        var project = await _context.Set<Project>().FirstOrDefaultAsync(item => item.Id == projectId && item.TenantId == report.TenantId && !item.IsDeleted, cancellationToken);
-        if (project is null) return Result<ProjectStatusReportDto>.Failure(Error.NotFound("Project not found"));
         var lifecycleStatus = await ResolveReportLifecycleStatusAsync(project, dto.ProjectLifecycleStatusAtReport, cancellationToken);
         if (lifecycleStatus.IsFailure) return Result<ProjectStatusReportDto>.Failure(lifecycleStatus.Error!);
 
@@ -263,8 +267,11 @@ public sealed class ProjectStatusReportService : IProjectStatusReportService
 
     public async Task<Result<ProjectStatusReportDto>> PublishAsync(Guid projectId, Guid reportId, UpdateProjectStatusReportDto dto, string userId, CancellationToken cancellationToken = default)
     {
+        var scopedProject = await FindProjectInScopeAsync(projectId, cancellationToken);
+        if (scopedProject is null) return Result<ProjectStatusReportDto>.Failure(Error.NotFound("Project not found"));
         var reportInfo = await _context.Set<ProjectStatusReport>().AsNoTracking()
-            .Where(item => item.Id == reportId && item.ProjectId == projectId && !item.IsDeleted)
+            .Where(item => item.Id == reportId && item.ProjectId == projectId
+                && item.TenantId == scopedProject.TenantId && !item.IsDeleted)
             .Select(item => new { item.TenantId, item.ReportState })
             .FirstOrDefaultAsync(cancellationToken);
         if (reportInfo is null) return Result<ProjectStatusReportDto>.Failure(Error.NotFound("Status report not found"));
@@ -280,12 +287,13 @@ public sealed class ProjectStatusReportService : IProjectStatusReportService
         try
         {
             var report = await _context.Set<ProjectStatusReport>()
-                .FirstOrDefaultAsync(item => item.Id == reportId && item.ProjectId == projectId && !item.IsDeleted, cancellationToken);
+                .FirstOrDefaultAsync(item => item.Id == reportId && item.ProjectId == projectId
+                    && item.TenantId == scopedProject.TenantId && !item.IsDeleted, cancellationToken);
             if (report is null) return Result<ProjectStatusReportDto>.Failure(Error.NotFound("Status report not found"));
             if (report.ReportState != ProjectStatusReportState.Draft)
                 return Result<ProjectStatusReportDto>.Failure(Error.Conflict("This status report has already left Draft."));
 
-            var project = await _context.Set<Project>().FirstOrDefaultAsync(item => item.Id == projectId && item.TenantId == report.TenantId && !item.IsDeleted, cancellationToken);
+            var project = await FindProjectInScopeAsync(projectId, cancellationToken);
             if (project is null) return Result<ProjectStatusReportDto>.Failure(Error.NotFound("Project not found"));
             var lifecycleStatus = await ResolveReportLifecycleStatusAsync(project, dto.ProjectLifecycleStatusAtReport, cancellationToken);
             if (lifecycleStatus.IsFailure) return Result<ProjectStatusReportDto>.Failure(lifecycleStatus.Error!);
@@ -474,7 +482,10 @@ public sealed class ProjectStatusReportService : IProjectStatusReportService
 
     public async Task<Result> DeleteAsync(Guid projectId, Guid reportId, string userId, CancellationToken cancellationToken = default)
     {
-        var report = await _context.Set<ProjectStatusReport>().FirstOrDefaultAsync(x => x.Id == reportId && x.ProjectId == projectId, cancellationToken);
+        var project = await FindProjectInScopeAsync(projectId, cancellationToken);
+        if (project is null) return Result.Failure(Error.NotFound("Project not found"));
+        var report = await _context.Set<ProjectStatusReport>().FirstOrDefaultAsync(x => x.Id == reportId
+            && x.ProjectId == projectId && x.TenantId == project.TenantId && !x.IsDeleted, cancellationToken);
         if (report is null) return Result.Failure(Error.NotFound("Status report not found"));
         if (report.ReportState != ProjectStatusReportState.Draft) return Result.Failure(Error.Conflict("Published status reports are immutable"));
         report.IsDeleted = true;
@@ -753,7 +764,24 @@ public sealed class ProjectStatusReportService : IProjectStatusReportService
         if (capacity.Value.UtilizedHours.GetValueOrDefault() <= 0m)
             return new(ProjectResourceUtilizationStatuses.NoAssignedWork, percent);
         return new(ProjectResourceUtilizationStatuses.WithinCapacity, percent);
-    }    private async Task<bool> ProjectExistsAsync(Guid projectId, CancellationToken cancellationToken) => await _context.Set<Project>().AnyAsync(x => x.Id == projectId, cancellationToken);
+    }
+
+    private IQueryable<Project> InScope(IQueryable<Project> projects)
+    {
+        var management = _managementContextAccessor.Current;
+        if (management is null || management.TenantId == Guid.Empty)
+            return projects.Where(_ => false);
+
+        var projectIds = management.Scope.ProjectIds.ToArray();
+        return projects.Where(project => project.TenantId == management.TenantId && projectIds.Contains(project.Id));
+    }
+
+    private Task<Project?> FindProjectInScopeAsync(Guid projectId, CancellationToken cancellationToken) =>
+        InScope(_context.Set<Project>())
+            .FirstOrDefaultAsync(project => project.Id == projectId && !project.IsDeleted, cancellationToken);
+
+    private async Task<bool> ProjectExistsAsync(Guid projectId, CancellationToken cancellationToken) =>
+        await FindProjectInScopeAsync(projectId, cancellationToken) is not null;
 
     private async Task<DateTime> GetBusinessTodayAsync(Guid projectId, CancellationToken cancellationToken)
     {

@@ -40,7 +40,10 @@ public sealed class ProgramManagementService : IProgramManagementService
         if (!canReadTenantData && context!.ViewMode == ManagementViewMode.Native && context.SelectedPerspective == ManagementPerspective.ProgramManager)
         {
             var nativeSnapshot = await _scopeResolver.GetPerspectiveSnapshotAsync(context.UserId, context.TenantId, null, cancellationToken);
-            programIds = nativeSnapshot.Scope.ProgramIds.ToArray();
+            // A resource-scope middleware may have narrowed this request to a
+            // single Organization. Never let a fresh tenant-wide perspective
+            // snapshot replace that authoritative request scope.
+            programIds = programIds.Intersect(nativeSnapshot.Scope.ProgramIds).ToArray();
         }
         var query = _db.Set<ProgramEntity>().AsNoTracking();
         if (canReadTenantData)

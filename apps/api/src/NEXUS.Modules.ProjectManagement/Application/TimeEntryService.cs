@@ -239,8 +239,15 @@ public sealed class TimeEntryService : ITimeEntryService
         var projectIds = new HashSet<Guid>();
         if (canViewTeam)
         {
-            var snapshot = await _scopeResolver.GetPerspectiveSnapshotAsync(actorId, tenantId, cancellationToken: cancellationToken);
-            projectIds = snapshot.Scope.ProjectIds.ToHashSet();
+            var current = _managementContext.Current;
+            if (current is not null && current.UserId == actorId && current.TenantId == tenantId)
+            {
+                var snapshot = await _scopeResolver.GetPerspectiveSnapshotAsync(
+                    actorId, tenantId, current, cancellationToken);
+                projectIds = snapshot.Scope.ProjectIds
+                    .Intersect(current.Scope.ProjectIds)
+                    .ToHashSet();
+            }
         }
         return new TimeEntryReadScope(ownResourceIds, projectIds, canViewOwn, canViewTeam);
     }

@@ -36,7 +36,8 @@ public sealed class ProjectLifecyclePermissionContractTests
             Assert.False(string.IsNullOrWhiteSpace(permission.DescriptionEn));
             Assert.False(string.IsNullOrWhiteSpace(permission.DescriptionAr));
             Assert.Equal(RoleCategories.Selectable, permission.AllowedCategories);
-            Assert.True(permission.IsTenantAdminBaseline);
+            Assert.False(PermissionProtectionPolicy.Empty.IsProtected(permission.Key));
+            Assert.True(PermissionProtectionPolicy.Empty.IsGrantable(permission));
 
             if (expectedLevel == PermissionLevel.Action)
             {
@@ -63,13 +64,13 @@ public sealed class ProjectLifecyclePermissionContractTests
         Assert.Equal(PermissionLevel.Action, statusChange.Level);
         Assert.Equal(PermissionScope.Project, statusChange.Scope);
         Assert.Contains("Project.View", statusChange.RequiredPermissionKeys);
-        Assert.False(statusChange.IsTenantAdminBaseline);
+        Assert.False(PermissionProtectionPolicy.Empty.IsProtected(statusChange.Key));
 
         Assert.True(phaseChange.IsActive);
         Assert.True(phaseChange.IsSensitive);
         Assert.Equal(PermissionScope.Project, phaseChange.Scope);
         Assert.Contains("Project.View", phaseChange.RequiredPermissionKeys);
-        Assert.False(phaseChange.IsTenantAdminBaseline);
+        Assert.False(PermissionProtectionPolicy.Empty.IsProtected(phaseChange.Key));
     }
 
     [Fact]

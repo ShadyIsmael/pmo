@@ -231,6 +231,9 @@ public sealed class DocumentTenantBoundaryTests : IDisposable
         Assert.NotEqual(Guid.Empty, firstVersion.Id);
         var databaseDocument = await _db.Documents.Include(document => document.Versions)
             .SingleAsync(document => document.Id == createdId);
+        Assert.True(databaseDocument.IsTemplate);
+        Assert.Equal(_organizationA, databaseDocument.OrganizationId);
+        Assert.Equal(_categoryA, databaseDocument.CategoryId);
         Assert.Null(databaseDocument.StoragePath);
         Assert.Null(databaseDocument.Versions.Single().StoragePath);
         Assert.Equal("test", databaseDocument.Versions.Single().StorageProviderId);
@@ -296,10 +299,12 @@ public sealed class DocumentTenantBoundaryTests : IDisposable
     }
 
     [Fact]
-    public async Task Cross_organization_template_create_and_missing_template_manage_permission_are_denied_before_storage()
+    public async Task Cross_organization_template_create_missing_category_and_missing_template_manage_permission_are_denied_before_storage()
     {
         var scopedService = CreateService(ScopedContext(_tenantA, _userA, _projectA));
         var crossOrganization = await scopedService.CreateAsync(NewTemplateMutation(_organizationOther, _categoryA, PdfBytes()), _userA);
+        var missingCategory = await scopedService.CreateAsync(
+            NewTemplateMutation(_organizationA, _categoryA, PdfBytes()) with { CategoryId = null }, _userA);
 
         _http.HttpContext!.User = RequestContext(_tenantA, _userA, includeTemplateManage: false).User;
         var withoutManage = CreateService(ScopedContext(_tenantA, _userA, _projectA));
@@ -307,6 +312,8 @@ public sealed class DocumentTenantBoundaryTests : IDisposable
 
         Assert.True(crossOrganization.IsFailure);
         Assert.Equal(403, crossOrganization.Error?.StatusCode);
+        Assert.True(missingCategory.IsFailure);
+        Assert.Equal(400, missingCategory.Error?.StatusCode);
         Assert.True(missingPermission.IsFailure);
         Assert.Equal(403, missingPermission.Error?.StatusCode);
         _storage.Verify(provider => provider.StoreAsync(It.IsAny<Stream>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
@@ -847,7 +854,7 @@ public sealed class DocumentTenantBoundaryTests : IDisposable
     }
 
     [Fact]
-    public async Task Template_category_option_lookup_uses_only_the_template_operation_permissions_and_selected_organization()
+    public async Task Template_category_option_lookup_uses_only_template_permissions_and_includes_selected_organization_and_tenant_shared_categories()
     {
         _http.HttpContext = RequestContext(_tenantA, _userA, permissions:
         [
@@ -859,11 +866,12 @@ public sealed class DocumentTenantBoundaryTests : IDisposable
         var result = await service.GetTemplateCategoryOptionsAsync(_organizationA);
 
         Assert.True(result.IsSuccess, result.Error?.Message);
-        var category = Assert.Single(result.Value!);
-        Assert.Equal(_categoryA, category.Id);
-        Assert.Equal("Organization A", category.NameEn);
-        Assert.Equal("\u0627\u0644\u0645\u0624\u0633\u0633\u0629 \u0623", category.NameAr);
-        Assert.DoesNotContain(result.Value!, item => item.Id == _legacyCategory || item.Id == _categoryOther || item.Id == _categoryB);
+        Assert.Contains(result.Value!, category => category.Id == _categoryA
+            && category.NameEn == "Organization A"
+            && category.NameAr == "\u0627\u0644\u0645\u0624\u0633\u0633\u0629 \u0623");
+        Assert.Contains(result.Value!, category => category.Id == _legacyCategory
+            && category.NameEn == "Legacy Tenant Category");
+        Assert.DoesNotContain(result.Value!, item => item.Id == _categoryOther || item.Id == _categoryB);
 
         var crossOrganization = await service.GetTemplateCategoryOptionsAsync(_organizationOther);
         Assert.True(crossOrganization.IsFailure);
@@ -874,7 +882,61 @@ public sealed class DocumentTenantBoundaryTests : IDisposable
         await _db.SaveChangesAsync();
         var afterDeactivation = await service.GetTemplateCategoryOptionsAsync(_organizationA);
         Assert.True(afterDeactivation.IsSuccess);
-        Assert.Empty(afterDeactivation.Value!);
+        Assert.DoesNotContain(afterDeactivation.Value!, item => item.Id == _categoryA);
+        Assert.Contains(afterDeactivation.Value!, item => item.Id == _legacyCategory);
+
+        var sharedCategory = await _db.DocumentCategories.SingleAsync(item => item.Id == _legacyCategory);
+        sharedCategory.IsActive = false;
+        await _db.SaveChangesAsync();
+        var afterSharedDeactivation = await service.GetTemplateCategoryOptionsAsync(_organizationA);
+        Assert.True(afterSharedDeactivation.IsSuccess);
+        Assert.Empty(afterSharedDeactivation.Value!);
+    }
+
+    [Fact]
+    public async Task Project_upload_category_lookup_and_upload_need_create_permission_only_and_stay_project_scoped()
+    {
+        _http.HttpContext = RequestContext(_tenantA, _userA, permissions: [DocumentPermissions.Create]);
+        var service = CreateService(ScopedContext(_tenantA, _userA, _projectA));
+
+        var options = await service.GetProjectUploadCategoryOptionsAsync(_projectA);
+
+        Assert.True(options.IsSuccess, options.Error?.Message);
+        Assert.Contains(options.Value!, category => category.Id == _categoryA);
+        Assert.Contains(options.Value!, category => category.Id == _legacyCategory);
+        Assert.DoesNotContain(options.Value!, category => category.Id == _categoryOther || category.Id == _categoryB);
+        var outOfScope = await service.GetProjectUploadCategoryOptionsAsync(_projectOtherOrg);
+        Assert.True(outOfScope.IsFailure);
+        Assert.Equal(404, outOfScope.Error?.StatusCode);
+
+        var uploaded = await service.CreateAsync(NewMutation(_projectA, _legacyCategory), _userA);
+        Assert.True(uploaded.IsSuccess, uploaded.Error?.Message);
+        Assert.Equal(_legacyCategory, uploaded.Value!.Document.CategoryId);
+
+        _http.HttpContext = RequestContext(_tenantA, _userA, permissions: [DocumentPermissions.Create],
+            deniedPermissions: [DocumentPermissions.Create]);
+        var denied = await CreateService(ScopedContext(_tenantA, _userA, _projectA))
+            .GetProjectUploadCategoryOptionsAsync(_projectA);
+        Assert.True(denied.IsFailure);
+        Assert.Equal(403, denied.Error?.StatusCode);
+    }
+
+    [Fact]
+    public async Task Template_upload_accepts_an_active_tenant_shared_category()
+    {
+        _http.HttpContext = RequestContext(_tenantA, _userA, permissions:
+        [
+            DocumentPermissions.Create,
+            DocumentPermissions.TemplateManage
+        ]);
+        var service = CreateService(ScopedContext(_tenantA, _userA, _projectA));
+
+        var uploaded = await service.CreateAsync(
+            NewTemplateMutation(_organizationA, _legacyCategory, PdfBytes()), _userA);
+
+        Assert.True(uploaded.IsSuccess, uploaded.Error?.Message);
+        Assert.Equal(_organizationA, uploaded.Value!.Document.OrganizationId);
+        Assert.Equal(_legacyCategory, uploaded.Value.Document.CategoryId);
     }
 
     [Theory]

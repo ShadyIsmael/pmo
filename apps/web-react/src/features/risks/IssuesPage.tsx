@@ -55,8 +55,7 @@ export function IssuesPage() {
   const statuses = statusesQuery.data ?? [];
   const projectId = searchParams.get("projectId") || undefined;
   const projectsQuery = useProjects({ page: 1, pageSize: 200 }, createOpen);
-  const draftProjectPublicId = projectsQuery.data?.items.find((project) => project.id === draft.projectId)?.publicId;
-  const assigneesQuery = useFullWorkItemAssignees(draftProjectPublicId, createOpen);
+  const assigneesQuery = useFullWorkItemAssignees(draft.projectId || undefined, createOpen);
   const mutations = useFullWorkItemMutations();
   const query = useFullWorkItems({
     page: 1,

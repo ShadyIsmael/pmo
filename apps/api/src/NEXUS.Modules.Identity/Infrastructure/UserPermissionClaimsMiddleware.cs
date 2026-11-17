@@ -10,6 +10,7 @@ public sealed class UserPermissionClaimsMiddleware
 {
     private const string PermissionClaimType = "permission";
     private const string SessionClaimType = "sid";
+    public const string OrganizationScopeItemKey = "Nexus.OrganizationScopeId";
     private readonly RequestDelegate _next;
 
     public UserPermissionClaimsMiddleware(RequestDelegate next) => _next = next;
@@ -18,7 +19,8 @@ public sealed class UserPermissionClaimsMiddleware
         HttpContext context,
         IUserEffectivePermissionService permissions,
         IUserSessionValidator sessions,
-        ITenantRegistryStatusValidator tenantRegistry)
+        ITenantRegistryStatusValidator tenantRegistry,
+        IProjectOrganizationLookup? projectOrganizations = null)
     {
         if (context.User.Identity is ClaimsIdentity identity && identity.IsAuthenticated)
         {
@@ -71,7 +73,20 @@ public sealed class UserPermissionClaimsMiddleware
             // Never trust the permission snapshot embedded in a long-lived JWT. Rebuild
             // it from the tenant-scoped source of truth on every authenticated request,
             // so direct denials and revocations apply without waiting for token expiry.
-            var currentPermissions = await permissions.GetEffectivePermissionsAsync(userId, tenantId, context.RequestAborted);
+            var organizationResolution = await TryResolveRequestedOrganizationIdAsync(
+                context, tenantId, projectOrganizations);
+            if (!organizationResolution.Success)
+            {
+                context.Response.StatusCode = StatusCodes.Status404NotFound;
+                return;
+            }
+            var requestedOrganizationId = organizationResolution.OrganizationId;
+
+            if (requestedOrganizationId is Guid scopedOrganizationId)
+                context.Items[OrganizationScopeItemKey] = scopedOrganizationId;
+            var currentPermissions = requestedOrganizationId is Guid organizationId
+                ? await permissions.GetEffectivePermissionsForOrganizationAsync(userId, tenantId, organizationId, context.RequestAborted)
+                : await permissions.GetEffectivePermissionsAsync(userId, tenantId, context.RequestAborted);
             foreach (var permission in currentPermissions)
                 identity.AddClaim(new Claim(PermissionClaimType, permission));
 
@@ -88,4 +103,80 @@ public sealed class UserPermissionClaimsMiddleware
             string.Equals(claim.Value, "PlatformAdministrator", StringComparison.OrdinalIgnoreCase))
         || principal.FindAll("platform_permission").Any(claim =>
             claim.Value is "tenants.manage");
+
+    private static async Task<(bool Success, Guid? OrganizationId)> TryResolveRequestedOrganizationIdAsync(
+        HttpContext context,
+        Guid tenantId,
+        IProjectOrganizationLookup? projectOrganizations)
+    {
+        var routeValue = context.Request.RouteValues.TryGetValue("organizationId", out var routeOrganization)
+            ? Convert.ToString(routeOrganization, System.Globalization.CultureInfo.InvariantCulture)
+            : null;
+        var queryValues = context.Request.Query["organizationId"];
+        if (queryValues.Count > 1)
+            return (false, null);
+        var queryValue = queryValues.Count == 1 ? queryValues[0] : null;
+
+        if (!string.IsNullOrWhiteSpace(routeValue) && !string.IsNullOrWhiteSpace(queryValue)
+            && !string.Equals(routeValue, queryValue, StringComparison.OrdinalIgnoreCase))
+            return (false, null);
+
+        var rawValue = string.IsNullOrWhiteSpace(routeValue) ? queryValue : routeValue;
+        if (!string.IsNullOrWhiteSpace(rawValue)
+            && (!Guid.TryParse(rawValue, out var parsedOrganizationId) || parsedOrganizationId == Guid.Empty))
+            return (false, null);
+
+        var explicitOrganizationId = string.IsNullOrWhiteSpace(rawValue) ? (Guid?)null : Guid.Parse(rawValue);
+        var projectIdCandidates = new List<Guid>();
+        if (context.Request.RouteValues.TryGetValue("projectId", out var routeProject)
+            && !TryAddProjectId(Convert.ToString(routeProject, System.Globalization.CultureInfo.InvariantCulture), projectIdCandidates))
+            return (false, null);
+
+        foreach (var headerName in new[] { "X-Nexus-Project-Id" })
+        {
+            var values = context.Request.Headers[headerName];
+            if (values.Count > 1
+                || (values.Count == 1 && !TryAddProjectId(values[0], projectIdCandidates)))
+                return (false, null);
+        }
+
+        foreach (var queryName in new[] { "projectId", "forProjectId" })
+        {
+            var values = context.Request.Query[queryName];
+            if (values.Count > 1
+                || (values.Count == 1 && !TryAddProjectId(values[0], projectIdCandidates)))
+                return (false, null);
+        }
+
+        var distinctProjectIds = projectIdCandidates.Distinct().ToArray();
+        if (distinctProjectIds.Length > 1)
+            return (false, null);
+
+        Guid? projectOrganizationId = null;
+        if (distinctProjectIds.Length == 1)
+        {
+            if (projectOrganizations is null)
+                return (false, null);
+            projectOrganizationId = await projectOrganizations.ResolveOrganizationIdAsync(
+                tenantId, distinctProjectIds[0], context.RequestAborted);
+            if (!projectOrganizationId.HasValue)
+                return (false, null);
+        }
+
+        if (explicitOrganizationId.HasValue && projectOrganizationId.HasValue
+            && explicitOrganizationId.Value != projectOrganizationId.Value)
+            return (false, null);
+
+        return (true, explicitOrganizationId ?? projectOrganizationId);
+    }
+
+    private static bool TryAddProjectId(string? rawValue, ICollection<Guid> projectIds)
+    {
+        if (string.IsNullOrWhiteSpace(rawValue))
+            return true;
+        if (!Guid.TryParse(rawValue, out var projectId) || projectId == Guid.Empty)
+            return false;
+        projectIds.Add(projectId);
+        return true;
+    }
 }

@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using NEXUS.SharedKernel;
 
 namespace NEXUS.Api.ProgramManagement;
 
@@ -17,6 +18,7 @@ public sealed class ProgramManagementController : ControllerBase
         _financialRollups = financialRollups;
     }
 
+    [OrganizationScopedCollectionPermission("Program.View")]
     [HttpGet("programs")]
     public async Task<ActionResult> GetPrograms([FromQuery] int page = 1, [FromQuery] int pageSize = 50, [FromQuery] string? search = null, CancellationToken cancellationToken = default)
         => Ok(await _service.GetProgramsAsync(page, pageSize, search, cancellationToken));

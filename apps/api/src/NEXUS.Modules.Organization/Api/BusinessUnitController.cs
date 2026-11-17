@@ -6,7 +6,7 @@ namespace NEXUS.Modules.Organization.Api;
 
 [ApiController]
 [Route("api/business-units")]
-[Authorize]
+[Authorize(Policy = "Settings.ManageTenantConfiguration")]
 public class BusinessUnitController : ControllerBase
 {
     private readonly IBusinessUnitService _businessUnitService;

@@ -1,9 +1,9 @@
-using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using NEXUS.Modules.ResourceManagement.Application;
 using NEXUS.Modules.ResourceManagement.Application.DTOs;
+using NEXUS.SharedKernel.Management;
 
 namespace NEXUS.Modules.ResourceManagement.Api;
 
@@ -13,10 +13,12 @@ namespace NEXUS.Modules.ResourceManagement.Api;
 public class TeamController : ControllerBase
 {
     private readonly ITeamService _teamService;
+    private readonly IManagementContextAccessor? _managementContext;
 
-    public TeamController(ITeamService teamService)
+    public TeamController(ITeamService teamService, IManagementContextAccessor? managementContext = null)
     {
         _teamService = teamService;
+        _managementContext = managementContext;
     }
 
     [HttpGet("{id:guid}")]
@@ -52,7 +54,9 @@ public class TeamController : ControllerBase
     [Authorize(Policy = "Team.Create")]
     public async Task<IActionResult> Create([FromBody] CreateTeamDto dto, CancellationToken cancellationToken)
     {
-        var result = await _teamService.CreateAsync(dto, ActorId(), cancellationToken);
+        var actorError = ResourceManagementActorBinding.RequireActor(this, _managementContext, requireManagementContext: true, out var actorId);
+        if (actorError is not null) return actorError;
+        var result = await _teamService.CreateAsync(dto, actorId, cancellationToken);
         if (result.IsFailure) return Failure(result.Error);
         return CreatedAtAction(nameof(GetById), new { id = result.Value!.Id }, result.Value);
     }
@@ -61,7 +65,9 @@ public class TeamController : ControllerBase
     [Authorize(Policy = "Team.Edit")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateTeamDto dto, CancellationToken cancellationToken)
     {
-        var result = await _teamService.UpdateAsync(id, dto, ActorId(), cancellationToken);
+        var actorError = ResourceManagementActorBinding.RequireActor(this, _managementContext, requireManagementContext: true, out var actorId);
+        if (actorError is not null) return actorError;
+        var result = await _teamService.UpdateAsync(id, dto, actorId, cancellationToken);
         if (result.IsFailure) return Failure(result.Error);
         return Ok(result.Value);
     }
@@ -70,7 +76,9 @@ public class TeamController : ControllerBase
     [Authorize(Policy = "Team.Delete")]
     public async Task<IActionResult> Deactivate(Guid id, CancellationToken cancellationToken)
     {
-        var result = await _teamService.DeactivateAsync(id, ActorId(), cancellationToken);
+        var actorError = ResourceManagementActorBinding.RequireActor(this, _managementContext, requireManagementContext: true, out var actorId);
+        if (actorError is not null) return actorError;
+        var result = await _teamService.DeactivateAsync(id, actorId, cancellationToken);
         if (result.IsFailure) return Failure(result.Error);
         return Ok(result.Value);
     }
@@ -79,7 +87,9 @@ public class TeamController : ControllerBase
     [Authorize(Policy = "Team.Delete")]
     public async Task<IActionResult> Reactivate(Guid id, CancellationToken cancellationToken)
     {
-        var result = await _teamService.ReactivateAsync(id, ActorId(), cancellationToken);
+        var actorError = ResourceManagementActorBinding.RequireActor(this, _managementContext, requireManagementContext: true, out var actorId);
+        if (actorError is not null) return actorError;
+        var result = await _teamService.ReactivateAsync(id, actorId, cancellationToken);
         if (result.IsFailure) return Failure(result.Error);
         return Ok(result.Value);
     }
@@ -88,7 +98,9 @@ public class TeamController : ControllerBase
     [Authorize(Policy = "Team.Delete")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
-        var result = await _teamService.DeleteAsync(id, ActorId(), cancellationToken);
+        var actorError = ResourceManagementActorBinding.RequireActor(this, _managementContext, requireManagementContext: true, out var actorId);
+        if (actorError is not null) return actorError;
+        var result = await _teamService.DeleteAsync(id, actorId, cancellationToken);
         if (result.IsFailure) return Failure(result.Error);
         return NoContent();
     }
@@ -106,7 +118,9 @@ public class TeamController : ControllerBase
     [Authorize(Policy = "Team.Edit")]
     public async Task<IActionResult> AddMembers(Guid id, [FromBody] AddTeamMembersDto dto, CancellationToken cancellationToken)
     {
-        var result = await _teamService.AddMembersAsync(id, dto, ActorId(), cancellationToken);
+        var actorError = ResourceManagementActorBinding.RequireActor(this, _managementContext, requireManagementContext: true, out var actorId);
+        if (actorError is not null) return actorError;
+        var result = await _teamService.AddMembersAsync(id, dto, actorId, cancellationToken);
         if (result.IsFailure) return Failure(result.Error);
         return Ok(result.Value);
     }
@@ -115,7 +129,9 @@ public class TeamController : ControllerBase
     [Authorize(Policy = "Team.Edit")]
     public async Task<IActionResult> SetMembers(Guid id, [FromBody] SetTeamMembersDto dto, CancellationToken cancellationToken)
     {
-        var result = await _teamService.SetMembersAsync(id, dto, ActorId(), cancellationToken);
+        var actorError = ResourceManagementActorBinding.RequireActor(this, _managementContext, requireManagementContext: true, out var actorId);
+        if (actorError is not null) return actorError;
+        var result = await _teamService.SetMembersAsync(id, dto, actorId, cancellationToken);
         if (result.IsFailure) return Failure(result.Error);
         return Ok(result.Value);
     }
@@ -124,12 +140,12 @@ public class TeamController : ControllerBase
     [Authorize(Policy = "Team.Edit")]
     public async Task<IActionResult> RemoveMember(Guid id, Guid resourceId, [FromBody] RemoveTeamMemberDto? dto, CancellationToken cancellationToken)
     {
-        var result = await _teamService.RemoveMemberAsync(id, resourceId, dto ?? new RemoveTeamMemberDto(), ActorId(), cancellationToken);
+        var actorError = ResourceManagementActorBinding.RequireActor(this, _managementContext, requireManagementContext: true, out var actorId);
+        if (actorError is not null) return actorError;
+        var result = await _teamService.RemoveMemberAsync(id, resourceId, dto ?? new RemoveTeamMemberDto(), actorId, cancellationToken);
         if (result.IsFailure) return Failure(result.Error);
         return Ok(result.Value);
     }
-
-    private string ActorId() => User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "System";
 
     private IActionResult Failure(NEXUS.SharedKernel.Error? error) => error?.StatusCode switch
     {

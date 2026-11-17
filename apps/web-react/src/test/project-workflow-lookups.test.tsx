@@ -142,7 +142,7 @@ describe("Project workflow user lookups", () => {
       meetings: useMeetingWorkflowUserLookup(true),
       meetingProjects: useMeetingProjectOptions({}, true),
       workItems: useWorkItemWorkflowUserLookup(true),
-      risks: useRiskWorkflowUserLookup(true),
+      risks: useRiskWorkflowUserLookup(true, "project-1"),
       resources: useResourceWorkflowUserLookup(true),
       portfolioManagers: usePortfolioWorkflowManagerLookup(true),
       programManagers: useProgramWorkflowManagerLookup(true),
@@ -158,7 +158,7 @@ describe("Project workflow user lookups", () => {
     expect(api.get).toHaveBeenCalledWith(endpoints.users.meetingWorkflowLookup);
     expect(api.get).toHaveBeenCalledWith(endpoints.meetings.projects, {});
     expect(api.get).toHaveBeenCalledWith(endpoints.users.workItemWorkflowLookup);
-    expect(api.get).toHaveBeenCalledWith(endpoints.users.riskWorkflowLookup);
+    expect(api.get).toHaveBeenCalledWith(endpoints.users.riskWorkflowLookup, { projectId: "project-1" });
     expect(api.get).toHaveBeenCalledWith(endpoints.users.resourceWorkflowLookup);
     expect(api.get).toHaveBeenCalledWith(endpoints.users.portfolioManagerWorkflowLookup);
     expect(api.get).toHaveBeenCalledWith(endpoints.users.programManagerWorkflowLookup);

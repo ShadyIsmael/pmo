@@ -450,6 +450,8 @@ public sealed class ProjectChangeRequestWorkflowService : IProjectChangeRequestS
         if (options.IsFailure) return Result<ProjectChangeRequestApprovalDto>.Failure(options.Error!);
         var replacement = options.Value!.Approvers.FirstOrDefault(item => item.UserId == dto.NewApproverUserId);
         if (replacement is null || replacement.UserId == assignment.AssignedToUserId) return Result<ProjectChangeRequestApprovalDto>.Failure(Error.Validation("Select a different currently eligible project participant."));
+        if (assignment.IsMandatory && assignment.IsSponsor && !replacement.IsSponsor)
+            return Result<ProjectChangeRequestApprovalDto>.Failure(Error.Conflict("A mandatory Project Sponsor approval can only be reassigned to an eligible Sponsor."));
         if (await _db.Set<ProjectChangeRequestApproval>().AnyAsync(item => item.ProjectChangeRequestId == id && item.AssignedToUserId == replacement.UserId
             && item.Status == ProjectChangeRequestApproval.Statuses.Pending && item.Id != assignment.Id && !item.IsDeleted, cancellationToken))
             return Result<ProjectChangeRequestApprovalDto>.Failure(Error.Conflict("This user already has a pending assignment."));
@@ -810,8 +812,10 @@ public sealed class ProjectChangeRequestWorkflowService : IProjectChangeRequestS
     private async Task<Project?> FindProjectAsync(Guid projectId, Guid tenantId, CancellationToken cancellationToken, bool allowOutOfScope = false)
     {
         var project = await _db.Set<Project>().FirstOrDefaultAsync(item => item.Id == projectId && item.TenantId == tenantId && !item.IsDeleted, cancellationToken);
-        var scope = _management.Current?.Scope.ProjectIds;
-        return project is null || (!allowOutOfScope && scope is { Count: > 0 } && !scope.Contains(projectId)) ? null : project;
+        var management = _management.Current;
+        if (project is null || management is null || management.TenantId != tenantId)
+            return null;
+        return !allowOutOfScope && !management.Scope.ProjectIds.Contains(projectId) ? null : project;
     }
 
     private async Task<bool> HasPermissionAsync(Guid userId, Guid tenantId, string permission, CancellationToken cancellationToken)

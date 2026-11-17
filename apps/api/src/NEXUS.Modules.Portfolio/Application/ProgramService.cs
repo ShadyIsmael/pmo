@@ -1,4 +1,5 @@
 using System.Data;
+using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using NEXUS.Modules.Identity.Application;
@@ -103,9 +104,7 @@ public sealed class ProgramService : IProgramService
         if (creationScope is null)
             return Result<IReadOnlyList<ProgramPortfolioLookupDto>>.Failure(Error.Forbidden("Portfolio creation scope is unavailable."));
 
-        var permissions = _effectivePermissions is null
-            ? new HashSet<string>(StringComparer.Ordinal)
-            : await _effectivePermissions.GetEffectivePermissionsAsync(context.UserId, context.TenantId, ct);
+        var permissions = await GetEffectivePermissionsForContextAsync(context, context.UserId, ct);
         if (!permissions.Contains("Program.Create"))
             return Result<IReadOnlyList<ProgramPortfolioLookupDto>>.Failure(Error.Forbidden(
                 "Program creation permission is required."));
@@ -147,9 +146,7 @@ public sealed class ProgramService : IProgramService
         if (_managementScopeResolver is null)
             return Result<IReadOnlyList<ProgramPortfolioLookupDto>>.Failure(Error.Forbidden("Portfolio assignment scope is unavailable."));
 
-        var permissions = _effectivePermissions is null
-            ? new HashSet<string>(StringComparer.Ordinal)
-            : await _effectivePermissions.GetEffectivePermissionsAsync(context.UserId, context.TenantId, ct);
+        var permissions = await GetEffectivePermissionsForContextAsync(context, context.UserId, ct);
         if (!permissions.Contains("Program.Edit"))
             return Result<IReadOnlyList<ProgramPortfolioLookupDto>>.Failure(Error.Forbidden("Program edit permission is required."));
 
@@ -182,6 +179,9 @@ public sealed class ProgramService : IProgramService
 
     public async Task<Result<ProgramDto>> CreateAsync(SaveProgramDto dto, string userId, CancellationToken ct = default)
     {
+        if (!IsTrustedActor(userId))
+            return Result<ProgramDto>.Failure(Error.Unauthorized("A valid authenticated actor and management context are required."));
+
         var tenantId = TenantId();
         if (tenantId == Guid.Empty || !HasManagementScope(tenantId))
             return Result<ProgramDto>.Failure(Error.Forbidden("A valid tenant management context is required."));
@@ -191,7 +191,7 @@ public sealed class ProgramService : IProgramService
         if (!await CanCreateProgramInPortfolioAsync(dto.PortfolioId, ct)) return Result<ProgramDto>.Failure(Error.NotFound("Portfolio not found"));
         if (!await IsValidPortfolioAsync(dto.PortfolioId, ct)) return Result<ProgramDto>.Failure(Error.Validation("Invalid Portfolio"));
         if (!await IsActivePortfolioAsync(dto.PortfolioId, ct)) return Result<ProgramDto>.Failure(Error.Validation("A Program must be assigned to an active Portfolio"));
-        if (dto.ProgramManagerId.HasValue && !await IsEligibleProgramManagerAsync(dto.ProgramManagerId.Value, ct)) return Result<ProgramDto>.Failure(Error.Validation("Select an eligible active Program Manager in this tenant."));
+        if (dto.ProgramManagerId.HasValue && !await IsEligibleProgramManagerAsync(dto.ProgramManagerId.Value, dto.PortfolioId, ct)) return Result<ProgramDto>.Failure(Error.Validation("Select an eligible active Program Manager in this tenant."));
         if (await IsDuplicateCodeAsync(dto.Name, null, ct)) return Result<ProgramDto>.Failure(Error.Validation("A program with this name already exists"));
 
         var code = await NextCodeAsync(ct);
@@ -253,6 +253,9 @@ public sealed class ProgramService : IProgramService
 
     public async Task<Result<ProgramDto>> UpdateAsync(Guid id, SaveProgramDto dto, string userId, CancellationToken ct = default)
     {
+        if (!IsTrustedActor(userId))
+            return Result<ProgramDto>.Failure(Error.Unauthorized("A valid authenticated actor and management context are required."));
+
         var validation = Validate(dto); if (validation is not null) return Result<ProgramDto>.Failure(validation);
         var entity = await InScope(_db.Set<Entity>()).FirstOrDefaultAsync(x => x.Id == id, ct);
         if (entity is null) return Result<ProgramDto>.Failure(Error.NotFound("Program not found"));
@@ -267,7 +270,7 @@ public sealed class ProgramService : IProgramService
             if (!await IsActivePortfolioAsync(dto.PortfolioId, ct)) return Result<ProgramDto>.Failure(Error.Validation("A Program can only be moved to an active Portfolio"));
             if (await HasProjectsAsync(id, ct)) return Result<ProgramDto>.Failure(Error.Validation("A Program with Projects cannot be moved to another Portfolio"));
         }
-        if (dto.ProgramManagerId.HasValue && dto.ProgramManagerId != entity.ProgramManagerId && !await IsEligibleProgramManagerAsync(dto.ProgramManagerId.Value, ct)) return Result<ProgramDto>.Failure(Error.Validation("Select an eligible active Program Manager in this tenant."));
+        if (dto.ProgramManagerId.HasValue && dto.ProgramManagerId != entity.ProgramManagerId && !await IsEligibleProgramManagerAsync(dto.ProgramManagerId.Value, entity.PortfolioId, ct)) return Result<ProgramDto>.Failure(Error.Validation("Select an eligible active Program Manager in this tenant."));
 
         if (dto.RowVersion.Length > 0) _db.Entry(entity).Property(x => x.RowVersion).OriginalValue = dto.RowVersion;
 
@@ -324,6 +327,9 @@ public sealed class ProgramService : IProgramService
 
     private async Task<Result> SetStatusAsync(Guid id, string status, string userId, bool requireArchived, CancellationToken ct)
     {
+        if (!IsTrustedActor(userId))
+            return Result.Failure(Error.Unauthorized("A valid authenticated actor and management context are required."));
+
         var entity = await InScope(_db.Set<Entity>()).FirstOrDefaultAsync(x => x.Id == id, ct);
         if (entity is null) return Result.Failure(Error.NotFound("Program not found"));
         if (requireArchived && entity.Status != "Archived") return Result.Failure(Error.Validation("Only archived programs can be reactivated"));
@@ -375,14 +381,14 @@ public sealed class ProgramService : IProgramService
         if (creationScope is not null && creationScope.NativePortfolioIds.Contains(id))
         {
             if (_effectivePermissions is null) return false;
-            var nativePermissions = await _effectivePermissions.GetEffectivePermissionsAsync(context.UserId, context.TenantId, ct);
+            var nativePermissions = await GetEffectivePermissionsForPortfolioAsync(context.UserId, context.TenantId, id, ct);
             return nativePermissions.Contains("Program.Create");
         }
 
         // Exceptional path: explicit permission Program.CreateAcrossPortfolios
         if (_effectivePermissions is not null)
         {
-            var permissions = await _effectivePermissions.GetEffectivePermissionsAsync(context.UserId, context.TenantId, ct);
+            var permissions = await GetEffectivePermissionsForPortfolioAsync(context.UserId, context.TenantId, id, ct);
             if (permissions.Contains("Program.Create")
                 && permissions.Contains("Program.CreateAcrossPortfolios")
                 && permissions.Contains("Portfolio.View"))
@@ -412,7 +418,18 @@ public sealed class ProgramService : IProgramService
             .SelectMany(item => item.Contexts)
             .Select(item => item.Id)
             .ToHashSet();
-        return new ProgramPortfolioAssignmentScope(portfolioIds, snapshot.Scope.OrganizationIds.ToHashSet());
+        var organizationIds = snapshot.Scope.OrganizationIds.ToHashSet();
+        if (context.Scope.OrganizationIds.Count == 1)
+        {
+            var currentOrganizationId = context.Scope.OrganizationIds.Single();
+            organizationIds.IntersectWith([currentOrganizationId]);
+            portfolioIds = await _db.Set<Portfolio.Domain.Portfolio>().IgnoreQueryFilters().AsNoTracking()
+                .Where(portfolio => portfolio.TenantId == context.TenantId && !portfolio.IsDeleted
+                    && portfolio.OrganizationId == currentOrganizationId && portfolioIds.Contains(portfolio.Id))
+                .Select(portfolio => portfolio.Id)
+                .ToHashSetAsync(ct);
+        }
+        return new ProgramPortfolioAssignmentScope(portfolioIds, organizationIds);
     }
     private async Task<bool> HasProjectsAsync(Guid programId, CancellationToken ct)
     {
@@ -433,7 +450,7 @@ public sealed class ProgramService : IProgramService
         var tenant = command.CreateParameter(); tenant.ParameterName = "@tenant"; tenant.Value = TenantId(); command.Parameters.Add(tenant);
         return Convert.ToInt32(await command.ExecuteScalarAsync(ct)) > 0;
     }
-    private async Task<bool> IsEligibleProgramManagerAsync(Guid id, CancellationToken ct)
+    private async Task<bool> IsEligibleProgramManagerAsync(Guid id, Guid portfolioId, CancellationToken ct)
     {
         var tenantId = TenantId();
         if (tenantId == Guid.Empty || id == Guid.Empty || _effectivePermissions is null) return false;
@@ -445,8 +462,40 @@ public sealed class ProgramService : IProgramService
                 && userRole.Role.Category == "Management"), ct);
         if (!isActiveSameTenantUser) return false;
 
-        var permissions = await _effectivePermissions.GetEffectivePermissionsAsync(id, tenantId, ct);
+        var permissions = await GetEffectivePermissionsForPortfolioAsync(id, tenantId, portfolioId, ct);
         return permissions.Contains("Program.View") && permissions.Contains("Handover.Approve");
+    }
+
+    private async Task<IReadOnlySet<string>> GetEffectivePermissionsForContextAsync(
+        ManagementContext context,
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        if (_effectivePermissions is null)
+            return new HashSet<string>(StringComparer.Ordinal);
+        if (context.Scope.OrganizationIds.Count == 1)
+            return await _effectivePermissions.GetEffectivePermissionsForOrganizationAsync(
+                userId, context.TenantId, context.Scope.OrganizationIds.Single(), cancellationToken);
+        return await _effectivePermissions.GetEffectivePermissionsAsync(userId, context.TenantId, cancellationToken);
+    }
+
+    private async Task<IReadOnlySet<string>> GetEffectivePermissionsForPortfolioAsync(
+        Guid userId,
+        Guid tenantId,
+        Guid portfolioId,
+        CancellationToken cancellationToken)
+    {
+        if (_effectivePermissions is null)
+            return new HashSet<string>(StringComparer.Ordinal);
+        var organizationId = await _db.Set<Portfolio.Domain.Portfolio>().IgnoreQueryFilters().AsNoTracking()
+            .Where(portfolio => portfolio.Id == portfolioId && portfolio.TenantId == tenantId
+                && !portfolio.IsDeleted && portfolio.Status == ActivePortfolioStatus)
+            .Select(portfolio => portfolio.OrganizationId)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (organizationId.HasValue)
+            return await _effectivePermissions.GetEffectivePermissionsForOrganizationAsync(
+                userId, tenantId, organizationId.Value, cancellationToken);
+        return await _effectivePermissions.GetEffectivePermissionsAsync(userId, tenantId, cancellationToken);
     }
 
     private async Task<bool> IsDuplicateCodeAsync(string name, Guid? excludeId, CancellationToken ct)
@@ -537,7 +586,11 @@ public sealed class ProgramService : IProgramService
     {
         if (_http.HttpContext is null) return TrustedTenantExecutionContext.CurrentTenantId == tenantId;
         var context = _managementContext?.Current;
-        return context is not null && context.TenantId == tenantId;
+        return context is not null
+            && context.TenantId == tenantId
+            && TryGetAuthenticatedActor(out var actorId, out var claimTenantId)
+            && context.UserId == actorId
+            && claimTenantId == tenantId;
     }
 
     private IQueryable<Entity> InScope(IQueryable<Entity> query)
@@ -550,10 +603,42 @@ public sealed class ProgramService : IProgramService
             return TrustedTenantExecutionContext.CurrentTenantId == tenantId ? query : query.Where(_ => false);
 
         var context = _managementContext?.Current;
-        if (context is null || context.TenantId != tenantId) return query.Where(_ => false);
+        if (context is null
+            || context.TenantId != tenantId
+            || !TryGetAuthenticatedActor(out var actorId, out var claimTenantId)
+            || context.UserId != actorId
+            || claimTenantId != tenantId) return query.Where(_ => false);
         if (context.CanReadAllTenantPortfolioProgramData || context.HasTenantAdministratorPortfolioWriteScope)
             return query;
         return query.Where(x => context.Scope.ProgramIds.Contains(x.Id));
+    }
+
+    private bool IsTrustedActor(string userId)
+    {
+        if (!Guid.TryParse(userId, out var actorId) || actorId == Guid.Empty)
+            return false;
+
+        var httpContext = _http.HttpContext;
+        if (httpContext is null)
+            return TrustedTenantExecutionContext.CurrentTenantId.HasValue;
+
+        return TryGetAuthenticatedActor(out var claimActorId, out var claimTenantId)
+            && claimActorId == actorId
+            && _managementContext?.Current is { } context
+            && context.UserId == actorId
+            && context.TenantId == claimTenantId;
+    }
+
+    private bool TryGetAuthenticatedActor(out Guid actorId, out Guid tenantId)
+    {
+        actorId = Guid.Empty;
+        tenantId = Guid.Empty;
+        var principal = _http.HttpContext?.User;
+        return principal?.Identity?.IsAuthenticated == true
+            && Guid.TryParse(principal.FindFirstValue(ClaimTypes.NameIdentifier), out actorId)
+            && actorId != Guid.Empty
+            && Guid.TryParse(principal.FindFirst("tenantId")?.Value, out tenantId)
+            && tenantId != Guid.Empty;
     }
     private sealed record ProgramPortfolioAssignmentScope(HashSet<Guid> NativePortfolioIds, HashSet<Guid> OrganizationIds);
     private sealed class ProgramProjectRow { public Guid Id { get; set; } public string Name { get; set; } = ""; public string Code { get; set; } = ""; public string Status { get; set; } = ""; public string Currency { get; set; } = ""; }

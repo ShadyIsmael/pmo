@@ -14,8 +14,11 @@ using NEXUS.Modules.Audit.Application;
 using NEXUS.Modules.Identity.Application;
 using NEXUS.Modules.Identity.Domain;
 using NEXUS.Modules.Identity.Infrastructure;
+using NEXUS.Modules.Organization.Application;
+using NEXUS.Modules.Organization.Domain;
 using NEXUS.Persistence;
 using NEXUS.SharedKernel.Helpers;
+using TenantEntity = NEXUS.Modules.Organization.Domain.Tenant;
 using Xunit;
 
 namespace NEXUS.Api.Tests.Security;
@@ -47,9 +50,11 @@ public sealed class DemoAuthTenantIsolationTests : IDisposable
             .UseSqlite(_connection)
             .Options);
         _db.Database.EnsureCreated();
-        _db.Users.AddRange(
-            NewUser(_demoUserId, TenantConstants.DemoTenantId, "demo@example.test"),
-            NewUser(_tenantAUserId, _tenantA, "tenant-a@example.test"));
+        _db.Users.Add(NewUser(_demoUserId, TenantConstants.DemoTenantId, "demo@example.test"));
+        SetAuthenticatedTenant(TenantConstants.DemoTenantId);
+        _db.SaveChanges();
+        _db.Users.Add(NewUser(_tenantAUserId, _tenantA, "tenant-a@example.test"));
+        SetAuthenticatedTenant(_tenantA);
         _db.SaveChanges();
         SetAnonymousLoginContext();
 
@@ -80,7 +85,8 @@ public sealed class DemoAuthTenantIsolationTests : IDisposable
             _effectivePermissions.Object,
             Mock.Of<IAuditService>(),
             passwordPolicy.Object,
-            environment.Object);
+            environment.Object,
+            new UserOrganizationDirectory(_db));
     }
 
     [Theory]
@@ -161,6 +167,53 @@ public sealed class DemoAuthTenantIsolationTests : IDisposable
         Assert.True(result.IsSuccess);
         Assert.Equal(_tenantAUserId, result.Value!.Id);
         Assert.Equal(_tenantA.ToString(), result.Value.TenantId);
+    }
+
+    [Fact]
+    public async Task Current_user_does_not_project_permissions_from_an_inactive_organization_role()
+    {
+        SetAuthenticatedTenant(TenantConstants.DemoTenantId);
+        var organizationId = Guid.NewGuid();
+        var role = new Role { TenantId = TenantConstants.DemoTenantId, Name = "Inactive Organization Role" };
+        role.AssignOrganization(organizationId);
+        role.Permissions.Add(new Permission
+        {
+            TenantId = TenantConstants.DemoTenantId,
+            Name = "Project.View",
+            Resource = "Project",
+            Action = "View"
+        });
+        _db.Tenants.Add(new TenantEntity
+        {
+            Id = TenantConstants.DemoTenantId,
+            Code = "DEMO-INACTIVE-ORG-TEST",
+            DisplayName = "Demo inactive Organization test",
+            Status = TenantLifecycleStatus.Active,
+            CreatedBy = "test"
+        });
+        _db.UserRoles.Add(new UserRole
+        {
+            TenantId = TenantConstants.DemoTenantId,
+            UserId = _demoUserId,
+            Role = role
+        });
+        _db.Organizations.Add(new Organization
+        {
+            Id = organizationId,
+            TenantId = TenantConstants.DemoTenantId,
+            Name = "Inactive Organization",
+            Code = "INACTIVE",
+            IsActive = false
+        });
+        _db.Roles.Add(role);
+        await _db.SaveChangesAsync();
+
+        var result = await _service.GetCurrentUserAsync(_demoUserId, TenantConstants.DemoTenantId);
+
+        Assert.True(result.IsSuccess, result.Error?.Message);
+        Assert.DoesNotContain("Project.View", result.Value!.Permissions);
+        _effectivePermissions.Verify(service => service.GetEffectivePermissionsForOrganizationAsync(
+            It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

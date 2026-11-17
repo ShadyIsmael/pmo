@@ -27,7 +27,11 @@ import {
   useAssignedProjectPaymentReversalReview,
   useProjectPaymentRequest,
   useProjectPaymentRequests,
+  usePaymentRequestRecoveryApprovers,
+  useProjectPaymentReversalRecoveryApprovers,
   useRecordProjectPaymentRequestSettlement,
+  useReassignProjectPaymentRequestApprover,
+  useReassignProjectPaymentReversalApprover,
   useSubmitProjectPaymentReversal,
   useSubmitProjectPaymentRequest,
   useUpdateProjectPaymentReversal,
@@ -51,7 +55,7 @@ function statusText(t: (key: string) => string, status: string) {
   return translated === key ? status : translated;
 }
 
-export function ProjectPaymentRequests({ projectId, canViewRequests, canReviewRequests, canReviewReversals, canCreateRequests, canEditRequests, canSubmitRequests, canCancelRequests, canApproveRequests, canRecordSettlements, canCreateReversals, canApproveReversals, section = "requests", active = true }: {
+export function ProjectPaymentRequests({ projectId, canViewRequests, canReviewRequests, canReviewReversals, canCreateRequests, canEditRequests, canSubmitRequests, canCancelRequests, canApproveRequests, canRecordSettlements, canCreateReversals, canApproveReversals, canManageAssignmentRecovery, section = "requests", active = true }: {
   projectId: string;
   canViewRequests: boolean;
   canReviewRequests: boolean;
@@ -64,6 +68,7 @@ export function ProjectPaymentRequests({ projectId, canViewRequests, canReviewRe
   canRecordSettlements: boolean;
   canCreateReversals: boolean;
   canApproveReversals: boolean;
+  canManageAssignmentRecovery: boolean;
   section?: "requests" | "settlements";
   active?: boolean;
 }) {
@@ -550,6 +555,12 @@ export function ProjectPaymentRequests({ projectId, canViewRequests, canReviewRe
                   {approver.decidedAt ? <p className="mt-1 text-xs text-muted-foreground">{formatDateTime(approver.decidedAt)}</p> : null}
                   {approver.comment ? <p className="mt-2 whitespace-pre-wrap text-sm">{approver.comment}</p> : null}
                   {approver.canDecide ? <p className="mt-1 text-xs font-medium text-primary">{t("projects.paymentRequestYourTurn")}</p> : null}
+                  {canApproveRequests && canManageAssignmentRecovery && detail.data.status === "Pending"
+                    && approver.decisionStatus === "Pending" && approver.canReassign ? <div className="mt-2">
+                      <PaymentApproverRecoveryControl
+                        kind="paymentRequest" projectId={projectId} requestId={detail.data.id} rowVersion={detail.data.rowVersion}
+                        currentApproverId={approver.userId} />
+                    </div> : null}
                 </li>)}</ol>
               </section> : null}
               {section === "settlements" ? <section className="space-y-3 border-t pt-4" aria-labelledby="payment-request-settlements-heading">
@@ -608,6 +619,12 @@ export function ProjectPaymentRequests({ projectId, canViewRequests, canReviewRe
                           <p className="whitespace-pre-wrap text-sm text-muted-foreground">{item.reason}</p>
                           {item.approvalMode ? <p className="text-xs text-muted-foreground">{t("projects.paymentRequestApprovalMethod")}: {item.approvalMode === "Sequential" ? t("projects.financeApprovalSequential") : t("projects.financeApprovalParallel")}</p> : null}
                           {item.approvers.length ? <ol className="space-y-1">{item.approvers.map(approver => <li key={approver.userId} className="flex flex-wrap items-center justify-between gap-2 text-xs"><span>{approver.position ? `${approver.position}. ` : ""}{approver.displayName || t("projects.paymentRequestUnknownApprover")} · {approver.requirement === "Mandatory" ? t("projects.paymentRequestMandatory") : t("projects.paymentRequestOptional")}</span><span>{statusText(t, approver.decisionStatus)}{approver.decidedAt ? ` · ${formatDateTime(approver.decidedAt)}` : ""}</span></li>)}</ol> : null}
+                          {canApproveReversals && canManageAssignmentRecovery && item.status === "Pending"
+                            ? <div className="flex flex-wrap gap-2">
+                              {item.approvers.filter(approver => approver.decisionStatus === "Pending" && approver.canReassign).map(approver => <PaymentApproverRecoveryControl
+                                key={approver.userId} kind="paymentReversal" projectId={projectId} requestId={item.originalPaymentRequestId}
+                                reversalId={item.id} rowVersion={item.rowVersion} currentApproverId={approver.userId} />)}
+                            </div> : null}
                           <div className="flex flex-wrap gap-2">
                             {canCreateReversals && item.canEdit ? <Button size="sm" variant="outline" onClick={() => openReversalForm(item)}><Pencil className="me-1.5 h-4 w-4" aria-hidden="true" />{t("common.edit")}</Button> : null}
                             {canCreateReversals && item.canSubmit ? <Button size="sm" onClick={() => openReversalSubmission(item)}><Send className="me-1.5 h-4 w-4" aria-hidden="true" />{t("projects.paymentRequestSubmit")}</Button> : null}
@@ -654,6 +671,108 @@ export function ProjectPaymentRequests({ projectId, canViewRequests, canReviewRe
           {reversalFormError ? <p role="alert" className="text-sm text-destructive">{reversalFormError}</p> : null}
         </SideSheetBody>
         <SideSheetFooter><Button type="button" variant="outline" onClick={() => setReversalFormOpen(false)}>{t("common.cancel")}</Button><Button type="submit" disabled={isSavingReversal || !reversalHistory.data?.maximumReversibleAmount}>{isSavingReversal ? t("common.saving") : t("common.save")}</Button></SideSheetFooter>
+      </form>
+    </SideSheet>
+  </>;
+}
+
+function PaymentApproverRecoveryControl({ kind, projectId, requestId, reversalId, rowVersion, currentApproverId }: {
+  kind: "paymentRequest" | "paymentReversal";
+  projectId: string;
+  requestId: string;
+  reversalId?: string;
+  rowVersion: string;
+  currentApproverId: string;
+}) {
+  const { t } = useI18n();
+  const [open, setOpen] = React.useState(false);
+  const [replacementApproverId, setReplacementApproverId] = React.useState("");
+  const [reason, setReason] = React.useState("");
+  const [error, setError] = React.useState<string | null>(null);
+  const isReversal = kind === "paymentReversal";
+  const paymentOptions = usePaymentRequestRecoveryApprovers(
+    projectId, requestId, isReversal ? null : currentApproverId, open && !isReversal);
+  const reversalOptions = useProjectPaymentReversalRecoveryApprovers(
+    projectId, requestId, isReversal ? reversalId ?? null : null,
+    isReversal ? currentApproverId : null, open && isReversal);
+  const reassignPaymentRequest = useReassignProjectPaymentRequestApprover(projectId);
+  const reassignReversal = useReassignProjectPaymentReversalApprover(projectId);
+  const options = isReversal ? reversalOptions : paymentOptions;
+  const isSaving = reassignPaymentRequest.isPending || reassignReversal.isPending;
+
+  const close = (next: boolean) => {
+    setOpen(next);
+    if (!next) {
+      setReplacementApproverId("");
+      setReason("");
+      setError(null);
+    }
+  };
+
+  const save = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const normalizedReason = reason.trim();
+    if (!replacementApproverId || !normalizedReason || normalizedReason.length > 1000) {
+      setError(t("projects.paymentRequestRecoveryFieldsRequired"));
+      return;
+    }
+    setError(null);
+    try {
+      if (isReversal && reversalId) {
+        await reassignReversal.mutateAsync({
+          requestId, reversalId, currentApproverId, replacementApproverId,
+          reason: normalizedReason, rowVersion,
+        });
+      } else if (!isReversal) {
+        await reassignPaymentRequest.mutateAsync({
+          requestId, currentApproverId, replacementApproverId, reason: normalizedReason, rowVersion,
+        });
+      }
+      close(false);
+    } catch (saveError) {
+      setError(saveError instanceof ApiError && saveError.status === 409
+        ? t("projects.paymentRequestRecoveryRefresh")
+        : t("projects.paymentRequestRecoverySaveFailed"));
+    }
+  };
+
+  return <>
+    <Button type="button" size="sm" variant="outline" onClick={() => close(true)}>
+      <Pencil className="me-1.5 h-4 w-4" aria-hidden="true" />{t("projects.paymentRequestRecoveryReassign")}
+    </Button>
+    <SideSheet open={open} onOpenChange={close}
+      title={t("projects.paymentRequestRecoveryTitle")}
+      description={t("projects.paymentRequestRecoveryDescription")}>
+      <form onSubmit={event => void save(event)} className="flex min-h-0 flex-1 flex-col">
+        <SideSheetBody className="space-y-4">
+          {options.isLoading ? <p role="status" className="text-sm text-muted-foreground">{t("common.loading")}</p>
+            : options.isError ? <p role="alert" className="text-sm text-destructive">{t("projects.paymentRequestRecoveryOptionsFailed")}</p>
+              : options.data?.length === 0 ? <p role="status" className="rounded-md border p-3 text-sm text-muted-foreground">{t("projects.paymentRequestRecoveryNoReplacement")}</p>
+                : <div className="space-y-1.5">
+                  <Label htmlFor={`recovery-approver-${kind}-${requestId}-${currentApproverId}`}>{t("projects.paymentRequestRecoverySelectReplacement")}</Label>
+                  <select
+                    id={`recovery-approver-${kind}-${requestId}-${currentApproverId}`}
+                    className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+                    value={replacementApproverId}
+                    onChange={event => setReplacementApproverId(event.target.value)} required>
+                    <option value="">{t("projects.paymentRequestRecoverySelectReplacement")}</option>
+                    {(options.data ?? []).map(candidate => <option key={candidate.userId} value={candidate.userId}>{candidate.displayName}</option>)}
+                  </select>
+                </div>}
+          <div className="space-y-1.5">
+            <Label htmlFor={`recovery-reason-${kind}-${requestId}-${currentApproverId}`}>{t("projects.paymentRequestRecoveryReason")}</Label>
+            <Textarea
+              id={`recovery-reason-${kind}-${requestId}-${currentApproverId}`}
+              value={reason} onChange={event => setReason(event.target.value)} rows={4} maxLength={1000} required />
+          </div>
+          {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
+        </SideSheetBody>
+        <SideSheetFooter>
+          <Button type="button" variant="outline" onClick={() => close(false)}>{t("common.cancel")}</Button>
+          <Button type="submit" disabled={isSaving || options.isLoading || options.isError || !options.data?.length || !replacementApproverId || !reason.trim()}>
+            {isSaving ? t("common.saving") : t("projects.paymentRequestRecoveryReassign")}
+          </Button>
+        </SideSheetFooter>
       </form>
     </SideSheet>
   </>;

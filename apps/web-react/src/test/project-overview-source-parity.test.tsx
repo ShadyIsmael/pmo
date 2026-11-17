@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import userEvent from "@testing-library/user-event";
 import { I18nProvider } from "../i18n/messages";
 import { ProjectOverviewTab } from "../features/projects/ProjectOverviewTab";
+import { ApiError } from "../api/client";
 
 const fixtures = vi.hoisted(() => ({
   query: { isLoading: false, isError: false, data: undefined as unknown, refetch: vi.fn() },
@@ -11,7 +12,7 @@ const fixtures = vi.hoisted(() => ({
   performance: { isLoading: false, isError: false, data: undefined as unknown },
   teamCapacity: { isLoading: false, isError: false, data: undefined as unknown, refetch: vi.fn() },
   capacityHook: vi.fn(),
-  permissions: ["Planning.View"] as string[],
+  permissions: ["Planning.View", "Project.View", "Resource.View"] as string[],
 }));
 
 vi.mock("../features/projects/api/projects", () => ({
@@ -134,7 +135,7 @@ describe("project overview source parity", () => {
   beforeEach(() => {
     window.localStorage.setItem("nexus-locale", "en");
     fixtures.query = { isLoading: false, isError: false, data: overview, refetch: vi.fn() };
-    fixtures.permissions = ["Planning.View"];
+    fixtures.permissions = ["Planning.View", "Project.View", "Resource.View"];
     fixtures.reportingConfiguration = { isLoading: false, isError: false, data: undefined, refetch: vi.fn() };
     fixtures.performance = { isLoading: false, isError: false, data: undefined };
     fixtures.teamCapacity = { isLoading: false, isError: false, data: teamCapacityOverview, refetch: vi.fn() };
@@ -258,6 +259,35 @@ describe("project overview source parity", () => {
     );
     expect(screen.getByTestId("project-team-capacity-kpis").children).toHaveLength(4);
     expect(screen.getByText("Capacity data unavailable")).toBeInTheDocument();
+  });
+
+  it("does not request or render team capacity without Resource.View", () => {
+    fixtures.permissions = ["Project.View"];
+    fixtures.teamCapacity = { isLoading: false, isError: false, data: teamCapacityOverview, refetch: vi.fn() };
+    renderOverview();
+
+    expect(fixtures.capacityHook).toHaveBeenCalledWith("project-1", "Month", expect.any(String), expect.any(String), false);
+    expect(screen.getByText("Team capacity is unavailable for your current access or project scope.")).toBeInTheDocument();
+    expect(screen.getByTestId("project-team-capacity-kpis")).toHaveTextContent("—");
+    expect(screen.queryByText("80.0 hours")).not.toBeInTheDocument();
+  });
+
+  it("handles a fresh server 403 without offering an unauthorized retry or showing cached capacity", () => {
+    const refetch = vi.fn();
+    fixtures.teamCapacity = {
+      isLoading: false,
+      isError: true,
+      data: teamCapacityOverview,
+      refetch,
+    };
+    Object.assign(fixtures.teamCapacity, { error: new ApiError(403, "Forbidden") });
+    renderOverview();
+
+    expect(screen.getByText("Team capacity is unavailable for your current access or project scope.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
+    expect(screen.getByTestId("project-team-capacity-kpis")).toHaveTextContent("—");
+    expect(screen.queryByText("80.0 hours")).not.toBeInTheDocument();
+    expect(refetch).not.toHaveBeenCalled();
   });
 
   it("keeps the capacity donut visible as an empty ring when calendar data is incomplete", () => {

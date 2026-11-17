@@ -253,16 +253,43 @@ public sealed class DocumentService : IDocumentService
             return Result<IReadOnlyList<DocumentCategoryOptionDto>>.Failure(
                 Error.NotFound("The selected organization was not found."));
 
-        var options = await _context.Set<DocumentCategory>().AsNoTracking()
-            .Where(category => category.TenantId == managementContext.TenantId
-                && category.OrganizationId == organizationId
-                && category.IsActive
-                && !category.IsDeleted)
-            .OrderBy(category => category.SortOrder).ThenBy(category => category.Name)
-            .Select(category => new DocumentCategoryOptionDto(category.Id, category.Name, category.NameAr))
-            .ToListAsync(cancellationToken);
+        var options = await GetActiveCategoryOptionsAsync(managementContext.TenantId, organizationId, cancellationToken);
         return Result<IReadOnlyList<DocumentCategoryOptionDto>>.Success(options);
     }
+
+    public async Task<Result<IReadOnlyList<DocumentCategoryOptionDto>>> GetProjectUploadCategoryOptionsAsync(
+        Guid projectId,
+        CancellationToken cancellationToken = default)
+    {
+        if (!HasEffectivePermission(DocumentPermissions.Create))
+            return Result<IReadOnlyList<DocumentCategoryOptionDto>>.Failure(
+                Error.Forbidden("Document create permission is required."));
+        if (!TryGetTrustedManagementContext(out var managementContext) || managementContext is null)
+            return Result<IReadOnlyList<DocumentCategoryOptionDto>>.Failure(
+                Error.Forbidden("A valid tenant and management context are required."));
+        if (projectId == Guid.Empty
+            || !managementContext.Scope.ProjectIds.Contains(projectId)
+            || !managementContext.Scope.ProjectOrganizationIds.TryGetValue(projectId, out var organizationId)
+            || !CanAccessOrganization(managementContext, organizationId))
+            return Result<IReadOnlyList<DocumentCategoryOptionDto>>.Failure(
+                Error.NotFound("The requested project was not found."));
+
+        var options = await GetActiveCategoryOptionsAsync(managementContext.TenantId, organizationId, cancellationToken);
+        return Result<IReadOnlyList<DocumentCategoryOptionDto>>.Success(options);
+    }
+
+    private Task<List<DocumentCategoryOptionDto>> GetActiveCategoryOptionsAsync(
+        Guid tenantId,
+        Guid organizationId,
+        CancellationToken cancellationToken) => _context.Set<DocumentCategory>().AsNoTracking()
+        .Where(category => category.TenantId == tenantId
+            && (category.OrganizationId == organizationId || category.OrganizationId == null)
+            && category.IsActive
+            && !category.IsDeleted)
+        .OrderBy(category => category.OrganizationId == null ? 0 : 1)
+        .ThenBy(category => category.SortOrder).ThenBy(category => category.Name)
+        .Select(category => new DocumentCategoryOptionDto(category.Id, category.Name, category.NameAr))
+        .ToListAsync(cancellationToken);
 
     public async Task<Result<ManagedDocumentCategoryDto>> GetManagedCategoryAsync(Guid id, CancellationToken cancellationToken = default)
     {
@@ -449,6 +476,8 @@ public sealed class DocumentService : IDocumentService
             return Result<DocumentDetailDto>.Failure(Error.Validation("Organization ownership can be assigned only to templates."));
         if (dto.IsTemplate && !IsActiveAuthorizedOrganization(managementContext, dto.OrganizationId!.Value))
             return Result<DocumentDetailDto>.Failure(Error.Forbidden("The selected organization is outside the current tenant or management scope."));
+        if (dto.IsTemplate && !dto.CategoryId.HasValue)
+            return Result<DocumentDetailDto>.Failure(Error.Validation("A document category is required for an approved template."));
 
         var uploadName = GetSafeFileName(dto.File);
         if (uploadName.Error is not null)
@@ -475,7 +504,7 @@ public sealed class DocumentService : IDocumentService
             var eligibleCategory = await _context.Set<DocumentCategory>().AsNoTracking()
                 .FirstOrDefaultAsync(category => category.Id == dto.CategoryId.Value
                     && category.TenantId == managementContext.TenantId
-                    && category.OrganizationId == categoryOrganizationId.Value
+                    && (category.OrganizationId == categoryOrganizationId.Value || category.OrganizationId == null)
                     && category.IsActive
                     && !category.IsDeleted, cancellationToken);
             if (eligibleCategory is null)

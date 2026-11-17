@@ -6,6 +6,7 @@ using NEXUS.Modules.ProjectManagement.Application.DTOs;
 using NEXUS.Modules.ProjectManagement.Domain;
 using NEXUS.Modules.ProjectManagement.Domain.Entities;
 using NEXUS.SharedKernel;
+using NEXUS.SharedKernel.Management;
 using Status = NEXUS.Modules.ProjectManagement.Domain.Entities.Status;
 
 namespace NEXUS.Modules.ProjectManagement.Application;
@@ -18,17 +19,20 @@ public class ProjectBaselineService : IProjectBaselineService
     private readonly IAuditService _auditService;
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly IProjectSnapshotService _snapshotService;
+    private readonly IManagementContextAccessor? _managementContext;
 
     public ProjectBaselineService(
         DbContext context,
         IAuditService auditService,
         IHttpContextAccessor httpContextAccessor,
-        IProjectSnapshotService snapshotService)
+        IProjectSnapshotService snapshotService,
+        IManagementContextAccessor? managementContext = null)
     {
         _context = context;
         _auditService = auditService;
         _httpContextAccessor = httpContextAccessor;
         _snapshotService = snapshotService;
+        _managementContext = managementContext;
     }
 
     public async Task<Result<ProjectBaselineVersionDto>> CreateInitialBaselineAsync(Guid projectId, string userId, CancellationToken cancellationToken = default)
@@ -39,6 +43,9 @@ public class ProjectBaselineService : IProjectBaselineService
             return Result<ProjectBaselineVersionDto>.Failure(tenantIdResult.Error!);
         }
         var tenantId = tenantIdResult.Value;
+        var management = _managementContext?.Current;
+        if (management is null || management.TenantId != tenantId || !management.Scope.ProjectIds.Contains(projectId))
+            return Result<ProjectBaselineVersionDto>.Failure(Error.NotFound());
 
         var actorIdResult = GetCurrentUserGuid();
         if (actorIdResult.IsFailure)

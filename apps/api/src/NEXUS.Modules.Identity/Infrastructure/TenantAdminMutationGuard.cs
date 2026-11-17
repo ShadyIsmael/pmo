@@ -45,26 +45,22 @@ public sealed class TenantAdminMutationGuard : IAsyncDisposable
         }
     }
 
-    public async Task<bool> HasEffectiveTenantAdminAsync(
-        IUserEffectivePermissionService effectivePermissions,
+    public async Task<bool> HasActiveTenantAdminAsync(
         Guid tenantId,
         CancellationToken cancellationToken = default)
     {
-        var activeUserIds = await _context.Set<NEXUS.Modules.Identity.Domain.User>()
+        return await _context.Set<NEXUS.Modules.Identity.Domain.UserRole>()
             .IgnoreQueryFilters()
             .AsNoTracking()
-            .Where(user => user.TenantId == tenantId && user.IsActive && !user.IsDeleted)
-            .Select(user => user.Id)
-            .ToListAsync(cancellationToken);
-
-        foreach (var userId in activeUserIds)
-        {
-            var permissions = await effectivePermissions.GetEffectivePermissionsAsync(userId, tenantId, cancellationToken);
-            if (ProtectedTenantAdminPolicy.IsEffectiveTenantAdmin(permissions))
-                return true;
-        }
-
-        return false;
+            .Where(assignment => assignment.TenantId == tenantId && !assignment.IsDeleted
+                && assignment.User.TenantId == tenantId && assignment.User.IsActive && !assignment.User.IsDeleted
+                && assignment.Role.TenantId == tenantId && !assignment.Role.IsDeleted
+                && assignment.Role.IsSystem
+                && assignment.Role.OrganizationId == null
+                && !assignment.Role.IsLegacyOrganizationOwnershipUnresolved
+                && assignment.Role.RoleKey == NEXUS.Modules.Identity.Domain.Role.TenantAdminRoleKey
+                && assignment.Role.SystemRoleKey == NEXUS.Modules.Identity.Domain.Role.TenantAdminRoleKey)
+            .AnyAsync(cancellationToken);
     }
 
     public async Task CommitAsync(CancellationToken cancellationToken = default)

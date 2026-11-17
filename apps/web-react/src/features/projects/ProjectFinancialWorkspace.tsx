@@ -17,11 +17,11 @@ const PAGE_SIZE = 10;
 
 export type FinanceWorkspaceSection = "overview" | "annualBudgets" | "paymentRequests" | "settlements" | "closing" | "auditTrail";
 
-export function ProjectFinancialWorkspace({ projectId, canViewPaymentRequests, canViewAnnualBudgetClosing, canCreateAnnualBudget, canEditAnnualBudget, canConfigureDraftApproval, canDeleteAnnualBudget, canWithdrawAnnualBudget, canSubmitAnnualBudget, canReviseAnnualBudget, canApprove, canPrepareClosing, canApproveClosing, canCarryForward, projectCurrency, activeSection, selectedFiscalYear, onFiscalYearChange, onOpenClosing }: {
+export function ProjectFinancialWorkspace({ projectId, canViewPaymentRequests, canViewAnnualBudgetClosing, canCreateAnnualBudget, canEditAnnualBudget, canConfigureDraftApproval, canDeleteAnnualBudget, canWithdrawAnnualBudget, canSubmitAnnualBudget, canReviseAnnualBudget, canApprove, canPrepareClosing, canApproveClosing, canManageAssignmentRecovery, canCarryForward, projectCurrency, activeSection, selectedFiscalYear, onFiscalYearChange, onOpenClosing }: {
   projectId: string; canApprove: boolean; projectCurrency: string | null;
   canViewPaymentRequests: boolean; canViewAnnualBudgetClosing: boolean;
   canCreateAnnualBudget: boolean; canEditAnnualBudget: boolean; canConfigureDraftApproval: boolean; canDeleteAnnualBudget: boolean; canWithdrawAnnualBudget: boolean; canSubmitAnnualBudget: boolean; canReviseAnnualBudget: boolean;
-  canPrepareClosing: boolean; canApproveClosing: boolean; canCarryForward: boolean;
+  canPrepareClosing: boolean; canApproveClosing: boolean; canManageAssignmentRecovery: boolean; canCarryForward: boolean;
   activeSection: FinanceWorkspaceSection;
   selectedFiscalYear: number | null;
   onFiscalYearChange: (year: number) => void;
@@ -39,7 +39,8 @@ export function ProjectFinancialWorkspace({ projectId, canViewPaymentRequests, c
     </section>
     <section hidden={activeSection !== "closing"}>
       <ProjectAnnualBudgetYearEndClosing projectId={projectId} canPrepare={canPrepareClosing}
-        canApprove={canApproveClosing} canCarryForward={canCarryForward} active={activeSection === "closing"}
+        canApprove={canApproveClosing} canManageAssignmentRecovery={canManageAssignmentRecovery}
+        canCarryForward={canCarryForward} active={activeSection === "closing"}
         selectedFiscalYear={selectedFiscalYear} onFiscalYearChange={onFiscalYearChange} />
     </section>
     <section hidden={activeSection !== "auditTrail"}>

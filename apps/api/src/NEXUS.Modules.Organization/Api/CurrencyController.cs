@@ -46,7 +46,8 @@ public sealed class CurrencyController : ControllerBase
     [Authorize(Policy = "ReferenceData.Create")]
     public async Task<IActionResult> Create([FromBody] SaveCurrencyRequest request, CancellationToken cancellationToken)
     {
-        var result = await _currencyService.CreateAsync(request, ActorId(), cancellationToken);
+        if (!TryGetActorId(out var actorId)) return Forbid();
+        var result = await _currencyService.CreateAsync(request, actorId, cancellationToken);
         return result.IsFailure
             ? StatusCode(result.Error!.StatusCode, result.Error)
             : CreatedAtAction(nameof(GetById), new { id = result.Value!.Id }, result.Value);
@@ -56,7 +57,8 @@ public sealed class CurrencyController : ControllerBase
     [Authorize(Policy = "ReferenceData.Edit")]
     public async Task<IActionResult> Update(Guid id, [FromBody] SaveCurrencyRequest request, CancellationToken cancellationToken)
     {
-        var result = await _currencyService.UpdateAsync(id, request, ActorId(), cancellationToken);
+        if (!TryGetActorId(out var actorId)) return Forbid();
+        var result = await _currencyService.UpdateAsync(id, request, actorId, cancellationToken);
         return result.IsFailure ? StatusCode(result.Error!.StatusCode, result.Error) : Ok(result.Value);
     }
 
@@ -64,9 +66,20 @@ public sealed class CurrencyController : ControllerBase
     [Authorize(Policy = "ReferenceData.Delete")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
-        var result = await _currencyService.DeleteAsync(id, ActorId(), cancellationToken);
+        if (!TryGetActorId(out var actorId)) return Forbid();
+        var result = await _currencyService.DeleteAsync(id, actorId, cancellationToken);
         return result.IsFailure ? StatusCode(result.Error!.StatusCode, result.Error) : NoContent();
     }
 
-    private string ActorId() => User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "System";
+    private bool TryGetActorId(out string actorId)
+    {
+        actorId = string.Empty;
+        var hasActorId = Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var parsedActorId)
+            && parsedActorId != Guid.Empty;
+        if (!hasActorId)
+            hasActorId = Guid.TryParse(User.FindFirstValue("sub"), out parsedActorId) && parsedActorId != Guid.Empty;
+        if (!hasActorId) return false;
+        actorId = parsedActorId.ToString("D");
+        return true;
+    }
 }

@@ -94,6 +94,9 @@ public sealed class PaymentObligationService : IPaymentObligationService
     {
         var accessError = FinancePermissionGuard.Require(_httpContextAccessor, "PaymentObligation.Create");
         if (accessError is not null) return Result<PaymentObligationDto>.Failure(accessError);
+        var writeContextError = FinancePermissionGuard.RequireWritableActorContext(
+            _httpContextAccessor, _managementContext?.Current, userId, CurrentTenant());
+        if (writeContextError is not null) return Result<PaymentObligationDto>.Failure(writeContextError);
         if (dto.ProjectId == Guid.Empty) return Result<PaymentObligationDto>.Failure(Error.Validation("ProjectId is required"));
         if (dto.Amount <= 0m || !HasMonetaryPrecision(dto.Amount)) return Result<PaymentObligationDto>.Failure(Error.Validation("Amount must be greater than zero and use no more than four decimal places"));
         if (string.IsNullOrWhiteSpace(dto.PaymentReference)) return Result<PaymentObligationDto>.Failure(Error.Validation("Payment reference is required"));
@@ -146,6 +149,9 @@ public sealed class PaymentObligationService : IPaymentObligationService
     {
         var accessError = FinancePermissionGuard.Require(_httpContextAccessor, "PaymentObligation.Edit");
         if (accessError is not null) return Result<PaymentObligationDto>.Failure(accessError);
+        var writeContextError = FinancePermissionGuard.RequireWritableActorContext(
+            _httpContextAccessor, _managementContext?.Current, userId, CurrentTenant());
+        if (writeContextError is not null) return Result<PaymentObligationDto>.Failure(writeContextError);
         var obligation = await ApplyManagementScope(_context.Set<PaymentObligation>().Where(item => item.TenantId == CurrentTenant()))
             .Include(item => item.Settlements).FirstOrDefaultAsync(item => item.Id == id && !item.IsDeleted, cancellationToken);
         if (obligation is null) return Result<PaymentObligationDto>.Failure(Error.NotFound("Payment obligation not found"));
@@ -210,6 +216,9 @@ public sealed class PaymentObligationService : IPaymentObligationService
     {
         var accessError = FinancePermissionGuard.Require(_httpContextAccessor, "PaymentObligation.Delete");
         if (accessError is not null) return Result.Failure(accessError);
+        var writeContextError = FinancePermissionGuard.RequireWritableActorContext(
+            _httpContextAccessor, _managementContext?.Current, userId, CurrentTenant());
+        if (writeContextError is not null) return Result.Failure(writeContextError);
         var obligation = await ApplyManagementScope(_context.Set<PaymentObligation>().Where(item => item.TenantId == CurrentTenant()))
             .Include(item => item.Settlements).FirstOrDefaultAsync(item => item.Id == id && !item.IsDeleted, cancellationToken);
         if (obligation is null) return Result.Failure(Error.NotFound("Payment obligation not found"));
@@ -242,6 +251,9 @@ public sealed class PaymentObligationService : IPaymentObligationService
     {
         var accessError = FinancePermissionGuard.Require(_httpContextAccessor, "PaymentObligationSettlement.Record");
         if (accessError is not null) return Result<PaymentSettlementDto>.Failure(accessError);
+        var writeContextError = FinancePermissionGuard.RequireWritableActorContext(
+            _httpContextAccessor, _managementContext?.Current, userId, CurrentTenant());
+        if (writeContextError is not null) return Result<PaymentSettlementDto>.Failure(writeContextError);
         if (!Guid.TryParse(_httpContextAccessor.HttpContext?.User.FindFirst("tenantId")?.Value, out var tenantId)
             || tenantId == Guid.Empty)
             return Result<PaymentSettlementDto>.Failure(Error.Forbidden("A valid Tenant context is required."));
@@ -250,8 +262,6 @@ public sealed class PaymentObligationService : IPaymentObligationService
             .Select(item => new { item.ProjectId })
             .FirstOrDefaultAsync(cancellationToken);
         if (obligationScope is null) return Result<PaymentSettlementDto>.Failure(Error.NotFound("Payment obligation not found"));
-        if (!HasSettlementRecordPermission(userId))
-            return Result<PaymentSettlementDto>.Failure(Error.Forbidden("The PaymentObligationSettlement.Record permission is required to record an actual settlement."));
         var writeError = EnsureWritableProject(obligationScope.ProjectId);
         if (writeError is not null) return Result<PaymentSettlementDto>.Failure(writeError);
         if (dto.Amount <= 0m || !HasMonetaryPrecision(dto.Amount)) return Result<PaymentSettlementDto>.Failure(Error.Validation("Settlement amount must be greater than zero and use no more than four decimal places"));
@@ -469,21 +479,7 @@ public sealed class PaymentObligationService : IPaymentObligationService
 
     private Error? EnsureWritableProject(Guid projectId)
     {
-        if (_managementContext?.Current?.EffectiveReadOnly == true)
-            return Error.Forbidden("This action is not available while using read-only perspective mode");
         return HasProjectScope(projectId) ? null : Error.Forbidden("Project is outside the current management scope");
-    }
-
-    private bool HasSettlementRecordPermission(string userId)
-    {
-        var user = _httpContextAccessor.HttpContext?.User;
-        var actorId = user?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-        var managementUserId = _managementContext?.Current?.UserId;
-        return string.Equals(actorId, userId, StringComparison.OrdinalIgnoreCase)
-            && Guid.TryParse(userId, out var parsedActor)
-            && parsedActor != Guid.Empty
-            && managementUserId == parsedActor
-            && FinancePermissionGuard.HasCurrentPermission(_httpContextAccessor, "PaymentObligationSettlement.Record");
     }
 
     private Guid CurrentTenant() => FinancePermissionGuard.TryGetTenantId(_httpContextAccessor.HttpContext?.User, out var tenantId) ? tenantId : Guid.Empty;

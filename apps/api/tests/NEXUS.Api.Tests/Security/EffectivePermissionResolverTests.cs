@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Options;
 using NEXUS.Modules.Identity.Application;
 using NEXUS.Modules.Identity.Domain;
 using Xunit;
@@ -6,6 +7,48 @@ namespace NEXUS.Api.Tests.Security;
 
 public sealed class EffectivePermissionResolverTests
 {
+    [Fact]
+    public void Default_protection_policy_makes_every_active_catalog_entry_grantable()
+    {
+        var policy = new PermissionProtectionPolicy(Options.Create(new PermissionProtectionOptions()));
+
+        Assert.Empty(policy.ProtectedPermissionKeys);
+        Assert.All(PermissionCatalog.Entries.Where(entry => entry.IsActive), entry =>
+            Assert.True(policy.IsGrantable(entry), entry.Key));
+    }
+
+    [Fact]
+    public void Only_explicitly_configured_permission_keys_are_protected()
+    {
+        var policy = new PermissionProtectionPolicy(Options.Create(new PermissionProtectionOptions
+        {
+            ProtectedPermissionKeys = ["Document.View"]
+        }));
+
+        Assert.True(policy.IsProtected("Document.View"));
+        Assert.False(policy.IsGrantable(PermissionCatalog.ByKey["Document.View"]));
+        Assert.False(policy.IsProtected("Document.Create"));
+        Assert.True(policy.IsGrantable(PermissionCatalog.ByKey["Document.Create"]));
+        Assert.True(policy.IsGrantable(PermissionCatalog.ByKey["Plugin.View"]));
+    }
+
+    [Fact]
+    public void Invalid_protection_keys_are_rejected_at_configuration_validation()
+    {
+        Assert.False(PermissionProtectionPolicy.IsValidConfiguration(new PermissionProtectionOptions
+        {
+            ProtectedPermissionKeys = ["Document.NotACanonicalPermission"]
+        }));
+        Assert.False(PermissionProtectionPolicy.IsValidConfiguration(new PermissionProtectionOptions
+        {
+            ProtectedPermissionKeys = ["Document.View", "Document.View"]
+        }));
+        Assert.True(PermissionProtectionPolicy.IsValidConfiguration(new PermissionProtectionOptions
+        {
+            ProtectedPermissionKeys = ["Document.View"]
+        }));
+    }
+
     [Fact]
     public void Deny_wins_over_inherited_and_allow_overrides_in_any_order()
     {
@@ -20,45 +63,17 @@ public sealed class EffectivePermissionResolverTests
         Assert.DoesNotContain("Project.View", denyThenAllow);
     }
 
-    [Theory]
-    [InlineData("ProjectAnnualBudget.ConfigureDraftApproval")]
-    [InlineData("ProjectAnnualBudget.Delete")]
-    [InlineData("ProjectAnnualBudget.Withdraw")]
-    public void Direct_deny_wins_over_all_role_allows_and_a_direct_allow_for_annual_budget_lifecycle(string permission)
-    {
-        var effective = EffectivePermissionResolver.Resolve(
-            [permission, permission],
-            [(permission, PermissionOverrideEffect.Allow),
-                (permission, PermissionOverrideEffect.Deny)]);
-
-        Assert.DoesNotContain(permission, effective);
-    }
-
     [Fact]
-    public void Protected_admin_baseline_survives_deny_while_deny_wins_for_ordinary_permissions()
+    public void Deny_remains_effective_for_admin_roles_and_no_role_identity_adds_grants()
     {
+        var inherited = new[] { "Roles.ConfigurePermissions", "Document.View" };
         var effective = EffectivePermissionResolver.Resolve(
-            ["Project.Edit"],
-            [("Project.Edit", PermissionOverrideEffect.Deny), ("Plugin.View", PermissionOverrideEffect.Deny)],
-            ["Plugin.View", "Roles.View"]);
+            inherited,
+            [("Document.View", PermissionOverrideEffect.Deny)]);
 
-        Assert.DoesNotContain("Project.Edit", effective);
-        Assert.Contains("Plugin.View", effective);
-        Assert.Contains("Roles.View", effective);
+        Assert.Contains("Roles.ConfigurePermissions", effective);
+        Assert.DoesNotContain("Document.View", effective);
+        Assert.DoesNotContain("Document.Create", effective);
     }
 
-    [Theory]
-    [InlineData("DocumentCategory.View")]
-    [InlineData("DocumentCategory.Create")]
-    [InlineData("DocumentCategory.Edit")]
-    [InlineData("DocumentCategory.ActivateDeactivate")]
-    public void Protected_tenant_admin_category_baseline_survives_member_deny_overrides(string permission)
-    {
-        var effective = EffectivePermissionResolver.Resolve(
-            [],
-            [(permission, PermissionOverrideEffect.Deny)],
-            ProtectedTenantAdminPolicy.MandatoryPermissionKeys);
-
-        Assert.Contains(permission, effective);
-    }
 }

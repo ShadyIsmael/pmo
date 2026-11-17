@@ -5,6 +5,8 @@ using NEXUS.Modules.Organization.Domain;
 using NEXUS.Modules.ResourceManagement.Application;
 using NEXUS.Modules.ResourceManagement.Application.DTOs;
 using NEXUS.Modules.ResourceManagement.Domain;
+using NEXUS.SharedKernel;
+using NEXUS.SharedKernel.Management;
 using Xunit;
 
 namespace NEXUS.Modules.ResourceManagement.Tests;
@@ -144,6 +146,68 @@ public class ResourceFinderServiceTests : TestBase
 
         var charlie = result.Items.Single();
         charlie.AvailableCapacityHours.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public async Task FindAsync_DoesNotExposeAllocationsOutsideManagementProjectScope()
+    {
+        using var context = CreateContext();
+        var hiddenProjectId = Guid.Parse("F3000000-0000-0000-0000-000000000001");
+        context.ResourceAllocations.Add(new ResourceAllocation
+        {
+            Id = Guid.Parse("F3000000-0000-0000-0000-000000000002"),
+            ResourceId = ResourceAliceId,
+            ProjectId = hiddenProjectId,
+            ProjectName = "Restricted Project",
+            AllocationPercentage = 80,
+            StartDate = new DateTime(2026, 1, 5),
+            EndDate = new DateTime(2026, 1, 19),
+            Status = ResourceAllocation.StatusConfirmed
+        });
+        await context.SaveChangesAsync();
+
+        var managementContext = new Mock<IManagementContextAccessor>();
+        var visibleProjectId = Guid.Parse("F2000000-0000-0000-0000-000000000001");
+        managementContext.SetupGet(accessor => accessor.Current).Returns(new ManagementContext(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            ManagementPerspective.ProjectManager,
+            ManagementViewMode.Native,
+            null,
+            null,
+            null,
+            new ManagementScope(
+                new HashSet<Guid>(),
+                new HashSet<Guid>(),
+                new HashSet<Guid> { visibleProjectId })));
+
+        var capacityMock = new Mock<ICapacityService>();
+        var planningContextLookup = new Mock<IProjectResourcePlanningContextLookup>(MockBehavior.Strict);
+        var service = new ResourceFinderService(
+            context,
+            capacityMock.Object,
+            planningContextLookup.Object,
+            managementContext.Object);
+        var query = new ResourceFinderQueryDto
+        {
+            Role = "Developer",
+            ResourceType = "Employee",
+            DepartmentId = DepartmentEngineeringId,
+            ProjectId = hiddenProjectId,
+            StartDate = new DateTime(2026, 1, 5),
+            EndDate = new DateTime(2026, 1, 19),
+            Page = 1,
+            PageSize = 20
+        };
+
+        var result = await service.FindAsync(query);
+
+        var alice = result.Items.Should().ContainSingle().Subject;
+        alice.ConflictingAllocations.Should().ContainSingle();
+        alice.ConflictingAllocations[0].ProjectName.Should().Be("Project Alpha");
+        alice.ConflictingAllocations.Should().NotContain(conflict => conflict.ProjectName == "Restricted Project");
+        planningContextLookup.Verify(lookup => lookup.GetPlanningContextsAsync(
+            It.IsAny<Guid>(), It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

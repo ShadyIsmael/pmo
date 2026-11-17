@@ -60,6 +60,10 @@ export function getApiFieldErrors(error: unknown): Record<string, string[]> {
   return error instanceof ApiError ? error.fieldErrors : {};
 }
 
+export function getApiErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof ApiError && error.message.trim() ? error.message : fallback;
+}
+
 function readStorage(key: string): string | null {
   try { return typeof window === "undefined" ? null : window.localStorage.getItem(key); }
   catch { return null; }

@@ -32,6 +32,7 @@ const fixtures = vi.hoisted(() => {
     lifecycle: {
       defaultPhase,
       defaultStatus,
+      statuses: [defaultStatus] as Array<typeof defaultStatus>,
       mode: "ready" as "ready" | "loading" | "error" | "empty" | "single-default" | "ambiguous-defaults",
       phasesByPortfolio: {} as Record<string, Array<typeof defaultPhase>>,
       loadingPortfolios: [] as string[],
@@ -39,7 +40,7 @@ const fixtures = vi.hoisted(() => {
         enabled?: boolean;
         purpose?: "create";
         portfolioId?: string;
-        departmentId?: string;
+        programId?: string;
         projectId?: string;
         organizationId?: string;
       }>,
@@ -96,12 +97,15 @@ vi.mock("../features/projects/api/project-lifecycle", () => {
       enabled?: boolean;
       purpose?: "create";
       portfolioId?: string;
-      departmentId?: string;
+      programId?: string;
       projectId?: string;
       organizationId?: string;
     } = {}) => {
       fixtures.lifecycle.calls.push(args);
-      const scopeKey = args.portfolioId ?? args.departmentId ?? "";
+      const scopeKey = args.portfolioId ?? "";
+      if (!args.enabled) {
+        return { data: undefined, isLoading: false, isError: false, refetch: fixtures.lifecycle.refetch };
+      }
       const isLoading = fixtures.lifecycle.mode === "loading" || fixtures.lifecycle.loadingPortfolios.includes(scopeKey);
       if (isLoading) {
         return { data: undefined, isLoading: true, isError: false, refetch: fixtures.lifecycle.refetch };
@@ -110,7 +114,7 @@ vi.mock("../features/projects/api/project-lifecycle", () => {
         return { data: undefined, isLoading: false, isError: true, refetch: fixtures.lifecycle.refetch };
       }
       return {
-        data: { phases: phasesForScope(scopeKey), statuses: [fixtures.lifecycle.defaultStatus] },
+        data: { phases: phasesForScope(scopeKey), statuses: fixtures.lifecycle.statuses },
         isLoading: false,
         isError: false,
         refetch: fixtures.lifecycle.refetch,
@@ -141,12 +145,21 @@ function renderProjectSheet(locale: "en" | "ar" = "en") {
   return render(projectSheetElement());
 }
 
+function selectPortfolio(portfolioId = "portfolio-1") {
+  fireEvent.change(screen.getByRole("combobox", { name: /Portfolio|المحفظة/ }), { target: { value: portfolioId } });
+}
+
 function lastLifecycleCall() {
   return fixtures.lifecycle.calls[fixtures.lifecycle.calls.length - 1];
 }
 
+function statusSelectElement(optionName = "Not Started") {
+  return screen.getByRole("option", { name: optionName }).closest("select") as HTMLSelectElement;
+}
+
 beforeEach(() => {
   fixtures.lifecycle.mode = "ready";
+  fixtures.lifecycle.statuses = [fixtures.lifecycle.defaultStatus];
   fixtures.lifecycle.phasesByPortfolio = {};
   fixtures.lifecycle.loadingPortfolios = [];
   fixtures.lifecycle.calls = [];
@@ -162,6 +175,7 @@ describe("Project creation initial Annual Budget", () => {
 
   it("follows the lifetime ceiling until the user edits the proposed amount", async () => {
     renderProjectSheet();
+    selectPortfolio();
     const numericInputs = screen.getAllByRole("spinbutton");
     const ceiling = numericInputs[0] as HTMLInputElement;
     const proposedAnnualFunding = screen.getByLabelText("New Funding") as HTMLInputElement;
@@ -186,6 +200,7 @@ describe("Project creation initial Annual Budget", () => {
 
   it("rejects an initial Annual Budget when the selected currency is no longer configured", async () => {
     renderProjectSheet();
+    selectPortfolio();
     fireEvent.change(screen.getAllByRole("spinbutton")[0], { target: { value: "100000" } });
     await waitFor(() => expect(screen.getByLabelText("New Funding")).toHaveValue(100000));
     fireEvent.change(screen.getByPlaceholderText("Name"), { target: { value: "Delivery Project" } });
@@ -207,6 +222,7 @@ describe("Project creation UX and contract", () => {
 
   it.each(["en", "ar"] as const)("renders localized creation and document direction in %s", async locale => {
     renderProjectSheet(locale);
+    selectPortfolio();
     await waitFor(() => expect(document.documentElement.dir).toBe(locale === "ar" ? "rtl" : "ltr"));
     expect(document.documentElement.lang).toBe(locale);
     expect(screen.getByRole("button", { name: locale === "ar" ? "مشروع جديد" : "New Project" })).toBeInTheDocument();
@@ -215,6 +231,7 @@ describe("Project creation UX and contract", () => {
   });
 
   it("filters programs by portfolio, clears a conflicting program, and submits an eligible initial manager", async () => {
+    fixtures.permissions = ["Project.Create", "Handover.AdminInitiate"];
     renderProjectSheet();
     const portfolio = screen.getByRole("combobox", { name: "Portfolio" });
     const program = screen.getByRole("combobox", { name: "Program" });
@@ -235,9 +252,18 @@ describe("Project creation UX and contract", () => {
     expect(payload.initialAnnualBudgetAmount).toBeUndefined();
   });
 
+  it("does not expose initial manager selection without Handover.AdminInitiate", () => {
+    fixtures.permissions = ["Project.Create"];
+    renderProjectSheet();
+
+    expect(screen.queryByRole("combobox", { name: "Project Manager" })).not.toBeInTheDocument();
+    expect(screen.getByText("Handover.AdminInitiate permission is required to assign the initial manager.")).toBeInTheDocument();
+  });
+
   it("keeps entered values and shows a submission error", async () => {
     fixtures.createProject.mockRejectedValue(new Error("network"));
     renderProjectSheet();
+    selectPortfolio();
     const name = screen.getByPlaceholderText("Name");
     fireEvent.change(name, { target: { value: "Delivery Project" } });
     fireEvent.click(screen.getByRole("button", { name: "New Project" }));
@@ -256,6 +282,7 @@ describe("Project creation UX and contract", () => {
     let resolveRequest!: (value: { publicId: string }) => void;
     fixtures.createProject.mockImplementation(() => new Promise(resolve => { resolveRequest = resolve; }));
     renderProjectSheet();
+    selectPortfolio();
     fireEvent.change(screen.getByPlaceholderText("Name"), { target: { value: "Delivery Project" } });
     const button = screen.getByRole("button", { name: "New Project" });
     fireEvent.click(button);
@@ -272,8 +299,31 @@ describe("Project creation initial phase", () => {
     fixtures.createProject.mockReset().mockResolvedValue({ publicId: "project-1" });
   });
 
+  it("loads and preselects the Tenant status catalog before a Portfolio is selected", () => {
+    renderProjectSheet();
+
+    expect(screen.getByText("Select a Portfolio to load its Organization's project phases.")).toBeInTheDocument();
+    expect(lastLifecycleCall()).toMatchObject({ enabled: true, purpose: "create" });
+    expect(lastLifecycleCall()?.portfolioId).toBeUndefined();
+    expect(lastLifecycleCall()?.programId).toBeUndefined();
+    expect(lastLifecycleCall()?.organizationId).toBeUndefined();
+    expect(screen.getByTestId("project-phase-id")).toHaveValue("");
+    expect(statusSelectElement()).not.toBeDisabled();
+    expect(statusSelectElement()).toHaveValue("status-not-started");
+  });
+
+  it("requires a Portfolio before submitting a new Project", async () => {
+    renderProjectSheet();
+    fireEvent.change(screen.getByPlaceholderText("Name"), { target: { value: "Delivery Project" } });
+    fireEvent.click(screen.getByRole("button", { name: "New Project" }));
+
+    expect(await screen.findByText("Select a Portfolio.")).toBeInTheDocument();
+    expect(fixtures.createProject).not.toHaveBeenCalled();
+  });
+
   it.each(["en", "ar"] as const)("renders the resolved initial phase read-only and localized in %s", async locale => {
     renderProjectSheet(locale);
+    selectPortfolio();
 
     expect(screen.queryByRole("combobox", { name: locale === "ar" ? "مرحلة المشروع" : "Project phase" })).not.toBeInTheDocument();
     const display = await screen.findByTestId("project-initial-phase");
@@ -283,26 +333,29 @@ describe("Project creation initial phase", () => {
 
     const request = lastLifecycleCall();
     expect(request).toMatchObject({ enabled: true, purpose: "create" });
-    expect(request?.portfolioId).toBeUndefined();
-    expect(request?.departmentId).toBeUndefined();
+    expect(request?.portfolioId).toBe("portfolio-1");
+    expect(request?.programId).toBeUndefined();
     expect(request?.projectId).toBeUndefined();
     expect(request?.organizationId).toBeUndefined();
   });
 
-  it("falls back to the only active default option when no protected Pre-Initiation record is returned", async () => {
+  it("does not fall back to a different default when protected Pre-Initiation is missing", async () => {
     fixtures.lifecycle.mode = "single-default";
     renderProjectSheet();
+    selectPortfolio();
 
-    expect(await screen.findByTestId("project-initial-phase")).toHaveTextContent("Initiation");
-    await waitFor(() => expect(screen.getByTestId("project-phase-id")).toHaveValue("phase-tenant-default"));
-    expect(screen.getByRole("button", { name: "New Project" })).toBeEnabled();
+    expect(await screen.findByText("The initial project phase is unavailable for this Portfolio's Organization. Contact an administrator.")).toBeInTheDocument();
+    expect(screen.queryByTestId("project-initial-phase")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId("project-phase-id")).toHaveValue(""));
+    expect(screen.getByRole("button", { name: "New Project" })).toBeDisabled();
   });
 
   it.each(["empty", "ambiguous-defaults"] as const)("shows a truthful unavailable state and disables submission when the initial phase cannot be resolved (%s)", async mode => {
     fixtures.lifecycle.mode = mode;
     renderProjectSheet();
+    selectPortfolio();
 
-    expect(screen.getByText("The initial project phase is unavailable for the current lifecycle configuration. Select a portfolio or department with an active Organization lifecycle, or contact an administrator.")).toBeInTheDocument();
+    expect(await screen.findByText("The initial project phase is unavailable for this Portfolio's Organization. Contact an administrator.")).toBeInTheDocument();
     expect(screen.queryByTestId("project-initial-phase")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "New Project" })).toBeDisabled();
     await waitFor(() => expect(screen.getByTestId("project-phase-id")).toHaveValue(""));
@@ -311,6 +364,7 @@ describe("Project creation initial phase", () => {
   it("shows the phase loading state and blocks submission while the lookup is unresolved", async () => {
     fixtures.lifecycle.mode = "loading";
     renderProjectSheet();
+    selectPortfolio();
 
     expect(screen.getByText("Loading project phases…")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "New Project" })).toBeDisabled();
@@ -320,6 +374,7 @@ describe("Project creation initial phase", () => {
   it("shows the lookup error and recovers through a working Retry action", async () => {
     fixtures.lifecycle.mode = "error";
     const view = renderProjectSheet();
+    selectPortfolio();
 
     expect(screen.getByText("Lifecycle options could not be loaded.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "New Project" })).toBeDisabled();
@@ -333,14 +388,17 @@ describe("Project creation initial phase", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "New Project" })).toBeEnabled());
   });
 
-  it("restores the resolved form phase id after the sheet is reopened", async () => {
+  it("clears the resolved phase when the sheet reopens without a selected Portfolio", async () => {
     const view = renderProjectSheet();
+    selectPortfolio();
     await waitFor(() => expect(screen.getByTestId("project-phase-id")).toHaveValue("phase-pre-initiation"));
 
     view.rerender(projectSheetElement(false));
     view.rerender(projectSheetElement(true));
 
-    await waitFor(() => expect(screen.getByTestId("project-phase-id")).toHaveValue("phase-pre-initiation"));
+    await waitFor(() => expect(screen.getByTestId("project-phase-id")).toHaveValue(""));
+    expect(screen.getByText("Select a Portfolio to load its Organization's project phases.")).toBeInTheDocument();
+    expect(lastLifecycleCall()).toMatchObject({ enabled: true, purpose: "create" });
   });
 
   it("requests create options for the selected portfolio and submits the newly resolved phase id", async () => {
@@ -353,12 +411,14 @@ describe("Project creation initial phase", () => {
     const portfolio = screen.getByRole("combobox", { name: "Portfolio" });
     fireEvent.change(portfolio, { target: { value: "portfolio-1" } });
     await waitFor(() => expect(screen.getByTestId("project-phase-id")).toHaveValue("phase-pre-initiation-portfolio-1"));
+    fireEvent.change(screen.getByRole("combobox", { name: "Program" }), { target: { value: "program-1" } });
+    await waitFor(() => expect(lastLifecycleCall()).toMatchObject({ portfolioId: "portfolio-1", programId: "program-1" }));
 
     fireEvent.change(portfolio, { target: { value: "portfolio-2" } });
     await waitFor(() => expect(screen.getByTestId("project-phase-id")).toHaveValue("phase-pre-initiation-portfolio-2"));
 
     const createCalls = fixtures.lifecycle.calls.filter(call => call.purpose === "create");
-    expect(createCalls[createCalls.length - 1]).toMatchObject({ purpose: "create", portfolioId: "portfolio-2" });
+    expect(createCalls[createCalls.length - 1]).toMatchObject({ purpose: "create", portfolioId: "portfolio-2", programId: undefined });
     expect(createCalls.every(call => call.projectId === undefined && call.organizationId === undefined)).toBe(true);
 
     fireEvent.change(screen.getByPlaceholderText("Name"), { target: { value: "Delivery Project" } });
@@ -385,5 +445,90 @@ describe("Project creation initial phase", () => {
     expect(screen.getByText("Loading project phases…")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "New Project" })).toBeDisabled();
     expect(fixtures.createProject).not.toHaveBeenCalled();
+  });
+});
+
+describe("Project creation Tenant-scoped status", () => {
+  beforeEach(() => {
+    fixtures.permissions = ["Project.Create"];
+    fixtures.currencies = [{ id: "currency-usd", code: "USD", name: "US Dollar", symbol: "$", isBase: true }];
+    fixtures.createProject.mockReset().mockResolvedValue({ publicId: "project-1" });
+  });
+
+  it("keeps the selected Tenant status across Portfolio and Program changes and submits it", async () => {
+    const activeStatus = {
+      ...fixtures.lifecycle.defaultStatus,
+      id: "status-active",
+      code: "ACTIVE",
+      nameEn: "Active",
+      nameAr: "نشط",
+      displayOrder: 2,
+      isDefault: false,
+    };
+    fixtures.lifecycle.statuses = [fixtures.lifecycle.defaultStatus, activeStatus];
+    renderProjectSheet();
+
+    fireEvent.change(statusSelectElement(), { target: { value: "status-active" } });
+    selectPortfolio("portfolio-1");
+    fireEvent.change(screen.getByRole("combobox", { name: "Program" }), { target: { value: "program-1" } });
+    await waitFor(() => expect(lastLifecycleCall()).toMatchObject({ portfolioId: "portfolio-1", programId: "program-1" }));
+    selectPortfolio("portfolio-2");
+
+    expect(statusSelectElement()).toBeEnabled();
+    expect(statusSelectElement()).toHaveValue("status-active");
+
+    fireEvent.change(screen.getByPlaceholderText("Name"), { target: { value: "Delivery Project" } });
+    fireEvent.click(screen.getByRole("button", { name: "New Project" }));
+    await waitFor(() => expect(fixtures.createProject).toHaveBeenCalledWith(expect.objectContaining({
+      portfolioId: "portfolio-2",
+      statusId: "status-active",
+    })));
+  });
+
+  it("replaces a stale status selection with the Tenant default from the loaded catalog", async () => {
+    const view = renderProjectSheet();
+    selectPortfolio("portfolio-1");
+    await waitFor(() => expect(statusSelectElement()).toHaveValue("status-not-started"));
+
+    const replacementDefault = {
+      ...fixtures.lifecycle.defaultStatus,
+      id: "status-tenant-default",
+      code: "TENANT_DEFAULT",
+      nameEn: "Tenant Default",
+    };
+    fixtures.lifecycle.statuses = [replacementDefault];
+    view.rerender(projectSheetElement());
+
+    await waitFor(() => expect(screen.getByRole("option", { name: "Tenant Default" })).toBeInTheDocument());
+    expect(statusSelectElement("Tenant Default")).toHaveValue("status-tenant-default");
+  });
+
+  it("shows a truthful empty state and blocks submission when the Tenant has no active status", async () => {
+    fixtures.lifecycle.statuses = [];
+    renderProjectSheet();
+    selectPortfolio("portfolio-1");
+
+    expect(await screen.findByText("No active project statuses are available in this scope.")).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Not Started" })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText("Name"), { target: { value: "Delivery Project" } });
+    // The status Select is disabled with an empty catalog, so submission must be
+    // blocked up front instead of failing with an error on a field the user cannot fix.
+    expect(screen.getByRole("button", { name: "New Project" })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "New Project" }));
+
+    expect(screen.queryByText("Select a project status.")).not.toBeInTheDocument();
+    expect(fixtures.createProject).not.toHaveBeenCalled();
+  });
+
+  it("surfaces a lifecycle lookup error with Retry before a Portfolio is selected", () => {
+    fixtures.lifecycle.mode = "error";
+    renderProjectSheet();
+
+    expect(screen.getByText("Lifecycle options could not be loaded.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(fixtures.lifecycle.refetch).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("option", { name: "Not Started" })).not.toBeInTheDocument();
   });
 });

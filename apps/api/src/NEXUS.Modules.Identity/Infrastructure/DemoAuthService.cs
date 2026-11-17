@@ -27,8 +27,17 @@ public class DemoAuthService : IAuthenticationService
     private readonly IAuditService _auditService;
     private readonly IOptionsMonitor<LocalPasswordPolicyOptions> _passwordPolicy;
     private readonly IHostEnvironment _environment;
+    private readonly IUserOrganizationDirectory? _organizationDirectory;
 
-    public DemoAuthService(DbContext context, IConfiguration configuration, IPasswordHasher<User> passwordHasher, IUserEffectivePermissionService effectivePermissions, IAuditService auditService, IOptionsMonitor<LocalPasswordPolicyOptions> passwordPolicy, IHostEnvironment environment)
+    public DemoAuthService(
+        DbContext context,
+        IConfiguration configuration,
+        IPasswordHasher<User> passwordHasher,
+        IUserEffectivePermissionService effectivePermissions,
+        IAuditService auditService,
+        IOptionsMonitor<LocalPasswordPolicyOptions> passwordPolicy,
+        IHostEnvironment environment,
+        IUserOrganizationDirectory? organizationDirectory = null)
     {
         _context = context;
         _configuration = configuration;
@@ -37,6 +46,7 @@ public class DemoAuthService : IAuthenticationService
         _auditService = auditService;
         _passwordPolicy = passwordPolicy;
         _environment = environment;
+        _organizationDirectory = organizationDirectory;
     }
 
     public async Task<Result<LoginResponseDto>> LoginAsync(LoginCommand command, CancellationToken cancellationToken = default)
@@ -270,8 +280,63 @@ public class DemoAuthService : IAuthenticationService
         if (user is null)
             return Result<CurrentUserDto>.Failure(Error.NotFound("User not found"));
 
+        // Derive the user's organizations from active role assignments.
+        // Organization membership is determined by the OrganizationId of assigned roles.
+        // Each role carries its authoritative OrganizationId; a user's organizations are the
+        // set of Organizations for which they have at least one active, assigned role.
+        var assignedOrganizationIds = await _context.Set<UserRole>()
+            .AsNoTracking()
+            .Where(ur => ur.UserId == userId && ur.TenantId == tenantId.Value && !ur.IsDeleted
+                && ur.User.TenantId == tenantId.Value && ur.User.IsActive && !ur.User.IsDeleted
+                && ur.Role.TenantId == tenantId.Value && !ur.Role.IsDeleted
+                && ur.Role.OrganizationId.HasValue)
+            .Select(ur => ur.Role.OrganizationId.GetValueOrDefault())
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        var userOrganizations = assignedOrganizationIds;
+        if (assignedOrganizationIds.Count > 0)
+        {
+            if (_organizationDirectory is null)
+            {
+                userOrganizations = new List<Guid>();
+            }
+            else
+            {
+                var activeOrganizations = await _organizationDirectory.GetActiveNamesAsync(
+                    tenantId.Value, assignedOrganizationIds, cancellationToken);
+                userOrganizations = assignedOrganizationIds
+                    .Where(activeOrganizations.ContainsKey)
+                    .ToList();
+            }
+        }
+
+        // Compute effective permissions per organization and union them together.
+        // This ensures that organization-owned role grants become effective when the
+        // user's session has the corresponding organization context.
+        var effectivePermissions = new HashSet<string>(StringComparer.Ordinal);
+
+        if (userOrganizations.Count > 0)
+        {
+            foreach (var organizationId in userOrganizations)
+            {
+                var orgPermissions = await _effectivePermissions.GetEffectivePermissionsForOrganizationAsync(
+                    userId, tenantId.Value, organizationId, cancellationToken);
+                foreach (var perm in orgPermissions)
+                    effectivePermissions.Add(perm);
+            }
+        }
+        else
+        {
+            // Fall back to tenant-scoped permissions when the user has no organization membership.
+            var tenantPermissions = await _effectivePermissions.GetEffectivePermissionsAsync(
+                userId, tenantId.Value, cancellationToken);
+            foreach (var perm in tenantPermissions)
+                effectivePermissions.Add(perm);
+        }
+
         var currentUser = MapToCurrentUser(user);
-        currentUser.Permissions = (await _effectivePermissions.GetEffectivePermissionsAsync(userId, user.TenantId, cancellationToken))
+        currentUser.Permissions = effectivePermissions
             .OrderBy(permission => permission, StringComparer.Ordinal)
             .ToList();
         var bypassInitialPasswordPolicy = IsDevelopmentAdminPasswordBypassEnabled(user.TenantId, user.Email, user.AuthenticationSource);
@@ -396,9 +461,18 @@ public class DemoAuthService : IAuthenticationService
                 Role = new RoleDto
                 {
                     Id = userRole.Role.Id,
+                    RoleKey = userRole.Role.RoleKey,
                     Name = userRole.Role.Name,
                     Description = userRole.Role.Description,
-                    Category = userRole.Role.Category
+                    Category = userRole.Role.Category,
+                    IsSystem = userRole.Role.IsSystem,
+                    IsProtected = userRole.Role.IsSystem
+                        && userRole.Role.RoleKey == Role.TenantAdminRoleKey
+                        && userRole.Role.SystemRoleKey == Role.TenantAdminRoleKey,
+                    IsAssignable = !userRole.Role.IsSystem
+                        && userRole.Role.SystemRoleKey == null
+                        && userRole.Role.RoleKey != Role.TenantAdminRoleKey
+                        && userRole.Role.RoleKey != Role.OrganizationAdminRoleKey
                 },
                 Permissions = userRole.Role.Permissions
                     .Where(permission => permission.TenantId == tenantId && !permission.IsDeleted)
@@ -471,9 +545,13 @@ public class DemoAuthService : IAuthenticationService
             Roles = user.UserRoles.Select(userRole => new RoleDto
             {
                 Id = userRole.Role.Id,
+                RoleKey = userRole.Role.RoleKey,
                 Name = userRole.Role.Name,
                 Description = userRole.Role.Description,
-                Category = userRole.Role.Category
+                Category = userRole.Role.Category,
+                IsSystem = userRole.Role.IsSystem,
+                IsProtected = ProtectedTenantAdminPolicy.IsProtectedSystemAdminRole(userRole.Role),
+                IsAssignable = RoleAssignmentAuthorizationPolicy.IsGenerallyAssignable(userRole.Role)
             }).ToList(),
             Permissions = user.UserRoles
                 .SelectMany(userRole => userRole.Role.Permissions)
@@ -488,9 +566,13 @@ public class DemoAuthService : IAuthenticationService
         var roleDtos = user.UserRoles.Select(userRole => new RoleDto
         {
             Id = userRole.Role.Id,
+            RoleKey = userRole.Role.RoleKey,
             Name = userRole.Role.Name,
             Description = userRole.Role.Description,
-            Category = userRole.Role.Category
+            Category = userRole.Role.Category,
+            IsSystem = userRole.Role.IsSystem,
+            IsProtected = ProtectedTenantAdminPolicy.IsProtectedSystemAdminRole(userRole.Role),
+            IsAssignable = RoleAssignmentAuthorizationPolicy.IsGenerallyAssignable(userRole.Role)
         }).ToList();
 
         var permissions = user.UserRoles

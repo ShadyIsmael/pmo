@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using NEXUS.Modules.ResourceManagement.Application;
 using NEXUS.Modules.ResourceManagement.Application.DTOs;
+using NEXUS.SharedKernel.Management;
 
 namespace NEXUS.Modules.ResourceManagement.Api;
 
@@ -11,10 +12,12 @@ namespace NEXUS.Modules.ResourceManagement.Api;
 public class AllocationController : ControllerBase
 {
     private readonly IAllocationService _allocationService;
+    private readonly IManagementContextAccessor? _managementContext;
 
-    public AllocationController(IAllocationService allocationService)
+    public AllocationController(IAllocationService allocationService, IManagementContextAccessor? managementContext = null)
     {
         _allocationService = allocationService;
+        _managementContext = managementContext;
     }
 
     [HttpGet("{id:guid}")]
@@ -74,7 +77,8 @@ public class AllocationController : ControllerBase
     [Authorize(Policy = "Resource.Assign")]
     public async Task<IActionResult> Create([FromBody] CreateAllocationDto dto, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        var actorError = ResourceManagementActorBinding.RequireActor(this, _managementContext, requireManagementContext: true, out var userId);
+        if (actorError is not null) return actorError;
         var result = await _allocationService.CreateAsync(dto, userId, cancellationToken);
         if (result.IsFailure) return BadRequest(new { error = result.Error?.Message });
         return CreatedAtAction(nameof(GetById), new { id = result.Value!.Id }, result.Value);
@@ -84,7 +88,8 @@ public class AllocationController : ControllerBase
     [Authorize(Policy = "Resource.Assign")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateAllocationDto dto, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        var actorError = ResourceManagementActorBinding.RequireActor(this, _managementContext, requireManagementContext: true, out var userId);
+        if (actorError is not null) return actorError;
         var result = await _allocationService.UpdateAsync(id, dto, userId, cancellationToken);
         if (result.IsFailure)
             return result.Error?.StatusCode switch
@@ -99,7 +104,8 @@ public class AllocationController : ControllerBase
     [Authorize(Policy = "Resource.Assign")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        var actorError = ResourceManagementActorBinding.RequireActor(this, _managementContext, requireManagementContext: true, out var userId);
+        if (actorError is not null) return actorError;
         var result = await _allocationService.DeleteAsync(id, userId, cancellationToken);
         if (result.IsFailure) return NotFound(new { error = result.Error?.Message });
         return NoContent();

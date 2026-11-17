@@ -5,6 +5,7 @@ import { NavLink, useLocation } from "react-router-dom";
 import { ChevronRight, Search, X, PanelLeft, PanelLeftClose, Menu, Info } from "lucide-react";
 import { useI18n } from "@i18n/messages";
 import { navigationConfig, filterSections, normalizePathname, findActiveItem, itemIsActive, type NavItem, type NavSection } from "@lib/navigation";
+import { Permissions } from "@lib/permissions";
 import { useAuth } from "@auth/AuthProvider";
 import { useSettingsAccess } from "@features/administration/api/settings";
 import { useOrganizationProfiles } from "@features/administration/api/settings";
@@ -134,9 +135,13 @@ export function Sidebar() {
   const permissions = React.useMemo(() => user?.permissions ?? [], [user?.permissions]);
   const settingsAccess = useSettingsAccess();
   const canReadPlatform = settingsAccess.data?.canReadPlatform === true;
-  const organizationSettingsAccess = useOrganizationProfiles(permissions.includes("Settings.View"));
+  const canReadTenant = settingsAccess.data?.canReadTenant === true;
+  const canRequestOrganizationProfiles = permissions.includes(Permissions.Settings.View)
+    || permissions.includes(Permissions.OrganizationConfiguration.View)
+    || permissions.includes(Permissions.OrganizationConfiguration.Manage);
+  const organizationSettingsAccess = useOrganizationProfiles(canRequestOrganizationProfiles);
   const canReadOrganizations = (organizationSettingsAccess.data?.length ?? 0) > 0;
-  const visibleSections = React.useMemo(() => filterSections(navigationConfig, permissions, canReadPlatform, canReadOrganizations), [permissions, canReadPlatform, canReadOrganizations]);
+  const visibleSections = React.useMemo(() => filterSections(navigationConfig, permissions, canReadPlatform, canReadOrganizations, canReadTenant), [permissions, canReadPlatform, canReadOrganizations, canReadTenant]);
   const activeItem = React.useMemo(() => visibleSections.reduce<NavItem | null>((found, entry) => found || findActiveItem(entry.items, normalizedPathname), null), [visibleSections, normalizedPathname]);
   const activeSectionId = visibleSections.find(({ items }) => findActiveItem(items, normalizedPathname) === activeItem)?.id;
   const isDesktop = useIsDesktopViewport();

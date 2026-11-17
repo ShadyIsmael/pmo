@@ -11,6 +11,7 @@ import { SideSheet, SideSheetBody, SideSheetFooter } from "@components/ui/SideSh
 import { Textarea } from "@components/ui/Textarea";
 import { useAuth } from "@auth/AuthProvider";
 import { useManagement } from "@api/management";
+import { getApiErrorMessage } from "@api/client";
 import { useI18n } from "@i18n/messages";
 import { getStatusTextClass } from "@lib/status-presentation";
 import {
@@ -159,12 +160,7 @@ export function ManagerHandoverPanel({ scope, entityId, entityName, currentManag
       setSheetOpen(false);
       await refreshSnapshot();
     } catch (requestError: unknown) {
-      const message = (requestError as { message?: string } | null)?.message ?? "";
-      if (errorStatus(requestError) === 400 && /handover date cannot be after the project end date/i.test(message)) {
-        setError(t("managerHandover.handoverDateAfterProjectEnd"));
-      } else {
-        setError(errorStatus(requestError) === 409 ? t("managerHandover.decisionConflict") : t("managerHandover.saveFailed"));
-      }
+      setError(errorStatus(requestError) === 409 ? t("managerHandover.decisionConflict") : getApiErrorMessage(requestError, t("managerHandover.saveFailed")));
     }
   }
 
@@ -177,7 +173,7 @@ export function ManagerHandoverPanel({ scope, entityId, entityName, currentManag
       setCancellingId(null);
       await refreshSnapshot();
     } catch (requestError: unknown) {
-      setError(errorStatus(requestError) === 409 ? t("managerHandover.decisionConflict") : t("managerHandover.cancelFailed"));
+      setError(errorStatus(requestError) === 409 ? t("managerHandover.decisionConflict") : getApiErrorMessage(requestError, t("managerHandover.cancelFailed")));
       setCancellingId(null);
     }
   }
@@ -188,7 +184,7 @@ export function ManagerHandoverPanel({ scope, entityId, entityName, currentManag
       await accept.mutateAsync(requestId);
       await refreshSnapshot();
     } catch (requestError: unknown) {
-      setActionError({ requestId, message: errorStatus(requestError) === 409 ? t("managerHandover.decisionConflict") : t("managerHandover.acceptFailed") });
+      setActionError({ requestId, message: errorStatus(requestError) === 409 ? t("managerHandover.decisionConflict") : getApiErrorMessage(requestError, t("managerHandover.acceptFailed")) });
     }
   }
 
@@ -205,7 +201,7 @@ export function ManagerHandoverPanel({ scope, entityId, entityName, currentManag
       setRejectionReason("");
       await refreshSnapshot();
     } catch (requestError: unknown) {
-      const message = errorStatus(requestError) === 409 ? t("managerHandover.decisionConflict") : t("managerHandover.rejectFailed");
+      const message = errorStatus(requestError) === 409 ? t("managerHandover.decisionConflict") : getApiErrorMessage(requestError, t("managerHandover.rejectFailed"));
       if (errorStatus(requestError) === 409) {
         setActionError({ requestId: rejectingId, message });
         setRejectingId(null);
@@ -220,6 +216,14 @@ export function ManagerHandoverPanel({ scope, entityId, entityName, currentManag
   const hasError = requests.isError || history.isError || snapshots.isError || selfPending.isError || capabilities.isError || currentManagerError;
   const hint = initiateHint();
   const showApproveOnlySection = (!canReadRequests || requestsForbidden) && canApprove;
+  const queryErrorMessage = requestsForbidden
+    ? getApiErrorMessage(requests.error, t("managerHandover.viewPermissionRequired"))
+    : getApiErrorMessage(requests.error, "")
+      || getApiErrorMessage(history.error, "")
+      || getApiErrorMessage(snapshots.error, "")
+      || getApiErrorMessage(selfPending.error, "")
+      || getApiErrorMessage(capabilities.error, "")
+      || t("managerHandover.loadFailed");
 
   // Self-scoped pending card for Handover.Approve holders without Handover.View.
   // Data comes from the self-scoped backend endpoint, which returns ONLY the pending
@@ -261,7 +265,7 @@ export function ManagerHandoverPanel({ scope, entityId, entityName, currentManag
 
   return <div className="space-y-4">
     {error ? <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{error}</p> : null}
-    {hasError ? <div role="alert" className="flex items-center justify-between gap-3 rounded-md border border-destructive/30 p-3 text-sm text-destructive"><span>{requestsForbidden ? t("managerHandover.viewPermissionRequired") : t("managerHandover.loadFailed")}</span><Button size="sm" variant="outline" onClick={() => { void requests.refetch(); void history.refetch(); void snapshots.refetch(); void selfPending.refetch(); if (currentManagerError) onRetryCurrentManager?.(); }}>{t("common.retry")}</Button></div> : null}
+    {hasError ? <div role="alert" className="flex items-center justify-between gap-3 rounded-md border border-destructive/30 p-3 text-sm text-destructive"><span>{queryErrorMessage}</span><Button size="sm" variant="outline" onClick={() => { void requests.refetch(); void history.refetch(); void snapshots.refetch(); void selfPending.refetch(); void capabilities.refetch(); if (currentManagerError) onRetryCurrentManager?.(); }}>{t("common.retry")}</Button></div> : null}
     {canReadRequests ? <>
       <Card>
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -315,7 +319,7 @@ export function ManagerHandoverPanel({ scope, entityId, entityName, currentManag
         <CardHeader><CardTitle className="flex items-center gap-2 text-base"><History className="h-4 w-4" />{t("managerHandover.managerHistory")}</CardTitle></CardHeader>
         <CardContent className="p-0">
           {history.isLoading ? <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
-            : history.isError ? <p role="alert" className="p-6 text-sm text-destructive">{t("managerHandover.loadFailed")}</p>
+            : history.isError ? <p role="alert" className="p-6 text-sm text-destructive">{getApiErrorMessage(history.error, t("managerHandover.loadFailed"))}</p>
               : (history.data?.length ?? 0) === 0 ? <p className="p-6 text-sm text-muted-foreground">{t("managerHandover.noHistory")}</p>
                 : <div className="divide-y">{history.data?.map((assignment) => <div key={assignment.id} className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                   <div><p className="text-sm font-medium">{assignment.managerName}</p><p className="mt-1 text-xs text-muted-foreground">{formatDate(assignment.startDate)} – {assignment.endDate ? formatDate(assignment.endDate) : t("managerHandover.current")}</p>{assignment.handoverReason ? <p className="mt-1 text-xs text-muted-foreground">{assignment.handoverReason}</p> : null}</div>
@@ -328,7 +332,7 @@ export function ManagerHandoverPanel({ scope, entityId, entityName, currentManag
         <CardHeader><CardTitle className="text-base">{t("managerHandover.snapshots")}</CardTitle></CardHeader>
         <CardContent className="p-0">
           {snapshots.isLoading ? <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
-            : snapshots.isError ? <p role="alert" className="p-6 text-sm text-destructive">{t("managerHandover.loadFailed")}</p>
+            : snapshots.isError ? <p role="alert" className="p-6 text-sm text-destructive">{getApiErrorMessage(snapshots.error, t("managerHandover.loadFailed"))}</p>
               : (snapshots.data?.length ?? 0) === 0 ? <p className="p-6 text-sm text-muted-foreground">{t("managerHandover.noSnapshots")}</p>
                 : <div className="divide-y">{snapshots.data?.map((snapshot) => <div key={snapshot.id} className="space-y-1 px-4 py-3">
                   <p className="text-sm font-medium">{snapshot.name}</p>
@@ -338,7 +342,7 @@ export function ManagerHandoverPanel({ scope, entityId, entityName, currentManag
         </CardContent>
       </Card>
     </> : showApproveOnlySection ? renderSelfPendingCard(true) : <Card><CardContent className="flex flex-col items-start gap-3 p-6 text-sm text-muted-foreground">
-      <span>{isLoading ? t("common.loading") : t("managerHandover.viewPermissionRequired")}</span>
+      <span>{isLoading ? t("common.loading") : requestsForbidden ? getApiErrorMessage(requests.error, t("managerHandover.viewPermissionRequired")) : t("managerHandover.viewPermissionRequired")}</span>
       {canApprove && !isLoading ? <Link to="/my-work/approvals" className="text-primary underline-offset-4 hover:underline">{t("managerHandover.viewApprovalsHint")}</Link> : null}
     </CardContent></Card>}
 
@@ -349,7 +353,7 @@ export function ManagerHandoverPanel({ scope, entityId, entityName, currentManag
           <div><Label>{t("managerHandover.entity")}</Label><Input className="mt-1" value={entityName} readOnly /></div>
           <div><Label>{t("managerHandover.currentManager")}</Label><Input className="mt-1" value={capabilities.data?.currentManagerName || currentManagerName || t("managerHandover.notAssigned")} readOnly /></div>
           <div><Label>{t("managerHandover.newManager")} *</Label><div className="mt-1"><SearchableSelect options={managers} value={managerId} onValueChange={setManagerId} placeholder={t("managerHandover.selectManager")} searchPlaceholder={t("managerHandover.searchManager")} loading={eligibleManagers.isLoading} loadingText={t("projects.loadingManagers")} emptyText={t("managerHandover.noManagers")} disabled={eligibleManagers.isError} /></div>
-            {eligibleManagers.isError ? <p role="alert" className="mt-1 text-xs text-destructive">{t("managerHandover.loadFailed")}</p> : null}
+            {eligibleManagers.isError ? <p role="alert" className="mt-1 text-xs text-destructive">{getApiErrorMessage(eligibleManagers.error, t("managerHandover.loadFailed"))}</p> : null}
             {!eligibleManagers.isLoading && !eligibleManagers.isError && managers.length === 0 ? <div className="mt-2 space-y-1 text-xs text-muted-foreground"><p>{t("projects.noEligibleManagersHint")}</p><Link to="/administration/users" className="text-primary underline-offset-4 hover:underline">{t("projects.manageUsers")}</Link></div> : null}
           </div>
           <div><Label htmlFor="manager-handover-effective-date">{t("managerHandover.effectiveDate")} *</Label><Input id="manager-handover-effective-date" className="mt-1" type="date" value={effectiveDate} onChange={(event) => setEffectiveDate(event.target.value)} required /><p className="mt-1 text-xs text-muted-foreground">{t("managerHandover.effectiveDateHint")}</p></div>

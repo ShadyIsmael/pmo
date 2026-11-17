@@ -347,19 +347,94 @@ public sealed class NotificationDeliveryFoundationTests
     }
 
     [Fact]
-    public async Task DeviceRegistration_ReconcilesCrossTenantOwnershipWithoutOverwritingPriorOwnerHistory()
+    public async Task DeviceRegistration_RejectsCrossTenantOwnershipWithoutMutatingPriorOwner()
     {
         await using var database = await TestDatabase.CreateAsync();
         await using var context = database.CreateContext();
         var service = new DeviceTokenService(context);
         var previous = await service.RegisterAsync(TenantA, UserA, new RegisterDeviceTokenRequest("shared-registration-token", "web"));
-        var reassigned = await service.RegisterAsync(TenantB, UserB, new RegisterDeviceTokenRequest("shared-registration-token", "web"));
+        await Assert.ThrowsAsync<DeviceTokenOwnershipConflictException>(async () =>
+        {
+            _ = await service.RegisterAsync(TenantB, UserB, new RegisterDeviceTokenRequest("shared-registration-token", "web"));
+        });
 
-        Assert.NotEqual(previous.Id, reassigned.Id);
+        var rows = await context.UserDeviceTokens.ToListAsync();
+        var owner = Assert.Single(rows);
+        Assert.Equal(previous.Id, owner.Id);
+        Assert.Equal((TenantA, UserA, true), (owner.TenantId, owner.UserId, owner.IsActive));
+    }
+
+    [Fact]
+    public async Task DeviceRegistration_RejectsSameTenantDifferentUserWithoutMutatingPriorOwner()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        await using var context = database.CreateContext();
+        var service = new DeviceTokenService(context);
+        var previous = await service.RegisterAsync(TenantA, UserA, new RegisterDeviceTokenRequest("shared-user-token", "web"));
+
+        await Assert.ThrowsAsync<DeviceTokenOwnershipConflictException>(async () =>
+        {
+            _ = await service.RegisterAsync(TenantA, UserB, new RegisterDeviceTokenRequest("shared-user-token", "web"));
+        });
+
+        var rows = await context.UserDeviceTokens.ToListAsync();
+        var owner = Assert.Single(rows);
+        Assert.Equal(previous.Id, owner.Id);
+        Assert.Equal((TenantA, UserA, true), (owner.TenantId, owner.UserId, owner.IsActive));
+    }
+
+    [Fact]
+    public async Task DeviceRegistration_OwnershipConflictDoesNotDeactivateCallersPreviousDevice()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        await using var context = database.CreateContext();
+        var service = new DeviceTokenService(context);
+        var callerDevice = await service.RegisterAsync(TenantB, UserB, new RegisterDeviceTokenRequest("caller-device-token", "web"));
+        var otherOwnerDevice = await service.RegisterAsync(TenantA, UserA, new RegisterDeviceTokenRequest("other-owner-token", "web"));
+
+        await Assert.ThrowsAsync<DeviceTokenOwnershipConflictException>(async () =>
+        {
+            _ = await service.RegisterAsync(TenantB, UserB, new RegisterDeviceTokenRequest(
+                "other-owner-token", "web", PreviousDeviceId: callerDevice.Id));
+        });
+
         var rows = await context.UserDeviceTokens.OrderBy(item => item.TenantId).ToListAsync();
         Assert.Equal(2, rows.Count);
-        Assert.Equal((TenantA, UserA, false), (rows[0].TenantId, rows[0].UserId, rows[0].IsActive));
-        Assert.Equal((TenantB, UserB, true), (rows[1].TenantId, rows[1].UserId, rows[1].IsActive));
+        Assert.All(rows, item => Assert.True(item.IsActive));
+        Assert.Equal((TenantA, UserA), (rows[0].TenantId, rows[0].UserId));
+        Assert.Equal((TenantB, UserB), (rows[1].TenantId, rows[1].UserId));
+        Assert.Equal(otherOwnerDevice.Id, rows[0].Id);
+        Assert.Equal(callerDevice.Id, rows[1].Id);
+    }
+
+    [Fact]
+    public async Task RegisterDeviceEndpoint_ReturnsConflictWhenTokenBelongsToAnotherOwner()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        await using var context = database.CreateContext();
+        var service = new DeviceTokenService(context);
+        await service.RegisterAsync(TenantA, UserA, new RegisterDeviceTokenRequest("endpoint-shared-token", "web"));
+        var controller = new NotificationController(CreateService(context, new TestPushSender()), service)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext
+                {
+                    User = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity(
+                    [
+                        new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, UserB.ToString()),
+                        new System.Security.Claims.Claim("tenantId", TenantB.ToString()),
+                    ], "test")),
+                },
+            },
+        };
+
+        var response = await controller.RegisterDevice(new RegisterDeviceTokenRequest("endpoint-shared-token", "web"), CancellationToken.None);
+
+        var conflict = Assert.IsType<ConflictObjectResult>(response);
+        Assert.Equal("deviceTokenOwnershipConflict", conflict.Value!.GetType().GetProperty("code")!.GetValue(conflict.Value));
+        var owner = Assert.Single(await context.UserDeviceTokens.ToListAsync());
+        Assert.Equal((TenantA, UserA, true), (owner.TenantId, owner.UserId, owner.IsActive));
     }
 
     [Fact]

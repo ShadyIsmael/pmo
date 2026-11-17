@@ -28,11 +28,18 @@ public static class IdentityModuleRegistration
                 && options.MaximumLength >= options.MinimumLength && options.MaximumLength <= 256,
                 "Local password policy values are outside the supported range.")
             .ValidateOnStart();
+        services.AddOptions<PermissionProtectionOptions>()
+            .BindConfiguration(PermissionProtectionOptions.SectionName)
+            .Validate(PermissionProtectionPolicy.IsValidConfiguration,
+                "Protected permission keys must be unique active canonical catalog keys.")
+            .ValidateOnStart();
+        services.AddSingleton<IPermissionProtectionPolicy, PermissionProtectionPolicy>();
         services.AddScoped<IAuthenticationService, DemoAuthService>();
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IUserReferenceLookup, UserReferenceLookup>();
         services.AddScoped<IUserAdministrationService, UserAdministrationService>();
         services.AddScoped<IRoleAdministrationService, RoleAdministrationService>();
+        services.AddScoped<IRoleAssignmentAuthorizationService, RoleAssignmentAuthorizationService>();
         services.AddScoped<IUserEffectivePermissionService, UserEffectivePermissionService>();
         services.AddScoped<IApprovalDelegationEligibilityLookup, ApprovalDelegationEligibilityLookup>();
         services.AddScoped<IUserSessionValidator, UserSessionValidator>();

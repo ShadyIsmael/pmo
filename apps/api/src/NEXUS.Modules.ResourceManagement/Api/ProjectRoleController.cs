@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using NEXUS.Modules.ResourceManagement.Application;
+using NEXUS.SharedKernel.Management;
 
 namespace NEXUS.Modules.ResourceManagement.Api;
 
@@ -10,10 +11,12 @@ namespace NEXUS.Modules.ResourceManagement.Api;
 public class ProjectRoleController : ControllerBase
 {
     private readonly IProjectRoleService _service;
+    private readonly IManagementContextAccessor? _managementContext;
 
-    public ProjectRoleController(IProjectRoleService service)
+    public ProjectRoleController(IProjectRoleService service, IManagementContextAccessor? managementContext = null)
     {
         _service = service;
+        _managementContext = managementContext;
     }
 
     [HttpGet]
@@ -52,7 +55,8 @@ public class ProjectRoleController : ControllerBase
     [Authorize(Policy = "ReferenceData.Create")]
     public async Task<IActionResult> Create([FromBody] CreateLookupDto dto, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        var actorError = ResourceManagementActorBinding.RequireActor(this, _managementContext, requireManagementContext: true, out var userId);
+        if (actorError is not null) return actorError;
         var result = await _service.CreateAsync(dto, userId, cancellationToken);
         if (result.IsFailure)
             return result.Error?.StatusCode switch
@@ -67,7 +71,8 @@ public class ProjectRoleController : ControllerBase
     [Authorize(Policy = "ReferenceData.Edit")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateLookupDto dto, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        var actorError = ResourceManagementActorBinding.RequireActor(this, _managementContext, requireManagementContext: true, out var userId);
+        if (actorError is not null) return actorError;
         var result = await _service.UpdateAsync(id, dto, userId, cancellationToken);
         if (result.IsFailure)
             return result.Error?.StatusCode switch
@@ -83,7 +88,8 @@ public class ProjectRoleController : ControllerBase
     [Authorize(Policy = "ReferenceData.Delete")]
     public async Task<IActionResult> Deactivate(Guid id, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        var actorError = ResourceManagementActorBinding.RequireActor(this, _managementContext, requireManagementContext: true, out var userId);
+        if (actorError is not null) return actorError;
         var result = await _service.DeactivateAsync(id, userId, cancellationToken);
         if (result.IsFailure) return NotFound(new { error = result.Error?.Message });
         return NoContent();

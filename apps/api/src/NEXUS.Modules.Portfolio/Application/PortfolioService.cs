@@ -1,4 +1,5 @@
 using System.Data;
+using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using NEXUS.Modules.Identity.Application;
@@ -7,6 +8,7 @@ using NEXUS.Modules.Portfolio.Domain;
 using NEXUS.SharedKernel;
 using NEXUS.SharedKernel.Management;
 using Entity = NEXUS.Modules.Portfolio.Domain.Portfolio;
+using OrganizationEntity = NEXUS.Modules.Organization.Domain.Organization;
 
 namespace NEXUS.Modules.Portfolio.Application;
 
@@ -79,10 +81,17 @@ public sealed class PortfolioService : IPortfolioService
 
     public async Task<Result<PortfolioDto>> CreateAsync(SavePortfolioDto dto, string userId, CancellationToken ct = default)
     {
+        var actorError = ValidateMutationActor(userId);
+        if (actorError is not null) return Result<PortfolioDto>.Failure(actorError);
+
         var tenantId = TenantId();
         if (tenantId == Guid.Empty || !HasManagementScope(tenantId))
             return Result<PortfolioDto>.Failure(Error.Forbidden("A valid tenant management context is required."));
         var validation = Validate(dto); if (validation is not null) return Result<PortfolioDto>.Failure(validation);
+        if (!dto.OrganizationId.HasValue)
+            return Result<PortfolioDto>.Failure(Error.Validation("An Organization is required when creating a Portfolio.", "organizationId"));
+        if (!await CanAssignOrganizationAsync(dto.OrganizationId.Value, tenantId, ct))
+            return Result<PortfolioDto>.Failure(Error.NotFound());
         var ownerId = NormalizeOwnerId(dto.OwnerId);
         if (ownerId.HasValue && !CanAssignPortfolioManager())
             return Result<PortfolioDto>.Failure(Error.Forbidden("Handover.AdminInitiate is required to assign an initial Portfolio Manager."));
@@ -95,7 +104,7 @@ public sealed class PortfolioService : IPortfolioService
                 var next = await NextCodeAsync(ct);
                 var requestedCurrency = NormalizeCurrency(dto.Currency);
                 if (!IsValidCurrency(requestedCurrency)) return Result<PortfolioDto>.Failure(Error.Validation("Currency must be an active configured 3-letter currency code"));
-                var entity = new Entity { TenantId = tenantId, Code = next, Name = dto.Name.Trim(), Description = dto.Description?.Trim(), OwnerId = ownerId, Status = dto.Status, Currency = requestedCurrency, StrategicObjective = dto.StrategicObjective?.Trim(), Priority = dto.Priority?.Trim(), Health = dto.Health?.Trim(), ConfidenceLevel = dto.ConfidenceLevel?.Trim(), CreatedBy = userId };
+                var entity = new Entity { TenantId = tenantId, OrganizationId = dto.OrganizationId.Value, Code = next, Name = dto.Name.Trim(), Description = dto.Description?.Trim(), OwnerId = ownerId, Status = dto.Status, Currency = requestedCurrency, StrategicObjective = dto.StrategicObjective?.Trim(), Priority = dto.Priority?.Trim(), Health = dto.Health?.Trim(), ConfidenceLevel = dto.ConfidenceLevel?.Trim(), CreatedBy = userId };
                 _db.Set<Entity>().Add(entity); await _db.SaveChangesAsync(ct);
                 if (ownerId.HasValue)
                 {
@@ -117,11 +126,16 @@ public sealed class PortfolioService : IPortfolioService
 
     public async Task<Result<PortfolioDto>> UpdateAsync(Guid id, SavePortfolioDto dto, string userId, CancellationToken ct = default)
     {
+        var actorError = ValidateMutationActor(userId);
+        if (actorError is not null) return Result<PortfolioDto>.Failure(actorError);
+
         var validation = Validate(dto); if (validation is not null) return Result<PortfolioDto>.Failure(validation);
         var requestedCurrency = NormalizeCurrency(dto.Currency);
         if (!IsValidCurrency(requestedCurrency)) return Result<PortfolioDto>.Failure(Error.Validation("Currency must be an active configured 3-letter currency code"));
         var entity = await InScope(_db.Set<Entity>()).FirstOrDefaultAsync(x => x.Id == id, ct);
         if (entity is null) return Result<PortfolioDto>.Failure(Error.NotFound("Portfolio not found"));
+        if (dto.OrganizationId.HasValue && dto.OrganizationId != entity.OrganizationId)
+            return Result<PortfolioDto>.Failure(Error.Conflict("Portfolio Organization changes require a governed ownership transfer."));
         var dtoOwnerId = NormalizeOwnerId(dto.OwnerId);
         if (entity.OwnerId.HasValue)
         {
@@ -144,6 +158,9 @@ public sealed class PortfolioService : IPortfolioService
 
     private async Task<Result> SetStatusAsync(Guid id, string status, string userId, bool requireArchived, CancellationToken ct)
     {
+        var actorError = ValidateMutationActor(userId);
+        if (actorError is not null) return Result.Failure(actorError);
+
         var entity = await InScope(_db.Set<Entity>()).FirstOrDefaultAsync(x => x.Id == id, ct);
         if (entity is null) return Result.Failure(Error.NotFound("Portfolio not found"));
         if (requireArchived && entity.Status != "Archived") return Result.Failure(Error.Validation("Only archived portfolios can be reactivated"));
@@ -180,7 +197,7 @@ public sealed class PortfolioService : IPortfolioService
         var owner = await _db.Set<User>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == entity.OwnerId && x.TenantId == entity.TenantId, ct);
         var projects = await LoadProjectsAsync(entity.Id, ct);
         var metrics = BuildMetrics(projects);
-        return new PortfolioDto { Id = entity.Id, Name = entity.Name, Code = entity.Code ?? "", Description = entity.Description, Status = entity.Status ?? "Active", OwnerId = entity.OwnerId ?? Guid.Empty, OwnerName = owner?.FullName, OwnerEmail = owner?.Email, Currency = entity.Currency, StartDate = entity.StartDate, EndDate = entity.EndDate, StrategicObjective = entity.StrategicObjective, Priority = entity.Priority, Health = entity.Health, ConfidenceLevel = entity.ConfidenceLevel, Metrics = metrics, Projects = includeProjects ? projects : Array.Empty<PortfolioProjectDto>(), CreatedAt = entity.CreatedAt, UpdatedAt = entity.UpdatedAt, CreatedBy = entity.CreatedBy, UpdatedBy = entity.UpdatedBy };
+        return new PortfolioDto { Id = entity.Id, OrganizationId = entity.OrganizationId, Name = entity.Name, Code = entity.Code ?? "", Description = entity.Description, Status = entity.Status ?? "Active", OwnerId = entity.OwnerId ?? Guid.Empty, OwnerName = owner?.FullName, OwnerEmail = owner?.Email, Currency = entity.Currency, StartDate = entity.StartDate, EndDate = entity.EndDate, StrategicObjective = entity.StrategicObjective, Priority = entity.Priority, Health = entity.Health, ConfidenceLevel = entity.ConfidenceLevel, Metrics = metrics, Projects = includeProjects ? projects : Array.Empty<PortfolioProjectDto>(), CreatedAt = entity.CreatedAt, UpdatedAt = entity.UpdatedAt, CreatedBy = entity.CreatedBy, UpdatedBy = entity.UpdatedBy };
     }
 
     private async Task<List<PortfolioProjectDto>> LoadProjectsAsync(Guid portfolioId, CancellationToken ct)
@@ -221,7 +238,69 @@ public sealed class PortfolioService : IPortfolioService
     {
         if (_http.HttpContext is null) return TrustedTenantExecutionContext.CurrentTenantId == tenantId;
         var context = _managementContext?.Current;
-        return context is not null && context.TenantId == tenantId;
+        return HasTrustedManagementContext(context) && context!.TenantId == tenantId;
+    }
+
+    private Error? ValidateMutationActor(string userId)
+    {
+        if (!Guid.TryParse(userId, out var actorId) || actorId == Guid.Empty)
+            return Error.Unauthorized("A valid authenticated actor is required.");
+
+        var httpContext = _http.HttpContext;
+        if (httpContext is null)
+            return TrustedTenantExecutionContext.CurrentTenantId.HasValue
+                ? null
+                : Error.Unauthorized("A valid tenant management context is required.");
+
+        if (httpContext.User.Identity?.IsAuthenticated != true
+            || !Guid.TryParse(ActorClaim(httpContext.User), out var claimActorId)
+            || claimActorId != actorId
+            || !Guid.TryParse(httpContext.User.FindFirstValue("tenantId"), out var tenantId)
+            || tenantId == Guid.Empty)
+            return Error.Unauthorized("The authenticated actor and tenant claims are required.");
+
+        var context = _managementContext?.Current;
+        if (!HasTrustedManagementContext(context)
+            || context!.UserId != actorId
+            || context.TenantId != tenantId)
+            return Error.Unauthorized("The management context does not match the authenticated actor and tenant.");
+
+        return context.EffectiveReadOnly
+            ? Error.Forbidden("Writes are disabled in a read-only management view.")
+            : null;
+    }
+
+    private bool HasTrustedManagementContext(ManagementContext? context)
+    {
+        if (context is null || context.UserId == Guid.Empty || context.TenantId == Guid.Empty)
+            return false;
+
+        var httpContext = _http.HttpContext;
+        if (httpContext is null)
+            return TrustedTenantExecutionContext.CurrentTenantId == context.TenantId;
+
+        return httpContext.User.Identity?.IsAuthenticated == true
+            && Guid.TryParse(ActorClaim(httpContext.User), out var claimActorId)
+            && claimActorId == context.UserId
+            && Guid.TryParse(httpContext.User.FindFirstValue("tenantId"), out var claimTenantId)
+            && claimTenantId == context.TenantId;
+    }
+
+    private static string? ActorClaim(ClaimsPrincipal principal) =>
+        principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? principal.FindFirstValue("sub");
+
+    private async Task<bool> CanAssignOrganizationAsync(Guid organizationId, Guid tenantId, CancellationToken ct)
+    {
+        var organizationExists = await _db.Set<OrganizationEntity>().AsNoTracking()
+            .AnyAsync(organization => organization.Id == organizationId && organization.TenantId == tenantId
+                && organization.IsActive && !organization.IsDeleted, ct);
+        if (!organizationExists) return false;
+
+        if (_http.HttpContext is null)
+            return TrustedTenantExecutionContext.CurrentTenantId == tenantId;
+        var context = _managementContext?.Current;
+        return context is not null && context.TenantId == tenantId && !context.EffectiveReadOnly
+            && context.Scope.OrganizationIds.Contains(organizationId);
     }
 
     private IQueryable<Entity> InScope(IQueryable<Entity> query)
@@ -234,7 +313,7 @@ public sealed class PortfolioService : IPortfolioService
             return TrustedTenantExecutionContext.CurrentTenantId == tenantId ? query : query.Where(_ => false);
 
         var context = _managementContext?.Current;
-        if (context is null || context.TenantId != tenantId) return query.Where(_ => false);
+        if (!HasTrustedManagementContext(context) || context!.TenantId != tenantId) return query.Where(_ => false);
 
         if (context.CanReadAllTenantPortfolioProgramData || context.HasTenantAdministratorPortfolioWriteScope)
             return query;

@@ -253,6 +253,22 @@ public sealed class ProjectChangeRequestWorkflowAdapter(
             : Result.Failure(Error.Forbidden("Change Request access is required."));
     }
 
+    public async Task<Result> AuthorizeProvisionAsync(WorkflowExecutionContext execution, Guid entityId, CancellationToken cancellationToken = default)
+    {
+        if (execution.ReadOnly || managementContext.Current?.EffectiveReadOnly == true)
+            return Result.Failure(WorkflowErrors.ReadOnlyViewAs);
+        var principal = httpContextAccessor.HttpContext?.User;
+        var userId = ParseUserId(execution.UserId);
+        if (principal?.Identity?.IsAuthenticated != true || userId == Guid.Empty)
+            return Result.Failure(Error.Unauthorized("An authenticated user is required."));
+        var permissions = await effectivePermissions.GetEffectivePermissionsAsync(userId, execution.TenantId, cancellationToken);
+        if (!permissions.Contains("ChangeRequest.Manage"))
+            return Result.Failure(Error.Forbidden("Change Request management permission is required to provision its workflow."));
+        return await FindAccessibleAsync(entityId, execution, cancellationToken) is null
+            ? Result.Failure(WorkflowErrors.EntityNotAccessible(EntityType, entityId))
+            : Result.Success();
+    }
+
     /// <summary>
     /// Transition-level gate: reading a change request (<c>ChangeRequest.View</c>) does not
     /// authorize submitting, cancelling, approving or rejecting it. The granular, assignment

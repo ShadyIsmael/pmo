@@ -622,8 +622,16 @@ public sealed class ProjectReportingService : IProjectReportingService
     private static bool IsValidCurrency(string currency) => currency.Length == 3
         && currency.All(character => character is >= 'A' and <= 'Z');
 
-    private Task<Project?> GetProjectAsync(Guid projectId, CancellationToken cancellationToken) =>
-        _context.Set<Project>().AsNoTracking().FirstOrDefaultAsync(item => item.Id == projectId && !item.IsDeleted, cancellationToken);
+    private Task<Project?> GetProjectAsync(Guid projectId, CancellationToken cancellationToken)
+    {
+        var management = _managementContextAccessor?.Current;
+        if (management is null || management.TenantId == Guid.Empty)
+            return Task.FromResult<Project?>(null);
+
+        var projectIds = management.Scope.ProjectIds.ToArray();
+        return _context.Set<Project>().AsNoTracking().FirstOrDefaultAsync(item => item.Id == projectId
+            && item.TenantId == management.TenantId && projectIds.Contains(item.Id) && !item.IsDeleted, cancellationToken);
+    }
 
     private static ProjectReportingPlanOptionDto MapOption(ProjectEvmPlanOption plan) => new()
     {

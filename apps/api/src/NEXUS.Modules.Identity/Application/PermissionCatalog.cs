@@ -11,12 +11,15 @@ public sealed record PermissionCatalogEntry(
     string ScreenId, string ScreenNameEn, string ScreenNameAr, PermissionLevel Level,
     string LabelEn, string LabelAr, string DescriptionEn, string DescriptionAr,
     string Sensitivity, bool IsSensitive, IReadOnlyList<string> RequiredPermissionKeys,
-    bool IsActive, PermissionScope Scope = PermissionScope.Tenant, bool IsAssignable = true,
-    bool IsTenantAdminBaseline = false)
+    bool IsActive, PermissionScope Scope = PermissionScope.Tenant)
 {
+    // Compatibility metadata only. Grantability is evaluated by
+    // IPermissionProtectionPolicy plus the separate permission-scope rules.
+    public bool IsAssignable => IsActive;
+
     // Compatibility metadata for existing Roles & Permissions clients: every
     // selectable custom-role category can receive this permission, subject to
-    // ordinary delegation, scope, dependency, and protected-role rules.
+    // ordinary delegation, scope, dependency, and the central protection policy.
     public IReadOnlyList<string> AllowedCategories => RoleCategories.Selectable;
 }
 
@@ -119,25 +122,25 @@ public static class PermissionCatalog
             "governance", "Governance", "الحوكمة",
             "document-center-categories", "Document Categories", "فئات المستندات", PermissionLevel.View,
             "View", "عرض", "View managed document categories for authorized organizations", "عرض فئات المستندات المدارة للمؤسسات المصرح بها.",
-            "Low", false, [], true, IsTenantAdminBaseline: true),
+            "Low", false, [], true),
         new(
             "b0000275-0000-0000-0000-000000000275", "DocumentCategory.Create", "DocumentCategory", "Create",
             "governance", "Governance", "الحوكمة",
             "document-center-categories", "Document Categories", "فئات المستندات", PermissionLevel.Action,
             "Create", "إنشاء", "Create document categories for an authorized organization", "إنشاء فئات مستندات لمؤسسة مصرح بها.",
-            "Low", false, ["DocumentCategory.View"], true, IsTenantAdminBaseline: true),
+            "Low", false, ["DocumentCategory.View"], true),
         new(
             "b0000276-0000-0000-0000-000000000276", "DocumentCategory.Edit", "DocumentCategory", "Edit",
             "governance", "Governance", "الحوكمة",
             "document-center-categories", "Document Categories", "فئات المستندات", PermissionLevel.Action,
             "Edit", "تعديل", "Edit document category names and descriptions without breaking historical references", "تعديل أسماء فئات المستندات وأوصافها دون الإضرار بالمراجع التاريخية.",
-            "Low", false, ["DocumentCategory.View"], true, IsTenantAdminBaseline: true),
+            "Low", false, ["DocumentCategory.View"], true),
         new(
             "b0000277-0000-0000-0000-000000000277", "DocumentCategory.ActivateDeactivate", "DocumentCategory", "ActivateDeactivate",
             "governance", "Governance", "الحوكمة",
             "document-center-categories", "Document Categories", "فئات المستندات", PermissionLevel.Action,
             "Activate / deactivate", "تفعيل / إلغاء التفعيل", "Activate or deactivate document categories without deleting historical references", "تفعيل فئات المستندات أو إلغاء تفعيلها دون حذف المراجع التاريخية.",
-            "Low", false, ["DocumentCategory.View"], true, IsTenantAdminBaseline: true),
+            "Low", false, ["DocumentCategory.View"], true),
         new(
             "b0000228-0000-0000-0000-000000000228", "ProjectFinance.View", "ProjectFinance", "View",
             "financial-management", "Financial Management", "الإدارة المالية",
@@ -225,7 +228,7 @@ public static class PermissionCatalog
             "capacity", "Resources", "الموارد",
             "cost-utilization", "Cost & Utilization", "التكلفة والاستغلال", PermissionLevel.Action,
             "Export", "تصدير", "Export Cost & Utilization data within the current Tenant and the user's authorized management scope. The export endpoint also requires Resource.View; resource cost-rate fields remain redacted unless Resource.ViewCostRate is effective.", "تصدير بيانات التكلفة والاستغلال ضمن المستأجر الحالي ونطاق الإدارة المصرح به للمستخدم. يتطلب مسار التصدير أيضًا صلاحية Resource.View، وتظل حقول معدلات تكلفة الموارد مخفية ما لم تكن صلاحية Resource.ViewCostRate فعالة.",
-            "High", true, ["Resource.View"], true, PermissionScope.Tenant, IsAssignable: true, IsTenantAdminBaseline: false),
+            "High", true, ["Resource.View"], true, PermissionScope.Tenant),
         new(
             "b0000257-0000-0000-0000-000000000257", "Commitment.View", "Commitment", "View",
             "financial-management", "Financial Management", "الإدارة المالية", "commitments", "Commitments", "الالتزامات", PermissionLevel.View,
@@ -298,19 +301,19 @@ public static class PermissionCatalog
             "governance", "Governance", "الحوكمة",
             "assignment-recovery", "Assignment Recovery", "استعادة الإسناد", PermissionLevel.Action,
             "Initiate", "بدء", "Initiate initial manager assignments through the existing approval workflow", "تنفيذ إجراء استعادة تعيينات الحوكمة · بدء على Assignment recovery مع الالتزام بنطاق المستأجر والإدارة.",
-            "Medium", false, ["Governance.AssignmentRecovery.View"], true, IsTenantAdminBaseline: true),
+            "Medium", false, ["Governance.AssignmentRecovery.View"], true),
         new(
             "b0000168-0000-0000-0000-000000000168", "Governance.AssignmentRecovery.Manage", "Governance.AssignmentRecovery", "Manage",
             "governance", "Governance", "الحوكمة",
             "assignment-recovery", "Assignment Recovery", "استعادة الإسناد", PermissionLevel.Action,
             "Manage recovery", "إدارة الاستعادة", "Reconcile governance references, assign project sponsors, and initiate administrative handovers", "تنفيذ إجراء تنفيذ استعادة الإسناد على Assignment recovery مع الالتزام بنطاق المستأجر والإدارة.",
-            "Medium", false, ["Governance.AssignmentRecovery.View"], true, IsTenantAdminBaseline: true),
+            "Medium", false, ["Governance.AssignmentRecovery.View"], true),
         new(
             "b0000166-0000-0000-0000-000000000166", "Governance.AssignmentRecovery.View", "Governance.AssignmentRecovery", "View",
             "governance", "Governance", "الحوكمة",
             "assignment-recovery", "Assignment Recovery", "استعادة الإسناد", PermissionLevel.View,
             "View", "عرض", "Discover tenant entities with missing governance assignments", "تنفيذ إجراء استعادة تعيينات الحوكمة · عرض على Assignment recovery مع الالتزام بنطاق المستأجر والإدارة.",
-            "Low", false, [], true, IsTenantAdminBaseline: true),
+            "Low", false, [], true),
         new(
             "b0000149-0000-0000-0000-000000000149", "Handover.AdminInitiate", "Handover", "AdminInitiate",
             "project-delivery", "Delivery Management", "إدارة التسليم",
@@ -424,67 +427,67 @@ public static class PermissionCatalog
             "administration", "Administration", "الإدارة",
             "project-lifecycle", "Project Lifecycle", "دورة حياة المشروع", PermissionLevel.View,
             "View phases", "عرض المراحل", "View the managed project phase catalog", "عرض دليل مراحل المشروع المُدار.",
-            "Low", false, [], true, IsTenantAdminBaseline: true),
+            "Low", false, [], true),
         new(
             "b0000309-0000-0000-0000-000000000309", "ProjectLifecyclePhase.Create", "ProjectLifecyclePhase", "Create",
             "administration", "Administration", "الإدارة",
             "project-lifecycle", "Project Lifecycle", "دورة حياة المشروع", PermissionLevel.Action,
             "Create phase", "إنشاء مرحلة", "Create a project phase catalog entry", "إنشاء مرحلة في دليل مراحل المشروع.",
-            "Low", false, ["ProjectLifecyclePhase.View"], true, IsTenantAdminBaseline: true),
+            "Low", false, ["ProjectLifecyclePhase.View"], true),
         new(
             "b0000310-0000-0000-0000-000000000310", "ProjectLifecyclePhase.Edit", "ProjectLifecyclePhase", "Edit",
             "administration", "Administration", "الإدارة",
             "project-lifecycle", "Project Lifecycle", "دورة حياة المشروع", PermissionLevel.Action,
             "Edit phase", "تعديل المرحلة", "Edit phase names, descriptions, defaults, ordering, and transition rules", "تعديل أسماء المراحل وأوصافها وقيمها الافتراضية وترتيبها وقواعد الانتقال.",
-            "Low", false, ["ProjectLifecyclePhase.View"], true, IsTenantAdminBaseline: true),
+            "Low", false, ["ProjectLifecyclePhase.View"], true),
         new(
             "b0000311-0000-0000-0000-000000000311", "ProjectLifecyclePhase.ActivateDeactivate", "ProjectLifecyclePhase", "ActivateDeactivate",
             "administration", "Administration", "الإدارة",
             "project-lifecycle", "Project Lifecycle", "دورة حياة المشروع", PermissionLevel.Action,
             "Activate or deactivate phases", "تفعيل المراحل أو إلغاء تفعيلها", "Activate or deactivate phases without deleting historical project references", "تفعيل المراحل أو إلغاء تفعيلها دون حذف المراجع التاريخية للمشروعات.",
-            "Low", false, ["ProjectLifecyclePhase.View"], true, IsTenantAdminBaseline: true),
+            "Low", false, ["ProjectLifecyclePhase.View"], true),
         new(
             "b0000312-0000-0000-0000-000000000312", "ProjectLifecycleStatus.View", "ProjectLifecycleStatus", "View",
             "administration", "Administration", "الإدارة",
             "project-lifecycle", "Project Lifecycle", "دورة حياة المشروع", PermissionLevel.View,
             "View statuses", "عرض الحالات", "View the managed project status catalog", "عرض دليل حالات المشروع المُدار.",
-            "Low", false, [], true, IsTenantAdminBaseline: true),
+            "Low", false, [], true),
         new(
             "b0000313-0000-0000-0000-000000000313", "ProjectLifecycleStatus.Create", "ProjectLifecycleStatus", "Create",
             "administration", "Administration", "الإدارة",
             "project-lifecycle", "Project Lifecycle", "دورة حياة المشروع", PermissionLevel.Action,
             "Create status", "إنشاء حالة", "Create a project status catalog entry", "إنشاء حالة في دليل حالات المشروع.",
-            "Low", false, ["ProjectLifecycleStatus.View"], true, IsTenantAdminBaseline: true),
+            "Low", false, ["ProjectLifecycleStatus.View"], true),
         new(
             "b0000314-0000-0000-0000-000000000314", "ProjectLifecycleStatus.Edit", "ProjectLifecycleStatus", "Edit",
             "administration", "Administration", "الإدارة",
             "project-lifecycle", "Project Lifecycle", "دورة حياة المشروع", PermissionLevel.Action,
             "Edit status", "تعديل الحالة", "Edit status names, descriptions, defaults, ordering, and transition rules", "تعديل أسماء الحالات وأوصافها وقيمها الافتراضية وترتيبها وقواعد الانتقال.",
-            "Low", false, ["ProjectLifecycleStatus.View"], true, IsTenantAdminBaseline: true),
+            "Low", false, ["ProjectLifecycleStatus.View"], true),
         new(
             "b0000315-0000-0000-0000-000000000315", "ProjectLifecycleStatus.ActivateDeactivate", "ProjectLifecycleStatus", "ActivateDeactivate",
             "administration", "Administration", "الإدارة",
             "project-lifecycle", "Project Lifecycle", "دورة حياة المشروع", PermissionLevel.Action,
             "Activate or deactivate statuses", "تفعيل الحالات أو إلغاء تفعيلها", "Activate or deactivate statuses without deleting historical project references", "تفعيل الحالات أو إلغاء تفعيلها دون حذف المراجع التاريخية للمشروعات.",
-            "Low", false, ["ProjectLifecycleStatus.View"], true, IsTenantAdminBaseline: true),
+            "Low", false, ["ProjectLifecycleStatus.View"], true),
         new(
             "b0000316-0000-0000-0000-000000000316", "ProjectStatus.Change", "ProjectStatus", "Change",
-            "project-management", "Delivery Management", "????? ???????",
-            "projects", "Projects", "?????????", PermissionLevel.Action,
+            "project-management", "Delivery Management", "إدارة التسليم",
+            "projects", "Projects", "المشروعات", PermissionLevel.Action,
             "Change project status", "تغيير حالة المشروع", "Apply a permitted project status transition and its configured reason and audit requirements", "تطبيق انتقال مسموح لحالة المشروع ومتطلبات السبب والتدقيق المحددة له.",
-            "Medium", true, ["Project.View"], true, PermissionScope.Project, IsAssignable: true, IsTenantAdminBaseline: false),
+            "Medium", true, ["Project.View"], true, PermissionScope.Project),
         new(
             "b0000307-0000-0000-0000-000000000307", "ProjectPhase.Change", "ProjectPhase", "Change",
-            "project-management", "Delivery Management", "مدیریت تحویل",
+            "project-management", "Delivery Management", "إدارة التسليم",
             "projects", "Projects", "المشروعات", PermissionLevel.Action,
             "Change project phase", "تغيير مرحلة المشروع", "Change a project's lifecycle phase after server-side phase gate validation.", "تغيير مرحلة دورة حياة المشروع بعد اجتياز التحقق من بوابة المرحلة على الخادم.",
-            "Medium", true, ["Project.View"], true, PermissionScope.Project, IsAssignable: true, IsTenantAdminBaseline: false),
+            "Medium", true, ["Project.View"], true, PermissionScope.Project),
         new(
             "b0000170-0000-0000-0000-000000000170", "ProjectAnnualBudget.Approve", "ProjectAnnualBudget", "Approve",
             "financial-management", "Financial Management", "الإدارة المالية",
             "annual-budgets", "Annual Budgets", "الموازنات السنوية", PermissionLevel.Action,
             "Review assigned budget", "مراجعة الميزانية المسندة", "Approve or reject an assigned Annual Budget review, or return it for changes; retain scope and separation-of-duties checks.", "اتخاذ قرار بشأن مراجعة ميزانية سنوية مسندة بالموافقة أو الرفض أو الإعادة للتعديل، مع تطبيق قيود النطاق وفصل المهام.",
-            "High", true, ["ProjectAnnualBudget.View"], true, PermissionScope.Project, IsAssignable: true, IsTenantAdminBaseline: false),
+            "High", true, ["ProjectAnnualBudget.View"], true, PermissionScope.Project),
         new(
             "b0000176-0000-0000-0000-000000000176", "ProjectAnnualBudget.CarryForward", "ProjectAnnualBudget", "CarryForward",
             "financial-management", "Financial Management", "الإدارة المالية",
@@ -508,7 +511,7 @@ public static class PermissionCatalog
             "financial-management", "Financial Management", "الإدارة المالية",
             "annual-budgets", "Annual Budgets", "الموازنات السنوية", PermissionLevel.Action,
             "Override approval", "تجاوز الموافقة", "Apply a reasoned exception to one approval submission only; does not change persistent Project Settings.", "تطبيق استثناء مسبب على إرسال واحد فقط، دون تغيير إعدادات المشروع الدائمة.",
-            "High", true, ["ProjectAnnualBudget.View"], true, PermissionScope.Project, IsAssignable: true, IsTenantAdminBaseline: false),
+            "High", true, ["ProjectAnnualBudget.View"], true, PermissionScope.Project),
         new(
             "b0000173-0000-0000-0000-000000000173", "ProjectPaymentReversal.Approve", "ProjectPaymentReversal", "Approve",
             "financial-management", "Financial Management", "الإدارة المالية",
@@ -724,19 +727,19 @@ public static class PermissionCatalog
             "project-delivery", "Delivery Management", "إدارة التسليم",
             "workflow-administration", "Workflow Management", "إدارة سير العمل", PermissionLevel.Action,
             "Edit drafts", "تعديل المسودات", "Edit workflow drafts", "تنفيذ إجراء مسارات العمل · إدارة على Workflow administration مع الالتزام بنطاق المستأجر والإدارة.",
-            "Medium", false, ["Workflow.View"], true, IsTenantAdminBaseline: true),
+            "Medium", false, ["Workflow.View"], true),
         new(
             "b0000141-0000-0000-0000-000000000141", "Workflow.Publish", "Workflow", "Publish",
             "project-delivery", "Delivery Management", "إدارة التسليم",
             "workflow-administration", "Workflow Management", "إدارة سير العمل", PermissionLevel.Action,
             "Publish", "نشر", "Publish and retire workflow versions", "تنفيذ إجراء مسارات العمل · نشر على Workflow administration مع الالتزام بنطاق المستأجر والإدارة.",
-            "Medium", false, ["Workflow.View"], true, IsTenantAdminBaseline: true),
+            "Medium", false, ["Workflow.View"], true),
         new(
             "b0000139-0000-0000-0000-000000000139", "Workflow.View", "Workflow", "View",
             "project-delivery", "Delivery Management", "إدارة التسليم",
             "workflow-administration", "Workflow Management", "إدارة سير العمل", PermissionLevel.View,
             "View", "عرض", "View workflow definitions and versions", "تنفيذ إجراء مسارات العمل · عرض على Workflow administration مع الالتزام بنطاق المستأجر والإدارة.",
-            "Low", false, [], true, IsTenantAdminBaseline: true),
+            "Low", false, [], true),
         new(
             "b0000124-0000-0000-0000-000000000124", "WorkItem.Create", "WorkItem", "Create",
             "project-delivery", "Delivery Management", "إدارة التسليم",
@@ -766,7 +769,7 @@ public static class PermissionCatalog
             "financial-management", "Financial Management", "الإدارة المالية",
             "annual-budgets", "Annual Budgets", "الموازنات السنوية", PermissionLevel.View,
             "View", "عرض", "Open the annual-budget workspace within tenant and project scope. Review-only users see assigned records only.", "فتح مساحة الميزانيات السنوية ضمن نطاق المستأجر والمشروع. يقتصر عرض المراجعين على السجلات المُسندة إليهم.",
-            "High", true, [], true, PermissionScope.Project, IsAssignable: true, IsTenantAdminBaseline: false),
+            "High", true, [], true, PermissionScope.Project),
         new(
             "b0000179-0000-0000-0000-000000000179", "ProjectPaymentRequest.View", "ProjectPaymentRequest", "View",
             "financial-management", "Financial Management", "الإدارة المالية",
@@ -796,19 +799,19 @@ public static class PermissionCatalog
             "financial-management", "Financial Management", "الإدارة المالية",
             "financial-overview", "Overview", "نظرة عامة", PermissionLevel.View,
             "View overview", "عرض النظرة العامة", "Read the Project financial foundation summary, including the lifetime ceiling and source-backed actual-paid and outstanding-obligation totals when records are comparable. Legacy approved-payment allocation and available-budget fields may be null. Does not grant create, edit, approve, or export capabilities.", "قراءة ملخص الأساس المالي للمشروع، بما في ذلك السقف المالي مدى الحياة وإجماليات المدفوعات الفعلية والالتزامات المستحقة المدعومة بسجلات المصدر عندما تكون السجلات قابلة للمقارنة. قد لا تتوفر حقول تخصيص مدفوعات الطلبات المعتمدة والميزانية المتاحة. لا يمنح هذا الإذن صلاحيات الإنشاء أو التعديل أو الاعتماد أو التصدير.",
-            "High", true, [], true, PermissionScope.Project, IsAssignable: true, IsTenantAdminBaseline: false),
+            "High", true, [], true, PermissionScope.Project),
         new(
             "b0000270-0000-0000-0000-000000000270", "ProgramFinancialRollup.View", "ProgramFinancialRollup", "View",
             "financial-management", "Financial Management", "الإدارة المالية",
             "program-financial-rollup", "Program Financials", "ماليات البرنامج", PermissionLevel.View,
             "View", "عرض", "Read a Program financial rollup and its paged Project breakdown using only Projects within the current Tenant and authorized Program/descendant Project management scope. Does not grant Project workflow actions or unscoped Project access.", "عرض التجميع المالي للبرنامج وتفاصيل المشاريع الموزعة على الصفحات، مع الاقتصار على المشاريع ضمن المستأجر الحالي ونطاق الإدارة المصرح به للبرنامج والمشاريع التابعة له. لا تمنح هذه الصلاحية إجراءات سير العمل المالية للمشروع أو الوصول إلى مشاريع خارج النطاق.",
-            "High", true, [], true, PermissionScope.Program, IsAssignable: true, IsTenantAdminBaseline: false),
+            "High", true, [], true, PermissionScope.Program),
         new(
             "b0000271-0000-0000-0000-000000000271", "PortfolioFinancialRollup.View", "PortfolioFinancialRollup", "View",
             "financial-management", "Financial Management", "الإدارة المالية",
             "portfolio-financial-rollup", "Portfolio Financials", "ماليات المحفظة", PermissionLevel.View,
             "View", "عرض", "Read a Portfolio financial rollup and its paged Project breakdown using only Projects within the current Tenant and authorized Portfolio/descendant Program and Project management scope. Does not grant Project workflow actions or unscoped Project access.", "عرض التجميع المالي للمحفظة وتفاصيل المشاريع الموزعة على الصفحات، مع الاقتصار على المشاريع ضمن المستأجر الحالي ونطاق الإدارة المصرح به للمحفظة والبرامج والمشاريع التابعة لها. لا تمنح هذه الصلاحية إجراءات سير العمل المالية للمشروع أو الوصول إلى مشاريع خارج النطاق.",
-            "High", true, [], true, PermissionScope.Portfolio, IsAssignable: true, IsTenantAdminBaseline: false),
+            "High", true, [], true, PermissionScope.Portfolio),
         new(
             "b0000181-0000-0000-0000-000000000181", "Dashboard.View", "Dashboard", "View",
             "reporting", "Reports & Insights", "التقارير والرؤى",
@@ -820,49 +823,49 @@ public static class PermissionCatalog
             "financial-management", "Financial Management", "الإدارة المالية",
             "annual-budgets", "Annual Budgets", "الموازنات السنوية", PermissionLevel.Action,
             "Create draft", "إنشاء مسودة", "Create an annual-budget draft within project and fiscal-year scope.", "إنشاء مسودة ميزانية سنوية ضمن نطاق المشروع والسنة المالية.",
-            "High", true, ["ProjectAnnualBudget.View"], true, PermissionScope.Project, IsAssignable: true, IsTenantAdminBaseline: false),
+            "High", true, ["ProjectAnnualBudget.View"], true, PermissionScope.Project),
         new(
             "b0000183-0000-0000-0000-000000000183", "ProjectAnnualBudget.EditDraft", "ProjectAnnualBudget", "EditDraft",
             "financial-management", "Financial Management", "الإدارة المالية",
             "annual-budgets", "Annual Budgets", "الموازنات السنوية", PermissionLevel.Action,
             "Edit draft", "تعديل المسودة", "Edit an eligible draft before submission.", "تعديل مسودة مستوفية للشروط قبل إرسالها.",
-            "High", true, ["ProjectAnnualBudget.View"], true, PermissionScope.Project, IsAssignable: true, IsTenantAdminBaseline: false),
+            "High", true, ["ProjectAnnualBudget.View"], true, PermissionScope.Project),
         new(
             "b0000306-0000-0000-0000-000000000306", "ProjectAnnualBudget.ConfigureDraftApproval", "ProjectAnnualBudget", "ConfigureDraftApproval",
             "financial-management", "Financial Management", "الإدارة المالية",
             "annual-budgets", "Annual Budgets", "الموازنات السنوية", PermissionLevel.Action,
             "Configure approval", "تهيئة الموافقة", "Configure and save approvers and review order for this Annual Budget Draft. The configuration applies to its next submission only and does not change Project Settings or an immutable submitted approval plan.", "تهيئة قائمة المعتمدين وترتيب المراجعة لمسودة الميزانية السنوية الحالية. يُطبق الإعداد عند إرسالها التالية فقط، ولا يغير إعدادات المشروع أو خطة اعتماد مُرسلة وغير قابلة للتعديل.",
-            "High", true, ["ProjectAnnualBudget.View", "ProjectAnnualBudget.EditDraft"], true, PermissionScope.Project, IsAssignable: true, IsTenantAdminBaseline: false),
+            "High", true, ["ProjectAnnualBudget.View", "ProjectAnnualBudget.EditDraft"], true, PermissionScope.Project),
         new(
             "b0000184-0000-0000-0000-000000000184", "ProjectAnnualBudget.SubmitForReview", "ProjectAnnualBudget", "SubmitForReview",
             "financial-management", "Financial Management", "الإدارة المالية",
             "annual-budgets", "Annual Budgets", "الموازنات السنوية", PermissionLevel.Action,
             "Submit for review", "إرسال للمراجعة", "Submit an eligible draft to its configured review workflow.", "إرسال مسودة مستوفية للشروط إلى مسار المراجعة المحدد.",
-            "High", true, ["ProjectAnnualBudget.View"], true, PermissionScope.Project, IsAssignable: true, IsTenantAdminBaseline: false),
+            "High", true, ["ProjectAnnualBudget.View"], true, PermissionScope.Project),
         new(
             "b0000185-0000-0000-0000-000000000185", "ProjectAnnualBudget.ReviseApproved", "ProjectAnnualBudget", "ReviseApproved",
             "financial-management", "Financial Management", "الإدارة المالية",
             "annual-budgets", "Annual Budgets", "الموازنات السنوية", PermissionLevel.Action,
             "Revise approved budget", "تعديل الميزانية المعتمدة", "Submit an eligible revision to an approved budget.", "إرسال تعديل مستوفٍ للشروط على ميزانية معتمدة.",
-            "High", true, ["ProjectAnnualBudget.View"], true, PermissionScope.Project, IsAssignable: true, IsTenantAdminBaseline: false),
+            "High", true, ["ProjectAnnualBudget.View"], true, PermissionScope.Project),
         new(
             "b0000186-0000-0000-0000-000000000186", "ProjectAnnualBudget.ManageApprovalConfiguration", "ProjectAnnualBudget", "ManageApprovalConfiguration",
             "financial-management", "Financial Management", "الإدارة المالية",
             "annual-budget-defaults", "Annual Budget Approval Defaults", "الإعدادات الافتراضية لاعتماد الموازنة السنوية", PermissionLevel.Action,
             "Set approval defaults", "ضبط إعدادات الاعتماد الافتراضية", "Change persistent Project Settings approval defaults; distinct from a one-submission override.", "تغيير إعدادات الاعتماد الافتراضية الدائمة للمشروع، بمعزل عن تجاوز إرسال واحد.",
-            "Critical", true, ["ProjectAnnualBudget.View"], true, PermissionScope.Project, IsAssignable: true, IsTenantAdminBaseline: false),
+            "Critical", true, ["ProjectAnnualBudget.View"], true, PermissionScope.Project),
         new(
             "b0000304-0000-0000-0000-000000000304", "ProjectAnnualBudget.Delete", "ProjectAnnualBudget", "Delete",
             "financial-management", "Financial Management", "الإدارة المالية",
             "annual-budgets", "Annual Budgets", "الموازنات السنوية", PermissionLevel.Action,
             "Delete draft", "حذف المسودة", "Delete an eligible unapproved Draft annual budget with no active approval workflow or protected financial dependency.", "حذف مسودة موازنة سنوية غير معتمدة ومؤهلة، بشرط عدم وجود مراجعة موافقة نشطة أو ارتباط مالي محمي.",
-            "Critical", true, ["ProjectAnnualBudget.View"], true, PermissionScope.Project, IsAssignable: true, IsTenantAdminBaseline: false),
+            "Critical", true, ["ProjectAnnualBudget.View"], true, PermissionScope.Project),
         new(
             "b0000305-0000-0000-0000-000000000305", "ProjectAnnualBudget.Withdraw", "ProjectAnnualBudget", "Withdraw",
             "financial-management", "Financial Management", "الإدارة المالية",
             "annual-budgets", "Annual Budgets", "الموازنات السنوية", PermissionLevel.Action,
             "Withdraw submission", "سحب الإرسال", "Withdraw a Pending Approval Annual Budget submission and cancel its active approval request only when the workflow permits; preserve the prior approval history.", "سحب إرسال ميزانية سنوية قيد المراجعة وإلغاء طلب الاعتماد النشط عندما يسمح مسار العمل بذلك، مع الاحتفاظ بسجل الاعتماد السابق.",
-            "High", true, ["ProjectAnnualBudget.View"], true, PermissionScope.Project, IsAssignable: true, IsTenantAdminBaseline: false),
+            "High", true, ["ProjectAnnualBudget.View"], true, PermissionScope.Project),
         new(
             "b0000187-0000-0000-0000-000000000187", "ProjectPaymentRequest.Create", "ProjectPaymentRequest", "Create",
             "financial-management", "Financial Management", "الإدارة المالية",
@@ -929,6 +932,18 @@ public static class PermissionCatalog
             "tenant-and-organization-settings", "Tenant Settings", "إعدادات المستأجر", PermissionLevel.Action,
             "Edit tenant settings", "تعديل إعدادات المستأجر", "Update tenant settings permitted by typed definitions; platform settings remain separate.", "تحديث إعدادات المستأجر المسموح بها وفق التعريفات؛ وتظل إعدادات المنصة منفصلة.",
             "High", true, ["Settings.View"], true),
+        new(
+            "b0000317-0000-0000-0000-000000000317", "OrganizationConfiguration.View", "OrganizationConfiguration", "View",
+            "administration", "Administration", "الإدارة",
+            "organization-configuration", "Organization Configuration", "إعدادات المؤسسة", PermissionLevel.View,
+            "View", "عرض", "View supported Organization-level configuration within the authorized Organization scope.", "عرض إعدادات المؤسسة المدعومة ضمن نطاق المؤسسة المصرح به.",
+            "High", true, [], true, PermissionScope.Organization),
+        new(
+            "b0000318-0000-0000-0000-000000000318", "OrganizationConfiguration.Manage", "OrganizationConfiguration", "Manage",
+            "administration", "Administration", "الإدارة",
+            "organization-configuration", "Organization Configuration", "إعدادات المؤسسة", PermissionLevel.Action,
+            "Manage", "إدارة", "Manage eligible Organization-level configuration within the authorized Organization scope. Tenant-enforced values remain read-only.", "إدارة إعدادات المؤسسة المسموح بها ضمن نطاق المؤسسة المصرح به. تظل القيم المفروضة على مستوى المستأجر للقراءة فقط.",
+            "Critical", true, ["OrganizationConfiguration.View"], true, PermissionScope.Organization),
         new(
             "b0000301-0000-0000-0000-000000000301", "EmailNotifications.Manage", "EmailNotifications", "Manage",
             "administration", "Administration", "الإدارة",
@@ -1096,13 +1111,13 @@ public static class PermissionCatalog
             "project-management", "Delivery Management", "إدارة التسليم",
             "settings", "Project Settings", "إعدادات المشروع", PermissionLevel.View,
             "View", "عرض", "Open Project Settings within the actor's authorized Tenant and Project scope. This permission does not allow saving changes or replace permissions required for protected settings.", "عرض إعدادات المشروع ضمن نطاق المستأجر والمشروع المصرح به للمستخدم. لا تمنح هذه الصلاحية حفظ التغييرات أو تحل محل الصلاحيات المطلوبة للإعدادات المحمية.",
-            "Low", false, [], true, PermissionScope.Project, IsAssignable: true, IsTenantAdminBaseline: false),
+            "Low", false, [], true, PermissionScope.Project),
         new(
             "b0000273-0000-0000-0000-000000000273", "ProjectSettings.Edit", "ProjectSettings", "Edit",
             "project-management", "Delivery Management", "إدارة التسليم",
             "settings", "Project Settings", "إعدادات المشروع", PermissionLevel.Action,
             "Edit", "تعديل", "Edit Project Settings within the actor's authorized Tenant and Project scope. Financial approval defaults and other protected settings continue to require their specific permissions.", "تعديل إعدادات المشروع ضمن نطاق المستأجر والمشروع المصرح به للمستخدم. تظل الإعدادات المالية المحمية وغيرها خاضعة للصلاحيات المخصصة لها.",
-            "Medium", true, ["ProjectSettings.View"], true, PermissionScope.Project, IsAssignable: true, IsTenantAdminBaseline: false),
+            "Medium", true, ["ProjectSettings.View"], true, PermissionScope.Project),
         new(
             "b0000280-0000-0000-0000-000000000280", "ApprovalRequest.View", "ApprovalRequest", "View",
             "project-delivery", "Delivery Management", "إدارة التسليم",

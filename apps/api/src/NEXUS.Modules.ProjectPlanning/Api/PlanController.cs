@@ -39,8 +39,8 @@ public class PlanController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create(Guid projectId, [FromBody] CreatePlanDto dto, CancellationToken cancellationToken)
     {
+        if (!TryGetActorId(out var userId)) return Unauthorized();
         dto.ProjectId = projectId;
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
         var result = await _planService.CreateAsync(dto, userId, cancellationToken);
         if (result.IsFailure)
             return result.Error?.StatusCode switch
@@ -49,6 +49,12 @@ public class PlanController : ControllerBase
                 _ => BadRequest(new { error = result.Error?.Message })
             };
         return CreatedAtAction(nameof(GetById), new { projectId, id = result.Value!.Id }, result.Value);
+    }
+
+    private bool TryGetActorId(out string actorId)
+    {
+        actorId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? string.Empty;
+        return User.Identity?.IsAuthenticated == true && Guid.TryParse(actorId, out var parsed) && parsed != Guid.Empty;
     }
 
     [Authorize(Policy = "Planning.View")]

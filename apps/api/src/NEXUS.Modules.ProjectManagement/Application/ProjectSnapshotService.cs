@@ -17,6 +17,7 @@ using NEXUS.Modules.RiskManagement.Domain;
 using NEXUS.Modules.WorkItems.Domain;
 using NEXUS.SharedKernel;
 using NEXUS.SharedKernel.Helpers;
+using NEXUS.SharedKernel.Management;
 using PortfolioEntity = NEXUS.Modules.Portfolio.Domain.Portfolio;
 using ProgramEntity = NEXUS.Modules.Portfolio.Domain.Program;
 
@@ -35,14 +36,18 @@ public class ProjectSnapshotService : IProjectSnapshotService
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly ProjectManagerMembershipSynchronizer _membershipSynchronizer;
     private readonly TimeProvider _timeProvider;
+    private readonly IManagementContextAccessor? _managementContext;
 
-    public ProjectSnapshotService(DbContext context, IAuditService auditService, IHttpContextAccessor httpContextAccessor, ProjectManagerMembershipSynchronizer membershipSynchronizer, TimeProvider? timeProvider = null)
+    public ProjectSnapshotService(DbContext context, IAuditService auditService, IHttpContextAccessor httpContextAccessor,
+        ProjectManagerMembershipSynchronizer membershipSynchronizer, TimeProvider? timeProvider = null,
+        IManagementContextAccessor? managementContext = null)
     {
         _context = context;
         _auditService = auditService;
         _httpContextAccessor = httpContextAccessor;
         _membershipSynchronizer = membershipSynchronizer;
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _managementContext = managementContext;
     }
 
     private string? CurrentUserName => _httpContextAccessor.HttpContext?.User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value
@@ -269,6 +274,8 @@ public class ProjectSnapshotService : IProjectSnapshotService
         var tenantId = GetCurrentTenantId();
         if (tenantId == Guid.Empty)
             return Result<ProjectSnapshotSummaryDto>.Failure(Error.Unauthorized("A valid tenant context is required."));
+        if (!IsProjectInScope(tenantId, projectId))
+            return Result<ProjectSnapshotSummaryDto>.Failure(Error.NotFound("Project not found"));
 
         var project = await _context.Set<Project>()
             .FirstOrDefaultAsync(p => p.Id == projectId && p.TenantId == tenantId && !p.IsDeleted, cancellationToken);
@@ -319,6 +326,11 @@ public class ProjectSnapshotService : IProjectSnapshotService
 
     public async Task<Result<IReadOnlyList<ProjectSnapshotSummaryDto>>> GetSnapshotsAsync(Guid projectId, CancellationToken cancellationToken = default)
     {
+        var tenantId = GetCurrentTenantId();
+        if (tenantId == Guid.Empty)
+            return Result<IReadOnlyList<ProjectSnapshotSummaryDto>>.Failure(Error.Unauthorized("A valid tenant context is required."));
+        if (!IsProjectInScope(tenantId, projectId))
+            return Result<IReadOnlyList<ProjectSnapshotSummaryDto>>.Failure(Error.NotFound("Project not found"));
         var snapshots = await _context.Set<ProjectSnapshot>()
             .Where(s => s.ProjectId == projectId && !s.IsDeleted)
             .OrderByDescending(s => s.SnapshotNumber)
@@ -361,6 +373,11 @@ public class ProjectSnapshotService : IProjectSnapshotService
 
     public async Task<Result<ProjectSnapshotDto>> GetSnapshotAsync(Guid projectId, Guid snapshotId, CancellationToken cancellationToken = default)
     {
+        var tenantId = GetCurrentTenantId();
+        if (tenantId == Guid.Empty)
+            return Result<ProjectSnapshotDto>.Failure(Error.Unauthorized("A valid tenant context is required."));
+        if (!IsProjectInScope(tenantId, projectId))
+            return Result<ProjectSnapshotDto>.Failure(Error.NotFound("Project not found"));
         var snapshot = await _context.Set<ProjectSnapshot>()
             .FirstOrDefaultAsync(s => s.Id == snapshotId && s.ProjectId == projectId && !s.IsDeleted, cancellationToken);
         if (snapshot is null) return Result<ProjectSnapshotDto>.Failure(Error.NotFound("Snapshot not found"));
@@ -1044,6 +1061,14 @@ public class ProjectSnapshotService : IProjectSnapshotService
         }
 
         return TrustedTenantExecutionContext.CurrentTenantId ?? Guid.Empty;
+    }
+
+    private bool IsProjectInScope(Guid tenantId, Guid projectId)
+    {
+        var management = _managementContext?.Current;
+        return management is not null
+            && management.TenantId == tenantId
+            && management.Scope.ProjectIds.Contains(projectId);
     }
 
     private static Guid? TryParseGuid(string value)

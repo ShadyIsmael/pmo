@@ -238,6 +238,9 @@ public class ProjectSummaryDto
 public class ProjectTeamMemberAllocationDto
 {
     public Guid AllocationId { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore]
+    public Guid ProjectId { get; set; }
+    public bool IsRestrictedConflict { get; set; }
     public Guid ResourceId { get; set; }
     public string ResourceName { get; set; } = string.Empty;
     public string? ResourceJobTitle { get; set; }

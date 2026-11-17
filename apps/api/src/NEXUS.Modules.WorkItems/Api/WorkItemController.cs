@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 using NEXUS.Modules.WorkItems.Application;
 using NEXUS.Modules.WorkItems.Application.DTOs;
 using NEXUS.SharedKernel;
@@ -59,7 +60,8 @@ public class WorkItemController : ControllerBase
     [HttpPost("{id:guid}/comments")]
     public async Task<IActionResult> AddComment(Guid id, [FromBody] CreateWorkItemCommentDto dto, CancellationToken cancellationToken)
     {
-        var result = await _workItemService.AddCommentAsync(id, dto, UserId(), cancellationToken);
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        var result = await _workItemService.AddCommentAsync(id, dto, actorId, cancellationToken);
         return result.IsSuccess ? Ok(result.Value) : ToActionResult(result.Error);
     }
 
@@ -76,7 +78,8 @@ public class WorkItemController : ControllerBase
     [Consumes("multipart/form-data")]
     public async Task<IActionResult> AddAttachments(Guid id, [FromForm] List<IFormFile> files, CancellationToken cancellationToken)
     {
-        var result = await _workItemService.AddAttachmentsAsync(id, files, UserId(), cancellationToken);
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        var result = await _workItemService.AddAttachmentsAsync(id, files, actorId, cancellationToken);
         return result.IsSuccess ? Ok(result.Value) : ToActionResult(result.Error);
     }
 
@@ -93,7 +96,8 @@ public class WorkItemController : ControllerBase
     [HttpDelete("{id:guid}/attachments/{attachmentId:guid}")]
     public async Task<IActionResult> DeleteAttachment(Guid id, Guid attachmentId, CancellationToken cancellationToken)
     {
-        var result = await _workItemService.DeleteAttachmentAsync(id, attachmentId, UserId(), cancellationToken);
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        var result = await _workItemService.DeleteAttachmentAsync(id, attachmentId, actorId, cancellationToken);
         return result.IsSuccess ? NoContent() : ToActionResult(result.Error);
     }
 
@@ -108,7 +112,8 @@ public class WorkItemController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetPaged([FromQuery] int page = 1, [FromQuery] int pageSize = 20, [FromQuery] Guid? projectId = null, [FromQuery] string? status = null, [FromQuery] string? type = null, [FromQuery] string? priority = null, [FromQuery] string? search = null, [FromQuery] Guid? assignedResourceId = null, [FromQuery] Guid? assignedTeamId = null, [FromQuery] Guid? assigneeId = null, [FromQuery] Guid? reporterId = null, [FromQuery] DateTime? dueDateFrom = null, [FromQuery] DateTime? dueDateTo = null, [FromQuery] bool? overdue = null, [FromQuery] bool? unassigned = null, [FromQuery] bool? highPriority = null, [FromQuery] bool myWork = false, [FromQuery] string? sortBy = null, CancellationToken cancellationToken = default)
     {
-        var result = await _workItemService.GetPagedAsync(page, pageSize, projectId, status, type, priority, search, assignedResourceId, assignedTeamId, assigneeId, reporterId, dueDateFrom, dueDateTo, overdue, unassigned, highPriority, myWork, UserId(), sortBy, cancellationToken);
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        var result = await _workItemService.GetPagedAsync(page, pageSize, projectId, status, type, priority, search, assignedResourceId, assignedTeamId, assigneeId, reporterId, dueDateFrom, dueDateTo, overdue, unassigned, highPriority, myWork, actorId, sortBy, cancellationToken);
         return Ok(result);
     }
 
@@ -116,7 +121,8 @@ public class WorkItemController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateWorkItemDto dto, CancellationToken cancellationToken)
     {
-        var result = await _workItemService.CreateAsync(dto, UserId(), cancellationToken);
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        var result = await _workItemService.CreateAsync(dto, actorId, cancellationToken);
         if (result.IsFailure) return ToActionResult(result);
         return CreatedAtAction(nameof(GetById), new { id = result.Value!.Id }, result.Value);
     }
@@ -125,7 +131,8 @@ public class WorkItemController : ControllerBase
     [HttpPost("workflow/provision")]
     public async Task<IActionResult> ProvisionWorkflow(CancellationToken cancellationToken)
     {
-        var result = await _workflowProvisioning.OnboardCurrentTenantAsync(UserId(), cancellationToken);
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        var result = await _workflowProvisioning.OnboardCurrentTenantAsync(actorId, cancellationToken);
         return result.IsSuccess ? Ok(result.Value) : ToActionResult(result.Error);
     }
 
@@ -133,19 +140,31 @@ public class WorkItemController : ControllerBase
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateWorkItemDto dto, CancellationToken cancellationToken)
     {
-        return ToActionResult(await _workItemService.UpdateAsync(id, dto, UserId(), cancellationToken));
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        return ToActionResult(await _workItemService.UpdateAsync(id, dto, actorId, cancellationToken));
     }
 
     [Authorize(Policy = "WorkItem.Delete")]
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
-        var result = await _workItemService.DeleteAsync(id, UserId(), cancellationToken);
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        var result = await _workItemService.DeleteAsync(id, actorId, cancellationToken);
         if (result.IsFailure) return NotFound(new { error = result.Error?.Message });
         return NoContent();
     }
 
-    private string UserId() => User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+    private bool TryGetActorId(out string actorId)
+    {
+        if (Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var parsed) && parsed != Guid.Empty)
+        {
+            actorId = parsed.ToString();
+            return true;
+        }
+
+        actorId = string.Empty;
+        return false;
+    }
 
     private IActionResult ToActionResult(Result<WorkItemDto> result)
     {

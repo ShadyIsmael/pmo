@@ -14,14 +14,20 @@ public class OrganizationController : ControllerBase
 {
     private readonly IOrganizationService _organizationService;
     private readonly IOrganizationSettingsAccessService _settingsAccess;
+    private readonly IAuthorizationService? _authorizationService;
 
-    public OrganizationController(IOrganizationService organizationService, IOrganizationSettingsAccessService settingsAccess)
+    public OrganizationController(
+        IOrganizationService organizationService,
+        IOrganizationSettingsAccessService settingsAccess,
+        IAuthorizationService? authorizationService = null)
     {
         _organizationService = organizationService;
         _settingsAccess = settingsAccess;
+        _authorizationService = authorizationService;
     }
 
     [HttpGet("{id:guid}")]
+    [Authorize(Policy = "Settings.ManageTenantConfiguration")]
     public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
     {
         var result = await _organizationService.GetByIdAsync(id, cancellationToken);
@@ -30,16 +36,19 @@ public class OrganizationController : ControllerBase
     }
 
     [HttpGet]
+    [Authorize(Policy = "Settings.ManageTenantConfiguration")]
     public async Task<IActionResult> GetPaged([FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken cancellationToken = default)
     {
-        var result = await _organizationService.GetPagedAsync(page, pageSize, cancellationToken);
+        var result = await _organizationService.GetPagedDirectoryAsync(page, pageSize, cancellationToken);
         return Ok(result);
     }
 
     [HttpGet("general-settings")]
-    [Authorize(Policy = "Settings.View")]
     public async Task<ActionResult<IReadOnlyList<OrganizationProfileDto>>> GetGeneralSettings(CancellationToken cancellationToken)
     {
+        if (!await IsAuthorizedForSettingsAsync("Settings.View")
+            && !await IsAuthorizedForSettingsAsync("OrganizationConfiguration.View"))
+            return Forbid();
         if (!Guid.TryParse(User.FindFirstValue("tenantId"), out var tenantId) || tenantId == Guid.Empty) return Forbid();
         try
         {
@@ -54,12 +63,17 @@ public class OrganizationController : ControllerBase
     }
 
     [HttpPut("{id:guid}/general-settings")]
-    [Authorize(Policy = "Settings.ManageTenantConfiguration")]
     public async Task<IActionResult> UpdateGeneralSettings(
         Guid id,
         [FromBody] UpdateOrganizationProfileRequest request,
         CancellationToken cancellationToken)
     {
+        var hasTenantConfigurationAuthority = await IsAuthorizedForSettingsAsync("Settings.ManageTenantConfiguration");
+        var hasOrganizationConfigurationAuthority = !hasTenantConfigurationAuthority
+            && await IsAuthorizedForSettingsAsync("OrganizationConfiguration.Manage")
+            && await _settingsAccess.HasScopedOrganizationAdminAuthorityAsync(id, manage: true, cancellationToken);
+        if (!hasTenantConfigurationAuthority && !hasOrganizationConfigurationAuthority) return Forbid();
+
         OrganizationProfileUpdateResult result;
         try
         {
@@ -80,6 +94,7 @@ public class OrganizationController : ControllerBase
                 Detail = result.Error
             }),
             OrganizationProfileUpdateCode.TenantContextMissing => Forbid(),
+            OrganizationProfileUpdateCode.AccessDenied => Forbid(),
             OrganizationProfileUpdateCode.AuditFailed => StatusCode(StatusCodes.Status500InternalServerError,
                 new ProblemDetails { Title = "Audit trail unavailable", Detail = result.Error }),
             _ => StatusCode(StatusCodes.Status500InternalServerError)
@@ -167,4 +182,11 @@ public class OrganizationController : ControllerBase
             new ProblemDetails { Title = "Organization settings audit unavailable", Detail = result.Error }),
         _ => StatusCode(StatusCodes.Status500InternalServerError)
     };
+
+    private async Task<bool> IsAuthorizedForSettingsAsync(string policy)
+    {
+        if (_authorizationService is null || User.Identity?.IsAuthenticated != true) return false;
+        var result = await _authorizationService.AuthorizeAsync(User, resource: null, policyName: policy);
+        return result.Succeeded;
+    }
 }

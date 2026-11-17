@@ -2,6 +2,7 @@ import * as React from "react";
 import { Link } from "react-router-dom";
 import { CircleDollarSign, FilePen, Loader2, Paperclip, Save, Send } from "lucide-react";
 import { useI18n } from "@i18n/messages";
+import { getApiErrorMessage } from "@api/client";
 import { useAuth } from "@auth/AuthProvider";
 import { useManagement } from "@api/management";
 import { toHandoverManagerOptions } from "../lib/handover-manager-options";
@@ -105,7 +106,7 @@ export function ProjectChangeRequestActionSheet({ open, onOpenChange, project, r
       if (submitForReview) await submitDraft.mutateAsync({ id: draft.id, rowVersion: draft.rowVersion });
       onOpenChange(false);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : t("projects.changeRequestFailed"));
+      setError(getApiErrorMessage(reason, t("projects.changeRequestFailed")));
     }
   }
 
@@ -219,9 +220,10 @@ interface HandoverActionSheetProps extends ActionSheetProps {
   requests: ProjectHandoverRequestDto[];
   requestsLoading?: boolean;
   requestsError?: boolean;
+  requestsErrorMessage?: string;
 }
 
-export function ProjectHandoverActionSheet({ open, onOpenChange, project, requests, requestsLoading, requestsError }: HandoverActionSheetProps) {
+export function ProjectHandoverActionSheet({ open, onOpenChange, project, requests, requestsLoading, requestsError, requestsErrorMessage }: HandoverActionSheetProps) {
   const { t, formatDate } = useI18n();
   const { user } = useAuth();
   const { canMutate, effectiveReadOnly } = useManagement();
@@ -278,7 +280,7 @@ export function ProjectHandoverActionSheet({ open, onOpenChange, project, reques
       });
       onOpenChange(false);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : t("projects.handoverFailed"));
+      setError(getApiErrorMessage(reason, t("projects.handoverFailed")));
     }
   }
 
@@ -289,7 +291,7 @@ export function ProjectHandoverActionSheet({ open, onOpenChange, project, reques
       setConfirmCancel(false);
       setError(null);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : t("managerHandover.cancelFailed"));
+      setError(getApiErrorMessage(reason, t("managerHandover.cancelFailed")));
       setConfirmCancel(false);
     }
   }
@@ -326,7 +328,7 @@ export function ProjectHandoverActionSheet({ open, onOpenChange, project, reques
           <SideSheetBody className="space-y-4">
             {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
             {requestsLoading ? <p role="status" className="text-sm text-muted-foreground">{t("common.loading")}</p> : null}
-            {requestsError || capabilities.isError ? <p role="alert" className="text-sm text-destructive">{t("managerHandover.loadFailed")}</p> : null}
+            {requestsError || capabilities.isError ? <p role="alert" className="text-sm text-destructive">{requestsErrorMessage || getApiErrorMessage(capabilities.error, t("managerHandover.loadFailed"))}</p> : null}
             <div className="space-y-2"><Label>{t("managerHandover.handover")}</Label><div className="flex flex-wrap gap-2">{modes.filter((mode) => mode.allowed).map((mode) => <Button key={mode.value} type="button" size="sm" variant={initiationType === mode.value ? "default" : "outline"} onClick={() => { setInitiationType(mode.value); setNewManagerId(""); setError(null); }}>{mode.label}</Button>)}</div></div>
             <div><Label htmlFor="handover-project">{t("projects.project")}</Label><Input id="handover-project" className="mt-1" value={project.name} readOnly /></div>
             <div><Label htmlFor="handover-current-manager">{t("projects.currentProjectManager")}</Label><Input id="handover-current-manager" className="mt-1" value={capabilities.data?.currentManagerName || project.projectManagerName || t("managerHandover.notAssigned")} readOnly /></div>
@@ -342,7 +344,7 @@ export function ProjectHandoverActionSheet({ open, onOpenChange, project, reques
                 emptyText={t("projects.noEligibleManagers")}
                 disabled={managersError}
               />
-              {managersError ? <p role="alert" className="mt-1 text-xs text-destructive">{t("common.errorLoading")}</p> : null}
+              {managersError ? <p role="alert" className="mt-1 text-xs text-destructive">{getApiErrorMessage(handoverManagers.error, t("common.errorLoading"))}</p> : null}
               {!managersLoading && !managersError && managerOptions.length === 0 ? <div className="mt-2 space-y-1 text-xs text-muted-foreground"><p>{t("projects.noEligibleManagersHint")}</p><Link to="/administration/users" className="text-primary underline-offset-4 hover:underline">{t("projects.manageUsers")}</Link></div> : null}
             </div>
             <div>

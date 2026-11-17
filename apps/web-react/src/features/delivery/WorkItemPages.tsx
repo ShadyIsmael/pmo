@@ -177,8 +177,7 @@ export function WorkItemsPageFull() {
   const [moveError, setMoveError] = React.useState("");
   const [pendingTransition, setPendingTransition] = React.useState<{ itemId: string; targetStatus: string; options: WorkflowTransitionOption[] }>();
   const transitionMove = useWorkItemWorkflowTransition();
-  const draftProjectPublicId = formProjects.data?.items.find((project) => project.id === draft.projectId)?.publicId;
-  const createAssignees = useFullWorkItemAssignees(draftProjectPublicId, createOpen);
+  const createAssignees = useFullWorkItemAssignees(draft.projectId || undefined, createOpen);
   const items = React.useMemo(() => query.data?.items ?? [], [query.data?.items]);
   const statuses = statusesQuery.data ?? emptyWorkItemStatuses;
   const activeStatuses = React.useMemo(() => statuses.filter((status) => status.isActive).sort((a, b) => a.displayOrder - b.displayOrder), [statuses]);
@@ -405,10 +404,8 @@ export function WorkItemDetailPageFull() {
   const formProjects = useProjects({ page: 1, pageSize: 200 }, editOpen);
   const mutations = useFullWorkItemMutations();
   const commentMutation = useFullWorkItemCommentMutation(id ?? "");
-  const draftProjectPublicId = draft?.projectId
-    ? formProjects.data?.items.find((project) => project.id === draft.projectId)?.publicId ?? (draft.projectId === item?.projectId ? item?.projectPublicId : undefined)
-    : item?.projectPublicId;
-  const assignees = useFullWorkItemAssignees(draftProjectPublicId, editOpen);
+  const draftProjectId = draft?.projectId ?? item?.projectId;
+  const assignees = useFullWorkItemAssignees(draftProjectId, editOpen);
   const workflow = useFullWorkItemWorkflow(id, Boolean(id));
   const statusReferences = useWorkItemStatuses(Boolean(id));
   const comments = useFullWorkItemComments(id, tab === "comments", commentsPage, 20);

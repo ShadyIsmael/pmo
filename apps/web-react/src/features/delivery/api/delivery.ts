@@ -24,8 +24,8 @@ export interface DocumentDto {
   sourceTemplateId?: string;
   updatedAt?: string;
 }
-export interface PortfolioDto { id: string; name: string; code?: string; description?: string; status?: string; ownerId?: string; ownerName?: string; currency?: string; startDate?: string; endDate?: string; strategicObjective?: string; priority?: string; health?: string; confidenceLevel?: string; createdAt?: string; updatedAt?: string; }
-export type SavePortfolioDto = { name: string; description?: string; ownerId?: string; status: "Active" | "Archived"; currency?: string; startDate?: string; endDate?: string; strategicObjective?: string; priority?: string };
+export interface PortfolioDto { id: string; organizationId?: string; name: string; code?: string; description?: string; status?: string; ownerId?: string; ownerName?: string; currency?: string; startDate?: string; endDate?: string; strategicObjective?: string; priority?: string; health?: string; confidenceLevel?: string; createdAt?: string; updatedAt?: string; }
+export type SavePortfolioDto = { name: string; organizationId?: string; description?: string; ownerId?: string; status: "Active" | "Archived"; currency?: string; startDate?: string; endDate?: string; strategicObjective?: string; priority?: string };
 export interface ProgramDto {
   id: string; name: string; code?: string; description?: string; status?: string;
   portfolioId?: string; portfolioName?: string; programManagerId?: string;

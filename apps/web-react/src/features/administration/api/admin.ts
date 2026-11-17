@@ -1,16 +1,52 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+﻿import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, type AuthenticationSource, type CurrentUser } from "@api/client";
 import { endpoints } from "@api/endpoints";
 
-export interface AdminUserDto { id: string; email: string; firstName: string; lastName: string; fullName: string; isActive: boolean; authenticationSource: AuthenticationSource; mustChangePassword: boolean; temporaryPasswordExpiresAt?: string | null; roles: string[]; }
-export interface UpdateAdminUserInput { email: string; firstName: string; lastName: string; isActive: boolean; roles: string[]; }
+export interface AdminUserOrganizationDto { id: string; name: string | null; }
+export interface AssignedRoleDto {
+  id: string;
+  name: string;
+  organizationId: string | null;
+  organizationName: string | null;
+  scope: string;
+  isOrganizationOwned: boolean;
+  isLegacyOrganizationOwnershipUnresolved: boolean;
+  isOrganizationOwnershipUnresolved: boolean;
+  isProtected: boolean;
+  canRemove: boolean;
+}
+export interface AdminUserDto { id: string; email: string; firstName: string; lastName: string; fullName: string; isActive: boolean; authenticationSource: AuthenticationSource; mustChangePassword: boolean; temporaryPasswordExpiresAt?: string | null; roles: AssignedRoleDto[]; organizations: AdminUserOrganizationDto[]; }
+export interface UpdateAdminUserInput { email: string; firstName: string; lastName: string; isActive: boolean; roleIds?: string[]; }
 export interface CreateAdminUserInput extends UpdateAdminUserInput { authenticationSource: AuthenticationSource; }
 export interface CreateAdminUserResponse { user: AdminUserDto; temporaryPassword?: string | null; }
 export interface TemporaryPasswordResetDto { userId: string; temporaryPassword: string; expiresAt: string; }
 export interface RoleDto { id: string; name: string; description?: string; category?: string; }
-export interface ManagedRoleSummaryDto extends RoleDto {
+export interface AssignableRoleDto extends RoleDto {
+  organizationId: string | null;
+  organizationName: string | null;
+  isOrganizationOwned: boolean;
+  isLegacyOrganizationOwnershipUnresolved?: boolean;
+  isOrganizationOwnershipUnresolved?: boolean;
+  scope: string;
+  roleKey?: string | null;
   isSystem: boolean;
-  isProtectedSystemAdmin: boolean;
+  isProtected: boolean;
+  isAssignable: boolean;
+}
+export interface ManagedRoleSummaryDto extends RoleDto {
+  organizationId?: string | null;
+  organizationName?: string | null;
+  isOrganizationOwned?: boolean;
+  isLegacyOrganizationOwnershipUnresolved?: boolean;
+  scope?: string;
+  roleKey?: string | null;
+  isSystem: boolean;
+  isProtected: boolean;
+  isAssignable: boolean;
+  canEditDetails: boolean;
+  canManagePermissions: boolean;
+  canDelete: boolean;
+  isProtectedSystemAdmin?: boolean;
   permissionCount: number;
   assignedUserCount: number;
 }
@@ -33,17 +69,19 @@ export interface PermissionCatalogItemDto {
   descriptionAr: string;
   scope: string;
   canDelegate?: boolean | null;
+  canDelegateToOrdinaryRole?: boolean | null;
   canDelegateToCustomRole?: boolean | null;
   sensitivity: "Low" | "Medium" | "High" | "Critical";
   isSensitive: boolean;
   requiredPermissionKeys: string[];
   isActive: boolean;
   isAssignable: boolean;
-  isMandatoryForSystemAdmin: boolean;
+  canGrantToOrganizationRole: boolean;
   allowedCategories: string[];
 }
 export interface ManagedRoleDto extends ManagedRoleSummaryDto { permissions: PermissionCatalogItemDto[]; }
-export interface SaveRoleInput { name: string; description: string; category: string; permissionIds: string[]; }
+export interface SaveRoleInput { name: string; description: string; category: string; organizationId: string | null; permissionIds: string[]; }
+export interface ManagedRoleOrganizationDto { id: string; name: string; }
 export type PermissionOverrideEffect = "Inherit" | "Allow" | "Deny";
 export interface UserPermissionAssignmentDto {
   id: string;
@@ -58,9 +96,11 @@ export interface UserPermissionAssignmentDto {
   isActive: boolean;
   isAssignable: boolean;
   isRoleGranted: boolean;
+  roleGrantSources?: string[];
+  scope?: string;
   overrideEffect: Exclude<PermissionOverrideEffect, "Inherit"> | null;
   isEffective: boolean;
-  isProtectedAdminBaseline: boolean;
+  canDelegate?: boolean;
 }
 export interface CurrencyDto { id: string; code: string; name: string; symbol: string; exchangeRate: number; isBase: boolean; }
 export interface SaveCurrencyInput { code: string; name: string; symbol: string; isBase: boolean; }
@@ -80,6 +120,7 @@ export function useCreateAdminUser() {
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ["admin", "users"] });
       void client.invalidateQueries({ queryKey: ["admin", "roles", "manage"] });
+      void client.invalidateQueries({ queryKey: ["admin", "roles", "assignable"] });
     },
   });
 }
@@ -98,6 +139,7 @@ export function useUpdateAdminUser() {
       void client.invalidateQueries({ queryKey: ["admin", "users"] });
       void client.invalidateQueries({ queryKey: ["admin", "user-permissions", variables.userId] });
       void client.invalidateQueries({ queryKey: ["admin", "roles", "manage"] });
+      void client.invalidateQueries({ queryKey: ["admin", "roles", "assignable"] });
       void client.invalidateQueries({ queryKey: ["admin", "roles", "permission-catalog"] });
     },
   });
@@ -108,24 +150,21 @@ export function useRoles(enabled = true) {
 export function useManagedRoles(enabled = true) {
   return useQuery({ queryKey: ["admin", "roles", "manage"], queryFn: () => api.get<ManagedRoleSummaryDto[]>(endpoints.roleManagement.manageable), enabled, staleTime: 30_000 });
 }
-export function useAssignableRoles(enabled = true) {
-  return useManagedRoles(enabled);
+export function useManagedRoleOrganizations(enabled = true) {
+  return useQuery({ queryKey: ["admin", "roles", "organization-options"], queryFn: () => api.get<ManagedRoleOrganizationDto[]>(endpoints.roleManagement.organizationOptions), enabled, staleTime: 60_000 });
 }
 export function useManagedRole(roleId: string | null, enabled = true) {
-  return useQuery({
-    queryKey: ["admin", "roles", "detail", roleId],
-    queryFn: () => api.get<ManagedRoleDto>(endpoints.roleManagement.detail(roleId!)),
-    enabled: enabled && Boolean(roleId),
-    staleTime: 0,
-  });
+  return useQuery({ queryKey: ["admin", "roles", "detail", roleId], queryFn: () => api.get<ManagedRoleDto>(endpoints.roleManagement.detail(roleId!)), enabled: enabled && Boolean(roleId), staleTime: 30_000 });
 }
-export function usePermissionCatalog(enabled = true, actor?: Pick<CurrentUser, "id" | "tenantId" | "permissions"> | null) {
-  const permissionFingerprint = JSON.stringify([...new Set(actor?.permissions ?? [])].sort());
+export function useAssignableRoles(enabled = true) {
+  return useQuery({ queryKey: ["admin", "roles", "assignable"], queryFn: () => api.get<AssignableRoleDto[]>(endpoints.roleManagement.assignable), enabled, staleTime: 60_000 });
+}
+export function usePermissionCatalog(enabled = true, actor?: { id?: string | null; tenantId?: string | null; permissions?: readonly string[] | null } | null) {
   return useQuery({
-    queryKey: ["admin", "roles", "permission-catalog", actor?.id ?? null, actor?.tenantId ?? null, permissionFingerprint],
+    queryKey: ["admin", "roles", "permission-catalog", actor?.id ?? null, actor?.tenantId ?? null, (actor?.permissions ?? []).join("|")],
     queryFn: () => api.get<PermissionCatalogItemDto[]>(endpoints.roleManagement.permissionCatalog),
-    enabled: enabled && Boolean(actor?.id),
-    staleTime: 0,
+    enabled,
+    staleTime: 60_000,
     refetchOnWindowFocus: true,
   });
 }

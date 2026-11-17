@@ -12,3 +12,11 @@ public sealed record DeviceTokenResponse(
     string? DeviceName,
     bool IsActive,
     DateTime LastSeenAt);
+
+public sealed class DeviceTokenOwnershipConflictException : Exception
+{
+    public DeviceTokenOwnershipConflictException()
+        : base("This device token is already registered to another account.")
+    {
+    }
+}

@@ -2,13 +2,14 @@
 
 NEXUS has one document-management module and one template catalog. **Governance / Document Center is the authoritative place to register and maintain organization-approved templates.** Organization Settings configures phase requirements by referencing template IDs and versions from that catalog; it does not maintain another template catalog. Project Documents remains the project-facing view over the shared document records and can create a project copy from an active template, but it does not create or manage approved templates.
 
-Document Categories taxonomy is managed in **Administration → Reference Data → Document Categories** using the same `DocumentCategory` catalog. The Document Library consumes active categories for folders and filters. Register Approved Template loads active options through `GET /api/document-categories/template-options?organizationId=` using `Document.Create` and `Document.TemplateManage`; it does not require broad `DocumentCategory.View` listing permission. The Library does not provide a second category-management surface or catalog. Categories remain descriptive metadata and do not determine Phase Gate requirements, which pin approved Template IDs and Template Version IDs.
+Document Categories taxonomy is managed in **Administration → Reference Data → Document Categories** using the same `DocumentCategory` catalog. The Document Library consumes active categories for folders and filters. Register Approved Template loads active options through `GET /api/document-categories/template-options?organizationId=` using `Document.Create` and `Document.TemplateManage`. Project Document upload loads options through `GET /api/document-categories/project-upload-options?projectId=` using `Document.Create` and the authenticated project scope. These minimal upload lookups do not require broad `DocumentCategory.View` listing permission. Both return active, non-deleted categories owned by the selected Organization plus eligible Tenant-shared categories in the authenticated Tenant. The Library does not provide a second category-management surface or catalog. Categories remain descriptive metadata and do not determine Phase Gate requirements, which pin approved Template IDs and Template Version IDs.
 
 ## Document and template ownership
 
 - A template is a document record marked as a template and owned by one active Organization within its authenticated Tenant. Tenant identity and the trusted management scope are resolved server-side; an organization ID supplied by a caller is only a selector and never proof of access.
 - An ordinary document or project document retains its existing ownership and project links. Introducing organization-owned templates must not require copying or migrating existing Project Documents.
 - A template ID remains stable as new immutable file versions are uploaded. Each version has its own stable version ID and provider-neutral file metadata. Archiving or deactivating a template does not delete versions or invalidate historical references. Organization Phase Gate requirements pin a template ID and exact version ID.
+- Register Approved Template begins with a required Organization and then a required Document Category. Organization choices come from the caller's active management scope; changing Organization clears the selected Category and reloads active options from the existing category catalog. The API validates the selected Organization against Tenant and management scope and accepts an active Category owned by that Organization or an eligible Tenant-shared Category before storing the file. Project uploads derive Organization from the authorized Project and apply the same category eligibility rule.
 - Project Documents may retain the source template ID and exact source version used for a completed copy. A later template version must not change that historical reference.
 - Templates are selected from the Document Center catalog. A project upload is not a second template registration path.
 
@@ -20,7 +21,9 @@ The API authorizes each document read and mutation, validates the authenticated 
 |---|---|
 | List/search templates and documents; read metadata/categories; preview/download | `Document.View` |
 | Upload ordinary or project document | `Document.Create` |
+| Load project-upload category options | `Document.Create` plus authenticated Project scope |
 | Register an approved template | `Document.Create` and `Document.TemplateManage` |
+| Load template-upload category options | `Document.Create`, `Document.TemplateManage`, and authorized Organization scope |
 | Add a version to an ordinary document | `Document.Edit` |
 | Add a template version or activate/deactivate a template | `Document.Edit` and `Document.TemplateManage` |
 | Archive an ordinary document | `Document.Archive` |

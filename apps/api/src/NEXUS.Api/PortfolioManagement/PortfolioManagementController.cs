@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using NEXUS.SharedKernel;
 
 namespace NEXUS.Api.PortfolioManagement;
 
@@ -18,6 +19,7 @@ public sealed class PortfolioManagementController : ControllerBase
     }
 
     [Authorize(Policy = "Portfolio.View")]
+    [OrganizationScopedCollectionPermission("Portfolio.View")]
     [HttpGet("portfolios")]
     public async Task<IActionResult> GetPortfolios([FromQuery] int page = 1, [FromQuery] int pageSize = 25, [FromQuery] string? search = null, CancellationToken cancellationToken = default)
         => Ok(await _service.GetPortfoliosAsync(page, pageSize, search, cancellationToken));

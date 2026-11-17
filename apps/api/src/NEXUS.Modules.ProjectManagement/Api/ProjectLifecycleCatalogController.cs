@@ -15,7 +15,6 @@ public sealed class ProjectLifecycleCatalogController : ControllerBase
     public ProjectLifecycleCatalogController(ProjectLifecycleCatalogService catalog) => _catalog = catalog;
 
     [HttpGet("phases")]
-    [Authorize(Policy = ProjectLifecyclePermissions.PhaseView)]
     public async Task<IActionResult> GetPhases(
         [FromQuery] Guid? organizationId,
         [FromQuery] bool includeInactive = false,
@@ -27,7 +26,6 @@ public sealed class ProjectLifecycleCatalogController : ControllerBase
     }
 
     [HttpGet("statuses")]
-    [Authorize(Policy = ProjectLifecyclePermissions.StatusView)]
     public async Task<IActionResult> GetStatuses(
         [FromQuery] Guid? organizationId,
         [FromQuery] bool includeInactive = false,
@@ -39,7 +37,6 @@ public sealed class ProjectLifecycleCatalogController : ControllerBase
     }
 
     [HttpPost("phases")]
-    [Authorize(Policy = ProjectLifecyclePermissions.PhaseCreate)]
     public async Task<IActionResult> CreatePhase(
         [FromBody] ProjectLifecycleCatalogRequest request, CancellationToken cancellationToken)
     {
@@ -50,7 +47,6 @@ public sealed class ProjectLifecycleCatalogController : ControllerBase
     }
 
     [HttpPut("phases/{id:guid}")]
-    [Authorize(Policy = ProjectLifecyclePermissions.PhaseEdit)]
     public async Task<IActionResult> UpdatePhase(
         Guid id, [FromBody] ProjectLifecycleCatalogRequest request, CancellationToken cancellationToken)
     {
@@ -59,7 +55,6 @@ public sealed class ProjectLifecycleCatalogController : ControllerBase
     }
 
     [HttpPost("phases/{id:guid}/activate")]
-    [Authorize(Policy = ProjectLifecyclePermissions.PhaseActivateDeactivate)]
     public async Task<IActionResult> ActivatePhase(Guid id, [FromBody] ProjectLifecycleActionRequest request, CancellationToken cancellationToken)
     {
         var result = await _catalog.SetPhaseActiveAsync(id, true, request.RowVersion, CurrentUserId(), cancellationToken);
@@ -67,7 +62,6 @@ public sealed class ProjectLifecycleCatalogController : ControllerBase
     }
 
     [HttpPost("phases/{id:guid}/deactivate")]
-    [Authorize(Policy = ProjectLifecyclePermissions.PhaseActivateDeactivate)]
     public async Task<IActionResult> DeactivatePhase(Guid id, [FromBody] ProjectLifecycleActionRequest request, CancellationToken cancellationToken)
     {
         var result = await _catalog.SetPhaseActiveAsync(id, false, request.RowVersion, CurrentUserId(), cancellationToken);
@@ -75,7 +69,6 @@ public sealed class ProjectLifecycleCatalogController : ControllerBase
     }
 
     [HttpPost("phases/{id:guid}/default")]
-    [Authorize(Policy = ProjectLifecyclePermissions.PhaseEdit)]
     public async Task<IActionResult> SetDefaultPhase(Guid id, [FromBody] ProjectLifecycleActionRequest request, CancellationToken cancellationToken)
     {
         var result = await _catalog.SetPhaseDefaultAsync(id, request.RowVersion, CurrentUserId(), cancellationToken);
@@ -83,7 +76,6 @@ public sealed class ProjectLifecycleCatalogController : ControllerBase
     }
 
     [HttpPost("statuses")]
-    [Authorize(Policy = ProjectLifecyclePermissions.StatusCreate)]
     public async Task<IActionResult> CreateStatus(
         [FromBody] ProjectLifecycleCatalogRequest request, CancellationToken cancellationToken)
     {
@@ -94,7 +86,6 @@ public sealed class ProjectLifecycleCatalogController : ControllerBase
     }
 
     [HttpPut("statuses/{id:guid}")]
-    [Authorize(Policy = ProjectLifecyclePermissions.StatusEdit)]
     public async Task<IActionResult> UpdateStatus(
         Guid id, [FromBody] ProjectLifecycleCatalogRequest request, CancellationToken cancellationToken)
     {
@@ -103,7 +94,6 @@ public sealed class ProjectLifecycleCatalogController : ControllerBase
     }
 
     [HttpPost("statuses/{id:guid}/activate")]
-    [Authorize(Policy = ProjectLifecyclePermissions.StatusActivateDeactivate)]
     public async Task<IActionResult> ActivateStatus(Guid id, [FromBody] ProjectLifecycleActionRequest request, CancellationToken cancellationToken)
     {
         var result = await _catalog.SetStatusActiveAsync(id, true, request.RowVersion, CurrentUserId(), cancellationToken);
@@ -111,7 +101,6 @@ public sealed class ProjectLifecycleCatalogController : ControllerBase
     }
 
     [HttpPost("statuses/{id:guid}/deactivate")]
-    [Authorize(Policy = ProjectLifecyclePermissions.StatusActivateDeactivate)]
     public async Task<IActionResult> DeactivateStatus(Guid id, [FromBody] ProjectLifecycleActionRequest request, CancellationToken cancellationToken)
     {
         var result = await _catalog.SetStatusActiveAsync(id, false, request.RowVersion, CurrentUserId(), cancellationToken);
@@ -119,7 +108,6 @@ public sealed class ProjectLifecycleCatalogController : ControllerBase
     }
 
     [HttpPost("statuses/{id:guid}/default")]
-    [Authorize(Policy = ProjectLifecyclePermissions.StatusEdit)]
     public async Task<IActionResult> SetDefaultStatus(Guid id, [FromBody] ProjectLifecycleActionRequest request, CancellationToken cancellationToken)
     {
         var result = await _catalog.SetStatusDefaultAsync(id, request.RowVersion, CurrentUserId(), cancellationToken);
@@ -131,9 +119,14 @@ public sealed class ProjectLifecycleCatalogController : ControllerBase
     public async Task<IActionResult> GetOptions(
         [FromQuery] Guid? organizationId,
         [FromQuery] Guid? projectId,
+        [FromQuery] string? purpose,
+        [FromQuery] Guid? portfolioId,
+        [FromQuery] Guid? programId,
         CancellationToken cancellationToken)
     {
-        var result = await _catalog.GetOptionsAsync(organizationId, projectId, cancellationToken);
+        var isCreatePurpose = string.Equals(purpose, "create", StringComparison.OrdinalIgnoreCase);
+        var result = await _catalog.GetOptionsAsync(
+            organizationId, projectId, portfolioId, programId, isCreatePurpose, cancellationToken);
         return result.IsFailure ? ToError(result.Error!) : Ok(result.Value);
     }
 

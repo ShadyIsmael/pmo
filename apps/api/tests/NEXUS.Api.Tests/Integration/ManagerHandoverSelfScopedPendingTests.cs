@@ -9,6 +9,7 @@ using NEXUS.Modules.Notifications.Domain;
 using NEXUS.Modules.Portfolio.Application;
 using NEXUS.Modules.Portfolio.Domain;
 using NEXUS.SharedKernel;
+using NEXUS.SharedKernel.Management;
 using Xunit;
 using PortfolioProgram = NEXUS.Modules.Portfolio.Domain.Program;
 
@@ -28,10 +29,14 @@ public sealed class ManagerHandoverSelfScopedPendingTests : IDisposable
     private static readonly Guid NoManagementId = Guid.Parse("30000000-0000-0000-0000-000000000018");
     private static readonly Guid PortfolioId = Guid.Parse("30000000-0000-0000-0000-000000000021");
     private static readonly Guid ProgramId = Guid.Parse("30000000-0000-0000-0000-000000000022");
+    private static readonly Guid OtherPortfolioId = Guid.Parse("30000000-0000-0000-0000-000000000023");
+    private static readonly Guid OtherProgramId = Guid.Parse("30000000-0000-0000-0000-000000000024");
 
     private readonly SqliteConnection _connection = new("Data Source=:memory:");
     private readonly SelfScopedHandoverDbContext _context;
     private readonly Mock<IUserEffectivePermissionService> _permissions = new();
+    private readonly Mock<IManagementContextAccessor> _management = new();
+    private bool _readOnlyViewAs;
     private readonly Dictionary<Guid, IReadOnlySet<string>> _permissionMap;
     private readonly ManagerHandoverService _service;
 
@@ -50,18 +55,30 @@ public sealed class ManagerHandoverSelfScopedPendingTests : IDisposable
             [NoPermId] = new HashSet<string>(),
             [NoPortfolioViewId] = new HashSet<string> { "Handover.Approve" },
             [OtherTenantId] = new HashSet<string> { "Handover.Approve" },
-            [AdminId] = new HashSet<string> { "Handover.AdminInitiate" },
+            [AdminId] = new HashSet<string> { "Handover.AdminInitiate", "Handover.View" },
             [NoManagementId] = new HashSet<string> { "Handover.Approve", "Portfolio.View", "Program.View" },
         };
+        ManagementContext? currentContext = null;
+        _management.SetupGet(x => x.Current).Returns(() => currentContext);
+        _management.Setup(x => x.Set(It.IsAny<ManagementContext>()))
+            .Callback<ManagementContext>(context => currentContext = context);
         _permissions.Setup(x => x.GetEffectivePermissionsAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((Guid user, Guid tenant, CancellationToken ct) =>
-                _permissionMap.TryGetValue(user, out var perms) ? perms : new HashSet<string>());
+            {
+                var scope = tenant == TenantA
+                    ? new ManagementScope(new HashSet<Guid> { PortfolioId }, new HashSet<Guid> { ProgramId }, new HashSet<Guid>())
+                    : ManagementScope.Empty;
+                currentContext = new ManagementContext(user, tenant, ManagementPerspective.PortfolioManager,
+                    _readOnlyViewAs ? ManagementViewMode.ReadOnlyViewAs : ManagementViewMode.Native,
+                    PortfolioId, ProgramId, null, scope);
+                return _permissionMap.TryGetValue(user, out var perms) ? perms : new HashSet<string>();
+            });
 
         var notifications = new Mock<INotificationService>();
         notifications.Setup(x => x.SendAsync(It.IsAny<Notification>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success());
 
-        _service = new ManagerHandoverService(_context, notifications.Object, _permissions.Object);
+        _service = new ManagerHandoverService(_context, notifications.Object, _permissions.Object, _management.Object);
     }
 
     [Fact]
@@ -426,6 +443,42 @@ public sealed class ManagerHandoverSelfScopedPendingTests : IDisposable
     }
 
     [Fact]
+    public async Task SameTenantOutOfScopeResources_DoNotExposeHandoverDataOrCandidates()
+    {
+        var portfolioRequests = await _service.GetPortfolioRequestsAsync(OtherPortfolioId, OwnerId);
+        var portfolioHistory = await _service.GetPortfolioHistoryAsync(OtherPortfolioId, OwnerId);
+        var portfolioSnapshots = await _service.GetPortfolioSnapshotsAsync(OtherPortfolioId, OwnerId);
+        var programRequests = await _service.GetProgramRequestsAsync(OtherProgramId, OwnerId);
+        var programHistory = await _service.GetProgramHistoryAsync(OtherProgramId, OwnerId);
+        var programSnapshots = await _service.GetProgramSnapshotsAsync(OtherProgramId, OwnerId);
+        var portfolioCandidates = await _service.GetEligiblePortfolioManagersAsync(OtherPortfolioId, OwnerId);
+        var programCandidates = await _service.GetEligibleProgramManagersAsync(OtherProgramId, OwnerId);
+        var adminCreate = await _service.CreateAdminPortfolioAsync(OtherPortfolioId, CreateRequest(), AdminId);
+
+        Assert.Equal(404, portfolioRequests.Error?.StatusCode);
+        Assert.Equal(404, portfolioHistory.Error?.StatusCode);
+        Assert.Equal(404, portfolioSnapshots.Error?.StatusCode);
+        Assert.Equal(404, programRequests.Error?.StatusCode);
+        Assert.Equal(404, programHistory.Error?.StatusCode);
+        Assert.Equal(404, programSnapshots.Error?.StatusCode);
+        Assert.Equal(403, portfolioCandidates.Error?.StatusCode);
+        Assert.Equal(403, programCandidates.Error?.StatusCode);
+        Assert.Equal(404, adminCreate.Error?.StatusCode);
+        Assert.Empty(await _context.PortfolioHandoverRequests.ToListAsync());
+    }
+
+    [Fact]
+    public async Task ReadOnlyViewAs_CannotInitiateHandover()
+    {
+        _readOnlyViewAs = true;
+
+        var result = await _service.CreateAdminPortfolioAsync(PortfolioId, CreateRequest(), AdminId);
+
+        Assert.Equal(403, result.Error?.StatusCode);
+        Assert.Empty(await _context.PortfolioHandoverRequests.ToListAsync());
+    }
+
+    [Fact]
     public async Task FullRequestList_RemainsAvailable()
     {
         await CreatePortfolioRequestAsync();
@@ -502,13 +555,15 @@ public sealed class ManagerHandoverSelfScopedPendingTests : IDisposable
         };
         var portfolio = new Portfolio { Id = PortfolioId, TenantId = TenantA, Name = "Portfolio A", Currency = "USD", OwnerId = OwnerId, RowVersion = new byte[8] };
         var program = new PortfolioProgram { Id = ProgramId, TenantId = TenantA, Name = "Program A", PortfolioId = PortfolioId, ProgramManagerId = OwnerId, RowVersion = new byte[8] };
+        var otherPortfolio = new Portfolio { Id = OtherPortfolioId, TenantId = TenantA, Name = "Portfolio B", Currency = "USD", OwnerId = OwnerId, RowVersion = new byte[8] };
+        var otherProgram = new PortfolioProgram { Id = OtherProgramId, TenantId = TenantA, Name = "Program B", PortfolioId = OtherPortfolioId, ProgramManagerId = OwnerId, RowVersion = new byte[8] };
 
         _context.Users.AddRange(users);
         _context.Permissions.Add(approvePermission);
         _context.Roles.AddRange(managerRole, projectManagerRole, operationsRole);
         _context.UserRoles.AddRange(assignments);
-        _context.Portfolios.Add(portfolio);
-        _context.Programs.Add(program);
+        _context.Portfolios.AddRange(portfolio, otherPortfolio);
+        _context.Programs.AddRange(program, otherProgram);
         _context.SaveChanges();
     }
 

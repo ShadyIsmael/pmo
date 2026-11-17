@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using NEXUS.Modules.ResourceManagement.Application;
 using NEXUS.Modules.ResourceManagement.Application.DTOs;
+using NEXUS.SharedKernel.Management;
 
 namespace NEXUS.Modules.ResourceManagement.Api;
 
@@ -11,10 +12,12 @@ namespace NEXUS.Modules.ResourceManagement.Api;
 public class ResourceCostProfileController : ControllerBase
 {
     private readonly IResourceCostProfileService _service;
+    private readonly IManagementContextAccessor? _managementContext;
 
-    public ResourceCostProfileController(IResourceCostProfileService service)
+    public ResourceCostProfileController(IResourceCostProfileService service, IManagementContextAccessor? managementContext = null)
     {
         _service = service;
+        _managementContext = managementContext;
     }
 
     [HttpGet]
@@ -39,8 +42,9 @@ public class ResourceCostProfileController : ControllerBase
     [Authorize(Policy = "Resource.EditCostRate")]
     public async Task<IActionResult> Create(Guid resourceId, [FromBody] CreateResourceCostProfileDto dto, CancellationToken cancellationToken)
     {
+        var actorError = ResourceManagementActorBinding.RequireActor(this, _managementContext, requireManagementContext: true, out var userId);
+        if (actorError is not null) return actorError;
         dto.ResourceId = resourceId;
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
         var result = await _service.CreateAsync(dto, userId, cancellationToken);
         if (result.IsFailure)
             return result.Error?.StatusCode switch
@@ -55,7 +59,8 @@ public class ResourceCostProfileController : ControllerBase
     [Authorize(Policy = "Resource.EditCostRate")]
     public async Task<IActionResult> Update(Guid resourceId, Guid id, [FromBody] UpdateResourceCostProfileDto dto, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        var actorError = ResourceManagementActorBinding.RequireActor(this, _managementContext, requireManagementContext: true, out var userId);
+        if (actorError is not null) return actorError;
         var result = await _service.UpdateAsync(resourceId, id, dto, userId, cancellationToken);
         if (result.IsFailure)
             return result.Error?.StatusCode switch
@@ -71,7 +76,8 @@ public class ResourceCostProfileController : ControllerBase
     [Authorize(Policy = "Resource.EditCostRate")]
     public async Task<IActionResult> Delete(Guid resourceId, Guid id, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        var actorError = ResourceManagementActorBinding.RequireActor(this, _managementContext, requireManagementContext: true, out var userId);
+        if (actorError is not null) return actorError;
         var result = await _service.DeleteAsync(resourceId, id, userId, cancellationToken);
         if (result.IsFailure) return NotFound(new { error = result.Error?.Message });
         return NoContent();

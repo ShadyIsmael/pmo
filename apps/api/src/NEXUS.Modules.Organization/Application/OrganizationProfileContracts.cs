@@ -58,6 +58,7 @@ public enum OrganizationProfileUpdateCode
     NotFound,
     ConcurrencyConflict,
     TenantContextMissing,
+    AccessDenied,
     AuditFailed
 }
 

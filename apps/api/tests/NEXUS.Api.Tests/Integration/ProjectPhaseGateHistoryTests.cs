@@ -371,6 +371,14 @@ public sealed class ProjectPhaseGateHistoryTests : IDisposable
                 DescriptionAr = phaseDescriptionAr, DisplayOrder = 10, IsActive = true,
                 CreatedBy = userId.ToString()
             });
+            db.ProjectPhaseCatalogEntries.Add(new ProjectPhaseCatalogEntry
+            {
+                TenantId = tenantId, OrganizationId = organizationId,
+                Code = "pre-initiation", NormalizedCode = "PRE-INITIATION",
+                NameEn = "Pre-Initiation", NameAr = "مرحلة ما قبل البدء",
+                DisplayOrder = 0, IsDefault = true, IsActive = true,
+                CreatedBy = userId.ToString()
+            });
             db.ProjectStatusCatalogEntries.Add(new ProjectStatusCatalogEntry
             {
                 Id = statusId, TenantId = tenantId, Code = "in-progress", NormalizedCode = "IN-PROGRESS",

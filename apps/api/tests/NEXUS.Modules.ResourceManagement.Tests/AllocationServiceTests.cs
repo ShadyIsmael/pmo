@@ -187,6 +187,71 @@ public class AllocationServiceTests : TestBase
     }
 
     [Fact]
+    public async Task CreateAsync_WithHiddenProjectConflictReturnsGenericErrorWithoutAllocationDetails()
+    {
+        using var context = CreateContext();
+        var visibleProjectId = Guid.Parse("F3000000-0000-0000-0000-000000000011");
+        var hiddenProjectId = Guid.Parse("F3000000-0000-0000-0000-000000000012");
+        context.ResourceAllocations.RemoveRange(context.ResourceAllocations);
+        context.ResourceAllocations.Add(new ResourceAllocation
+        {
+            Id = Guid.NewGuid(),
+            TenantId = TenantConstants.DemoTenantId,
+            ResourceId = ResourceCharlieId,
+            ProjectId = hiddenProjectId,
+            ProjectName = "Confidential Project",
+            ProjectRoleId = ProjectRoleDevId,
+            AllocationPercentage = 80m,
+            StartDate = new DateTime(2026, 3, 1),
+            EndDate = new DateTime(2026, 3, 31),
+            Status = ResourceAllocation.StatusConfirmed
+        });
+        await context.SaveChangesAsync();
+        var service = CreateService(context, new HashSet<Guid> { visibleProjectId });
+
+        var result = await service.CreateAsync(new CreateAllocationDto
+        {
+            ResourceId = ResourceCharlieId,
+            ProjectId = visibleProjectId,
+            ProjectName = "Visible Project",
+            ProjectRoleId = ProjectRoleDevId,
+            AllocationPercentage = 30m,
+            StartDate = new DateTime(2026, 3, 10),
+            EndDate = new DateTime(2026, 3, 20),
+            Status = ResourceAllocation.StatusConfirmed
+        }, "11111111-1111-1111-1111-111111111111");
+
+        result.IsFailure.Should().BeTrue();
+        result.Error!.Message.Should().Contain("outside the current project scope");
+        result.Error.Message.Should().NotContain("Confidential Project");
+        result.Error.Message.Should().NotContain("80%");
+        result.Error.Message.Should().NotContain("110%");
+        (await context.ResourceAllocations.CountAsync()).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task CreateAsync_WithOutOfScopeProjectRejectsBeforeResourceAndAllocationValidation()
+    {
+        using var context = CreateContext();
+        var service = CreateService(context, new HashSet<Guid>());
+        var beforeCount = await context.ResourceAllocations.CountAsync();
+
+        var result = await service.CreateAsync(new CreateAllocationDto
+        {
+            ResourceId = Guid.NewGuid(),
+            ProjectId = Guid.NewGuid(),
+            AllocationPercentage = 150m,
+            StartDate = new DateTime(2026, 3, 20),
+            EndDate = new DateTime(2026, 3, 10),
+            Status = ResourceAllocation.StatusConfirmed
+        }, "11111111-1111-1111-1111-111111111111");
+
+        result.IsFailure.Should().BeTrue();
+        result.Error!.Code.Should().Be("NOT_FOUND");
+        (await context.ResourceAllocations.CountAsync()).Should().Be(beforeCount);
+    }
+
+    [Fact]
     public async Task CreateAsync_WithOverlappingAllocationsWithin100Percent_ReturnsSuccess()
     {
         using var context = CreateContext();

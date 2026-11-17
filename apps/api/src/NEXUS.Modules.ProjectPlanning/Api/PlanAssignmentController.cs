@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 using NEXUS.Modules.ProjectPlanning.Application;
 using NEXUS.Modules.ProjectPlanning.Application.DTOs;
 
@@ -34,7 +35,8 @@ public class PlanAssignmentController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create(Guid projectId, Guid planId, [FromBody] CreatePlanAssignmentDto dto, CancellationToken cancellationToken)
     {
-        var result = await _assignmentService.CreateAsync(planId, dto, UserId(), cancellationToken);
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        var result = await _assignmentService.CreateAsync(planId, dto, actorId, cancellationToken);
         return ToActionResult(result, value => CreatedAtAction(nameof(GetByPlan), new { projectId, planId }, value));
     }
 
@@ -42,7 +44,8 @@ public class PlanAssignmentController : ControllerBase
     [HttpPost("batch")]
     public async Task<IActionResult> CreateMany(Guid projectId, Guid planId, [FromBody] CreatePlanAssignmentsBatchDto dto, CancellationToken cancellationToken)
     {
-        var result = await _assignmentService.CreateManyAsync(planId, dto, UserId(), cancellationToken);
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        var result = await _assignmentService.CreateManyAsync(planId, dto, actorId, cancellationToken);
         return ToActionResult(result, value => CreatedAtAction(nameof(GetByPlan), new { projectId, planId }, value));
     }
 
@@ -50,7 +53,8 @@ public class PlanAssignmentController : ControllerBase
     [HttpPut("{assignmentId:guid}")]
     public async Task<IActionResult> Update(Guid projectId, Guid planId, Guid assignmentId, [FromBody] UpdatePlanAssignmentDto dto, CancellationToken cancellationToken)
     {
-        var result = await _assignmentService.UpdateAsync(planId, assignmentId, dto, UserId(), cancellationToken);
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        var result = await _assignmentService.UpdateAsync(planId, assignmentId, dto, actorId, cancellationToken);
         return ToActionResult(result, value => Ok(value));
     }
 
@@ -58,11 +62,16 @@ public class PlanAssignmentController : ControllerBase
     [HttpDelete("{assignmentId:guid}")]
     public async Task<IActionResult> Delete(Guid projectId, Guid planId, Guid assignmentId, [FromQuery] byte[] rowVersion, CancellationToken cancellationToken)
     {
-        var result = await _assignmentService.DeleteAsync(planId, assignmentId, rowVersion, UserId(), cancellationToken);
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        var result = await _assignmentService.DeleteAsync(planId, assignmentId, rowVersion, actorId, cancellationToken);
         return result.IsSuccess ? NoContent() : ErrorResult(result.Error);
     }
 
-    private string UserId() => User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+    private bool TryGetActorId(out string actorId)
+    {
+        actorId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? string.Empty;
+        return User.Identity?.IsAuthenticated == true && Guid.TryParse(actorId, out var parsed) && parsed != Guid.Empty;
+    }
 
     private IActionResult ToActionResult<T>(NEXUS.SharedKernel.Result<T> result, Func<T?, IActionResult> success) =>
         result.IsSuccess ? success(result.Value) : ErrorResult(result.Error);

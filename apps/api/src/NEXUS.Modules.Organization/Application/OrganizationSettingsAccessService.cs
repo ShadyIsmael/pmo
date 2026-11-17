@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using NEXUS.Modules.Audit.Application;
 using NEXUS.Modules.Audit.Domain;
+using NEXUS.Modules.Identity.Application;
 using NEXUS.Modules.Identity.Domain;
 using NEXUS.Modules.Organization.Application.Settings;
 using NEXUS.Modules.Organization.Domain;
@@ -18,15 +19,18 @@ public sealed class OrganizationSettingsAccessService : IOrganizationSettingsAcc
     private readonly DbContext _context;
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly IAuditService _auditService;
+    private readonly IUserEffectivePermissionService _effectivePermissions;
 
     public OrganizationSettingsAccessService(
         DbContext context,
         IHttpContextAccessor httpContextAccessor,
-        IAuditService auditService)
+        IAuditService auditService,
+        IUserEffectivePermissionService effectivePermissions)
     {
         _context = context;
         _httpContextAccessor = httpContextAccessor;
         _auditService = auditService;
+        _effectivePermissions = effectivePermissions;
     }
 
     public async Task<IReadOnlyList<Guid>> GetReadableOrganizationIdsAsync(CancellationToken cancellationToken = default)
@@ -34,7 +38,22 @@ public sealed class OrganizationSettingsAccessService : IOrganizationSettingsAcc
         if (!TryGetActor(out var tenantId, out var userId)) return Array.Empty<Guid>();
         try
         {
-            return await _context.Set<OrganizationSettingsGrant>()
+            if (await IsProtectedTenantAdminAsync(tenantId, userId, cancellationToken))
+            {
+                return await _context.Set<OrganizationEntity>()
+                    .IgnoreQueryFilters()
+                    .Where(organization => organization.TenantId == tenantId && !organization.IsDeleted && organization.IsActive)
+                    .OrderBy(organization => organization.Id)
+                    .Select(organization => organization.Id)
+                    .ToListAsync(cancellationToken);
+            }
+
+            var effectivePermissions = await _effectivePermissions.GetEffectivePermissionsAsync(userId, tenantId, cancellationToken);
+            var canViewSettings = effectivePermissions.Contains("Settings.View");
+            var canViewOrganizationConfiguration = effectivePermissions.Contains("OrganizationConfiguration.View");
+            if (!canViewSettings && !canViewOrganizationConfiguration) return Array.Empty<Guid>();
+
+            var grantedOrganizationIds = await _context.Set<OrganizationSettingsGrant>()
                 .IgnoreQueryFilters()
                 .Where(grant => grant.TenantId == tenantId && grant.UserId == userId && !grant.IsDeleted
                     && (grant.CanRead || grant.CanManage))
@@ -45,6 +64,15 @@ public sealed class OrganizationSettingsAccessService : IOrganizationSettingsAcc
                     (_, organization) => organization.Id)
                 .Distinct()
                 .ToListAsync(cancellationToken);
+            if (canViewSettings || !canViewOrganizationConfiguration) return grantedOrganizationIds;
+
+            var authorizedOrganizationIds = new List<Guid>();
+            foreach (var organizationId in grantedOrganizationIds)
+            {
+                if (await HasScopedOrganizationAdminAuthorityAsync(organizationId, manage: false, cancellationToken))
+                    authorizedOrganizationIds.Add(organizationId);
+            }
+            return authorizedOrganizationIds;
         }
         catch (Exception exception) when (IsDatabaseFailure(exception))
         {
@@ -57,7 +85,22 @@ public sealed class OrganizationSettingsAccessService : IOrganizationSettingsAcc
         if (!TryGetActor(out var tenantId, out var userId)) return Array.Empty<Guid>();
         try
         {
-            return await _context.Set<OrganizationSettingsGrant>()
+            if (await IsProtectedTenantAdminAsync(tenantId, userId, cancellationToken))
+            {
+                return await _context.Set<OrganizationEntity>()
+                    .IgnoreQueryFilters()
+                    .Where(organization => organization.TenantId == tenantId && !organization.IsDeleted && organization.IsActive)
+                    .OrderBy(organization => organization.Id)
+                    .Select(organization => organization.Id)
+                    .ToListAsync(cancellationToken);
+            }
+
+            var effectivePermissions = await _effectivePermissions.GetEffectivePermissionsAsync(userId, tenantId, cancellationToken);
+            var canManageTenantConfiguration = effectivePermissions.Contains("Settings.ManageTenantConfiguration");
+            var canManageOrganizationConfiguration = effectivePermissions.Contains("OrganizationConfiguration.Manage");
+            if (!canManageTenantConfiguration && !canManageOrganizationConfiguration) return Array.Empty<Guid>();
+
+            var grantedOrganizationIds = await _context.Set<OrganizationSettingsGrant>()
                 .IgnoreQueryFilters()
                 .Where(grant => grant.TenantId == tenantId && grant.UserId == userId && !grant.IsDeleted && grant.CanManage)
                 .Join(_context.Set<OrganizationEntity>().IgnoreQueryFilters().Where(organization =>
@@ -67,6 +110,15 @@ public sealed class OrganizationSettingsAccessService : IOrganizationSettingsAcc
                     (_, organization) => organization.Id)
                 .Distinct()
                 .ToListAsync(cancellationToken);
+            if (canManageTenantConfiguration || !canManageOrganizationConfiguration) return grantedOrganizationIds;
+
+            var authorizedOrganizationIds = new List<Guid>();
+            foreach (var organizationId in grantedOrganizationIds)
+            {
+                if (await HasScopedOrganizationAdminAuthorityAsync(organizationId, manage: true, cancellationToken))
+                    authorizedOrganizationIds.Add(organizationId);
+            }
+            return authorizedOrganizationIds;
         }
         catch (Exception exception) when (IsDatabaseFailure(exception))
         {
@@ -84,6 +136,73 @@ public sealed class OrganizationSettingsAccessService : IOrganizationSettingsAcc
                 .AnyAsync(organization => organization.Id == organizationId && organization.TenantId == tenantId
                     && !organization.IsDeleted && organization.IsActive, cancellationToken);
             if (!organizationExists) return false;
+
+            if (await IsProtectedTenantAdminAsync(tenantId, userId, cancellationToken)) return true;
+
+            var effectivePermissions = await _effectivePermissions.GetEffectivePermissionsAsync(
+                userId, tenantId, cancellationToken);
+            var hasTenantSettingsAuthority = manage
+                ? effectivePermissions.Contains("Settings.ManageTenantConfiguration")
+                : effectivePermissions.Contains("Settings.View");
+            if (hasTenantSettingsAuthority
+                && await _context.Set<OrganizationSettingsGrant>()
+                    .IgnoreQueryFilters()
+                    .AnyAsync(grant => grant.TenantId == tenantId && grant.OrganizationId == organizationId
+                        && grant.UserId == userId && !grant.IsDeleted
+                        && (manage ? grant.CanManage : grant.CanRead || grant.CanManage), cancellationToken))
+                return true;
+
+            var hasOrganizationConfigurationAuthority = effectivePermissions.Contains(
+                manage ? "OrganizationConfiguration.Manage" : "OrganizationConfiguration.View");
+            return hasOrganizationConfigurationAuthority
+                && await HasScopedOrganizationAdminAuthorityAsync(organizationId, manage, cancellationToken);
+        }
+        catch (Exception exception) when (IsDatabaseFailure(exception))
+        {
+            throw new SettingsPersistenceUnavailableException("Organization settings access storage is unavailable or its schema has not been deployed.", exception);
+        }
+    }
+
+    /// <summary>
+    /// Organization Admin is a tenant role identity whose configuration reach is
+    /// constrained by an explicit per-user/per-Organization settings grant. The
+    /// role itself never supplies an Organization scope. Appointment mutations
+    /// remain governed by the separate role-assignment policy.
+    /// </summary>
+    public async Task<bool> HasScopedOrganizationAdminAuthorityAsync(
+        Guid organizationId,
+        bool manage,
+        CancellationToken cancellationToken = default)
+    {
+        if (organizationId == Guid.Empty || !TryGetActor(out var tenantId, out var userId)) return false;
+        try
+        {
+            var organizationExists = await _context.Set<OrganizationEntity>()
+                .IgnoreQueryFilters()
+                .AnyAsync(organization => organization.Id == organizationId && organization.TenantId == tenantId
+                    && !organization.IsDeleted && organization.IsActive, cancellationToken);
+            if (!organizationExists) return false;
+
+            var hasOrganizationAdminRole = await (
+                    from assignment in _context.Set<UserRole>().IgnoreQueryFilters().AsNoTracking()
+                    where assignment.UserId == userId && assignment.TenantId == tenantId && !assignment.IsDeleted
+                          && assignment.User.TenantId == tenantId && !assignment.User.IsDeleted && assignment.User.IsActive
+                          && assignment.Role.TenantId == tenantId && !assignment.Role.IsDeleted
+                          && assignment.Role.IsSystem
+                          && assignment.Role.SystemRoleKey == Role.OrganizationAdminRoleKey
+                          && assignment.Role.RoleKey == Role.OrganizationAdminRoleKey
+                    select assignment.RoleId)
+                .AnyAsync(cancellationToken);
+            if (!hasOrganizationAdminRole) return false;
+
+            // Re-read effective authorization from persistence for each sensitive
+            // settings operation. Effective permission evaluation applies Active
+            // Deny and catalog dependency rules, so a stale token or grant cannot
+            // preserve Organization Configuration authority after revocation.
+            var effectivePermissions = await _effectivePermissions.GetEffectivePermissionsAsync(
+                userId, tenantId, cancellationToken);
+            if (!effectivePermissions.Contains("OrganizationConfiguration.View")) return false;
+            if (manage && !effectivePermissions.Contains("OrganizationConfiguration.Manage")) return false;
 
             return await _context.Set<OrganizationSettingsGrant>()
                 .IgnoreQueryFilters()
@@ -343,6 +462,20 @@ public sealed class OrganizationSettingsAccessService : IOrganizationSettingsAcc
             && !Guid.TryParse(principal.FindFirstValue("sub"), out userId)) return false;
         return userId != Guid.Empty;
     }
+
+    private async Task<bool> IsProtectedTenantAdminAsync(
+        Guid tenantId,
+        Guid userId,
+        CancellationToken cancellationToken) => await (
+            from assignment in _context.Set<UserRole>().IgnoreQueryFilters().AsNoTracking()
+            where assignment.UserId == userId && assignment.TenantId == tenantId && !assignment.IsDeleted
+                  && assignment.User.TenantId == tenantId && !assignment.User.IsDeleted && assignment.User.IsActive
+                  && assignment.Role.TenantId == tenantId && !assignment.Role.IsDeleted
+                  && assignment.Role.IsSystem
+                  && assignment.Role.SystemRoleKey == Role.TenantAdminRoleKey
+                  && assignment.Role.RoleKey == Role.TenantAdminRoleKey
+            select assignment.RoleId)
+        .AnyAsync(cancellationToken);
 
     private static bool TryParseVersion(string? value, out byte[]? version)
     {

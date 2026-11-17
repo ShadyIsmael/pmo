@@ -15,6 +15,7 @@ using NEXUS.Modules.CostManagement.Application;
 using NEXUS.Modules.CostManagement.Application.DTOs;
 using NEXUS.Modules.CostManagement.Domain;
 using NEXUS.Modules.Identity.Api;
+using NEXUS.Modules.Identity.Application;
 using NEXUS.Modules.Identity.Domain;
 using NEXUS.Modules.Notifications.Application;
 using NEXUS.Modules.ProjectManagement.Api;
@@ -84,7 +85,7 @@ public sealed class Phase2AuthorizationNegativeTests : IDisposable
         AppDbContext.ConfigureTenantResolution(new HttpContextAccessor { HttpContext = httpContext });
     }
 
-    private StubManagementContext ScopeTo(params Guid[] projectIds) => new(projectIds);
+    private StubManagementContext ScopeTo(params Guid[] projectIds) => new(_tenantId, _userId, projectIds);
 
     private void SeedResources()
     {
@@ -481,6 +482,18 @@ public sealed class Phase2AuthorizationNegativeTests : IDisposable
             ScopeTo(_projectA));
 
         Assert.True((await mitigator.AuthorizeTransitionAsync(Transition(snapshot, mitigator, _tenantId, _userId))).IsSuccess);
+
+        var reader = new RiskWorkflowAdapter(
+            _context,
+            new HttpContextAccessor { HttpContext = CallerContext(_tenantId, _userId, "Risk.View") },
+            ScopeTo(_projectA));
+        var creator = new RiskWorkflowAdapter(
+            _context,
+            new HttpContextAccessor { HttpContext = CallerContext(_tenantId, _userId, "Risk.Create") },
+            ScopeTo(_projectA));
+        var execution = new WorkflowExecutionContext(_tenantId, _userId.ToString());
+        Assert.True((await reader.AuthorizeProvisionAsync(execution, risk.Id)).IsFailure);
+        Assert.True((await creator.AuthorizeProvisionAsync(execution, risk.Id)).IsSuccess);
     }
 
     [Fact]
@@ -590,6 +603,138 @@ public sealed class Phase2AuthorizationNegativeTests : IDisposable
             ScopeTo(_projectA));
         var canonicalApproverContext = broadFinanceContext with { EntityAdapter = canonicalApprover };
         Assert.True((await canonicalApprover.AuthorizeTransitionAsync(canonicalApproverContext)).IsSuccess);
+        var unknownActorContext = canonicalApproverContext with
+        {
+            Execution = new WorkflowExecutionContext(_tenantId, "unknown")
+        };
+        Assert.Equal(401, (await canonicalApprover.AuthorizeTransitionAsync(unknownActorContext)).Error?.StatusCode);
+
+        revision.RequestedBy = _userId;
+        await _context.SaveChangesAsync();
+        var selfApproval = await canonicalApprover.ApplyTransitionAsync(canonicalApproverContext);
+        Assert.True(selfApproval.IsFailure);
+        Assert.Contains("cannot approve their own", selfApproval.Error?.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(BudgetRevision.Statuses.Submitted,
+            (await _context.Set<BudgetRevision>().SingleAsync(item => item.Id == revision.Id)).Status);
+
+        var financeReader = new FinanceWorkflowAdapter(
+            _context,
+            Mock.Of<IProjectReferenceLookup>(),
+            new HttpContextAccessor { HttpContext = CallerContext(_tenantId, _userId, "BudgetRevision.View") },
+            ScopeTo(_projectA));
+        var financeCreator = new FinanceWorkflowAdapter(
+            _context,
+            Mock.Of<IProjectReferenceLookup>(),
+            new HttpContextAccessor { HttpContext = CallerContext(_tenantId, _userId, "BudgetRevision.Create") },
+            ScopeTo(_projectA));
+        var execution = new WorkflowExecutionContext(_tenantId, _userId.ToString());
+        Assert.True((await financeReader.AuthorizeProvisionAsync(execution, revision.Id)).IsFailure);
+        Assert.True((await financeCreator.AuthorizeProvisionAsync(execution, revision.Id)).IsSuccess);
+    }
+
+    [Fact]
+    public async Task Workflow_provision_uses_write_permissions_and_project_scope_for_each_entity_type()
+    {
+        var project = new Project
+        {
+            Id = _projectA,
+            TenantId = _tenantId,
+            Name = "Workflow authorization project",
+            Code = "WF-AUTH",
+            Status = "Active",
+            CreatedBy = _userId.ToString()
+        };
+        _context.Projects.Add(project);
+        await _context.SaveChangesAsync();
+
+        var risk = SeedRisk(_tenantId, _projectA);
+        var workItem = new NEXUS.Modules.WorkItems.Domain.WorkItem
+        {
+            TenantId = _tenantId,
+            ProjectId = _projectA,
+            Title = "Provision authorization test",
+            Type = "Task",
+            Priority = "Medium",
+            Status = "Open",
+            Source = "Internal",
+            CreatedBy = _userId.ToString()
+        };
+        var report = new ProjectStatusReport
+        {
+            TenantId = _tenantId,
+            ProjectId = _projectA,
+            ReportDate = DateTime.UtcNow.Date,
+            PeriodFrom = DateTime.UtcNow.Date.AddDays(-7),
+            PeriodTo = DateTime.UtcNow.Date,
+            StatusDate = DateTime.UtcNow.Date,
+            CreatedBy = _userId.ToString()
+        };
+        var changeRequest = new ProjectChangeRequest
+        {
+            TenantId = _tenantId,
+            ProjectId = _projectA,
+            Number = 1,
+            Type = ProjectChangeRequest.ChangeTypes.Administrative,
+            Reason = "Workflow provisioning authorization test",
+            RequestedBy = _userId,
+            RequestedAt = DateTime.UtcNow,
+            CreatedBy = _userId.ToString()
+        };
+        _context.AddRange(risk, workItem, report, changeRequest);
+        await _context.SaveChangesAsync();
+
+        var execution = new WorkflowExecutionContext(_tenantId, _userId.ToString());
+        var scope = new StubManagementContext(_tenantId, _userId, [_projectA]);
+
+        var statusReader = new ProjectStatusReportWorkflowAdapter(
+            _context,
+            new HttpContextAccessor { HttpContext = CallerContext(_tenantId, _userId, "StatusReport.View") },
+            scope);
+        var statusCreator = new ProjectStatusReportWorkflowAdapter(
+            _context,
+            new HttpContextAccessor { HttpContext = CallerContext(_tenantId, _userId, "StatusReport.Create") },
+            scope);
+        Assert.True((await statusReader.AuthorizeProvisionAsync(execution, report.Id)).IsFailure);
+        Assert.True((await statusCreator.AuthorizeProvisionAsync(execution, report.Id)).IsSuccess);
+
+        var viewPermissions = new Mock<IUserEffectivePermissionService>();
+        viewPermissions.Setup(service => service.GetEffectivePermissionsAsync(_userId, _tenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "ChangeRequest.View" });
+        var changeRequestReader = new ProjectChangeRequestWorkflowAdapter(
+            _context,
+            new HttpContextAccessor { HttpContext = CallerContext(_tenantId, _userId, "ChangeRequest.View") },
+            scope,
+            viewPermissions.Object);
+        Assert.True((await changeRequestReader.AuthorizeProvisionAsync(execution, changeRequest.Id)).IsFailure);
+
+        var managePermissions = new Mock<IUserEffectivePermissionService>();
+        managePermissions.Setup(service => service.GetEffectivePermissionsAsync(_userId, _tenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "ChangeRequest.Manage" });
+        var changeRequestManager = new ProjectChangeRequestWorkflowAdapter(
+            _context,
+            new HttpContextAccessor { HttpContext = CallerContext(_tenantId, _userId, "ChangeRequest.Manage") },
+            scope,
+            managePermissions.Object);
+        Assert.True((await changeRequestManager.AuthorizeProvisionAsync(execution, changeRequest.Id)).IsSuccess);
+
+        var workItemReader = new WorkItemWorkflowAdapter(
+            _context,
+            new HttpContextAccessor { HttpContext = CallerContext(_tenantId, _userId, "WorkItem.View") },
+            scope,
+            Mock.Of<IWorkItemStatusReferenceLookup>());
+        var workItemCreator = new WorkItemWorkflowAdapter(
+            _context,
+            new HttpContextAccessor { HttpContext = CallerContext(_tenantId, _userId, "WorkItem.Create") },
+            scope,
+            Mock.Of<IWorkItemStatusReferenceLookup>());
+        Assert.True((await workItemReader.AuthorizeProvisionAsync(execution, workItem.Id)).IsFailure);
+        Assert.True((await workItemCreator.AuthorizeProvisionAsync(execution, workItem.Id)).IsSuccess);
+
+        var outOfScopeStatusCreator = new ProjectStatusReportWorkflowAdapter(
+            _context,
+            new HttpContextAccessor { HttpContext = CallerContext(_tenantId, _userId, "StatusReport.Create") },
+            ScopeTo(_projectB));
+        Assert.True((await outOfScopeStatusCreator.AuthorizeProvisionAsync(execution, report.Id)).IsFailure);
     }
 
     // ---------------------------------------------------------------- governance people
@@ -766,10 +911,15 @@ public sealed class Phase2AuthorizationNegativeTests : IDisposable
     private sealed class StubManagementContext : IManagementContextAccessor
     {
         public StubManagementContext(IEnumerable<Guid> projectIds)
+            : this(Guid.NewGuid(), Guid.NewGuid(), projectIds)
+        {
+        }
+
+        public StubManagementContext(Guid tenantId, Guid userId, IEnumerable<Guid> projectIds)
         {
             Current = new ManagementContext(
-                Guid.NewGuid(),
-                Guid.NewGuid(),
+                userId,
+                tenantId,
                 ManagementPerspective.ProjectManager,
                 ManagementViewMode.Native,
                 null,

@@ -263,6 +263,10 @@ export const Permissions = {
     View: "Settings.View",
     ManageTenantConfiguration: "Settings.ManageTenantConfiguration",
   },
+  OrganizationConfiguration: {
+    View: "OrganizationConfiguration.View",
+    Manage: "OrganizationConfiguration.Manage",
+  },
   EmailNotifications: {
     View: "EmailNotifications.View",
     Manage: "EmailNotifications.Manage",

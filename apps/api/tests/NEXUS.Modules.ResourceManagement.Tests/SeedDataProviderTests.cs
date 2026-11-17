@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using NEXUS.Modules.Identity.Application;
 using NEXUS.Modules.Identity.Domain;
 using NEXUS.Modules.Organization.Application.Settings;
@@ -37,50 +38,24 @@ public class SeedDataProviderTests : IDisposable
     }
 
     [Fact]
-    public void Protected_admin_administration_baseline_uses_active_tenant_catalog_metadata()
+    public void Permission_protection_uses_only_explicit_central_policy_keys()
     {
-        var futureAdministrationPermission = PermissionCatalog.Entries
-            .First(entry => entry.ModuleId == "administration") with
+        var protectedKey = PermissionCatalog.ByKey["Governance.AssignmentRecovery.View"].Key;
+        var policy = new PermissionProtectionPolicy(Options.Create(new PermissionProtectionOptions
         {
-            SeedId = "b0000999-0000-0000-0000-000000000999",
-            Key = "FutureAdministration.Capability",
-            Resource = "FutureAdministration",
-            Action = "Capability"
-        };
-        var explicitlyProtectedPermission = futureAdministrationPermission with
-        {
-            SeedId = "b0000998-0000-0000-0000-000000000998",
-            Key = "Governance.FutureCapability",
-            Resource = "Governance",
-            Action = "FutureCapability",
-            ModuleId = "governance",
-            IsTenantAdminBaseline = true
-        };
-        var platformAdministrationPermission = futureAdministrationPermission with
-        {
-            SeedId = "b0000997-0000-0000-0000-000000000997",
-            Key = "FutureAdministration.PlatformCapability",
-            Resource = "FutureAdministration",
-            Action = "PlatformCapability",
-            Scope = PermissionScope.Platform
-        };
+            ProtectedPermissionKeys = [protectedKey]
+        }));
 
-        var baseline = ProtectedTenantAdminPolicy.GetTenantAdministrationPermissionKeys(
-            PermissionCatalog.Entries.Append(futureAdministrationPermission)
-                .Append(explicitlyProtectedPermission)
-                .Append(platformAdministrationPermission));
-
-        baseline.Should().Contain(futureAdministrationPermission.Key);
-        baseline.Should().Contain(explicitlyProtectedPermission.Key);
-        baseline.Should().NotContain(platformAdministrationPermission.Key);
-        baseline.Should().Contain("Workflow.View");
-        baseline.Should().Contain("Governance.AssignmentRecovery.View");
-        baseline.Should().NotContain("ProjectAnnualBudget.Approve");
-        baseline.Should().NotContain("Program.CreateAcrossPortfolios");
+        PermissionProtectionPolicy.Empty.ProtectedPermissionKeys.Should().BeEmpty();
+        PermissionCatalog.Entries.Where(entry => entry.IsActive)
+            .Should().OnlyContain(entry => PermissionProtectionPolicy.Empty.IsGrantable(entry));
+        policy.IsProtected(protectedKey).Should().BeTrue();
+        policy.IsGrantable(PermissionCatalog.ByKey[protectedKey]).Should().BeFalse();
+        policy.IsGrantable(PermissionCatalog.ByKey["Workflow.View"]).Should().BeTrue();
     }
 
     [Fact]
-    public async Task SeedIdentityOnlyAsync_NewAdminRole_SeedsAllApprovedTenantAdministrationPermissions()
+    public async Task SeedIdentityOnlyAsync_NewAdminRole_SeedsProtectedCoreWithoutAllAssignableOperationalPermissions()
     {
         var originalEnvironment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
         Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Development");
@@ -122,13 +97,24 @@ public class SeedDataProviderTests : IDisposable
                 .ToArrayAsync();
             seededSystemRoles.Should().OnlyContain(item => !string.IsNullOrWhiteSpace(item.SystemRoleKey));
             seededSystemRoles.Select(item => item.SystemRoleKey).Should().OnlyHaveUniqueItems();
+            seededSystemRoles.Select(item => item.SystemRoleKey).Should().BeEquivalentTo(
+                new[] { Role.TenantAdminSystemRoleKey, Role.OrganizationAdminSystemRoleKey },
+                "only Tenant Admin and Organization Admin are System Roles");
 
-            var activeAdministrationKeys = PermissionCatalog.Entries
-                .Where(item => item.ModuleId == "administration" && item.IsActive && item.Scope == PermissionScope.Tenant)
-                .Select(item => item.Key)
-                .ToArray();
-            permissionKeys.Should().Contain(activeAdministrationKeys);
-            permissionKeys.Should().Contain(ProtectedTenantAdminPolicy.PortfolioProgramPermissionKeys);
+            var protectedKeys = PermissionProtectionPolicy.Empty.ProtectedPermissionKeys;
+            protectedKeys.Should().BeEmpty("the Product Owner has not designated any protected permission keys");
+            PermissionCatalog.Entries.Where(entry => entry.IsActive)
+                .Should().OnlyContain(entry => PermissionProtectionPolicy.Empty.IsGrantable(entry));
+            var assignableOperationalKeys = PermissionCatalog.Entries
+                .Where(entry => entry.IsActive
+                    && entry.IsAssignable
+                    && entry.Scope is PermissionScope.Tenant or PermissionScope.Organization or PermissionScope.Portfolio
+                        or PermissionScope.Program or PermissionScope.Project
+                    && !protectedKeys.Contains(entry.Key))
+                .Select(entry => entry.Key)
+                .ToHashSet(StringComparer.Ordinal);
+            assignableOperationalKeys.Except(permissionKeys, StringComparer.Ordinal).Should().NotBeEmpty(
+                "the protected Admin does not automatically receive every assignable operational permission");
             permissionKeys.Should().Contain([
                 "Governance.AssignmentRecovery.View",
                 "Governance.AssignmentRecovery.Initiate",
@@ -138,13 +124,11 @@ public class SeedDataProviderTests : IDisposable
                 "Workflow.Publish"
             ]);
             permissionKeys.Should().Contain("Roles.Delete");
-            permissionKeys.Should().Contain(["ProjectSettings.View", "ProjectSettings.Edit"],
-                "the stable tenant Admin seed receives the approved additive Project-scoped Settings grants");
-            permissionKeys.Should().NotContain("ProjectAnnualBudget.Approve", "sensitive approval grants are excluded from the Admin seed");
-            permissionKeys.Should().NotContain("ProjectFinancialCeiling.ApproveChange", "sensitive approval grants are excluded from the Admin seed");
-            permissionKeys.Should().NotContain("Program.CreateAcrossPortfolios", "cross-Portfolio authority is explicit and not a tenant Admin default");
+            permissionKeys.Should().NotContain("Program.CreateAcrossPortfolios", "cross-Portfolio creation stays an explicit opt-in permission");
+            permissionKeys.Should().NotContain("ProjectAnnualBudget.Approve", "financial approval is not required for protected Tenant Admin delegation");
+            permissionKeys.Should().NotContain("ProjectFinancialCeiling.ApproveChange", "financial approval is not required for protected Tenant Admin delegation");
             permissionKeys.Should().NotContain(key => key.StartsWith("Platform", StringComparison.Ordinal), "tenant Admin has no platform authority");
-            permissionKeys.Should().Contain("Users.ManageAccounts", "canonical account management is part of the protected tenant Administration baseline");
+            permissionKeys.Should().Contain("Users.ManageAccounts", "the existing explicit seed grant is preserved without making it a protection rule");
 
             var pmoAdminRole = await context.Roles
                 .IgnoreQueryFilters()
@@ -174,6 +158,10 @@ public class SeedDataProviderTests : IDisposable
                 .IgnoreQueryFilters()
                 .Include(item => item.Permissions)
                 .SingleAsync(item => item.Name == "project.manager" && item.TenantId == SeedDataProvider.TenantId);
+            projectManagerRole.RoleKey.Should().Be("tenant.project-manager");
+            projectManagerRole.SystemRoleKey.Should().BeNull();
+            projectManagerRole.IsSystem.Should().BeFalse();
+            projectManagerRole.Category.Should().Be(RoleCategories.Management);
             var projectManagerPermissionKeys = projectManagerRole.Permissions
                 .Select(item => $"{item.Resource}.{item.Action}")
                 .ToHashSet(StringComparer.Ordinal);
@@ -181,6 +169,31 @@ public class SeedDataProviderTests : IDisposable
                 "StatusReport.View", "StatusReport.Create", "StatusReport.Edit",
                 "StatusReport.Export", "StatusReport.ManageConfiguration"
             ]);
+
+            var organizationAdmin = await context.Roles
+                .IgnoreQueryFilters()
+                .Include(item => item.Permissions)
+                .SingleAsync(item => item.TenantId == SeedDataProvider.TenantId
+                    && item.RoleKey == Role.OrganizationAdminSystemRoleKey);
+            organizationAdmin.IsSystem.Should().BeTrue();
+            organizationAdmin.SystemRoleKey.Should().Be(Role.OrganizationAdminSystemRoleKey);
+            organizationAdmin.RoleKey.Should().Be(Role.OrganizationAdminSystemRoleKey);
+            organizationAdmin.Category.Should().Be(RoleCategories.Organization);
+            organizationAdmin.Permissions.Select(item => item.Name).Should().BeEquivalentTo(
+                new[] { "OrganizationConfiguration.View", "OrganizationConfiguration.Manage" },
+                "Organization Admin receives only canonical Organization Configuration permissions");
+            foreach (var permission in organizationAdmin.Permissions)
+            {
+                PermissionCatalog.ByKey.ContainsKey(permission.Name).Should().BeTrue();
+                var definition = PermissionCatalog.ByKey[permission.Name];
+                definition.Scope.Should().Be(PermissionScope.Organization);
+                definition.IsAssignable.Should().BeFalse();
+            }
+            PermissionCatalog.ByKey["OrganizationConfiguration.Manage"].RequiredPermissionKeys
+                .Should().Contain("OrganizationConfiguration.View");
+            (await context.UserRoles.IgnoreQueryFilters()
+                .AnyAsync(item => item.TenantId == SeedDataProvider.TenantId && item.RoleId == organizationAdmin.Id))
+                .Should().BeFalse("seeding must not appoint an Organization Admin without its approved Organization-scoped assignment policy");
 
             var seededRoleGrants = await context.Roles
                 .IgnoreQueryFilters()
@@ -213,7 +226,7 @@ public class SeedDataProviderTests : IDisposable
     }
 
     [Fact]
-    public async Task SeedIdentityOnlyAsync_Rerun_RestoresMissingAdminBaselineAndPreservesCustomGrant()
+    public async Task SeedIdentityOnlyAsync_Rerun_PreservesExistingGrants_AndDoesNotRestoreRemovedGrants()
     {
         var originalEnvironment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
         Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Development");
@@ -232,9 +245,9 @@ public class SeedDataProviderTests : IDisposable
                 .Include(item => item.Permissions)
                 .SingleAsync(item => item.TenantId == SeedDataProvider.TenantId
                     && item.SystemRoleKey == Role.TenantAdminSystemRoleKey);
-            var reconciliationKeys = ProtectedTenantAdminPolicy.MandatoryPermissionKeys
-                .Concat(["ProjectSettings.View", "ProjectSettings.Edit"])
-                .ToHashSet(StringComparer.Ordinal);
+            var projectSettingsKeys = new HashSet<string>(["ProjectSettings.View", "ProjectSettings.Edit"], StringComparer.Ordinal);
+            var removedExistingGrantKey = "Document.View";
+            var reconciliationKeys = projectSettingsKeys.Append(removedExistingGrantKey).ToHashSet(StringComparer.Ordinal);
             foreach (var permission in role.Permissions
                 .Where(item => reconciliationKeys.Contains($"{item.Resource}.{item.Action}"))
                 .ToList())
@@ -243,7 +256,7 @@ public class SeedDataProviderTests : IDisposable
             }
 
             var preservedCustomGrant = await context.Permissions.IgnoreQueryFilters()
-                .SingleAsync(item => item.Name == "ProjectFinancialCeiling.ApproveChange");
+                .SingleAsync(item => item.Name == "Program.CreateAcrossPortfolios");
             role.Permissions.Add(preservedCustomGrant);
 
             var adminUserId = await context.UserRoles.IgnoreQueryFilters()
@@ -274,16 +287,16 @@ public class SeedDataProviderTests : IDisposable
                 .Include(item => item.Permissions)
                 .SingleAsync(item => item.Id == role.Id);
             var permissionKeys = reloadedRole.Permissions.Select(item => $"{item.Resource}.{item.Action}").ToHashSet(StringComparer.Ordinal);
-            permissionKeys.Should().Contain(reconciliationKeys);
-            permissionKeys.Should().Contain("ProjectFinancialCeiling.ApproveChange", "custom grants are preserved without being inferred for new roles");
-            permissionKeys.Should().Contain(["ProjectSettings.View", "ProjectSettings.Edit"]);
+            permissionKeys.Should().Contain("Program.CreateAcrossPortfolios", "existing explicit opt-in grants are preserved");
+            permissionKeys.Should().NotContain(projectSettingsKeys, "Project Settings grants are not added by reseeding");
+            permissionKeys.Should().NotContain(removedExistingGrantKey, "reseeding never restores an existing Admin grant removed by an authorized change");
             var preservedSettingsDeny = await context.UserPermissionOverrides.IgnoreQueryFilters()
                 .AsNoTracking()
                 .SingleAsync(item => item.Id == preservedDeny.Id);
             preservedSettingsDeny.Effect.Should().Be(PermissionOverrideEffect.Deny);
             preservedSettingsDeny.IsDeleted.Should().BeFalse();
             EffectivePermissionResolver.Resolve(
-                    permissionKeys,
+                    permissionKeys.Append("ProjectSettings.Edit"),
                     [("ProjectSettings.Edit", preservedSettingsDeny.Effect)])
                 .Should().NotContain("ProjectSettings.Edit", "seed reconciliation must not erase a user's explicit Deny");
             (await context.Roles.IgnoreQueryFilters()
@@ -442,7 +455,7 @@ public class SeedDataProviderTests : IDisposable
                 .Include(role => role.Permissions)
                 .SingleAsync(role => role.Id == adminRoleId);
             adminRole.Permissions.Select(permission => $"{permission.Resource}.{permission.Action}")
-                .Should().Contain(ProtectedTenantAdminPolicy.MandatoryPermissionKeys);
+                .Should().Contain("Document.View", "new seed setup has explicit grants, but existing roles are not force-reconciled with protection lists");
 
             var otherRoleGrantsAfter = await context.Roles.IgnoreQueryFilters()
                 .Where(role => role.TenantId == SeedDataProvider.TenantId
@@ -463,6 +476,87 @@ public class SeedDataProviderTests : IDisposable
         {
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", originalEnvironment);
         }
+    }
+
+    [Fact]
+    public async Task SeedIdentityOnlyAsync_RejectsUnexpectedOrganizationAdminGrantWithoutRemovingExistingGrants()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var context = new AppDbContext(options);
+        await SeedDataProvider.SeedIdentityOnlyAsync(context);
+
+        var role = await context.Roles.IgnoreQueryFilters()
+            .Include(item => item.Permissions)
+            .SingleAsync(item => item.TenantId == SeedDataProvider.TenantId
+                && item.RoleKey == Role.OrganizationAdminRoleKey && !item.IsDeleted);
+        var projectEdit = await context.Permissions.IgnoreQueryFilters()
+            .SingleAsync(item => item.TenantId == SeedDataProvider.TenantId
+                && item.Name == "Project.Edit" && !item.IsDeleted);
+        role.Permissions.Add(projectEdit);
+        await context.SaveChangesAsync();
+
+        var roleId = role.Id;
+        var grantsBefore = role.Permissions.Where(item => !item.IsDeleted)
+            .Select(item => item.Name).ToArray();
+        var membershipsBefore = await context.UserRoles.IgnoreQueryFilters()
+            .Where(item => item.TenantId == SeedDataProvider.TenantId && item.RoleId == roleId)
+            .Select(item => new { item.Id, item.UserId, item.RoleId })
+            .ToArrayAsync();
+        context.ChangeTracker.Clear();
+
+        var act = async () => await SeedDataProvider.SeedIdentityOnlyAsync(context);
+        var exception = await act.Should().ThrowAsync<InvalidOperationException>();
+        exception.Which.Message.Should().Contain("Project.Edit");
+        exception.Which.Message.Should().Contain("No existing grants were removed");
+
+        context.ChangeTracker.Clear();
+        var persistedRole = await context.Roles.IgnoreQueryFilters().AsNoTracking()
+            .Include(item => item.Permissions)
+            .SingleAsync(item => item.Id == roleId);
+        persistedRole.Permissions.Where(item => !item.IsDeleted)
+            .Select(item => item.Name).ToArray().Should().BeEquivalentTo(grantsBefore);
+        (await context.UserRoles.IgnoreQueryFilters()
+            .Where(item => item.TenantId == SeedDataProvider.TenantId && item.RoleId == roleId)
+            .Select(item => new { item.Id, item.UserId, item.RoleId })
+            .ToArrayAsync()).Should().BeEquivalentTo(membershipsBefore);
+    }
+
+    [Fact]
+    public async Task SeedIdentityOnlyAsync_RestoresOnlyApprovedOrganizationAdminGrantsIdempotently()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var context = new AppDbContext(options);
+        await SeedDataProvider.SeedIdentityOnlyAsync(context);
+
+        var role = await context.Roles.IgnoreQueryFilters()
+            .Include(item => item.Permissions)
+            .SingleAsync(item => item.TenantId == SeedDataProvider.TenantId
+                && item.RoleKey == Role.OrganizationAdminRoleKey && !item.IsDeleted);
+        var roleId = role.Id;
+        role.Permissions.Remove(role.Permissions.Single(item => item.Name == "OrganizationConfiguration.Manage"));
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+
+        await SeedDataProvider.SeedIdentityOnlyAsync(context);
+        await SeedDataProvider.SeedIdentityOnlyAsync(context);
+        context.ChangeTracker.Clear();
+
+        var restoredRole = await context.Roles.IgnoreQueryFilters().AsNoTracking()
+            .Include(item => item.Permissions)
+            .SingleAsync(item => item.Id == roleId);
+        restoredRole.Permissions.Where(item => !item.IsDeleted)
+            .Select(item => item.Name).ToArray().Should().BeEquivalentTo(new[]
+            {
+                "OrganizationConfiguration.View",
+                "OrganizationConfiguration.Manage"
+            });
+        (await context.UserRoles.IgnoreQueryFilters()
+            .AnyAsync(item => item.TenantId == SeedDataProvider.TenantId && item.RoleId == roleId))
+            .Should().BeFalse("seed reconciliation must not appoint an Organization Admin");
     }
 
     [Fact]
@@ -829,7 +923,7 @@ public class SeedDataProviderTests : IDisposable
             .ToListAsync();
         adminMemberships.Should().ContainSingle(item => item.RoleId == adminRole.Id);
         adminRole.Permissions.Select(item => $"{item.Resource}.{item.Action}")
-            .Should().Contain(ProtectedTenantAdminPolicy.MandatoryPermissionKeys);
+            .Should().Contain("Document.View", "the initial Admin seed keeps its explicit grant set independent of protection policy");
 
         var activePermissionKeys = await context.Permissions.IgnoreQueryFilters()
             .Where(item => item.TenantId == SeedDataProvider.TenantId && !item.IsDeleted)

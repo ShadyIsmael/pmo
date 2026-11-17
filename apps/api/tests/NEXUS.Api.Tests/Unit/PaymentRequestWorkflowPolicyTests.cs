@@ -24,6 +24,26 @@ public sealed class PaymentRequestWorkflowPolicyTests
     }
 
     [Fact]
+    public void ApprovalSetup_RejectsTheRequesterAsAnApproverByDefault()
+    {
+        var requesterId = Guid.NewGuid();
+        var approvers = new[]
+        {
+            new PaymentRequestApproverSelectionDto(requesterId, null, PaymentRequestApproverRequirements.Mandatory)
+        };
+
+        var errors = PaymentRequestWorkflowPolicy.ValidateApprovalSetup(
+            FinanceApprovalModes.Parallel,
+            PaymentRequestApprovalModes.Parallel,
+            approvers,
+            requesterId);
+
+        Assert.Contains("requester_cannot_approve", errors);
+        Assert.False(PaymentRequestWorkflowPolicy.IsRequesterEligibleForApproval(requesterId, requesterId));
+        Assert.True(PaymentRequestWorkflowPolicy.IsRequesterEligibleForApproval(requesterId, Guid.NewGuid()));
+    }
+
+    [Fact]
     public void ParallelSetup_RequiresAtLeastOneMandatoryApprover()
     {
         var approvers = new[]

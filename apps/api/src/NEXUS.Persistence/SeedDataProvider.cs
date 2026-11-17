@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Identity;
+﻿using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using System.Data;
@@ -40,6 +40,7 @@ public static class SeedDataProvider
     /// deployment (no separate Tenant table exists; tenancy is expressed via TenantId).
     /// </summary>
     public static readonly Guid TenantId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+    private static readonly Guid DefaultSeedOrganizationId = Guid.Parse("90000001-0000-0000-0000-000000000001");
     private static readonly DateTime SeedTimestampUtc = new(2026, 11, 2, 0, 0, 0, DateTimeKind.Utc);
 
     public sealed record CanonicalPermissionRebuildResult(
@@ -135,8 +136,8 @@ public static class SeedDataProvider
         var planningView = PermissionCatalog.ByKey["Planning.View"];
         var planningEdit = PermissionCatalog.ByKey["Planning.Edit"];
         var projectPlanCreate = PermissionCatalog.ByKey["ProjectPlan.Create"];
-        if (!requiredKeys.All(key => PermissionCatalog.ByKey.TryGetValue(key, out var definition) && definition.IsActive && definition.IsAssignable))
-            throw new InvalidOperationException("The canonical Project Plan permission set is incomplete, inactive, or not assignable.");
+        if (!requiredKeys.All(key => PermissionCatalog.ByKey.TryGetValue(key, out var definition) && definition.IsActive))
+            throw new InvalidOperationException("The canonical Project Plan permission set is incomplete or inactive.");
         if (planningEdit.Scope != PermissionScope.Project
             || projectPlanCreate.Scope != PermissionScope.Project
             || !planningEdit.RequiredPermissionKeys.Contains("Planning.View", StringComparer.Ordinal)
@@ -265,11 +266,9 @@ public static class SeedDataProvider
     }
 
     /// <summary>
-    /// Adds only missing permission catalog rows needed by Project Settings and the explicit
-    /// financial delegation bootstrap, then grants ProjectSettings.View/Edit additively to
-    /// the protected Development Admin role. Financial and annual-budget permissions are
-    /// never granted by this operation; authorized role administrators may delegate the
-    /// exact allowlisted capabilities through RoleAdministrationService.
+    /// Ensures canonical permission catalog rows needed by the explicit financial
+    /// delegation bootstrap. This operation does not add role grants; optional permissions
+    /// remain policy-managed and are delegated through RoleAdministrationService.
     /// </summary>
     public static async Task<InitialDelegationPermissionBootstrapResult> BootstrapInitialDelegationPermissionsAsync(
         AppDbContext context,
@@ -332,17 +331,11 @@ public static class SeedDataProvider
             "ProgramFinancialRollup.View",
             "PortfolioFinancialRollup.View"
         };
-        var settingsKeys = new HashSet<string>(StringComparer.Ordinal)
-        {
-            "ProjectSettings.View",
-            "ProjectSettings.Edit"
-        };
         foreach (var key in requiredKeys)
         {
             if (!PermissionCatalog.ByKey.TryGetValue(key, out var definition)
-                || !definition.IsActive
-                || !definition.IsAssignable)
-                throw new InvalidOperationException($"Required delegable permission '{key}' is missing, inactive, or not assignable in the canonical catalog.");
+                || !definition.IsActive)
+                throw new InvalidOperationException($"Required delegable permission '{key}' is missing or inactive in the canonical catalog.");
         }
         if (PermissionCatalog.ByKey["ProjectSettings.View"].Scope != PermissionScope.Project
             || PermissionCatalog.ByKey["ProjectSettings.Edit"].Scope != PermissionScope.Project
@@ -352,9 +345,6 @@ public static class SeedDataProvider
             || PermissionCatalog.ByKey["ProjectAnnualBudget.ManageApprovalConfiguration"].Scope != PermissionScope.Project
             || !PermissionCatalog.ByKey["ProjectAnnualBudget.ManageApprovalConfiguration"].RequiredPermissionKeys.Contains("ProjectAnnualBudget.View", StringComparer.Ordinal))
             throw new InvalidOperationException("Annual Budget approval configuration permissions must remain Project-scoped, with configuration management depending on the Annual Budget View permission.");
-        if (requiredKeys.Except(settingsKeys, StringComparer.Ordinal).Any(key => ProtectedTenantAdminPolicy.MandatoryPermissionKeys.Contains(key)))
-            throw new InvalidOperationException("Sensitive financial permissions cannot be included in the protected tenant Admin baseline.");
-
         await using var transaction = await context.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
         await AcquireSqlServerAdminMutationLockAsync(context, transaction, TenantId, cancellationToken);
 
@@ -409,29 +399,15 @@ public static class SeedDataProvider
         var adminRoles = await context.Roles
             .IgnoreQueryFilters()
             .Where(role => role.TenantId == TenantId && !role.IsDeleted
-                && role.IsSystem && role.SystemRoleKey == Role.TenantAdminSystemRoleKey)
+                && role.IsSystem
+                && role.RoleKey == Role.TenantAdminRoleKey
+                && role.SystemRoleKey == Role.TenantAdminSystemRoleKey)
             .Include(role => role.Permissions)
             .ToArrayAsync(cancellationToken);
         if (adminRoles.Length != 1)
             throw new InvalidOperationException("Initial delegation bootstrap requires exactly one active protected Development Admin role.");
 
         var adminRole = adminRoles[0];
-        var originalRoleKeys = adminRole.Permissions
-            .Where(permission => permission.TenantId == TenantId && !permission.IsDeleted)
-            .Select(permission => $"{permission.Resource}.{permission.Action}")
-            .Distinct(StringComparer.Ordinal)
-            .OrderBy(key => key, StringComparer.Ordinal)
-            .ToArray();
-        var addedProjectSettingsKeys = new List<string>();
-        foreach (var key in settingsKeys.OrderBy(key => key, StringComparer.Ordinal))
-        {
-            var permission = persistedByKey[key];
-            if (adminRole.Permissions.Any(linked => linked.Id == permission.Id))
-                continue;
-            adminRole.Permissions.Add(permission);
-            addedProjectSettingsKeys.Add(key);
-        }
-
         if (addedPermissions.Count > 0)
         {
             context.AuditEntries.Add(new AuditEntry
@@ -449,24 +425,6 @@ public static class SeedDataProvider
                 CreatedBy = "System"
             });
         }
-        if (addedProjectSettingsKeys.Count > 0)
-        {
-            context.AuditEntries.Add(new AuditEntry
-            {
-                TenantId = TenantId,
-                EntityType = "Role",
-                EntityId = adminRole.Id,
-                Action = "ProtectedAdminProjectSettingsGrants.Bootstrapped",
-                OriginalValues = JsonSerializer.Serialize(new { PermissionKeys = originalRoleKeys }),
-                NewValues = JsonSerializer.Serialize(new { PermissionKeys = originalRoleKeys.Concat(addedProjectSettingsKeys).Distinct(StringComparer.Ordinal).OrderBy(key => key, StringComparer.Ordinal).ToArray(), Added = addedProjectSettingsKeys.ToArray() }),
-                ChangedFields = "Permissions",
-                Description = "Added only the approved Project Settings View/Edit role grants; preserved financial operation permissions, other role grants, and user-level Deny overrides.",
-                Source = AuditSources.System,
-                UserName = "Scoped Development permission delegation bootstrap",
-                CreatedBy = "System"
-            });
-        }
-
         await context.SaveChangesAsync(cancellationToken);
 
         var persistedKeys = await context.Permissions
@@ -492,9 +450,7 @@ public static class SeedDataProvider
         foreach (var adminUserId in adminUserIds)
         {
             var permissions = await effectivePermissions.GetEffectivePermissionsAsync(adminUserId, TenantId, cancellationToken);
-            if (permissions.Contains("ProjectSettings.View")
-                && permissions.Contains("ProjectSettings.Edit")
-                && permissions.Contains("Roles.ConfigurePermissions")
+            if (permissions.Contains("Roles.ConfigurePermissions")
                 && permissions.Contains("TenantAdministration.ManageScope"))
             {
                 authorizedAdminUsers++;
@@ -503,7 +459,7 @@ public static class SeedDataProvider
             }
         }
         if (authorizedAdminUsers == 0)
-            throw new InvalidOperationException("No active protected Admin user has effective Project Settings View/Edit, Roles.ConfigurePermissions, and TenantAdministration.ManageScope after preserving all Active Deny overrides; no changes were committed.");
+            throw new InvalidOperationException("No active protected Admin user has effective Roles.ConfigurePermissions and TenantAdministration.ManageScope after preserving all Active Deny overrides; no changes were committed.");
 
         await transaction.CommitAsync(cancellationToken);
         return new InitialDelegationPermissionBootstrapResult(
@@ -511,7 +467,7 @@ public static class SeedDataProvider
             actualDatabase,
             databaseId,
             addedPermissions.Count,
-            addedProjectSettingsKeys.Count,
+            0,
             authorizedAdminUsers,
             authorizedAdminUserId);
     }
@@ -703,132 +659,6 @@ public static class SeedDataProvider
         if (protectedAdminRoles.Length != 1)
             throw new InvalidOperationException("Canonical permission reconciliation requires exactly one active, trusted tenant Admin role.");
 
-        var protectedAdminRole = protectedAdminRoles[0];
-        // Mandatory permissions = all active Tenant-scoped keys (auto-inherited by protected Admin)
-        // + approved Portfolio/Program baseline keys.  This set is automatically kept in
-        // sync with the current catalog by GetAllTenantPermissionKeys below.
-        var mandatoryPermissionKeys = ProtectedTenantAdminPolicy.MandatoryPermissionKeys;
-        var mandatoryPermissionRows = mandatoryPermissionKeys
-            .OrderBy(key => key, StringComparer.Ordinal)
-            .Select(key =>
-            {
-                // Every key in MandatoryPermissionKeys is guaranteed to exist in the catalog
-                // because GetAllTenantPermissionKeys enumerates all active Tenant entries,
-                // and the Portfolio/Program keys are validated separately.
-                var definition = PermissionCatalog.ByKey[key];
-                var pair = $"{definition.Resource}|{definition.Action}";
-                if (!persistedByPair.TryGetValue(pair, out var permission) || permission.IsDeleted)
-                    throw new InvalidOperationException($"Protected Admin baseline permission '{key}' is missing or retired in the active Tenant catalog.");
-                return (Key: key, Permission: permission);
-            })
-            .ToArray();
-        var protectedAdminProjectSettingsPermissionRows = ProtectedAdminProjectSettingsPermissionKeys
-            .OrderBy(key => key, StringComparer.Ordinal)
-            .Select(key =>
-            {
-                if (!PermissionCatalog.ByKey.TryGetValue(key, out var definition)
-                    || !definition.IsActive
-                    || definition.Scope != PermissionScope.Project)
-                    throw new InvalidOperationException($"Supplemental protected Admin permission '{key}' must be an active Project-scoped catalog permission.");
-                var pair = $"{definition.Resource}|{definition.Action}";
-                if (!persistedByPair.TryGetValue(pair, out var permission) || permission.IsDeleted)
-                    throw new InvalidOperationException($"Supplemental protected Admin permission '{key}' is missing or retired in the active Tenant catalog.");
-                return (Key: key, Permission: permission);
-            })
-            .ToArray();
-        var originalProtectedAdminKeys = protectedAdminRole.Permissions
-            .Where(permission => permission.TenantId == TenantId && !permission.IsDeleted)
-            .Select(permission => $"{permission.Resource}.{permission.Action}")
-            .Distinct(StringComparer.Ordinal)
-            .OrderBy(key => key, StringComparer.Ordinal)
-            .ToArray();
-        var originalProtectedAdminKeySet = originalProtectedAdminKeys.ToHashSet(StringComparer.Ordinal);
-        var addedProtectedAdminKeys = mandatoryPermissionRows
-            .Where(item => !originalProtectedAdminKeySet.Contains(item.Key))
-            .Select(item => item.Key)
-            .ToArray();
-        var addedProtectedAdminProjectSettingsKeys = protectedAdminProjectSettingsPermissionRows
-            .Where(item => !originalProtectedAdminKeySet.Contains(item.Key))
-            .Select(item => item.Key)
-            .ToArray();
-        foreach (var item in mandatoryPermissionRows.Where(item => addedProtectedAdminKeys.Contains(item.Key, StringComparer.Ordinal))
-                     .Concat(protectedAdminProjectSettingsPermissionRows.Where(item => addedProtectedAdminProjectSettingsKeys.Contains(item.Key, StringComparer.Ordinal))))
-        {
-            if (!protectedAdminRole.Permissions.Any(linked => linked.Id == item.Permission.Id))
-                protectedAdminRole.Permissions.Add(item.Permission);
-        }
-
-        var allAddedProtectedAdminKeys = addedProtectedAdminKeys
-            .Concat(addedProtectedAdminProjectSettingsKeys)
-            .Distinct(StringComparer.Ordinal)
-            .OrderBy(key => key, StringComparer.Ordinal)
-            .ToArray();
-        if (allAddedProtectedAdminKeys.Length > 0)
-        {
-            var updatedProtectedAdminKeys = originalProtectedAdminKeys
-                .Concat(allAddedProtectedAdminKeys)
-                .Distinct(StringComparer.Ordinal)
-                .OrderBy(key => key, StringComparer.Ordinal)
-                .ToArray();
-            context.AuditEntries.Add(new AuditEntry
-            {
-                TenantId = TenantId,
-                EntityType = "Role",
-                EntityId = protectedAdminRole.Id,
-                Action = "ProtectedAdminPermissions.Reconciled",
-                OriginalValues = JsonSerializer.Serialize(new { PermissionKeys = originalProtectedAdminKeys }),
-                NewValues = JsonSerializer.Serialize(new { PermissionKeys = updatedProtectedAdminKeys, Added = allAddedProtectedAdminKeys }),
-                ChangedFields = "Permissions",
-                Description = "Reconciled the protected tenant Admin baseline and approved additive Project Settings grants without changing unrelated grants.",
-                Source = AuditSources.System,
-                UserName = "Canonical Development permission reconciliation",
-                CreatedBy = "System"
-            });
-        }
-
-        var protectedAdminMemberIds = await context.UserRoles
-            .IgnoreQueryFilters()
-            .Where(assignment => assignment.TenantId == TenantId
-                && assignment.RoleId == protectedAdminRole.Id
-                && !assignment.IsDeleted
-                && assignment.User.TenantId == TenantId
-                && !assignment.User.IsDeleted)
-            .Select(assignment => assignment.UserId)
-            .Distinct()
-            .ToArrayAsync(cancellationToken);
-        var mandatoryPermissionIds = mandatoryPermissionRows.Select(item => item.Permission.Id).ToArray();
-        var protectedAdminDenies = protectedAdminMemberIds.Length == 0
-            ? new List<UserPermissionOverride>()
-            : await context.UserPermissionOverrides
-                .IgnoreQueryFilters()
-                .Where(item => item.TenantId == TenantId
-                    && !item.IsDeleted
-                    && protectedAdminMemberIds.Contains(item.UserId)
-                    && mandatoryPermissionIds.Contains(item.PermissionId)
-                    && item.Effect == PermissionOverrideEffect.Deny)
-                .ToListAsync(cancellationToken);
-        foreach (var denial in protectedAdminDenies)
-        {
-            denial.Effect = PermissionOverrideEffect.Inherit;
-            denial.IsDeleted = true;
-            denial.UpdatedAt = DateTime.UtcNow;
-            denial.UpdatedBy = "System";
-            context.AuditEntries.Add(new AuditEntry
-            {
-                TenantId = TenantId,
-                EntityType = "UserPermissionOverride",
-                EntityId = denial.Id,
-                Action = "PermissionOverride.ProtectedAdminDenyReconciled",
-                OriginalValues = JsonSerializer.Serialize(new { denial.UserId, denial.PermissionId, Effect = PermissionOverrideEffect.Deny.ToString() }),
-                NewValues = JsonSerializer.Serialize(new { denial.IsDeleted, Effect = PermissionOverrideEffect.Inherit.ToString(), ProtectedAdminBaseline = true }),
-                ChangedFields = "Effect,IsDeleted",
-                Description = "Archived a conflicting Deny override for a mandatory protected tenant Admin permission.",
-                Source = AuditSources.System,
-                UserName = "Canonical Development permission reconciliation",
-                CreatedBy = "System"
-            });
-        }
-
         var removedLegacyRoleGrants = 0;
         foreach (var role in roles)
         {
@@ -915,8 +745,7 @@ public static class SeedDataProvider
         }
 
         if (addedCatalogPermissions + normalizedCatalogPermissions + retiredPermissions.Length
-            + removedLegacyRoleGrants + retiredOverrides.Count + allAddedProtectedAdminKeys.Length
-            + protectedAdminDenies.Count > 0)
+            + removedLegacyRoleGrants + retiredOverrides.Count > 0)
             await context.SaveChangesAsync(cancellationToken);
 
         await transaction.CommitAsync(cancellationToken);
@@ -926,8 +755,8 @@ public static class SeedDataProvider
             retiredPermissions.Length,
             removedLegacyRoleGrants,
             retiredOverrides.Count,
-            allAddedProtectedAdminKeys.Length,
-            protectedAdminDenies.Count,
+            0,
+            0,
             verifiedBackupPath);
     }
 
@@ -1018,6 +847,12 @@ public static class SeedDataProvider
     private static readonly Guid PmoAdminRoleId = Guid.Parse("a0000006-0000-0000-0000-000000000006");
     private static readonly Guid FinanceControllerRoleId = Guid.Parse("a0000007-0000-0000-0000-000000000007");
     private static readonly Guid ResourceManagerRoleId = Guid.Parse("a0000008-0000-0000-0000-000000000008");
+    private static readonly Guid OrganizationAdminRoleId = Guid.Parse("a0000009-0000-0000-0000-000000000009");
+    private static readonly string[] OrganizationAdminPermissionKeys =
+    [
+        "OrganizationConfiguration.View",
+        "OrganizationConfiguration.Manage"
+    ];
     private static readonly HashSet<Type> MinimalSeedAllowedEntityTypes =
     [
         typeof(Tenant),
@@ -1040,16 +875,10 @@ public static class SeedDataProvider
     private static readonly MethodInfo HasAnyRowsAsyncMethod = typeof(SeedDataProvider)
         .GetMethod(nameof(HasAnyRowsAsync), BindingFlags.NonPublic | BindingFlags.Static)!;
 
-    // These Project-scoped grants are additive to the tenant Admin's protected
-    // Administration baseline. They are not tenant-wide baseline permissions and
-    // never suppress an explicit user Deny.
-    private static readonly string[] ProtectedAdminProjectSettingsPermissionKeys =
-    [
-        "ProjectSettings.Edit",
-        "ProjectSettings.View"
-    ];
-
-    // Approved supplementary Tenant Admin grants outside the dynamic protected baseline. The Administration and Portfolio/Program baseline is catalog-derived, so future eligible entries require no seed-map edit.
+    // Historical explicit Tenant Admin grants retained as an auditable
+    // compatibility baseline. Delegation Authority is evaluated independently
+    // from this operational grant set; seed data does not auto-grant every
+    // assignable catalog permission to a newly provisioned administrator.
     private static readonly string[] AdminRoleSeedPermissionKeys =
     [
         "Audit|View",
@@ -1178,6 +1007,8 @@ private static readonly Guid Portfolio1Id = Guid.Parse("a0000001-0000-0000-0000-
             : null;
         try
         {
+            await EnsureDevelopmentTenantRegistryAsync(context);
+            await EnsureMinimalDevelopmentOrganizationAsync(context);
             await SeedIdentityAsync(context, temporaryPasswordExpiryHours);
 
             await EnsurePortfolioAndProgramSeedDataAsync(context);
@@ -1574,13 +1405,13 @@ private static readonly Guid Portfolio1Id = Guid.Parse("a0000001-0000-0000-0000-
     {
         var definitions = new[]
         {
-            new { Code = "Backlog", NameEn = "Backlog", NameAr = "المتراكم", DisplayOrder = 10, Color = "slate", IsDefault = false },
-            new { Code = "ToDo", NameEn = "To Do", NameAr = "للتنفيذ", DisplayOrder = 20, Color = "blue", IsDefault = true },
-            new { Code = "InProgress", NameEn = "In Progress", NameAr = "قيد التنفيذ", DisplayOrder = 30, Color = "amber", IsDefault = false },
-            new { Code = "InReview", NameEn = "In Review", NameAr = "قيد المراجعة", DisplayOrder = 40, Color = "violet", IsDefault = false },
-            new { Code = "Done", NameEn = "Done", NameAr = "مكتمل", DisplayOrder = 50, Color = "emerald", IsDefault = false },
-            new { Code = "Cancelled", NameEn = "Cancelled", NameAr = "ملغى", DisplayOrder = 60, Color = "rose", IsDefault = false },
-            new { Code = "OnHold", NameEn = "On Hold", NameAr = "معلّق", DisplayOrder = 70, Color = "orange", IsDefault = false }
+            new { Code = "Backlog", NameEn = "Backlog", NameAr = "Ø§Ù„Ù…ØªØ±Ø§ÙƒÙ…", DisplayOrder = 10, Color = "slate", IsDefault = false },
+            new { Code = "ToDo", NameEn = "To Do", NameAr = "Ù„Ù„ØªÙ†ÙÙŠØ°", DisplayOrder = 20, Color = "blue", IsDefault = true },
+            new { Code = "InProgress", NameEn = "In Progress", NameAr = "Ù‚ÙŠØ¯ Ø§Ù„ØªÙ†ÙÙŠØ°", DisplayOrder = 30, Color = "amber", IsDefault = false },
+            new { Code = "InReview", NameEn = "In Review", NameAr = "Ù‚ÙŠØ¯ Ø§Ù„Ù…Ø±Ø§Ø¬Ø¹Ø©", DisplayOrder = 40, Color = "violet", IsDefault = false },
+            new { Code = "Done", NameEn = "Done", NameAr = "Ù…ÙƒØªÙ…Ù„", DisplayOrder = 50, Color = "emerald", IsDefault = false },
+            new { Code = "Cancelled", NameEn = "Cancelled", NameAr = "Ù…Ù„ØºÙ‰", DisplayOrder = 60, Color = "rose", IsDefault = false },
+            new { Code = "OnHold", NameEn = "On Hold", NameAr = "Ù…Ø¹Ù„Ù‘Ù‚", DisplayOrder = 70, Color = "orange", IsDefault = false }
         };
 
         var statuses = await context.Lookups.IgnoreQueryFilters()
@@ -1993,14 +1824,16 @@ private static readonly Guid Portfolio1Id = Guid.Parse("a0000001-0000-0000-0000-
 
     private static async Task EnsureProjectLifecycleCatalogAsync(AppDbContext context)
     {
-        // Only the protected Pre-Initiation phase is auto-provisioned. The legacy
+        // Only the protected Pre-Initiation phase is auto-provisioned, and only at
+        // Organization scope (exactly once per existing Organization). Tenant-level
+        // Pre-Initiation (OrganizationId == null) is never created by seed. The legacy
         // initiation, planning, execution, monitoring-controlling, and closure phases
         // are intentionally not seeded any more: they reached Create Project as
         // predefined phases that no administrator had configured. Rows already
         // persisted by earlier migrations are left untouched here because removing
         // them would break Project and Phase Gate references and requires Product
-        // Owner authorization. This helper therefore repairs exactly one Tenant-wide
-        // Pre-Initiation record and never inserts the other phase codes.
+        // Owner authorization. This helper repairs exactly one protected Pre-Initiation
+        // record per existing Organization scope and never inserts the other phase codes.
         const string preInitiationCode = "pre-initiation";
         const string preInitiationNormalizedCode = "PRE-INITIATION";
         const string preInitiationNameEn = "Pre-Initiation";
@@ -2022,98 +1855,122 @@ private static readonly Guid Portfolio1Id = Guid.Parse("a0000001-0000-0000-0000-
             new { Code = "cancelled", NameEn = "Cancelled", NameAr = "ملغى", Order = 50 }
         };
 
-        foreach (var tenantId in tenantIds.Distinct())
-        {
-            var phases = await context.ProjectPhaseCatalogEntries.IgnoreQueryFilters()
-                .Where(item => item.TenantId == tenantId && item.OrganizationId == null)
-                .ToListAsync();
-            var statuses = await context.ProjectStatusCatalogEntries.IgnoreQueryFilters()
-                .Where(item => item.TenantId == tenantId && item.OrganizationId == null)
-                .ToListAsync();
-            var needsStatusDefault = !statuses.Any(item => item.IsActive && item.IsDefault && !item.IsDeleted);
+        var organizationIdsByTenant = await context.Organizations.IgnoreQueryFilters()
+            .Where(organization => !organization.IsDeleted)
+            .Select(organization => new { organization.TenantId, organization.Id })
+            .ToListAsync();
+        var organizationLookup = organizationIdsByTenant
+            .GroupBy(item => item.TenantId)
+            .ToDictionary(group => group.Key, group => group.Select(item => item.Id).Distinct().ToArray());
 
-            // Prefer a live record. If none is live, reuse a soft-deleted identity
-            // instead of inserting a duplicate so existing Project/Phase Gate
-            // references keep pointing at the same phase row.
-            var preInitiation = phases
-                .Where(item => string.Equals(item.NormalizedCode, preInitiationNormalizedCode,
-                    StringComparison.OrdinalIgnoreCase))
-                .OrderBy(item => item.IsDeleted)
-                .ThenBy(item => item.Id)
-                .FirstOrDefault();
-
-            // The filtered unique default index permits one active default per Tenant
-            // scope, so a stale default in the same scope must be cleared (and saved)
-            // before the protected record becomes the default. Only that exact scope
-            // is touched; Organization-scoped defaults are independent.
-            var conflictingDefaults = phases
-                .Where(item => !item.IsDeleted && item.IsDefault
-                    && (preInitiation is null || item.Id != preInitiation.Id))
-                .ToArray();
-            foreach (var phase in conflictingDefaults)
+            foreach (var tenantId in tenantIds.Distinct())
             {
-                phase.IsDefault = false;
-                phase.UpdatedBy = "System";
-            }
-            if (conflictingDefaults.Length > 0)
-                await context.SaveChangesAsync();
+                var scopeOrganizationIds = new List<Guid?> { null };
+                if (organizationLookup.TryGetValue(tenantId, out var orgIds))
+                    scopeOrganizationIds.AddRange(orgIds.Select(id => (Guid?)id));
 
-            if (preInitiation is null)
-            {
-                preInitiation = new ProjectPhaseCatalogEntry
+                foreach (var organizationId in scopeOrganizationIds)
                 {
-                    TenantId = tenantId,
-                    OrganizationId = null,
-                    Code = preInitiationCode,
-                    NormalizedCode = preInitiationNormalizedCode,
-                    NameEn = preInitiationNameEn,
-                    NameAr = preInitiationNameAr,
-                    DisplayOrder = preInitiationDisplayOrder,
-                    IsDefault = true,
-                    IsActive = true,
-                    IsContinuousActivity = false,
-                    CreatedBy = "System"
-                };
-                context.ProjectPhaseCatalogEntries.Add(preInitiation);
-                phases.Add(preInitiation);
-            }
-            else
-            {
-                // Canonicalize the protected record in place: stable code, bilingual
-                // labels, order zero, active and default. Nothing else is rewritten.
-                preInitiation.IsDeleted = false;
-                preInitiation.Code = preInitiationCode;
-                preInitiation.NormalizedCode = preInitiationNormalizedCode;
-                preInitiation.NameEn = preInitiationNameEn;
-                preInitiation.NameAr = preInitiationNameAr;
-                preInitiation.DisplayOrder = preInitiationDisplayOrder;
-                preInitiation.IsActive = true;
-                preInitiation.IsDefault = true;
-                preInitiation.IsContinuousActivity = false;
-                preInitiation.UpdatedBy = "System";
-            }
+                    var phases = organizationId.HasValue
+                        ? await context.ProjectPhaseCatalogEntries.IgnoreQueryFilters()
+                            .Where(item => item.TenantId == tenantId && item.OrganizationId == organizationId)
+                            .ToListAsync()
+                        : new List<ProjectPhaseCatalogEntry>();
+                    var statuses = await context.ProjectStatusCatalogEntries.IgnoreQueryFilters()
+                        .Where(item => item.TenantId == tenantId && item.OrganizationId == organizationId)
+                        .ToListAsync();
+                    var needsStatusDefault = !statuses.Any(item => item.IsActive && item.IsDefault && !item.IsDeleted);
 
-            foreach (var definition in statusDefinitions)
-            {
-                if (statuses.Any(item => !item.IsDeleted && string.Equals(item.NormalizedCode, definition.Code.ToUpperInvariant(), StringComparison.Ordinal))) continue;
-                var status = new ProjectStatusCatalogEntry
-                {
-                    TenantId = tenantId,
-                    Code = definition.Code,
-                    NormalizedCode = definition.Code.ToUpperInvariant(),
-                    NameEn = definition.NameEn,
-                    NameAr = definition.NameAr,
-                    DisplayOrder = definition.Order,
-                    IsDefault = needsStatusDefault && string.Equals(definition.Code, "not-started", StringComparison.Ordinal),
-                    IsActive = true,
-                    ReportingCategory = ProjectStatusReportingCategories.ForLegacyCode(definition.Code),
-                    AttentionLevel = ProjectStatusAttentionLevels.ForLegacyCode(definition.Code),
-                    CreatedBy = "System"
-                };
-                context.ProjectStatusCatalogEntries.Add(status);
-                statuses.Add(status);
+                    // Pre-Initiation is provisioned only at Organization scope (exactly once per
+                    // Organization). Tenant-level Pre-Initiation (OrganizationId == null) is never
+                    // created or repaired by seed. Existing Organization lifecycle data is preserved.
+                    if (organizationId.HasValue)
+                    {
+                        // Prefer a live record. If none is live, reuse a soft-deleted identity
+                        // instead of inserting a duplicate so existing Project/Phase Gate
+                        // references keep pointing at the same phase row.
+                        var preInitiation = phases
+                            .Where(item => string.Equals(item.NormalizedCode, preInitiationNormalizedCode,
+                                StringComparison.OrdinalIgnoreCase))
+                            .OrderBy(item => item.IsDeleted)
+                            .ThenBy(item => item.Id)
+                            .FirstOrDefault();
+
+                        // The filtered unique default index permits one active default per
+                        // scope, so a stale default in the same scope must be cleared (and
+                        // saved) before the protected record becomes the default. Only that
+                        // exact scope is touched.
+                        var conflictingDefaults = phases
+                            .Where(item => !item.IsDeleted && item.IsDefault
+                                && (preInitiation is null || item.Id != preInitiation.Id))
+                            .ToArray();
+                        foreach (var phase in conflictingDefaults)
+                        {
+                            phase.IsDefault = false;
+                            phase.UpdatedBy = "System";
+                        }
+                        if (conflictingDefaults.Length > 0)
+                            await context.SaveChangesAsync();
+
+                        if (preInitiation is null)
+                        {
+                            preInitiation = new ProjectPhaseCatalogEntry
+                            {
+                                TenantId = tenantId,
+                                OrganizationId = organizationId,
+                                Code = preInitiationCode,
+                                NormalizedCode = preInitiationNormalizedCode,
+                                NameEn = preInitiationNameEn,
+                                NameAr = preInitiationNameAr,
+                                DisplayOrder = preInitiationDisplayOrder,
+                                IsDefault = true,
+                                IsActive = true,
+                                IsContinuousActivity = false,
+                                CreatedBy = "System"
+                            };
+                            context.ProjectPhaseCatalogEntries.Add(preInitiation);
+                            phases.Add(preInitiation);
+                        }
+                        else
+                        {
+                            // Canonicalize the protected record in place: stable code, bilingual
+                            // labels, order zero, active and default. Nothing else is rewritten.
+                            preInitiation.IsDeleted = false;
+                            preInitiation.Code = preInitiationCode;
+                            preInitiation.NormalizedCode = preInitiationNormalizedCode;
+                            preInitiation.NameEn = preInitiationNameEn;
+                            preInitiation.NameAr = preInitiationNameAr;
+                            preInitiation.DisplayOrder = preInitiationDisplayOrder;
+                            preInitiation.IsActive = true;
+                            preInitiation.IsDefault = true;
+                            preInitiation.IsContinuousActivity = false;
+                            preInitiation.UpdatedBy = "System";
+                        }
+                    }
+
+                    foreach (var definition in statusDefinitions)
+                    {
+                        if (statuses.Any(item => !item.IsDeleted && string.Equals(item.NormalizedCode, definition.Code.ToUpperInvariant(), StringComparison.Ordinal))) continue;
+                        var status = new ProjectStatusCatalogEntry
+                        {
+                            TenantId = tenantId,
+                            OrganizationId = organizationId,
+                            Code = definition.Code,
+                            NormalizedCode = definition.Code.ToUpperInvariant(),
+                            NameEn = definition.NameEn,
+                            NameAr = definition.NameAr,
+                            DisplayOrder = definition.Order,
+                            IsDefault = needsStatusDefault && string.Equals(definition.Code, "not-started", StringComparison.Ordinal),
+                            IsActive = true,
+                            ReportingCategory = ProjectStatusReportingCategories.ForLegacyCode(definition.Code),
+                            AttentionLevel = ProjectStatusAttentionLevels.ForLegacyCode(definition.Code),
+                            CreatedBy = "System"
+                        };
+                        context.ProjectStatusCatalogEntries.Add(status);
+                        statuses.Add(status);
+                    }
+                }
             }
-        }
 
         await context.SaveChangesAsync();
     }
@@ -2122,11 +1979,11 @@ private static readonly Guid Portfolio1Id = Guid.Parse("a0000001-0000-0000-0000-
     {
         var currencyDefinitions = new[]
         {
-            new { Id = Guid.Parse("90000003-0000-0000-0000-000000000001"), Code = "GBP", Name = "Pound Sterling", Symbol = "£", IsBase = true },
+            new { Id = Guid.Parse("90000003-0000-0000-0000-000000000001"), Code = "GBP", Name = "Pound Sterling", Symbol = "Â£", IsBase = true },
             new { Id = Guid.Parse("90000003-0000-0000-0000-000000000002"), Code = "USD", Name = "US Dollar", Symbol = "$", IsBase = false },
-            new { Id = Guid.Parse("90000003-0000-0000-0000-000000000003"), Code = "EUR", Name = "Euro", Symbol = "€", IsBase = false },
-            new { Id = Guid.Parse("90000003-0000-0000-0000-000000000004"), Code = "AED", Name = "UAE Dirham", Symbol = "د.إ", IsBase = false },
-            new { Id = Guid.Parse("90000003-0000-0000-0000-000000000005"), Code = "EGP", Name = "Egyptian Pound", Symbol = "ج.م", IsBase = false }
+            new { Id = Guid.Parse("90000003-0000-0000-0000-000000000003"), Code = "EUR", Name = "Euro", Symbol = "â‚¬", IsBase = false },
+            new { Id = Guid.Parse("90000003-0000-0000-0000-000000000004"), Code = "AED", Name = "UAE Dirham", Symbol = "Ø¯.Ø¥", IsBase = false },
+            new { Id = Guid.Parse("90000003-0000-0000-0000-000000000005"), Code = "EGP", Name = "Egyptian Pound", Symbol = "Ø¬.Ù…", IsBase = false }
         };
 
         foreach (var definition in currencyDefinitions)
@@ -2159,11 +2016,11 @@ private static readonly Guid Portfolio1Id = Guid.Parse("a0000001-0000-0000-0000-
     {
         var definitions = new[]
         {
-            new { Code = "SUP", NameEn = "Supplier", NameAr = "مورّد", DisplayOrder = 10 },
-            new { Code = "CON", NameEn = "Consultant", NameAr = "مستشار", DisplayOrder = 20 },
-            new { Code = "TEC", NameEn = "Technology", NameAr = "تقنية", DisplayOrder = 30 },
-            new { Code = "OUT", NameEn = "Outsourcing", NameAr = "تعاقد خارجي", DisplayOrder = 40 },
-            new { Code = "OTH", NameEn = "Other", NameAr = "أخرى", DisplayOrder = 50 }
+            new { Code = "SUP", NameEn = "Supplier", NameAr = "Ù…ÙˆØ±Ù‘Ø¯", DisplayOrder = 10 },
+            new { Code = "CON", NameEn = "Consultant", NameAr = "Ù…Ø³ØªØ´Ø§Ø±", DisplayOrder = 20 },
+            new { Code = "TEC", NameEn = "Technology", NameAr = "ØªÙ‚Ù†ÙŠØ©", DisplayOrder = 30 },
+            new { Code = "OUT", NameEn = "Outsourcing", NameAr = "ØªØ¹Ø§Ù‚Ø¯ Ø®Ø§Ø±Ø¬ÙŠ", DisplayOrder = 40 },
+            new { Code = "OTH", NameEn = "Other", NameAr = "Ø£Ø®Ø±Ù‰", DisplayOrder = 50 }
         };
 
         var existing = await context.Lookups.IgnoreQueryFilters()
@@ -2351,8 +2208,9 @@ private static readonly Guid Portfolio1Id = Guid.Parse("a0000001-0000-0000-0000-
         try
         {
             await EnsureMinimalSeedInputAsync(context);
-            await SeedIdentityAsync(context, temporaryPasswordExpiryHours);
+            await EnsureDevelopmentTenantRegistryAsync(context);
             await EnsureMinimalDevelopmentOrganizationAsync(context);
+            await SeedIdentityAsync(context, temporaryPasswordExpiryHours);
 
             // Reference-only helpers. Do not replace these calls with the broader
             // organization, vendor/outsourced, portfolio/program, or demo seed helpers.
@@ -2425,9 +2283,10 @@ private static readonly Guid Portfolio1Id = Guid.Parse("a0000001-0000-0000-0000-
                 && organization.Name == "NEXUS Group"))
             throw new InvalidOperationException("Minimal Development seed must contain exactly the required Tenant and structural Organization.");
 
-        var expectedSystemRoleKeys = new HashSet<string>(StringComparer.Ordinal)
+        var expectedRoleKeys = new HashSet<string>(StringComparer.Ordinal)
         {
             Role.TenantAdminSystemRoleKey,
+            Role.OrganizationAdminRoleKey,
             "tenant.executive",
             "tenant.portfolio-manager",
             "tenant.project-manager",
@@ -2437,26 +2296,74 @@ private static readonly Guid Portfolio1Id = Guid.Parse("a0000001-0000-0000-0000-
             "tenant.resource-manager"
         };
         var actualRoles = await context.Roles.IgnoreQueryFilters().ToListAsync();
-        if (actualRoles.Count != expectedSystemRoleKeys.Count
-            || !actualRoles.Select(role => role.SystemRoleKey).ToHashSet(StringComparer.Ordinal).SetEquals(expectedSystemRoleKeys)
-            || actualRoles.Any(role => role.TenantId != TenantId
-                || !role.IsSystem
-                || role.IsDeleted
-                || role.SystemRoleKey is null
-                || !expectedSystemRoleKeys.Contains(role.SystemRoleKey)))
-            throw new InvalidOperationException("Minimal Development seed must contain only the canonical Tenant system roles.");
+        var expectedSystemRoleKeys = new HashSet<string>(StringComparer.Ordinal)
+        {
+            Role.TenantAdminSystemRoleKey,
+            Role.OrganizationAdminSystemRoleKey
+        };
+        var canonicalRoles = actualRoles
+            .Where(role => role.TenantId == TenantId
+                && !role.IsDeleted
+                && role.RoleKey is not null
+                && expectedRoleKeys.Contains(role.RoleKey))
+            .ToArray();
+        var systemRoles = actualRoles.Where(role => role.IsSystem).ToArray();
+        if (canonicalRoles.Length != expectedRoleKeys.Count
+            || !canonicalRoles.Select(role => role.RoleKey!).ToHashSet(StringComparer.Ordinal).SetEquals(expectedRoleKeys)
+            || canonicalRoles.Any(role => role.IsSystem
+                ? role.SystemRoleKey is null
+                    || !expectedSystemRoleKeys.Contains(role.SystemRoleKey)
+                    || !string.Equals(role.RoleKey, role.SystemRoleKey, StringComparison.Ordinal)
+                    || role.OrganizationId is not null
+                    || role.IsLegacyOrganizationOwnershipUnresolved
+                : role.SystemRoleKey is not null
+                    || role.OrganizationId != DefaultSeedOrganizationId
+                    || role.IsLegacyOrganizationOwnershipUnresolved)
+            || !systemRoles.All(role => role.SystemRoleKey is not null
+                && expectedSystemRoleKeys.Contains(role.SystemRoleKey)
+                && string.Equals(role.RoleKey, role.SystemRoleKey, StringComparison.Ordinal))
+            || actualRoles.Any(role => !role.IsSystem
+                && (role.SystemRoleKey is not null
+                    || role.RoleKey is Role.TenantAdminRoleKey or Role.OrganizationAdminRoleKey))
+            || !canonicalRoles.Where(role => role.IsSystem)
+                .Select(role => role.SystemRoleKey!)
+                .ToHashSet(StringComparer.Ordinal)
+                .SetEquals(expectedSystemRoleKeys))
+            throw new InvalidOperationException("Minimal Development seed must contain every canonical role and classify only Tenant Admin and Organization Admin as System Roles; custom non-System roles are preserved.");
+
+        var projectManagerRole = canonicalRoles.Single(role => role.RoleKey == "tenant.project-manager");
+        if (projectManagerRole.IsSystem || !string.Equals(projectManagerRole.Category, "Management", StringComparison.Ordinal))
+            throw new InvalidOperationException("Minimal Development seed must preserve Project Manager as a Non-System Management role.");
 
         var adminRole = await context.Roles.IgnoreQueryFilters()
             .Include(role => role.Permissions)
             .SingleOrDefaultAsync(role => role.TenantId == TenantId
+                && role.RoleKey == Role.TenantAdminRoleKey
                 && role.SystemRoleKey == Role.TenantAdminSystemRoleKey
                 && role.IsSystem
                 && !role.IsDeleted);
-        if (adminRole is null || !ProtectedTenantAdminPolicy.MandatoryPermissionKeys.All(key =>
-                adminRole.Permissions.Any(permission => permission.TenantId == TenantId
-                    && !permission.IsDeleted
-                    && string.Equals(permission.Name, key, StringComparison.Ordinal))))
-            throw new InvalidOperationException("Minimal Development seed did not establish the complete protected Tenant Admin permission baseline.");
+        if (adminRole is null)
+            throw new InvalidOperationException("Minimal Development seed did not establish the canonical Tenant Admin role.");
+
+        var organizationAdminRole = await context.Roles.IgnoreQueryFilters()
+            .Include(role => role.Permissions)
+            .SingleOrDefaultAsync(role => role.TenantId == TenantId
+                && role.RoleKey == Role.OrganizationAdminSystemRoleKey
+                && role.SystemRoleKey == Role.OrganizationAdminSystemRoleKey
+                && role.IsSystem
+                && !role.IsDeleted);
+        var expectedOrganizationAdminPermissionKeys = new HashSet<string>(OrganizationAdminPermissionKeys, StringComparer.Ordinal);
+        var organizationAdminPermissionKeys = organizationAdminRole?.Permissions
+            .Where(permission => permission.TenantId == TenantId && !permission.IsDeleted)
+            .Select(permission => permission.Name)
+            .ToHashSet(StringComparer.Ordinal)
+            ?? new HashSet<string>(StringComparer.Ordinal);
+        if (organizationAdminRole is null
+            || !organizationAdminPermissionKeys.SetEquals(expectedOrganizationAdminPermissionKeys)
+            || expectedOrganizationAdminPermissionKeys.Any(key => !PermissionCatalog.ByKey.TryGetValue(key, out var definition)
+                || !definition.IsActive
+                || definition.Scope != PermissionScope.Organization))
+            throw new InvalidOperationException("Minimal Development seed must contain the canonical Organization Admin System Role with its Organization-scoped Configuration grants.");
 
         var activeAdminMemberships = await context.UserRoles.IgnoreQueryFilters()
             .Include(assignment => assignment.Role)
@@ -2464,7 +2371,9 @@ private static readonly Guid Portfolio1Id = Guid.Parse("a0000001-0000-0000-0000-
             .ToListAsync();
         if (activeAdminMemberships.Count != 1
             || activeAdminMemberships[0].Role.TenantId != TenantId
+            || activeAdminMemberships[0].Role.RoleKey != Role.TenantAdminRoleKey
             || activeAdminMemberships[0].Role.SystemRoleKey != Role.TenantAdminSystemRoleKey
+            || !activeAdminMemberships[0].Role.IsSystem
             || activeAdminMemberships[0].Role.IsDeleted)
             throw new InvalidOperationException("Minimal Development seed must assign the sole Admin user only to the protected Tenant Admin system role.");
 
@@ -2559,7 +2468,7 @@ private static readonly Guid Portfolio1Id = Guid.Parse("a0000001-0000-0000-0000-
                 context.Permissions.Add(permission);
         }
 
-        Role CreateSystemRole(Guid id, string systemRoleKey, string name, string description, string category)
+        Role CreateCanonicalRole(Guid id, string roleKey, string name, string description, string category, bool isSystemRole)
         {
             var role = new Role
             {
@@ -2568,39 +2477,45 @@ private static readonly Guid Portfolio1Id = Guid.Parse("a0000001-0000-0000-0000-
                 Name = name,
                 Description = description,
                 Category = category,
-                IsSystem = true,
+                IsSystem = isSystemRole,
                 CreatedBy = "System",
                 Permissions = new List<Permission>()
             };
-            role.AssignSystemRoleKey(systemRoleKey, TenantId);
+            if (!isSystemRole)
+                role.AssignOrganization(DefaultSeedOrganizationId);
+            role.AssignRoleKey(roleKey, TenantId);
+            if (isSystemRole)
+                role.AssignSystemRoleKey(roleKey, TenantId);
             return role;
         }
 
-        // Roles and their stable, code-defined identities are seed metadata. Display
-        // names remain editable and are not used to identify persisted system roles.
+        // RoleKey is the stable identity for every canonical role. SystemRoleKey is
+        // reserved for the two approved administrative System Role types; ordinary seeded
+        // operational roles remain assignable Non-System roles.
         var roles = new List<Role>
         {
-            CreateSystemRole(AdminRoleId, Role.TenantAdminSystemRoleKey, "admin", "Tenant-scoped administration and approved PMO capabilities", "System"),
-            CreateSystemRole(ExecutiveRoleId, "tenant.executive", "executive", "Executive leadership access", "Leadership"),
-            CreateSystemRole(PortfolioManagerRoleId, "tenant.portfolio-manager", "portfolio.manager", "Portfolio management access", "Management"),
-            CreateSystemRole(ProjectManagerRoleId, "tenant.project-manager", "project.manager", "Project management access", "Management"),
-            CreateSystemRole(TeamMemberRoleId, "tenant.team-member", "team.member", "Team member access", "Operations"),
-            CreateSystemRole(PmoAdminRoleId, "tenant.pmo-admin", "pmo.admin", "PMO administration access", "PMO"),
-            CreateSystemRole(FinanceControllerRoleId, "tenant.finance-controller", "finance.controller", "Financial management access", "Finance"),
-            CreateSystemRole(ResourceManagerRoleId, "tenant.resource-manager", "resource.manager", "Resource management access", "Management")
+            CreateCanonicalRole(AdminRoleId, Role.TenantAdminSystemRoleKey, "admin", "Tenant-scoped administration and approved PMO capabilities", "System", true),
+            CreateCanonicalRole(OrganizationAdminRoleId, Role.OrganizationAdminSystemRoleKey, "organization.admin", "Organization-scoped configuration administration", "Organization", true),
+            CreateCanonicalRole(ExecutiveRoleId, "tenant.executive", "executive", "Executive leadership access", "Leadership", false),
+            CreateCanonicalRole(PortfolioManagerRoleId, "tenant.portfolio-manager", "portfolio.manager", "Portfolio management access", "Management", false),
+            CreateCanonicalRole(ProjectManagerRoleId, "tenant.project-manager", "project.manager", "Project management access", "Management", false),
+            CreateCanonicalRole(TeamMemberRoleId, "tenant.team-member", "team.member", "Team member access", "Operations", false),
+            CreateCanonicalRole(PmoAdminRoleId, "tenant.pmo-admin", "pmo.admin", "PMO administration access", "PMO", false),
+            CreateCanonicalRole(FinanceControllerRoleId, "tenant.finance-controller", "finance.controller", "Financial management access", "Finance", false),
+            CreateCanonicalRole(ResourceManagerRoleId, "tenant.resource-manager", "resource.manager", "Resource management access", "Management", false)
         };
 
-        // Permission-to-role mapping by immutable system-role identity.
+        // Permission-to-role mapping by immutable canonical RoleKey. Organization
+        // Admin receives no automatic grants; its approved configuration scope is
+        // enforced separately and does not imply operational permissions.
         var rolePermissionKeys = new Dictionary<string, List<string>>(StringComparer.Ordinal)
         {
             [Role.TenantAdminSystemRoleKey] = AdminRoleSeedPermissionKeys
-                .Concat(ProtectedAdminProjectSettingsPermissionKeys
-                    .Select(key => PermissionCatalog.ByKey[key])
-                    .Select(permission => $"{permission.Resource}|{permission.Action}"))
-                .Concat(ProtectedTenantAdminPolicy.MandatoryPermissionKeys
-                    .Select(key => PermissionCatalog.ByKey[key])
-                    .Select(permission => $"{permission.Resource}|{permission.Action}"))
                 .Distinct(StringComparer.Ordinal)
+                .ToList(),
+            [Role.OrganizationAdminRoleKey] = OrganizationAdminPermissionKeys
+                .Select(key => PermissionCatalog.ByKey[key])
+                .Select(permission => $"{permission.Resource}|{permission.Action}")
                 .ToList(),
             ["tenant.portfolio-manager"] = new() { "Portfolio|View", "Project|View", "Report|View", "Project|View", "Project|Edit", "Stakeholders|Read", "Stakeholders|Manage", "ChangeRequest|View", "Handover|View", "Handover|Manage", "Handover|Approve", "Planning|View", "Risk|View", "Portfolio|View", "Portfolio|Create", "Portfolio|Edit", "Portfolio|Archive", "Portfolio|Reactivate", "Program|View", "Program|Create", "Program|Edit", "Program|Archive", "Program|Reactivate", "WorkItem|View", "WorkItem|Create", "WorkItem|Edit", "TimeTracking|ViewOwn", "TimeTracking|ManageOwn", "TimeTracking|ViewTeam", "TimeTracking|ManageTeam", MeetingPermissions.ViewKey, MeetingPermissions.CreateKey, MeetingPermissions.EditKey, DocumentPermissions.ViewKey, DocumentPermissions.CreateKey, DocumentPermissions.EditKey, "StatusReport|View", "StatusReport|Export" },
             ["tenant.project-manager"] = new() { "Project|View", "Resource|View", "Report|View", "Resource|View", "Resource|Assign", "Resource|Create", "Resource|Edit", "Project|View", "Project|Create", "Project|Edit", "Project|Delete", "Stakeholders|Read", "Stakeholders|Manage", "ChangeRequest|View", "ChangeRequest|Manage", "Handover|View", "Handover|Manage", "Handover|Approve", "Risk|View", "Risk|Create", "Risk|Edit", "Risk|Delete", "Risk|Mitigate", "Planning|View", "Planning|Edit", "Program|View", "WorkItem|View", "WorkItem|Create", "WorkItem|Edit", "TimeTracking|ViewOwn", "TimeTracking|ManageOwn", "TimeTracking|ViewTeam", "TimeTracking|ManageTeam", MeetingPermissions.ViewKey, MeetingPermissions.CreateKey, MeetingPermissions.EditKey, MeetingPermissions.ManageKey, MeetingPermissions.DeleteKey, DocumentPermissions.ViewKey, DocumentPermissions.CreateKey, DocumentPermissions.EditKey, "StatusReport|View", "StatusReport|Create", "StatusReport|Edit", "StatusReport|Export", "StatusReport|ManageConfiguration" },
@@ -2629,44 +2544,86 @@ private static readonly Guid Portfolio1Id = Guid.Parse("a0000001-0000-0000-0000-
         if (invalidRolePermissionKeys.Length > 0)
             throw new InvalidOperationException($"Development role seed references missing or inactive canonical permissions: {string.Join(", ", invalidRolePermissionKeys)}.");
 
-        var resolvedRoleIdsBySystemKey = new Dictionary<string, Guid>(StringComparer.Ordinal);
+        var resolvedRoleIdsByRoleKey = new Dictionary<string, Guid>(StringComparer.Ordinal);
         foreach (var role in roles)
         {
-            var expectedSystemRoleKey = role.SystemRoleKey
-                ?? throw new InvalidOperationException($"Seed role '{role.Id}' has no stable system identity.");
+            var expectedRoleKey = role.RoleKey
+                ?? throw new InvalidOperationException($"Seed role '{role.Id}' has no stable canonical identity.");
             var existing = existingRoles.FirstOrDefault(r => r.TenantId == role.TenantId
-                    && string.Equals(r.SystemRoleKey, expectedSystemRoleKey, StringComparison.Ordinal))
+                    && string.Equals(r.RoleKey, expectedRoleKey, StringComparison.Ordinal))
+                // Upgrade compatibility: the database migration backfills RoleKey
+                // before seed runs, but this lookup also lets the seed reconcile a
+                // legacy row when invoked against the just-upgraded model.
+                ?? existingRoles.FirstOrDefault(r => r.TenantId == role.TenantId
+                    && string.Equals(r.SystemRoleKey, expectedRoleKey, StringComparison.Ordinal))
                 ?? existingRoles.FirstOrDefault(r => r.Id == role.Id && r.TenantId == role.TenantId);
+
+            if (existing is not null
+                && string.Equals(expectedRoleKey, Role.OrganizationAdminRoleKey, StringComparison.Ordinal))
+            {
+                var unapprovedOrganizationAdminGrantKeys = existing.Permissions
+                    .Where(permission => !permission.IsDeleted)
+                    .Select(permission => permission.Name)
+                    .Where(key => !OrganizationAdminPermissionKeys.Contains(key, StringComparer.Ordinal))
+                    .Distinct(StringComparer.Ordinal)
+                    .OrderBy(key => key, StringComparer.Ordinal)
+                    .ToArray();
+                if (unapprovedOrganizationAdminGrantKeys.Length > 0)
+                    throw new InvalidOperationException(
+                        "Organization Admin seed reconciliation was stopped because the existing canonical role has active permissions outside its approved Organization Configuration grants. No existing grants were removed. Review the role and its data before retrying. "
+                        + $"Unexpected keys: {string.Join(", ", unapprovedOrganizationAdminGrantKeys)}.");
+            }
+
             if (existing is null && existingRoles.Any(r => r.TenantId == role.TenantId
                     && string.Equals(r.Name, role.Name, StringComparison.OrdinalIgnoreCase)))
-                throw new InvalidOperationException($"A conflicting Role already uses the seeded system-role name '{role.Name}' in this Tenant.");
+                throw new InvalidOperationException($"A conflicting Role already uses the seeded canonical role name '{role.Name}' in this Tenant.");
 
             var roleEntity = existing ?? role;
-            roleEntity.AssignSystemRoleKey(expectedSystemRoleKey, role.TenantId);
-            resolvedRoleIdsBySystemKey.Add(expectedSystemRoleKey, roleEntity.Id);
+            roleEntity.AssignRoleKey(expectedRoleKey, role.TenantId);
+            if (role.IsSystem)
+            {
+                roleEntity.IsSystem = true;
+                roleEntity.AssignSystemRoleKey(expectedRoleKey, role.TenantId);
+            }
+            else
+            {
+                roleEntity.MarkAsNonSystemRole();
+            }
+            resolvedRoleIdsByRoleKey.Add(expectedRoleKey, roleEntity.Id);
 
             if (existing is null)
                 context.Roles.Add(role);
 
-            // Seed grants only when defining a new role. The protected tenant Admin
-            // also receives its catalog-derived mandatory baseline and the narrowly
-            // approved, append-only Project Settings grants below; all other existing
-            // role grants remain untouched.
-            var keys = rolePermissionKeys[expectedSystemRoleKey].Distinct(StringComparer.Ordinal);
-            var isProtectedExistingAdmin = existing is not null
-                && ProtectedTenantAdminPolicy.IsProtectedSystemAdminRole(roleEntity)
+            // Seed the explicit initial grant set only when defining a new role.
+            // Existing role grants are never silently restored by reseeding.
+            var keys = rolePermissionKeys[expectedRoleKey].Distinct(StringComparer.Ordinal);
+            if (!roleEntity.IsSystem && existing is null)
+            {
+                // New operational seed Roles are Organization-owned, so Tenant
+                // grants are excluded at creation. Existing legacy grants are left
+                // untouched for evidence-based reconciliation and remain inert
+                // while their owner is unresolved.
+                keys = keys.Where(key => PermissionCatalog.ByKey.TryGetValue(key, out var definition)
+                    && (definition.Scope is PermissionScope.Organization
+                        or PermissionScope.Portfolio
+                        or PermissionScope.Program
+                        or PermissionScope.Project));
+            }
+            var isExistingOrganizationAdmin = existing is not null
                 && roleEntity.TenantId == TenantId
+                && roleEntity.RoleKey == Role.OrganizationAdminRoleKey
+                && roleEntity.SystemRoleKey == Role.OrganizationAdminSystemRoleKey
+                && roleEntity.IsSystem
                 && !roleEntity.IsDeleted;
-            var originalProtectedAdminKeys = isProtectedExistingAdmin
+            var originalOrganizationAdminGrantKeys = isExistingOrganizationAdmin
                 ? roleEntity.Permissions
                     .Where(permission => permission.TenantId == TenantId && !permission.IsDeleted)
-                    .Select(permission => $"{permission.Resource}.{permission.Action}")
+                    .Select(permission => permission.Name)
                     .Distinct(StringComparer.Ordinal)
                     .OrderBy(key => key, StringComparer.Ordinal)
                     .ToArray()
                 : [];
-            var addedProtectedAdminProjectSettingsKeys = new List<string>();
-
+            var addedOrganizationAdminGrantKeys = new List<string>();
             foreach (var key in keys)
             {
                 var permission = permissionsByKey[key];
@@ -2676,24 +2633,20 @@ private static readonly Guid Portfolio1Id = Guid.Parse("a0000001-0000-0000-0000-
 
                 if (existing is null)
                     roleEntity.Permissions.Add(permissionEntity);
-                else if (isProtectedExistingAdmin
-                    && ProtectedTenantAdminPolicy.MandatoryPermissionKeys.Contains(permission.Name)
-                    && !roleEntity.Permissions.Any(linked => linked.Id == permissionEntity.Id))
-                    roleEntity.Permissions.Add(permissionEntity);
-                else if (isProtectedExistingAdmin
-                    && ProtectedAdminProjectSettingsPermissionKeys.Contains(permission.Name, StringComparer.Ordinal)
+                else if (isExistingOrganizationAdmin
+                    && OrganizationAdminPermissionKeys.Contains(permission.Name, StringComparer.Ordinal)
                     && !roleEntity.Permissions.Any(linked => linked.Id == permissionEntity.Id))
                 {
                     roleEntity.Permissions.Add(permissionEntity);
-                    addedProtectedAdminProjectSettingsKeys.Add(permission.Name);
+                    addedOrganizationAdminGrantKeys.Add(permission.Name);
                 }
             }
 
-            if (addedProtectedAdminProjectSettingsKeys.Count > 0)
+            if (addedOrganizationAdminGrantKeys.Count > 0)
             {
-                var updatedProtectedAdminKeys = roleEntity.Permissions
+                var updatedOrganizationAdminGrantKeys = roleEntity.Permissions
                     .Where(permission => permission.TenantId == TenantId && !permission.IsDeleted)
-                    .Select(permission => $"{permission.Resource}.{permission.Action}")
+                    .Select(permission => permission.Name)
                     .Distinct(StringComparer.Ordinal)
                     .OrderBy(key => key, StringComparer.Ordinal)
                     .ToArray();
@@ -2702,17 +2655,17 @@ private static readonly Guid Portfolio1Id = Guid.Parse("a0000001-0000-0000-0000-
                     TenantId = TenantId,
                     EntityType = "Role",
                     EntityId = roleEntity.Id,
-                    Action = "ProtectedAdminProjectSettingsGrants.Reconciled",
-                    OriginalValues = JsonSerializer.Serialize(new { PermissionKeys = originalProtectedAdminKeys }),
+                    Action = "OrganizationAdminConfigurationGrants.Reconciled",
+                    OriginalValues = JsonSerializer.Serialize(new { PermissionKeys = originalOrganizationAdminGrantKeys }),
                     NewValues = JsonSerializer.Serialize(new
                     {
-                        PermissionKeys = updatedProtectedAdminKeys,
-                        Added = addedProtectedAdminProjectSettingsKeys.OrderBy(key => key, StringComparer.Ordinal).ToArray()
+                        PermissionKeys = updatedOrganizationAdminGrantKeys,
+                        Added = addedOrganizationAdminGrantKeys.OrderBy(key => key, StringComparer.Ordinal).ToArray()
                     }),
                     ChangedFields = "Permissions",
-                    Description = "Added the approved Project Settings permissions to the stable protected tenant Admin role without changing unrelated grants or user Deny overrides.",
+                    Description = "Added only the approved Organization-scoped Configuration View and Manage grants to the canonical Organization Admin role.",
                     Source = AuditSources.System,
-                    UserName = "Development seed reconciliation",
+                    UserName = "Canonical Organization Admin permission reconciliation",
                     CreatedBy = "System"
                 });
             }
@@ -2770,7 +2723,7 @@ private static readonly Guid Portfolio1Id = Guid.Parse("a0000001-0000-0000-0000-
         // gets a seeded role; the other roles stay defined so they can be assigned later.
         var assignments = new List<(Guid id, Guid userId, Guid roleId)>
         {
-            (Guid.Parse("f1000001-0000-0000-0000-000000000001"), seededAdminUserId, resolvedRoleIdsBySystemKey[Role.TenantAdminSystemRoleKey])
+            (Guid.Parse("f1000001-0000-0000-0000-000000000001"), seededAdminUserId, resolvedRoleIdsByRoleKey[Role.TenantAdminSystemRoleKey])
         };
 
         foreach (var (id, userId, roleId) in assignments)
@@ -2895,7 +2848,7 @@ private static readonly Guid Portfolio1Id = Guid.Parse("a0000001-0000-0000-0000-
 
     private static async Task EnsureMinimalDevelopmentOrganizationAsync(AppDbContext context)
     {
-        var organizationId = Guid.Parse("90000001-0000-0000-0000-000000000001");
+        var organizationId = DefaultSeedOrganizationId;
         if (await context.Organizations.IgnoreQueryFilters()
                 .AnyAsync(organization => organization.Id == organizationId && organization.TenantId == TenantId))
             return;
@@ -2918,3 +2871,4 @@ private static readonly Guid Portfolio1Id = Guid.Parse("a0000001-0000-0000-0000-
             throw new ArgumentOutOfRangeException(nameof(hours), "Temporary password expiry must be between 1 and 168 hours.");
     }
 }
+

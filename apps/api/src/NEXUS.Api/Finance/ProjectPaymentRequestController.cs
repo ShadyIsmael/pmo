@@ -35,6 +35,18 @@ public sealed class ProjectPaymentRequestController(
         return ToActionResult(await workflow.GetEligibleApproversAsync(tenantId, projectId, cancellationToken));
     }
 
+    [HttpGet("{requestId:guid}/approver-recovery-options/{currentApproverId:guid}")]
+    [Authorize(Policy = "ProjectPaymentRequest.Approve")]
+    [Authorize(Policy = "Governance.AssignmentRecovery.Manage")]
+    public async Task<IActionResult> GetPaymentRequestRecoveryApprovers(
+        Guid projectId, Guid requestId, Guid currentApproverId, CancellationToken cancellationToken)
+    {
+        if (!TryGetScope(projectId, out var tenantId, out var actorId)) return ScopeFailure();
+        if (management.Current?.EffectiveReadOnly == true) return Forbid();
+        return ToActionResult(await workflow.GetEligibleRecoveryApproversAsync(
+            tenantId, projectId, requestId, currentApproverId, actorId, cancellationToken));
+    }
+
     [HttpGet("reversal-approvers")]
     [Authorize(Policy = "ProjectPaymentReversal.Create")]
     public async Task<IActionResult> GetEligibleReversalApprovers(Guid projectId, CancellationToken cancellationToken)
@@ -124,6 +136,19 @@ public sealed class ProjectPaymentRequestController(
             tenantId, projectId, requestId, reversalId, actorId, cancellationToken));
     }
 
+    [HttpGet("{requestId:guid}/reversals/{reversalId:guid}/approver-recovery-options/{currentApproverId:guid}")]
+    [Authorize(Policy = "ProjectPaymentReversal.Approve")]
+    [Authorize(Policy = "Governance.AssignmentRecovery.Manage")]
+    public async Task<IActionResult> GetReversalRecoveryApprovers(
+        Guid projectId, Guid requestId, Guid reversalId, Guid currentApproverId,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetScope(projectId, out var tenantId, out var actorId)) return ScopeFailure();
+        if (management.Current?.EffectiveReadOnly == true) return Forbid();
+        return ToActionResult(await workflow.GetEligibleReversalRecoveryApproversAsync(
+            tenantId, projectId, requestId, reversalId, currentApproverId, actorId, cancellationToken));
+    }
+
     [HttpPost("{requestId:guid}/reversals/{reversalId:guid}/decisions")]
     [Authorize(Policy = "ProjectPaymentReversal.Approve")]
     public async Task<IActionResult> DecideReversal(
@@ -133,6 +158,20 @@ public sealed class ProjectPaymentRequestController(
         if (!TryGetIdentityScope(out var tenantId, out var actorId)) return ScopeFailure();
         if (management.Current?.EffectiveReadOnly == true) return Forbid();
         return ToActionResult(await workflow.DecideReversalAsync(
+            tenantId, projectId, requestId, reversalId, actorId, ActorName(), dto, cancellationToken));
+    }
+
+    [HttpPost("{requestId:guid}/reversals/{reversalId:guid}/approver-reassignments")]
+    [Authorize(Policy = "ProjectPaymentReversal.Approve")]
+    [Authorize(Policy = "Governance.AssignmentRecovery.Manage")]
+    public async Task<IActionResult> ReassignReversalApprover(
+        Guid projectId, Guid requestId, Guid reversalId,
+        [FromBody] ReassignPaymentRequestApproverDto dto,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetScope(projectId, out var tenantId, out var actorId)) return ScopeFailure();
+        if (management.Current?.EffectiveReadOnly == true) return Forbid();
+        return ToActionResult(await workflow.ReassignReversalApproverAsync(
             tenantId, projectId, requestId, reversalId, actorId, ActorName(), dto, cancellationToken));
     }
 
@@ -196,6 +235,21 @@ public sealed class ProjectPaymentRequestController(
         if (!TryGetIdentityScope(out var tenantId, out var actorId)) return ScopeFailure();
         if (management.Current?.EffectiveReadOnly == true) return Forbid();
         return ToActionResult(await workflow.DecideAsync(tenantId, projectId, requestId, actorId, ActorName(), dto, cancellationToken));
+    }
+
+    [HttpPost("{requestId:guid}/approver-reassignments")]
+    [Authorize(Policy = "ProjectPaymentRequest.Approve")]
+    [Authorize(Policy = "Governance.AssignmentRecovery.Manage")]
+    public async Task<IActionResult> ReassignApprover(
+        Guid projectId,
+        Guid requestId,
+        [FromBody] ReassignPaymentRequestApproverDto dto,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetScope(projectId, out var tenantId, out var actorId)) return ScopeFailure();
+        if (management.Current?.EffectiveReadOnly == true) return Forbid();
+        return ToActionResult(await workflow.ReassignApproverAsync(
+            tenantId, projectId, requestId, actorId, ActorName(), dto, cancellationToken));
     }
 
     [HttpPost("{requestId:guid}/cancel")]

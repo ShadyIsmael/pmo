@@ -77,7 +77,7 @@ public sealed class LocalPasswordLifecycleTests : IAsyncLifetime
             Email = "local@example.test",
             FirstName = "Local",
             LastName = "User",
-            Roles = []
+            RoleIds = []
         }, actor.Id.ToString());
 
         Assert.True(result.IsSuccess);
@@ -527,7 +527,16 @@ public sealed class LocalPasswordLifecycleTests : IAsyncLifetime
                 ], "test"))
             }
         };
-        return new UserAdministrationService(_context, _hasher, http, new UserEffectivePermissionService(_context), _audit.Object, Options.Create(_policy));
+        var effectivePermissions = new UserEffectivePermissionService(_context);
+        var organizationDirectory = new Mock<IUserOrganizationDirectory>();
+        organizationDirectory
+            .Setup(directory => directory.GetActiveNamesAsync(It.IsAny<Guid>(), It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Guid _, IEnumerable<Guid> organizationIds, CancellationToken _) =>
+                (IReadOnlyDictionary<Guid, string>)organizationIds.Distinct().ToDictionary(id => id, id => id.ToString("D")));
+        var assignmentAuthorization = new RoleAssignmentAuthorizationService(_context, effectivePermissions, http, organizationDirectory.Object);
+        return new UserAdministrationService(
+            _context, _hasher, http, effectivePermissions, _audit.Object, assignmentAuthorization,
+            Options.Create(_policy), organizationDirectory.Object, Mock.Of<IUserOrganizationMembershipIntegrity>());
     }
 
     private DemoAuthService CreateAuthService(

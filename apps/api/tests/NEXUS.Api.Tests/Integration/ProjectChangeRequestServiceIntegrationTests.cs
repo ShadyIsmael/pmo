@@ -66,6 +66,9 @@ public class ProjectChangeRequestServiceIntegrationTests : IDisposable
         _mockWorkflowExecution = new Mock<IWorkflowExecutionService>();
         _mockPermissions = new Mock<NEXUS.Modules.Identity.Application.IUserEffectivePermissionService>();
         _mockManagement = new Mock<NEXUS.SharedKernel.Management.IManagementContextAccessor>();
+        _mockManagement.SetupGet(item => item.Current).Returns(new ManagementContext(_userA_Id, _tenantA_Id,
+            ManagementPerspective.ProjectManager, ManagementViewMode.Native, null, null, null,
+            new ManagementScope(new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid> { _projectId_A })));
         _mockNotifications = new Mock<NEXUS.Modules.Notifications.Application.INotificationService>();
         _service = new ProjectChangeRequestWorkflowService(_context, _mockAuditService.Object, _mockHttpContextAccessor.Object,
             _mockProjectWorkflows.Object, _mockWorkflowProvisioner.Object, _mockWorkflowInstances.Object, _mockWorkflowExecution.Object,
@@ -245,6 +248,20 @@ public class ProjectChangeRequestServiceIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task ProjectChangeRequestGeneralReadsFailClosedWhenManagementProjectScopeIsEmpty()
+    {
+        SetupHttpContext(_tenantA_Id.ToString(), _userA_Id.ToString());
+        _mockManagement.SetupGet(item => item.Current).Returns(new ManagementContext(_userA_Id, _tenantA_Id,
+            ManagementPerspective.ProjectManager, ManagementViewMode.Native, null, null, null, ManagementScope.Empty));
+
+        var byId = await _service.GetByIdAsync(_pcrId_A);
+        var byProject = await _service.GetByProjectIdAsync(_projectId_A);
+
+        Assert.Equal(404, byId.Error?.StatusCode);
+        Assert.Equal(404, byProject.Error?.StatusCode);
+    }
+
+    [Fact]
     public async Task GetApprovalOptionsAsync_IncludesOnlyActiveSameTenantExternalUsersWithEffectiveApprovalPermission()
     {
         SetupHttpContext(_tenantA_Id.ToString(), _userA_Id.ToString());
@@ -265,6 +282,54 @@ public class ProjectChangeRequestServiceIntegrationTests : IDisposable
         Assert.False(externalApprover.IsMandatory);
         Assert.DoesNotContain(result.Value.Approvers, item => item.UserId == _userB_Id);
         Assert.DoesNotContain(result.Value.Approvers, item => item.UserId == _userA_Id);
+    }
+
+    [Fact]
+    public async Task ReassignApprovalAsync_CannotReplaceMandatorySponsorWithNonSponsor()
+    {
+        SetupHttpContext(_tenantA_Id.ToString(), _userA_Id.ToString());
+        _mockPermissions.Setup(item => item.GetEffectivePermissionsAsync(_userA_Id, _tenantA_Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlySet<string>)new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "ChangeRequest.Manage" });
+        _mockPermissions.Setup(item => item.GetEffectivePermissionsAsync(_assignedApprover_Id, _tenantA_Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlySet<string>)new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "ChangeRequest.Approve" });
+        _mockPermissions.Setup(item => item.GetEffectivePermissionsAsync(_unassignedApprover_Id, _tenantA_Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlySet<string>)new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "ChangeRequest.Approve" });
+
+        var project = await _context.Projects.SingleAsync(item => item.Id == _projectId_A);
+        project.SponsorId = _assignedApprover_Id;
+        var assignmentId = Guid.NewGuid();
+        _context.ProjectChangeRequestApprovals.Add(new ProjectChangeRequestApproval
+        {
+            Id = assignmentId,
+            TenantId = _tenantA_Id,
+            ProjectChangeRequestId = _pcrId_A,
+            WorkflowInstanceId = Guid.NewGuid(),
+            ProjectId = _projectId_A,
+            OriginalApproverUserId = _assignedApprover_Id,
+            OriginalApproverNameSnapshot = "Assigned Approver",
+            AssignedToUserId = _assignedApprover_Id,
+            ApproverNameSnapshot = "Assigned Approver",
+            RoleSnapshot = "Project Sponsor",
+            IsSponsor = true,
+            IsMandatory = true,
+            Sequence = 1,
+            Status = ProjectChangeRequestApproval.Statuses.Pending,
+            CreatedBy = _userA_Id.ToString(),
+            RowVersion = new byte[8]
+        });
+        await _context.SaveChangesAsync();
+
+        var result = await _service.ReassignApprovalAsync(_pcrId_A, assignmentId,
+            new ReassignProjectChangeRequestApprovalDto { NewApproverUserId = _unassignedApprover_Id, Reason = "Sponsor unavailable" },
+            _userA_Id.ToString());
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(409, result.Error?.StatusCode);
+        var persisted = await _context.ProjectChangeRequestApprovals.SingleAsync(item => item.Id == assignmentId);
+        Assert.Equal(_assignedApprover_Id, persisted.AssignedToUserId);
+        Assert.True(persisted.IsSponsor);
+        Assert.True(persisted.IsMandatory);
+        Assert.Empty(await _context.ProjectChangeRequestApprovalHistories.Where(item => item.ProjectChangeRequestApprovalId == assignmentId).ToListAsync());
     }
 
     [Fact]

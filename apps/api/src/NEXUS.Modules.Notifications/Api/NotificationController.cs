@@ -125,8 +125,15 @@ public class NotificationController : ControllerBase
             || !new[] { "web", "android", "ios" }.Contains(request.Platform, StringComparer.OrdinalIgnoreCase)
             || request.DeviceName?.Length > 200)
             return BadRequest(new { error = "The device registration is invalid." });
-        var device = await _deviceTokenService.RegisterAsync(tenantId, userId, request, cancellationToken);
-        return Ok(device);
+        try
+        {
+            var device = await _deviceTokenService.RegisterAsync(tenantId, userId, request, cancellationToken);
+            return Ok(device);
+        }
+        catch (DeviceTokenOwnershipConflictException exception)
+        {
+            return Conflict(new { code = "deviceTokenOwnershipConflict", error = exception.Message });
+        }
     }
 
     [HttpDelete("devices/{deviceId:guid}")]

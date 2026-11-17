@@ -55,12 +55,30 @@ public sealed class FinanceWorkflowAdapter : IWorkflowEntityAdapter
             : Result.Success();
     }
 
+    public async Task<Result> AuthorizeProvisionAsync(WorkflowExecutionContext context, Guid entityId, CancellationToken cancellationToken = default)
+    {
+        if (context.ReadOnly || _managementContext.Current?.EffectiveReadOnly == true)
+            return Result.Failure(WorkflowErrors.ReadOnlyViewAs);
+        var accessError = FinancePermissionGuard.Require(_httpContextAccessor, "BudgetRevision.Create");
+        if (accessError is not null) return Result.Failure(accessError);
+        return await FindAccessibleAsync(entityId, context, cancellationToken) is null
+            ? Result.Failure(WorkflowErrors.EntityNotAccessible(EntityType, entityId))
+            : Result.Success();
+    }
+
     /// <summary>
     /// Every Finance workflow state transition requires its canonical action permission.
     /// Scope checks are applied independently below.
     /// </summary>
     public async Task<Result> AuthorizeTransitionAsync(WorkflowTransitionContext context, CancellationToken cancellationToken = default)
     {
+        var actorId = ParseUserId(context.Execution.UserId);
+        if (actorId == Guid.Empty)
+            return Result.Failure(Error.Unauthorized("A valid workflow actor is required."));
+        if (_managementContext.Current is { } management
+            && (management.TenantId != context.Execution.TenantId || management.UserId != actorId))
+            return Result.Failure(Error.Forbidden("The workflow actor does not match the active management context."));
+
         var requiredPermission = context.ToState.Code.ToLowerInvariant() switch
         {
             "submitted" => "BudgetRevision.SubmitForReview",
@@ -92,11 +110,15 @@ public sealed class FinanceWorkflowAdapter : IWorkflowEntityAdapter
         if (!Enum.TryParse<BudgetRevision.Statuses>(context.ToState.Code, true, out var status)) return Result.Failure(Error.Validation("Finance transition target is invalid."));
         if (!string.Equals(revision.Status.ToString(), context.FromState.Code, StringComparison.OrdinalIgnoreCase))
             return Result.Failure(WorkflowErrors.WorkflowDomainStateMismatch(context.FromState.Code, revision.Status.ToString()));
-        revision.Status = status;
+        var approverId = ParseUserId(context.Execution.UserId);
+        if (approverId == Guid.Empty)
+            return Result.Failure(Error.Unauthorized("A valid workflow actor is required."));
+        if (_managementContext.Current is { } management
+            && (management.TenantId != context.Execution.TenantId || management.UserId != approverId))
+            return Result.Failure(Error.Forbidden("The workflow actor does not match the active management context."));
         if (status == BudgetRevision.Statuses.Approved)
         {
-            var approverId = ParseUserId(context.Execution.UserId);
-            if (approverId != Guid.Empty && approverId == revision.RequestedBy)
+            if (approverId == revision.RequestedBy)
                 return Result.Failure(Error.Validation("The requester cannot approve their own budget revision."));
             if (revision.Budget is null)
                 return Result.Failure(Error.NotFound("Associated budget not found."));
@@ -109,6 +131,7 @@ public sealed class FinanceWorkflowAdapter : IWorkflowEntityAdapter
             revision.Budget.UpdatedBy = context.Execution.UserId;
             revision.Budget.UpdatedAt = DateTime.UtcNow;
         }
+        revision.Status = status;
         revision.ReviewedBy = status is BudgetRevision.Statuses.Approved or BudgetRevision.Statuses.Rejected ? ParseUserId(context.Execution.UserId) : revision.ReviewedBy;
         revision.ReviewedAt = status is BudgetRevision.Statuses.Approved or BudgetRevision.Statuses.Rejected ? DateTime.UtcNow : revision.ReviewedAt;
         revision.UpdatedBy = context.Execution.UserId;

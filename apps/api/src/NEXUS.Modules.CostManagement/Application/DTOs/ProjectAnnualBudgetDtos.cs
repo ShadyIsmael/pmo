@@ -156,7 +156,20 @@ public sealed record SubmitProjectAnnualBudgetClosingDto(
     byte[] RowVersion);
 
 public sealed record DecideProjectAnnualBudgetClosingDto(string Decision, string? Comment);
-public sealed record CancelProjectAnnualBudgetClosingDto(byte[] RowVersion);
+public sealed record CancelProjectAnnualBudgetClosingDto(byte[] RowVersion, byte[]? ApprovalRowVersion = null);
+
+public sealed record ReassignProjectAnnualBudgetClosingApproverDto(
+    Guid AssignmentId,
+    Guid ReplacementApproverId,
+    string Reason,
+    byte[] RowVersion,
+    byte[] ApprovalRowVersion);
+
+public sealed record RecoverCancelProjectAnnualBudgetClosingDto(
+    Guid AssignmentId,
+    byte[] RowVersion,
+    byte[] ApprovalRowVersion,
+    string Reason);
 
 public sealed record ProjectAnnualBudgetClosingDecisionDto(
     Guid UserId,
@@ -166,7 +179,12 @@ public sealed record ProjectAnnualBudgetClosingDecisionDto(
     string State,
     string? Decision,
     DateTime? DecidedAtUtc,
-    string? Comment);
+    string? Comment)
+{
+    public Guid AssignmentId { get; init; }
+    public bool CanReassignAssignment { get; init; }
+    public bool CanRecoverCancelAssignment { get; init; }
+}
 
 public sealed record ProjectAnnualBudgetClosingDto(
     Guid Id,
@@ -215,7 +233,12 @@ public sealed record ProjectAnnualBudgetClosingDto(
     byte[] RowVersion,
     bool CanSubmit,
     bool CanApprove,
-    bool CanCancel);
+    bool CanCancel)
+{
+    public bool CanReassignApprover { get; init; }
+    public bool CanRecoverCancel { get; init; }
+    public byte[]? ApprovalRowVersion { get; init; }
+}
 
 public sealed record ProjectAnnualBudgetClosingPageDto(
     int CurrentFiscalYear,

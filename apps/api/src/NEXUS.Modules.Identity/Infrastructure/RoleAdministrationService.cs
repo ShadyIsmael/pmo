@@ -21,17 +21,94 @@ public sealed class RoleAdministrationService : IRoleAdministrationService
     private readonly IUserEffectivePermissionService _effectivePermissions;
     private readonly IAuditService _auditService;
     private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly IUserOrganizationDirectory? _organizationDirectory;
+    private readonly IPermissionProtectionPolicy _permissionProtection;
 
     public RoleAdministrationService(
         DbContext context,
         IUserEffectivePermissionService effectivePermissions,
         IAuditService auditService,
-        IHttpContextAccessor httpContextAccessor)
+        IHttpContextAccessor httpContextAccessor,
+        IUserOrganizationDirectory? organizationDirectory = null,
+        IPermissionProtectionPolicy? permissionProtection = null)
     {
         _context = context;
         _effectivePermissions = effectivePermissions;
         _auditService = auditService;
         _httpContextAccessor = httpContextAccessor;
+        _organizationDirectory = organizationDirectory;
+        _permissionProtection = permissionProtection ?? PermissionProtectionPolicy.Empty;
+    }
+
+    public async Task<Result<IReadOnlyList<RoleSummaryDto>>> GetAssignableRolesAsync(
+        Guid actorId,
+        Guid tenantId,
+        CancellationToken cancellationToken = default)
+    {
+        if (!IsCurrentActorAndTenant(actorId, tenantId))
+            return Result<IReadOnlyList<RoleSummaryDto>>.Failure(Error.Forbidden("A verified Tenant actor is required."));
+        var roles = await _context.Set<Role>().IgnoreQueryFilters().AsNoTracking()
+            .Where(role => role.TenantId == tenantId && !role.IsDeleted)
+            .Include(role => role.Permissions)
+            .OrderBy(role => role.Name)
+            .ThenBy(role => role.Id)
+            .ToListAsync(cancellationToken);
+        var organizationIds = roles.Where(role => role.OrganizationId.HasValue)
+            .Select(role => role.OrganizationId!.Value).Distinct().ToArray();
+        if (organizationIds.Length > 0 && _organizationDirectory is null)
+            return Result<IReadOnlyList<RoleSummaryDto>>.Failure(new Error(
+                "ORGANIZATION_LOOKUP_UNAVAILABLE", "Organization lookup is unavailable.", StatusCodes.Status503ServiceUnavailable));
+        var organizationNames = organizationIds.Length == 0
+            ? new Dictionary<Guid, string>()
+            : await _organizationDirectory!.GetActiveNamesAsync(tenantId, organizationIds, cancellationToken);
+        var result = new List<RoleSummaryDto>();
+
+        foreach (var role in roles)
+        {
+            if (role.IsLegacyOrganizationOwnershipUnresolved
+                || role.OrganizationId is Guid organizationId && !organizationNames.ContainsKey(organizationId))
+                continue;
+
+            var actorPermissions = role.OrganizationId is Guid scopedOrganizationId
+                ? await _effectivePermissions.GetEffectivePermissionsForOrganizationAsync(actorId, tenantId, scopedOrganizationId, cancellationToken)
+                : await _effectivePermissions.GetEffectivePermissionsAsync(actorId, tenantId, cancellationToken);
+            if (!actorPermissions.Contains("Users.AssignRoles"))
+                continue;
+            var failure = RoleAssignmentAuthorizationPolicy.Evaluate(
+                [role], actorId, tenantId, targetUserId: null, actorPermissions, _permissionProtection);
+            if (failure is not null)
+                continue;
+
+            organizationNames.TryGetValue(role.OrganizationId ?? Guid.Empty, out var organizationName);
+            result.Add(MapSummary(role, 0, tenantId, organizationName, isAssignable: true));
+        }
+
+        return Result<IReadOnlyList<RoleSummaryDto>>.Success(result);
+    }
+
+    public async Task<Result<IReadOnlyList<RoleOrganizationOptionDto>>> GetManagedRoleOrganizationsAsync(
+        Guid actorId,
+        Guid tenantId,
+        CancellationToken cancellationToken = default)
+    {
+        if (!IsCurrentActorAndTenant(actorId, tenantId))
+            return Result<IReadOnlyList<RoleOrganizationOptionDto>>.Failure(Error.Forbidden("A verified Tenant actor is required."));
+        if (_organizationDirectory is null)
+            return Result<IReadOnlyList<RoleOrganizationOptionDto>>.Failure(new Error(
+                "ORGANIZATION_LOOKUP_UNAVAILABLE", "Organization lookup is unavailable.", StatusCodes.Status503ServiceUnavailable));
+
+        var organizations = await _organizationDirectory.GetAssignableOptionsAsync(
+            tenantId, authorizedOrganizationIds: null, cancellationToken);
+        var managed = new List<RoleOrganizationOptionDto>();
+        foreach (var organization in organizations)
+        {
+            var permissions = await _effectivePermissions.GetEffectivePermissionsForOrganizationAsync(
+                actorId, tenantId, organization.Id, cancellationToken);
+            if (HasRoleViewCapability(permissions) || HasRoleManagementCapability(permissions))
+                managed.Add(new RoleOrganizationOptionDto { Id = organization.Id, Name = organization.Name });
+        }
+
+        return Result<IReadOnlyList<RoleOrganizationOptionDto>>.Success(managed);
     }
 
     public async Task<Result<IReadOnlyList<RoleSummaryDto>>> GetManageableRolesAsync(
@@ -39,9 +116,8 @@ public sealed class RoleAdministrationService : IRoleAdministrationService
         Guid tenantId,
         CancellationToken cancellationToken = default)
     {
-        var actorPermissions = await GetActorPermissionsAsync(actorId, tenantId, cancellationToken, requireManage: false);
-        if (actorPermissions is null)
-            return Result<IReadOnlyList<RoleSummaryDto>>.Failure(Error.Forbidden("You do not have permission to manage roles"));
+        if (!IsCurrentActorAndTenant(actorId, tenantId))
+            return Result<IReadOnlyList<RoleSummaryDto>>.Failure(Error.Forbidden("A verified Tenant actor is required."));
 
         var roles = await _context.Set<Role>()
             .IgnoreQueryFilters()
@@ -55,14 +131,25 @@ public sealed class RoleAdministrationService : IRoleAdministrationService
             .ThenBy(role => role.Name)
             .ToListAsync(cancellationToken);
 
-        var canManageRoles = HasRoleManagementCapability(actorPermissions);
-        var bootstrapDelegableKeys = canManageRoles
-            ? await BootstrapPermissionDelegationPolicy.GetDelegableKeysAsync(_context, actorId, tenantId, actorPermissions, cancellationToken)
-            : EmptyPermissionKeys;
-        var manageableRoles = roles
-            .Where(role => !canManageRoles || CanManageRole(role, tenantId, actorPermissions, bootstrapDelegableKeys))
-            .Select(role => MapSummary(role, role.UserRoles.Count, tenantId))
-            .ToList();
+        var organizationNames = _organizationDirectory is null
+            ? new Dictionary<Guid, string>()
+            : await _organizationDirectory.GetActiveNamesAsync(
+                tenantId, roles.Where(role => role.OrganizationId.HasValue).Select(role => role.OrganizationId!.Value), cancellationToken);
+        var manageableRoles = new List<RoleSummaryDto>();
+        foreach (var role in roles)
+        {
+            var actorPermissions = await GetEffectivePermissionsForRoleAsync(actorId, tenantId, role, cancellationToken);
+            var canManageRoles = HasRoleManagementCapability(actorPermissions);
+            if (!HasRoleViewCapability(actorPermissions) && !canManageRoles)
+                continue;
+            var canManageRole = canManageRoles && CanManageRole(role, tenantId, actorPermissions);
+            if (canManageRoles && !canManageRole)
+                continue;
+            organizationNames.TryGetValue(role.OrganizationId ?? Guid.Empty, out var organizationName);
+            manageableRoles.Add(MapSummary(
+                role, role.UserRoles.Count, tenantId, organizationName,
+                actorPermissions: actorPermissions, canManageRole: canManageRole));
+        }
 
         return Result<IReadOnlyList<RoleSummaryDto>>.Success(manageableRoles);
     }
@@ -77,9 +164,6 @@ public sealed class RoleAdministrationService : IRoleAdministrationService
             return Result<IReadOnlyList<PermissionCatalogItemDto>>.Failure(Error.Forbidden("You do not have permission to manage roles"));
         if (!CanConfigureRolePermissions(actorPermissions))
             return Result<IReadOnlyList<PermissionCatalogItemDto>>.Failure(Error.Forbidden("Roles.ConfigurePermissions is required."));
-        var bootstrapDelegableKeys = await BootstrapPermissionDelegationPolicy.GetDelegableKeysAsync(
-            _context, actorId, tenantId, actorPermissions, cancellationToken);
-
         var permissions = await _context.Set<Permission>()
             .IgnoreQueryFilters()
             .AsNoTracking()
@@ -88,10 +172,6 @@ public sealed class RoleAdministrationService : IRoleAdministrationService
             .ThenBy(permission => permission.Action)
             .ToListAsync(cancellationToken);
 
-        // Preserve the actor-effective/bootstrap capability for system-role recipients,
-        // while exposing the broader custom-role delegation capability separately.
-        var actorDelegableKeys = actorPermissions.Concat(bootstrapDelegableKeys)
-            .ToHashSet(StringComparer.Ordinal);
         var catalogItems = new List<PermissionCatalogItemDto>();
         foreach (var permission in permissions)
         {
@@ -101,14 +181,9 @@ public sealed class RoleAdministrationService : IRoleAdministrationService
                 || definition.Scope is PermissionScope.Platform or PermissionScope.CrossTenant or PermissionScope.SystemOwner)
                 continue;
 
-            var canDelegate = definition.IsAssignable
-                && actorDelegableKeys.Contains(key)
-                && definition.RequiredPermissionKeys.All(actorDelegableKeys.Contains);
-            var canDelegateToCustomRole = definition.IsAssignable
-                && (IsAdministrativePermission(definition)
-                    ? actorPermissions.Contains(key)
-                        && definition.RequiredPermissionKeys.All(actorPermissions.Contains)
-                    : IsRoleAssignableScope(definition.Scope));
+            var canDelegate = _permissionProtection.IsGrantable(definition)
+                && IsRoleAssignableScope(definition.Scope);
+            var canDelegateToCustomRole = canDelegate;
             catalogItems.Add(MapPermission(permission, canDelegate, canDelegateToCustomRole));
         }
 
@@ -121,18 +196,24 @@ public sealed class RoleAdministrationService : IRoleAdministrationService
         Guid tenantId,
         CancellationToken cancellationToken = default)
     {
-        var actorPermissions = await GetActorPermissionsAsync(actorId, tenantId, cancellationToken, requireManage: false);
-        if (actorPermissions is null)
-            return Result<RoleDetailDto>.Failure(Error.Forbidden("You do not have permission to manage roles"));
+        if (!IsCurrentActorAndTenant(actorId, tenantId))
+            return Result<RoleDetailDto>.Failure(Error.Forbidden("A verified Tenant actor is required."));
 
         var role = await LoadRoleAsync(id, tenantId, tracked: false, cancellationToken);
         if (role is null)
             return Result<RoleDetailDto>.Failure(Error.NotFound("Role not found"));
-        var bootstrapDelegableKeys = await BootstrapPermissionDelegationPolicy.GetDelegableKeysAsync(_context, actorId, tenantId, actorPermissions, cancellationToken);
-        if (HasRoleManagementCapability(actorPermissions) && !CanManageRole(role, tenantId, actorPermissions, bootstrapDelegableKeys))
+        var actorPermissions = await GetEffectivePermissionsForRoleAsync(actorId, tenantId, role, cancellationToken);
+        if (!HasRoleViewCapability(actorPermissions) && !HasRoleManagementCapability(actorPermissions))
+            return Result<RoleDetailDto>.Failure(Error.Forbidden("You do not have permission to view this role"));
+        var canManageRole = HasRoleManagementCapability(actorPermissions)
+            && CanManageRole(role, tenantId, actorPermissions);
+        if (HasRoleManagementCapability(actorPermissions) && !canManageRole)
             return Result<RoleDetailDto>.Failure(Error.Forbidden("You cannot manage a role with permissions outside your own effective access"));
 
-        return Result<RoleDetailDto>.Success(MapDetail(role, await GetAssignedUserCountAsync(id, tenantId, cancellationToken), tenantId));
+        return Result<RoleDetailDto>.Success(MapDetail(
+            role, await GetAssignedUserCountAsync(id, tenantId, cancellationToken), tenantId,
+            await GetOrganizationNameAsync(role.OrganizationId, tenantId, cancellationToken),
+            actorPermissions, canManageRole));
     }
 
     public async Task<Result<RoleDetailDto>> CreateAsync(
@@ -145,31 +226,49 @@ public sealed class RoleAdministrationService : IRoleAdministrationService
         if (validationError is not null)
             return Result<RoleDetailDto>.Failure(validationError);
 
-        var actorPermissions = await GetActorPermissionsAsync(actorId, tenantId, cancellationToken);
-        if (actorPermissions is null)
-            return Result<RoleDetailDto>.Failure(Error.Forbidden("You do not have permission to manage roles"));
+        if (!IsCurrentActorAndTenant(actorId, tenantId))
+            return Result<RoleDetailDto>.Failure(Error.Forbidden("A verified Tenant actor is required."));
+        if (dto.OrganizationId == Guid.Empty)
+            return Result<RoleDetailDto>.Failure(Error.Validation("A valid Organization is required when the Role is Organization-owned."));
+        var organizationId = dto.OrganizationId;
+        string? organizationName = null;
+        if (organizationId.HasValue)
+        {
+            if (_organizationDirectory is null)
+                return Result<RoleDetailDto>.Failure(new Error(
+                    "ORGANIZATION_LOOKUP_UNAVAILABLE", "Organization lookup is unavailable.", StatusCodes.Status503ServiceUnavailable));
+            var organizationNames = await _organizationDirectory.GetActiveNamesAsync(tenantId, [organizationId.Value], cancellationToken);
+            if (!organizationNames.TryGetValue(organizationId.Value, out organizationName))
+                return Result<RoleDetailDto>.Failure(Error.NotFound("The requested Organization is unavailable."));
+        }
+
+        var actorPermissions = await GetEffectivePermissionsForOrganizationScopeAsync(
+            actorId, tenantId, organizationId, cancellationToken);
         var category = NormalizeOptional(dto.Category);
         if (!RoleCategories.IsSelectable(category))
             return Result<RoleDetailDto>.Failure(Error.Validation(
                 $"A custom role category must be one of: {string.Join(", ", RoleCategories.Selectable)}. System is reserved for protected system roles."));
         if (!CanPerformRoleOperation(actorPermissions, CreateRolePermission))
             return Result<RoleDetailDto>.Failure(Error.Forbidden("Roles.Create is required."));
+
+        // Revalidate the actor's scope-specific grant while holding the same
+        // tenant mutation transaction used for role and user access changes.
+        await using var tenantMutation = await TenantAdminMutationGuard.AcquireAsync(_context, tenantId, cancellationToken);
+        actorPermissions = await GetEffectivePermissionsForOrganizationScopeAsync(
+            actorId, tenantId, organizationId, cancellationToken);
+        if (!CanPerformRoleOperation(actorPermissions, CreateRolePermission))
+            return Result<RoleDetailDto>.Failure(Error.Forbidden("Roles.Create is no longer effective in this Role scope."));
         if (dto.PermissionIds is { Count: > 0 }
             && !CanConfigureRolePermissions(actorPermissions))
             return Result<RoleDetailDto>.Failure(Error.Forbidden("Roles.ConfigurePermissions is required to assign permissions while creating a role."));
-        var bootstrapDelegableKeys = await BootstrapPermissionDelegationPolicy.GetDelegableKeysAsync(_context, actorId, tenantId, actorPermissions, cancellationToken);
-
         var name = dto.Name.Trim();
         if (string.Equals(name, "admin", StringComparison.OrdinalIgnoreCase))
             return Result<RoleDetailDto>.Failure(Error.Conflict("The protected system Admin role name is reserved."));
-        if (await RoleNameExistsAsync(name, tenantId, null, cancellationToken))
+        if (await RoleNameExistsAsync(name, tenantId, organizationId, null, cancellationToken))
             return Result<RoleDetailDto>.Failure(Error.Conflict("A role with this name already exists"));
 
         var permissionsResult = await ResolvePermissionsAsync(
-            dto.PermissionIds, tenantId, actorPermissions, bootstrapDelegableKeys,
-            allowOrdinaryDelegation: true,
-            allowProtectedSystemAdminBaseline: false,
-            cancellationToken);
+            dto.PermissionIds, tenantId, organizationOwned: organizationId.HasValue, cancellationToken);
         if (permissionsResult.IsFailure)
             return Result<RoleDetailDto>.Failure(permissionsResult.Error!);
 
@@ -184,13 +283,15 @@ public sealed class RoleAdministrationService : IRoleAdministrationService
             CreatedBy = actorId.ToString("D"),
             Permissions = permissionsResult.Value!
         };
+        if (organizationId is Guid ownerOrganizationId)
+            role.AssignOrganization(ownerOrganizationId);
 
         _context.Set<Role>().Add(role);
         await AppendAuditAsync(
             role.Id,
             "Created",
             null,
-            new { role.Name, role.Description, role.Category, Permissions = role.Permissions.Select(PermissionKey).OrderBy(key => key).ToArray() },
+            new { role.Name, role.Description, role.Category, role.OrganizationId, Permissions = role.Permissions.Select(PermissionKey).OrderBy(key => key).ToArray() },
             actorId,
             tenantId,
             cancellationToken);
@@ -198,13 +299,16 @@ public sealed class RoleAdministrationService : IRoleAdministrationService
         try
         {
             await _context.SaveChangesAsync(cancellationToken);
+            await tenantMutation.CommitAsync(cancellationToken);
         }
         catch (DbUpdateException)
         {
             return Result<RoleDetailDto>.Failure(Error.Conflict("The role could not be saved because its name is already in use or another update conflicted"));
         }
 
-        return Result<RoleDetailDto>.Success(MapDetail(role, 0, tenantId));
+        return Result<RoleDetailDto>.Success(MapDetail(
+            role, 0, tenantId, organizationName, actorPermissions,
+            CanManageRole(role, tenantId, actorPermissions)));
     }
 
     public async Task<Result<RoleDetailDto>> UpdateAsync(
@@ -218,18 +322,27 @@ public sealed class RoleAdministrationService : IRoleAdministrationService
         if (validationError is not null)
             return Result<RoleDetailDto>.Failure(validationError);
 
-        var actorPermissions = await GetActorPermissionsAsync(actorId, tenantId, cancellationToken);
-        if (actorPermissions is null)
-            return Result<RoleDetailDto>.Failure(Error.Forbidden("You do not have permission to manage roles"));
-        var bootstrapDelegableKeys = await BootstrapPermissionDelegationPolicy.GetDelegableKeysAsync(_context, actorId, tenantId, actorPermissions, cancellationToken);
-
-        await using var tenantAdminMutation = await TenantAdminMutationGuard.AcquireAsync(_context, tenantId, cancellationToken);
-        var hadEffectiveTenantAdmin = await tenantAdminMutation.HasEffectiveTenantAdminAsync(_effectivePermissions, tenantId, cancellationToken);
-
-        var role = await LoadRoleAsync(id, tenantId, tracked: true, cancellationToken);
+        if (!IsCurrentActorAndTenant(actorId, tenantId))
+            return Result<RoleDetailDto>.Failure(Error.Forbidden("A verified Tenant actor is required."));
+        var role = await LoadRoleAsync(id, tenantId, tracked: false, cancellationToken);
         if (role is null)
             return Result<RoleDetailDto>.Failure(Error.NotFound("Role not found"));
-        if (!CanManageRole(role, tenantId, actorPermissions, bootstrapDelegableKeys))
+        var actorPermissions = await GetEffectivePermissionsForRoleAsync(actorId, tenantId, role, cancellationToken);
+        if (!HasRoleManagementCapability(actorPermissions))
+            return Result<RoleDetailDto>.Failure(Error.Forbidden("You do not have permission to manage roles"));
+        await using var tenantAdminMutation = await TenantAdminMutationGuard.AcquireAsync(_context, tenantId, cancellationToken);
+        var hadActiveTenantAdmin = await tenantAdminMutation.HasActiveTenantAdminAsync(tenantId, cancellationToken);
+
+        role = await LoadRoleAsync(id, tenantId, tracked: true, cancellationToken);
+        if (role is null)
+            return Result<RoleDetailDto>.Failure(Error.NotFound("Role not found"));
+        if (dto.OrganizationId.HasValue && dto.OrganizationId != role.OrganizationId)
+            return Result<RoleDetailDto>.Failure(Error.Conflict("A Role's Organization is immutable once it has been created."));
+        var roleOrganizationName = await GetOrganizationNameAsync(role.OrganizationId, tenantId, cancellationToken);
+        actorPermissions = await GetEffectivePermissionsForRoleAsync(actorId, tenantId, role, cancellationToken);
+        if (!HasRoleManagementCapability(actorPermissions))
+            return Result<RoleDetailDto>.Failure(Error.Forbidden("Your role management permission is no longer effective."));
+        if (!CanManageRole(role, tenantId, actorPermissions))
             return Result<RoleDetailDto>.Failure(Error.Forbidden("You cannot manage a role with permissions outside your own effective access"));
 
         var category = NormalizeOptional(dto.Category);
@@ -249,15 +362,12 @@ public sealed class RoleAdministrationService : IRoleAdministrationService
         if (!ProtectedTenantAdminPolicy.IsProtectedSystemAdminRole(role)
             && string.Equals(name, "admin", StringComparison.OrdinalIgnoreCase))
             return Result<RoleDetailDto>.Failure(Error.Conflict("The protected system Admin role name is reserved."));
-        if (await RoleNameExistsAsync(name, tenantId, id, cancellationToken))
+        if (await RoleNameExistsAsync(name, tenantId, role.OrganizationId, id, cancellationToken))
             return Result<RoleDetailDto>.Failure(Error.Conflict("A role with this name already exists"));
 
         var oldPermissions = role.Permissions.Select(PermissionKey).OrderBy(key => key, StringComparer.Ordinal).ToArray();
         var permissionsResult = await ResolvePermissionsAsync(
-            dto.PermissionIds, tenantId, actorPermissions, bootstrapDelegableKeys,
-            allowOrdinaryDelegation: !role.IsSystem,
-            allowProtectedSystemAdminBaseline: ProtectedTenantAdminPolicy.IsProtectedSystemAdminRole(role),
-            cancellationToken);
+            dto.PermissionIds, tenantId, organizationOwned: role.OrganizationId.HasValue, cancellationToken);
         if (permissionsResult.IsFailure)
             return Result<RoleDetailDto>.Failure(permissionsResult.Error!);
 
@@ -267,43 +377,12 @@ public sealed class RoleAdministrationService : IRoleAdministrationService
         if (!role.IsSystem && actorIsAssignedToRole)
         {
             var effectiveAfterRoleUpdate = await GetActorEffectivePermissionsWithRoleReplacementAsync(
-                actorId, tenantId, role.Id, nextPermissions, cancellationToken);
+                actorId, tenantId, role.Id, role.OrganizationId, nextPermissions, cancellationToken);
             if (effectiveAfterRoleUpdate.Except(actorPermissions, StringComparer.Ordinal).Any())
                 return Result<RoleDetailDto>.Failure(Error.Forbidden(
                     "A role assigned to you cannot add permissions outside your current effective access."));
         }
-        if (ProtectedTenantAdminPolicy.IsProtectedSystemAdminRole(role))
-        {
-            var selectedKeys = nextPermissions.Select(PermissionKey).ToHashSet(StringComparer.Ordinal);
-            var missingMandatoryKeys = ProtectedTenantAdminPolicy.MandatoryPermissionKeys
-                .Where(key => !selectedKeys.Contains(key))
-                .OrderBy(key => key, StringComparer.Ordinal)
-                .ToArray();
-            if (missingMandatoryKeys.Length > 0)
-            {
-                await AppendAuditAsync(
-                    role.Id,
-                    "ProtectedAdminBaselineMutationRejected",
-                    new { Permissions = role.Permissions.Select(PermissionKey).OrderBy(key => key, StringComparer.Ordinal).ToArray() },
-                    new { RejectedRemoval = missingMandatoryKeys },
-                    actorId,
-                    tenantId,
-                    cancellationToken);
-                await _context.SaveChangesAsync(cancellationToken);
-                await tenantAdminMutation.CommitAsync(cancellationToken);
-                return Result<RoleDetailDto>.Failure(Error.Conflict("The protected system Admin role must retain every mandatory tenant Administration and Portfolio/Program permission."));
-            }
-        }
-        var oldPermissionKeys = oldPermissions.ToHashSet(StringComparer.Ordinal);
-        if (role.IsSystem && nextPermissions
-                .Select(PermissionKey)
-                .Any(key => BootstrapPermissionDelegationPolicy.Keys.Contains(key)
-                    && !oldPermissionKeys.Contains(key)
-                    && !(ProtectedTenantAdminPolicy.IsProtectedSystemAdminRole(role)
-                        && BootstrapPermissionDelegationPolicy.CanAddToProtectedTenantAdminRole(key))))
-            return Result<RoleDetailDto>.Failure(Error.Forbidden(
-                "Bootstrap-delegable permissions can be added only to custom roles, except the explicitly configured Annual Budget permissions on the protected tenant Admin role."));
-        if (!await ActorRetainsRoleManagementAsync(actorId, tenantId, role.Id, nextPermissions, cancellationToken))
+        if (!await ActorRetainsRoleManagementAsync(actorId, tenantId, role.Id, role.OrganizationId, nextPermissions, cancellationToken))
             return Result<RoleDetailDto>.Failure(Error.Conflict("This change would remove your role-management access. Keep an effective Roles.Create, Roles.EditDetails, Roles.ConfigurePermissions, or Roles.Delete permission assigned to your account."));
 
         var newPermissions = nextPermissions.Select(PermissionKey).OrderBy(key => key, StringComparer.Ordinal).ToArray();
@@ -319,7 +398,8 @@ public sealed class RoleAdministrationService : IRoleAdministrationService
         var hasChanges = detailsChanged || permissionsChanged;
 
         if (!hasChanges)
-            return Result<RoleDetailDto>.Success(MapDetail(role, role.UserRoles.Count, tenantId));
+            return Result<RoleDetailDto>.Success(MapDetail(
+                role, role.UserRoles.Count, tenantId, roleOrganizationName, actorPermissions, canManageRole: true));
 
         var originalValues = new { role.Name, role.Description, role.Category, Permissions = oldPermissions };
         role.Name = name;
@@ -342,8 +422,8 @@ public sealed class RoleAdministrationService : IRoleAdministrationService
         try
         {
             await _context.SaveChangesAsync(cancellationToken);
-            if (hadEffectiveTenantAdmin
-                && !await tenantAdminMutation.HasEffectiveTenantAdminAsync(_effectivePermissions, tenantId, cancellationToken))
+            if (hadActiveTenantAdmin
+                && !await tenantAdminMutation.HasActiveTenantAdminAsync(tenantId, cancellationToken))
             {
                 await tenantAdminMutation.RollbackAsync(cancellationToken);
                 _context.ChangeTracker.Clear();
@@ -351,12 +431,12 @@ public sealed class RoleAdministrationService : IRoleAdministrationService
                     role.Id,
                     "TenantAdminMutationRejected",
                     originalValues,
-                    new { Rejected = true, Reason = "Last effective tenant administrator would be removed" },
+                    new { Rejected = true, Reason = "Last active Tenant Admin assignment would be removed" },
                     actorId,
                     tenantId,
                     cancellationToken);
                 await _context.SaveChangesAsync(cancellationToken);
-                return Result<RoleDetailDto>.Failure(Error.Conflict("This change would remove the last effective tenant administrator."));
+                return Result<RoleDetailDto>.Failure(Error.Conflict("This change would remove the last active Tenant Admin assignment."));
             }
             await tenantAdminMutation.CommitAsync(cancellationToken);
         }
@@ -369,7 +449,8 @@ public sealed class RoleAdministrationService : IRoleAdministrationService
             return Result<RoleDetailDto>.Failure(Error.Conflict("The role could not be saved because its name is already in use or another update conflicted"));
         }
 
-        return Result<RoleDetailDto>.Success(MapDetail(role, role.UserRoles.Count, tenantId));
+        return Result<RoleDetailDto>.Success(MapDetail(
+            role, role.UserRoles.Count, tenantId, roleOrganizationName, actorPermissions, canManageRole: true));
     }
 
     public async Task<Result> DeleteAsync(
@@ -378,17 +459,15 @@ public sealed class RoleAdministrationService : IRoleAdministrationService
         Guid tenantId,
         CancellationToken cancellationToken = default)
     {
-        var actorPermissions = await GetActorPermissionsAsync(actorId, tenantId, cancellationToken);
-        if (actorPermissions is null)
-            return Result.Failure(Error.Forbidden("You do not have permission to manage roles"));
-        if (!actorPermissions.Contains(DeleteRolePermission))
-            return Result.Failure(Error.Forbidden("Roles.Delete is required."));
-        var bootstrapDelegableKeys = await BootstrapPermissionDelegationPolicy.GetDelegableKeysAsync(_context, actorId, tenantId, actorPermissions, cancellationToken);
-
+        if (!IsCurrentActorAndTenant(actorId, tenantId))
+            return Result.Failure(Error.Forbidden("A verified Tenant actor is required."));
         var role = await LoadRoleAsync(id, tenantId, tracked: true, cancellationToken);
         if (role is null)
             return Result.Failure(Error.NotFound("Role not found"));
-        if (!CanManageRole(role, tenantId, actorPermissions, bootstrapDelegableKeys))
+        var actorPermissions = await GetEffectivePermissionsForRoleAsync(actorId, tenantId, role, cancellationToken);
+        if (!actorPermissions.Contains(DeleteRolePermission))
+            return Result.Failure(Error.Forbidden("Roles.Delete is required in this Organization."));
+        if (!CanManageRole(role, tenantId, actorPermissions))
             return Result.Failure(Error.Forbidden("You cannot manage a role with permissions outside your own effective access"));
         if (role.IsSystem)
             return Result.Failure(Error.Forbidden("System roles cannot be deleted"));
@@ -430,6 +509,42 @@ public sealed class RoleAdministrationService : IRoleAdministrationService
         }
 
         return Result.Success();
+    }
+
+    private async Task<IReadOnlySet<string>> GetEffectivePermissionsForRoleAsync(
+        Guid actorId,
+        Guid tenantId,
+        Role role,
+        CancellationToken cancellationToken)
+    {
+        if (role.IsLegacyOrganizationOwnershipUnresolved)
+            return EmptyPermissionKeys;
+        if (role.OrganizationId is not Guid organizationId)
+            return await _effectivePermissions.GetEffectivePermissionsAsync(actorId, tenantId, cancellationToken);
+        if (_organizationDirectory is null
+            || (await _organizationDirectory.GetActiveNamesAsync(tenantId, [organizationId], cancellationToken)).Count != 1)
+            return EmptyPermissionKeys;
+        return await _effectivePermissions.GetEffectivePermissionsForOrganizationAsync(
+            actorId, tenantId, organizationId, cancellationToken);
+    }
+
+    private Task<IReadOnlySet<string>> GetEffectivePermissionsForOrganizationScopeAsync(
+        Guid actorId,
+        Guid tenantId,
+        Guid? organizationId,
+        CancellationToken cancellationToken) => organizationId is Guid scopedOrganizationId
+            ? _effectivePermissions.GetEffectivePermissionsForOrganizationAsync(actorId, tenantId, scopedOrganizationId, cancellationToken)
+            : _effectivePermissions.GetEffectivePermissionsAsync(actorId, tenantId, cancellationToken);
+
+    private async Task<string?> GetOrganizationNameAsync(
+        Guid? organizationId,
+        Guid tenantId,
+        CancellationToken cancellationToken)
+    {
+        if (organizationId is not Guid id || _organizationDirectory is null)
+            return null;
+        var names = await _organizationDirectory.GetActiveNamesAsync(tenantId, [id], cancellationToken);
+        return names.TryGetValue(id, out var name) ? name : null;
     }
 
     private async Task<IReadOnlySet<string>?> GetActorPermissionsAsync(
@@ -477,10 +592,7 @@ public sealed class RoleAdministrationService : IRoleAdministrationService
     private async Task<Result<List<Permission>>> ResolvePermissionsAsync(
         List<Guid>? permissionIds,
         Guid tenantId,
-        IReadOnlySet<string> actorPermissions,
-        IReadOnlySet<string> bootstrapDelegableKeys,
-        bool allowOrdinaryDelegation,
-        bool allowProtectedSystemAdminBaseline,
+        bool organizationOwned,
         CancellationToken cancellationToken)
     {
         if (permissionIds is null || permissionIds.Count > MaximumPermissionsPerRole)
@@ -502,30 +614,18 @@ public sealed class RoleAdministrationService : IRoleAdministrationService
             var key = PermissionKey(permission);
             if (!PermissionCatalog.ByKey.TryGetValue(key, out var definition)
                 || !definition.IsActive
-                || !definition.IsAssignable
                 || definition.Scope is PermissionScope.Platform or PermissionScope.CrossTenant or PermissionScope.SystemOwner)
                 return Result<List<Permission>>.Failure(Error.Validation(
-                    $"Permission {key} is inactive, uncatalogued, non-assignable, or reserved for platform-wide administration."));
-
-            var isAdministrativePermission = IsAdministrativePermission(definition);
-            var canDelegateAdministrative = isAdministrativePermission && actorPermissions.Contains(key);
-            var canDelegateOrdinary = allowOrdinaryDelegation
-                && !isAdministrativePermission
-                && IsRoleAssignableScope(definition.Scope);
-            var canDelegateActorOwnedOrdinary = !allowOrdinaryDelegation
-                && !isAdministrativePermission
-                && IsRoleAssignableScope(definition.Scope)
-                && actorPermissions.Contains(key);
-            var canUseBootstrapDelegation = !isAdministrativePermission
-                && bootstrapDelegableKeys.Contains(key)
-                && (!allowProtectedSystemAdminBaseline
-                    || BootstrapPermissionDelegationPolicy.CanAddToProtectedTenantAdminRole(key));
-            if (!canDelegateAdministrative && !canDelegateOrdinary
-                && !canDelegateActorOwnedOrdinary && !canUseBootstrapDelegation)
-                return Result<List<Permission>>.Failure(Error.Forbidden(
-                    isAdministrativePermission
-                        ? "Administrative permissions can only be assigned within your own effective access."
-                        : "This permission is not available for role delegation."));
+                    $"Permission {key} is inactive, uncatalogued, or reserved for platform-wide administration."));
+            if (!_permissionProtection.IsGrantable(definition))
+                return Result<List<Permission>>.Failure(Error.Validation(
+                    $"Permission {key} is protected by Product Owner policy and cannot be assigned."));
+            if (organizationOwned && !OrganizationRolePermissionPolicy.CanGrant(definition, _permissionProtection))
+                return Result<List<Permission>>.Failure(Error.Validation(
+                    $"Permission {key} is outside the grantable scope for an Organization-owned Role."));
+            if (!IsRoleAssignableScope(definition.Scope))
+                return Result<List<Permission>>.Failure(Error.Validation(
+                    $"Permission {key} cannot be assigned to a Tenant- or Organization-owned Role."));
 
             var missingDependencies = definition.RequiredPermissionKeys
                 .Where(requiredKey => !selectedKeys.Contains(requiredKey))
@@ -538,13 +638,14 @@ public sealed class RoleAdministrationService : IRoleAdministrationService
         return Result<List<Permission>>.Success(permissions);
     }
 
-    private async Task<bool> RoleNameExistsAsync(string name, Guid tenantId, Guid? exceptRoleId, CancellationToken cancellationToken)
+    private async Task<bool> RoleNameExistsAsync(string name, Guid tenantId, Guid? organizationId, Guid? exceptRoleId, CancellationToken cancellationToken)
     {
         var normalizedName = name.ToUpperInvariant();
         return await _context.Set<Role>()
             .IgnoreQueryFilters()
             .AnyAsync(role => role.TenantId == tenantId && !role.IsDeleted
                 && role.Id != (exceptRoleId ?? Guid.Empty)
+                && role.OrganizationId == organizationId
                 && role.Name.ToUpper() == normalizedName, cancellationToken);
     }
 
@@ -552,11 +653,12 @@ public sealed class RoleAdministrationService : IRoleAdministrationService
         Guid actorId,
         Guid tenantId,
         Guid changedRoleId,
+        Guid? organizationId,
         IReadOnlyCollection<Permission> replacementPermissions,
         CancellationToken cancellationToken)
     {
         var effective = await GetActorEffectivePermissionsWithRoleReplacementAsync(
-            actorId, tenantId, changedRoleId, replacementPermissions, cancellationToken);
+            actorId, tenantId, changedRoleId, organizationId, replacementPermissions, cancellationToken);
         return HasRoleManagementCapability(effective);
     }
 
@@ -564,6 +666,7 @@ public sealed class RoleAdministrationService : IRoleAdministrationService
         Guid actorId,
         Guid tenantId,
         Guid changedRoleId,
+        Guid? organizationId,
         IReadOnlyCollection<Permission> replacementPermissions,
         CancellationToken cancellationToken)
     {
@@ -571,18 +674,22 @@ public sealed class RoleAdministrationService : IRoleAdministrationService
             .IgnoreQueryFilters()
             .AsNoTracking()
             .Where(assignment => assignment.UserId == actorId && assignment.TenantId == tenantId && !assignment.IsDeleted
-                && assignment.Role.TenantId == tenantId && !assignment.Role.IsDeleted)
+                && assignment.User.TenantId == tenantId && !assignment.User.IsDeleted && assignment.User.IsActive
+                && assignment.Role.TenantId == tenantId && !assignment.Role.IsDeleted
+                && !assignment.Role.IsLegacyOrganizationOwnershipUnresolved
+                && (assignment.Role.OrganizationId == null || assignment.Role.OrganizationId == organizationId))
             .Include(assignment => assignment.Role)
                 .ThenInclude(role => role.Permissions)
             .ToListAsync(cancellationToken);
 
-        var effective = assignments
+        var inherited = assignments
             .SelectMany(assignment => assignment.RoleId == changedRoleId
                 ? replacementPermissions.AsEnumerable()
                 : assignment.Role.Permissions.AsEnumerable())
             .Where(permission => permission.TenantId == tenantId && !permission.IsDeleted)
             .Select(PermissionKey)
-            .ToHashSet(StringComparer.Ordinal);
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
 
         var overrides = await _context.Set<UserPermissionOverride>()
             .IgnoreQueryFilters()
@@ -592,15 +699,13 @@ public sealed class RoleAdministrationService : IRoleAdministrationService
             .Select(item => new { Permission = PermissionKey(item.Permission), item.Effect })
             .ToListAsync(cancellationToken);
 
-        foreach (var item in overrides)
-        {
-            if (item.Effect == PermissionOverrideEffect.Allow)
-                effective.Add(item.Permission);
-            else if (item.Effect == PermissionOverrideEffect.Deny)
-                effective.Remove(item.Permission);
-        }
-
-        return PermissionCatalog.EnforceDependencies(effective);
+        var effectiveOverrides = overrides.Where(item =>
+            item.Effect == PermissionOverrideEffect.Deny
+            || (PermissionCatalog.ByKey.TryGetValue(item.Permission, out var definition)
+                && definition.Scope == PermissionScope.Tenant));
+        return PermissionCatalog.EnforceDependencies(EffectivePermissionResolver.Resolve(
+            inherited,
+            effectiveOverrides.Select(item => (item.Permission, item.Effect))));
     }
 
     private async Task<int> GetAssignedUserCountAsync(Guid roleId, Guid tenantId, CancellationToken cancellationToken) =>
@@ -657,11 +762,10 @@ public sealed class RoleAdministrationService : IRoleAdministrationService
 
     private static readonly IReadOnlySet<string> EmptyPermissionKeys = new HashSet<string>(StringComparer.Ordinal);
 
-    private static bool CanManageRole(
+    private bool CanManageRole(
         Role role,
         Guid tenantId,
-        IReadOnlySet<string> actorPermissions,
-        IReadOnlySet<string> bootstrapDelegableKeys) =>
+        IReadOnlySet<string> actorPermissions) =>
         role.Permissions.All(permission =>
         {
             if (permission.TenantId != tenantId || permission.IsDeleted)
@@ -670,21 +774,11 @@ public sealed class RoleAdministrationService : IRoleAdministrationService
             var key = PermissionKey(permission);
             if (!PermissionCatalog.ByKey.TryGetValue(key, out var definition)
                 || !definition.IsActive
-                || !definition.IsAssignable
                 || !IsRoleAssignableScope(definition.Scope))
                 return false;
-
-            if (IsAdministrativePermission(definition))
-                return actorPermissions.Contains(key);
-
-            if (!role.IsSystem && CanConfigureRolePermissions(actorPermissions))
-                return true;
-
-            return actorPermissions.Contains(key) || bootstrapDelegableKeys.Contains(key);
+            return _permissionProtection.IsGrantable(definition)
+                || actorPermissions.Contains(key);
         });
-
-    private static bool IsAdministrativePermission(PermissionCatalogEntry definition) =>
-        string.Equals(definition.ModuleId, "administration", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsRoleAssignableScope(PermissionScope scope) =>
         scope is PermissionScope.Tenant
@@ -693,28 +787,64 @@ public sealed class RoleAdministrationService : IRoleAdministrationService
             or PermissionScope.Program
             or PermissionScope.Project;
 
-    private static RoleSummaryDto MapSummary(Role role, int assignedUserCount, Guid tenantId) => new()
+    private static RoleSummaryDto MapSummary(
+        Role role,
+        int assignedUserCount,
+        Guid tenantId,
+        string? organizationName = null,
+        bool isAssignable = false,
+        IReadOnlySet<string>? actorPermissions = null,
+        bool canManageRole = false) => new()
     {
         Id = role.Id,
+        OrganizationId = role.OrganizationId,
+        OrganizationName = organizationName,
+        IsOrganizationOwned = role.OrganizationId.HasValue,
+        IsLegacyOrganizationOwnershipUnresolved = role.IsLegacyOrganizationOwnershipUnresolved,
+        Scope = role.IsLegacyOrganizationOwnershipUnresolved ? "Unresolved" : role.OrganizationId.HasValue ? "Organization" : "Tenant",
+        RoleKey = role.RoleKey,
         Name = role.Name,
         Description = role.Description,
         Category = role.Category,
         IsSystem = role.IsSystem,
+        IsProtected = ProtectedTenantAdminPolicy.IsProtectedSystemAdminRole(role)
+            || ProtectedTenantAdminPolicy.IsOrganizationAdminSystemRole(role),
         IsProtectedSystemAdmin = ProtectedTenantAdminPolicy.IsProtectedSystemAdminRole(role),
+        IsAssignable = isAssignable,
+        CanEditDetails = canManageRole && actorPermissions?.Contains(EditRoleDetailsPermission) == true,
+        CanManagePermissions = canManageRole && actorPermissions is not null && CanConfigureRolePermissions(actorPermissions),
+        CanDelete = canManageRole && !role.IsSystem && actorPermissions?.Contains(DeleteRolePermission) == true,
         PermissionCount = role.Permissions.Count(permission => permission.TenantId == tenantId && IsActiveCatalogPermission(permission)),
         AssignedUserCount = assignedUserCount
     };
 
-    private static RoleDetailDto MapDetail(Role role, int assignedUserCount, Guid tenantId) => new()
+    private RoleDetailDto MapDetail(
+        Role role,
+        int assignedUserCount,
+        Guid tenantId,
+        string? organizationName = null,
+        IReadOnlySet<string>? actorPermissions = null,
+        bool canManageRole = false) => new()
     {
         Id = role.Id,
+        OrganizationId = role.OrganizationId,
+        OrganizationName = organizationName,
+        IsOrganizationOwned = role.OrganizationId.HasValue,
+        IsLegacyOrganizationOwnershipUnresolved = role.IsLegacyOrganizationOwnershipUnresolved,
+        Scope = role.IsLegacyOrganizationOwnershipUnresolved ? "Unresolved" : role.OrganizationId.HasValue ? "Organization" : "Tenant",
+        RoleKey = role.RoleKey,
         Name = role.Name,
         Description = role.Description,
         Category = role.Category,
         IsSystem = role.IsSystem,
+        IsProtected = ProtectedTenantAdminPolicy.IsProtectedSystemAdminRole(role)
+            || ProtectedTenantAdminPolicy.IsOrganizationAdminSystemRole(role),
         IsProtectedSystemAdmin = ProtectedTenantAdminPolicy.IsProtectedSystemAdminRole(role),
         PermissionCount = role.Permissions.Count(permission => permission.TenantId == tenantId && IsActiveCatalogPermission(permission)),
         AssignedUserCount = assignedUserCount,
+        CanEditDetails = canManageRole && actorPermissions?.Contains(EditRoleDetailsPermission) == true,
+        CanManagePermissions = canManageRole && actorPermissions is not null && CanConfigureRolePermissions(actorPermissions),
+        CanDelete = canManageRole && !role.IsSystem && actorPermissions?.Contains(DeleteRolePermission) == true,
         Permissions = role.Permissions
             .Where(permission => permission.TenantId == tenantId && IsActiveCatalogPermission(permission))
             .OrderBy(permission => permission.Resource, StringComparer.Ordinal)
@@ -723,7 +853,7 @@ public sealed class RoleAdministrationService : IRoleAdministrationService
             .ToList()
     };
 
-    private static PermissionCatalogItemDto MapPermission(
+    private PermissionCatalogItemDto MapPermission(
         Permission permission,
         bool? canDelegate = null,
         bool? canDelegateToCustomRole = null)
@@ -755,10 +885,10 @@ public sealed class RoleAdministrationService : IRoleAdministrationService
             IsSensitive = definition.IsSensitive,
             RequiredPermissionKeys = definition.RequiredPermissionKeys,            AllowedCategories = definition.AllowedCategories,
             IsActive = definition.IsActive,
-            IsAssignable = definition.IsAssignable,
+            IsAssignable = _permissionProtection.IsGrantable(definition),
+            CanGrantToOrganizationRole = OrganizationRolePermissionPolicy.CanGrant(definition, _permissionProtection),
             CanDelegate = canDelegate,
-            CanDelegateToCustomRole = canDelegateToCustomRole,
-            IsMandatoryForSystemAdmin = ProtectedTenantAdminPolicy.MandatoryPermissionKeys.Contains(key)
+            CanDelegateToCustomRole = canDelegateToCustomRole
         };
     }
     private static string PermissionKey(Permission permission) => $"{permission.Resource}.{permission.Action}";
@@ -772,8 +902,8 @@ public sealed class RoleAdministrationService : IRoleAdministrationService
         permissions.Contains(operationPermission);
 
     // Granting permission sets is explicit through Roles.ConfigurePermissions.
-    // Custom-role delegation covers ordinary scoped capabilities; Administration
-    // module capabilities still require the actor's own effective permission.
+    // Per-permission actor possession and module/category restrictions do not
+    // override that authenticated operation authority.
     private static bool CanConfigureRolePermissions(IReadOnlySet<string> permissions) =>
         CanPerformRoleOperation(permissions, ConfigureRolePermissionsPermission);
 

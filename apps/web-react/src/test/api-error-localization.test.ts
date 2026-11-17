@@ -1,8 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { ApiError, getApiFieldError, getApiFieldErrors, setApiErrorLocale } from "../api/client";
+import { ApiError, getApiErrorMessage, getApiFieldError, getApiFieldErrors, setApiErrorLocale } from "../api/client";
 import { getLocalizedApiErrorMessage, getLocalizedApiFieldError } from "../api/api-error-localization";
+import arMessages from "../i18n/messages/ar.json";
 
 describe("API error localization", () => {
+  it("exposes localized API errors while using a safe fallback for other errors", () => {
+    const apiError = new ApiError(403, "The localized API message", "FORBIDDEN");
+    expect(getApiErrorMessage(apiError, "Fallback message")).toBe("The localized API message");
+    expect(getApiErrorMessage(new Error("internal runtime detail"), "Fallback message")).toBe("Fallback message");
+  });
+
   it("uses localized validation guidance and keeps field errors available", () => {
     setApiErrorLocale("ar");
     const error = new ApiError(
@@ -22,6 +29,39 @@ describe("API error localization", () => {
     expect(getLocalizedApiErrorMessage("CONFLICT", 409, "en")).toContain("Refresh");
     expect(getLocalizedApiErrorMessage("FORBIDDEN", 403, "ar")).toContain("صلاحية");
     expect(getLocalizedApiErrorMessage("CONFLICT", 409, "ar")).toContain("حدّث");
+  });
+
+  it("localizes specific handover permission messages clearly in English and Arabic", () => {
+    const handoverViewMsg = "You do not have permission to view handovers";
+    expect(getLocalizedApiErrorMessage(undefined, 403, "en", undefined, handoverViewMsg))
+      .toBe("You do not have permission to view handovers");
+    expect(getLocalizedApiErrorMessage("FORBIDDEN", 403, "en", undefined, handoverViewMsg))
+      .toBe("You do not have permission to view handovers");
+    expect(getLocalizedApiErrorMessage(undefined, 403, "ar", undefined, handoverViewMsg))
+      .toBe(arMessages.managerHandover.viewPermissionRequired);
+    expect(getLocalizedApiErrorMessage("FORBIDDEN", 403, "ar", undefined, handoverViewMsg))
+      .toBe(arMessages.managerHandover.viewPermissionRequired);
+
+    const handoverInitiateMsg = "You do not have permission to initiate this handover";
+    expect(getLocalizedApiErrorMessage("FORBIDDEN", 403, "en", undefined, handoverInitiateMsg))
+      .toBe("You do not have permission to initiate this handover");
+    expect(getLocalizedApiErrorMessage("FORBIDDEN", 403, "ar", undefined, handoverInitiateMsg))
+      .toBe(arMessages.apiErrors.handoverInitiatePermissionDenied);
+
+    const currentManagerMsg = "Only the current Project Manager can request a handover";
+    expect(getLocalizedApiErrorMessage("FORBIDDEN", 403, "en", undefined, currentManagerMsg))
+      .toBe("Only the current Project Manager can request a handover");
+    expect(getLocalizedApiErrorMessage("FORBIDDEN", 403, "ar", undefined, currentManagerMsg))
+      .toBe(arMessages.apiErrors.currentProjectManagerRequired);
+
+    expect(getLocalizedApiErrorMessage("FORBIDDEN", 403, "ar", undefined, "Only the current Program Manager can request a handover"))
+      .toBe(arMessages.apiErrors.currentProgramManagerRequired);
+    expect(getLocalizedApiErrorMessage("FORBIDDEN", 403, "ar", undefined, "Only the selected new manager can accept this request"))
+      .toBe(arMessages.managerHandover.approvePermissionHint);
+    expect(getLocalizedApiErrorMessage("FORBIDDEN", 403, "ar", undefined, "You do not have permission to view status reports"))
+      .toBe(arMessages.apiErrors.statusReportsViewPermissionDenied);
+    expect(getLocalizedApiErrorMessage("FORBIDDEN", 403, "en", undefined, "You do not have permission to view status reports"))
+      .toBe("You do not have permission to view status reports");
   });
 
   it("localizes handover date conflicts and includes the actual dates", () => {

@@ -525,6 +525,17 @@ public sealed class ProjectStatusReportWorkflowAdapter(
             : Result.Success();
     }
 
+    public async Task<Result> AuthorizeProvisionAsync(WorkflowExecutionContext execution, Guid entityId, CancellationToken cancellationToken = default)
+    {
+        if (execution.ReadOnly || managementContext.Current?.EffectiveReadOnly == true)
+            return Result.Failure(WorkflowErrors.ReadOnlyViewAs);
+        if (!HasPermission("StatusReport.Create"))
+            return Result.Failure(Error.Forbidden("Status report creation permission is required to provision its workflow."));
+        return await FindAccessibleAsync(entityId, execution, cancellationToken) is null
+            ? Result.Failure(WorkflowErrors.EntityNotAccessible(EntityType, entityId))
+            : Result.Success();
+    }
+
     /// <summary>
     /// Publication is gated by the dedicated publish permission; any other draft-lifecycle
     /// transition is a write and requires edit rights. The exact lifecycle is still enforced

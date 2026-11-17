@@ -27,10 +27,13 @@ public sealed class TimeEntryPermissionScopeTests : IDisposable
     private readonly Guid _tenantId = Guid.NewGuid();
     private readonly Guid _actorId = Guid.NewGuid();
     private readonly Guid _projectId = Guid.NewGuid();
+    private readonly Guid _otherProjectId = Guid.NewGuid();
     private readonly Guid _ownResourceId = Guid.NewGuid();
     private readonly Guid _teamResourceId = Guid.NewGuid();
+    private readonly Guid _otherTeamResourceId = Guid.NewGuid();
     private readonly Guid _ownEntryId = Guid.NewGuid();
     private readonly Guid _teamEntryId = Guid.NewGuid();
+    private readonly Guid _otherTeamEntryId = Guid.NewGuid();
 
     public TimeEntryPermissionScopeTests()
     {
@@ -64,6 +67,16 @@ public sealed class TimeEntryPermissionScopeTests : IDisposable
             Status = "Active",
             Priority = "Medium"
         });
+        _db.Projects.Add(new Project
+        {
+            Id = _otherProjectId,
+            TenantId = _tenantId,
+            CreatedBy = _actorId.ToString(),
+            Name = "Other Organization project",
+            Code = "TIME-SCOPE-OTHER",
+            Status = "Active",
+            Priority = "Medium"
+        });
         _db.Resources.AddRange(
             new Resource
             {
@@ -83,17 +96,27 @@ public sealed class TimeEntryPermissionScopeTests : IDisposable
                 Name = "Team resource",
                 Type = "Internal",
                 Status = "Active"
+            },
+            new Resource
+            {
+                Id = _otherTeamResourceId,
+                TenantId = _tenantId,
+                CreatedBy = "test",
+                Name = "Other Organization team resource",
+                Type = "Internal",
+                Status = "Active"
             });
         _db.TimeEntries.AddRange(
             NewEntry(_ownEntryId, _ownResourceId, "Own entry"),
-            NewEntry(_teamEntryId, _teamResourceId, "Team entry"));
+            NewEntry(_teamEntryId, _teamResourceId, "Team entry"),
+            NewEntry(_otherTeamEntryId, _otherTeamResourceId, "Other Organization team entry", _otherProjectId));
         await _db.SaveChangesAsync();
 
         var scopeResolver = new Mock<IManagementScopeResolver>();
         var projectScope = new ManagementScope(
             new HashSet<Guid>(),
             new HashSet<Guid>(),
-            new HashSet<Guid> { _projectId });
+            new HashSet<Guid> { _projectId, _otherProjectId });
         scopeResolver.Setup(item => item.GetPerspectiveSnapshotAsync(
                 _actorId, _tenantId, It.IsAny<ManagementContext?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ManagementPerspectiveSnapshot(
@@ -107,6 +130,15 @@ public sealed class TimeEntryPermissionScopeTests : IDisposable
                 _actorId, _tenantId, _projectId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
+        var requestScope = new ManagementScope(
+            new HashSet<Guid>(),
+            new HashSet<Guid>(),
+            new HashSet<Guid> { _projectId });
+        var managementContext = new Mock<IManagementContextAccessor>();
+        managementContext.Setup(accessor => accessor.Current).Returns(new ManagementContext(
+            _actorId, _tenantId, ManagementPerspective.ProjectManager, ManagementViewMode.Native,
+            null, null, null, requestScope));
+
         var service = new TimeEntryService(
             _db,
             Mock.Of<IResourceReferenceLookup>(),
@@ -114,7 +146,7 @@ public sealed class TimeEntryPermissionScopeTests : IDisposable
             Mock.Of<IWorkItemReferenceLookup>(),
             Mock.Of<IWorkItemAssigneeLookup>(),
             scopeResolver.Object,
-            Mock.Of<IManagementContextAccessor>(),
+            managementContext.Object,
             Mock.Of<IAuditService>(),
             _http.Object);
 
@@ -129,6 +161,7 @@ public sealed class TimeEntryPermissionScopeTests : IDisposable
         Assert.True(list.IsSuccess, list.Error?.Message);
         Assert.Single(list.Value!.Items);
         Assert.Equal(_teamEntryId, list.Value.Items[0].Id);
+        Assert.DoesNotContain(list.Value.Items, item => item.Id == _otherTeamEntryId);
 
         var ownResourceList = await service.ListAsync(new TimeEntryFilterDto { ResourceId = _ownResourceId }, _actorId, _tenantId);
         Assert.False(ownResourceList.IsSuccess);
@@ -143,13 +176,13 @@ public sealed class TimeEntryPermissionScopeTests : IDisposable
         Assert.Equal(403, ownSummary.Error?.StatusCode);
     }
 
-    private TimeEntry NewEntry(Guid id, Guid resourceId, string description) => new()
+    private TimeEntry NewEntry(Guid id, Guid resourceId, string description, Guid? projectId = null) => new()
     {
         Id = id,
         TenantId = _tenantId,
         CreatedBy = _actorId.ToString(),
         ResourceId = resourceId,
-        ProjectId = _projectId,
+        ProjectId = projectId ?? _projectId,
         WorkDate = DateTime.UtcNow.Date,
         StartTime = TimeSpan.FromHours(9),
         EndTime = TimeSpan.FromHours(10),

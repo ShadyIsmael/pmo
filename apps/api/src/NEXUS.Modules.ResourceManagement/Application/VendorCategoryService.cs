@@ -1,3 +1,5 @@
+using System.Security.Claims;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using NEXUS.Modules.Audit.Application;
 using NEXUS.Modules.Audit.Domain;
@@ -10,11 +12,13 @@ public class VendorCategoryService : IVendorCategoryService
 {
     private readonly DbContext _context;
     private readonly IAuditService _auditService;
+    private readonly IHttpContextAccessor? _httpContextAccessor;
 
-    public VendorCategoryService(DbContext context, IAuditService auditService)
+    public VendorCategoryService(DbContext context, IAuditService auditService, IHttpContextAccessor? httpContextAccessor = null)
     {
         _context = context;
         _auditService = auditService;
+        _httpContextAccessor = httpContextAccessor;
     }
 
     public async Task<Result<IReadOnlyList<LookupDto>>> GetActiveAsync(CancellationToken cancellationToken = default)
@@ -43,6 +47,12 @@ public class VendorCategoryService : IVendorCategoryService
 
     public async Task<Result<LookupDto>> CreateAsync(CreateLookupDto dto, string userId, CancellationToken cancellationToken = default)
     {
+        if (!IsTrustedActor(userId))
+            return Result<LookupDto>.Failure(Error.Unauthorized("A valid authenticated actor is required."));
+
+        var tenantId = CurrentTenantId();
+        if (tenantId == Guid.Empty)
+            return Result<LookupDto>.Failure(Error.Forbidden("A valid tenant context is required."));
         if (string.IsNullOrWhiteSpace(dto.Code))
             return Result<LookupDto>.Failure(Error.Validation("Vendor category code is required"));
         if (string.IsNullOrWhiteSpace(dto.NameEn))
@@ -54,6 +64,7 @@ public class VendorCategoryService : IVendorCategoryService
 
         var lookup = new Lookup
         {
+            TenantId = tenantId,
             Category = ReferenceDataCategories.VendorCategory,
             Code = dto.Code.Trim(),
             Name = dto.NameEn.Trim(),
@@ -85,6 +96,9 @@ public class VendorCategoryService : IVendorCategoryService
 
     public async Task<Result<LookupDto>> UpdateAsync(Guid id, UpdateLookupDto dto, string userId, CancellationToken cancellationToken = default)
     {
+        if (!IsTrustedActor(userId))
+            return Result<LookupDto>.Failure(Error.Unauthorized("A valid authenticated actor is required."));
+
         var lookup = await Query().FirstOrDefaultAsync(l => l.Id == id, cancellationToken);
         if (lookup is null) return Result<LookupDto>.Failure(Error.NotFound("Vendor category not found"));
         if (lookup.IsActive && dto.IsActive == false)
@@ -125,6 +139,9 @@ public class VendorCategoryService : IVendorCategoryService
 
     public async Task<Result> DeactivateAsync(Guid id, string userId, CancellationToken cancellationToken = default)
     {
+        if (!IsTrustedActor(userId))
+            return Result.Failure(Error.Unauthorized("A valid authenticated actor is required."));
+
         var lookup = await Query().FirstOrDefaultAsync(l => l.Id == id, cancellationToken);
         if (lookup is null) return Result.Failure(Error.NotFound("Vendor category not found"));
 
@@ -147,6 +164,29 @@ public class VendorCategoryService : IVendorCategoryService
 
     private IQueryable<Lookup> Query() =>
         _context.Set<Lookup>().Where(l => l.Category == ReferenceDataCategories.VendorCategory && !l.IsDeleted);
+
+    private Guid CurrentTenantId() =>
+        Guid.TryParse(_httpContextAccessor?.HttpContext?.User.FindFirstValue("tenantId"), out var tenantId)
+            && tenantId != Guid.Empty
+                ? tenantId
+                : Guid.Empty;
+
+    private bool IsTrustedActor(string userId)
+    {
+        if (!Guid.TryParse(userId, out var actorId) || actorId == Guid.Empty)
+            return false;
+
+        var httpContext = _httpContextAccessor?.HttpContext;
+        if (httpContext is null)
+            return false;
+
+        var principal = httpContext.User;
+        var actorClaim = principal.FindFirst(ClaimTypes.NameIdentifier);
+        var actorValue = actorClaim?.Value ?? (actorClaim is null ? principal.FindFirst("sub")?.Value : null);
+        return principal.Identity?.IsAuthenticated == true
+            && Guid.TryParse(actorValue, out var claimActorId)
+            && claimActorId == actorId;
+    }
 
     private static LookupDto ToDto(Lookup l) => new()
     {

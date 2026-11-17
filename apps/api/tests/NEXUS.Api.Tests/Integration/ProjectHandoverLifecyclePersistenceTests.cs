@@ -11,6 +11,7 @@ using NEXUS.Modules.Audit.Domain;
 using NEXUS.Modules.Identity.Application;
 using NEXUS.Modules.Identity.Domain;
 using NEXUS.Modules.Notifications.Application;
+using NEXUS.Modules.Organization.Domain;
 using NEXUS.Modules.ProjectManagement.Api;
 using NEXUS.Modules.ProjectManagement.Application;
 using NEXUS.Modules.ProjectManagement.Application.DTOs;
@@ -19,6 +20,7 @@ using NEXUS.Modules.ProjectManagement.Domain;
 using NEXUS.Modules.ResourceManagement.Domain;
 using NEXUS.Persistence;
 using NEXUS.SharedKernel;
+using NEXUS.SharedKernel.Management;
 using Xunit;
 
 namespace NEXUS.Api.Tests.Integration;
@@ -262,7 +264,7 @@ public sealed class ProjectHandoverLifecyclePersistenceTests : IDisposable
             .ReturnsAsync(new Dictionary<Guid, ResourceReference>());
         resourceLookup.Setup(lookup => lookup.GetDetailsByUserIdsAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Dictionary<Guid, ResourceReference>());
-        var people = new ProjectPeopleService(_context, resourceLookup.Object, _audit.Object);
+        var people = CreateProjectPeopleService(resourceLookup.Object);
         var peopleResult = await people.GetAsync(ProjectId);
 
         Assert.True(peopleResult.IsSuccess, peopleResult.Error?.Message);
@@ -337,7 +339,7 @@ public sealed class ProjectHandoverLifecyclePersistenceTests : IDisposable
             .ReturnsAsync(new Dictionary<Guid, ResourceReference> { [resourceId] = resourceReference });
         resourceLookup.Setup(lookup => lookup.GetDetailsByUserIdsAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Dictionary<Guid, ResourceReference> { [ManagerB] = resourceReference });
-        var people = new ProjectPeopleService(_context, resourceLookup.Object, _audit.Object);
+        var people = CreateProjectPeopleService(resourceLookup.Object);
 
         var peopleResult = await people.GetAsync(ProjectId);
 
@@ -371,7 +373,7 @@ public sealed class ProjectHandoverLifecyclePersistenceTests : IDisposable
 
         SetActor(ManagerA, TenantId);
         var resourceLookup = new Mock<IResourceReferenceLookup>();
-        var people = new ProjectPeopleService(_context, resourceLookup.Object, _audit.Object);
+        var people = CreateProjectPeopleService(resourceLookup.Object);
 
         var result = await people.GetAsync(foreignProjectId);
 
@@ -392,7 +394,7 @@ public sealed class ProjectHandoverLifecyclePersistenceTests : IDisposable
             .ReturnsAsync(new Dictionary<Guid, ResourceReference>());
         resourceLookup.Setup(lookup => lookup.GetDetailsByUserIdsAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Dictionary<Guid, ResourceReference>());
-        var people = new ProjectPeopleService(_context, resourceLookup.Object, _audit.Object);
+        var people = CreateProjectPeopleService(resourceLookup.Object);
 
         var result = await people.GetAsync(ProjectId);
 
@@ -400,6 +402,137 @@ public sealed class ProjectHandoverLifecyclePersistenceTests : IDisposable
         Assert.DoesNotContain(result.Value!, person => person.UserId == missingManagerId);
         Assert.Empty(await _context.Users.Where(user => user.Id == missingManagerId).ToListAsync());
         Assert.Empty(await _context.Set<Resource>().Where(resource => resource.UserId == missingManagerId).ToListAsync());
+    }
+
+    [Fact]
+    public async Task ProjectPeopleRejectsSameTenantProjectsOutsideManagementProjectScope()
+    {
+        var hiddenProjectId = Guid.Parse("51000000-0000-0000-0000-000000000099");
+        var hiddenTeamId = Guid.Parse("51000000-0000-0000-0000-000000000098");
+        var memberId = Guid.Parse("51000000-0000-0000-0000-000000000097");
+        _context.Projects.Add(new Project
+        {
+            Id = hiddenProjectId,
+            TenantId = TenantId,
+            Name = "Out of scope project",
+            Code = "HANDOVER-HIDDEN",
+            SponsorId = ManagerB,
+            CreatedBy = ManagerA.ToString(),
+            RowVersion = new byte[8]
+        });
+        _context.Teams.Add(new Team
+        {
+            Id = hiddenTeamId,
+            TenantId = TenantId,
+            Name = "Hidden project team",
+            Code = "TEAM-HIDDEN",
+            IsActive = true,
+            RowVersion = new byte[8]
+        });
+        _context.Set<ProjectMember>().Add(new ProjectMember
+        {
+            Id = memberId,
+            TenantId = TenantId,
+            ProjectId = hiddenProjectId,
+            TeamId = hiddenTeamId,
+            Role = "TeamMember",
+            AllocationPercentage = 60m,
+            StartDate = _clock.GetUtcNow().UtcDateTime.Date,
+            EndDate = _clock.GetUtcNow().UtcDateTime.Date.AddMonths(1),
+            Status = "Active",
+            CreatedBy = ManagerA.ToString(),
+            RowVersion = new byte[8]
+        });
+        await _context.SaveChangesAsync();
+
+        var resourceLookup = new Mock<IResourceReferenceLookup>();
+        resourceLookup.Setup(lookup => lookup.GetDetailsAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<Guid, ResourceReference>());
+        resourceLookup.Setup(lookup => lookup.GetDetailsByUserIdsAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<Guid, ResourceReference>());
+        var people = CreateProjectPeopleService(resourceLookup.Object);
+
+        var read = await people.GetAsync(hiddenProjectId);
+        var isTeamGroup = await people.IsTeamGroupAssignmentAsync(hiddenProjectId, memberId);
+        var add = await people.AddAsync(hiddenProjectId, new CreateProjectPersonDto
+        {
+            TeamId = hiddenTeamId,
+            RelationshipType = ProjectRelationshipType.TeamMember,
+            AllocationPercentage = 20m,
+            StartDate = _clock.GetUtcNow().UtcDateTime.Date,
+            EndDate = _clock.GetUtcNow().UtcDateTime.Date.AddMonths(1)
+        }, ManagerA.ToString());
+        var update = await people.UpdateAsync(hiddenProjectId, memberId, new UpdateProjectPersonDto
+        {
+            Source = "TeamMember",
+            AllocationPercentage = 10m
+        }, ManagerA.ToString());
+        var remove = await people.RevokeOrRemoveAsync(hiddenProjectId, memberId,
+            "TeamMember", null, ManagerA.ToString());
+        var clearSponsor = await people.ClearSponsorAsync(hiddenProjectId, ManagerA.ToString());
+
+        Assert.Equal(404, read.Error?.StatusCode);
+        Assert.False(isTeamGroup);
+        Assert.Equal(404, add.Error?.StatusCode);
+        Assert.Equal(404, update.Error?.StatusCode);
+        Assert.Equal(404, remove.Error?.StatusCode);
+        Assert.Equal(404, clearSponsor.Error?.StatusCode);
+        var persistedProject = await _context.Projects.SingleAsync(project => project.Id == hiddenProjectId);
+        Assert.Equal("Out of scope project", persistedProject.Name);
+        Assert.Equal(ManagerB, persistedProject.SponsorId);
+        var persistedMember = await _context.ProjectMembers.SingleAsync(member => member.Id == memberId);
+        Assert.Equal(60m, persistedMember.AllocationPercentage);
+        Assert.False(persistedMember.IsDeleted);
+        Assert.Equal(1, await _context.ProjectMembers.CountAsync(member => member.ProjectId == hiddenProjectId));
+    }
+
+    [Fact]
+    public async Task ProjectPeopleRejectsProjectRolesFromAnotherTenant()
+    {
+        var teamId = Guid.NewGuid();
+        var foreignTenantId = Guid.NewGuid();
+        var foreignRoleId = Guid.NewGuid();
+        _context.Teams.Add(new Team
+        {
+            Id = teamId,
+            TenantId = TenantId,
+            Name = "Project people role validation team",
+            Code = "TEAM-ROLE-VALIDATION",
+            IsActive = true,
+            CreatedBy = ManagerA.ToString(),
+            RowVersion = new byte[8]
+        });
+        _context.Set<Lookup>().Add(new Lookup
+        {
+            Id = foreignRoleId,
+            TenantId = foreignTenantId,
+            Category = "ProjectRole",
+            Code = "FOREIGN-ROLE",
+            NameEn = "Foreign role",
+            NameAr = "دور خارجي",
+            IsActive = true,
+            CreatedBy = ManagerA.ToString(),
+            RowVersion = new byte[8]
+        });
+        await _context.SaveChangesAsync();
+
+        SetActor(ManagerA, TenantId);
+        var resourceLookup = new Mock<IResourceReferenceLookup>();
+        resourceLookup.Setup(lookup => lookup.GetDetailsAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<Guid, ResourceReference>());
+        var people = CreateProjectPeopleService(resourceLookup.Object);
+        var result = await people.AddAsync(ProjectId, new CreateProjectPersonDto
+        {
+            TeamId = teamId,
+            RelationshipType = ProjectRelationshipType.TeamMember,
+            AllocationPercentage = 20m,
+            ProjectRoleIds = new List<Guid> { foreignRoleId }
+        }, ManagerA.ToString());
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(Error.Validation("Select active Project Roles from the same tenant.").Code, result.Error?.Code);
+        Assert.Empty(await _context.ProjectMembers.Where(member => member.ProjectId == ProjectId && member.TeamId == teamId).ToListAsync());
+        Assert.Empty(await _context.Set<ProjectMemberRole>().Where(role => role.ProjectRoleId == foreignRoleId).ToListAsync());
     }
 
     [Fact]
@@ -731,6 +864,24 @@ public sealed class ProjectHandoverLifecyclePersistenceTests : IDisposable
             new Claim(ClaimTypes.Name, $"Manager {userId.ToString()[^1]}")
         }, "handover-lifecycle-test"));
         _http.HttpContext = context;
+    }
+
+    private ProjectPeopleService CreateProjectPeopleService(IResourceReferenceLookup resources)
+    {
+        var actorId = Guid.Parse(_http.HttpContext!.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+        var tenantId = Guid.Parse(_http.HttpContext.User.FindFirst("tenantId")!.Value);
+        var projectIds = tenantId == TenantId ? new HashSet<Guid> { ProjectId } : new HashSet<Guid>();
+        var management = new Mock<IManagementContextAccessor>();
+        management.SetupGet(accessor => accessor.Current).Returns(new ManagementContext(
+            actorId,
+            tenantId,
+            ManagementPerspective.ProjectManager,
+            ManagementViewMode.Native,
+            null,
+            null,
+            null,
+            new ManagementScope(new HashSet<Guid>(), new HashSet<Guid>(), projectIds)));
+        return new ProjectPeopleService(_context, resources, _audit.Object, managementContext: management.Object);
     }
 
     public void Dispose()

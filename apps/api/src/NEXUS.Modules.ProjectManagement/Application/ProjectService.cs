@@ -55,7 +55,7 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
     {
         return await InScope(_context.Set<Project>())
             .Where(project => project.Id == projectId)
-            .Select(project => new ProjectReference(project.Id, project.Name, project.Currency, project.Budget, project.PublicId, project.Code))
+            .Select(project => new ProjectReference(project.Id, project.Name, project.Currency, project.Budget, project.PublicId, project.Code, project.PortfolioId))
             .FirstOrDefaultAsync(cancellationToken);
     }
 
@@ -72,7 +72,7 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
 
     public async Task<IReadOnlyList<ProjectReference>> GetFinancialReferencesAsync(CancellationToken cancellationToken = default)
         => await InScope(_context.Set<Project>().AsNoTracking())
-            .Select(p => new ProjectReference(p.Id, p.Name, p.Currency, p.Budget, p.PublicId, p.Code)).ToListAsync(cancellationToken);
+            .Select(p => new ProjectReference(p.Id, p.Name, p.Currency, p.Budget, p.PublicId, p.Code, p.PortfolioId)).ToListAsync(cancellationToken);
 
     public async Task<IReadOnlyDictionary<Guid, ProjectReference>> GetReferencesAsync(IEnumerable<Guid> projectIds, CancellationToken cancellationToken = default)
     {
@@ -80,7 +80,7 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
         if (ids.Length == 0) return new Dictionary<Guid, ProjectReference>();
         return await InScope(_context.Set<Project>().AsNoTracking())
             .Where(project => ids.Contains(project.Id))
-            .Select(project => new ProjectReference(project.Id, project.Name, project.Currency, project.Budget, project.PublicId, project.Code))
+            .Select(project => new ProjectReference(project.Id, project.Name, project.Currency, project.Budget, project.PublicId, project.Code, project.PortfolioId))
             .ToDictionaryAsync(project => project.Id, cancellationToken);
     }
 
@@ -207,10 +207,21 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
                 || decimal.Round(dto.InitialAnnualBudgetAmount.Value, 4) != dto.InitialAnnualBudgetAmount.Value))
             return Result<ProjectDto>.Failure(Error.Validation("Initial Annual Budget must be non-negative and use at most four decimal places."));
         var initialProjectManagerId = dto.ProjectManagerId;
-        if (initialProjectManagerId.HasValue
-            && !await IsEligibleProjectManagerAsync(initialProjectManagerId.Value, tenantId, cancellationToken))
+        if (initialProjectManagerId.HasValue)
         {
-            return Result<ProjectDto>.Failure(Error.Validation("The Project Manager must be an active same-tenant user with an active Management-category role and effective Handover.Approve permission."));
+            var assignmentActorId = _managementContext?.Current?.UserId ?? TryParseGuid(userId) ?? Guid.Empty;
+            if (assignmentActorId == Guid.Empty || _effectivePermissions is null)
+                return Result<ProjectDto>.Failure(Error.Forbidden("Handover.AdminInitiate is required to assign a Project Manager during Project creation."));
+            if (_managementContext?.Current is { } activeContext
+                && (activeContext.TenantId != tenantId || activeContext.UserId != assignmentActorId
+                    || activeContext.EffectiveReadOnly))
+                return Result<ProjectDto>.Failure(Error.Forbidden("A writable authenticated management context is required for initial Project Manager assignment."));
+            if (!Guid.TryParse(userId, out var authenticatedActorId) || authenticatedActorId != assignmentActorId)
+                return Result<ProjectDto>.Failure(Error.Forbidden("The initial assignment actor must match the authenticated user."));
+
+            var actorPermissions = await _effectivePermissions.GetEffectivePermissionsAsync(assignmentActorId, tenantId, cancellationToken);
+            if (!actorPermissions.Contains("Handover.AdminInitiate"))
+                return Result<ProjectDto>.Failure(Error.Forbidden("Handover.AdminInitiate is required to assign a Project Manager during Project creation."));
         }
 
         var normalizedCode = dto.Code?.Trim();
@@ -223,12 +234,30 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
             return Result<ProjectDto>.Failure(Error.Conflict("A project with this code already exists"));
         }
 
+        if (!dto.PortfolioId.HasValue)
+            return Result<ProjectDto>.Failure(Error.Validation(
+                "A Portfolio is required when creating a Project.", "portfolioId"));
         var hierarchy = await ResolveHierarchyAsync(dto.ProgramId, dto.PortfolioId, dto.Currency, cancellationToken);
         if (hierarchy.Error is not null) return Result<ProjectDto>.Failure(hierarchy.Error);
+        if (!hierarchy.PortfolioId.HasValue)
+            return Result<ProjectDto>.Failure(Error.Validation(
+                "A Portfolio is required when creating a Project.", "portfolioId"));
         var lifecycleOrganizationId = await ResolveLifecycleOrganizationIdAsync(hierarchy.PortfolioId, dto.DepartmentId, cancellationToken);
         if (!lifecycleOrganizationId.HasValue)
             return Result<ProjectDto>.Failure(Error.Validation(
-                "Project ownership must resolve to an active Organization in the current tenant through its Program, Portfolio, or Department."));
+                "The selected Portfolio must resolve to an active Organization in the current tenant."));
+        if (initialProjectManagerId.HasValue
+            && !await IsEligibleProjectManagerAsync(initialProjectManagerId.Value, tenantId, lifecycleOrganizationId.Value, cancellationToken))
+            return Result<ProjectDto>.Failure(Error.Validation("The Project Manager must be an active same-tenant user with an active Management-category role and effective Handover.Approve permission in the owning Organization."));
+        if (dto.DepartmentId.HasValue)
+        {
+            var departmentOrganizationId = await ResolveDepartmentOrganizationIdAsync(dto.DepartmentId, cancellationToken);
+            if (!departmentOrganizationId.HasValue || departmentOrganizationId != lifecycleOrganizationId)
+                return Result<ProjectDto>.Failure(Error.Validation(
+                    "The selected Department must resolve to the same active Organization as the Project ownership."));
+            if (!HasOrganizationAssignmentScope(departmentOrganizationId.Value))
+                return Result<ProjectDto>.Failure(Error.NotFound());
+        }
         if (_lifecycleCatalog is not null)
         {
             var lifecycleActorId = _managementContext?.Current?.UserId ?? TryParseGuid(userId) ?? Guid.Empty;
@@ -263,7 +292,8 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
                 return Result<ProjectDto>.Failure(Error.Validation("The Initial Annual Budget cannot exceed the Project lifetime financial ceiling."));
             if (_effectivePermissions is null || _tenantFiscalYear is null || !Guid.TryParse(userId, out var financeActorId))
                 return Result<ProjectDto>.Failure(Error.Forbidden("ProjectAnnualBudget.Create and the tenant Fiscal Year configuration are required to prepare an Initial Annual Budget."));
-            var financePermissions = await _effectivePermissions.GetEffectivePermissionsAsync(financeActorId, project.TenantId, cancellationToken);
+            var financePermissions = await _effectivePermissions.GetEffectivePermissionsForOrganizationAsync(
+                financeActorId, project.TenantId, lifecycleOrganizationId.Value, cancellationToken);
             if (!financePermissions.Contains("ProjectAnnualBudget.Create"))
                 return Result<ProjectDto>.Failure(Error.Forbidden("ProjectAnnualBudget.Create is required to prepare an Initial Annual Budget during Project creation."));
             var fiscalYear = await _tenantFiscalYear.ResolveForTimestampAsync(project.TenantId, DateTimeOffset.UtcNow, cancellationToken);
@@ -529,7 +559,7 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
 
     public async Task<Result<ProjectDto>> UpdateAsync(Guid id, UpdateProjectDto dto, string userId, CancellationToken cancellationToken = default)
     {
-        var project = await _context.Set<Project>().FirstOrDefaultAsync(p => p.Id == id && !p.IsDeleted, cancellationToken);
+        var project = await InScope(_context.Set<Project>()).FirstOrDefaultAsync(p => p.Id == id && !p.IsDeleted, cancellationToken);
         if (project is null) return Result<ProjectDto>.Failure(Error.NotFound("Project not found"));
 
         if (dto.ProjectManagerIdWasProvided && dto.ProjectManagerId != project.ProjectManagerId)
@@ -566,6 +596,15 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
             if (!reassignedOrganizationId.HasValue)
                 return Result<ProjectDto>.Failure(Error.Validation(
                     "Project ownership reassignment must resolve to an active Organization in the current tenant through its Program, Portfolio, or Department."));
+            if (candidateDepartmentId.HasValue)
+            {
+                var departmentOrganizationId = await ResolveDepartmentOrganizationIdAsync(candidateDepartmentId, cancellationToken);
+                if (!departmentOrganizationId.HasValue || departmentOrganizationId != reassignedOrganizationId)
+                    return Result<ProjectDto>.Failure(Error.Validation(
+                        "The selected Department must resolve to the same active Organization as the Project ownership."));
+                if (!HasOrganizationAssignmentScope(departmentOrganizationId.Value))
+                    return Result<ProjectDto>.Failure(Error.NotFound());
+            }
         }
 
         var previousSponsorId = project.SponsorId;
@@ -630,7 +669,14 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
             return Result<ProjectDto>.Failure(Error.Unauthorized("A valid user identity is required."));
         if (_effectivePermissions is null)
             return Result<ProjectDto>.Failure(Error.Forbidden("Project Status authorization is unavailable."));
-        var permissions = await _effectivePermissions.GetEffectivePermissionsAsync(actorId, project.TenantId, cancellationToken);
+        if (_projectOrganizationLookup is null)
+            return Result<ProjectDto>.Failure(Error.Forbidden("Project Organization authorization is unavailable."));
+        var organizationId = await _projectOrganizationLookup.ResolveOrganizationIdAsync(
+            project.TenantId, project.Id, cancellationToken);
+        if (!organizationId.HasValue)
+            return Result<ProjectDto>.Failure(Error.NotFound("Project not found."));
+        var permissions = await _effectivePermissions.GetEffectivePermissionsForOrganizationAsync(
+            actorId, project.TenantId, organizationId.Value, cancellationToken);
         if (!permissions.Contains("ProjectStatus.Change"))
             return Result<ProjectDto>.Failure(Error.Forbidden("ProjectStatus.Change is required to change Project Status."));
         if (dto.TargetStatusId == Guid.Empty)
@@ -649,9 +695,6 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
         if (source.Id == target.Id)
             return Result<ProjectDto>.Failure(Error.Validation("The project already has the selected Status."));
 
-        var organizationId = _projectOrganizationLookup is null
-            ? null
-            : await _projectOrganizationLookup.ResolveOrganizationIdAsync(project.TenantId, project.Id, cancellationToken);
         if (source.OrganizationId.HasValue && source.OrganizationId != organizationId)
             return Result<ProjectDto>.Failure(Error.Conflict("The project's current Status belongs to a different Organization scope."));
         if (target.OrganizationId.HasValue && target.OrganizationId != organizationId)
@@ -710,7 +753,11 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
         return Result<ProjectDto>.Success(resultDto);
     }
 
-    private async Task<bool> IsEligibleProjectManagerAsync(Guid candidateId, Guid tenantId, CancellationToken cancellationToken)
+    private async Task<bool> IsEligibleProjectManagerAsync(
+        Guid candidateId,
+        Guid tenantId,
+        Guid organizationId,
+        CancellationToken cancellationToken)
     {
         var isActiveTenantUser = await _context.Set<User>().AsNoTracking()
             .AnyAsync(user => user.Id == candidateId && user.TenantId == tenantId && user.IsActive && !user.IsDeleted, cancellationToken);
@@ -724,12 +771,16 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
         if (!hasProjectManagerRole)
             return false;
 
-        var permissions = await _effectivePermissions.GetEffectivePermissionsAsync(candidateId, tenantId, cancellationToken);
+        var permissions = await _effectivePermissions.GetEffectivePermissionsForOrganizationAsync(
+            candidateId, tenantId, organizationId, cancellationToken);
         return permissions.Contains("Handover.Approve");
     }
 
     public async Task<Result<IReadOnlyList<ProjectManagerHistoryDto>>> GetManagerHistoryAsync(Guid projectId, CancellationToken cancellationToken = default)
     {
+        if (!await InScope(_context.Set<Project>().AsNoTracking())
+                .AnyAsync(project => project.Id == projectId, cancellationToken))
+            return Result<IReadOnlyList<ProjectManagerHistoryDto>>.Failure(Error.NotFound("Project not found"));
         var assignments = await _context.Set<ProjectManagerAssignment>()
             .Where(a => a.ProjectId == projectId && !a.IsDeleted)
             .OrderBy(a => a.StartDate)
@@ -890,18 +941,8 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
                 .FirstOrDefaultAsync(cancellationToken);
         }
 
-        if (!organizationId.HasValue && departmentId.HasValue)
-        {
-            organizationId = await (
-                from department in _context.Set<Department>().AsNoTracking()
-                join businessUnit in _context.Set<BusinessUnit>().AsNoTracking()
-                    on new { department.TenantId, department.BusinessUnitId }
-                    equals new { businessUnit.TenantId, BusinessUnitId = businessUnit.Id }
-                where department.Id == departmentId.Value && department.TenantId == tenantId
-                    && department.IsActive && !department.IsDeleted && businessUnit.IsActive && !businessUnit.IsDeleted
-                select (Guid?)businessUnit.OrganizationId)
-                .FirstOrDefaultAsync(cancellationToken);
-        }
+        if (!portfolioId.HasValue && departmentId.HasValue)
+            organizationId = await ResolveDepartmentOrganizationIdAsync(departmentId, cancellationToken);
 
         if (!organizationId.HasValue) return null;
         return await _context.Set<OrganizationEntity>().AsNoTracking()
@@ -909,6 +950,36 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
                 && organization.IsActive && !organization.IsDeleted)
             .Select(organization => (Guid?)organization.Id)
             .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    private async Task<Guid?> ResolveDepartmentOrganizationIdAsync(Guid? departmentId, CancellationToken cancellationToken)
+    {
+        if (!departmentId.HasValue) return null;
+        var tenantId = GetCurrentTenantId();
+        var organizationId = await (
+            from department in _context.Set<Department>().AsNoTracking()
+            join businessUnit in _context.Set<BusinessUnit>().AsNoTracking()
+                on new { department.TenantId, department.BusinessUnitId }
+                equals new { businessUnit.TenantId, BusinessUnitId = businessUnit.Id }
+            where department.Id == departmentId.Value && department.TenantId == tenantId
+                && department.IsActive && !department.IsDeleted && businessUnit.IsActive && !businessUnit.IsDeleted
+            select (Guid?)businessUnit.OrganizationId)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (!organizationId.HasValue) return null;
+        return await _context.Set<OrganizationEntity>().AsNoTracking()
+            .Where(organization => organization.Id == organizationId.Value && organization.TenantId == tenantId
+                && organization.IsActive && !organization.IsDeleted)
+            .Select(organization => (Guid?)organization.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    private bool HasOrganizationAssignmentScope(Guid organizationId)
+    {
+        var context = _managementContext?.Current;
+        if (context is null) return _httpContextAccessor.HttpContext is null;
+        return context.TenantId == GetCurrentTenantId()
+            && !context.EffectiveReadOnly
+            && context.Scope.OrganizationIds.Contains(organizationId);
     }
 
     private async Task<(Error? Error, ProjectPhaseCatalogEntry? Phase, ProjectStatusCatalogEntry? Status)> ResolveLifecycleSelectionAsync(
@@ -925,7 +996,7 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
             .ToListAsync(cancellationToken);
         var statusRows = await _context.Set<ProjectStatusCatalogEntry>().AsNoTracking()
             .Where(item => item.TenantId == tenantId && !item.IsDeleted && item.IsActive
-                && (item.OrganizationId == null || item.OrganizationId == organizationId))
+                && item.OrganizationId == null)
             .ToListAsync(cancellationToken);
 
         var phases = phaseRows.GroupBy(item => item.NormalizedCode, StringComparer.OrdinalIgnoreCase)
@@ -990,6 +1061,12 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
                 .AnyAsync(x => x.Id == program.PortfolioId && x.TenantId == tenant && !x.IsDeleted, ct);
             if (!programPortfolioExists) return (Error.Validation("Program Portfolio must exist in the current tenant"), null, null);
             var hierarchyChanged = existing is null || existing.ProgramId != program.Id || existing.PortfolioId != program.PortfolioId;
+            if (hierarchyChanged && !await _context.Set<PortfolioEntity>().AsNoTracking()
+                    .AnyAsync(x => x.Id == program.PortfolioId && x.TenantId == tenant
+                        && !x.IsDeleted && x.Status == "Active", ct))
+                return (Error.Validation("Program Portfolio must be active"), null, null);
+            if (hierarchyChanged && !string.Equals(program.Status, "Active", StringComparison.OrdinalIgnoreCase))
+                return (Error.Validation("Program must be active"), null, null);
             if (hierarchyChanged && !HasHierarchyAssignmentScope(program.Id, program.PortfolioId))
                 return (Error.NotFound(), null, null);
             resolvedPortfolio = program.PortfolioId;
@@ -1002,6 +1079,8 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
             var portfolio = await _context.Set<PortfolioEntity>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == portfolioId.Value && !x.IsDeleted, ct);
             if (portfolio is null || portfolio.TenantId != tenant) return (Error.Validation("Portfolio must exist in the current tenant"), null, null);
             var hierarchyChanged = existing is null || existing.ProgramId.HasValue || existing.PortfolioId != portfolio.Id;
+            if (hierarchyChanged && portfolio.Status != "Active")
+                return (Error.Validation("Portfolio must be active"), null, null);
             if (hierarchyChanged && !HasHierarchyAssignmentScope(null, portfolio.Id))
                 return (Error.NotFound(), null, null);
             var currency = string.IsNullOrWhiteSpace(requestedCurrency) ? (existing?.Currency ?? portfolio.Currency) : requestedCurrency.Trim().ToUpperInvariant();
@@ -1072,7 +1151,7 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
 
     public async Task<Result> DeleteAsync(Guid id, string userId, CancellationToken cancellationToken = default)
     {
-        var project = await _context.Set<Project>().FirstOrDefaultAsync(p => p.Id == id && !p.IsDeleted, cancellationToken);
+        var project = await InScope(_context.Set<Project>()).FirstOrDefaultAsync(p => p.Id == id && !p.IsDeleted, cancellationToken);
         if (project is null) return Result.Failure(Error.NotFound("Project not found"));
 
         project.IsDeleted = true;
@@ -1103,6 +1182,9 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
 
     public async Task<Result<IReadOnlyList<ProjectMemberDto>>> GetTeamAsync(Guid projectId, CancellationToken cancellationToken = default)
     {
+        if (!await InScope(_context.Set<Project>().AsNoTracking())
+                .AnyAsync(project => project.Id == projectId, cancellationToken))
+            return Result<IReadOnlyList<ProjectMemberDto>>.Failure(Error.NotFound("Project not found"));
         var members = await _context.Set<ProjectMember>()
             .Include(m => m.Project)
             .Where(m => m.ProjectId == projectId && !m.IsDeleted)
@@ -1137,9 +1219,14 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
         return Result<IReadOnlyList<ProjectMemberDto>>.Success(memberDtos);
     }
 
-    public Task<bool> IsTeamGroupAssignmentAsync(Guid projectId, Guid memberId, CancellationToken cancellationToken = default) =>
-        _context.Set<ProjectMember>().AsNoTracking().AnyAsync(member => member.Id == memberId
+    public async Task<bool> IsTeamGroupAssignmentAsync(Guid projectId, Guid memberId, CancellationToken cancellationToken = default)
+    {
+        if (!await InScope(_context.Set<Project>().AsNoTracking())
+                .AnyAsync(project => project.Id == projectId, cancellationToken))
+            return false;
+        return await _context.Set<ProjectMember>().AsNoTracking().AnyAsync(member => member.Id == memberId
             && member.ProjectId == projectId && member.TeamId.HasValue && !member.IsDeleted, cancellationToken);
+    }
 
     public async Task<Result<ProjectMemberDto>> AddTeamMemberAsync(Guid projectId, CreateProjectMemberDto dto, string userId, CancellationToken cancellationToken = default)
     {
@@ -1149,7 +1236,7 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
             return Result<ProjectMemberDto>.Failure(Error.Validation("Project allocation must be between 0 and 100 percent."));
         if (dto.EndDate.Date < dto.StartDate.Date)
             return Result<ProjectMemberDto>.Failure(Error.Validation("Project team end date cannot be earlier than its start date."));
-        var project = await _context.Set<Project>().FirstOrDefaultAsync(p => p.Id == projectId && !p.IsDeleted, cancellationToken);
+        var project = await InScope(_context.Set<Project>()).FirstOrDefaultAsync(p => p.Id == projectId && !p.IsDeleted, cancellationToken);
         if (project is null) return Result<ProjectMemberDto>.Failure(Error.NotFound("Project not found"));
 
         Resource? resource = null;
@@ -1207,6 +1294,9 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
 
     public async Task<Result<ProjectMemberDto>> UpdateTeamMemberAsync(Guid projectId, Guid memberId, UpdateProjectMemberDto dto, string userId, CancellationToken cancellationToken = default)
     {
+        if (!await InScope(_context.Set<Project>().AsNoTracking())
+                .AnyAsync(project => project.Id == projectId, cancellationToken))
+            return Result<ProjectMemberDto>.Failure(Error.NotFound("Project not found"));
         var member = await _context.Set<ProjectMember>()
             .Include(m => m.Project)
             .FirstOrDefaultAsync(m => m.Id == memberId && m.ProjectId == projectId && !m.IsDeleted, cancellationToken);
@@ -1264,6 +1354,9 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
 
     public async Task<Result> RemoveTeamMemberAsync(Guid projectId, Guid memberId, string userId, CancellationToken cancellationToken = default)
     {
+        if (!await InScope(_context.Set<Project>().AsNoTracking())
+                .AnyAsync(project => project.Id == projectId, cancellationToken))
+            return Result.Failure(Error.NotFound("Project not found"));
         var member = await _context.Set<ProjectMember>()
             .FirstOrDefaultAsync(m => m.Id == memberId && m.ProjectId == projectId && !m.IsDeleted, cancellationToken);
         if (member is null) return Result.Failure(Error.NotFound("Project member not found"));
@@ -1304,7 +1397,27 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
 
     public async Task<Result<List<ProjectTeamMemberAllocationDto>>> CheckResourceConflictsAsync(Guid resourceId, DateTime startDate, DateTime endDate, decimal allocationPercentage, Guid? excludeMemberId, CancellationToken cancellationToken = default, Guid? projectId = null)
     {
+        if (projectId.HasValue && !await InScope(_context.Set<Project>().AsNoTracking())
+                .AnyAsync(project => project.Id == projectId.Value, cancellationToken))
+            return Result<List<ProjectTeamMemberAllocationDto>>.Failure(Error.NotFound("Project not found"));
         var conflicts = await CheckResourceConflictsInternalAsync(resourceId, startDate, endDate, allocationPercentage, excludeMemberId, cancellationToken, projectId);
+        if (projectId.HasValue)
+        {
+            var visibleProjectIds = _managementContext?.Current?.Scope.ProjectIds;
+            var visibleConflicts = conflicts
+                .Where(conflict => visibleProjectIds?.Contains(conflict.ProjectId) == true)
+                .ToList();
+            if (visibleConflicts.Count != conflicts.Count)
+            {
+                visibleConflicts.Add(new ProjectTeamMemberAllocationDto
+                {
+                    AllocationId = Guid.Empty,
+                    ResourceId = resourceId,
+                    IsRestrictedConflict = true
+                });
+            }
+            conflicts = visibleConflicts;
+        }
         return Result<List<ProjectTeamMemberAllocationDto>>.Success(conflicts);
     }
 
@@ -1375,6 +1488,7 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
             .Select(member => new ProjectTeamMemberAllocationDto
             {
                 AllocationId = member.Id,
+                ProjectId = member.ProjectId,
                 ResourceId = resourceId,
                 ResourceName = resource.Name,
                 ProjectName = member.Project?.Name ?? "Unknown",
@@ -1406,9 +1520,15 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
         return conflicts.DistinctBy(conflict => new { conflict.ResourceId, conflict.AllocationId }).ToList();
     }
 
-    private static Result<ProjectMemberDto> ResourceAllocationConflict(IReadOnlyCollection<ProjectTeamMemberAllocationDto> conflicts)
+    private Result<ProjectMemberDto> ResourceAllocationConflict(IReadOnlyCollection<ProjectTeamMemberAllocationDto> conflicts)
     {
-        var detail = conflicts.Select(conflict => $"{conflict.ResourceName ?? "Unknown"}: {conflict.ProjectName ?? "Unknown"} ({conflict.AllocationPercentage}%)");
+        var visibleProjectIds = _managementContext?.Current?.Scope.ProjectIds;
+        var detail = conflicts
+            .Where(conflict => visibleProjectIds?.Contains(conflict.ProjectId) == true)
+            .Select(conflict => $"{conflict.ResourceName ?? "Unknown"}: {conflict.ProjectName ?? "Unknown"} ({conflict.AllocationPercentage}%)")
+            .ToList();
+        if (conflicts.Any(conflict => visibleProjectIds?.Contains(conflict.ProjectId) != true))
+            detail.Add("an allocation in another project");
         return Result<ProjectMemberDto>.Failure(Error.Validation(
             $"Resource over-allocation detected: total would exceed 100%. Conflicting allocations: {string.Join(", ", detail)}"));
     }

@@ -18,11 +18,27 @@ import { SideSheet, SideSheetBody, SideSheetFooter } from "@components/ui/SideSh
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@components/ui/Dialog";
 import { getStatusTextClass } from "@lib/status-presentation";
 import { formatDateTime } from "@lib/utils";
-import { useAdminUsers, useAssignableRoles, useCreateAdminUser, useResetAdminUserPassword, useSaveUserPermissions, useUpdateAdminUser, useUserPermissions, toUserPermissionOverrides, type AdminUserDto, type PermissionOverrideEffect, type UserPermissionAssignmentDto } from "./api/admin";
-import { getPermissionDisplayName, getPermissionResourceLabel } from "./permission-labels";
+import { useAdminUsers, useAssignableRoles, useCreateAdminUser, useResetAdminUserPassword, useSaveUserPermissions, useUpdateAdminUser, useUserPermissions, toUserPermissionOverrides, type AdminUserDto, type AssignedRoleDto, type AssignableRoleDto, type PermissionOverrideEffect, type UserPermissionAssignmentDto } from "./api/admin";
+import { getPermissionDisplayName, getPermissionResourceLabel, getPermissionScopeValueLabel } from "./permission-labels";
 
 function isPermissionOverrideEffect(value: string): value is PermissionOverrideEffect {
   return value === "Inherit" || value === "Allow" || value === "Deny";
+}
+
+function isProtectedTenantRole(role: Pick<AssignedRoleDto, "scope" | "isOrganizationOwned" | "isProtected">): boolean {
+  return !role.isOrganizationOwned && role.scope.toLocaleLowerCase() === "tenant" && role.isProtected;
+}
+
+function isUnresolvedRoleOwnership(role: Pick<AssignableRoleDto | AssignedRoleDto, "scope" | "isLegacyOrganizationOwnershipUnresolved" | "isOrganizationOwnershipUnresolved">): boolean {
+  return role.isOrganizationOwnershipUnresolved === true
+    || role.isLegacyOrganizationOwnershipUnresolved === true
+    || role.scope.toLocaleLowerCase() === "unresolved";
+}
+
+function roleOrganizationName(role: Pick<AssignableRoleDto | AssignedRoleDto, "organizationName" | "isOrganizationOwned" | "scope" | "isLegacyOrganizationOwnershipUnresolved" | "isOrganizationOwnershipUnresolved">, tenantLabel: string, unavailableLabel: string, unresolvedLabel: string): string {
+  if (isUnresolvedRoleOwnership(role)) return unresolvedLabel;
+  if (!role.isOrganizationOwned) return tenantLabel;
+  return role.organizationName?.trim() || unavailableLabel;
 }
 
 export function AccessPage() {
@@ -78,7 +94,7 @@ export function AccessUsersPage() {
   const resetPassword = useResetAdminUserPassword();
   const [editingUser, setEditingUser] = React.useState<AdminUserDto | null>(null);
   const [isCreatingUser, setIsCreatingUser] = React.useState(false);
-  const [draft, setDraft] = React.useState<{ firstName: string; lastName: string; email: string; authenticationSource: AdminUserDto["authenticationSource"]; isActive: boolean; roles: string[] }>({ firstName: "", lastName: "", email: "", authenticationSource: "Local", isActive: true, roles: [] });
+  const [draft, setDraft] = React.useState<{ firstName: string; lastName: string; email: string; authenticationSource: AdminUserDto["authenticationSource"]; isActive: boolean; roleIds: string[] }>({ firstName: "", lastName: "", email: "", authenticationSource: "Local", isActive: true, roleIds: [] });
   const [roleSearch, setRoleSearch] = React.useState("");
   const [formError, setFormError] = React.useState<string | null>(null);
   const [apiError, setApiError] = React.useState<unknown>(null);
@@ -88,16 +104,73 @@ export function AccessUsersPage() {
   const isSelfEdit = Boolean(editingUser && editingUser.id === user?.id);
   const items = users.data?.items ?? [];
   const roleTerm = roleSearch.trim().toLocaleLowerCase();
-  const filteredRoles = (roles.data ?? []).filter((role) => !roleTerm || role.name.toLocaleLowerCase().includes(roleTerm));
-  const assignableRoleNames = new Set((roles.data ?? []).map((role) => role.name));
-  const unavailableAssignedRoles = (editingUser?.roles ?? []).filter((name) => !assignableRoleNames.has(name));
-  const filteredUnavailableAssignedRoles = unavailableAssignedRoles.filter((name) => !roleTerm || name.toLocaleLowerCase().includes(roleTerm));
-  const hasUnavailableRoleSelected = unavailableAssignedRoles.some((name) => draft.roles.includes(name));
+
+  const assignableRoles = (roles.data ?? []).filter((role) => role.isAssignable);
+  const assignableRoleIds = new Set(assignableRoles.map((role) => role.id));
+  const assignedRoleById = new Map((editingUser?.roles ?? []).map((role) => [role.id, role]));
+  const availableRoleById = new Map((roles.data ?? []).map((role) => [role.id, role]));
+  const selectedRoleRecords = [...new Set(draft.roleIds)].map((id) => assignedRoleById.get(id) ?? availableRoleById.get(id)).filter((role): role is AssignedRoleDto | AssignableRoleDto => Boolean(role));
+  const organizationIdsByName = new Map<string, Set<string>>();
+  for (const role of [...(roles.data ?? []), ...items.flatMap((item) => item.roles), ...(editingUser?.roles ?? [])]) {
+    const normalizedName = role.organizationName?.trim().toLocaleLowerCase();
+    if (!role.isOrganizationOwned || !role.organizationId || !normalizedName) continue;
+    const organizationIds = organizationIdsByName.get(normalizedName) ?? new Set<string>();
+    organizationIds.add(role.organizationId);
+    organizationIdsByName.set(normalizedName, organizationIds);
+  }
+  function getRoleOrganizationLabel(role: AssignableRoleDto | AssignedRoleDto): string {
+    const label = roleOrganizationName(role, t("administration.users.tenantRolesTitle"), t("administration.users.roleOrganizationUnavailable"), t("administration.users.unresolvedRoleOwnershipTitle"));
+    const normalizedName = role.organizationName?.trim().toLocaleLowerCase();
+    const sameNameOrganizations = normalizedName ? organizationIdsByName.get(normalizedName) : undefined;
+    return role.isOrganizationOwned && role.organizationId && (!normalizedName || Boolean(sameNameOrganizations && sameNameOrganizations.size > 1))
+      ? `${label} (${role.organizationId.slice(0, 8)})`
+      : label;
+  }
+  function getRoleDisplayName(role: AssignableRoleDto | AssignedRoleDto): string {
+    return `${getRoleOrganizationLabel(role)} \u2014 ${role.name}`;
+  }
+  const derivedOrganizations = [...new Map(selectedRoleRecords
+    .filter((role) => role.isOrganizationOwned && role.organizationId)
+    .map((role) => [role.organizationId!, role.organizationName?.trim() || t("administration.users.roleOrganizationUnavailable")])).entries()]
+    .map(([id, name]) => {
+      const sameNameOrganizations = organizationIdsByName.get(name.toLocaleLowerCase());
+      const lacksOrganizationName = selectedRoleRecords.some((role) => role.organizationId === id && !role.organizationName?.trim());
+      return {
+        id,
+        name,
+        displayName: lacksOrganizationName || (sameNameOrganizations && sameNameOrganizations.size > 1)
+          ? `${name} (${id.slice(0, 8)})`
+          : name,
+      };
+    })
+    .sort((left, right) => left.name.localeCompare(right.name));
+  const selectedOrganizationRolesMissingDetails = selectedRoleRecords.some((role) => role.isOrganizationOwned && (!role.organizationId || !role.organizationName?.trim()));
+  const protectedTenantRoles = (editingUser?.roles ?? []).filter(isProtectedTenantRole);
+  const unavailableAssignedRoles = (editingUser?.roles ?? []).filter((role) => !assignableRoleIds.has(role.id) && !isProtectedTenantRole(role));
+  const filteredUnavailableAssignedRoles = unavailableAssignedRoles.filter((role) => {
+    const searchText = `${role.name} ${role.organizationName ?? ""}`.toLocaleLowerCase();
+    return !roleTerm || searchText.includes(roleTerm);
+  });
+  const filteredRoles = assignableRoles.filter((role) => {
+    const searchText = `${role.name} ${role.organizationName ?? ""} ${role.description ?? ""} ${role.scope}`.toLocaleLowerCase();
+    return !roleTerm || searchText.includes(roleTerm);
+  });
+  const groupedRoles = [...filteredRoles.reduce((groups, role) => {
+    const groupId = role.isOrganizationOwned && role.organizationId
+      ? `organization:${role.organizationId}`
+      : `scope:${(role.scope ?? "Tenant").toLocaleLowerCase()}`;
+    const label = getRoleOrganizationLabel(role);
+    const group = groups.get(groupId) ?? { id: groupId, label, roles: [] as AssignableRoleDto[] };
+    group.roles.push(role);
+    groups.set(groupId, group);
+    return groups;
+  }, new Map<string, { id: string; label: string; roles: AssignableRoleDto[] }>()).values()]
+    .sort((left, right) => left.label.localeCompare(right.label));
 
   function beginCreateUser() {
     setEditingUser(null);
     setIsCreatingUser(true);
-    setDraft({ firstName: "", lastName: "", email: "", authenticationSource: "Local", isActive: true, roles: [] });
+    setDraft({ firstName: "", lastName: "", email: "", authenticationSource: "Local", isActive: true, roleIds: [] });
     setRoleSearch("");
     setFormError(null);
     setApiError(null);
@@ -106,7 +179,14 @@ export function AccessUsersPage() {
   function beginEditUser(item: AdminUserDto) {
     setEditingUser(item);
     setIsCreatingUser(false);
-    setDraft({ firstName: item.firstName, lastName: item.lastName, email: item.email, authenticationSource: item.authenticationSource ?? "Local", isActive: item.isActive, roles: [...item.roles] });
+    setDraft({
+      firstName: item.firstName,
+      lastName: item.lastName,
+      email: item.email,
+      authenticationSource: item.authenticationSource ?? "Local",
+      isActive: item.isActive,
+      roleIds: [...new Set(item.roles.map((role) => role.id))],
+    });
     setRoleSearch("");
     setFormError(null);
     setApiError(null);
@@ -130,7 +210,7 @@ export function AccessUsersPage() {
       firstName: draft.firstName.trim(),
       lastName: draft.lastName.trim(),
       isActive: draft.isActive,
-      roles: draft.roles,
+      ...(canAssignRoles ? { roleIds: [...new Set(draft.roleIds)] } : {}),
     };
     try {
       if (editingUser) {
@@ -145,7 +225,24 @@ export function AccessUsersPage() {
       setIsCreatingUser(false);
     } catch (error) {
       setApiError(error);
-      setFormError(error instanceof ApiError ? error.message : t("administration.users.error"));
+      let saveError = error instanceof ApiError ? error.message : t("administration.users.error");
+      if (error instanceof ApiError && error.details && typeof error.details === "object") {
+        const payload = error.details as Record<string, unknown>;
+        const fieldName = typeof payload.fieldName === "string" ? payload.fieldName : "";
+        const payloadErrors = payload.errors && typeof payload.errors === "object" ? payload.errors as Record<string, unknown> : null;
+        const hasRoleFieldError = fieldName.toLocaleLowerCase() === "roleids"
+          || Boolean(payloadErrors && Object.keys(payloadErrors).some((field) => field.toLocaleLowerCase() === "roleids"));
+        const nestedDetails = payload.details && typeof payload.details === "object" ? payload.details as Record<string, unknown> : null;
+        const organizationNames = Array.isArray(nestedDetails?.organizationNames)
+          ? nestedDetails.organizationNames.filter((name): name is string => typeof name === "string" && name.trim().length > 0)
+          : [];
+        if (hasRoleFieldError) {
+          saveError = error.status === 409 && organizationNames.length > 0
+            ? t("administration.users.roleMembershipDependencyConflict", { organizations: organizationNames.join(", ") })
+            : t("administration.users.roleAssignmentValidationError");
+        }
+      }
+      setFormError(saveError);
     }
   }
 
@@ -161,6 +258,17 @@ export function AccessUsersPage() {
 
   function updateDraft<K extends keyof typeof draft>(key: K, value: (typeof draft)[K]) {
     setDraft((current) => ({ ...current, [key]: value }));
+  }
+
+  function setRoleSelected(roleId: string, checked: boolean, canSelect: boolean, canRemove = true) {
+    if (checked && !canSelect) return;
+    if (!checked && !canRemove) return;
+    setDraft((current) => ({
+      ...current,
+      roleIds: checked
+        ? [...new Set([...current.roleIds, roleId])]
+        : current.roleIds.filter((value) => value !== roleId),
+    }));
   }
 
   const userSheetOpen = Boolean(editingUser || isCreatingUser);
@@ -191,7 +299,7 @@ export function AccessUsersPage() {
                     <TableCell className="font-medium">{item.fullName}</TableCell>
                     <TableCell className="text-muted-foreground">{item.email}</TableCell>
                     <TableCell>{t(`administration.users.sources.${item.authenticationSource ?? "Local"}`)}</TableCell>
-                    <TableCell><div className="flex flex-wrap gap-1">{item.roles.length > 0 ? item.roles.map((role) => <Badge key={role} variant="outline">{role}</Badge>) : <span className="text-muted-foreground">—</span>}</div></TableCell>
+                    <TableCell><div className="flex flex-wrap gap-1">{item.roles.length > 0 ? item.roles.map((role) => <Badge key={role.id} variant="outline">{getRoleDisplayName(role)}</Badge>) : <span className="text-muted-foreground">-</span>}</div></TableCell>
                     <TableCell><span className={`text-sm font-medium ${getStatusTextClass(item.isActive ? "active" : "inactive")}`}>{item.isActive ? t("administration.users.active") : t("administration.users.inactive")}</span></TableCell>
                     {canEditUser || canResetPasswords || canManageOverrides ? <TableCell><div className="flex flex-wrap gap-2">
                       {canEditUser ? <Button type="button" size="sm" variant="outline" onClick={() => beginEditUser(item)} aria-label={`${t("administration.users.edit")} ${item.fullName}`}><Pencil className="me-1.5 h-3.5 w-3.5" />{canAssignRoles && !canManageUsers ? t("nav.roles") : t("administration.users.edit")}</Button> : null}
@@ -224,27 +332,45 @@ export function AccessUsersPage() {
               <input id="user-is-active" type="checkbox" checked={draft.isActive} disabled={isSavingUser || isSelfEdit || !canManageUserStatus} onChange={(event) => updateDraft("isActive", event.target.checked)} className="mt-0.5 h-4 w-4 accent-primary" />
               <span className="text-sm font-medium">{t("administration.users.isActive")}{isSelfEdit ? <span className="ms-2 text-xs font-normal text-muted-foreground">{t("administration.areas.access.selfStatusLocked")}</span> : null}</span>
             </label>
+            <section className="space-y-3 rounded-lg border bg-muted/20 p-4" aria-labelledby="user-derived-organizations-heading">
+              <div className="space-y-1"><h3 id="user-derived-organizations-heading" className="text-sm font-semibold">{t("administration.users.derivedOrganizationsLabel")}</h3><p className="text-xs text-muted-foreground">{t("administration.users.derivedOrganizationsHint")}</p></div>
+              {derivedOrganizations.length > 0
+                ? <div className="flex flex-wrap gap-2">{derivedOrganizations.map((organization) => <Badge key={organization.id} variant="outline">{organization.displayName}</Badge>)}</div>
+                : <p className="text-sm text-muted-foreground">{t("administration.users.noDerivedOrganizations")}</p>}
+              {selectedOrganizationRolesMissingDetails ? <p role="alert" className="text-xs text-destructive">{t("administration.users.roleOrganizationUnavailable")}</p> : null}
+            </section>
             <section className="space-y-3">
-              <div className="space-y-1"><h3 className="text-sm font-semibold">{t("administration.users.rolesLabel")}</h3><p className="text-xs text-muted-foreground">{t("administration.areas.access.roleAssignmentInstructions")}</p></div>
+              <div className="space-y-1"><h3 className="text-sm font-semibold">{t("administration.users.rolesLabel")}</h3><p className="text-xs text-muted-foreground">{t("administration.users.roleAssignmentByOrganizationHint")}</p></div>
+              {protectedTenantRoles.length > 0 ? <div className="space-y-2 rounded-lg border border-info/30 bg-info/5 p-3">
+                <h4 className="text-xs font-semibold text-info">{t("administration.users.protectedTenantRolesTitle")}</h4>
+                <div className="flex flex-wrap gap-2">{protectedTenantRoles.map((role) => <Badge key={role.id} variant="outline" className="border-info/40">{role.name} ({t("administration.users.protectedTenantRoleLocked")})</Badge>)}</div>
+              </div> : null}
               {canAssignRoles ? <>
-              <Input value={roleSearch} onChange={(event) => setRoleSearch(event.target.value)} placeholder={t("administration.areas.roles.searchRoles")} aria-label={t("administration.areas.roles.searchRoles")} disabled={isSavingUser || isSelfEdit} />
+              <Input value={roleSearch} onChange={(event) => setRoleSearch(event.target.value)} placeholder={t("administration.users.searchRolesByOrganizationOrName")} aria-label={t("administration.users.searchRolesByOrganizationOrName")} disabled={isSavingUser || isSelfEdit} />
               {roles.isLoading ? <p className="py-5 text-center text-sm text-muted-foreground">{t("common.loading")}</p>
                 : roles.isError ? <div className="flex flex-col items-center gap-3 py-5"><p role="alert" className="text-sm text-destructive">{t("administration.areas.access.roleLoadError")}</p><Button type="button" size="sm" variant="outline" onClick={() => void roles.refetch()}>{t("common.retry")}</Button></div>
-                  : filteredRoles.length === 0 && filteredUnavailableAssignedRoles.length === 0 ? <p className="py-5 text-center text-sm text-muted-foreground">{t("common.noResults")}</p>
-                    : <div className="grid gap-2 sm:grid-cols-2">
-                      {filteredRoles.map((role) => <label key={role.id} htmlFor={"user-role-" + role.id} className="flex cursor-pointer items-start gap-3 rounded-lg border p-3 hover:bg-accent/50 focus-within:ring-2 focus-within:ring-ring">
-                        <input id={"user-role-" + role.id} type="checkbox" checked={draft.roles.includes(role.name)} disabled={isSavingUser || isSelfEdit || (hasUnavailableRoleSelected && !draft.roles.includes(role.name))} onChange={(event) => updateDraft("roles", event.target.checked ? [...new Set([...draft.roles, role.name])] : draft.roles.filter((name) => name !== role.name))} className="mt-0.5 h-4 w-4 shrink-0 accent-primary" />
-                        <span className="min-w-0"><span className="block text-sm font-medium">{role.name}</span>{role.description ? <span className="mt-1 block text-xs text-muted-foreground">{role.description}</span> : null}</span>
-                      </label>)}
-                      {filteredUnavailableAssignedRoles.map((name) => <label key={name} htmlFor={"user-role-unavailable-" + encodeURIComponent(name)} className="flex cursor-pointer items-start gap-3 rounded-lg border p-3 hover:bg-accent/50 focus-within:ring-2 focus-within:ring-ring">
-                        <input id={"user-role-unavailable-" + encodeURIComponent(name)} type="checkbox" checked={draft.roles.includes(name)} disabled={isSavingUser || isSelfEdit || !draft.roles.includes(name)} onChange={(event) => { if (!event.target.checked) updateDraft("roles", draft.roles.filter((roleName) => roleName !== name)); }} className="mt-0.5 h-4 w-4 shrink-0 accent-primary" />
-                        <span className="min-w-0"><span className="block text-sm font-medium">{name}</span><span className="mt-1 block text-xs text-muted-foreground">{t("administration.areas.access.unavailableAssignedRole")}</span></span>
-                      </label>)}
-                    </div>}
-              {hasUnavailableRoleSelected && !isSelfEdit ? <p className="text-xs text-muted-foreground">{t("administration.areas.access.removeUnavailableRoleFirst")}</p> : null}
-              <ApiFieldError id="user-roles-error" error={apiError} fieldName="roles" />
+                  : <div className="space-y-4">
+                    {groupedRoles.map((group) => <section key={group.id} className="space-y-2">
+                      <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{group.label}</h4>
+                      <div className="grid gap-2 sm:grid-cols-2">{group.roles.map((role) => <label key={role.id} htmlFor={"user-role-" + role.id} className="flex cursor-pointer items-start gap-3 rounded-lg border p-3 hover:bg-accent/50 focus-within:ring-2 focus-within:ring-ring">
+                        <input id={"user-role-" + role.id} type="checkbox" checked={draft.roleIds.includes(role.id)} disabled={isSavingUser || isSelfEdit || (draft.roleIds.includes(role.id) && assignedRoleById.get(role.id)?.canRemove === false)} onChange={(event) => setRoleSelected(role.id, event.target.checked, role.isAssignable, assignedRoleById.get(role.id)?.canRemove ?? true)} className="mt-0.5 h-4 w-4 shrink-0 accent-primary" />
+                        <span className="min-w-0"><span className="block text-sm font-medium">{getRoleDisplayName(role)}</span>{role.description ? <span className="mt-1 block text-xs text-muted-foreground">{role.description}</span> : null}{role.isSystem || role.isProtected ? <span className="mt-2 flex flex-wrap gap-1">{role.isSystem ? <span className="rounded-full border px-2 py-0.5 text-[10px] text-info">{t("administration.areas.roles.systemRole")}</span> : null}{role.isProtected ? <span className="rounded-full border px-2 py-0.5 text-[10px]">{t("administration.areas.roles.protectedRole")}</span> : null}</span> : null}</span>
+                      </label>)}</div>
+                    </section>)}
+                    {filteredUnavailableAssignedRoles.length > 0 ? <section className="space-y-2">
+                      <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t("administration.users.currentRolesNotAssignable")}</h4>
+                      <div className="grid gap-2 sm:grid-cols-2">{filteredUnavailableAssignedRoles.map((role) => <label key={role.id} htmlFor={"user-role-current-" + role.id} className="flex items-start gap-3 rounded-lg border p-3">
+                        <input id={"user-role-current-" + role.id} type="checkbox" checked={draft.roleIds.includes(role.id)} disabled={isSavingUser || isSelfEdit || !role.canRemove} onChange={(event) => setRoleSelected(role.id, event.target.checked, false, role.canRemove)} className="mt-0.5 h-4 w-4 shrink-0 accent-primary" />
+                        <span className="min-w-0"><span className="block text-sm font-medium">{getRoleDisplayName(role)}</span><span className="mt-1 block text-xs text-muted-foreground">{isUnresolvedRoleOwnership(role) ? t("administration.users.unresolvedRoleOwnershipHint") : role.canRemove ? t("administration.areas.access.unavailableAssignedRole") : t("administration.users.assignedRoleRemovalProtected")}</span></span>
+                      </label>)}</div>
+                    </section> : null}
+                    {filteredRoles.length === 0 && filteredUnavailableAssignedRoles.length === 0
+                      ? <p className="py-5 text-center text-sm text-muted-foreground">{roleTerm ? t("common.noResults") : t("administration.users.noAssignableRoles")}</p>
+                      : null}
+                  </div>}
+              <ApiFieldError id="user-roles-error" error={apiError} fieldName="roleIds" />
               {isSelfEdit ? <p className="text-xs text-muted-foreground">{t("administration.areas.access.selfRoleLocked")}</p> : null}
-              </> : <p className="rounded-md border bg-muted/30 p-3 text-sm">{draft.roles.length ? draft.roles.join(", ") : "-"}</p>}
+              </> : <div className="flex flex-wrap gap-2">{(editingUser?.roles ?? []).filter((role) => !isProtectedTenantRole(role)).map((role) => <Badge key={role.id} variant="outline">{getRoleDisplayName(role)}</Badge>)}{(editingUser?.roles ?? []).filter((role) => !isProtectedTenantRole(role)).length === 0 ? <span className="text-sm text-muted-foreground">-</span> : null}</div>}
             </section>
             {formError ? <p role="alert" className="text-sm text-destructive">{formError}</p> : null}
           </SideSheetBody>
@@ -322,16 +448,14 @@ export function UserPermissionsPage() {
   const [draft, setDraft] = React.useState<Record<string, PermissionOverrideEffect>>({});
   const [search, setSearch] = React.useState("");
   const [saveError, setSaveError] = React.useState<string | null>(null);
-  const actorPermissions = user?.permissions ?? [];
   const hasUnmanageableOverrides = (permissions.data ?? []).some((permission) =>
-    !permission.isProtectedAdminBaseline && permission.isActive && permission.isAssignable
-      && permission.overrideEffect !== null && !hasPermission(actorPermissions, permission.name));
+    permission.overrideEffect !== null && permission.canDelegate !== true);
 
   React.useEffect(() => {
     if (permissions.data) {
       setDraft(Object.fromEntries(permissions.data.map((item) => [
         item.id,
-        item.isProtectedAdminBaseline ? "Inherit" : item.overrideEffect ?? "Inherit",
+        item.overrideEffect ?? "Inherit",
       ])));
     }
   }, [permissions.data, userId]);
@@ -373,20 +497,36 @@ export function UserPermissionsPage() {
             <CardHeader><CardTitle>{t("administration.areas.access.permissionDirectory")}</CardTitle><CardDescription>{t("administration.areas.access.permissionInstructions")}</CardDescription></CardHeader>
             <CardContent className="space-y-4">
               <p id="permission-assignment-scope-hint" className="text-sm text-muted-foreground">{t("administration.areas.access.permissionScopeHint")}</p>
+              <p className="text-xs text-muted-foreground">{t("administration.areas.access.effectiveScopeNote")}</p>
               <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t("administration.areas.access.searchPermissions")} aria-label={t("administration.areas.access.searchPermissions")} />
               {groups.length === 0 ? <p className="py-6 text-center text-sm text-muted-foreground">{t("common.noResults")}</p>
                 : <div className="grid gap-4 md:grid-cols-2">{groups.map(([resource, group]) => <section key={resource} className="space-y-2">
                   <h3 className="text-sm font-semibold">{getPermissionResourceLabel(group[0], locale)}</h3>
                   <div className="overflow-hidden rounded-lg border">
                     {group.map((permission) => {
-                      const effect = permission.isProtectedAdminBaseline ? "Inherit" : draft[permission.id] ?? "Inherit";
-                      const isEffective = permission.isProtectedAdminBaseline || effect === "Allow" || (effect === "Inherit" && permission.isRoleGranted);
-                      const canOverride = !permission.isProtectedAdminBaseline && permission.isActive && permission.isAssignable && hasPermission(actorPermissions, permission.name);
+                      const effect = draft[permission.id] ?? "Inherit";
+                      const isEffective = permission.isEffective;
+                      const savedEffect = permission.overrideEffect ?? "Inherit";
+                      const hasPendingOverride = effect !== savedEffect;
+                      const roleGrantSources = permission.roleGrantSources ?? [];
+                      const scopeLabel = permission.scope ? getPermissionScopeValueLabel(permission.scope, t) : undefined;
+                      const canOverride = permission.canDelegate === true;
+                      const canDirectlyAllow = permission.isAssignable && permission.scope === "Tenant";
                       const effectTextClass = effect === "Allow" ? "text-success" : effect === "Deny" ? "text-destructive" : "text-muted-foreground";
                       return <div key={permission.id} className="grid gap-3 border-b p-3 last:border-b-0 lg:grid-cols-[minmax(0,1fr)_13rem] lg:items-center">
-                        <div className="min-w-0"><p className="text-sm font-medium">{getPermissionDisplayName(permission, locale)}</p><p className="mt-1 text-xs"><span className={permission.isRoleGranted ? "text-info" : "text-muted-foreground"}>{permission.isRoleGranted ? t("administration.areas.access.roleGranted") : t("administration.areas.access.notRoleGranted")}</span><span className="text-muted-foreground"> · </span><span className={isEffective ? "text-success" : "text-muted-foreground"}>{isEffective ? t("administration.areas.access.effective") : t("administration.areas.access.notEffective")}</span>{permission.isProtectedAdminBaseline ? <span className="mt-1 block font-medium text-info">{t("administration.areas.access.protectedAdminOverrideLocked")}</span> : !canOverride ? <span className="mt-1 block text-muted-foreground">{t("administration.areas.access.permissionNotAssignable")}</span> : null}</p></div>
-                        <div className="space-y-1"><Label className="sr-only" htmlFor={"user-permission-" + permission.id}>{t("administration.areas.access.overrideFor", { permission: getPermissionDisplayName(permission, locale) })}</Label><select id={"user-permission-" + permission.id} aria-describedby={!canOverride ? "permission-assignment-scope-hint" : undefined} className={`h-9 w-full rounded-md border border-input bg-background px-3 text-sm ${effectTextClass}`} value={effect} disabled={savePermissions.isPending || !canOverride} onChange={(event) => { const nextEffect = event.target.value; if (isPermissionOverrideEffect(nextEffect)) setDraft((current) => ({ ...current, [permission.id]: nextEffect })); }}>
-                          <option value="Inherit">{t("administration.areas.access.inherit")}</option><option value="Allow">{t("administration.areas.access.allow")}</option><option value="Deny">{t("administration.areas.access.deny")}</option>
+                        <div className="min-w-0">
+  <p className="text-sm font-medium">{getPermissionDisplayName(permission, locale)}</p>
+  <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+    <span className={permission.isRoleGranted ? "text-info" : "text-muted-foreground"}>{permission.isRoleGranted ? t("administration.areas.access.roleGranted") : t("administration.areas.access.notRoleGranted")}</span>
+    <span className={isEffective ? "text-success" : "text-muted-foreground"}>{isEffective ? t("administration.areas.access.effective") : t("administration.areas.access.notEffective")}</span>
+    {roleGrantSources.length ? <span className="text-muted-foreground">{t("administration.areas.access.roleGrantSources", { roles: roleGrantSources.join(", ") })}</span> : null}
+    {permission.overrideEffect === "Allow" ? <span className="text-success">{t("administration.areas.access.directAllowSource")}</span> : permission.overrideEffect === "Deny" ? <span className="text-destructive">{t("administration.areas.access.directDenySource")}</span> : null}
+    {scopeLabel ? <span className="text-muted-foreground">{t("administration.areas.access.permissionScopeLabel")}: {scopeLabel}</span> : null}
+    {hasPendingOverride ? <span className="text-info">{t("administration.areas.access.unsavedOverride", { effect: t("administration.areas.access." + effect.toLowerCase()) })}</span> : null}
+    {!canOverride ? <span className="text-muted-foreground">{t("administration.areas.access.permissionNotAssignable")}</span> : null}
+  </p>
+</div><div className="space-y-1"><Label className="sr-only" htmlFor={"user-permission-" + permission.id}>{t("administration.areas.access.overrideFor", { permission: getPermissionDisplayName(permission, locale) })}</Label><select id={"user-permission-" + permission.id} aria-describedby={!canOverride ? "permission-assignment-scope-hint" : undefined} className={`h-9 w-full rounded-md border border-input bg-background px-3 text-sm ${effectTextClass}`} value={effect} disabled={savePermissions.isPending || !canOverride} onChange={(event) => { const nextEffect = event.target.value; if (isPermissionOverrideEffect(nextEffect) && (nextEffect !== "Allow" || canDirectlyAllow)) setDraft((current) => ({ ...current, [permission.id]: nextEffect })); }}>
+                          <option value="Inherit">{t("administration.areas.access.inherit")}</option><option value="Allow" disabled={!canDirectlyAllow}>{t("administration.areas.access.allow")}</option><option value="Deny">{t("administration.areas.access.deny")}</option>
                         </select></div>
                       </div>;
                     })}

@@ -45,7 +45,7 @@ public sealed record ProjectLifecycleCatalogDto(
     bool IsDefault,
     bool IsActive,
     bool IsContinuousActivity,
-    int ReferencedProjectCount,
+    int? ReferencedProjectCount,
     byte[] RowVersion,
     Guid? DocumentCategoryId = null,
     string ReportingCategory = ProjectStatusReportingCategories.InProgress,

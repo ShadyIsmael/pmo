@@ -32,7 +32,7 @@ const catalogPermission = (canDelegate: boolean): PermissionCatalogItemDto => ({
   requiredPermissionKeys: [],
   isActive: true,
   isAssignable: true,
-  isMandatoryForSystemAdmin: false,
+  canGrantToOrganizationRole: true,
   allowedCategories: canDelegate ? ["Tenant", "Organization", "Management", "Operation", "Business"] : ["Tenant", "Organization", "Management", "Operation"],
 });
 

@@ -2420,6 +2420,9 @@ namespace NEXUS.Persistence.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
+                    b.Property<bool>("IsLegacyOrganizationOwnershipUnresolved")
+                        .HasColumnType("bit");
+
                     b.Property<bool>("IsSystem")
                         .HasColumnType("bit");
 
@@ -2427,6 +2430,13 @@ namespace NEXUS.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
+
+                    b.Property<Guid?>("OrganizationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("RoleKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
@@ -2451,16 +2461,29 @@ namespace NEXUS.Persistence.Migrations
 
                     b.HasIndex("TenantId", "Name")
                         .IsUnique()
-                        .HasDatabaseName("UX_Roles_Tenant_Name");
+                        .HasDatabaseName("UX_Roles_Tenant_Unowned_Name")
+                        .HasFilter("[OrganizationId] IS NULL AND [IsDeleted] = 0");
+
+                    b.HasIndex("TenantId", "RoleKey")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Roles_Tenant_RoleKey")
+                        .HasFilter("[RoleKey] IS NOT NULL AND [IsDeleted] = 0");
 
                     b.HasIndex("TenantId", "SystemRoleKey")
                         .IsUnique()
                         .HasDatabaseName("UX_Roles_Tenant_SystemRoleKey")
                         .HasFilter("[SystemRoleKey] IS NOT NULL AND [IsDeleted] = 0");
 
+                    b.HasIndex("TenantId", "OrganizationId", "Name")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Roles_Tenant_Organization_Name")
+                        .HasFilter("[OrganizationId] IS NOT NULL AND [IsDeleted] = 0");
+
                     b.ToTable("Roles", null, t =>
                         {
-                            t.HasCheckConstraint("CK_Roles_SystemRoleKeyRequiresSystemRole", "[SystemRoleKey] IS NULL OR [IsSystem] = 1");
+                            t.HasCheckConstraint("CK_Roles_OrganizationOwnershipMatchesRoleKind", "([IsSystem] = 0 AND [SystemRoleKey] IS NULL AND (([OrganizationId] IS NOT NULL AND [IsLegacyOrganizationOwnershipUnresolved] = 0) OR ([OrganizationId] IS NULL AND [IsLegacyOrganizationOwnershipUnresolved] = 1))) OR ([IsSystem] = 1 AND [OrganizationId] IS NULL AND [IsLegacyOrganizationOwnershipUnresolved] = 0 AND [SystemRoleKey] COLLATE Latin1_General_100_BIN2 IN (N'tenant.admin', N'organization.admin'))");
+
+                            t.HasCheckConstraint("CK_Roles_SystemRoleKeyRequiresSystemRole", "([IsSystem] = 0 AND [SystemRoleKey] IS NULL AND ([RoleKey] IS NULL OR [RoleKey] COLLATE Latin1_General_100_BIN2 NOT IN (N'tenant.admin', N'organization.admin'))) OR ([IsSystem] = 1 AND [SystemRoleKey] IS NOT NULL AND [RoleKey] IS NOT NULL AND [SystemRoleKey] COLLATE Latin1_General_100_BIN2 IN (N'tenant.admin', N'organization.admin') AND [RoleKey] COLLATE Latin1_General_100_BIN2 = [SystemRoleKey] COLLATE Latin1_General_100_BIN2)");
                         });
                 });
 
@@ -14807,6 +14830,15 @@ namespace NEXUS.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("Document");
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.Identity.Domain.Role", b =>
+                {
+                    b.HasOne("NEXUS.Modules.Organization.Domain.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "OrganizationId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("NEXUS.Modules.Identity.Domain.UserPermissionOverride", b =>

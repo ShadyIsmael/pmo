@@ -70,6 +70,7 @@ export function RiskDetailPage({ riskIdOverride, actionIdOverride, projectPublic
   const [editingImpact, setEditingImpact] = React.useState(false);
 
   const query = useRisk(id, Boolean(id));
+  const risk = query.data;
   const actions = useRiskActions(id, query.isSuccess);
   const impacts = useRiskImpacts(id, query.isSuccess);
   const updates = useRiskActionUpdates(id, selectedAction, Boolean(selectedAction));
@@ -83,8 +84,7 @@ export function RiskDetailPage({ riskIdOverride, actionIdOverride, projectPublic
   const updateRisk = useUpdateRisk();
   const updateStatus = useUpdateRiskStatus();
   const lookupsEnabled = editingRisk || showActionForm || editingAction;
-  const users = useRiskWorkflowUserLookup(Boolean(id) || lookupsEnabled || Boolean(selectedAction));
-  const risk = query.data;
+  const users = useRiskWorkflowUserLookup(Boolean(id) || lookupsEnabled || Boolean(selectedAction), risk?.projectId);
   const actionItems = React.useMemo(() => actions.data ?? [], [actions.data]);
   const selected = actionItems.find((action) => action.id === selectedAction);
   const impact = impacts.data?.[0];

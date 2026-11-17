@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using NEXUS.Modules.Organization.Application;
+using NEXUS.SharedKernel.Management;
 
 namespace NEXUS.Modules.Organization.Api;
 
@@ -11,8 +12,13 @@ namespace NEXUS.Modules.Organization.Api;
 public sealed class OrganizationalUnitController : ControllerBase
 {
     private readonly IOrganizationalUnitService _service;
+    private readonly IManagementContextAccessor _managementContext;
 
-    public OrganizationalUnitController(IOrganizationalUnitService service) => _service = service;
+    public OrganizationalUnitController(IOrganizationalUnitService service, IManagementContextAccessor managementContext)
+    {
+        _service = service;
+        _managementContext = managementContext;
+    }
 
     [HttpGet("units")]
     [Authorize(Policy = "Settings.View")]
@@ -43,7 +49,8 @@ public sealed class OrganizationalUnitController : ControllerBase
     [Authorize(Policy = "Settings.ManageTenantConfiguration")]
     public async Task<IActionResult> CreateUnit(SaveOrganizationalUnitDto request, CancellationToken cancellationToken)
     {
-        var result = await _service.CreateUnitAsync(request, Actor(), cancellationToken);
+        if (!TryGetActor(out var actor)) return Forbid();
+        var result = await _service.CreateUnitAsync(request, actor, cancellationToken);
         return result.IsFailure ? ToError(result.Error!) : Ok(result.Value);
     }
 
@@ -51,21 +58,34 @@ public sealed class OrganizationalUnitController : ControllerBase
     [Authorize(Policy = "Settings.ManageTenantConfiguration")]
     public async Task<IActionResult> UpdateUnit(Guid id, SaveOrganizationalUnitDto request, CancellationToken cancellationToken)
     {
-        var result = await _service.UpdateUnitAsync(id, request, Actor(), cancellationToken);
+        if (!TryGetActor(out var actor)) return Forbid();
+        var result = await _service.UpdateUnitAsync(id, request, actor, cancellationToken);
         return result.IsFailure ? ToError(result.Error!) : Ok(result.Value);
     }
 
     [HttpPost("units/{id:guid}/deactivate")]
     [Authorize(Policy = "Settings.ManageTenantConfiguration")]
-    public async Task<IActionResult> DeactivateUnit(Guid id, CancellationToken cancellationToken) => FromResult(await _service.DeactivateUnitAsync(id, Actor(), cancellationToken));
+    public async Task<IActionResult> DeactivateUnit(Guid id, CancellationToken cancellationToken)
+    {
+        if (!TryGetActor(out var actor)) return Forbid();
+        return FromResult(await _service.DeactivateUnitAsync(id, actor, cancellationToken));
+    }
 
     [HttpPost("units/{id:guid}/reactivate")]
     [Authorize(Policy = "Settings.ManageTenantConfiguration")]
-    public async Task<IActionResult> ReactivateUnit(Guid id, CancellationToken cancellationToken) => FromResult(await _service.ReactivateUnitAsync(id, Actor(), cancellationToken));
+    public async Task<IActionResult> ReactivateUnit(Guid id, CancellationToken cancellationToken)
+    {
+        if (!TryGetActor(out var actor)) return Forbid();
+        return FromResult(await _service.ReactivateUnitAsync(id, actor, cancellationToken));
+    }
 
     [HttpDelete("units/{id:guid}")]
     [Authorize(Policy = "Settings.ManageTenantConfiguration")]
-    public async Task<IActionResult> DeleteUnit(Guid id, CancellationToken cancellationToken) => FromResult(await _service.DeleteUnitAsync(id, Actor(), cancellationToken));
+    public async Task<IActionResult> DeleteUnit(Guid id, CancellationToken cancellationToken)
+    {
+        if (!TryGetActor(out var actor)) return Forbid();
+        return FromResult(await _service.DeleteUnitAsync(id, actor, cancellationToken));
+    }
 
     [HttpGet("unit-types")]
     [Authorize(Policy = "Settings.View")]
@@ -75,7 +95,8 @@ public sealed class OrganizationalUnitController : ControllerBase
     [Authorize(Policy = "Settings.ManageTenantConfiguration")]
     public async Task<IActionResult> CreateType(SaveOrganizationalUnitTypeDto request, CancellationToken cancellationToken)
     {
-        var result = await _service.CreateTypeAsync(request, Actor(), cancellationToken);
+        if (!TryGetActor(out var actor)) return Forbid();
+        var result = await _service.CreateTypeAsync(request, actor, cancellationToken);
         return result.IsFailure ? ToError(result.Error!) : Ok(result.Value);
     }
 
@@ -83,7 +104,8 @@ public sealed class OrganizationalUnitController : ControllerBase
     [Authorize(Policy = "Settings.ManageTenantConfiguration")]
     public async Task<IActionResult> UpdateType(Guid id, SaveOrganizationalUnitTypeDto request, CancellationToken cancellationToken)
     {
-        var result = await _service.UpdateTypeAsync(id, request, Actor(), cancellationToken);
+        if (!TryGetActor(out var actor)) return Forbid();
+        var result = await _service.UpdateTypeAsync(id, request, actor, cancellationToken);
         return result.IsFailure ? ToError(result.Error!) : Ok(result.Value);
     }
 
@@ -95,13 +117,18 @@ public sealed class OrganizationalUnitController : ControllerBase
     [Authorize(Policy = "Settings.ManageTenantConfiguration")]
     public async Task<IActionResult> AssignMembership(SaveResourceOrganizationalUnitDto request, CancellationToken cancellationToken)
     {
-        var result = await _service.AssignMembershipAsync(request, Actor(), cancellationToken);
+        if (!TryGetActor(out var actor)) return Forbid();
+        var result = await _service.AssignMembershipAsync(request, actor, cancellationToken);
         return result.IsFailure ? ToError(result.Error!) : Ok(result.Value);
     }
 
     [HttpPost("memberships/{id:guid}/end")]
     [Authorize(Policy = "Settings.ManageTenantConfiguration")]
-    public async Task<IActionResult> EndMembership(Guid id, [FromBody] EndEffectiveDateRequest request, CancellationToken cancellationToken) => FromResult(await _service.EndMembershipAsync(id, request.EffectiveTo, Actor(), cancellationToken));
+    public async Task<IActionResult> EndMembership(Guid id, [FromBody] EndEffectiveDateRequest request, CancellationToken cancellationToken)
+    {
+        if (!TryGetActor(out var actor)) return Forbid();
+        return FromResult(await _service.EndMembershipAsync(id, request.EffectiveTo, actor, cancellationToken));
+    }
 
     [HttpGet("reporting-lines")]
     [Authorize(Policy = "Settings.View")]
@@ -111,15 +138,34 @@ public sealed class OrganizationalUnitController : ControllerBase
     [Authorize(Policy = "Settings.ManageTenantConfiguration")]
     public async Task<IActionResult> AssignReportingLine(SaveResourceReportingLineDto request, CancellationToken cancellationToken)
     {
-        var result = await _service.AssignReportingLineAsync(request, Actor(), cancellationToken);
+        if (!TryGetActor(out var actor)) return Forbid();
+        var result = await _service.AssignReportingLineAsync(request, actor, cancellationToken);
         return result.IsFailure ? ToError(result.Error!) : Ok(result.Value);
     }
 
     [HttpPost("reporting-lines/{id:guid}/end")]
     [Authorize(Policy = "Settings.ManageTenantConfiguration")]
-    public async Task<IActionResult> EndReportingLine(Guid id, [FromBody] EndEffectiveDateRequest request, CancellationToken cancellationToken) => FromResult(await _service.EndReportingLineAsync(id, request.EffectiveTo, Actor(), cancellationToken));
+    public async Task<IActionResult> EndReportingLine(Guid id, [FromBody] EndEffectiveDateRequest request, CancellationToken cancellationToken)
+    {
+        if (!TryGetActor(out var actor)) return Forbid();
+        return FromResult(await _service.EndReportingLineAsync(id, request.EffectiveTo, actor, cancellationToken));
+    }
 
-    private string Actor() => User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? "System";
+    private bool TryGetActor(out string actorId)
+    {
+        actorId = string.Empty;
+        var tenantClaim = User.FindFirstValue("tenantId");
+        var context = _managementContext.Current;
+        if (!Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var userId) || userId == Guid.Empty
+            || !Guid.TryParse(tenantClaim, out var tenantId) || tenantId == Guid.Empty
+            || context is null || context.EffectiveReadOnly || context.UserId != userId || context.TenantId != tenantId)
+        {
+            return false;
+        }
+
+        actorId = userId.ToString("D");
+        return true;
+    }
     private IActionResult FromResult(NEXUS.SharedKernel.Result result) => result.IsSuccess ? NoContent() : ToError(result.Error!);
     private IActionResult ToError(NEXUS.SharedKernel.Error error) => error.StatusCode switch { 404 => NotFound(new { error = error.Message }), 409 => Conflict(new { error = error.Message }), 403 => Forbid(), _ => BadRequest(new { error = error.Message }) };
 }

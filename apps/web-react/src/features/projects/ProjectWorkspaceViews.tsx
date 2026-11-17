@@ -92,7 +92,7 @@ export function ProjectBoardPage() {
   const [createOpen, setCreateOpen] = React.useState(false);
   const [draft, setDraft] = React.useState<SaveWorkItemDto>(() => emptyProjectBoardTask(selectedProject?.id));
   const [createError, setCreateError] = React.useState("");
-  const createAssignees = useFullWorkItemAssignees(selectedProject?.publicId, createOpen);
+  const createAssignees = useFullWorkItemAssignees(selectedProject?.id, createOpen);
   const [movingItemId, setMovingItemId] = React.useState<string>();
   const [moveError, setMoveError] = React.useState("");
   const [pendingTransition, setPendingTransition] = React.useState<{ itemId: string; targetStatus: string; options: WorkflowTransitionOption[] }>();

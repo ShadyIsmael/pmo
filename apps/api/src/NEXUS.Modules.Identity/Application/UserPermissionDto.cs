@@ -15,10 +15,12 @@ public sealed class UserPermissionAssignmentDto
     public string? LabelAr { get; init; }
     public bool IsActive { get; init; }
     public bool IsAssignable { get; init; }
+    public bool CanDelegate { get; init; }
     public bool IsRoleGranted { get; init; }
+    public string Scope { get; init; } = PermissionScope.Tenant.ToString();
+    public IReadOnlyList<string> RoleGrantSources { get; init; } = Array.Empty<string>();
     public PermissionOverrideEffect? OverrideEffect { get; init; }
     public bool IsEffective { get; init; }
-    public bool IsProtectedAdminBaseline { get; init; }
 }
 
 public sealed class UpdateUserPermissionsDto

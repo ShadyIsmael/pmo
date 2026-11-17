@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Http;
 using NEXUS.Modules.Audit.Application;
 using NEXUS.Modules.Audit.Domain;
 using NEXUS.Modules.Organization.Domain;
@@ -6,6 +7,7 @@ using NEXUS.Modules.ResourceManagement.Application.DTOs;
 using NEXUS.Modules.ResourceManagement.Application.Mapping;
 using NEXUS.Modules.ResourceManagement.Domain;
 using NEXUS.SharedKernel;
+using NEXUS.SharedKernel.Management;
 
 namespace NEXUS.Modules.ResourceManagement.Application;
 
@@ -13,11 +15,19 @@ public class ResourceCostProfileService : IResourceCostProfileService
 {
     private readonly DbContext _context;
     private readonly IAuditService _auditService;
+    private readonly IHttpContextAccessor? _httpContextAccessor;
+    private readonly IManagementContextAccessor? _managementContextAccessor;
 
-    public ResourceCostProfileService(DbContext context, IAuditService auditService)
+    public ResourceCostProfileService(
+        DbContext context,
+        IAuditService auditService,
+        IHttpContextAccessor? httpContextAccessor = null,
+        IManagementContextAccessor? managementContextAccessor = null)
     {
         _context = context;
         _auditService = auditService;
+        _httpContextAccessor = httpContextAccessor;
+        _managementContextAccessor = managementContextAccessor;
     }
 
     public async Task<Result<IReadOnlyList<ResourceCostProfileDto>>> GetByResourceAsync(Guid resourceId, CancellationToken cancellationToken = default)
@@ -45,6 +55,9 @@ public class ResourceCostProfileService : IResourceCostProfileService
 
     public async Task<Result<ResourceCostProfileDto>> CreateAsync(CreateResourceCostProfileDto dto, string userId, CancellationToken cancellationToken = default)
     {
+        var actorError = ResourceManagementWriteGuard.RequireActorContext(_httpContextAccessor, _managementContextAccessor, userId);
+        if (actorError is not null) return Result<ResourceCostProfileDto>.Failure(actorError);
+
         if (!CompensationType.IsValid(dto.CompensationType))
             return Result<ResourceCostProfileDto>.Failure(Error.Validation("Invalid compensation type"));
 
@@ -118,6 +131,9 @@ public class ResourceCostProfileService : IResourceCostProfileService
 
     public async Task<Result<ResourceCostProfileDto>> UpdateAsync(Guid resourceId, Guid id, UpdateResourceCostProfileDto dto, string userId, CancellationToken cancellationToken = default)
     {
+        var actorError = ResourceManagementWriteGuard.RequireActorContext(_httpContextAccessor, _managementContextAccessor, userId);
+        if (actorError is not null) return Result<ResourceCostProfileDto>.Failure(actorError);
+
         var profile = await _context.Set<ResourceCostProfile>()
             .FirstOrDefaultAsync(cp => cp.Id == id && cp.ResourceId == resourceId && !cp.IsDeleted, cancellationToken);
         if (profile is null)
@@ -196,6 +212,9 @@ public class ResourceCostProfileService : IResourceCostProfileService
 
     public async Task<Result> DeleteAsync(Guid resourceId, Guid id, string userId, CancellationToken cancellationToken = default)
     {
+        var actorError = ResourceManagementWriteGuard.RequireActorContext(_httpContextAccessor, _managementContextAccessor, userId);
+        if (actorError is not null) return Result.Failure(actorError);
+
         var profile = await _context.Set<ResourceCostProfile>()
             .FirstOrDefaultAsync(cp => cp.Id == id && cp.ResourceId == resourceId && !cp.IsDeleted, cancellationToken);
         if (profile is null)

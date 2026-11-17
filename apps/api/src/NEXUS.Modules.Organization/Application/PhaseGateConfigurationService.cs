@@ -9,6 +9,7 @@ using NEXUS.Modules.Audit.Application;
 using NEXUS.Modules.Audit.Domain;
 using NEXUS.Modules.Organization.Domain;
 using NEXUS.Modules.Organization.Application.Settings;
+using NEXUS.SharedKernel.Management;
 
 namespace NEXUS.Modules.Organization.Application;
 
@@ -18,6 +19,8 @@ public sealed class PhaseGateConfigurationService : IPhaseGateConfigurationServi
     private const string DocumentViewPolicy = "Document.View";
     private const string SettingsViewPolicy = "Settings.View";
     private const string SettingsManagePolicy = "Settings.ManageTenantConfiguration";
+    private const string OrganizationConfigurationViewPolicy = "OrganizationConfiguration.View";
+    private const string OrganizationConfigurationManagePolicy = "OrganizationConfiguration.Manage";
 
     private readonly DbContext _context;
     private readonly IHttpContextAccessor _httpContextAccessor;
@@ -26,6 +29,7 @@ public sealed class PhaseGateConfigurationService : IPhaseGateConfigurationServi
     private readonly IProjectPhaseGatePhasePairCatalog _phasePairs;
     private readonly IApprovedTemplateCatalog _templateCatalog;
     private readonly IAuditService _auditService;
+    private readonly IManagementContextAccessor? _managementContextAccessor;
 
     public PhaseGateConfigurationService(
         DbContext context,
@@ -34,7 +38,8 @@ public sealed class PhaseGateConfigurationService : IPhaseGateConfigurationServi
         IOrganizationSettingsAccessService organizationAccess,
         IProjectPhaseGatePhasePairCatalog phasePairs,
         IApprovedTemplateCatalog templateCatalog,
-        IAuditService auditService)
+        IAuditService auditService,
+        IManagementContextAccessor? managementContextAccessor = null)
     {
         _context = context;
         _httpContextAccessor = httpContextAccessor;
@@ -43,6 +48,7 @@ public sealed class PhaseGateConfigurationService : IPhaseGateConfigurationServi
         _phasePairs = phasePairs;
         _templateCatalog = templateCatalog;
         _auditService = auditService;
+        _managementContextAccessor = managementContextAccessor;
     }
 
     public async Task<(PhaseGateConfigurationOperationCode Code, IReadOnlyList<ProjectPhaseGatePhasePairDto> PhasePairs)> GetPhasePairsAsync(
@@ -50,12 +56,11 @@ public sealed class PhaseGateConfigurationService : IPhaseGateConfigurationServi
     {
         if (!TryGetTenantAndActor(out var tenantId, out _))
             return (PhaseGateConfigurationOperationCode.TenantContextMissing, Array.Empty<ProjectPhaseGatePhasePairDto>());
-        if (!await IsAuthorizedAsync(SettingsViewPolicy) || !await IsAuthorizedAsync(DocumentViewPolicy))
-            return (PhaseGateConfigurationOperationCode.AccessDenied, Array.Empty<ProjectPhaseGatePhasePairDto>());
         try
         {
-            if (!await _organizationAccess.HasAccessAsync(organizationId, manage: false, cancellationToken))
-                return (PhaseGateConfigurationOperationCode.AccessDenied, Array.Empty<ProjectPhaseGatePhasePairDto>());
+            var access = await CheckOrganizationAccessAsync(organizationId, manage: false, cancellationToken);
+            if (access != PhaseGateConfigurationOperationCode.Success)
+                return (access, Array.Empty<ProjectPhaseGatePhasePairDto>());
             return (PhaseGateConfigurationOperationCode.Success,
                 await _phasePairs.GetPhasePairsAsync(tenantId, organizationId, cancellationToken));
         }
@@ -426,12 +431,20 @@ public sealed class PhaseGateConfigurationService : IPhaseGateConfigurationServi
         Guid organizationId, bool manage, CancellationToken cancellationToken)
     {
         if (!TryGetTenantAndActor(out _, out _)) return PhaseGateConfigurationOperationCode.TenantContextMissing;
-        var settingsPolicy = manage ? SettingsManagePolicy : SettingsViewPolicy;
-        if (!await IsAuthorizedAsync(settingsPolicy) || !await IsAuthorizedAsync(DocumentViewPolicy))
+        if (manage && _managementContextAccessor?.Current?.EffectiveReadOnly == true)
             return PhaseGateConfigurationOperationCode.AccessDenied;
+        var settingsPolicy = manage ? SettingsManagePolicy : SettingsViewPolicy;
         try
         {
-            return await _organizationAccess.HasAccessAsync(organizationId, manage, cancellationToken)
+            var hasTenantConfigurationAuthority = await IsAuthorizedAsync(settingsPolicy)
+                && await IsAuthorizedAsync(DocumentViewPolicy)
+                && await _organizationAccess.HasAccessAsync(organizationId, manage, cancellationToken);
+            if (hasTenantConfigurationAuthority) return PhaseGateConfigurationOperationCode.Success;
+
+            var organizationPolicy = manage ? OrganizationConfigurationManagePolicy : OrganizationConfigurationViewPolicy;
+            var hasOrganizationAdminAuthority = await IsAuthorizedAsync(organizationPolicy)
+                && await _organizationAccess.HasScopedOrganizationAdminAuthorityAsync(organizationId, manage, cancellationToken);
+            return hasOrganizationAdminAuthority
                 ? PhaseGateConfigurationOperationCode.Success
                 : PhaseGateConfigurationOperationCode.AccessDenied;
         }

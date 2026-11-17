@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 using NEXUS.Modules.ProjectPlanning.Application;
 using NEXUS.Modules.ProjectPlanning.Application.DTOs;
 using NEXUS.SharedKernel;
@@ -35,7 +36,8 @@ public class PlanCalendarController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create(Guid projectId, Guid planId, [FromBody] CreatePlanCalendarDto dto, CancellationToken cancellationToken)
     {
-        var result = await _service.CreatePlanCalendarAsync(projectId, planId, dto, UserId(), cancellationToken);
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        var result = await _service.CreatePlanCalendarAsync(projectId, planId, dto, actorId, cancellationToken);
         return result.IsSuccess ? CreatedAtAction(nameof(GetByPlan), new { projectId, planId }, result.Value) : ErrorResult(result.Error);
     }
 
@@ -43,7 +45,8 @@ public class PlanCalendarController : ControllerBase
     [HttpPut("{calendarId:guid}")]
     public async Task<IActionResult> Update(Guid projectId, Guid planId, Guid calendarId, [FromBody] UpdatePlanCalendarDto dto, CancellationToken cancellationToken)
     {
-        var result = await _service.UpdatePlanCalendarAsync(projectId, planId, calendarId, dto, UserId(), cancellationToken);
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        var result = await _service.UpdatePlanCalendarAsync(projectId, planId, calendarId, dto, actorId, cancellationToken);
         return result.IsSuccess ? Ok(result.Value) : ErrorResult(result.Error);
     }
 
@@ -51,11 +54,16 @@ public class PlanCalendarController : ControllerBase
     [HttpDelete("{calendarId:guid}")]
     public async Task<IActionResult> Delete(Guid projectId, Guid planId, Guid calendarId, [FromQuery] byte[] rowVersion, CancellationToken cancellationToken)
     {
-        var result = await _service.DeletePlanCalendarAsync(projectId, planId, calendarId, rowVersion, UserId(), cancellationToken);
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        var result = await _service.DeletePlanCalendarAsync(projectId, planId, calendarId, rowVersion, actorId, cancellationToken);
         return result.IsSuccess ? NoContent() : ErrorResult(result.Error);
     }
 
-    private string UserId() => User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+    private bool TryGetActorId(out string actorId)
+    {
+        actorId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? string.Empty;
+        return User.Identity?.IsAuthenticated == true && Guid.TryParse(actorId, out var parsed) && parsed != Guid.Empty;
+    }
 
     private IActionResult ErrorResult(Error? error) => error?.StatusCode switch
     {

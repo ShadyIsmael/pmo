@@ -28,4 +28,10 @@ public interface IProjectAudienceLookup
         Guid tenantId,
         IEnumerable<Guid> userIds,
         CancellationToken cancellationToken = default);
+
+    Task<bool> IsActiveProjectResourceAsync(
+        Guid tenantId,
+        Guid projectId,
+        Guid resourceId,
+        CancellationToken cancellationToken = default);
 }

@@ -1,9 +1,17 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using NEXUS.Api.Management;
+using NEXUS.Modules.Identity.Application;
+using NEXUS.Modules.Organization.Domain;
+using NEXUS.Modules.Portfolio.Domain;
+using NEXUS.Modules.ProjectManagement.Domain;
+using NEXUS.Persistence;
+using NEXUS.SharedKernel;
 using NEXUS.SharedKernel.Management;
+using PortfolioProgram = NEXUS.Modules.Portfolio.Domain.Program;
 using Xunit;
 
 namespace NEXUS.Api.Tests.Unit;
@@ -610,6 +618,306 @@ public sealed class ManagementContextMiddlewareTests
             new Claim(ClaimTypes.NameIdentifier, Guid.NewGuid().ToString()),
             new Claim("tenantId", Guid.NewGuid().ToString())
         }, "test"));
+        return context;
+    }
+}
+
+[Collection("Static tenant resolution")]
+public sealed class OrganizationScopedCollectionPermissionMiddlewareTests
+{
+    [Fact]
+    public async Task Adds_permission_when_one_current_organization_grants_it()
+    {
+        var userId = Guid.NewGuid();
+        var tenantId = Guid.NewGuid();
+        var organizationId = Guid.NewGuid();
+        var context = CreateContext(userId, tenantId, organizationId);
+        await using var db = CreateDb(tenantId, organizationId);
+        var accessor = CreateAccessor(context);
+        var permissions = new Mock<IUserEffectivePermissionService>();
+        permissions.Setup(service => service.GetEffectivePermissionsForOrganizationAsync(
+                userId, tenantId, organizationId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new HashSet<string>(["Project.View"], StringComparer.Ordinal));
+
+        var httpContext = CreateRequest(userId, tenantId, "GET", "Project.View");
+        var middleware = new OrganizationScopedCollectionPermissionMiddleware(_ => Task.CompletedTask);
+
+        await middleware.InvokeAsync(httpContext, db, accessor, permissions.Object, new ProjectOrganizationLookup(db));
+
+        Assert.Contains(httpContext.User.FindAll("permission"), claim => claim.Value == "Project.View");
+        Assert.Equal(new[] { organizationId }, accessor.Current!.Scope.OrganizationIds);
+    }
+
+    [Fact]
+    public async Task Does_not_combine_permissions_from_different_organizations()
+    {
+        var userId = Guid.NewGuid();
+        var tenantId = Guid.NewGuid();
+        var firstOrganizationId = Guid.NewGuid();
+        var secondOrganizationId = Guid.NewGuid();
+        var context = CreateContext(userId, tenantId, firstOrganizationId, secondOrganizationId);
+        await using var db = CreateDb(tenantId, firstOrganizationId, secondOrganizationId);
+        var accessor = CreateAccessor(context);
+        var permissions = new Mock<IUserEffectivePermissionService>();
+        permissions.Setup(service => service.GetEffectivePermissionsForOrganizationAsync(
+                userId, tenantId, firstOrganizationId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new HashSet<string>(["Project.View"], StringComparer.Ordinal));
+        permissions.Setup(service => service.GetEffectivePermissionsForOrganizationAsync(
+                userId, tenantId, secondOrganizationId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new HashSet<string>(["Project.Edit"], StringComparer.Ordinal));
+
+        var httpContext = CreateRequest(userId, tenantId, "GET", "Project.View", "Project.Edit");
+        var middleware = new OrganizationScopedCollectionPermissionMiddleware(_ => Task.CompletedTask);
+
+        await middleware.InvokeAsync(httpContext, db, accessor, permissions.Object, new ProjectOrganizationLookup(db));
+
+        Assert.DoesNotContain(httpContext.User.FindAll("permission"), claim => claim.Value is "Project.View" or "Project.Edit");
+        Assert.Empty(accessor.Current!.Scope.OrganizationIds);
+        Assert.Empty(accessor.Current.Scope.PortfolioIds);
+        Assert.Empty(accessor.Current.Scope.ProgramIds);
+        Assert.Empty(accessor.Current.Scope.ProjectIds);
+    }
+
+    [Fact]
+    public async Task Does_not_add_scoped_permission_for_mutations_or_unmarked_endpoints()
+    {
+        var userId = Guid.NewGuid();
+        var tenantId = Guid.NewGuid();
+        var organizationId = Guid.NewGuid();
+        var context = CreateContext(userId, tenantId, organizationId);
+        await using var db = CreateDb(tenantId, organizationId);
+        var accessor = CreateAccessor(context);
+        var permissions = new Mock<IUserEffectivePermissionService>();
+        permissions.Setup(service => service.GetEffectivePermissionsForOrganizationAsync(
+                userId, tenantId, organizationId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new HashSet<string>(["Project.View"], StringComparer.Ordinal));
+
+        foreach (var (method, marked) in new[] { ("POST", true), ("GET", false) })
+        {
+            var httpContext = marked
+                ? CreateRequest(userId, tenantId, method, "Project.View")
+                : CreateRequest(userId, tenantId, method);
+            var middleware = new OrganizationScopedCollectionPermissionMiddleware(_ => Task.CompletedTask);
+
+            await middleware.InvokeAsync(httpContext, db, accessor, permissions.Object, new ProjectOrganizationLookup(db));
+
+            Assert.DoesNotContain(httpContext.User.FindAll("permission"), claim => claim.Value == "Project.View");
+        }
+
+        permissions.Verify(service => service.GetEffectivePermissionsForOrganizationAsync(
+            It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    private static ManagementContext CreateContext(Guid userId, Guid tenantId, params Guid[] organizationIds) =>
+        new(userId, tenantId, ManagementPerspective.ProjectManager, ManagementViewMode.Native,
+            null, null, null,
+            new ManagementScope(new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>())
+            {
+                OrganizationIds = organizationIds.ToHashSet()
+            });
+
+    [Fact]
+    public async Task Organization_view_grant_does_not_expose_directly_scoped_projects_from_another_organization()
+    {
+        var userId = Guid.NewGuid();
+        var tenantId = Guid.NewGuid();
+        var grantedOrganizationId = Guid.NewGuid();
+        var otherOrganizationId = Guid.NewGuid();
+        var grantedPortfolioId = Guid.NewGuid();
+        var otherPortfolioId = Guid.NewGuid();
+        var grantedProgramId = Guid.NewGuid();
+        var otherProgramId = Guid.NewGuid();
+        var grantedProject = new Project
+        {
+            Id = Guid.NewGuid(), TenantId = tenantId, PortfolioId = grantedPortfolioId, Name = "Granted", Code = "A"
+        };
+        var otherProject = new Project
+        {
+            Id = Guid.NewGuid(), TenantId = tenantId, PortfolioId = otherPortfolioId, Name = "Other", Code = "B"
+        };
+        var grantedProgram = new PortfolioProgram
+        {
+            Id = grantedProgramId, TenantId = tenantId, PortfolioId = grantedPortfolioId, Name = "Granted", Code = "A"
+        };
+        var otherProgram = new PortfolioProgram
+        {
+            Id = otherProgramId, TenantId = tenantId, PortfolioId = otherPortfolioId, Name = "Other", Code = "B"
+        };
+        await using var db = CreateDb(
+            tenantId,
+            [grantedOrganizationId, otherOrganizationId],
+            [
+                new Portfolio { Id = grantedPortfolioId, TenantId = tenantId, OrganizationId = grantedOrganizationId, Name = "Granted", Code = "A" },
+                new Portfolio { Id = otherPortfolioId, TenantId = tenantId, OrganizationId = otherOrganizationId, Name = "Other", Code = "B" }
+            ],
+            [grantedProject, otherProject],
+            [grantedProgram, otherProgram]);
+        var originalContext = new ManagementContext(
+            userId, tenantId, ManagementPerspective.ProjectManager, ManagementViewMode.Native, null, null, null,
+            new ManagementScope(
+                new HashSet<Guid> { grantedPortfolioId, otherPortfolioId },
+                new HashSet<Guid> { grantedProgramId, otherProgramId },
+                new HashSet<Guid> { grantedProject.Id, otherProject.Id })
+            {
+                OrganizationIds = new HashSet<Guid> { grantedOrganizationId, otherOrganizationId },
+                OrganizationReferences =
+                [
+                    new ManagementEntityReference(grantedOrganizationId, "Granted"),
+                    new ManagementEntityReference(otherOrganizationId, "Other")
+                ],
+                ProjectOrganizationIds = new Dictionary<Guid, Guid>
+                {
+                    [grantedProject.Id] = grantedOrganizationId,
+                    [otherProject.Id] = otherOrganizationId
+                }
+            });
+        var accessor = CreateAccessor(originalContext);
+        var permissions = new Mock<IUserEffectivePermissionService>();
+        permissions.Setup(service => service.GetEffectivePermissionsForOrganizationAsync(
+                userId, tenantId, grantedOrganizationId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new HashSet<string>(["Project.View"], StringComparer.Ordinal));
+        permissions.Setup(service => service.GetEffectivePermissionsForOrganizationAsync(
+                userId, tenantId, otherOrganizationId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new HashSet<string>(StringComparer.Ordinal));
+        var httpContext = CreateRequest(userId, tenantId, "GET", "Project.View");
+        var middleware = new OrganizationScopedCollectionPermissionMiddleware(_ => Task.CompletedTask);
+
+        await middleware.InvokeAsync(httpContext, db, accessor, permissions.Object, new ProjectOrganizationLookup(db));
+
+        Assert.Equal(new[] { grantedOrganizationId }, accessor.Current!.Scope.OrganizationIds);
+        Assert.Equal(new[] { grantedPortfolioId }, accessor.Current.Scope.PortfolioIds);
+        Assert.Equal(new[] { grantedProgramId }, accessor.Current.Scope.ProgramIds);
+        Assert.Equal(new[] { grantedProject.Id }, accessor.Current.Scope.ProjectIds);
+        Assert.DoesNotContain(otherProject.Id, accessor.Current.Scope.ProjectIds);
+        Assert.DoesNotContain(otherProgramId, accessor.Current.Scope.ProgramIds);
+    }
+
+    [Fact]
+    public async Task Existing_tenant_permission_keeps_the_existing_tenant_scope()
+    {
+        var userId = Guid.NewGuid();
+        var tenantId = Guid.NewGuid();
+        var firstOrganizationId = Guid.NewGuid();
+        var secondOrganizationId = Guid.NewGuid();
+        var firstPortfolioId = Guid.NewGuid();
+        var secondPortfolioId = Guid.NewGuid();
+        var firstProgramId = Guid.NewGuid();
+        var secondProgramId = Guid.NewGuid();
+        var firstProject = new Project
+        {
+            Id = Guid.NewGuid(), TenantId = tenantId, PortfolioId = firstPortfolioId, Name = "First", Code = "A"
+        };
+        var secondProject = new Project
+        {
+            Id = Guid.NewGuid(), TenantId = tenantId, PortfolioId = secondPortfolioId, Name = "Second", Code = "B"
+        };
+        var firstProgram = new PortfolioProgram
+        {
+            Id = firstProgramId, TenantId = tenantId, PortfolioId = firstPortfolioId, Name = "First", Code = "A"
+        };
+        var secondProgram = new PortfolioProgram
+        {
+            Id = secondProgramId, TenantId = tenantId, PortfolioId = secondPortfolioId, Name = "Second", Code = "B"
+        };
+        await using var db = CreateDb(
+            tenantId,
+            [firstOrganizationId, secondOrganizationId],
+            [
+                new Portfolio { Id = firstPortfolioId, TenantId = tenantId, OrganizationId = firstOrganizationId, Name = "First", Code = "A" },
+                new Portfolio { Id = secondPortfolioId, TenantId = tenantId, OrganizationId = secondOrganizationId, Name = "Second", Code = "B" }
+            ],
+            [firstProject, secondProject],
+            [firstProgram, secondProgram]);
+        var context = new ManagementContext(
+            userId, tenantId, ManagementPerspective.ProjectManager, ManagementViewMode.Native, null, null, null,
+            new ManagementScope(
+                new HashSet<Guid> { firstPortfolioId, secondPortfolioId },
+                new HashSet<Guid> { firstProgramId, secondProgramId },
+                new HashSet<Guid> { firstProject.Id, secondProject.Id })
+            {
+                OrganizationIds = new HashSet<Guid> { firstOrganizationId, secondOrganizationId },
+                ProjectOrganizationIds = new Dictionary<Guid, Guid>
+                {
+                    [firstProject.Id] = firstOrganizationId,
+                    [secondProject.Id] = secondOrganizationId
+                }
+            });
+        var accessor = CreateAccessor(context);
+        var permissions = new Mock<IUserEffectivePermissionService>(MockBehavior.Strict);
+        var httpContext = CreateRequest(userId, tenantId, "GET", "Project.View");
+        httpContext.User.Identities.Single(identity => identity.IsAuthenticated)
+            .AddClaim(new Claim("permission", "Project.View"));
+        var middleware = new OrganizationScopedCollectionPermissionMiddleware(_ => Task.CompletedTask);
+
+        await middleware.InvokeAsync(httpContext, db, accessor, permissions.Object, new ProjectOrganizationLookup(db));
+
+        Assert.Equal(context.Scope.OrganizationIds, accessor.Current!.Scope.OrganizationIds);
+        Assert.Equal(context.Scope.PortfolioIds, accessor.Current.Scope.PortfolioIds);
+        Assert.Equal(context.Scope.ProgramIds, accessor.Current.Scope.ProgramIds);
+        Assert.Equal(context.Scope.ProjectIds, accessor.Current.Scope.ProjectIds);
+        permissions.VerifyNoOtherCalls();
+    }
+
+    private static ManagementContextAccessor CreateAccessor(ManagementContext context)
+    {
+        var accessor = new ManagementContextAccessor();
+        accessor.Set(context);
+        return accessor;
+    }
+
+    private static AppDbContext CreateDb(
+        Guid tenantId,
+        params Guid[] organizationIds) => CreateDb(tenantId, organizationIds, [], []);
+
+    private static AppDbContext CreateDb(
+        Guid tenantId,
+        Guid[] organizationIds,
+        Portfolio[] portfolios,
+        Project[] projects,
+        PortfolioProgram[]? programs = null)
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
+            .Options;
+        var db = new AppDbContext(options);
+        db.Organizations.AddRange(organizationIds.Select(id => new Organization
+        {
+            Id = id, TenantId = tenantId, Name = id.ToString("N"), IsActive = true
+        }));
+        db.Portfolios.AddRange(portfolios);
+        db.Programs.AddRange(programs ?? []);
+        db.Projects.AddRange(projects);
+        var requestContext = new DefaultHttpContext
+        {
+            User = new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim("tenantId", tenantId.ToString("D"))], "test"))
+        };
+        AppDbContext.ConfigureTenantResolution(new HttpContextAccessor { HttpContext = requestContext });
+        try
+        {
+            db.SaveChanges();
+        }
+        finally
+        {
+            AppDbContext.ConfigureTenantResolution(new HttpContextAccessor());
+        }
+        return db;
+    }
+
+    private static DefaultHttpContext CreateRequest(Guid userId, Guid tenantId, string method, params string[] permissionKeys)
+    {
+        var context = new DefaultHttpContext();
+        context.Request.Method = method;
+        context.User = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
+            new Claim("tenantId", tenantId.ToString())
+        ], "test"));
+        if (permissionKeys.Length > 0)
+            context.SetEndpoint(new Endpoint(
+                _ => Task.CompletedTask,
+                new EndpointMetadataCollection(new OrganizationScopedCollectionPermissionAttribute(permissionKeys)),
+                "organization-scoped collection"));
         return context;
     }
 }

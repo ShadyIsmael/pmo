@@ -189,6 +189,7 @@ public sealed class ManagementScopeResolver : IManagementScopeResolver
             }
         }
 
+        var projectOrganizationIds = await GetProjectOrganizationIdsAsync(assignments.TenantId, projectIds, cancellationToken);
         var isTenantAdministrator = await IsTenantAdministratorAsync(assignments.UserId, assignments.TenantId, cancellationToken);
         var organizationIds = isTenantAdministrator
             ? await _db.Set<Organization>().AsNoTracking()
@@ -199,9 +200,10 @@ public sealed class ManagementScopeResolver : IManagementScopeResolver
                     .Where(portfolio => portfolio.TenantId == assignments.TenantId
                         && organizationPortfolioIds.Contains(portfolio.Id) && portfolio.OrganizationId.HasValue)
                     .Select(portfolio => portfolio.OrganizationId!.Value).ToHashSetAsync(cancellationToken);
+        if (!isTenantAdministrator)
+            organizationIds.UnionWith(projectOrganizationIds.Values);
 
         var organizationReferences = await GetOrganizationReferencesAsync(assignments.TenantId, organizationIds, cancellationToken);
-        var projectOrganizationIds = await GetProjectOrganizationIdsAsync(assignments.TenantId, projectIds, cancellationToken);
         return new ManagementScope(portfolioIds, programIds, projectIds)
         {
             OrganizationIds = organizationIds,
@@ -248,8 +250,9 @@ public sealed class ManagementScopeResolver : IManagementScopeResolver
         var organizationIds = await _db.Set<Portfolio>().AsNoTracking()
             .Where(portfolio => portfolio.TenantId == program.TenantId && portfolio.Id == program.PortfolioId && portfolio.OrganizationId.HasValue)
             .Select(portfolio => portfolio.OrganizationId!.Value).ToHashSetAsync(cancellationToken);
-        var organizationReferences = await GetOrganizationReferencesAsync(program.TenantId, organizationIds, cancellationToken);
         var projectOrganizationIds = await GetProjectOrganizationIdsAsync(program.TenantId, projects, cancellationToken);
+        organizationIds.UnionWith(projectOrganizationIds.Values);
+        var organizationReferences = await GetOrganizationReferencesAsync(program.TenantId, organizationIds, cancellationToken);
         return new ManagementScope(new HashSet<Guid> { program.PortfolioId }, new HashSet<Guid> { programId }, projects)
         {
             OrganizationIds = organizationIds,
@@ -274,8 +277,9 @@ public sealed class ManagementScopeResolver : IManagementScopeResolver
         var organizationIds = portfolios.Count == 0 ? new HashSet<Guid>() : await _db.Set<Portfolio>().AsNoTracking()
             .Where(portfolio => portfolio.TenantId == project.TenantId && portfolios.Contains(portfolio.Id) && portfolio.OrganizationId.HasValue)
             .Select(portfolio => portfolio.OrganizationId!.Value).ToHashSetAsync(cancellationToken);
-        var organizationReferences = await GetOrganizationReferencesAsync(project.TenantId, organizationIds, cancellationToken);
         var projectOrganizationIds = await GetProjectOrganizationIdsAsync(project.TenantId, new HashSet<Guid> { projectId }, cancellationToken);
+        organizationIds.UnionWith(projectOrganizationIds.Values);
+        var organizationReferences = await GetOrganizationReferencesAsync(project.TenantId, organizationIds, cancellationToken);
         return new ManagementScope(portfolios, programs, new HashSet<Guid> { projectId })
         {
             OrganizationIds = organizationIds,
@@ -343,6 +347,92 @@ public sealed class ManagementScopeResolver : IManagementScopeResolver
                             && _db.Set<Resource>().Any(r => r.TenantId == tenantId && r.Id == tm.ResourceId && r.UserId == userId
                                 && r.IsActive && !r.IsDeleted)))))))).OrderBy(x => x.Name).ThenBy(x => x.Code).ThenBy(x => x.Id)
             .Select(x => new ManagementEntityReference(x.Id, x.Name, x.Code)).ToListAsync(cancellationToken);
+
+        // Organization Role membership contributes resource visibility only when
+        // the effective permission is evaluated for that Role's exact owner.
+        // This is deliberately materialized into the same row-id scope consumed
+        // by portfolio/program/project queries; permission claims alone never
+        // turn a tenant-wide collection into an unrestricted query.
+        var organizationRoleOwners = await (
+                from assignment in _db.Set<UserRole>().IgnoreQueryFilters().AsNoTracking()
+                join role in _db.Set<Role>().IgnoreQueryFilters().AsNoTracking()
+                    on new { assignment.TenantId, assignment.RoleId }
+                    equals new { role.TenantId, RoleId = role.Id }
+                join organization in _db.Set<Organization>().IgnoreQueryFilters().AsNoTracking()
+                    on new { role.TenantId, OrganizationId = role.OrganizationId!.Value }
+                    equals new { organization.TenantId, OrganizationId = organization.Id }
+                where assignment.UserId == userId && assignment.TenantId == tenantId && !assignment.IsDeleted
+                    && assignment.User.TenantId == tenantId && assignment.User.IsActive && !assignment.User.IsDeleted
+                    && role.TenantId == tenantId && !role.IsDeleted && !role.IsLegacyOrganizationOwnershipUnresolved
+                    && role.OrganizationId.HasValue
+                    && organization.IsActive && !organization.IsDeleted
+                select new { OrganizationId = organization.Id, organization.Name })
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        var organizationPermissions = new Dictionary<Guid, IReadOnlySet<string>>();
+        foreach (var owner in organizationRoleOwners)
+        {
+            organizationPermissions[owner.OrganizationId] = await _effectivePermissions.GetEffectivePermissionsForOrganizationAsync(
+                userId, tenantId, owner.OrganizationId, cancellationToken);
+        }
+
+        var portfolioViewOrganizations = organizationPermissions
+            .Where(item => item.Value.Contains("Portfolio.View"))
+            .Select(item => item.Key).ToArray();
+        if (portfolioViewOrganizations.Length > 0)
+        {
+            var organizationPortfolios = await _db.Set<Portfolio>().IgnoreQueryFilters().AsNoTracking()
+                .Where(portfolio => portfolio.TenantId == tenantId && !portfolio.IsDeleted
+                    && portfolio.OrganizationId.HasValue && portfolioViewOrganizations.Contains(portfolio.OrganizationId.Value))
+                .OrderBy(portfolio => portfolio.Name).ThenBy(portfolio => portfolio.Code).ThenBy(portfolio => portfolio.Id)
+                .Select(portfolio => new ManagementEntityReference(portfolio.Id, portfolio.Name, portfolio.Code))
+                .ToListAsync(cancellationToken);
+            portfolios.AddRange(organizationPortfolios);
+        }
+
+        var programViewOrganizations = organizationPermissions
+            .Where(item => item.Value.Contains("Program.View"))
+            .Select(item => item.Key).ToArray();
+        if (programViewOrganizations.Length > 0)
+        {
+            var organizationPrograms = await (
+                    from program in _db.Set<Program>().IgnoreQueryFilters().AsNoTracking()
+                    join portfolio in _db.Set<Portfolio>().IgnoreQueryFilters().AsNoTracking()
+                        on new { program.TenantId, PortfolioId = program.PortfolioId }
+                        equals new { portfolio.TenantId, PortfolioId = portfolio.Id }
+                    where program.TenantId == tenantId && !program.IsDeleted && !portfolio.IsDeleted
+                        && portfolio.OrganizationId.HasValue
+                        && programViewOrganizations.Contains(portfolio.OrganizationId.Value)
+                    orderby program.Name, program.Code, program.Id
+                    select new ManagementEntityReference(program.Id, program.Name, program.Code))
+                .ToListAsync(cancellationToken);
+            programs.AddRange(organizationPrograms);
+        }
+
+        var projectViewOrganizations = organizationPermissions
+            .Where(item => item.Value.Contains("Project.View"))
+            .Select(item => item.Key).ToHashSet();
+        if (projectViewOrganizations.Count > 0)
+        {
+            var tenantProjects = await _db.Set<Project>().IgnoreQueryFilters().AsNoTracking()
+                .Where(project => project.TenantId == tenantId && !project.IsDeleted)
+                .OrderBy(project => project.Name).ThenBy(project => project.Code).ThenBy(project => project.Id)
+                .Select(project => new ManagementEntityReference(project.Id, project.Name, project.Code))
+                .ToListAsync(cancellationToken);
+            foreach (var project in tenantProjects)
+            {
+                var ownerOrganizationId = await _organizationLookup.ResolveOrganizationIdAsync(
+                    tenantId, project.Id, cancellationToken);
+                if (ownerOrganizationId.HasValue && projectViewOrganizations.Contains(ownerOrganizationId.Value))
+                    projects.Add(project);
+            }
+        }
+
+        portfolios = portfolios.GroupBy(item => item.Id).Select(group => group.First()).ToList();
+        programs = programs.GroupBy(item => item.Id).Select(group => group.First()).ToList();
+        projects = projects.GroupBy(item => item.Id).Select(group => group.First()).ToList();
+
         var native = new HashSet<ManagementPerspective>();
         if (portfolios.Count > 0) native.Add(ManagementPerspective.PortfolioManager);
         if (programs.Count > 0) native.Add(ManagementPerspective.ProgramManager);

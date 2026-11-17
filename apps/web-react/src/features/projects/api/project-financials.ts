@@ -59,6 +59,7 @@ export interface PaymentRequestApprover {
   comment: string | null;
   isActive: boolean;
   canDecide: boolean;
+  canReassign?: boolean;
 }
 
 export interface ProjectPaymentRequest {
@@ -208,6 +209,12 @@ export interface ProjectPaymentRequestSettlementPage {
 
 export interface PaymentRequestApproverCandidate { userId: string; displayName: string; }
 export interface PaymentRequestMilestoneOption { id: string; name: string; endDate: string | null; }
+export interface ReassignPaymentRequestApproverInput {
+  currentApproverId: string;
+  replacementApproverId: string;
+  reason: string;
+  rowVersion: string;
+}
 
 export interface CreatePaymentRequestInput {
   title: string;
@@ -348,6 +355,18 @@ export function useCancelProjectPaymentReversal(projectId: string) {
   });
 }
 
+export function useReassignProjectPaymentReversalApprover(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: ReassignPaymentRequestApproverInput & { requestId: string; reversalId: string }) => {
+      const { requestId, reversalId, ...body } = input;
+      return api.post<ProjectPaymentReversal>(
+        `/api/projects/${encodeURIComponent(projectId)}/payment-requests/${encodeURIComponent(requestId)}/reversals/${encodeURIComponent(reversalId)}/approver-reassignments`, body);
+    },
+    onSuccess: (reversal) => invalidateProjectFinance(queryClient, projectId, reversal.originalPaymentRequestId),
+  });
+}
+
 export function useRecordProjectPaymentRequestSettlement(projectId: string) {
   const queryClient = useQueryClient();
   return useMutation({
@@ -369,6 +388,18 @@ export function usePaymentRequestApprovers(projectId: string, enabled = true) {
   });
 }
 
+export function usePaymentRequestRecoveryApprovers(
+  projectId: string, requestId: string | null, currentApproverId: string | null, enabled = true,
+) {
+  return useQuery({
+    queryKey: ["project-payment-request-recovery-approvers", projectId, requestId, currentApproverId],
+    queryFn: () => api.get<PaymentRequestApproverCandidate[]>(
+      `/api/projects/${encodeURIComponent(projectId)}/payment-requests/${encodeURIComponent(requestId!)}/approver-recovery-options/${encodeURIComponent(currentApproverId!)}`),
+    enabled: Boolean(projectId && requestId && currentApproverId) && enabled,
+    staleTime: 0,
+  });
+}
+
 export function useProjectPaymentReversalApprovers(projectId: string, enabled = true) {
   return useQuery({
     queryKey: ["project-payment-reversal-approvers", projectId],
@@ -376,6 +407,19 @@ export function useProjectPaymentReversalApprovers(projectId: string, enabled = 
       `/api/projects/${encodeURIComponent(projectId)}/payment-requests/reversal-approvers`),
     enabled: Boolean(projectId) && enabled,
     staleTime: 30_000,
+  });
+}
+
+export function useProjectPaymentReversalRecoveryApprovers(
+  projectId: string, requestId: string | null, reversalId: string | null,
+  currentApproverId: string | null, enabled = true,
+) {
+  return useQuery({
+    queryKey: ["project-payment-reversal-recovery-approvers", projectId, requestId, reversalId, currentApproverId],
+    queryFn: () => api.get<PaymentRequestApproverCandidate[]>(
+      `/api/projects/${encodeURIComponent(projectId)}/payment-requests/${encodeURIComponent(requestId!)}/reversals/${encodeURIComponent(reversalId!)}/approver-recovery-options/${encodeURIComponent(currentApproverId!)}`),
+    enabled: Boolean(projectId && requestId && reversalId && currentApproverId) && enabled,
+    staleTime: 0,
   });
 }
 
@@ -440,6 +484,18 @@ export function useCancelProjectPaymentRequest(projectId: string) {
   });
 }
 
+export function useReassignProjectPaymentRequestApprover(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: ReassignPaymentRequestApproverInput & { requestId: string }) => {
+      const { requestId, ...body } = input;
+      return api.post<ProjectPaymentRequest>(
+        `/api/projects/${encodeURIComponent(projectId)}/payment-requests/${encodeURIComponent(requestId)}/approver-reassignments`, body);
+    },
+    onSuccess: (request) => invalidateProjectFinance(queryClient, projectId, request.id),
+  });
+}
+
 const foundationKey = (projectId: string) => ["project-financial-foundation", projectId] as const;
 const activityKey = (projectId: string, filters: FinancialActivityFilters) => ["project-financial-activity", projectId, filters] as const;
 
@@ -494,6 +550,9 @@ export function useProjectFinancialActivity(projectId: string, filters: Financia
 }
 
 export interface ProjectAnnualBudgetClosingDecision {
+  assignmentId: string;
+  canReassignAssignment?: boolean;
+  canRecoverCancelAssignment?: boolean;
   userId: string;
   userName: string | null;
   position: number | null;
@@ -552,6 +611,9 @@ export interface ProjectAnnualBudgetClosing {
   canSubmit: boolean;
   canApprove: boolean;
   canCancel: boolean;
+  canReassignApprover: boolean;
+  canRecoverCancel: boolean;
+  approvalRowVersion: string | null;
 }
 
 export interface ProjectAnnualBudgetClosingPage {
@@ -586,6 +648,18 @@ export function useProjectAnnualBudgetClosingApprovers(projectId: string, enable
       `/api/projects/${encodeURIComponent(projectId)}/annual-budget-closings/approvers`),
     enabled: Boolean(projectId) && enabled,
     staleTime: 30_000,
+  });
+}
+
+export function useProjectAnnualBudgetClosingRecoveryApprovers(
+  projectId: string, closingId: string | null, assignmentId: string | null, enabled = true,
+) {
+  return useQuery({
+    queryKey: ["project-annual-budget-closing-recovery-approvers", projectId, closingId, assignmentId],
+    queryFn: () => api.get<PaymentRequestApproverCandidate[]>(
+      `/api/projects/${encodeURIComponent(projectId)}/annual-budget-closings/${encodeURIComponent(closingId!)}/approver-recovery-options/${encodeURIComponent(assignmentId!)}`),
+    enabled: Boolean(projectId && closingId && assignmentId) && enabled,
+    staleTime: 0,
   });
 }
 
@@ -625,10 +699,40 @@ export function useDecideProjectAnnualBudgetClosing(projectId: string) {
 export function useCancelProjectAnnualBudgetClosing(projectId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: { closingId: string; rowVersion: string }) => {
+    mutationFn: (input: { closingId: string; rowVersion: string; approvalRowVersion?: string | null }) => {
       const { closingId, ...body } = input;
       return api.post<ProjectAnnualBudgetClosing>(
         `/api/projects/${encodeURIComponent(projectId)}/annual-budget-closings/${encodeURIComponent(closingId)}/cancel`, body);
+    },
+    onSuccess: () => invalidateProjectFinance(queryClient, projectId),
+  });
+}
+
+export function useReassignProjectAnnualBudgetClosingApprover(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: {
+      closingId: string; assignmentId: string; replacementApproverId: string; reason: string;
+      rowVersion: string; approvalRowVersion: string;
+    }) => {
+      const { closingId, ...body } = input;
+      return api.post<ProjectAnnualBudgetClosing>(
+        `/api/projects/${encodeURIComponent(projectId)}/annual-budget-closings/${encodeURIComponent(closingId)}/approver-reassignments`, body);
+    },
+    onSuccess: () => invalidateProjectFinance(queryClient, projectId),
+  });
+}
+
+export function useRecoverCancelProjectAnnualBudgetClosing(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: {
+      closingId: string; assignmentId: string; rowVersion: string;
+      approvalRowVersion: string; reason: string;
+    }) => {
+      const { closingId, ...body } = input;
+      return api.post<ProjectAnnualBudgetClosing>(
+        `/api/projects/${encodeURIComponent(projectId)}/annual-budget-closings/${encodeURIComponent(closingId)}/recovery-cancellations`, body);
     },
     onSuccess: () => invalidateProjectFinance(queryClient, projectId),
   });

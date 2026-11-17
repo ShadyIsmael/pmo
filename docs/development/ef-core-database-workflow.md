@@ -20,14 +20,89 @@ From the repository root:
 
 This compares the current EF model with the migration snapshot and lists repository migrations without opening a database connection. A failing model check means a migration may be missing or the snapshot/model may be inconsistent; inspect and resolve that before delivery.
 
+## Canonical EF Core migration procedure (copy-ready)
+
+Use this single procedure for every future Development schema change. It covers CREATE → PREFLIGHT → INSPECT → REVIEW SQL → HASH → APPROVE → APPLY → VERIFY. Do not create an alternative execution path.
+
+### Environment initialization (required before every gate invocation)
+
+```powershell
+$env:ASPNETCORE_ENVIRONMENT = 'Development'
+$env:DOTNET_ENVIRONMENT = 'Development'
+$env:NEXUS_EF_DEVELOPMENT_CONNECTION_STRING = '<retrieve securely; do not paste into chat or source control>'
+Set-Location 'C:\Projects\pmo'
+```
+
+The EF Database Gate also validates these variables and refuses any value other than `Development`. The offline `model` check does not require a connection string.
+
+### CREATE (only when a model change requires a new migration)
+
+```powershell
+dotnet restore apps/api/tools/NEXUS.Persistence.DesignTime/NEXUS.Persistence.DesignTime.csproj --ignore-failed-sources --disable-parallel -m:1
+dotnet build apps/api/tools/NEXUS.Persistence.DesignTime/NEXUS.Persistence.DesignTime.csproj --no-restore -m:1
+dotnet ef migrations add <MigrationName> --project apps/api/src/NEXUS.Persistence/NEXUS.Persistence.csproj --startup-project apps/api/tools/NEXUS.Persistence.DesignTime/NEXUS.Persistence.DesignTime.csproj --context NEXUS.Persistence.AppDbContext --output-dir Migrations --no-build
+dotnet build apps/api/tools/NEXUS.Persistence.DesignTime/NEXUS.Persistence.DesignTime.csproj --no-restore -m:1
+```
+
+### PREFLIGHT (read-only, host-side)
+
+```powershell
+.\scripts\dev\db-preflight.ps1
+```
+
+The wrapper generates a unique pending SQL artifact under `artifacts/ef-review/` only when migrations are pending and writes a sanitized JSON report. If the model check fails, preflight stops before inspection and no SQL artifact is generated or reused.
+
+### INSPECT / STATUS
+
+```powershell
+.\scripts\dev\db-migrations-status.ps1
+```
+
+### REVIEW SQL
+
+Open only the SQL file path printed by the successful preflight for the current run. Review ordering, data effects, drops, destructive type changes, constraints, indexes, and transaction boundaries. Do not review, hash, approve, or apply an artifact from a previous or failed run.
+
+### HASH
+
+```powershell
+Get-FileHash -Algorithm SHA256 'artifacts/ef-review/<generated-pending-file>.sql'
+```
+
+### APPROVE / APPLY (only after explicit Product Owner authorization)
+
+```powershell
+.\scripts\dev\db-apply-migrations.ps1 `
+  -ReviewedSqlPath 'artifacts/ef-review/<generated-pending-file>.sql' `
+  -ApprovedSha256 '<reviewed-64-character-SHA256>' `
+  -AuthorizationReference '<active Product Owner task or conversation reference>' `
+  -ConfirmDevelopmentApply
+```
+
+### VERIFY
+
+Confirm from the gate output and sanitized report: `EF Model synchronized: Yes`; target identity matches `Shady` / `NexusPmo`; pending migrations = 0; physical schema verified; applied migration names. Then run the focused persistence/integration tests for the changed model.
+
+### Permanent safeguards for this procedure
+
+- Initialize `ASPNETCORE_ENVIRONMENT` and `DOTNET_ENVIRONMENT` explicitly; never rely on a default or inherited value.
+- Stop immediately when any mandatory step fails. Do not continue to review or apply SQL after a failed model check, inspection, hash comparison, or gate rejection.
+- Use unique or freshly regenerated SQL artifacts. The preflight wrapper refuses to overwrite an existing artifact path.
+- Apply regenerates the pending SQL from the current target and rejects the operation unless its hash exactly matches the reviewed file hash. A mismatch is a hard stop, not a warning.
+- Never copy a hash from an error message, console output, or report as authorization. The authorization hash must be calculated from the reviewed SQL file.
+- Treat offline `model` output as model/snapshot verification only. It is not evidence of live database identity, history, or schema.
+- Direct `dotnet ef migrations script` output is reference-only and must never be used as an approval artifact for Development apply.
+- Deferred application must be reported as **Database Migration Pending**, not Complete.
+
 ## Read-only Development inspection
 
 Populate the connection variable through a secret manager or the current PowerShell process, and set the same Development environment used by the API. Do not put credentials in source control, a command argument, or a log.
 
 ```powershell
 $env:ASPNETCORE_ENVIRONMENT = 'Development'
+$env:DOTNET_ENVIRONMENT = 'Development'
 $env:NEXUS_EF_DEVELOPMENT_CONNECTION_STRING = '<retrieve securely; do not paste into chat>'
-.\scripts\database\ef-database-gate.ps1 inspect --environment Development --expected-server '<SERVERPROPERTY(''ServerName'')>' --expected-database '<DB_NAME()>' --script-output 'artifacts/ef-review/development-pending.sql'
+# Use a fresh, unique --script-output path for every run; the gate overwrites only on a successful generation.
+.\scripts\database\ef-database-gate.ps1 inspect --environment Development --expected-server '<SERVERPROPERTY(''ServerName'')>' --expected-database '<DB_NAME()>' --script-output 'artifacts/ef-review/development-pending-<timestamp>.sql'
 ```
 
 The tool compares its connection endpoint with the effective Development API configuration, opens that explicit target, and queries the server identity directly. It never prints the connection string. A server alias is not accepted as proof: use the value returned by `SERVERPROPERTY('ServerName')` for the expected server and the value returned by `DB_NAME()` for the expected database. The reported database ID is also included in the verification output.
@@ -45,8 +120,8 @@ Inspect the generated SQL file, migration ordering, and data effects. Pay specia
 Only after explicit Development authorization, verified target identity, a clean model/snapshot, and review of the exact SQL file, use:
 
 ```powershell
-Get-FileHash -Algorithm SHA256 'artifacts/ef-review/development-pending.sql'
-.\scripts\database\ef-database-gate.ps1 apply --environment Development --expected-server '<verified-server>' --expected-database '<verified-database>' --script-file 'artifacts/ef-review/development-pending.sql' --approved-sha256 '<reviewed-sha256>'
+Get-FileHash -Algorithm SHA256 'artifacts/ef-review/development-pending-<timestamp>.sql'
+.\scripts\database\ef-database-gate.ps1 apply --environment Development --expected-server '<verified-server>' --expected-database '<verified-database>' --script-file 'artifacts/ef-review/development-pending-<timestamp>.sql' --approved-sha256 '<reviewed-sha256>'
 ```
 
 Apply refuses Production and a different SQL file. It applies only the reviewed pending migrations, then rechecks EF history and the physical schema. A backup may be created when explicitly requested, but it is not a Development/UAT apply prerequisite; absence of a backup directory or `RESTORE VERIFYONLY` result must not block apply.

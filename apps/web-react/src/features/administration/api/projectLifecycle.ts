@@ -20,7 +20,7 @@ export interface ProjectLifecycleCatalogItem {
   isContinuousActivity?: boolean;
   reportingCategory?: ProjectStatusReportingCategory;
   attentionLevel?: ProjectStatusAttentionLevel;
-  referencedProjectCount: number;
+  referencedProjectCount: number | null;
   rowVersion: string;
 }
 
@@ -66,7 +66,7 @@ export function useProjectLifecycleOptions(organizationId?: string | null, proje
   return useQuery({
     queryKey: ["projectLifecycle", "options", organizationId ?? null, projectId ?? null],
     queryFn: () => api.get<ProjectLifecycleOptions>("/api/project-lifecycle/options", { organizationId: organizationId ?? undefined, projectId: projectId ?? undefined }),
-    enabled,
+    enabled: Boolean(enabled && (organizationId || projectId)),
     staleTime: 30_000,
   });
 }

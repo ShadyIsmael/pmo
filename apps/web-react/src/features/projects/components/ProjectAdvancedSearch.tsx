@@ -12,7 +12,8 @@ import { useI18n } from "@i18n/messages";
 import { useProjectEnumLabels } from "../lib/project-labels";
 import { ProjectHealthHelper } from "@lib/enums";
 import { shouldLoadProjectLookup, toUserSelectOptions, useProjectManagerCandidateLookup } from "../lib/project-lookups";
-import { projectLifecycleLabel, type ProjectLifecycleOption } from "../api/project-lifecycle";
+
+type ProjectStatusFilterOption = { id: string; code: string; nameEn: string; nameAr: string };
 
 interface ProjectAdvancedSearchProps {
   filterName: string;
@@ -21,10 +22,8 @@ interface ProjectAdvancedSearchProps {
   setFilterCode: (value: string) => void;
   filterStatuses: string[];
   toggleStatus: (status: string) => void;
-  statusOptions: ProjectLifecycleOption[];
+  statusOptions: ProjectStatusFilterOption[];
   statusOptionsLoading: boolean;
-  statusOptionsError: boolean;
-  retryStatusOptions: () => void;
   filterHealths: string[];
   toggleHealth: (health: string) => void;
   filterProgressMin: string;
@@ -55,8 +54,6 @@ export function ProjectAdvancedSearch({
   toggleStatus,
   statusOptions,
   statusOptionsLoading,
-  statusOptionsError,
-  retryStatusOptions,
   filterHealths,
   toggleHealth,
   filterProgressMin,
@@ -122,9 +119,8 @@ export function ProjectAdvancedSearch({
               <div className="space-y-2">
                 <Label className="text-xs font-medium">{t("common.status")}</Label>
                 {statusOptionsLoading ? <p role="status" className="text-xs text-muted-foreground">{t("projects.lifecycle.statusLookupLoading")}</p> : null}
-                {statusOptionsError ? <div className="flex items-center gap-3"><p role="alert" className="text-xs text-destructive">{t("projects.lifecycle.lookupError")}</p><Button type="button" size="sm" variant="outline" onClick={retryStatusOptions}>{t("projects.lifecycle.retry")}</Button></div> : null}
                 <div className="flex flex-wrap gap-2">
-                  {statusOptions.filter((status) => status.isActive !== false).map((status) => (
+                  {statusOptions.map((status) => (
                     <div key={status.id} className="flex items-center gap-2">
                       <Checkbox
                         id={`status-${status.id}`}
@@ -132,12 +128,12 @@ export function ProjectAdvancedSearch({
                         onCheckedChange={() => toggleStatus(status.code)}
                       />
                       <Label htmlFor={`status-${status.id}`} className="cursor-pointer text-sm">
-                        {projectLifecycleLabel(status, locale, status.code)}
+                        {locale === "ar" ? status.nameAr || status.nameEn || status.code : status.nameEn || status.nameAr || status.code}
                       </Label>
                     </div>
                   ))}
                 </div>
-                {!statusOptionsLoading && !statusOptionsError && statusOptions.length === 0 ? <p className="text-xs text-muted-foreground">{t("projects.lifecycle.noStatusesAvailable")}</p> : null}
+                {!statusOptionsLoading && statusOptions.length === 0 ? <p className="text-xs text-muted-foreground">{t("projects.lifecycle.noStatusesAvailable")}</p> : null}
               </div>
 
               <div className="space-y-2">

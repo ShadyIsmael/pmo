@@ -280,6 +280,12 @@ public sealed class ProgramCreationServiceTests
             Guid tenantId,
             CancellationToken cancellationToken = default) => Task.FromResult(_permissions);
 
+        public Task<IReadOnlySet<string>> GetEffectivePermissionsForOrganizationAsync(
+            Guid userId,
+            Guid tenantId,
+            Guid organizationId,
+            CancellationToken cancellationToken = default) => Task.FromResult(_permissions);
+
         public Task<IReadOnlySet<string>> GetEffectiveRoleNamesAsync(
             Guid userId,
             Guid tenantId,

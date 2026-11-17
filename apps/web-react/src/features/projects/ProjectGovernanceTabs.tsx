@@ -2,7 +2,7 @@ import * as React from "react";
 import { Link, useOutletContext } from "react-router-dom";
 import { AlertTriangle, CalendarDays, Download, Eye, FileSpreadsheet, FileText, GitBranch, Headphones, ListChecks, Loader2, Pencil, Plus, Printer, RefreshCw, Send, TrendingUp, Trash2, UserRoundCheck } from "lucide-react";
 import { useI18n } from "@i18n/messages";
-import { getApiFieldError } from "@api/client";
+import { ApiError, getApiErrorMessage, getApiFieldError } from "@api/client";
 import { useConfirm } from "@components/ui/ConfirmProvider";
 import { useAuth } from "@auth/AuthProvider";
 import { useManagement } from "@api/management";
@@ -17,6 +17,7 @@ import { Badge } from "@components/ui/Badge";
 import { Skeleton } from "@components/ui/Skeleton";
 import { SideSheet, SideSheetBody, SideSheetFooter } from "@components/ui/SideSheet";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@components/ui/Dialog";
+import { ErrorState } from "@components/ui/StateDisplay";
 import {
   useCancelProjectHandoverRequest,
   useCreateProjectHandoverRequest,
@@ -125,10 +126,6 @@ function useProjectContext(): ProjectContext {
 
 function Loading({ t }: { t: (key: string) => string }) {
   return <p className="py-12 text-center text-sm text-muted-foreground">{t("common.loading")}</p>;
-}
-
-function ErrorState({ t, onRetry }: { t: (key: string) => string; onRetry?: () => void }) {
-  return <div className="py-12 text-center text-sm text-destructive"><p>{t("common.errorLoading")}</p>{onRetry ? <Button className="mt-3" size="sm" variant="outline" onClick={onRetry}><RefreshCw className="me-1.5 h-3.5 w-3.5" />{t("common.retry")}</Button> : null}</div>;
 }
 
 function Empty({ children }: { children: React.ReactNode }) {
@@ -353,7 +350,7 @@ export function ProjectStatusReportsTab() {
         </div>
       </CardHeader>
       <CardContent className="p-0">
-        {query.isLoading ? <Loading t={t} /> : query.isError ? <ErrorState t={t} onRetry={() => void query.refetch()} /> : reports.length === 0 ? <Empty>{t("projects.noStatusReportsDescription")}</Empty> :
+        {query.isLoading ? <Loading t={t} /> : query.isError ? <ErrorState title={getApiErrorMessage(query.error, t("common.errorLoading"))} onRetry={() => void query.refetch()} /> : reports.length === 0 ? <Empty>{t("projects.noStatusReportsDescription")}</Empty> :
           <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>{t("projects.statusReportComparison.select")}</TableHead><TableHead className="whitespace-nowrap">{t("projects.reportDate")}</TableHead><TableHead className="whitespace-nowrap">{t("projects.statusDate")}</TableHead><TableHead className="whitespace-nowrap">{t("projects.reportingPeriod")}</TableHead><TableHead className="whitespace-nowrap">{t("projects.projectStatusAtReport")}</TableHead><TableHead className="whitespace-nowrap">{t("projects.overallHealth")}</TableHead><TableHead className="whitespace-nowrap">{t("projects.overallProgress")}</TableHead><TableHead className="whitespace-nowrap">{t("projects.reportState")}</TableHead><TableHead className="whitespace-nowrap">{t("projects.preparedBy")}</TableHead><TableHead className="whitespace-nowrap">{t("projects.publishedAt")}</TableHead><TableHead className="text-end">{t("projects.view")}</TableHead></TableRow></TableHeader><TableBody>
             {reports.map((report) => { const selected = comparisonSelection.includes(report.id); return <TableRow key={report.id}><TableCell><input type="checkbox" aria-label={t("projects.statusReportComparison.selectReport", { date: formatDate(report.statusDate) })} checked={selected} disabled={report.reportState !== "Published" || (comparisonSelection.length === 2 && !selected)} onChange={() => toggleComparison(report)} /></TableCell><TableCell>{formatDate(report.reportDate)}</TableCell><TableCell>{formatDate(report.statusDate)}</TableCell><TableCell className="whitespace-nowrap">{formatDate(report.periodFrom)} → {formatDate(report.periodTo)}</TableCell><TableCell><Badge status={report.projectLifecycleStatusAtReport} className="text-[10px]">{report.projectLifecycleStatusAtReport ? statusLabel(report.projectLifecycleStatusAtReport) : "—"}</Badge></TableCell><TableCell><Badge status={report.overallHealth} className="text-[10px]">{report.overallHealth ? healthLabel(report.overallHealth) : "—"}</Badge></TableCell><TableCell className="tabular-nums">{formatPercent1(report.overallProgressPercent, locale)}</TableCell><TableCell><Badge status={report.reportState}>{t(`projects.statusReportStates.${report.reportState}`)}</Badge></TableCell><TableCell>{report.preparedByNameSnapshot || "—"}</TableCell><TableCell className="whitespace-nowrap">{report.publishedAt ? formatDateTime(report.publishedAt, locale) : "—"}</TableCell><TableCell><div className="flex justify-end"><Button size="sm" variant="ghost" onClick={() => openReport(report.id)}><Eye className="me-1.5 h-3.5 w-3.5" />{t("projects.view")}</Button></div></TableCell></TableRow>; })}</TableBody></Table></div>}
           
@@ -904,15 +901,15 @@ export function ProjectHandoverTab() {
   const { t, formatDate } = useI18n();
   const { user } = useAuth();
   const { canMutate, effectiveReadOnly } = useManagement();
-  const canAccessHandover = Boolean(user && (hasPermission(user.permissions, Permissions.Handover.View) || hasPermission(user.permissions, Permissions.Handover.Manage) || hasPermission(user.permissions, Permissions.Handover.AdminInitiate)));
-  const query = useProjectHandoverRequests(projectId, canAccessHandover);
-  const capabilities = useProjectHandoverCapabilities(projectId, canAccessHandover);
+  const capabilities = useProjectHandoverCapabilities(projectId, Boolean(user));
+  const canViewHandovers = Boolean(user && capabilities.isSuccess && capabilities.data);
+  const query = useProjectHandoverRequests(projectId, canViewHandovers);
   const [newManagerId, setNewManagerId] = React.useState("");
   const [actionError, setActionError] = React.useState<string | null>(null);
   const [handoverDateError, setHandoverDateError] = React.useState<string | null>(null);
   const [initiationType, setInitiationType] = React.useState<ProjectHandoverInitiationType>("ManagerInitiated");
   const [open, setOpen] = React.useState(false);
-  const canChangeHandover = canMutate && !effectiveReadOnly;
+  const canChangeHandover = canViewHandovers && canMutate && !effectiveReadOnly;
   const selectedAllowed = initiationType === "ManagerInitiated" ? capabilities.data?.canInitiate : initiationType === "AdminInitiated" ? capabilities.data?.canAdminInitiate : capabilities.data?.canAssignInitial;
   const handoverManagers = useProjectHandoverManagers(projectId, open && canChangeHandover && Boolean(selectedAllowed));
   const create = useCreateProjectHandoverRequest(projectId);
@@ -947,7 +944,7 @@ export function ProjectHandoverTab() {
     } catch (reason) {
       const fieldError = getApiFieldError(reason, "effectiveHandoverDate");
       setHandoverDateError(fieldError ?? null);
-      setActionError(fieldError ? null : reason instanceof Error ? reason.message : t("projects.handoverFailed"));
+      setActionError(fieldError ? null : getApiErrorMessage(reason, t("projects.handoverFailed")));
     }
   }
 
@@ -967,19 +964,27 @@ export function ProjectHandoverTab() {
       await cancel.mutateAsync(pendingRequest.id);
       setActionError(null);
     } catch (reason) {
-      setActionError(reason instanceof Error ? reason.message : t("managerHandover.cancelFailed"));
+      setActionError(getApiErrorMessage(reason, t("managerHandover.cancelFailed")));
     }
   }
 
-  return <div className="space-y-4"><Card><CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><CardTitle className="flex items-center gap-2"><UserRoundCheck className="h-4 w-4" />{t("projects.handoverTitle")}</CardTitle><CardDescription>{t("projects.handoverDescription")}</CardDescription></div>{canCreateHandover ? <Button size="sm" onClick={() => setOpen(true)}><Plus className="me-1.5 h-4 w-4" />{t(capabilities.data?.canInitiate ? "managerHandover.request" : capabilities.data?.canAdminInitiate ? "managerHandover.adminRequest" : "managerHandover.initialAssignment")}</Button> : null}</CardHeader><CardContent className="p-0">{query.isLoading ? <Loading t={t} /> : query.isError ? <ErrorState t={t} onRetry={() => void query.refetch()} /> : requests.length === 0 ? <Empty>{t("projects.noHandoverRequests")}</Empty> : <div className="divide-y">{requests.map((item) => <div key={item.id} className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><p className="text-sm font-medium">{item.currentProjectManagerName || t("managerHandover.notAssigned")} → {item.newProjectManagerName}</p>{item.initiationType !== "ManagerInitiated" ? <p className="text-xs text-muted-foreground">{t(item.initiationType === "InitialAssignment" ? "managerHandover.initialAssignment" : "managerHandover.adminRequest")}</p> : null}<p className="mt-1 text-xs text-muted-foreground">{t("projects.effectiveHandoverDate")}: {formatDate(item.effectiveHandoverDate)} · {t("projects.requestedBy")}: {item.requestedByName}</p>{item.reason ? <p className="mt-1 text-xs text-muted-foreground">{item.reason}</p> : null}{item.rejectionReason ? <p className="mt-1 text-xs text-destructive">{t("projects.rejectionReason")}: {item.rejectionReason}</p> : null}</div><div className="flex items-center gap-2"><Badge status={item.status} className="w-fit text-[10px]">{t(`projects.handoverStatus.${item.status}`)}</Badge>{canCancelPending && pendingRequest?.id === item.id ? <Button size="sm" variant="outline" onClick={() => void cancelPendingRequest()} disabled={cancel.isPending}>{t("managerHandover.cancel")}</Button> : null}</div></div>)}</div>}</CardContent></Card>
+  const accessUnavailable = [query.error, capabilities.error].some((error) =>
+    error instanceof ApiError && [401, 403, 404].includes(error.status));
+  const queryErrorMessage = accessUnavailable
+    ? t("projects.handoverUnavailable")
+    : query.error
+      ? getApiErrorMessage(query.error, t("managerHandover.loadFailed"))
+      : getApiErrorMessage(capabilities.error, t("managerHandover.loadFailed"));
+
+  return <div className="space-y-4"><Card><CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><CardTitle className="flex items-center gap-2"><UserRoundCheck className="h-4 w-4" />{t("projects.handoverTitle")}</CardTitle><CardDescription>{t("projects.handoverDescription")}</CardDescription></div>{canCreateHandover ? <Button size="sm" onClick={() => setOpen(true)}><Plus className="me-1.5 h-4 w-4" />{t(capabilities.data?.canInitiate ? "managerHandover.request" : capabilities.data?.canAdminInitiate ? "managerHandover.adminRequest" : "managerHandover.initialAssignment")}</Button> : null}</CardHeader><CardContent className="p-0">{!user ? <ErrorState title={t("managerHandover.viewPermissionRequired")} /> : capabilities.isLoading ? <Loading t={t} /> : capabilities.isError ? <ErrorState title={queryErrorMessage} onRetry={!accessUnavailable ? () => void capabilities.refetch() : undefined} /> : query.isLoading ? <Loading t={t} /> : query.isError ? <ErrorState title={queryErrorMessage} onRetry={!accessUnavailable ? () => void query.refetch() : undefined} /> : requests.length === 0 ? <Empty>{t("projects.noHandoverRequests")}</Empty> : <div className="divide-y">{requests.map((item) => <div key={item.id} className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><p className="text-sm font-medium">{item.currentProjectManagerName || t("managerHandover.notAssigned")} → {item.newProjectManagerName}</p>{item.initiationType !== "ManagerInitiated" ? <p className="text-xs text-muted-foreground">{t(item.initiationType === "InitialAssignment" ? "managerHandover.initialAssignment" : "managerHandover.adminRequest")}</p> : null}<p className="mt-1 text-xs text-muted-foreground">{t("projects.effectiveHandoverDate")}: {formatDate(item.effectiveHandoverDate)} · {t("projects.requestedBy")}: {item.requestedByName}</p>{item.reason ? <p className="mt-1 text-xs text-muted-foreground">{item.reason}</p> : null}{item.rejectionReason ? <p className="mt-1 text-xs text-destructive">{t("projects.rejectionReason")}: {item.rejectionReason}</p> : null}</div><div className="flex items-center gap-2"><Badge status={item.status} className="w-fit text-[10px]">{t(`projects.handoverStatus.${item.status}`)}</Badge>{canCancelPending && pendingRequest?.id === item.id ? <Button size="sm" variant="outline" onClick={() => void cancelPendingRequest()} disabled={cancel.isPending}>{t("managerHandover.cancel")}</Button> : null}</div></div>)}</div>}</CardContent></Card>
     <SideSheet open={open} onOpenChange={setOpen} title={t("projects.handoverTitle")} description={t("projects.handoverDescription")}>
       {pendingRequest ? <><SideSheetBody className="space-y-4"><p className="text-sm font-semibold">{t("projects.handoverPendingTitle")}</p><p className="text-sm text-muted-foreground">{t("projects.handoverPendingDescription")}</p><div className="rounded border px-3 py-2 text-sm"><p className="font-medium">{pendingRequest.currentProjectManagerName || t("managerHandover.notAssigned")} → {pendingRequest.newProjectManagerName}</p><p className="mt-1 text-xs text-muted-foreground">{formatDate(pendingRequest.effectiveHandoverDate)}</p>{pendingRequest.initiationType !== "ManagerInitiated" ? <p className="mt-1 text-xs text-muted-foreground">{t(pendingRequest.initiationType === "InitialAssignment" ? "managerHandover.initialAssignment" : "managerHandover.adminRequest")}</p> : null}</div>{canCancelPending ? <Button type="button" variant="outline" onClick={() => void cancelPendingRequest()} disabled={cancel.isPending}>{t("managerHandover.cancel")}</Button> : null}</SideSheetBody><SideSheetFooter><Button type="button" variant="outline" onClick={() => setOpen(false)}>{t("common.close")}</Button></SideSheetFooter></>
       : <form onSubmit={(event) => void submit(event)} className="flex min-h-0 flex-1 flex-col"><SideSheetBody className="space-y-4">
-        {actionError ? <p className="rounded border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">{actionError}</p> : null}
+        {actionError ? <p role="alert" className="rounded border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">{actionError}</p> : null}
         <div className="space-y-2"><Label>{t("managerHandover.handover")}</Label><div className="flex flex-wrap gap-2">{([{ value: "ManagerInitiated", label: "managerHandover.request", allowed: capabilities.data?.canInitiate }, { value: "AdminInitiated", label: "managerHandover.adminRequest", allowed: capabilities.data?.canAdminInitiate }, { value: "InitialAssignment", label: "managerHandover.initialAssignment", allowed: capabilities.data?.canAssignInitial }] as const).filter((mode) => mode.allowed).map((mode) => <Button key={mode.value} type="button" size="sm" variant={initiationType === mode.value ? "default" : "outline"} onClick={() => { setInitiationType(mode.value); setNewManagerId(""); }}>{t(mode.label)}</Button>)}</div></div>
         <div><Label>{t("projects.project")}</Label><Input className="mt-1" value={project.name} readOnly /></div>
         <div><Label>{t("projects.currentProjectManager")}</Label><Input className="mt-1" value={capabilities.data?.currentManagerName || project.projectManagerName || t("managerHandover.notAssigned")} readOnly /></div>
-        <div><Label>{t("projects.newManager")}</Label><SearchableSelect options={managerOptions} value={newManagerId} onValueChange={setNewManagerId} placeholder={t("projects.selectProjectManager")} searchPlaceholder={t("projects.selectProjectManager")} loading={managersLoading} emptyText={t("projects.noEligibleManagers")} disabled={managersError} /><input type="hidden" name="newProjectManagerId" value={newManagerId} />{managersError ? <p role="alert" className="mt-1 text-xs text-destructive">{t("common.errorLoading")}</p> : null}{!managersLoading && !managersError && managerOptions.length === 0 ? <div className="mt-2 space-y-1 text-xs text-muted-foreground"><p>{t("projects.noEligibleManagersHint")}</p><Link to="/administration/users" className="text-primary underline-offset-4 hover:underline">{t("projects.manageUsers")}</Link></div> : null}</div>
+        <div><Label>{t("projects.newManager")}</Label><SearchableSelect options={managerOptions} value={newManagerId} onValueChange={setNewManagerId} placeholder={t("projects.selectProjectManager")} searchPlaceholder={t("projects.selectProjectManager")} loading={managersLoading} emptyText={t("projects.noEligibleManagers")} disabled={managersError} /><input type="hidden" name="newProjectManagerId" value={newManagerId} />{managersError ? <p role="alert" className="mt-1 text-xs text-destructive">{getApiErrorMessage(handoverManagers.error, t("common.errorLoading"))}</p> : null}{!managersLoading && !managersError && managerOptions.length === 0 ? <div className="mt-2 space-y-1 text-xs text-muted-foreground"><p>{t("projects.noEligibleManagersHint")}</p><Link to="/administration/users" className="text-primary underline-offset-4 hover:underline">{t("projects.manageUsers")}</Link></div> : null}</div>
         <div><Label htmlFor="project-handover-effective-date">{t("projects.effectiveHandoverDate")}</Label><Input id="project-handover-effective-date" className="mt-1" name="effectiveHandoverDate" type="date" required min={minDate} max={maxDate} aria-invalid={Boolean(handoverDateError)} aria-describedby={handoverDateError ? "project-handover-date-error" : undefined} onChange={() => setHandoverDateError(null)} />{handoverDateError ? <p id="project-handover-date-error" role="alert" className="mt-1 text-xs text-destructive">{handoverDateError}</p> : <p className="mt-1 text-xs text-muted-foreground">{t("managerHandover.effectiveDateHint")}</p>}</div>
         <div><Label>{t(initiationType === "ManagerInitiated" ? "projects.handoverReason" : "managerHandover.administrativeReason")}</Label><Textarea className="mt-1" name="reason" required maxLength={500} /></div>
         <div><Label>{t("projects.handoverNotes")}</Label><Textarea className="mt-1" name="notes" rows={3} maxLength={2000} /></div>

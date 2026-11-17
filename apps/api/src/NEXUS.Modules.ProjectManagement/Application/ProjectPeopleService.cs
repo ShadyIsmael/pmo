@@ -14,6 +14,7 @@ using NEXUS.Modules.ResourceManagement.Domain;
 using NEXUS.Modules.WorkItems.Domain;
 using NEXUS.SharedKernel;
 using NEXUS.SharedKernel.Helpers;
+using NEXUS.SharedKernel.Management;
 
 namespace NEXUS.Modules.ProjectManagement.Application;
 
@@ -28,19 +29,36 @@ public sealed class ProjectPeopleService : IProjectPeopleService
     private readonly IAuditService _audit;
     private readonly ProjectSponsorMembershipSynchronizer _sponsorMembershipSynchronizer;
     private readonly IProjectService? _projectService;
+    private readonly IManagementContextAccessor? _managementContext;
 
-    public ProjectPeopleService(DbContext context, IResourceReferenceLookup resources, IAuditService audit, IProjectService? projectService = null)
+    public ProjectPeopleService(
+        DbContext context,
+        IResourceReferenceLookup resources,
+        IAuditService audit,
+        IProjectService? projectService = null,
+        IManagementContextAccessor? managementContext = null)
     {
         _context = context;
         _resources = resources;
         _audit = audit;
         _projectService = projectService;
+        _managementContext = managementContext;
         _sponsorMembershipSynchronizer = new ProjectSponsorMembershipSynchronizer(context);
+    }
+
+    private IQueryable<Project> InScope(IQueryable<Project> query)
+    {
+        var management = _managementContext?.Current;
+        if (management is null || management.TenantId == Guid.Empty)
+            return query.Where(_ => false);
+        return query.Where(project => project.TenantId == management.TenantId
+            && management.Scope.ProjectIds.Contains(project.Id));
     }
 
     public async Task<Result<IReadOnlyList<ProjectPersonDto>>> GetAsync(Guid projectId, CancellationToken cancellationToken = default)
     {
-        var project = await _context.Set<Project>().AsNoTracking().FirstOrDefaultAsync(p => p.Id == projectId && !p.IsDeleted, cancellationToken);
+        var project = await InScope(_context.Set<Project>().AsNoTracking())
+            .FirstOrDefaultAsync(p => p.Id == projectId && !p.IsDeleted, cancellationToken);
         if (project is null) return Result<IReadOnlyList<ProjectPersonDto>>.Failure(Error.NotFound("Project not found"));
 
         var members = await _context.Set<ProjectMember>().AsNoTracking()
@@ -50,12 +68,12 @@ public sealed class ProjectPeopleService : IProjectPeopleService
 
         var memberIds = members.Select(m => m.Id).ToList();
         var memberRoles = await _context.Set<ProjectMemberRole>().AsNoTracking()
-            .Where(pmr => memberIds.Contains(pmr.ProjectMemberId) && !pmr.IsDeleted)
+            .Where(pmr => pmr.TenantId == project.TenantId && memberIds.Contains(pmr.ProjectMemberId) && !pmr.IsDeleted)
             .ToListAsync(cancellationToken);
 
         var roleIds = memberRoles.Select(pmr => pmr.ProjectRoleId).Distinct().ToList();
         var roleLookup = await _context.Set<Lookup>().AsNoTracking()
-            .Where(l => roleIds.Contains(l.Id) && !l.IsDeleted)
+            .Where(l => l.TenantId == project.TenantId && roleIds.Contains(l.Id) && !l.IsDeleted)
             .ToDictionaryAsync(l => l.Id, cancellationToken);
         var stakeholders = await _context.Set<ProjectStakeholder>().AsNoTracking()
             .Where(s => s.TenantId == project.TenantId && s.ProjectId == projectId && !s.IsDeleted)
@@ -71,7 +89,7 @@ public sealed class ProjectPeopleService : IProjectPeopleService
             .Distinct().ToList();
         var resourceById = await _resources.GetDetailsAsync(resourceIds, cancellationToken);
         var teamById = await _context.Set<Team>().AsNoTracking()
-            .Where(team => teamIds.Contains(team.Id) && !team.IsDeleted)
+            .Where(team => team.TenantId == project.TenantId && teamIds.Contains(team.Id) && !team.IsDeleted)
             .ToDictionaryAsync(team => team.Id, cancellationToken);
         var resourceByUser = await _resources.GetDetailsByUserIdsAsync(userIds, cancellationToken);
         var usersById = await _context.Set<User>()
@@ -154,13 +172,21 @@ public sealed class ProjectPeopleService : IProjectPeopleService
             .ToList());
     }
 
-    public Task<bool> IsTeamGroupAssignmentAsync(Guid projectId, Guid memberId, CancellationToken cancellationToken = default) =>
-        _context.Set<ProjectMember>().AsNoTracking().AnyAsync(member => member.Id == memberId
-            && member.ProjectId == projectId && member.TeamId.HasValue && !member.IsDeleted, cancellationToken);
+    public async Task<bool> IsTeamGroupAssignmentAsync(Guid projectId, Guid memberId, CancellationToken cancellationToken = default)
+    {
+        var project = await InScope(_context.Set<Project>().AsNoTracking())
+            .FirstOrDefaultAsync(item => item.Id == projectId && !item.IsDeleted, cancellationToken);
+        if (project is null)
+            return false;
+        return await _context.Set<ProjectMember>().AsNoTracking().AnyAsync(member => member.Id == memberId
+            && member.TenantId == project.TenantId && member.ProjectId == projectId
+            && member.TeamId.HasValue && !member.IsDeleted, cancellationToken);
+    }
 
     public async Task<Result<ProjectPersonDto>> AddAsync(Guid projectId, CreateProjectPersonDto dto, string userId, CancellationToken cancellationToken = default)
     {
-        var project = await _context.Set<Project>().FirstOrDefaultAsync(p => p.Id == projectId && !p.IsDeleted, cancellationToken);
+        var project = await InScope(_context.Set<Project>())
+            .FirstOrDefaultAsync(p => p.Id == projectId && !p.IsDeleted, cancellationToken);
         if (project is null) return Result<ProjectPersonDto>.Failure(Error.NotFound("Project not found"));
         if (!ProjectRelationshipType.IsSupported(dto.RelationshipType)) return Result<ProjectPersonDto>.Failure(Error.Validation("Unsupported project relationship"));
 
@@ -182,7 +208,8 @@ public sealed class ProjectPeopleService : IProjectPeopleService
         }
         else if (isTeamGroup)
         {
-            team = await _context.Set<Team>().FirstOrDefaultAsync(item => item.Id == dto.TeamId!.Value && !item.IsDeleted, cancellationToken);
+            team = await _context.Set<Team>().FirstOrDefaultAsync(item => item.Id == dto.TeamId!.Value
+                && item.TenantId == project.TenantId && !item.IsDeleted, cancellationToken);
             if (team is null) return Result<ProjectPersonDto>.Failure(Error.NotFound("Team not found"));
             if (!team.IsActive || team.TenantId != project.TenantId)
                 return Result<ProjectPersonDto>.Failure(Error.Validation("The Team must be active in the same tenant as the project"));
@@ -195,7 +222,9 @@ public sealed class ProjectPeopleService : IProjectPeopleService
         {
             if (!dto.AllocationPercentage.HasValue)
                 return Result<ProjectPersonDto>.Failure(Error.Validation("Project allocation percentage is required for team members."));
-            var duplicateMember = await _context.Set<ProjectMember>().AnyAsync(member => member.ProjectId == projectId
+            var roleError = await ValidateProjectRoleIdsAsync(dto.ProjectRoleIds, project.TenantId, cancellationToken);
+            if (roleError is not null) return Result<ProjectPersonDto>.Failure(roleError);
+            var duplicateMember = await _context.Set<ProjectMember>().AnyAsync(member => member.TenantId == project.TenantId && member.ProjectId == projectId
                 && member.ResourceId == dto.ResourceId && member.TeamId == dto.TeamId && !member.IsDeleted && member.Status == "Active", cancellationToken);
             if (duplicateMember) return Result<ProjectPersonDto>.Failure(Error.Conflict(isTeamGroup
                 ? "This Team is already assigned to the project"
@@ -206,7 +235,7 @@ public sealed class ProjectPeopleService : IProjectPeopleService
             var allocation = dto.AllocationPercentage ?? 0m;
             if (allocation < 0 || allocation > 100) return Result<ProjectPersonDto>.Failure(Error.Validation("Allocation must be between 0 and 100"));
             var allocationConflict = isTeamGroup
-                ? await ValidateTeamGroupAllocationAsync(dto.TeamId!.Value, projectId, startDate, endDate, allocation, null, cancellationToken)
+                ? await ValidateTeamGroupAllocationAsync(dto.TeamId!.Value, projectId, project.TenantId, startDate, endDate, allocation, null, cancellationToken)
                 : await ValidateOverallAllocationAsync(dto.ResourceId!.Value, startDate, endDate, allocation, null, cancellationToken, projectId);
             if (allocationConflict is not null) return Result<ProjectPersonDto>.Failure(allocationConflict);
             var reusableMember = await _context.Set<ProjectMember>()
@@ -268,7 +297,7 @@ public sealed class ProjectPeopleService : IProjectPeopleService
         }
 
         var stakeholderRelationship = relationship == ProjectRelationshipType.Other ? ProjectRelationshipType.Other : ProjectRelationshipType.Stakeholder;
-        var duplicateStakeholder = await _context.Set<ProjectStakeholder>().AnyAsync(s => s.ProjectId == projectId && s.ResourceId == dto.ResourceId && !s.IsDeleted && s.Status == ProjectStakeholderStatus.Active && s.RelationshipType == stakeholderRelationship, cancellationToken);
+        var duplicateStakeholder = await _context.Set<ProjectStakeholder>().AnyAsync(s => s.TenantId == project.TenantId && s.ProjectId == projectId && s.ResourceId == dto.ResourceId && !s.IsDeleted && s.Status == ProjectStakeholderStatus.Active && s.RelationshipType == stakeholderRelationship, cancellationToken);
         if (duplicateStakeholder) return Result<ProjectPersonDto>.Failure(Error.Conflict("This Resource already has the selected active relationship on the project"));
         var reusableStakeholder = await _context.Set<ProjectStakeholder>()
             .IgnoreQueryFilters()
@@ -308,17 +337,23 @@ public sealed class ProjectPeopleService : IProjectPeopleService
 
     public async Task<Result<ProjectPersonDto>> UpdateAsync(Guid projectId, Guid personId, UpdateProjectPersonDto dto, string userId, CancellationToken cancellationToken = default)
     {
+        var project = await InScope(_context.Set<Project>())
+            .FirstOrDefaultAsync(item => item.Id == projectId && !item.IsDeleted, cancellationToken);
+        if (project is null) return Result<ProjectPersonDto>.Failure(Error.NotFound("Project not found"));
         if (dto.Source == "Governance") return Result<ProjectPersonDto>.Failure(Error.Validation("Project Manager and Sponsor are governed by Project settings"));
         if (dto.Source == "TeamMember")
         {
-            var member = await _context.Set<ProjectMember>().FirstOrDefaultAsync(m => m.Id == personId && m.ProjectId == projectId && !m.IsDeleted, cancellationToken);
+            var member = await _context.Set<ProjectMember>().FirstOrDefaultAsync(m => m.Id == personId
+                && m.TenantId == project.TenantId && m.ProjectId == projectId && !m.IsDeleted, cancellationToken);
             if (member is null) return Result<ProjectPersonDto>.Failure(Error.NotFound("Project person not found"));
+            var roleError = await ValidateProjectRoleIdsAsync(dto.ProjectRoleIds, project.TenantId, cancellationToken);
+            if (roleError is not null) return Result<ProjectPersonDto>.Failure(roleError);
             if (dto.RelationshipType is not null && dto.RelationshipType != ProjectRelationshipType.TeamMember) return Result<ProjectPersonDto>.Failure(Error.Validation("Change the relationship by removing this assignment and selecting the Resource again"));
             var start = dto.StartDate ?? member.StartDate; var end = dto.EndDate ?? member.EndDate; var allocation = dto.AllocationPercentage ?? member.AllocationPercentage;
             if (end <= start || allocation < 0 || allocation > 100) return Result<ProjectPersonDto>.Failure(Error.Validation("Invalid team member allocation dates or percentage"));
             var allocationConflict = member.ResourceId.HasValue
                 ? await ValidateOverallAllocationAsync(member.ResourceId.Value, start, end, allocation, member.Id, cancellationToken, projectId)
-                : await ValidateTeamGroupAllocationAsync(member.TeamId!.Value, projectId, start, end, allocation, member.Id, cancellationToken);
+                : await ValidateTeamGroupAllocationAsync(member.TeamId!.Value, projectId, project.TenantId, start, end, allocation, member.Id, cancellationToken);
             if (allocationConflict is not null) return Result<ProjectPersonDto>.Failure(allocationConflict);
             if (dto.Role is not null) member.Role = dto.Role.Trim();
             if (dto.AllocationPercentage.HasValue) member.AllocationPercentage = allocation;
@@ -332,18 +367,18 @@ public sealed class ProjectPeopleService : IProjectPeopleService
             await _context.SaveChangesAsync(cancellationToken);
             if (dto.ProjectRoleIds != null)
             {
-                var project = await _context.Set<Project>().FirstOrDefaultAsync(p => p.Id == projectId, cancellationToken);
-                if (project != null)
-                    await SyncFunctionalRolesAsync(member.Id, dto.ProjectRoleIds, project.TenantId, userId, cancellationToken);
+                await SyncFunctionalRolesAsync(member.Id, dto.ProjectRoleIds, project.TenantId, userId, cancellationToken);
             }
             var resource = member.ResourceId.HasValue ? await _resources.FindAsync(member.ResourceId.Value, cancellationToken) : null;
             var team = member.TeamId.HasValue
-                ? await _context.Set<Team>().AsNoTracking().FirstOrDefaultAsync(item => item.Id == member.TeamId.Value && !item.IsDeleted, cancellationToken)
+                ? await _context.Set<Team>().AsNoTracking().FirstOrDefaultAsync(item => item.Id == member.TeamId.Value
+                    && item.TenantId == project.TenantId && !item.IsDeleted, cancellationToken)
                 : null;
             return Result<ProjectPersonDto>.Success(ToMemberDto(member, resource, team));
         }
 
-        var stakeholder = await _context.Set<ProjectStakeholder>().FirstOrDefaultAsync(s => s.Id == personId && s.ProjectId == projectId && !s.IsDeleted, cancellationToken);
+        var stakeholder = await _context.Set<ProjectStakeholder>().FirstOrDefaultAsync(s => s.Id == personId
+            && s.TenantId == project.TenantId && s.ProjectId == projectId && !s.IsDeleted, cancellationToken);
         if (stakeholder is null) return Result<ProjectPersonDto>.Failure(Error.NotFound("Project person not found"));
         if (dto.RelationshipType is not null && dto.RelationshipType != stakeholder.RelationshipType) return Result<ProjectPersonDto>.Failure(Error.Validation("Change the relationship by removing this assignment and selecting the Resource again"));
         if (dto.RowVersion is null || dto.RowVersion.Length == 0) return Result<ProjectPersonDto>.Failure(Error.Validation("RowVersion is required"));
@@ -360,18 +395,20 @@ public sealed class ProjectPeopleService : IProjectPeopleService
 
     public async Task<Result<ProjectPersonDto>> RevokeOrRemoveAsync(Guid projectId, Guid personId, string source, byte[]? rowVersion, string userId, CancellationToken cancellationToken = default)
     {
-        var project = await _context.Set<Project>()
+        var project = await InScope(_context.Set<Project>())
             .FirstOrDefaultAsync(item => item.Id == projectId && !item.IsDeleted, cancellationToken);
         if (project is null) return Result<ProjectPersonDto>.Failure(Error.NotFound("Project not found"));
 
         if (string.Equals(source, "TeamMember", StringComparison.OrdinalIgnoreCase))
         {
-            var member = await _context.Set<ProjectMember>().FirstOrDefaultAsync(m => m.Id == personId && m.ProjectId == projectId && !m.IsDeleted, cancellationToken);
+            var member = await _context.Set<ProjectMember>().FirstOrDefaultAsync(m => m.Id == personId
+                && m.TenantId == project.TenantId && m.ProjectId == projectId && !m.IsDeleted, cancellationToken);
             if (member is null) return Result<ProjectPersonDto>.Failure(Error.NotFound("Project team member not found"));
 
             var memberResource = member.ResourceId.HasValue ? await _resources.FindAsync(member.ResourceId.Value, cancellationToken) : null;
             var team = member.TeamId.HasValue
-                ? await _context.Set<Team>().AsNoTracking().FirstOrDefaultAsync(item => item.Id == member.TeamId.Value && !item.IsDeleted, cancellationToken)
+                ? await _context.Set<Team>().AsNoTracking().FirstOrDefaultAsync(item => item.Id == member.TeamId.Value
+                    && item.TenantId == project.TenantId && !item.IsDeleted, cancellationToken)
                 : null;
             if (member.ResourceId.HasValue)
             {
@@ -387,10 +424,10 @@ public sealed class ProjectPeopleService : IProjectPeopleService
             else if (member.TeamId.HasValue)
             {
                 var effectiveResourceIds = await _context.Set<TeamMember>().AsNoTracking()
-                    .Where(teamMember => teamMember.TeamId == member.TeamId.Value && teamMember.IsActive && !teamMember.IsDeleted
+                    .Where(teamMember => teamMember.TenantId == project.TenantId && teamMember.TeamId == member.TeamId.Value && teamMember.IsActive && !teamMember.IsDeleted
                         && teamMember.EffectiveFrom.Date <= DateTime.UtcNow.Date
                         && (!teamMember.EffectiveTo.HasValue || teamMember.EffectiveTo.Value.Date >= DateTime.UtcNow.Date))
-                    .Join(_context.Set<Resource>().AsNoTracking().Where(resource => resource.IsActive && !resource.IsDeleted),
+                    .Join(_context.Set<Resource>().AsNoTracking().Where(resource => resource.TenantId == project.TenantId && resource.IsActive && !resource.IsDeleted),
                         teamMember => teamMember.ResourceId, resource => resource.Id, (teamMember, resource) => resource.Id)
                     .Distinct().ToListAsync(cancellationToken);
                 foreach (var resourceId in effectiveResourceIds)
@@ -444,7 +481,8 @@ public sealed class ProjectPeopleService : IProjectPeopleService
         if (!string.Equals(source, "Stakeholder", StringComparison.OrdinalIgnoreCase))
             return Result<ProjectPersonDto>.Failure(Error.Validation("The project relationship source is invalid."));
 
-        var stakeholder = await _context.Set<ProjectStakeholder>().FirstOrDefaultAsync(s => s.Id == personId && s.ProjectId == projectId && !s.IsDeleted, cancellationToken);
+        var stakeholder = await _context.Set<ProjectStakeholder>().FirstOrDefaultAsync(s => s.Id == personId
+            && s.TenantId == project.TenantId && s.ProjectId == projectId && !s.IsDeleted, cancellationToken);
         if (stakeholder is null) return Result<ProjectPersonDto>.Failure(Error.NotFound("Project stakeholder not found"));
         if (rowVersion is null || rowVersion.Length == 0) return Result<ProjectPersonDto>.Failure(Error.Validation("RowVersion is required"));
         _context.Entry(stakeholder).Property(x => x.RowVersion).OriginalValue = rowVersion;
@@ -469,7 +507,7 @@ public sealed class ProjectPeopleService : IProjectPeopleService
 
     public async Task<Result> ClearSponsorAsync(Guid projectId, string userId, CancellationToken cancellationToken = default)
     {
-        var project = await _context.Set<Project>()
+        var project = await InScope(_context.Set<Project>())
             .FirstOrDefaultAsync(item => item.Id == projectId && !item.IsDeleted, cancellationToken);
         if (project is null) return Result.Failure(Error.NotFound("Project not found"));
         if (!project.SponsorId.HasValue) return Result.Success();
@@ -583,18 +621,19 @@ public sealed class ProjectPeopleService : IProjectPeopleService
     }
 
     private async Task<Error?> ValidateTeamGroupAllocationAsync(
-        Guid teamId, Guid projectId, DateTime startDate, DateTime endDate, decimal allocationPercentage,
+        Guid teamId, Guid projectId, Guid tenantId, DateTime startDate, DateTime endDate, decimal allocationPercentage,
         Guid? excludeMemberId, CancellationToken cancellationToken)
     {
         var team = await _context.Set<Team>().AsNoTracking()
-            .FirstOrDefaultAsync(item => item.Id == teamId && item.IsActive && !item.IsDeleted, cancellationToken);
+            .FirstOrDefaultAsync(item => item.Id == teamId && item.TenantId == tenantId
+                && item.IsActive && !item.IsDeleted, cancellationToken);
         if (team is null) return Error.NotFound("Team not found or inactive");
 
         var resourceIds = await _context.Set<TeamMember>().AsNoTracking()
-            .Where(member => member.TeamId == teamId && member.IsActive && !member.IsDeleted
+            .Where(member => member.TenantId == tenantId && member.TeamId == teamId && member.IsActive && !member.IsDeleted
                 && member.EffectiveFrom.Date <= endDate.Date
                 && (!member.EffectiveTo.HasValue || member.EffectiveTo.Value.Date >= startDate.Date))
-            .Join(_context.Set<Resource>().AsNoTracking().Where(resource => resource.IsActive && !resource.IsDeleted),
+            .Join(_context.Set<Resource>().AsNoTracking().Where(resource => resource.TenantId == tenantId && resource.IsActive && !resource.IsDeleted),
                 member => member.ResourceId, resource => resource.Id, (member, resource) => resource.Id)
             .Distinct().ToListAsync(cancellationToken);
         foreach (var resourceId in resourceIds)
@@ -687,7 +726,7 @@ public sealed class ProjectPeopleService : IProjectPeopleService
     private async Task SyncFunctionalRolesAsync(Guid projectMemberId, List<Guid>? projectRoleIds, Guid tenantId, string userId, CancellationToken cancellationToken)
     {
         var existingRoles = await _context.Set<ProjectMemberRole>()
-            .Where(pmr => pmr.ProjectMemberId == projectMemberId && !pmr.IsDeleted)
+            .Where(pmr => pmr.TenantId == tenantId && pmr.ProjectMemberId == projectMemberId && !pmr.IsDeleted)
             .ToListAsync(cancellationToken);
 
         if (projectRoleIds is null || projectRoleIds.Count == 0)
@@ -722,5 +761,20 @@ public sealed class ProjectPeopleService : IProjectPeopleService
             });
             isFirst = false;
         }
+    }
+
+    private async Task<Error?> ValidateProjectRoleIdsAsync(List<Guid>? projectRoleIds, Guid tenantId, CancellationToken cancellationToken)
+    {
+        if (projectRoleIds is null || projectRoleIds.Count == 0) return null;
+        if (projectRoleIds.Any(id => id == Guid.Empty) || projectRoleIds.Count != projectRoleIds.Distinct().Count())
+            return Error.Validation("Project Role selections must be valid and unique.");
+
+        var requestedIds = projectRoleIds.ToArray();
+        var validCount = await _context.Set<Lookup>().AsNoTracking()
+            .CountAsync(role => role.TenantId == tenantId && role.Category == "ProjectRole"
+                && role.IsActive && !role.IsDeleted && requestedIds.Contains(role.Id), cancellationToken);
+        return validCount == requestedIds.Length
+            ? null
+            : Error.Validation("Select active Project Roles from the same tenant.");
     }
 }

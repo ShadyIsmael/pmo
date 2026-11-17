@@ -301,9 +301,12 @@ try
         var adminRoles = await _context.Set<Role>().IgnoreQueryFilters()
             .Include(role => role.Permissions)
             .Where(role => role.TenantId == tenant.Id
-                && role.SystemRoleKey == Role.TenantAdminSystemRoleKey && !role.IsDeleted)
+                && !role.IsDeleted
+                && (role.RoleKey == Role.TenantAdminRoleKey
+                    || role.SystemRoleKey == Role.TenantAdminRoleKey))
             .ToListAsync(cancellationToken);
-        if (adminRoles.Count > 1 || adminRoles.Any(role => !role.IsSystem))
+        if (adminRoles.Count > 1 || adminRoles.Any(role =>
+                !ProtectedTenantAdminPolicy.IsProtectedSystemAdminRole(role)))
             return new TenantProvisioningOperationResult(TenantProvisioningCode.AdministratorRoleUnavailable,
                 Error: "The tenant has an invalid or duplicate protected Admin role identity.");
 
@@ -343,22 +346,6 @@ try
             _context.Set<Permission>().Add(permission);
         }
 
-        var mandatoryAdminPermissions = new List<Permission>();
-        foreach (var key in ProtectedTenantAdminPolicy.MandatoryPermissionKeys.OrderBy(key => key, StringComparer.Ordinal))
-        {
-            if (!PermissionCatalog.ByKey.TryGetValue(key, out var definition)
-                || !definition.IsActive
-                || definition.Scope != PermissionScope.Tenant)
-                return new TenantProvisioningOperationResult(TenantProvisioningCode.AdministratorRoleUnavailable,
-                    Error: $"Required protected Admin permission {key} is missing, inactive, or outside Tenant scope.");
-
-            if (!permissionByKey.TryGetValue(key, out var permission))
-                return new TenantProvisioningOperationResult(TenantProvisioningCode.AdministratorRoleUnavailable,
-                    Error: $"Required protected Admin permission {key} could not be initialized in the tenant catalog.");
-
-            mandatoryAdminPermissions.Add(permission);
-        }
-
         if (adminRole is null)
         {
             adminRole = new Role
@@ -370,19 +357,13 @@ try
                 Category = "System",
                 IsSystem = true,
                 CreatedBy = actorId.ToString("D"),
-                Permissions = mandatoryAdminPermissions
+                Permissions = []
             };
             adminRole.AssignSystemRoleKey(Role.TenantAdminSystemRoleKey, tenant.Id);
             _context.Set<Role>().Add(adminRole);
         }
-        else
-        {
-            foreach (var permission in mandatoryAdminPermissions)
-            {
-                if (!adminRole.Permissions.Any(existing => existing.Id == permission.Id))
-                    adminRole.Permissions.Add(permission);
-            }
-        }
+        // Existing Admin grants are left untouched. New catalog entries are never
+        // added to an existing Admin role merely because they are grantable.
 
         var existingAssignment = await _context.Set<UserRole>().IgnoreQueryFilters()
             .AnyAsync(assignment => assignment.TenantId == tenant.Id && assignment.UserId == userId

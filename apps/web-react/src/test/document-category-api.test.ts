@@ -38,4 +38,20 @@ describe("Document Category create API contract", () => {
     expect(request?.method).toBe("POST");
     expect(JSON.parse(String(request?.body))).toEqual(input);
   });
+
+  it("loads project upload category options through the narrow project-scoped lookup", async () => {
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify([
+      { id: "category-a", nameEn: "Policies", nameAr: "???????" },
+    ]), { status: 200, headers: { "Content-Type": "application/json" } }));
+
+    await expect(documentApi.projectUploadCategoryOptions("project-internal-a")).resolves.toEqual([
+      { id: "category-a", nameEn: "Policies", nameAr: "???????" },
+    ]);
+
+    const [requestUrl, request] = fetchMock.mock.calls.at(-1) as [string, RequestInit];
+    const url = new URL(requestUrl);
+    expect(url.pathname).toBe("/api/document-categories/project-upload-options");
+    expect(url.searchParams.get("projectId")).toBe("project-internal-a");
+    expect(request?.method).toBe("GET");
+  });
 });

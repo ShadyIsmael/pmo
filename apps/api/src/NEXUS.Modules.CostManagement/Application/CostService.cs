@@ -50,6 +50,9 @@ public sealed class CostService : ICostService
     {
         var accessError = FinancePermissionGuard.Require(_httpContextAccessor, "Cost.Create");
         if (accessError is not null) return Result<CostEntryDto>.Failure(accessError);
+        var writeContextError = FinancePermissionGuard.RequireWritableActorContext(
+            _httpContextAccessor, _managementContext?.Current, userId, CurrentTenant());
+        if (writeContextError is not null) return Result<CostEntryDto>.Failure(writeContextError);
         if (!await CanAccessProjectOrBudgetAsync(dto.ProjectId, dto.BudgetId, cancellationToken))
             return Result<CostEntryDto>.Failure(Error.Forbidden("The cost entry is outside the actor's current project or portfolio scope."));
         var validation = await ValidateAsync(dto.ProjectId, dto.BudgetId, dto.Category, dto.Amount, dto.TaxAmount, dto.Currency, dto.IncurredDate, cancellationToken);
@@ -71,6 +74,9 @@ public sealed class CostService : ICostService
     {
         var accessError = FinancePermissionGuard.Require(_httpContextAccessor, "Cost.Edit");
         if (accessError is not null) return Result<CostEntryDto>.Failure(accessError);
+        var writeContextError = FinancePermissionGuard.RequireWritableActorContext(
+            _httpContextAccessor, _managementContext?.Current, userId, CurrentTenant());
+        if (writeContextError is not null) return Result<CostEntryDto>.Failure(writeContextError);
         var entry = await ApplyManagementScope(_context.Set<CostEntry>().Where(item => item.TenantId == CurrentTenant()))
             .FirstOrDefaultAsync(item => item.Id == id && !item.IsDeleted, cancellationToken);
         if (entry is null) return Result<CostEntryDto>.Failure(Error.NotFound("Cost entry not found"));
@@ -93,6 +99,9 @@ public sealed class CostService : ICostService
     {
         var accessError = FinancePermissionGuard.Require(_httpContextAccessor, "Cost.Delete");
         if (accessError is not null) return Result.Failure(accessError);
+        var writeContextError = FinancePermissionGuard.RequireWritableActorContext(
+            _httpContextAccessor, _managementContext?.Current, userId, CurrentTenant());
+        if (writeContextError is not null) return Result.Failure(writeContextError);
         var entry = await ApplyManagementScope(_context.Set<CostEntry>().Where(item => item.TenantId == CurrentTenant()))
             .FirstOrDefaultAsync(item => item.Id == id && !item.IsDeleted, cancellationToken);
         if (entry is null) return Result.Failure(Error.NotFound("Cost entry not found"));

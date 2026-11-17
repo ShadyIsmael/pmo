@@ -96,6 +96,40 @@ public sealed class ProjectAudienceLookup(DbContext context) : IProjectAudienceL
             .ToDictionaryAsync(user => user.UserId, cancellationToken);
     }
 
+    public async Task<bool> IsActiveProjectResourceAsync(
+        Guid tenantId,
+        Guid projectId,
+        Guid resourceId,
+        CancellationToken cancellationToken = default)
+    {
+        if (tenantId == Guid.Empty || projectId == Guid.Empty || resourceId == Guid.Empty) return false;
+
+        var today = DateTime.UtcNow.Date;
+        var directlyAssigned = await context.Set<ProjectMember>().AsNoTracking().AnyAsync(member => member.TenantId == tenantId
+            && member.ProjectId == projectId && member.ResourceId == resourceId && !member.IsDeleted
+            && member.Status == "Active" && member.StartDate.Date <= today && member.EndDate.Date >= today, cancellationToken);
+        var assignedThroughProjectTeam =
+            from assignment in context.Set<ProjectMember>().AsNoTracking()
+            join team in context.Set<Team>().AsNoTracking() on assignment.TeamId equals (Guid?)team.Id
+            join membership in context.Set<TeamMember>().AsNoTracking() on team.Id equals membership.TeamId
+            where assignment.TenantId == tenantId && assignment.ProjectId == projectId
+                && assignment.TeamId.HasValue && !assignment.IsDeleted && assignment.Status == "Active"
+                && assignment.StartDate.Date <= today && assignment.EndDate.Date >= today
+                && team.TenantId == tenantId && team.IsActive && !team.IsDeleted
+                && membership.TenantId == tenantId && membership.ResourceId == resourceId
+                && membership.IsActive && !membership.IsDeleted && membership.EffectiveFrom.Date <= today
+                && (!membership.EffectiveTo.HasValue || membership.EffectiveTo.Value.Date >= today)
+            select assignment.Id;
+        var stakeholder = await context.Set<ProjectStakeholder>().AsNoTracking().AnyAsync(item => item.TenantId == tenantId
+            && item.ProjectId == projectId && item.ResourceId == resourceId && !item.IsDeleted
+            && item.Status == ProjectStakeholderStatus.Active, cancellationToken);
+        var activeResource = await context.Set<Resource>().AsNoTracking().AnyAsync(resource => resource.Id == resourceId
+            && resource.TenantId == tenantId && resource.IsActive && resource.Status == "Active" && !resource.IsDeleted, cancellationToken);
+
+        if (!activeResource) return false;
+        return directlyAssigned || stakeholder || await assignedThroughProjectTeam.AnyAsync(cancellationToken);
+    }
+
     private async Task<HashSet<Guid>> GetProjectUserIdsAsync(Guid tenantId, Guid projectId, CancellationToken cancellationToken)
     {
         var userIds = new HashSet<Guid>();
@@ -139,11 +173,23 @@ public sealed class ProjectAudienceLookup(DbContext context) : IProjectAudienceL
             .ToListAsync(cancellationToken);
         userIds.UnionWith(stakeholderUserIds);
 
-        var managerIds = await context.Set<Project>().AsNoTracking()
-            .Where(project => project.Id == projectId && project.TenantId == tenantId && !project.IsDeleted && project.ProjectManagerId.HasValue)
-            .Select(project => project.ProjectManagerId!.Value)
-            .ToListAsync(cancellationToken);
-        userIds.UnionWith(managerIds);
+        var stakeholderResourceUserIds = await (
+            from stakeholder in context.Set<ProjectStakeholder>().AsNoTracking()
+            join resource in context.Set<Resource>().AsNoTracking() on stakeholder.ResourceId equals (Guid?)resource.Id
+            where stakeholder.TenantId == tenantId && stakeholder.ProjectId == projectId
+                && !stakeholder.IsDeleted && stakeholder.Status == ProjectStakeholderStatus.Active
+                && resource.TenantId == tenantId && resource.IsActive && resource.Status == "Active"
+                && !resource.IsDeleted && resource.UserId.HasValue
+            select resource.UserId!.Value
+        ).Distinct().ToListAsync(cancellationToken);
+        userIds.UnionWith(stakeholderResourceUserIds);
+
+        var projectOwners = await context.Set<Project>().AsNoTracking()
+            .Where(project => project.Id == projectId && project.TenantId == tenantId && !project.IsDeleted)
+            .Select(project => new { project.ProjectManagerId, project.SponsorId })
+            .FirstOrDefaultAsync(cancellationToken);
+        if (projectOwners?.ProjectManagerId is Guid projectManagerId) userIds.Add(projectManagerId);
+        if (projectOwners?.SponsorId is Guid sponsorId) userIds.Add(sponsorId);
 
         var assignedManagerIds = await context.Set<ProjectManagerAssignment>().AsNoTracking()
             .Where(assignment => assignment.TenantId == tenantId && assignment.ProjectId == projectId && !assignment.IsDeleted

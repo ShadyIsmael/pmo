@@ -1,14 +1,17 @@
 using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 using System.Text.Json;
 using NEXUS.Modules.CostManagement.Domain;
 using NEXUS.Modules.Documents.Domain;
 using NEXUS.Modules.IssueManagement.Domain;
+using NEXUS.Modules.Identity.Application;
 using NEXUS.Modules.Meetings.Domain;
 using NEXUS.Modules.ProjectManagement.Domain;
 using NEXUS.Modules.ProjectPlanning.Domain;
 using NEXUS.Modules.ResourceManagement.Domain;
 using NEXUS.Modules.RiskManagement.Domain;
 using NEXUS.Modules.WorkItems.Domain;
+using NEXUS.Modules.Identity.Infrastructure;
 using NEXUS.Persistence;
 using NEXUS.SharedKernel.Management;
 
@@ -25,7 +28,11 @@ public sealed class ProjectResourceScopeMiddleware
 
     public ProjectResourceScopeMiddleware(RequestDelegate next) => _next = next;
 
-    public async Task InvokeAsync(HttpContext httpContext, AppDbContext db, IManagementContextAccessor managementContext)
+    public async Task InvokeAsync(
+        HttpContext httpContext,
+        AppDbContext db,
+        IManagementContextAccessor managementContext,
+        IUserEffectivePermissionService effectivePermissions)
     {
         if (httpContext.User.Identity?.IsAuthenticated != true)
         {
@@ -43,6 +50,10 @@ public sealed class ProjectResourceScopeMiddleware
         }
 
         var current = managementContext.Current;
+        var requestedOrganizationId = httpContext.Items.TryGetValue(UserPermissionClaimsMiddleware.OrganizationScopeItemKey, out var rawOrganizationId)
+            && rawOrganizationId is Guid scopedOrganizationId
+                ? scopedOrganizationId
+                : (Guid?)null;
         // Assigned Change Request approvals are resource-scoped by the current
         // approval assignment in the workflow service. They must not require
         // ordinary project scope, which would incorrectly prevent a reviewer
@@ -51,6 +62,7 @@ public sealed class ProjectResourceScopeMiddleware
         var resourceId = assignedChangeRequestRoute ? null : GetResourceId(httpContext, path);
         var hasNestedProjectResource = IsNestedProjectResource(path);
         var inspectProjectBody = ShouldInspectProjectBody(httpContext, path);
+        Guid? resourceOrganizationId = null;
         if (current is null && (resourceId.HasValue || hasNestedProjectResource || inspectProjectBody))
         {
             await WriteNotFoundAsync(httpContext);
@@ -62,6 +74,20 @@ public sealed class ProjectResourceScopeMiddleware
         {
             await WriteNotFoundAsync(httpContext);
             return;
+        }
+
+        if (requestedOrganizationId.HasValue
+            && (HttpMethods.IsPost(httpContext.Request.Method)
+                || HttpMethods.IsPut(httpContext.Request.Method)
+                || HttpMethods.IsPatch(httpContext.Request.Method)))
+        {
+            var bodyOrganizationId = await ReadOrganizationIdAsync(httpContext);
+            if (bodyOrganizationId == Guid.Empty
+                || (bodyOrganizationId.HasValue && bodyOrganizationId.Value != requestedOrganizationId.Value))
+            {
+                await WriteNotFoundAsync(httpContext);
+                return;
+            }
         }
 
         if (resourceId.HasValue && current is not null)
@@ -86,6 +112,23 @@ public sealed class ProjectResourceScopeMiddleware
                 await WriteNotFoundAsync(httpContext);
                 return;
             }
+
+            if (requestedOrganizationId.HasValue)
+            {
+                var resolvedOrganizationId = await ResolveResourceOrganizationAsync(db, owner,
+                    current.TenantId, httpContext.RequestAborted);
+                if (resolvedOrganizationId != requestedOrganizationId)
+                {
+                    await WriteNotFoundAsync(httpContext);
+                    return;
+                }
+                resourceOrganizationId = requestedOrganizationId;
+            }
+            else
+            {
+                resourceOrganizationId = await ResolveResourceOrganizationAsync(db, owner,
+                    current.TenantId, httpContext.RequestAborted);
+            }
         }
 
         var bodyProjectId = inspectProjectBody
@@ -103,9 +146,265 @@ public sealed class ProjectResourceScopeMiddleware
                 await WriteNotFoundAsync(httpContext);
                 return;
             }
+            if (requestedOrganizationId.HasValue
+                && await ResolveProjectOrganizationAsync(db, bodyProjectId.Value, current.TenantId, httpContext.RequestAborted) != requestedOrganizationId)
+            {
+                await WriteNotFoundAsync(httpContext);
+                return;
+            }
+            resourceOrganizationId ??= await ResolveProjectOrganizationAsync(
+                db, bodyProjectId.Value, current.TenantId, httpContext.RequestAborted);
+        }
+
+        if (requestedOrganizationId.HasValue
+            && !await IsAddressedPortfolioProgramOrProjectInOrganizationAsync(
+                db, httpContext, path, current?.TenantId ?? Guid.Empty, requestedOrganizationId.Value))
+        {
+            await WriteNotFoundAsync(httpContext);
+            return;
+        }
+
+        if (current is not null)
+        {
+            resourceOrganizationId ??= await ResolveAddressedOrganizationAsync(
+                db, httpContext, path, current, httpContext.RequestAborted);
+            var organizationId = requestedOrganizationId ?? resourceOrganizationId;
+            if (organizationId.HasValue)
+            {
+                var organizationIsActive = await db.Organizations.IgnoreQueryFilters().AsNoTracking()
+                    .AnyAsync(organization => organization.Id == organizationId.Value
+                        && organization.TenantId == current.TenantId
+                        && organization.IsActive && !organization.IsDeleted,
+                        httpContext.RequestAborted);
+                if (!organizationIsActive || !current.Scope.OrganizationIds.Contains(organizationId.Value))
+                {
+                    await WriteNotFoundAsync(httpContext);
+                    return;
+                }
+
+                var scopedContext = await RestrictManagementContextToOrganizationAsync(
+                    db, current, organizationId.Value, httpContext.RequestAborted);
+                if (scopedContext is null)
+                {
+                    await WriteNotFoundAsync(httpContext);
+                    return;
+                }
+                managementContext.Set(scopedContext);
+                httpContext.Items[UserPermissionClaimsMiddleware.OrganizationScopeItemKey] = organizationId.Value;
+
+                var organizationPermissions = await effectivePermissions.GetEffectivePermissionsForOrganizationAsync(
+                    current.UserId, current.TenantId, organizationId.Value, httpContext.RequestAborted);
+                foreach (var permission in organizationPermissions)
+                    if (!httpContext.User.HasClaim("permission", permission))
+                        ((ClaimsIdentity)httpContext.User.Identity!).AddClaim(new System.Security.Claims.Claim("permission", permission));
+            }
         }
 
         await _next(httpContext);
+    }
+
+    private static async Task<Guid?> ResolveAddressedOrganizationAsync(
+        AppDbContext db,
+        HttpContext context,
+        IReadOnlyList<string> path,
+        ManagementContext management,
+        CancellationToken cancellationToken)
+    {
+        if (management.SelectedProjectId is Guid selectedProjectId)
+            return await ResolveProjectOrganizationAsync(db, selectedProjectId, management.TenantId, cancellationToken);
+        if (management.SelectedProgramId is Guid selectedProgramId)
+            return await db.Programs.IgnoreQueryFilters().AsNoTracking()
+                .Where(program => program.Id == selectedProgramId && program.TenantId == management.TenantId
+                    && !program.IsDeleted)
+                .Join(db.Portfolios.IgnoreQueryFilters().AsNoTracking(), program => new { program.TenantId, PortfolioId = program.PortfolioId },
+                    portfolio => new { portfolio.TenantId, PortfolioId = portfolio.Id },
+                    (_, portfolio) => new { portfolio.OrganizationId, portfolio.IsDeleted })
+                .Where(item => !item.IsDeleted)
+                .Select(item => item.OrganizationId)
+                .FirstOrDefaultAsync(cancellationToken);
+        if (management.SelectedPortfolioId is Guid selectedPortfolioId)
+            return await db.Portfolios.IgnoreQueryFilters().AsNoTracking()
+                .Where(portfolio => portfolio.Id == selectedPortfolioId && portfolio.TenantId == management.TenantId
+                    && !portfolio.IsDeleted)
+                .Select(portfolio => portfolio.OrganizationId)
+                .FirstOrDefaultAsync(cancellationToken);
+
+        if (path.Count >= 3 && Guid.TryParse(Convert.ToString(context.Request.RouteValues["id"]), out var addressedId))
+        {
+            if (path[1].Equals("projects", StringComparison.OrdinalIgnoreCase))
+                return await ResolveProjectOrganizationAsync(db, addressedId, management.TenantId, cancellationToken);
+            if (path[1].Equals("portfolios", StringComparison.OrdinalIgnoreCase))
+                return await db.Portfolios.IgnoreQueryFilters().AsNoTracking()
+                    .Where(portfolio => (portfolio.Id == addressedId || portfolio.PublicId == addressedId)
+                        && portfolio.TenantId == management.TenantId && !portfolio.IsDeleted)
+                    .Select(portfolio => portfolio.OrganizationId)
+                    .FirstOrDefaultAsync(cancellationToken);
+            if (path[1].Equals("programs", StringComparison.OrdinalIgnoreCase))
+                return await (from program in db.Programs.IgnoreQueryFilters().AsNoTracking()
+                              join portfolio in db.Portfolios.IgnoreQueryFilters().AsNoTracking()
+                                  on new { program.TenantId, PortfolioId = program.PortfolioId }
+                                  equals new { portfolio.TenantId, PortfolioId = portfolio.Id }
+                              where (program.Id == addressedId || program.PublicId == addressedId)
+                                  && program.TenantId == management.TenantId && !program.IsDeleted && !portfolio.IsDeleted
+                              select portfolio.OrganizationId)
+                    .FirstOrDefaultAsync(cancellationToken);
+        }
+
+        if (path.Count >= 3 && path[1].Equals("projects", StringComparison.OrdinalIgnoreCase))
+        {
+            var projectId = ProjectRequestContext.GetInternalProjectId(context);
+            if (projectId.HasValue)
+                return await ResolveProjectOrganizationAsync(db, projectId.Value, management.TenantId, cancellationToken);
+        }
+
+        return null;
+    }
+
+    private static async Task<ManagementContext?> RestrictManagementContextToOrganizationAsync(
+        AppDbContext db,
+        ManagementContext current,
+        Guid organizationId,
+        CancellationToken cancellationToken)
+    {
+        var portfolioIds = await db.Portfolios.IgnoreQueryFilters().AsNoTracking()
+            .Where(portfolio => portfolio.TenantId == current.TenantId && !portfolio.IsDeleted
+                && portfolio.OrganizationId == organizationId && current.Scope.PortfolioIds.Contains(portfolio.Id))
+            .Select(portfolio => portfolio.Id)
+            .ToHashSetAsync(cancellationToken);
+        var programIds = await (from program in db.Programs.IgnoreQueryFilters().AsNoTracking()
+                                join portfolio in db.Portfolios.IgnoreQueryFilters().AsNoTracking()
+                                    on new { program.TenantId, PortfolioId = program.PortfolioId }
+                                    equals new { portfolio.TenantId, PortfolioId = portfolio.Id }
+                                where program.TenantId == current.TenantId && !program.IsDeleted && !portfolio.IsDeleted
+                                    && portfolio.OrganizationId == organizationId
+                                    && current.Scope.ProgramIds.Contains(program.Id)
+                                select program.Id)
+            .ToHashSetAsync(cancellationToken);
+        var projectIds = current.Scope.ProjectOrganizationIds
+            .Where(pair => pair.Value == organizationId && current.Scope.ProjectIds.Contains(pair.Key))
+            .Select(pair => pair.Key)
+            .ToHashSet();
+        if (current.SelectedProjectId is Guid selectedProjectId
+            && current.Scope.ProjectIds.Contains(selectedProjectId)
+            && await ResolveProjectOrganizationAsync(db, selectedProjectId, current.TenantId, cancellationToken) == organizationId)
+            projectIds.Add(selectedProjectId);
+
+        var scopedOrganizationReferences = current.Scope.OrganizationReferences
+            .Where(item => item.Id == organizationId)
+            .ToArray();
+        var scope = new ManagementScope(portfolioIds, programIds, projectIds)
+        {
+            OrganizationIds = new HashSet<Guid> { organizationId },
+            OrganizationReferences = scopedOrganizationReferences,
+            ProjectOrganizationIds = current.Scope.ProjectOrganizationIds
+                .Where(pair => projectIds.Contains(pair.Key) && pair.Value == organizationId)
+                .ToDictionary(pair => pair.Key, pair => pair.Value)
+        };
+
+        return current with
+        {
+            Scope = scope,
+            CanReadAllTenantPortfolioProgramData = false,
+            HasTenantAdministratorPortfolioWriteScope = false
+        };
+    }
+
+    private static async Task<bool> IsAddressedPortfolioProgramOrProjectInOrganizationAsync(
+        AppDbContext db,
+        HttpContext context,
+        IReadOnlyList<string> path,
+        Guid tenantId,
+        Guid organizationId)
+    {
+        if (tenantId == Guid.Empty || path.Count < 3)
+            return true;
+
+        if (path[1].Equals("projects", StringComparison.OrdinalIgnoreCase))
+        {
+            var projectId = ProjectRequestContext.GetInternalProjectId(context);
+            if (!projectId.HasValue && Guid.TryParse(Convert.ToString(context.Request.RouteValues["id"]), out var routeId))
+                projectId = routeId;
+            if (!projectId.HasValue)
+                return true;
+            return await ResolveProjectOrganizationAsync(db, projectId.Value, tenantId, context.RequestAborted) == organizationId;
+        }
+
+        if (path[1].Equals("portfolios", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!Guid.TryParse(Convert.ToString(context.Request.RouteValues["id"]), out var portfolioId))
+                return true;
+            var owner = await db.Portfolios.IgnoreQueryFilters().AsNoTracking()
+                .Where(portfolio => (portfolio.Id == portfolioId || portfolio.PublicId == portfolioId)
+                    && portfolio.TenantId == tenantId && !portfolio.IsDeleted)
+                .Select(portfolio => portfolio.OrganizationId)
+                .FirstOrDefaultAsync(context.RequestAborted);
+            return owner == organizationId;
+        }
+
+        if (path[1].Equals("programs", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!Guid.TryParse(Convert.ToString(context.Request.RouteValues["id"]), out var programId))
+                return true;
+            var owner = await (from program in db.Programs.IgnoreQueryFilters().AsNoTracking()
+                               join portfolio in db.Portfolios.IgnoreQueryFilters().AsNoTracking()
+                                   on new { program.TenantId, program.PortfolioId } equals new { portfolio.TenantId, PortfolioId = portfolio.Id }
+                               where (program.Id == programId || program.PublicId == programId)
+                                   && program.TenantId == tenantId && !program.IsDeleted
+                                   && !portfolio.IsDeleted
+                               select portfolio.OrganizationId)
+                .FirstOrDefaultAsync(context.RequestAborted);
+            return owner == organizationId;
+        }
+
+        return true;
+    }
+
+    private static async Task<Guid?> ResolveResourceOrganizationAsync(
+        AppDbContext db,
+        ResourceOwner owner,
+        Guid tenantId,
+        CancellationToken cancellationToken)
+    {
+        if (owner.ProjectId.HasValue)
+            return await ResolveProjectOrganizationAsync(db, owner.ProjectId.Value, tenantId, cancellationToken);
+        if (owner.PortfolioId.HasValue)
+            return await db.Portfolios.IgnoreQueryFilters().AsNoTracking()
+                .Where(portfolio => portfolio.Id == owner.PortfolioId.Value
+                    && portfolio.TenantId == tenantId && !portfolio.IsDeleted)
+                .Select(portfolio => portfolio.OrganizationId)
+                .FirstOrDefaultAsync(cancellationToken);
+        return null;
+    }
+
+    private static async Task<Guid?> ResolveProjectOrganizationAsync(
+        AppDbContext db,
+        Guid projectId,
+        Guid tenantId,
+        CancellationToken cancellationToken)
+    {
+        var project = await db.Projects.IgnoreQueryFilters().AsNoTracking()
+            .Where(item => item.TenantId == tenantId && !item.IsDeleted
+                && (item.Id == projectId || item.PublicId == projectId))
+            .Select(item => new { item.PortfolioId, item.ProgramId })
+            .FirstOrDefaultAsync(cancellationToken);
+        if (project is null)
+            return null;
+
+        var portfolioId = project.PortfolioId;
+        if (!portfolioId.HasValue && project.ProgramId.HasValue)
+            portfolioId = await db.Programs.IgnoreQueryFilters().AsNoTracking()
+                .Where(program => program.Id == project.ProgramId.Value
+                    && program.TenantId == tenantId && !program.IsDeleted)
+                .Select(program => (Guid?)program.PortfolioId)
+                .FirstOrDefaultAsync(cancellationToken);
+        if (!portfolioId.HasValue)
+            return null;
+
+        return await db.Portfolios.IgnoreQueryFilters().AsNoTracking()
+            .Where(portfolio => portfolio.Id == portfolioId.Value
+                && portfolio.TenantId == tenantId && !portfolio.IsDeleted)
+            .Select(portfolio => portfolio.OrganizationId)
+            .FirstOrDefaultAsync(cancellationToken);
     }
 
     private static bool IsAssignedChangeRequestApprovalRoute(HttpContext context, IReadOnlyList<string> path)
@@ -189,6 +488,65 @@ public sealed class ProjectResourceScopeMiddleware
         catch (Exception exception) when (exception is JsonException or InvalidDataException or IOException)
         {
             return null;
+        }
+        finally
+        {
+            context.Request.Body.Position = originalPosition;
+        }
+    }
+
+    private static async Task<Guid?> ReadOrganizationIdAsync(HttpContext context)
+    {
+        if (!context.Request.Body.CanSeek)
+            context.Request.EnableBuffering();
+        var originalPosition = context.Request.Body.Position;
+        try
+        {
+            if (context.Request.ContentType?.StartsWith("application/json", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                using var document = await JsonDocument.ParseAsync(context.Request.Body,
+                    new JsonDocumentOptions { MaxDepth = 32 }, context.RequestAborted);
+                if (document.RootElement.ValueKind != JsonValueKind.Object)
+                    return null;
+                var found = false;
+                Guid? organizationId = null;
+                foreach (var property in document.RootElement.EnumerateObject())
+                {
+                    if (!property.Name.Equals("organizationId", StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    if (found)
+                        return Guid.Empty;
+                    found = true;
+                    if (property.Value.ValueKind == JsonValueKind.Null)
+                        continue;
+                    if (property.Value.ValueKind != JsonValueKind.String
+                        || !Guid.TryParse(property.Value.GetString(), out var parsed)
+                        || parsed == Guid.Empty)
+                        return Guid.Empty;
+                    organizationId = parsed;
+                }
+                return organizationId;
+            }
+
+            if (context.Request.ContentType?.StartsWith("multipart/form-data", StringComparison.OrdinalIgnoreCase) == true
+                || context.Request.ContentType?.StartsWith("application/x-www-form-urlencoded", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                var form = await context.Request.ReadFormAsync(context.RequestAborted);
+                if (!form.TryGetValue("organizationId", out var values))
+                    return null;
+                if (values.Count != 1)
+                    return Guid.Empty;
+                var rawValue = values[0];
+                if (string.IsNullOrWhiteSpace(rawValue))
+                    return null;
+                return Guid.TryParse(rawValue, out var parsed) && parsed != Guid.Empty ? parsed : Guid.Empty;
+            }
+
+            return null;
+        }
+        catch (Exception exception) when (exception is JsonException or InvalidDataException or IOException)
+        {
+            return Guid.Empty;
         }
         finally
         {

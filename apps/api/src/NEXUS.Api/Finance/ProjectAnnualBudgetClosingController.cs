@@ -30,6 +30,17 @@ public sealed class ProjectAnnualBudgetClosingController(
         return ToActionResult(await workflow.GetEligibleClosingApproversAsync(tenantId, projectId, actorId, cancellationToken));
     }
 
+    [HttpGet("{closingId:guid}/approver-recovery-options/{assignmentId:guid}")]
+    [Authorize(Policy = "ProjectAnnualBudget.CloseApprove")]
+    [Authorize(Policy = "Governance.AssignmentRecovery.Manage")]
+    public async Task<IActionResult> GetRecoveryApprovers(
+        Guid projectId, Guid closingId, Guid assignmentId, CancellationToken cancellationToken)
+    {
+        if (!TryGetScope(projectId, out var tenantId, out var actorId)) return ScopeFailure();
+        return ToActionResult(await workflow.GetEligibleClosingRecoveryApproversAsync(
+            tenantId, projectId, closingId, assignmentId, actorId, cancellationToken));
+    }
+
     [HttpPost]
     [Authorize(Policy = "ProjectAnnualBudget.Close")]
     public async Task<IActionResult> Prepare(Guid projectId, [FromBody] PrepareProjectAnnualBudgetClosingDto dto,
@@ -62,6 +73,30 @@ public sealed class ProjectAnnualBudgetClosingController(
         return ToActionResult(await workflow.DecideClosingAsync(tenantId, projectId, closingId, actorId, ActorName(), dto, cancellationToken));
     }
 
+    [HttpPost("{closingId:guid}/approver-reassignments")]
+    [Authorize(Policy = "ProjectAnnualBudget.CloseApprove")]
+    [Authorize(Policy = "Governance.AssignmentRecovery.Manage")]
+    public async Task<IActionResult> ReassignApprover(Guid projectId, Guid closingId,
+        [FromBody] ReassignProjectAnnualBudgetClosingApproverDto dto, CancellationToken cancellationToken)
+    {
+        if (!TryGetScope(projectId, out var tenantId, out var actorId)) return ScopeFailure();
+        if (management.Current?.EffectiveReadOnly == true) return Forbid();
+        return ToActionResult(await workflow.ReassignClosingApproverAsync(
+            tenantId, projectId, closingId, actorId, ActorName(), dto, cancellationToken));
+    }
+
+    [HttpPost("{closingId:guid}/recovery-cancellations")]
+    [Authorize(Policy = "ProjectAnnualBudget.CloseApprove")]
+    [Authorize(Policy = "Governance.AssignmentRecovery.Manage")]
+    public async Task<IActionResult> RecoveryCancel(Guid projectId, Guid closingId,
+        [FromBody] RecoverCancelProjectAnnualBudgetClosingDto dto, CancellationToken cancellationToken)
+    {
+        if (!TryGetScope(projectId, out var tenantId, out var actorId)) return ScopeFailure();
+        if (management.Current?.EffectiveReadOnly == true) return Forbid();
+        return ToActionResult(await workflow.RecoverCancelClosingAsync(
+            tenantId, projectId, closingId, actorId, ActorName(), dto, cancellationToken));
+    }
+
     [HttpPost("{closingId:guid}/cancel")]
     [Authorize(Policy = "ProjectAnnualBudget.Close")]
     public async Task<IActionResult> Cancel(Guid projectId, Guid closingId, [FromBody] CancelProjectAnnualBudgetClosingDto dto,
@@ -69,7 +104,7 @@ public sealed class ProjectAnnualBudgetClosingController(
     {
         if (!TryGetScope(projectId, out var tenantId, out var actorId)) return ScopeFailure();
         if (management.Current?.EffectiveReadOnly == true) return Forbid();
-        return ToActionResult(await workflow.CancelClosingAsync(tenantId, projectId, closingId, actorId, ActorName(), dto.RowVersion, cancellationToken));
+        return ToActionResult(await workflow.CancelClosingAsync(tenantId, projectId, closingId, actorId, ActorName(), dto, cancellationToken));
     }
 
     private bool TryGetScope(Guid projectId, out Guid tenantId, out Guid actorId)

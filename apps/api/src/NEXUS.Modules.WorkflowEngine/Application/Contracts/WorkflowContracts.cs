@@ -34,6 +34,12 @@ public interface IWorkflowEntityAdapter
     Task<Result> AuthorizeAsync(WorkflowExecutionContext context, Guid entityId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Write-path authorization for explicitly provisioning a workflow instance on an existing
+    /// business entity. Read access to that entity does not grant this operation.
+    /// </summary>
+    Task<Result> AuthorizeProvisionAsync(WorkflowExecutionContext context, Guid entityId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Write-path authorization for a specific transition. Read access to an entity does not
     /// imply the right to move it through its workflow, so adapters must check the permission
     /// that actually governs the target state here.

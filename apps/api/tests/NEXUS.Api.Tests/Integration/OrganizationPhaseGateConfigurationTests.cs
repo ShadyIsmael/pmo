@@ -5,6 +5,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
+using NEXUS.Api.Management;
 using NEXUS.Modules.Audit.Application;
 using NEXUS.Modules.Audit.Domain;
 using NEXUS.Modules.Documents.Domain;
@@ -13,6 +14,7 @@ using NEXUS.Modules.Organization.Domain;
 using NEXUS.Modules.ProjectManagement.Domain;
 using NEXUS.Persistence;
 using NEXUS.SharedKernel;
+using NEXUS.SharedKernel.Management;
 using Xunit;
 
 namespace NEXUS.Api.Tests.Integration;
@@ -253,6 +255,22 @@ public sealed class OrganizationPhaseGateConfigurationTests
         Assert.Empty(await host.Db.OrganizationPhaseGateConfigurations.IgnoreQueryFilters().ToListAsync());
     }
 
+    [Fact]
+    public async Task Read_only_view_as_can_read_phase_gate_configuration_but_cannot_save_it()
+    {
+        await using var host = await TestHost.CreateAsync();
+        host.Management.Set(host.Management.Current! with { ViewMode = ManagementViewMode.ReadOnlyViewAs });
+
+        var read = await host.Service.GetConfigurationAsync(host.OrganizationId, host.SourcePhaseId, host.TargetPhaseId);
+        var save = await host.SaveAsync(Array.Empty<SavePhaseGateRequirementRequest>());
+
+        Assert.Equal(PhaseGateConfigurationOperationCode.Success, read.Code);
+        Assert.Equal(PhaseGateConfigurationOperationCode.AccessDenied, save.Code);
+        Assert.Empty(host.AuditEntries);
+        Assert.Empty(await host.Db.OrganizationPhaseGateConfigurations.IgnoreQueryFilters().ToListAsync());
+        Assert.Empty(await host.Db.OrganizationPhaseGateConfigurationVersions.IgnoreQueryFilters().ToListAsync());
+    }
+
     [Theory]
     [InlineData("Settings.ManageTenantConfiguration")]
     [InlineData("Document.View")]
@@ -351,7 +369,8 @@ public sealed class OrganizationPhaseGateConfigurationTests
             Mock<IOrganizationSettingsAccessService> organizationAccess,
             PolicyAuthorizationService authorization,
             Mock<IAuditService> audit,
-            List<AuditEntry> auditEntries)
+            List<AuditEntry> auditEntries,
+            ManagementContextAccessor management)
         {
             _connection = connection;
             _provider = provider;
@@ -364,6 +383,7 @@ public sealed class OrganizationPhaseGateConfigurationTests
             Authorization = authorization;
             Audit = audit;
             AuditEntries = auditEntries;
+            Management = management;
             Service = new PhaseGateConfigurationService(
                 Db,
                 _httpContextAccessor,
@@ -371,7 +391,8 @@ public sealed class OrganizationPhaseGateConfigurationTests
                 OrganizationAccess.Object,
                 _provider.GetRequiredService<IProjectPhaseGatePhasePairCatalog>(),
                 _provider.GetRequiredService<IApprovedTemplateCatalog>(),
-                Audit.Object);
+                Audit.Object,
+                Management);
         }
 
         public AppDbContext Db { get; }
@@ -384,6 +405,7 @@ public sealed class OrganizationPhaseGateConfigurationTests
         public PolicyAuthorizationService Authorization { get; }
         public Mock<IAuditService> Audit { get; }
         public List<AuditEntry> AuditEntries { get; }
+        public ManagementContextAccessor Management { get; }
         public IPhaseGateConfigurationService Service { get; }
 
         public static async Task<TestHost> CreateAsync()
@@ -399,6 +421,10 @@ public sealed class OrganizationPhaseGateConfigurationTests
             {
                 User = Principal(tenantId, actorId)
             };
+            var management = new ManagementContextAccessor();
+            management.Set(new ManagementContext(
+                actorId, tenantId, ManagementPerspective.ProjectManager, ManagementViewMode.Native,
+                null, null, null, ManagementScope.Empty));
             AppDbContext.ConfigureTenantResolution(httpContextAccessor);
 
             var options = new DbContextOptionsBuilder<AppDbContext>()
@@ -466,7 +492,7 @@ public sealed class OrganizationPhaseGateConfigurationTests
             var provider = services.BuildServiceProvider();
 
             var host = new TestHost(connection, provider, httpContextAccessor, db, tenantId, actorId,
-                organizationId, organizationAccess, authorization, audit, auditEntries);
+                organizationId, organizationAccess, authorization, audit, auditEntries, management);
             host.SourcePhaseId = sourcePhaseId;
             host.TargetPhaseId = targetPhaseId;
             return host;

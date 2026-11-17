@@ -36,8 +36,7 @@ public sealed class ProjectFinancialFoundationController : ControllerBase
     [Authorize(Policy = "ProjectSettings.View")]
     public async Task<IActionResult> Get(Guid projectId, CancellationToken cancellationToken)
     {
-        if (!TryGetTenantId(out var tenantId)) return Unauthorized();
-        if (!IsInProjectScope(projectId)) return NotFound();
+        if (!TryGetIdentityScope(projectId, out var tenantId, out _)) return ScopeFailure();
 
         var project = await _db.Projects.IgnoreQueryFilters().AsNoTracking()
             .FirstOrDefaultAsync(item => item.Id == projectId && item.TenantId == tenantId && !item.IsDeleted, cancellationToken);
@@ -85,8 +84,7 @@ public sealed class ProjectFinancialFoundationController : ControllerBase
         [FromBody] UpdateProjectFinanceApprovalConfigurationDto request,
         CancellationToken cancellationToken)
     {
-        if (!TryGetTenantId(out var tenantId)) return Unauthorized();
-        if (!IsInProjectScope(projectId)) return NotFound();
+        if (!TryGetIdentityScope(projectId, out var tenantId, out var actorId)) return ScopeFailure();
         if (_management.Current?.EffectiveReadOnly == true) return Forbid();
         if (!FinanceApprovalModes.IsValid(request.Mode))
             return BadRequest(new { error = "Mode must be Sequential, Parallel, Both, or null." });
@@ -104,7 +102,6 @@ public sealed class ProjectFinancialFoundationController : ControllerBase
             return Ok(new { mode = project.FinanceApprovalMode, rowVersion = Convert.ToBase64String(project.RowVersion) });
 
         project.FinanceApprovalMode = request.Mode;
-        var actorId = Guid.TryParse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var parsedActor) ? parsedActor : (Guid?)null;
         var actorName = User.FindFirst(ClaimTypes.Name)?.Value ?? User.FindFirst("name")?.Value;
         var before = new { financialReference = project.Code, financeApprovalMode = previousMode };
         var after = new { financialReference = project.Code, financeApprovalMode = request.Mode };
@@ -126,7 +123,7 @@ public sealed class ProjectFinancialFoundationController : ControllerBase
             }),
             OriginalValues = JsonSerializer.Serialize(before),
             NewValues = JsonSerializer.Serialize(after),
-            CreatedBy = actorId?.ToString() ?? "System"
+            CreatedBy = actorId.ToString()
         }, cancellationToken);
 
         try
@@ -141,9 +138,25 @@ public sealed class ProjectFinancialFoundationController : ControllerBase
         return Ok(new { mode = project.FinanceApprovalMode, rowVersion = Convert.ToBase64String(project.RowVersion) });
     }
 
-    private bool TryGetTenantId(out Guid tenantId) => Guid.TryParse(User.FindFirst("tenantId")?.Value, out tenantId);
+    private bool TryGetIdentityScope(Guid projectId, out Guid tenantId, out Guid actorId)
+    {
+        tenantId = Guid.Empty;
+        actorId = Guid.Empty;
+        var current = _management.Current;
+        return current is not null
+            && Guid.TryParse(User.FindFirst("tenantId")?.Value, out tenantId)
+            && tenantId != Guid.Empty
+            && Guid.TryParse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out actorId)
+            && actorId != Guid.Empty
+            && current.TenantId == tenantId
+            && current.UserId == actorId
+            && current.Scope.ProjectIds.Contains(projectId);
+    }
 
-    private bool IsInProjectScope(Guid projectId) => _management.Current?.Scope.ProjectIds.Contains(projectId) == true;
+    private IActionResult ScopeFailure() => Guid.TryParse(User.FindFirst("tenantId")?.Value, out var tenantId)
+        && tenantId != Guid.Empty
+        ? NotFound()
+        : Unauthorized();
 
     private static string NormalizeCurrency(string? value) => (value ?? string.Empty).Trim().ToUpperInvariant();
 

@@ -171,6 +171,9 @@ export function ProjectSheet({ open, onOpenChange, project, onCreated, embedded 
   const canChangeProjectStatus = Boolean(user
     && hasPermission(user.permissions, Permissions.ProjectStatus.Change)
     && canMutate && !effectiveReadOnly);
+  const canAssignInitialManager = Boolean(user
+    && hasPermission(user.permissions, Permissions.Handover.AdminInitiate)
+    && canMutate && !effectiveReadOnly);
   const createMutation = useCreateProject();
   const updateMutation = useUpdateProject(project?.publicId ?? "");
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
@@ -185,7 +188,7 @@ export function ProjectSheet({ open, onOpenChange, project, onCreated, embedded 
   const initialAnnualBudgetWasEdited = React.useRef(false);
 
   const { data: userLookup, isLoading: usersLoading, error: usersError } = useProjectWorkflowUserLookup(open);
-  const { data: projectManagers, isLoading: managersLoading, isFetching: managersFetching, error: managersError, refetch: refetchProjectManagers } = useProjectManagerCandidateLookup(open && !isEdit);
+  const { data: projectManagers, isLoading: managersLoading, isFetching: managersFetching, error: managersError, refetch: refetchProjectManagers } = useProjectManagerCandidateLookup(open && !isEdit && canAssignInitialManager);
   const { data: portfolioData, error: portfoliosError } = usePortfolioLookup(open);
   const [lookupPortfolioId, setLookupPortfolioId] = React.useState("");
   const { data: programData, error: programsError } = useProgramLookup(open, lookupPortfolioId);
@@ -218,14 +221,14 @@ export function ProjectSheet({ open, onOpenChange, project, onCreated, embedded 
   });
   const budgetValue = form.watch("budget");
   const watchedPortfolioId = form.watch("portfolioId") ?? "";
-  const watchedDepartmentId = form.watch("departmentId") ?? "";
-  const createPhaseScopeKey = `${watchedPortfolioId}::${watchedDepartmentId}`;
+  const watchedProgramId = form.watch("programId") ?? "";
+  const createPhaseScopeKey = `${watchedPortfolioId}::${watchedProgramId}`;
   const canCreateInitialAnnualBudget = !isEdit
     && hasPermission(user?.permissions ?? [], Permissions.ProjectAnnualBudget.Create);
 
-  // Create mode asks the backend for the single protected Pre-Initiation option that
-  // applies to the selected portfolio/department scope. No Organization or project
-  // identifier is sent: the backend resolves the Organization from the scope.
+  // Create mode loads the Tenant-scoped Status catalog immediately and the protected
+  // Pre-Initiation phase for the selected Portfolio's Organization when one is chosen.
+  // No Organization or project identifier is sent.
   const lifecycleOptions = useProjectLifecycleOptions({
     enabled: open && canLoadLifecycleOptions,
     projectId: isEdit ? project?.publicId : undefined,
@@ -234,21 +237,19 @@ export function ProjectSheet({ open, onOpenChange, project, onCreated, embedded 
       : {
         purpose: "create" as const,
         portfolioId: watchedPortfolioId || undefined,
-        departmentId: watchedDepartmentId || undefined,
+        programId: watchedProgramId || undefined,
       }),
   });
 
-  // Only the protected Pre-Initiation record is an acceptable initial phase. A single
-  // active default option is tolerated for standalone/tenant contexts; anything else
-  // is reported as unavailable instead of silently choosing an arbitrary phase.
+  // Only the protected Pre-Initiation record is an acceptable initial phase, and only
+  // after a Portfolio resolves the Organization that owns the phase catalog.
   const initialPhaseOption = React.useMemo(() => {
-    if (isEdit) return undefined;
+    if (isEdit || !watchedPortfolioId) return undefined;
     const activePhases = (lifecycleOptions.data?.phases ?? []).filter(option => option.isActive !== false);
     const protectedPhase = activePhases.find(isPreInitiationPhase);
     if (protectedPhase) return protectedPhase;
-    const activeDefaults = activePhases.filter(option => option.isDefault);
-    return activeDefaults.length === 1 ? activeDefaults[0] : undefined;
-  }, [isEdit, lifecycleOptions.data]);
+    return undefined;
+  }, [isEdit, lifecycleOptions.data, watchedPortfolioId]);
 
   React.useEffect(() => {
     if (!open) return;
@@ -260,15 +261,28 @@ export function ProjectSheet({ open, onOpenChange, project, onCreated, embedded 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, project]);
 
+  // Project Status is Tenant-scoped reference data shared by every Organization, so the
+  // status catalog does not depend on the selected Portfolio. Keep the form value aligned
+  // with the loaded catalog and apply the configured Tenant default when it is needed.
+  const activeStatusOptions = React.useMemo(
+    () => (lifecycleOptions.data?.statuses ?? []).filter(option => option.isActive !== false),
+    [lifecycleOptions.data]);
+  const watchedStatusId = form.watch("statusId") ?? "";
+  const resolvedCreateStatusId = React.useMemo(() => {
+    if (isEdit) return "";
+    if (activeStatusOptions.some(option => option.id === watchedStatusId)) return watchedStatusId;
+    return activeStatusOptions.find(option => option.isDefault)?.id ?? "";
+  }, [activeStatusOptions, isEdit, watchedStatusId]);
+
   React.useEffect(() => {
     if (!open || isEdit || !lifecycleOptions.data) return;
-    const initialStatus = lifecycleOptions.data.statuses.find(option => option.isDefault);
-    if (!form.getValues("statusId") && initialStatus) form.setValue("statusId", initialStatus.id, { shouldValidate: true });
-  }, [form, isEdit, lifecycleOptions.data, open]);
+    const current = form.getValues("statusId") ?? "";
+    if (activeStatusOptions.some(option => option.id === current)) return;
+    const tenantDefault = activeStatusOptions.find(option => option.isDefault)?.id ?? "";
+    if (tenantDefault !== current) form.setValue("statusId", tenantDefault, { shouldValidate: false });
+  }, [activeStatusOptions, form, isEdit, lifecycleOptions.data, open]);
 
-  // Keep the real form phaseId aligned with the resolved record. The scope key is a
-  // dependency so a portfolio/department switch clears the previous id immediately,
-  // before the new lookup resolves, and never leaves a stale id to submit.
+  // Keep the real form phaseId aligned with the protected record for the selected scope.
   React.useEffect(() => {
     if (isEdit || !open) return;
     const resolvedPhaseId = initialPhaseOption?.id ?? "";
@@ -302,15 +316,21 @@ export function ProjectSheet({ open, onOpenChange, project, onCreated, embedded 
 
   const onSubmit = async (data: ProjectFormData) => {
     if (isSubmittingRef.current) return;
+    if (!isEdit && !data.portfolioId) {
+      form.setError("portfolioId", { type: "manual", message: t("projects.validation.portfolioRequired") });
+      setShowValidationSummary(true);
+      window.setTimeout(() => formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus(), 0);
+      return;
+    }
     // Never submit the form's possibly-stale id: the payload phase comes from the
-    // record resolved for the current portfolio/department scope.
+    // record resolved for the current Portfolio scope.
     if (!isEdit && !resolvedCreatePhaseId) {
       form.setError("phaseId", { type: "manual", message: t("projects.lifecycle.phaseRequired") });
       setShowValidationSummary(true);
       window.setTimeout(() => formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus(), 0);
       return;
     }
-    if (!isEdit && !data.statusId) {
+    if (!isEdit && !resolvedCreateStatusId) {
       form.setError("statusId", { type: "manual", message: t("projects.lifecycle.statusRequired") });
       setShowValidationSummary(true);
       window.setTimeout(() => formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus(), 0);
@@ -376,7 +396,7 @@ export function ProjectSheet({ open, onOpenChange, project, onCreated, embedded 
           ...base,
           name: data.name,
           phaseId: resolvedCreatePhaseId,
-          statusId: data.statusId!,
+          statusId: resolvedCreateStatusId,
           priority: data.priority,
           projectManagerId: data.projectManagerId || undefined,
           budget: data.budget === undefined || data.budget === null ? undefined : Number(data.budget),
@@ -398,6 +418,8 @@ export function ProjectSheet({ open, onOpenChange, project, onCreated, embedded 
       const apiFields = [
         "code",
         "name",
+        "portfolioId",
+        "programId",
         "projectManagerId",
         "startDate",
         "endDate",
@@ -457,7 +479,14 @@ export function ProjectSheet({ open, onOpenChange, project, onCreated, embedded 
 
   const isSubmitting = createMutation.isPending || updateMutation.isPending;
   const initialPhaseUnresolved = !isEdit
+    && Boolean(watchedPortfolioId)
     && (lifecycleOptions.isLoading || lifecycleOptions.isError || !initialPhaseOption);
+  // A Create submission must never reach the statusRequired validation while the
+  // status Select is disabled: loading, lookup error, or an empty Tenant catalog
+  // all leave the user unable to fix the field, so submission stays blocked and
+  // the truthful loading/error/empty state explains why.
+  const createStatusUnresolved = !isEdit
+    && (lifecycleOptions.isLoading || lifecycleOptions.isError || activeStatusOptions.length === 0);
 
   const focusFirstInvalid = () => window.setTimeout(() => formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus(), 0);
   const validationMessage = (message?: string) => {
@@ -547,13 +576,14 @@ export function ProjectSheet({ open, onOpenChange, project, onCreated, embedded 
             <div className="space-y-1"><h3 className="text-base font-semibold">{t("projects.createSections.hierarchy")}</h3><p className="text-xs text-muted-foreground">{t("projects.ownershipHierarchyDescription")}</p></div>
             <div className="grid gap-5 sm:grid-cols-2">
               <div className="space-y-1.5">
-                <Label>{t("projects.portfolio")}</Label>
-                <SearchableSelect aria-label={t("projects.portfolio")} emptyText={t("common.noResults")} loadingText={t("common.loading")}
+                <Label>{t("projects.portfolio")} {!isEdit ? <span className="text-destructive">*</span> : null}</Label>
+                <SearchableSelect aria-label={t("projects.portfolio")} aria-invalid={Boolean(form.formState.errors.portfolioId)} aria-describedby={form.formState.errors.portfolioId ? "project-portfolio-error" : undefined} emptyText={t("common.noResults")} loadingText={t("common.loading")}
                   options={portfolioOptions}
                   value={form.watch("portfolioId") ?? ""}
                   onValueChange={(value) => {
                     const currentProgram = programLookupMap[form.getValues("programId") ?? ""];
                     form.setValue("portfolioId", value, { shouldDirty: true });
+                    form.clearErrors("portfolioId");
                     setLookupPortfolioId(value);
                     if (form.getValues("programId") && (!currentProgram || currentProgram.portfolioId !== value)) form.setValue("programId", "", { shouldDirty: true });
                     if (!isEdit && !form.getValues("programId")) form.setValue("currency", portfolioCurrencyMap[value] || baseCurrencyCode, { shouldValidate: true });
@@ -561,6 +591,7 @@ export function ProjectSheet({ open, onOpenChange, project, onCreated, embedded 
                   placeholder={t("projects.portfolio")}
                   searchPlaceholder={t("projects.portfolio")}
                 />
+                <FieldError id="project-portfolio-error" message={form.formState.errors.portfolioId?.message} />
               </div>
               <div className="space-y-1.5">
                 <Label>{t("projects.program")}</Label>
@@ -612,7 +643,9 @@ export function ProjectSheet({ open, onOpenChange, project, onCreated, embedded 
                   </>
                 ) : (
                   <>
-                    {managersError ? (
+                    {!canAssignInitialManager ? (
+                      <p className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">{t("managerHandover.adminInitiateRequired")}</p>
+                    ) : managersError ? (
                       <div role="alert" className="space-y-2 rounded-md border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
                         <p>{managersForbidden ? t("projects.managerCandidatesForbidden") : t("common.errorLoading")}</p>
                         {!managersForbidden ? (
@@ -724,18 +757,15 @@ export function ProjectSheet({ open, onOpenChange, project, onCreated, embedded 
               {!isEdit ? <p className="text-xs text-muted-foreground">{t("projects.createLifecycleDescription")}</p> : null}
             </div>
             {lifecycleOptions.isLoading ? <p role="status" className="text-sm text-muted-foreground">{isEdit ? `${t("projects.lifecycle.phaseLookupLoading")} · ${t("projects.lifecycle.statusLookupLoading")}` : t("projects.lifecycle.statusLookupLoading")}</p> : null}
-            {isEdit && lifecycleOptions.isError ? <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"><span>{t("projects.lifecycle.lookupError")}</span><Button type="button" size="sm" variant="outline" onClick={() => void lifecycleOptions.refetch()}>{t("projects.lifecycle.retry")}</Button></div> : null}
-            {!isEdit ? <div className="grid gap-5 sm:grid-cols-2">
+            {lifecycleOptions.isError ? <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"><span>{t("projects.lifecycle.lookupError")}</span><Button type="button" size="sm" variant="outline" onClick={() => void lifecycleOptions.refetch()}>{t("projects.lifecycle.retry")}</Button></div> : null}
+            {!isEdit && !lifecycleOptions.isError ? <div className="grid gap-5 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label>{t("projects.lifecycle.phase")}</Label>
                 <input type="hidden" name="phaseId" data-testid="project-phase-id" value={form.watch("phaseId") ?? ""} readOnly />
                 {lifecycleOptions.isLoading ? (
                   <p role="status" className="text-sm text-muted-foreground">{t("projects.lifecycle.phaseLookupLoading")}</p>
-                ) : lifecycleOptions.isError ? (
-                  <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
-                    <span>{t("projects.lifecycle.lookupError")}</span>
-                    <Button type="button" size="sm" variant="outline" onClick={() => void lifecycleOptions.refetch()}>{t("projects.lifecycle.retry")}</Button>
-                  </div>
+                ) : !watchedPortfolioId ? (
+                  <p className="text-sm text-muted-foreground">{t("projects.lifecycle.selectPortfolioForOptions")}</p>
                 ) : initialPhaseOption ? (
                   <p data-testid="project-initial-phase" aria-readonly="true" className="rounded-md border bg-muted/30 px-3 py-2 text-sm font-medium">{projectLifecycleLabel(initialPhaseOption, locale)}</p>
                 ) : (
@@ -746,11 +776,11 @@ export function ProjectSheet({ open, onOpenChange, project, onCreated, embedded 
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="project-status">{t("projects.lifecycle.status")}</Label>
-                <Select value={form.watch("statusId") ?? ""} onValueChange={(value) => form.setValue("statusId", value, { shouldValidate: true })}>
-                  <SelectTrigger id="project-status" aria-label={t("projects.lifecycle.status")} aria-invalid={Boolean(form.formState.errors.statusId)} aria-describedby={form.formState.errors.statusId ? "project-status-error" : undefined} disabled={lifecycleOptions.isLoading || lifecycleOptions.isError || !lifecycleOptions.data?.statuses.length}><SelectValue placeholder={t("projects.lifecycle.chooseStatus")} /></SelectTrigger>
-                  <SelectContent>{(lifecycleOptions.data?.statuses ?? []).filter(option => option.isActive !== false).map(option => <SelectItem key={option.id} value={option.id}>{projectLifecycleLabel(option, locale)}</SelectItem>)}</SelectContent>
+                <Select value={watchedStatusId} onValueChange={(value) => form.setValue("statusId", value, { shouldValidate: true })}>
+                  <SelectTrigger id="project-status" aria-label={t("projects.lifecycle.status")} aria-invalid={Boolean(form.formState.errors.statusId)} aria-describedby={form.formState.errors.statusId ? "project-status-error" : undefined} disabled={lifecycleOptions.isLoading || lifecycleOptions.isError || activeStatusOptions.length === 0}><SelectValue placeholder={t("projects.lifecycle.chooseStatus")} /></SelectTrigger>
+                  <SelectContent>{activeStatusOptions.map(option => <SelectItem key={option.id} value={option.id}>{projectLifecycleLabel(option, locale)}</SelectItem>)}</SelectContent>
                 </Select>
-                {!lifecycleOptions.isLoading && !lifecycleOptions.isError && !lifecycleOptions.data?.statuses.length ? <p className="text-xs text-muted-foreground">{t("projects.lifecycle.noStatusesAvailable")}</p> : null}
+                {!lifecycleOptions.isLoading && !lifecycleOptions.isError && activeStatusOptions.length === 0 ? <p className="text-xs text-muted-foreground">{t("projects.lifecycle.noStatusesAvailable")}</p> : null}
                 <FieldError id="project-status-error" message={validationMessage(form.formState.errors.statusId?.message)} />
               </div>
             </div> : project ? <div className="grid gap-5 sm:grid-cols-2">
@@ -805,7 +835,7 @@ export function ProjectSheet({ open, onOpenChange, project, onCreated, embedded 
 
         <ProjectSheetFooter embedded={embedded}>
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>{t("common.cancel")}</Button>
-          <Button type="submit" disabled={isSubmitting || initialPhaseUnresolved}>
+          <Button type="submit" disabled={isSubmitting || initialPhaseUnresolved || createStatusUnresolved}>
             {isSubmitting ? (<><Loader2 className="me-2 h-4 w-4 animate-spin" />{isEdit ? t("projects.updating") : t("common.creating")}</>) : isEdit ? t("projects.update") : t("projects.create")}
           </Button>
         </ProjectSheetFooter>

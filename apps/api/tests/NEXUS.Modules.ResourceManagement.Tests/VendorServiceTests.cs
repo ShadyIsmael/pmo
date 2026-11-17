@@ -1,4 +1,6 @@
 using FluentAssertions;
+using System.Security.Claims;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Moq;
 using NEXUS.Modules.Audit.Application;
@@ -15,13 +17,30 @@ public class VendorServiceTests : TestBase
 {
     private static readonly Guid ActiveCategoryId = Guid.Parse("D4000000-0000-0000-0000-000000000041");
     private static readonly Guid InactiveCategoryId = Guid.Parse("D4000000-0000-0000-0000-000000000042");
+    private static readonly Guid VendorCategoryTenantId = Guid.Parse("11111111-2222-3333-4444-555555555555");
+    private static readonly Guid TestActorId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+
+    private static IHttpContextAccessor CreateTenantHttpContextAccessor()
+    {
+        var identity = new ClaimsIdentity(
+            new[]
+            {
+                new Claim("tenantId", VendorCategoryTenantId.ToString()),
+                new Claim(ClaimTypes.NameIdentifier, TestActorId.ToString())
+            },
+            "test");
+        return new HttpContextAccessor
+        {
+            HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(identity) }
+        };
+    }
 
     private static VendorService CreateService(TestDbContext context)
     {
         var auditMock = new Mock<IAuditService>();
         auditMock.Setup(a => a.LogAsync(It.IsAny<AuditEntry>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success());
-        return new VendorService(context, auditMock.Object);
+        return new VendorService(context, auditMock.Object, CreateTenantHttpContextAccessor());
     }
 
     private static void SeedVendorCategories(TestDbContext context)
@@ -474,7 +493,7 @@ public class VendorServiceTests : TestBase
     public async Task VendorCategoryService_CreateRenameAndDeactivate_KeepsHistory()
     {
         using var context = CreateContext();
-        var service = new VendorCategoryService(context, Mock.Of<IAuditService>());
+        var service = new VendorCategoryService(context, Mock.Of<IAuditService>(), CreateTenantHttpContextAccessor());
         var userId = "11111111-1111-1111-1111-111111111111";
 
         var created = await service.CreateAsync(new CreateLookupDto
@@ -486,6 +505,8 @@ public class VendorServiceTests : TestBase
             IsActive = true
         }, userId);
         created.IsSuccess.Should().BeTrue();
+        (await context.Lookups.AsNoTracking().SingleAsync(item => item.Id == created.Value!.Id))
+            .TenantId.Should().Be(VendorCategoryTenantId);
 
         var duplicate = await service.CreateAsync(new CreateLookupDto
         {
@@ -510,5 +531,38 @@ public class VendorServiceTests : TestBase
         var reloaded = await service.GetByIdAsync(created.Value.Id);
         reloaded.IsSuccess.Should().BeTrue();
         reloaded.Value!.IsActive.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task VendorService_CreateRejectsActorThatDoesNotMatchAuthenticatedClaimBeforePersisting()
+    {
+        using var context = CreateContext();
+        SeedVendorCategories(context);
+        var service = CreateService(context);
+
+        var result = await service.CreateAsync(NewVendorDto(ActiveCategoryId), Guid.NewGuid().ToString());
+
+        result.IsFailure.Should().BeTrue();
+        result.Error!.StatusCode.Should().Be(401);
+        (await context.Vendors.CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task VendorCategoryService_CreateRejectsActorThatDoesNotMatchAuthenticatedClaimBeforePersisting()
+    {
+        using var context = CreateContext();
+        var service = new VendorCategoryService(context, Mock.Of<IAuditService>(), CreateTenantHttpContextAccessor());
+
+        var result = await service.CreateAsync(new CreateLookupDto
+        {
+            Code = "SUP",
+            NameEn = "Supplier",
+            NameAr = "مورد",
+            IsActive = true
+        }, Guid.NewGuid().ToString());
+
+        result.IsFailure.Should().BeTrue();
+        result.Error!.StatusCode.Should().Be(401);
+        (await context.Lookups.CountAsync(item => item.Category == ReferenceDataCategories.VendorCategory)).Should().Be(0);
     }
 }

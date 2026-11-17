@@ -1,8 +1,10 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using NEXUS.Modules.ProjectManagement.Application;
 using NEXUS.Modules.ProjectManagement.Application.DTOs;
 using NEXUS.SharedKernel;
+using NEXUS.SharedKernel.Management;
 
 namespace NEXUS.Modules.ProjectManagement.Api;
 
@@ -18,8 +20,9 @@ public class ProjectController : ControllerBase
     private readonly IProjectOverviewService _projectOverviewService;
     private readonly IProjectReportingService _projectReportingService;
     private readonly IAuthorizationService? _authorization;
+    private readonly IManagementContextAccessor? _managementContext;
 
-    public ProjectController(IProjectService projectService, IProjectSnapshotService projectSnapshotService, IProjectHandoverRequestService projectHandoverRequestService, IProjectStatusReportService projectStatusReportService, IProjectOverviewService projectOverviewService, IProjectReportingService projectReportingService, IAuthorizationService? authorization = null)
+    public ProjectController(IProjectService projectService, IProjectSnapshotService projectSnapshotService, IProjectHandoverRequestService projectHandoverRequestService, IProjectStatusReportService projectStatusReportService, IProjectOverviewService projectOverviewService, IProjectReportingService projectReportingService, IAuthorizationService? authorization = null, IManagementContextAccessor? managementContext = null)
     {
         _projectService = projectService;
         _projectSnapshotService = projectSnapshotService;
@@ -28,6 +31,7 @@ public class ProjectController : ControllerBase
         _projectOverviewService = projectOverviewService;
         _projectReportingService = projectReportingService;
         _authorization = authorization;
+        _managementContext = managementContext;
     }
 
     [Authorize(Policy = "Project.View")]
@@ -81,6 +85,7 @@ public class ProjectController : ControllerBase
     }
 
     [Authorize(Policy = "Project.View")]
+    [OrganizationScopedCollectionPermission("Project.View")]
     [HttpGet]
     public async Task<IActionResult> GetPaged(
         [FromQuery] int page = 1,
@@ -163,8 +168,8 @@ public class ProjectController : ControllerBase
     [HttpPost("{projectId:guid}/status-reports")]
     public async Task<IActionResult> CreateStatusReport(Guid projectId, [FromBody] CreateProjectStatusReportDto dto, CancellationToken cancellationToken)
     {
-        var userId = GetStatusReportActorId();
-        if (userId is null) return Unauthorized();
+        var actorError = RequireManagementActor(out var userId);
+        if (actorError is not null) return actorError;
         var result = await _projectStatusReportService.CreateAsync(projectId, dto, userId, cancellationToken);
         if (result.IsFailure) return StatusReportError(result.Error!);
         return CreatedAtAction(nameof(GetStatusReport), new { projectId, reportId = result.Value!.Id }, result.Value);
@@ -174,8 +179,8 @@ public class ProjectController : ControllerBase
     [HttpPut("{projectId:guid}/status-reports/{reportId:guid}")]
     public async Task<IActionResult> UpdateStatusReport(Guid projectId, Guid reportId, [FromBody] UpdateProjectStatusReportDto dto, CancellationToken cancellationToken)
     {
-        var userId = GetStatusReportActorId();
-        if (userId is null) return Unauthorized();
+        var actorError = RequireManagementActor(out var userId);
+        if (actorError is not null) return actorError;
         var result = await _projectStatusReportService.UpdateAsync(projectId, reportId, dto, userId, cancellationToken);
         if (result.IsFailure) return StatusReportError(result.Error!);
         return Ok(result.Value);
@@ -185,18 +190,11 @@ public class ProjectController : ControllerBase
     [HttpPost("{projectId:guid}/status-reports/{reportId:guid}/publish")]
     public async Task<IActionResult> PublishStatusReport(Guid projectId, Guid reportId, [FromBody] UpdateProjectStatusReportDto dto, CancellationToken cancellationToken)
     {
-        var userId = GetStatusReportActorId();
-        if (userId is null) return Unauthorized();
+        var actorError = RequireManagementActor(out var userId);
+        if (actorError is not null) return actorError;
         var result = await _projectStatusReportService.PublishAsync(projectId, reportId, dto, userId, cancellationToken);
         if (result.IsFailure) return StatusReportError(result.Error!);
         return Ok(result.Value);
-    }
-
-    private string? GetStatusReportActorId()
-    {
-        var actorId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
-            ?? User.FindFirst("sub")?.Value;
-        return string.IsNullOrWhiteSpace(actorId) ? null : actorId;
     }
 
     private IActionResult StatusReportError(Error error) => error.StatusCode switch
@@ -212,8 +210,8 @@ public class ProjectController : ControllerBase
     [HttpDelete("{projectId:guid}/status-reports/{reportId:guid}")]
     public async Task<IActionResult> DeleteStatusReport(Guid projectId, Guid reportId, CancellationToken cancellationToken)
     {
-        var userId = GetStatusReportActorId();
-        if (userId is null) return Unauthorized();
+        var actorError = RequireManagementActor(out var userId);
+        if (actorError is not null) return actorError;
         var result = await _projectStatusReportService.DeleteAsync(projectId, reportId, userId, cancellationToken);
         if (result.IsFailure) return StatusReportError(result.Error!);
         return NoContent();
@@ -241,7 +239,8 @@ public class ProjectController : ControllerBase
     [HttpPut("{projectId:guid}/reporting/configuration")]
     public async Task<IActionResult> SaveReportingConfiguration(Guid projectId, [FromBody] SaveProjectReportingConfigurationDto dto, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? string.Empty;
+        var actorError = RequireManagementActor(out var userId);
+        if (actorError is not null) return actorError;
         var result = await _projectReportingService.SaveConfigurationAsync(projectId, dto, userId, cancellationToken);
         if (result.IsFailure) return result.Error?.StatusCode switch
         {
@@ -273,9 +272,18 @@ public class ProjectController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateProjectDto dto, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        var actorError = RequireManagementActor(out var userId);
+        if (actorError is not null) return actorError;
         var result = await _projectService.CreateAsync(dto, userId, cancellationToken);
-        if (result.IsFailure) return BadRequest(new { error = result.Error?.Message });
+        if (result.IsFailure)
+            return result.Error?.StatusCode switch
+            {
+                401 => Unauthorized(new { error = result.Error.Message }),
+                403 => StatusCode(403, new { error = result.Error.Message }),
+                404 => NotFound(new { error = result.Error.Message }),
+                409 => Conflict(new { error = result.Error.Message }),
+                _ => BadRequest(new { error = result.Error?.Message })
+            };
         return CreatedAtAction(nameof(GetById), new { id = result.Value!.PublicId }, result.Value);
     }
 
@@ -283,7 +291,8 @@ public class ProjectController : ControllerBase
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateProjectDto dto, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        var actorError = RequireManagementActor(out var userId);
+        if (actorError is not null) return actorError;
         var result = await _projectService.UpdateAsync(id, dto, userId, cancellationToken);
         if (result.IsFailure)
             return result.Error?.StatusCode switch
@@ -299,7 +308,8 @@ public class ProjectController : ControllerBase
     [HttpPost("{id:guid}/status")]
     public async Task<IActionResult> ChangeStatus(Guid id, [FromBody] ChangeProjectStatusDto dto, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? string.Empty;
+        var actorError = RequireManagementActor(out var userId);
+        if (actorError is not null) return actorError;
         var result = await _projectService.ChangeStatusAsync(id, dto, userId, cancellationToken);
         if (result.IsFailure)
             return result.Error?.StatusCode switch
@@ -317,7 +327,8 @@ public class ProjectController : ControllerBase
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        var actorError = RequireManagementActor(out var userId);
+        if (actorError is not null) return actorError;
         var result = await _projectService.DeleteAsync(id, userId, cancellationToken);
         if (result.IsFailure) return NotFound(new { error = result.Error?.Message });
         return NoContent();
@@ -327,7 +338,8 @@ public class ProjectController : ControllerBase
     [HttpPost("{id:guid}/archive")]
     public async Task<IActionResult> Archive(Guid id, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        var actorError = RequireManagementActor(out var userId);
+        if (actorError is not null) return actorError;
         var result = await _projectService.ArchiveAsync(id, userId, cancellationToken);
         if (result.IsFailure)
             return result.Error?.StatusCode switch
@@ -342,7 +354,8 @@ public class ProjectController : ControllerBase
     [HttpPost("{id:guid}/reactivate")]
     public async Task<IActionResult> Reactivate(Guid id, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        var actorError = RequireManagementActor(out var userId);
+        if (actorError is not null) return actorError;
         var result = await _projectService.ReactivateAsync(id, userId, cancellationToken);
         if (result.IsFailure)
             return result.Error?.StatusCode switch
@@ -375,6 +388,8 @@ public class ProjectController : ControllerBase
     [HttpGet("{id:guid}/handover-managers")]
     public async Task<IActionResult> GetEligibleHandoverManagers(Guid id, CancellationToken cancellationToken)
     {
+        var actorError = RequireManagementActor(out _, requireWritable: false);
+        if (actorError is not null) return actorError;
         var result = await _projectHandoverRequestService.GetEligibleManagersAsync(id, cancellationToken);
         if (result.IsFailure)
             return result.Error?.StatusCode switch
@@ -391,7 +406,8 @@ public class ProjectController : ControllerBase
     [HttpGet("{id:guid}/handover-capabilities")]
     public async Task<IActionResult> GetHandoverCapabilities(Guid id, CancellationToken cancellationToken)
     {
-        var actorId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? string.Empty;
+        var actorError = RequireManagementActor(out var actorId, requireWritable: false);
+        if (actorError is not null) return actorError;
         var result = await _projectHandoverRequestService.GetCapabilitiesAsync(id, actorId, cancellationToken);
         if (result.IsFailure)
             return result.Error?.StatusCode == 404 ? NotFound(new { error = result.Error.Message }) : Forbid();
@@ -402,7 +418,8 @@ public class ProjectController : ControllerBase
     [HttpPost("{id:guid}/handover-requests")]
     public async Task<IActionResult> CreateHandoverRequest(Guid id, [FromBody] CreateProjectHandoverRequestDto dto, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        var actorError = RequireManagementActor(out var userId);
+        if (actorError is not null) return actorError;
         var result = await _projectHandoverRequestService.CreateAsync(id, dto, userId, cancellationToken);
         if (result.IsFailure)
             return new ObjectResult(result.Error) { StatusCode = result.Error!.StatusCode };
@@ -413,7 +430,8 @@ public class ProjectController : ControllerBase
     [HttpPost("{id:guid}/handover-requests/admin")]
     public async Task<IActionResult> CreateAdministrativeHandoverRequest(Guid id, [FromBody] CreateProjectHandoverRequestDto dto, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? string.Empty;
+        var actorError = RequireManagementActor(out var userId);
+        if (actorError is not null) return actorError;
         var result = await _projectHandoverRequestService.CreateAdminInitiatedAsync(id, dto, userId, cancellationToken);
         if (result.IsFailure)
             return new ObjectResult(result.Error) { StatusCode = result.Error!.StatusCode };
@@ -424,7 +442,8 @@ public class ProjectController : ControllerBase
     [HttpPost("{id:guid}/handover-requests/initial-assignment")]
     public async Task<IActionResult> CreateInitialManagerAssignment(Guid id, [FromBody] CreateProjectHandoverRequestDto dto, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? string.Empty;
+        var actorError = RequireManagementActor(out var userId);
+        if (actorError is not null) return actorError;
         var result = await _projectHandoverRequestService.CreateInitialAssignmentAsync(id, dto, userId, cancellationToken);
         if (result.IsFailure)
             return new ObjectResult(result.Error) { StatusCode = result.Error!.StatusCode };
@@ -435,7 +454,8 @@ public class ProjectController : ControllerBase
     [HttpGet("{id:guid}/handover-requests")]
     public async Task<IActionResult> GetHandoverRequests(Guid id, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? string.Empty;
+        var actorError = RequireManagementActor(out var userId, requireWritable: false);
+        if (actorError is not null) return actorError;
         var result = await _projectHandoverRequestService.GetForProjectAsync(id, userId, cancellationToken);
         if (result.IsFailure) return NotFound(new { error = result.Error?.Message });
         return Ok(result.Value);
@@ -468,8 +488,9 @@ public class ProjectController : ControllerBase
     [HttpPost("{id:guid}/team")]
     public async Task<IActionResult> AddTeamMember(Guid id, [FromBody] CreateProjectMemberDto dto, CancellationToken cancellationToken)
     {
+        var actorError = RequireManagementActor(out var userId);
+        if (actorError is not null) return actorError;
         if (dto.TeamId.HasValue && !await HasTeamViewPermissionAsync()) return Forbid();
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
         dto.ProjectId = id;
         var result = await _projectService.AddTeamMemberAsync(id, dto, userId, cancellationToken);
         if (result.IsFailure)
@@ -485,8 +506,9 @@ public class ProjectController : ControllerBase
     [HttpPut("{id:guid}/team/{memberId:guid}")]
     public async Task<IActionResult> UpdateTeamMember(Guid id, Guid memberId, [FromBody] UpdateProjectMemberDto dto, CancellationToken cancellationToken)
     {
+        var actorError = RequireManagementActor(out var userId);
+        if (actorError is not null) return actorError;
         if (await _projectService.IsTeamGroupAssignmentAsync(id, memberId, cancellationToken) && !await HasTeamViewPermissionAsync()) return Forbid();
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
         var result = await _projectService.UpdateTeamMemberAsync(id, memberId, dto, userId, cancellationToken);
         if (result.IsFailure)
             return result.Error?.StatusCode switch
@@ -501,8 +523,9 @@ public class ProjectController : ControllerBase
     [HttpDelete("{id:guid}/team/{memberId:guid}")]
     public async Task<IActionResult> RemoveTeamMember(Guid id, Guid memberId, CancellationToken cancellationToken)
     {
+        var actorError = RequireManagementActor(out var userId);
+        if (actorError is not null) return actorError;
         if (await _projectService.IsTeamGroupAssignmentAsync(id, memberId, cancellationToken) && !await HasTeamViewPermissionAsync()) return Forbid();
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
         var result = await _projectService.RemoveTeamMemberAsync(id, memberId, userId, cancellationToken);
         if (result.IsFailure) return NotFound(new { error = result.Error?.Message });
         return NoContent();
@@ -526,4 +549,24 @@ public class ProjectController : ControllerBase
 
     private async Task<bool> HasTeamViewPermissionAsync() => _authorization is not null
         && (await _authorization.AuthorizeAsync(User, "Team.View")).Succeeded;
+
+    private IActionResult? RequireManagementActor(out string actorId, bool requireWritable = true)
+    {
+        actorId = string.Empty;
+        var principal = User;
+        var actorValue = principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? principal.FindFirstValue("sub");
+        if (principal.Identity?.IsAuthenticated != true
+            || !Guid.TryParse(actorValue, out var userId)
+            || userId == Guid.Empty
+            || !Guid.TryParse(principal.FindFirstValue("tenantId"), out var tenantId)
+            || tenantId == Guid.Empty)
+            return Unauthorized();
+
+        var context = _managementContext?.Current;
+        if (context is null || context.UserId != userId || context.TenantId != tenantId || (requireWritable && context.EffectiveReadOnly))
+            return Forbid();
+
+        actorId = userId.ToString();
+        return null;
+    }
 }

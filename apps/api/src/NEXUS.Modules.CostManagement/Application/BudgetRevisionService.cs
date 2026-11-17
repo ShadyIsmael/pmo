@@ -152,6 +152,9 @@ public sealed class BudgetRevisionService : IBudgetRevisionService
     {
         var accessError = FinancePermissionGuard.Require(_httpContextAccessor, "BudgetRevision.Create");
         if (accessError is not null) return Result<BudgetRevisionDto>.Failure(accessError);
+        var writeContextError = FinancePermissionGuard.RequireWritableActorContext(
+            _httpContextAccessor, _managementContext?.Current, userId, CurrentTenant());
+        if (writeContextError is not null) return Result<BudgetRevisionDto>.Failure(writeContextError);
         var budget = await _context.Set<Budget>()
             .FirstOrDefaultAsync(b => b.Id == dto.BudgetId && b.TenantId == CurrentTenant() && !b.IsDeleted, cancellationToken);
 
@@ -159,6 +162,8 @@ public sealed class BudgetRevisionService : IBudgetRevisionService
             return Result<BudgetRevisionDto>.Failure(Error.NotFound("Budget not found"));
         if (!await HasBudgetManagementScopeAsync(budget, cancellationToken))
             return Result<BudgetRevisionDto>.Failure(Error.NotFound("Budget not found"));
+        if (!ProjectBudgetOwnershipGuard.IsProjectOwned(budget.ProjectId))
+            return Result<BudgetRevisionDto>.Failure(Error.Forbidden("Portfolio rollup budgets are read-only."));
 
         if (dto.ProposedApprovedAmount < 0)
             return Result<BudgetRevisionDto>.Failure(Error.Validation("Proposed amount cannot be negative"));
@@ -216,6 +221,9 @@ public sealed class BudgetRevisionService : IBudgetRevisionService
     {
         var accessError = FinancePermissionGuard.Require(_httpContextAccessor, "BudgetRevision.EditDraft");
         if (accessError is not null) return Result<BudgetRevisionDto>.Failure(accessError);
+        var writeContextError = FinancePermissionGuard.RequireWritableActorContext(
+            _httpContextAccessor, _managementContext?.Current, userId, CurrentTenant());
+        if (writeContextError is not null) return Result<BudgetRevisionDto>.Failure(writeContextError);
         var revision = await ApplyManagementScope(_context.Set<BudgetRevision>().Where(item => item.TenantId == CurrentTenant()))
             .FirstOrDefaultAsync(r => r.Id == id && !r.IsDeleted, cancellationToken);
 
@@ -223,6 +231,8 @@ public sealed class BudgetRevisionService : IBudgetRevisionService
             return Result<BudgetRevisionDto>.Failure(Error.NotFound("Budget revision not found"));
         if (!await HasRevisionManagementScopeAsync(revision, cancellationToken))
             return Result<BudgetRevisionDto>.Failure(Error.NotFound("Budget revision not found"));
+        if (!await HasProjectOwnedBudgetAsync(revision, cancellationToken))
+            return Result<BudgetRevisionDto>.Failure(Error.Forbidden("Portfolio rollup budget revisions are read-only."));
 
         if (revision.Status != BudgetRevision.Statuses.Draft)
             return Result<BudgetRevisionDto>.Failure(Error.Validation("Only draft revisions can be edited"));
@@ -257,11 +267,16 @@ public sealed class BudgetRevisionService : IBudgetRevisionService
     {
         var accessError = FinancePermissionGuard.Require(_httpContextAccessor, "BudgetRevision.SubmitForReview");
         if (accessError is not null) return Result.Failure(accessError);
+        var writeContextError = FinancePermissionGuard.RequireWritableActorContext(
+            _httpContextAccessor, _managementContext?.Current, userId, CurrentTenant());
+        if (writeContextError is not null) return Result.Failure(writeContextError);
         var revision = await ApplyManagementScope(_context.Set<BudgetRevision>().Where(item => item.TenantId == CurrentTenant()))
             .FirstOrDefaultAsync(r => r.Id == id && !r.IsDeleted, cancellationToken);
 
         if (revision is null)
             return Result.Failure(Error.NotFound("Budget revision not found"));
+        if (!await HasProjectOwnedBudgetAsync(revision, cancellationToken))
+            return Result.Failure(Error.Forbidden("Portfolio rollup budget revisions are read-only."));
 
         var workflowGuard = await EnsureStandardFinanceMutationAsync(revision, userId, cancellationToken);
         if (workflowGuard is not null) return workflowGuard;
@@ -288,6 +303,9 @@ public sealed class BudgetRevisionService : IBudgetRevisionService
     {
         var accessError = FinancePermissionGuard.Require(_httpContextAccessor, "BudgetRevision.Approve");
         if (accessError is not null) return Result.Failure(accessError);
+        var writeContextError = FinancePermissionGuard.RequireWritableActorContext(
+            _httpContextAccessor, _managementContext?.Current, userId, CurrentTenant());
+        if (writeContextError is not null) return Result.Failure(writeContextError);
         await using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
         var revision = await ApplyManagementScope(_context.Set<BudgetRevision>().Where(item => item.TenantId == CurrentTenant()))
             .Include(r => r.Budget)
@@ -298,6 +316,9 @@ public sealed class BudgetRevisionService : IBudgetRevisionService
 
         if (!await HasRevisionManagementScopeAsync(revision, cancellationToken))
             return Result.Failure(Error.NotFound("Budget revision not found"));
+        if (revision.Budget is null || !ProjectBudgetOwnershipGuard.IsProjectOwned(revision.Budget.ProjectId)
+            || revision.ProjectId != revision.Budget.ProjectId.Value)
+            return Result.Failure(Error.Forbidden("Portfolio rollup budget revisions are read-only."));
         var workflowGuard = await EnsureStandardFinanceMutationAsync(revision, userId, cancellationToken);
         if (workflowGuard is not null) return workflowGuard;
 
@@ -347,11 +368,16 @@ public sealed class BudgetRevisionService : IBudgetRevisionService
     {
         var accessError = FinancePermissionGuard.Require(_httpContextAccessor, "BudgetRevision.Approve");
         if (accessError is not null) return Result.Failure(accessError);
+        var writeContextError = FinancePermissionGuard.RequireWritableActorContext(
+            _httpContextAccessor, _managementContext?.Current, userId, CurrentTenant());
+        if (writeContextError is not null) return Result.Failure(writeContextError);
         var revision = await ApplyManagementScope(_context.Set<BudgetRevision>().Where(item => item.TenantId == CurrentTenant()))
             .FirstOrDefaultAsync(r => r.Id == id && !r.IsDeleted, cancellationToken);
 
         if (revision is null)
             return Result.Failure(Error.NotFound("Budget revision not found"));
+        if (!await HasProjectOwnedBudgetAsync(revision, cancellationToken))
+            return Result.Failure(Error.Forbidden("Portfolio rollup budget revisions are read-only."));
 
         var workflowGuard = await EnsureStandardFinanceMutationAsync(revision, userId, cancellationToken);
         if (workflowGuard is not null) return workflowGuard;
@@ -389,11 +415,16 @@ public sealed class BudgetRevisionService : IBudgetRevisionService
     {
         var accessError = FinancePermissionGuard.Require(_httpContextAccessor, "BudgetRevision.Cancel");
         if (accessError is not null) return Result.Failure(accessError);
+        var writeContextError = FinancePermissionGuard.RequireWritableActorContext(
+            _httpContextAccessor, _managementContext?.Current, userId, CurrentTenant());
+        if (writeContextError is not null) return Result.Failure(writeContextError);
         var revision = await ApplyManagementScope(_context.Set<BudgetRevision>().Where(item => item.TenantId == CurrentTenant()))
             .FirstOrDefaultAsync(r => r.Id == id && !r.IsDeleted, cancellationToken);
 
         if (revision is null)
             return Result.Failure(Error.NotFound("Budget revision not found"));
+        if (!await HasProjectOwnedBudgetAsync(revision, cancellationToken))
+            return Result.Failure(Error.Forbidden("Portfolio rollup budget revisions are read-only."));
 
         var workflowGuard = await EnsureStandardFinanceMutationAsync(revision, userId, cancellationToken);
         if (workflowGuard is not null) return workflowGuard;
@@ -417,6 +448,9 @@ public sealed class BudgetRevisionService : IBudgetRevisionService
     {
         var accessError = FinancePermissionGuard.Require(_httpContextAccessor, "BudgetRevision.Delete");
         if (accessError is not null) return Result.Failure(accessError);
+        var writeContextError = FinancePermissionGuard.RequireWritableActorContext(
+            _httpContextAccessor, _managementContext?.Current, userId, CurrentTenant());
+        if (writeContextError is not null) return Result.Failure(writeContextError);
         var revision = await ApplyManagementScope(_context.Set<BudgetRevision>().Where(item => item.TenantId == CurrentTenant()))
             .FirstOrDefaultAsync(r => r.Id == id && !r.IsDeleted, cancellationToken);
 
@@ -424,6 +458,8 @@ public sealed class BudgetRevisionService : IBudgetRevisionService
             return Result.Failure(Error.NotFound("Budget revision not found"));
         if (!await HasRevisionManagementScopeAsync(revision, cancellationToken))
             return Result.Failure(Error.NotFound("Budget revision not found"));
+        if (!await HasProjectOwnedBudgetAsync(revision, cancellationToken))
+            return Result.Failure(Error.Forbidden("Portfolio rollup budget revisions are read-only."));
 
         if (revision.Status != BudgetRevision.Statuses.Draft)
             return Result.Failure(Error.Validation("Only draft revisions can be deleted"));
@@ -518,6 +554,16 @@ public sealed class BudgetRevisionService : IBudgetRevisionService
         var scope = management.Scope;
         if (budget.ProjectId.HasValue) return Task.FromResult(scope.ProjectIds.Contains(budget.ProjectId.Value));
         return Task.FromResult(budget.PortfolioId.HasValue && scope.PortfolioIds.Contains(budget.PortfolioId.Value));
+    }
+
+    private async Task<bool> HasProjectOwnedBudgetAsync(BudgetRevision revision, CancellationToken cancellationToken)
+    {
+        var budgetProjectId = await _context.Set<Budget>().AsNoTracking()
+            .Where(budget => budget.Id == revision.BudgetId && budget.TenantId == CurrentTenant() && !budget.IsDeleted)
+            .Select(budget => budget.ProjectId)
+            .FirstOrDefaultAsync(cancellationToken);
+        return ProjectBudgetOwnershipGuard.IsProjectOwned(budgetProjectId)
+            && revision.ProjectId == budgetProjectId;
     }
 
     private async Task<bool> HasRevisionManagementScopeAsync(BudgetRevision revision, CancellationToken cancellationToken)

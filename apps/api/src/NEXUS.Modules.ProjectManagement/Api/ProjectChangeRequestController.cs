@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using NEXUS.Modules.ProjectManagement.Application;
 using NEXUS.Modules.ProjectManagement.Application.DTOs;
 using NEXUS.SharedKernel;
+using NEXUS.SharedKernel.Management;
 
 namespace NEXUS.Modules.ProjectManagement.Api;
 
@@ -11,17 +12,20 @@ namespace NEXUS.Modules.ProjectManagement.Api;
 public class ProjectChangeRequestController : ControllerBase
 {
     private readonly IProjectChangeRequestService _projectChangeRequestService;
+    private readonly IManagementContextAccessor? _managementContext;
 
-    public ProjectChangeRequestController(IProjectChangeRequestService projectChangeRequestService)
+    public ProjectChangeRequestController(IProjectChangeRequestService projectChangeRequestService, IManagementContextAccessor? managementContext = null)
     {
         _projectChangeRequestService = projectChangeRequestService;
+        _managementContext = managementContext;
     }
 
     [Authorize(Policy = "ChangeRequest.Manage")]
     [HttpPost("api/projects/{projectId:guid}/change-requests")]
     public async Task<IActionResult> Create(Guid projectId, [FromBody] CreateProjectChangeRequestDto dto, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        var denied = ManagementActorBinding.RequireActor(this, _managementContext, requireWritable: true, out var userId);
+        if (denied is not null) return denied;
         dto.ProjectId = projectId;
         var result = await _projectChangeRequestService.CreateAsync(dto, userId, cancellationToken);
         if (result.IsFailure)
@@ -41,7 +45,8 @@ public class ProjectChangeRequestController : ControllerBase
     [HttpPut("api/project-change-requests/{id:guid}")]
     public async Task<IActionResult> UpdateDraft(Guid id, [FromBody] UpdateProjectChangeRequestDto dto, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        var denied = ManagementActorBinding.RequireActor(this, _managementContext, requireWritable: true, out var userId);
+        if (denied is not null) return denied;
         var result = await _projectChangeRequestService.UpdateDraftAsync(id, dto, userId, cancellationToken);
         return result.IsFailure ? MapError(result.Error) : Ok(result.Value);
     }
@@ -50,7 +55,8 @@ public class ProjectChangeRequestController : ControllerBase
     [HttpPost("api/project-change-requests/{id:guid}/submit")]
     public async Task<IActionResult> Submit(Guid id, [FromBody] SubmitProjectChangeRequestDto dto, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        var denied = ManagementActorBinding.RequireActor(this, _managementContext, requireWritable: true, out var userId);
+        if (denied is not null) return denied;
         var result = await _projectChangeRequestService.SubmitAsync(id, dto, userId, cancellationToken);
         return result.IsFailure ? MapError(result.Error) : Ok(result.Value);
     }
@@ -97,7 +103,8 @@ public class ProjectChangeRequestController : ControllerBase
     [HttpPost("api/project-change-requests/{id:guid}/approve")]
     public async Task<IActionResult> Approve(Guid id, [FromBody] ApproveProjectChangeRequestDto dto, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        var denied = ManagementActorBinding.RequireActor(this, _managementContext, requireWritable: true, out var userId);
+        if (denied is not null) return denied;
         var result = await _projectChangeRequestService.ApproveAsync(id, dto, userId, cancellationToken);
         if (result.IsFailure)
             return MapError(result.Error);
@@ -108,7 +115,8 @@ public class ProjectChangeRequestController : ControllerBase
     [HttpPost("api/project-change-requests/{id:guid}/reject")]
     public async Task<IActionResult> Reject(Guid id, [FromBody] RejectProjectChangeRequestDto dto, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        var denied = ManagementActorBinding.RequireActor(this, _managementContext, requireWritable: true, out var userId);
+        if (denied is not null) return denied;
         var result = await _projectChangeRequestService.RejectAsync(id, dto, userId, cancellationToken);
         if (result.IsFailure)
             return MapError(result.Error);
@@ -119,7 +127,8 @@ public class ProjectChangeRequestController : ControllerBase
     [HttpPost("api/project-change-requests/{id:guid}/cancel")]
     public async Task<IActionResult> Cancel(Guid id, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        var denied = ManagementActorBinding.RequireActor(this, _managementContext, requireWritable: true, out var userId);
+        if (denied is not null) return denied;
         var result = await _projectChangeRequestService.CancelAsync(id, userId, cancellationToken);
         if (result.IsFailure)
             return MapError(result.Error);
@@ -130,7 +139,8 @@ public class ProjectChangeRequestController : ControllerBase
     [HttpPost("api/project-change-requests/{id:guid}/remediate")]
     public async Task<IActionResult> Remediate(Guid id, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        var denied = ManagementActorBinding.RequireActor(this, _managementContext, requireWritable: true, out var userId);
+        if (denied is not null) return denied;
         var result = await _projectChangeRequestService.RemediateLegacyAsync(id, userId, cancellationToken);
         return result.IsFailure ? MapError(result.Error) : Ok(result.Value);
     }
@@ -139,7 +149,8 @@ public class ProjectChangeRequestController : ControllerBase
     [HttpPost("api/project-change-requests/{id:guid}/approvals/{assignmentId:guid}/reassign")]
     public async Task<IActionResult> Reassign(Guid id, Guid assignmentId, [FromBody] ReassignProjectChangeRequestApprovalDto dto, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        var denied = ManagementActorBinding.RequireActor(this, _managementContext, requireWritable: true, out var userId);
+        if (denied is not null) return denied;
         var result = await _projectChangeRequestService.ReassignApprovalAsync(id, assignmentId, dto, userId, cancellationToken);
         return result.IsFailure ? MapError(result.Error) : Ok(result.Value);
     }

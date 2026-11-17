@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.Authorization;
 using NEXUS.Modules.Audit.Application;
@@ -20,6 +20,9 @@ public static class OrganizationModuleRegistration
         services.AddScoped<ITenantFiscalYearService, TenantFiscalYearService>();
         services.AddScoped<IConfigurationSettingsService, ConfigurationSettingsService>();
         services.AddScoped<IOrganizationSettingsAccessService, OrganizationSettingsAccessService>();
+        services.AddScoped<NEXUS.SharedKernel.IUserOrganizationDirectory, UserOrganizationDirectory>();
+        services.AddScoped<NEXUS.SharedKernel.IUserOrganizationMembershipIntegrity, UserOrganizationMembershipIntegrity>();
+        services.AddScoped<NEXUS.SharedKernel.IUserOrganizationSettingsPermissionLookup, UserOrganizationSettingsPermissionLookup>();
         services.AddScoped<IPhaseGateConfigurationService, PhaseGateConfigurationService>();
         services.AddScoped<ITenantProvisioningService, TenantProvisioningService>();
         services.AddScoped<NEXUS.SharedKernel.ITenantRegistryStatusValidator, TenantRegistryStatusValidator>();
@@ -41,14 +44,16 @@ public static class OrganizationModuleRegistration
             var httpContextAccessor = sp.GetRequiredService<Microsoft.AspNetCore.Http.IHttpContextAccessor>();
             var auditService = sp.GetRequiredService<IAuditService>();
             var organizationSettingsAccess = sp.GetRequiredService<IOrganizationSettingsAccessService>();
-            return new OrganizationService(context, httpContextAccessor, auditService, organizationSettingsAccess);
+            var managementContext = sp.GetRequiredService<NEXUS.SharedKernel.Management.IManagementContextAccessor>();
+            return new OrganizationService(context, httpContextAccessor, auditService, organizationSettingsAccess, managementContext);
         });
         services.AddScoped<IOrganizationalUnitService>(sp =>
         {
             var context = sp.GetRequiredService<DbContext>();
             var httpContextAccessor = sp.GetRequiredService<Microsoft.AspNetCore.Http.IHttpContextAccessor>();
             var resourceLookup = sp.GetRequiredService<NEXUS.SharedKernel.IResourceReferenceLookup>();
-            return new OrganizationalUnitService(context, httpContextAccessor, resourceLookup);
+            var managementContext = sp.GetRequiredService<NEXUS.SharedKernel.Management.IManagementContextAccessor>();
+            return new OrganizationalUnitService(context, httpContextAccessor, resourceLookup, managementContext);
         });
         services.AddScoped<IBusinessUnitService>(sp =>
         {

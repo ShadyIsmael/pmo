@@ -558,8 +558,8 @@ export function OrganizationPage() {
   const tenantQuery = useQuery({
     queryKey: ["organization", "tenant-name", user?.tenantId, user?.id],
     queryFn: async () => {
-      const result = await api.get<{ items: Array<{ name?: string }> }>("/api/organizations", { page: 1, pageSize: 1 });
-      return result.items[0]?.name ?? null;
+      const result = await api.get<{ displayName?: string }>(endpoints.tenant.current);
+      return result.displayName?.trim() || null;
     },
     enabled: Boolean(user),
     staleTime: 300_000,

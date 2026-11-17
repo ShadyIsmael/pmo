@@ -26,8 +26,9 @@ public sealed class DocumentCategoryAuthorizationContractTests
             .Where(action => action.Route is not null)
             .ToArray();
 
-        Assert.Equal(6, actions.Length);
-        Assert.Collection(actions.Where(action => action.Policy != DocumentCategoryPermissions.TemplateOptionsLookupPolicy)
+        Assert.Equal(7, actions.Length);
+        Assert.Collection(actions.Where(action => action.Policy != DocumentCategoryPermissions.TemplateOptionsLookupPolicy
+                    && action.Route!.Template != "project-upload-options")
                 .OrderBy(action => action.Route!.HttpMethods.Single()).ThenBy(action => action.Route!.Template),
             action => AssertAction(action.Route!, action.Policy, "GET", null, "DocumentCategory.View"),
             action => AssertAction(action.Route!, action.Policy, "GET", "{id:guid}", "DocumentCategory.View"),
@@ -39,6 +40,11 @@ public sealed class DocumentCategoryAuthorizationContractTests
         Assert.Contains("GET", templateOptions.Route!.HttpMethods);
         Assert.Equal("template-options", templateOptions.Route.Template);
         Assert.Equal(DocumentCategoryPermissions.TemplateOptionsLookupPolicy, templateOptions.Policy);
+
+        var projectUploadOptions = Assert.Single(actions, action => action.Route?.Template == "project-upload-options");
+        Assert.Contains("GET", projectUploadOptions.Route!.HttpMethods);
+        Assert.Equal(DocumentPermissions.Create, projectUploadOptions.Policy);
+        Assert.Contains(DocumentPermissions.Create, PermissionCatalog.ByKey.Keys);
     }
 
     [Fact]

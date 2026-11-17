@@ -166,6 +166,39 @@ public sealed class WorkflowExecutionPhase2Tests : IDisposable
         Assert.True(instance.IsActive);
     }
 
+    [Fact]
+    public async Task Provision_Requires_write_authorization_even_when_entity_is_readable()
+    {
+        SeedWorkflow();
+        var entityId = Guid.NewGuid();
+        _adapter.AddEntity(entityId, "Open", "Open", "Open");
+        _adapter.ProvisionAuthorized = false;
+
+        var read = await _adapter.AuthorizeAsync(DefaultCtx, entityId);
+        var provision = await _instanceService.ProvisionAsync("TestEntity", entityId, "TEST-WF", DefaultCtx);
+
+        Assert.True(read.IsSuccess);
+        Assert.True(provision.IsFailure);
+        Assert.Equal(403, provision.Error!.StatusCode);
+        Assert.False(_db.Set<WorkflowInstance>().Any(item => item.EntityId == entityId));
+
+        var readOnlyEntityId = Guid.NewGuid();
+        _adapter.AddEntity(readOnlyEntityId, "Open", "Open", "Open");
+        var readOnlyProvision = await _instanceService.ProvisionAsync(
+            "TestEntity", readOnlyEntityId, "TEST-WF", DefaultCtx with { ReadOnly = true });
+        Assert.True(readOnlyProvision.IsFailure);
+        Assert.Equal(403, readOnlyProvision.Error!.StatusCode);
+        Assert.False(_db.Set<WorkflowInstance>().Any(item => item.EntityId == readOnlyEntityId));
+
+        var unknownActorEntityId = Guid.NewGuid();
+        _adapter.AddEntity(unknownActorEntityId, "Open", "Open", "Open");
+        var unknownActorProvision = await _instanceService.ProvisionAsync(
+            "TestEntity", unknownActorEntityId, "TEST-WF", DefaultCtx with { UserId = "unknown" });
+        Assert.True(unknownActorProvision.IsFailure);
+        Assert.Equal(401, unknownActorProvision.Error!.StatusCode);
+        Assert.False(_db.Set<WorkflowInstance>().Any(item => item.EntityId == unknownActorEntityId));
+    }
+
     #endregion
 
     #region 2. Provision_InitialState_IsOpen
@@ -822,6 +855,7 @@ public sealed class WorkflowExecutionPhase2Tests : IDisposable
         private readonly Dictionary<Guid, TestEntityState> _entities = new();
 
         public string EntityType => "TestEntity";
+        public bool ProvisionAuthorized { get; set; } = true;
 
         public void AddEntity(Guid id, string stateCode, string stateNameEn, string stateNameAr)
         {
@@ -873,6 +907,16 @@ public sealed class WorkflowExecutionPhase2Tests : IDisposable
                 return Task.FromResult(Result.Failure(WorkflowErrors.CrossTenantAccess));
 
             return Task.FromResult(Result.Success());
+        }
+
+        public Task<Result> AuthorizeProvisionAsync(
+            WorkflowExecutionContext context,
+            Guid entityId,
+            CancellationToken cancellationToken = default)
+        {
+            if (!ProvisionAuthorized)
+                return Task.FromResult(Result.Failure(NEXUS.SharedKernel.Error.Forbidden("Test entity write permission is required.")));
+            return AuthorizeAsync(context, entityId, cancellationToken);
         }
 
         public Task<Result> AuthorizeTransitionAsync(

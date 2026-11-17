@@ -22,7 +22,10 @@ public sealed class ProjectHandoverManagerServiceTests : IDisposable
 {
     private static readonly Guid TenantA = Guid.Parse("10000000-0000-0000-0000-000000000001");
     private static readonly Guid TenantB = Guid.Parse("20000000-0000-0000-0000-000000000001");
+    private static readonly Guid OrganizationA = Guid.Parse("10000000-0000-0000-0000-000000000002");
+    private static readonly Guid OrganizationB = Guid.Parse("10000000-0000-0000-0000-000000000003");
     private static readonly Guid ProjectId = Guid.Parse("10000000-0000-0000-0000-000000000010");
+    private static readonly Guid OtherProjectId = Guid.Parse("10000000-0000-0000-0000-000000000022");
     private static readonly Guid CurrentManagerId = Guid.Parse("10000000-0000-0000-0000-000000000011");
     private static readonly Guid ProjectManagerId = Guid.Parse("10000000-0000-0000-0000-000000000012");
     private static readonly Guid PortfolioManagerId = Guid.Parse("10000000-0000-0000-0000-000000000013");
@@ -128,6 +131,95 @@ public sealed class ProjectHandoverManagerServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task OrganizationRoleHandoverPermissions_AuthorizeWithinProjectOrganizationOnly()
+    {
+        var otherProject = new Project
+        {
+            Id = OtherProjectId,
+            TenantId = TenantA,
+            Name = "Project B",
+            Code = "PB",
+            ProjectManagerId = CurrentManagerId,
+            CreatedBy = AdminId.ToString(),
+            RowVersion = new byte[8]
+        };
+        _context.Projects.Add(otherProject);
+        await _context.SaveChangesAsync();
+
+        var projectOrganizations = new Mock<IProjectOrganizationLookup>();
+        projectOrganizations
+            .Setup(lookup => lookup.ResolveOrganizationIdAsync(TenantA, ProjectId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(OrganizationA);
+        projectOrganizations
+            .Setup(lookup => lookup.ResolveOrganizationIdAsync(TenantA, OtherProjectId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(OrganizationB);
+
+        var scopedPermissions = new Mock<IUserEffectivePermissionService>();
+        scopedPermissions
+            .Setup(service => service.GetEffectivePermissionsForOrganizationAsync(
+                It.IsAny<Guid>(), TenantA, It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Guid userId, Guid _, Guid organizationId, CancellationToken _) =>
+            {
+                if (organizationId != OrganizationA) return new HashSet<string>(StringComparer.Ordinal);
+                if (userId == AdminId) return new HashSet<string>(StringComparer.Ordinal) { "Handover.View", "Handover.AdminInitiate" };
+                if (userId == ProjectManagerId) return new HashSet<string>(StringComparer.Ordinal) { "Handover.View", "Handover.Approve" };
+                if (userId == NoApproveManagerId) return new HashSet<string>(StringComparer.Ordinal) { "Handover.View" };
+                if (userId == UnassignedManagementCandidateId) return new HashSet<string>(StringComparer.Ordinal) { "Handover.AdminInitiate" };
+                return new HashSet<string>(StringComparer.Ordinal);
+            });
+
+        var scopedService = new ProjectHandoverRequestService(
+            _context,
+            new ProjectSnapshotService(_context, _audit.Object, _httpContextAccessor.Object, new ProjectManagerMembershipSynchronizer(_context)),
+            _notifications.Object,
+            _httpContextAccessor.Object,
+            scopedPermissions.Object,
+            projectOrganizationLookup: projectOrganizations.Object);
+
+        SetTenant(TenantA, AdminId);
+        var created = await scopedService.CreateAdminInitiatedAsync(ProjectId, new NEXUS.Modules.ProjectManagement.Application.DTOs.CreateProjectHandoverRequestDto
+        {
+            NewProjectManagerId = ProjectManagerId,
+            EffectiveHandoverDate = DateTime.UtcNow.Date.AddDays(7),
+            Reason = "Organization scoped transition"
+        }, AdminId.ToString());
+        Assert.True(created.IsSuccess, created.Error?.Message);
+
+        SetTenant(TenantA, NoApproveManagerId);
+        var viewOnlyList = await scopedService.GetForProjectAsync(ProjectId, NoApproveManagerId.ToString());
+        Assert.True(viewOnlyList.IsSuccess, viewOnlyList.Error?.Message);
+        Assert.Single(viewOnlyList.Value!);
+
+        SetTenant(TenantA, UnassignedManagementCandidateId);
+        var initiateWithoutView = await scopedService.GetForProjectAsync(ProjectId, UnassignedManagementCandidateId.ToString());
+        Assert.True(initiateWithoutView.IsFailure);
+        Assert.Equal(403, initiateWithoutView.Error?.StatusCode);
+
+        SetTenant(TenantA, AdminId);
+        var crossOrganizationList = await scopedService.GetForProjectAsync(OtherProjectId, AdminId.ToString());
+        Assert.True(crossOrganizationList.IsFailure);
+        Assert.Equal(403, crossOrganizationList.Error?.StatusCode);
+        var crossOrganizationInitiation = await scopedService.CreateAdminInitiatedAsync(OtherProjectId, new NEXUS.Modules.ProjectManagement.Application.DTOs.CreateProjectHandoverRequestDto
+        {
+            NewProjectManagerId = ProjectManagerId,
+            EffectiveHandoverDate = DateTime.UtcNow.Date.AddDays(7),
+            Reason = "Should remain organization restricted"
+        }, AdminId.ToString());
+        Assert.True(crossOrganizationInitiation.IsFailure);
+        Assert.Equal(403, crossOrganizationInitiation.Error?.StatusCode);
+
+        SetTenant(TenantA, CurrentManagerId);
+        var deniedInitiation = await scopedService.CreateAdminInitiatedAsync(ProjectId, new NEXUS.Modules.ProjectManagement.Application.DTOs.CreateProjectHandoverRequestDto
+        {
+            NewProjectManagerId = ProjectManagerId,
+            EffectiveHandoverDate = DateTime.UtcNow.Date.AddDays(7),
+            Reason = "No initiate grant"
+        }, CurrentManagerId.ToString());
+        Assert.True(deniedInitiation.IsFailure);
+        Assert.Equal(403, deniedInitiation.Error?.StatusCode);
+    }
+
+    [Fact]
     public async Task AdministratorInitialAssignment_StaysUnassignedUntilIncomingManagerAccepts()
     {
         SetTenant(TenantA, AdminId);
@@ -172,7 +264,7 @@ public sealed class ProjectHandoverManagerServiceTests : IDisposable
         }, AdminId.ToString());
         Assert.True(created.IsSuccess);
 
-        var role = await _context.Roles.SingleAsync(item => item.Name == "delivery.lead");
+        var role = await _context.Roles.SingleAsync(item => item.Name == "delivery.lead" && item.TenantId == TenantA && !item.IsDeleted);
         role.Category = "Operation";
         await _context.SaveChangesAsync();
 

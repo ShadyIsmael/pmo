@@ -1,10 +1,12 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Http;
 using NEXUS.Modules.Audit.Application;
 using NEXUS.Modules.Audit.Domain;
 using NEXUS.Modules.ResourceManagement.Application.DTOs;
 using NEXUS.Modules.ResourceManagement.Application.Mapping;
 using NEXUS.Modules.ResourceManagement.Domain;
 using NEXUS.SharedKernel;
+using NEXUS.SharedKernel.Management;
 
 namespace NEXUS.Modules.ResourceManagement.Application;
 
@@ -12,11 +14,19 @@ public class SkillService : ISkillService
 {
     private readonly DbContext _context;
     private readonly IAuditService _auditService;
+    private readonly IHttpContextAccessor? _httpContextAccessor;
+    private readonly IManagementContextAccessor? _managementContextAccessor;
 
-    public SkillService(DbContext context, IAuditService auditService)
+    public SkillService(
+        DbContext context,
+        IAuditService auditService,
+        IHttpContextAccessor? httpContextAccessor = null,
+        IManagementContextAccessor? managementContextAccessor = null)
     {
         _context = context;
         _auditService = auditService;
+        _httpContextAccessor = httpContextAccessor;
+        _managementContextAccessor = managementContextAccessor;
     }
 
     public async Task<PagedResult<SkillDto>> GetPagedAsync(int page, int pageSize, string? search = null, CancellationToken cancellationToken = default)
@@ -49,6 +59,9 @@ public class SkillService : ISkillService
 
     public async Task<Result<SkillDto>> CreateAsync(CreateSkillDto dto, string userId, CancellationToken cancellationToken = default)
     {
+        var actorError = ResourceManagementWriteGuard.RequireActorContext(_httpContextAccessor, _managementContextAccessor, userId);
+        if (actorError is not null) return Result<SkillDto>.Failure(actorError);
+
         var existing = await _context.Set<Skill>().AnyAsync(s => s.Name.ToLower() == dto.Name.ToLower() && !s.IsDeleted, cancellationToken);
         if (existing)
             return Result<SkillDto>.Failure(Error.Conflict("Skill with this name already exists"));
@@ -75,6 +88,9 @@ public class SkillService : ISkillService
 
     public async Task<Result<SkillDto>> UpdateAsync(Guid id, UpdateSkillDto dto, string userId, CancellationToken cancellationToken = default)
     {
+        var actorError = ResourceManagementWriteGuard.RequireActorContext(_httpContextAccessor, _managementContextAccessor, userId);
+        if (actorError is not null) return Result<SkillDto>.Failure(actorError);
+
         var skill = await _context.Set<Skill>().FirstOrDefaultAsync(s => s.Id == id && !s.IsDeleted, cancellationToken);
         if (skill is null)
             return Result<SkillDto>.Failure(Error.NotFound("Skill not found"));
@@ -99,6 +115,9 @@ public class SkillService : ISkillService
 
     public async Task<Result> DeleteAsync(Guid id, string userId, CancellationToken cancellationToken = default)
     {
+        var actorError = ResourceManagementWriteGuard.RequireActorContext(_httpContextAccessor, _managementContextAccessor, userId);
+        if (actorError is not null) return Result.Failure(actorError);
+
         var skill = await _context.Set<Skill>().FirstOrDefaultAsync(s => s.Id == id && !s.IsDeleted, cancellationToken);
         if (skill is null)
             return Result.Failure(Error.NotFound("Skill not found"));

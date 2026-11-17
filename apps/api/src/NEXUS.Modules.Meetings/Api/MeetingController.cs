@@ -62,7 +62,8 @@ public sealed class MeetingController : ControllerBase
     [Authorize(Policy = MeetingPermissions.Create)]
     public async Task<IActionResult> CreateSeries([FromBody] CreateMeetingSeriesRequest request, CancellationToken cancellationToken)
     {
-        var result = await _meetingService.CreateSeriesAsync(request, CurrentUserId(), cancellationToken);
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        var result = await _meetingService.CreateSeriesAsync(request, actorId, cancellationToken);
         return result.IsSuccess ? CreatedAtAction(nameof(GetByPublicId), new { publicId = result.Value!.PublicId }, result.Value) : ToActionResult(result.Error);
     }
 
@@ -86,7 +87,8 @@ public sealed class MeetingController : ControllerBase
     [Authorize(Policy = MeetingPermissions.Create)]
     public async Task<IActionResult> Create([FromBody] CreateMeetingRequest request, CancellationToken cancellationToken)
     {
-        var result = await _meetingService.CreateAsync(request, CurrentUserId(), cancellationToken);
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        var result = await _meetingService.CreateAsync(request, actorId, cancellationToken);
         return result.IsSuccess ? CreatedAtAction(nameof(GetByPublicId), new { publicId = result.Value!.PublicId }, result.Value) : ToActionResult(result.Error);
     }
 
@@ -94,7 +96,8 @@ public sealed class MeetingController : ControllerBase
     [Authorize(Policy = MeetingPermissions.Edit)]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateMeetingRequest request, CancellationToken cancellationToken)
     {
-        var result = await _meetingService.UpdateAsync(id, request, CurrentUserId(), cancellationToken);
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        var result = await _meetingService.UpdateAsync(id, request, actorId, cancellationToken);
         return result.IsSuccess ? Ok(result.Value) : ToActionResult(result.Error);
     }
 
@@ -102,7 +105,8 @@ public sealed class MeetingController : ControllerBase
     [Authorize(Policy = MeetingPermissions.Edit)]
     public async Task<IActionResult> Start(Guid id, [FromBody] MeetingLifecycleRequest request, CancellationToken cancellationToken)
     {
-        var result = await _meetingService.StartAsync(id, request, CurrentUserId(), cancellationToken);
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        var result = await _meetingService.StartAsync(id, request, actorId, cancellationToken);
         return result.IsSuccess ? Ok(result.Value) : ToActionResult(result.Error);
     }
 
@@ -110,7 +114,8 @@ public sealed class MeetingController : ControllerBase
     [Authorize(Policy = MeetingPermissions.Edit)]
     public async Task<IActionResult> End(Guid id, [FromBody] MeetingLifecycleRequest request, CancellationToken cancellationToken)
     {
-        var result = await _meetingService.EndAsync(id, request, CurrentUserId(), cancellationToken);
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        var result = await _meetingService.EndAsync(id, request, actorId, cancellationToken);
         return result.IsSuccess ? Ok(result.Value) : ToActionResult(result.Error);
     }
 
@@ -118,7 +123,8 @@ public sealed class MeetingController : ControllerBase
     [Authorize(Policy = MeetingPermissions.Delete)]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
-        var result = await _meetingService.DeleteAsync(id, CurrentUserId(), cancellationToken);
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        var result = await _meetingService.DeleteAsync(id, actorId, cancellationToken);
         return result.IsSuccess ? NoContent() : ToActionResult(result.Error);
     }
 
@@ -128,13 +134,18 @@ public sealed class MeetingController : ControllerBase
 
     [HttpPost("{id:guid}/attendees")]
     [Authorize(Policy = MeetingPermissions.Edit)]
-    public async Task<IActionResult> AddAttendee(Guid id, [FromBody] MeetingAttendeeInput request, CancellationToken cancellationToken) => ToActionResult(await _meetingService.AddAttendeeAsync(id, request, CurrentUserId(), cancellationToken));
+    public async Task<IActionResult> AddAttendee(Guid id, [FromBody] MeetingAttendeeInput request, CancellationToken cancellationToken)
+    {
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        return ToActionResult(await _meetingService.AddAttendeeAsync(id, request, actorId, cancellationToken));
+    }
 
     [HttpDelete("{id:guid}/attendees/{participantId:guid}")]
     [Authorize(Policy = MeetingPermissions.Edit)]
     public async Task<IActionResult> RemoveAttendee(Guid id, Guid participantId, CancellationToken cancellationToken)
     {
-        var result = await _meetingService.RemoveAttendeeAsync(id, participantId, CurrentUserId(), cancellationToken);
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        var result = await _meetingService.RemoveAttendeeAsync(id, participantId, actorId, cancellationToken);
         return result.IsSuccess ? NoContent() : ToActionResult(result.Error);
     }
 
@@ -144,18 +155,27 @@ public sealed class MeetingController : ControllerBase
 
     [HttpPut("{id:guid}/attendance")]
     [Authorize(Policy = MeetingPermissions.View)]
-    public async Task<IActionResult> UpdateMyAttendance(Guid id, [FromBody] UpdateMeetingAttendanceRequest request, CancellationToken cancellationToken) =>
-        ToActionResult(await _meetingWorkspaceService.UpdateMyAttendanceAsync(id, request, CurrentUserId(), cancellationToken));
+    public async Task<IActionResult> UpdateMyAttendance(Guid id, [FromBody] UpdateMeetingAttendanceRequest request, CancellationToken cancellationToken)
+    {
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        return ToActionResult(await _meetingWorkspaceService.UpdateMyAttendanceAsync(id, request, actorId, cancellationToken));
+    }
 
     [HttpPut("{id:guid}/participants/{participantId:guid}/attendance")]
     [Authorize(Policy = MeetingPermissions.Edit)]
-    public async Task<IActionResult> UpdateAttendance(Guid id, Guid participantId, [FromBody] UpdateMeetingAttendanceRequest request, CancellationToken cancellationToken) =>
-        ToActionResult(await _meetingWorkspaceService.UpdateAttendanceAsync(id, participantId, request, CurrentUserId(), cancellationToken));
+    public async Task<IActionResult> UpdateAttendance(Guid id, Guid participantId, [FromBody] UpdateMeetingAttendanceRequest request, CancellationToken cancellationToken)
+    {
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        return ToActionResult(await _meetingWorkspaceService.UpdateAttendanceAsync(id, participantId, request, actorId, cancellationToken));
+    }
 
     [HttpPut("{id:guid}/participants/{participantId:guid}/attendance/organizer")]
     [Authorize(Policy = MeetingPermissions.View)]
-    public async Task<IActionResult> UpdateOrganizerAttendance(Guid id, Guid participantId, [FromBody] UpdateMeetingAttendanceRequest request, CancellationToken cancellationToken) =>
-        ToActionResult(await _meetingWorkspaceService.UpdateOrganizerAttendanceAsync(id, participantId, request, CurrentUserId(), cancellationToken));
+    public async Task<IActionResult> UpdateOrganizerAttendance(Guid id, Guid participantId, [FromBody] UpdateMeetingAttendanceRequest request, CancellationToken cancellationToken)
+    {
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        return ToActionResult(await _meetingWorkspaceService.UpdateOrganizerAttendanceAsync(id, participantId, request, actorId, cancellationToken));
+    }
 
     [HttpGet("{id:guid}/agenda")]
     [Authorize(Policy = MeetingPermissions.View)]
@@ -163,24 +183,34 @@ public sealed class MeetingController : ControllerBase
 
     [HttpPost("{id:guid}/agenda")]
     [Authorize(Policy = MeetingPermissions.Edit)]
-    public async Task<IActionResult> CreateAgendaItem(Guid id, [FromBody] CreateMeetingAgendaItemRequest request, CancellationToken cancellationToken) =>
-        ToActionResult(await _meetingWorkspaceService.CreateAgendaItemAsync(id, request, CurrentUserId(), cancellationToken));
+    public async Task<IActionResult> CreateAgendaItem(Guid id, [FromBody] CreateMeetingAgendaItemRequest request, CancellationToken cancellationToken)
+    {
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        return ToActionResult(await _meetingWorkspaceService.CreateAgendaItemAsync(id, request, actorId, cancellationToken));
+    }
 
     [HttpPut("{id:guid}/agenda/reorder")]
     [Authorize(Policy = MeetingPermissions.Edit)]
-    public async Task<IActionResult> ReorderAgenda(Guid id, [FromBody] ReorderMeetingAgendaRequest request, CancellationToken cancellationToken) =>
-        ToActionResult(await _meetingWorkspaceService.ReorderAgendaAsync(id, request, CurrentUserId(), cancellationToken));
+    public async Task<IActionResult> ReorderAgenda(Guid id, [FromBody] ReorderMeetingAgendaRequest request, CancellationToken cancellationToken)
+    {
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        return ToActionResult(await _meetingWorkspaceService.ReorderAgendaAsync(id, request, actorId, cancellationToken));
+    }
 
     [HttpPut("{id:guid}/agenda/{itemId:guid}")]
     [Authorize(Policy = MeetingPermissions.Edit)]
-    public async Task<IActionResult> UpdateAgendaItem(Guid id, Guid itemId, [FromBody] UpdateMeetingAgendaItemRequest request, CancellationToken cancellationToken) =>
-        ToActionResult(await _meetingWorkspaceService.UpdateAgendaItemAsync(id, itemId, request, CurrentUserId(), cancellationToken));
+    public async Task<IActionResult> UpdateAgendaItem(Guid id, Guid itemId, [FromBody] UpdateMeetingAgendaItemRequest request, CancellationToken cancellationToken)
+    {
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        return ToActionResult(await _meetingWorkspaceService.UpdateAgendaItemAsync(id, itemId, request, actorId, cancellationToken));
+    }
 
     [HttpDelete("{id:guid}/agenda/{itemId:guid}")]
     [Authorize(Policy = MeetingPermissions.Edit)]
     public async Task<IActionResult> DeleteAgendaItem(Guid id, Guid itemId, CancellationToken cancellationToken)
     {
-        var result = await _meetingWorkspaceService.DeleteAgendaItemAsync(id, itemId, CurrentUserId(), cancellationToken);
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        var result = await _meetingWorkspaceService.DeleteAgendaItemAsync(id, itemId, actorId, cancellationToken);
         return result.IsSuccess ? NoContent() : ToActionResult(result.Error);
     }
 
@@ -190,25 +220,35 @@ public sealed class MeetingController : ControllerBase
 
     [HttpPost("{id:guid}/actions")]
     [Authorize(Policy = MeetingPermissions.Manage)]
-    public async Task<IActionResult> CreateActionItem(Guid id, [FromBody] CreateMeetingActionItemRequest request, CancellationToken cancellationToken) =>
-        ToActionResult(await _meetingWorkspaceService.CreateActionItemAsync(id, request, CurrentUserId(), cancellationToken));
+    public async Task<IActionResult> CreateActionItem(Guid id, [FromBody] CreateMeetingActionItemRequest request, CancellationToken cancellationToken)
+    {
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        return ToActionResult(await _meetingWorkspaceService.CreateActionItemAsync(id, request, actorId, cancellationToken));
+    }
 
     [HttpPut("{id:guid}/actions/{itemId:guid}")]
     [Authorize(Policy = MeetingPermissions.Manage)]
-    public async Task<IActionResult> UpdateActionItem(Guid id, Guid itemId, [FromBody] UpdateMeetingActionItemRequest request, CancellationToken cancellationToken) =>
-        ToActionResult(await _meetingWorkspaceService.UpdateActionItemAsync(id, itemId, request, CurrentUserId(), cancellationToken));
+    public async Task<IActionResult> UpdateActionItem(Guid id, Guid itemId, [FromBody] UpdateMeetingActionItemRequest request, CancellationToken cancellationToken)
+    {
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        return ToActionResult(await _meetingWorkspaceService.UpdateActionItemAsync(id, itemId, request, actorId, cancellationToken));
+    }
 
     [HttpPost("{id:guid}/actions/{itemId:guid}/work-item")]
     [Authorize(Policy = MeetingPermissions.Manage)]
     [Authorize(Policy = "WorkItem.View")]
-    public async Task<IActionResult> LinkActionWorkItem(Guid id, Guid itemId, [FromBody] LinkMeetingActionWorkItemRequest request, CancellationToken cancellationToken) =>
-        ToActionResult(await _meetingWorkspaceService.LinkActionWorkItemAsync(id, itemId, request, CurrentUserId(), cancellationToken));
+    public async Task<IActionResult> LinkActionWorkItem(Guid id, Guid itemId, [FromBody] LinkMeetingActionWorkItemRequest request, CancellationToken cancellationToken)
+    {
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        return ToActionResult(await _meetingWorkspaceService.LinkActionWorkItemAsync(id, itemId, request, actorId, cancellationToken));
+    }
 
     [HttpDelete("{id:guid}/actions/{itemId:guid}/work-item")]
     [Authorize(Policy = MeetingPermissions.Manage)]
     public async Task<IActionResult> UnlinkActionWorkItem(Guid id, Guid itemId, CancellationToken cancellationToken)
     {
-        var result = await _meetingWorkspaceService.UnlinkActionWorkItemAsync(id, itemId, CurrentUserId(), cancellationToken);
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        var result = await _meetingWorkspaceService.UnlinkActionWorkItemAsync(id, itemId, actorId, cancellationToken);
         return result.IsSuccess ? NoContent() : ToActionResult(result.Error);
     }
 
@@ -216,7 +256,8 @@ public sealed class MeetingController : ControllerBase
     [Authorize(Policy = MeetingPermissions.Manage)]
     public async Task<IActionResult> DeleteActionItem(Guid id, Guid itemId, CancellationToken cancellationToken)
     {
-        var result = await _meetingWorkspaceService.DeleteActionItemAsync(id, itemId, CurrentUserId(), cancellationToken);
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        var result = await _meetingWorkspaceService.DeleteActionItemAsync(id, itemId, actorId, cancellationToken);
         return result.IsSuccess ? NoContent() : ToActionResult(result.Error);
     }
 
@@ -227,8 +268,11 @@ public sealed class MeetingController : ControllerBase
 
     [HttpPut("{id:guid}/decisions")]
     [Authorize(Policy = MeetingPermissions.Manage)]
-    public async Task<IActionResult> SaveDecisions(Guid id, [FromBody] UpdateMeetingDecisionsRequest request, CancellationToken cancellationToken) =>
-        ToActionResult(await _meetingWorkspaceService.SaveDecisionsAsync(id, request, CurrentUserId(), cancellationToken));
+    public async Task<IActionResult> SaveDecisions(Guid id, [FromBody] UpdateMeetingDecisionsRequest request, CancellationToken cancellationToken)
+    {
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        return ToActionResult(await _meetingWorkspaceService.SaveDecisionsAsync(id, request, actorId, cancellationToken));
+    }
 
     [HttpGet("{id:guid}/minutes")]
     [Authorize(Policy = MeetingPermissions.View)]
@@ -246,15 +290,27 @@ public sealed class MeetingController : ControllerBase
 
     [HttpPost("{id:guid}/minutes")]
     [Authorize(Policy = MeetingPermissions.Manage)]
-    public async Task<IActionResult> CreateMinutes(Guid id, [FromBody] CreateMeetingMinutesRequest request, CancellationToken cancellationToken) => ToActionResult(await _meetingService.CreateMinutesAsync(id, request, CurrentUserId(), cancellationToken));
+    public async Task<IActionResult> CreateMinutes(Guid id, [FromBody] CreateMeetingMinutesRequest request, CancellationToken cancellationToken)
+    {
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        return ToActionResult(await _meetingService.CreateMinutesAsync(id, request, actorId, cancellationToken));
+    }
 
     [HttpPut("{id:guid}/minutes")]
     [Authorize(Policy = MeetingPermissions.Manage)]
-    public async Task<IActionResult> UpdateMinutes(Guid id, [FromBody] UpdateMeetingMinutesRequest request, CancellationToken cancellationToken) => ToActionResult(await _meetingService.UpdateMinutesAsync(id, request, CurrentUserId(), cancellationToken));
+    public async Task<IActionResult> UpdateMinutes(Guid id, [FromBody] UpdateMeetingMinutesRequest request, CancellationToken cancellationToken)
+    {
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        return ToActionResult(await _meetingService.UpdateMinutesAsync(id, request, actorId, cancellationToken));
+    }
 
     [HttpPost("{id:guid}/minutes/finalize")]
     [Authorize(Policy = MeetingPermissions.Manage)]
-    public async Task<IActionResult> FinalizeMinutes(Guid id, [FromBody] FinalizeMeetingMinutesRequest request, CancellationToken cancellationToken) => ToActionResult(await _meetingService.FinalizeMinutesAsync(id, request, CurrentUserId(), cancellationToken));
+    public async Task<IActionResult> FinalizeMinutes(Guid id, [FromBody] FinalizeMeetingMinutesRequest request, CancellationToken cancellationToken)
+    {
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        return ToActionResult(await _meetingService.FinalizeMinutesAsync(id, request, actorId, cancellationToken));
+    }
 
     [HttpGet("{id:guid}/minutes/comments")]
     [Authorize(Policy = MeetingPermissions.View)]
@@ -262,7 +318,11 @@ public sealed class MeetingController : ControllerBase
 
     [HttpPost("{id:guid}/minutes/comments")]
     [Authorize(Policy = MeetingPermissions.Manage)]
-    public async Task<IActionResult> AddComment(Guid id, [FromBody] CreateMeetingMinutesCommentRequest request, CancellationToken cancellationToken) => ToActionResult(await _meetingService.AddCommentAsync(id, request, CurrentUserId(), cancellationToken));
+    public async Task<IActionResult> AddComment(Guid id, [FromBody] CreateMeetingMinutesCommentRequest request, CancellationToken cancellationToken)
+    {
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        return ToActionResult(await _meetingService.AddCommentAsync(id, request, actorId, cancellationToken));
+    }
 
     [HttpGet("{id:guid}/minutes/checklist")]
     [Authorize(Policy = MeetingPermissions.View)]
@@ -270,21 +330,34 @@ public sealed class MeetingController : ControllerBase
 
     [HttpPost("{id:guid}/minutes/checklist")]
     [Authorize(Policy = MeetingPermissions.Manage)]
-    public async Task<IActionResult> CreateChecklistItem(Guid id, [FromBody] CreateMeetingMinutesChecklistItemRequest request, CancellationToken cancellationToken) => ToActionResult(await _meetingService.CreateChecklistItemAsync(id, request, CurrentUserId(), cancellationToken));
+    public async Task<IActionResult> CreateChecklistItem(Guid id, [FromBody] CreateMeetingMinutesChecklistItemRequest request, CancellationToken cancellationToken)
+    {
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        return ToActionResult(await _meetingService.CreateChecklistItemAsync(id, request, actorId, cancellationToken));
+    }
 
     [HttpPut("{id:guid}/minutes/checklist/reorder")]
     [Authorize(Policy = MeetingPermissions.Manage)]
-    public async Task<IActionResult> ReorderChecklist(Guid id, [FromBody] ReorderMeetingMinutesChecklistRequest request, CancellationToken cancellationToken) => ToActionResult(await _meetingService.ReorderChecklistAsync(id, request, CurrentUserId(), cancellationToken));
+    public async Task<IActionResult> ReorderChecklist(Guid id, [FromBody] ReorderMeetingMinutesChecklistRequest request, CancellationToken cancellationToken)
+    {
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        return ToActionResult(await _meetingService.ReorderChecklistAsync(id, request, actorId, cancellationToken));
+    }
 
     [HttpPut("{id:guid}/minutes/checklist/{itemId:guid}")]
     [Authorize(Policy = MeetingPermissions.Manage)]
-    public async Task<IActionResult> UpdateChecklistItem(Guid id, Guid itemId, [FromBody] UpdateMeetingMinutesChecklistItemRequest request, CancellationToken cancellationToken) => ToActionResult(await _meetingService.UpdateChecklistItemAsync(id, itemId, request, CurrentUserId(), cancellationToken));
+    public async Task<IActionResult> UpdateChecklistItem(Guid id, Guid itemId, [FromBody] UpdateMeetingMinutesChecklistItemRequest request, CancellationToken cancellationToken)
+    {
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        return ToActionResult(await _meetingService.UpdateChecklistItemAsync(id, itemId, request, actorId, cancellationToken));
+    }
 
     [HttpDelete("{id:guid}/minutes/checklist/{itemId:guid}")]
     [Authorize(Policy = MeetingPermissions.Manage)]
     public async Task<IActionResult> DeleteChecklistItem(Guid id, Guid itemId, CancellationToken cancellationToken)
     {
-        var result = await _meetingService.DeleteChecklistItemAsync(id, itemId, CurrentUserId(), cancellationToken);
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        var result = await _meetingService.DeleteChecklistItemAsync(id, itemId, actorId, cancellationToken);
         return result.IsSuccess ? NoContent() : ToActionResult(result.Error);
     }
 
@@ -294,7 +367,11 @@ public sealed class MeetingController : ControllerBase
 
     [HttpPost("{id:guid}/minutes/attachments")]
     [Authorize(Policy = MeetingPermissions.Manage)]
-    public async Task<IActionResult> AddAttachments(Guid id, [FromForm] List<IFormFile> files, CancellationToken cancellationToken) => ToActionResult(await _meetingService.AddAttachmentsAsync(id, files, CurrentUserId(), cancellationToken));
+    public async Task<IActionResult> AddAttachments(Guid id, [FromForm] List<IFormFile> files, CancellationToken cancellationToken)
+    {
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        return ToActionResult(await _meetingService.AddAttachmentsAsync(id, files, actorId, cancellationToken));
+    }
 
     [HttpGet("{id:guid}/minutes/attachments/{attachmentId:guid}/content")]
     [Authorize(Policy = MeetingPermissions.View)]
@@ -309,7 +386,8 @@ public sealed class MeetingController : ControllerBase
     [Authorize(Policy = MeetingPermissions.Manage)]
     public async Task<IActionResult> DeleteAttachment(Guid id, Guid attachmentId, CancellationToken cancellationToken)
     {
-        var result = await _meetingService.DeleteAttachmentAsync(id, attachmentId, CurrentUserId(), cancellationToken);
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        var result = await _meetingService.DeleteAttachmentAsync(id, attachmentId, actorId, cancellationToken);
         return result.IsSuccess ? NoContent() : ToActionResult(result.Error);
     }
 
@@ -319,17 +397,34 @@ public sealed class MeetingController : ControllerBase
 
     [HttpPost("{id:guid}/minutes/work-items")]
     [Authorize(Policy = MeetingPermissions.Manage)]
-    public async Task<IActionResult> AddWorkItemLink(Guid id, [FromBody] CreateMeetingWorkItemLinkRequest request, CancellationToken cancellationToken) => ToActionResult(await _meetingService.AddWorkItemLinkAsync(id, request, CurrentUserId(), cancellationToken));
+    public async Task<IActionResult> AddWorkItemLink(Guid id, [FromBody] CreateMeetingWorkItemLinkRequest request, CancellationToken cancellationToken)
+    {
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        return ToActionResult(await _meetingService.AddWorkItemLinkAsync(id, request, actorId, cancellationToken));
+    }
 
     [HttpDelete("{id:guid}/minutes/work-items/{workItemId:guid}")]
     [Authorize(Policy = MeetingPermissions.Manage)]
     public async Task<IActionResult> RemoveWorkItemLink(Guid id, Guid workItemId, CancellationToken cancellationToken)
     {
-        var result = await _meetingService.RemoveWorkItemLinkAsync(id, workItemId, CurrentUserId(), cancellationToken);
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        var result = await _meetingService.RemoveWorkItemLinkAsync(id, workItemId, actorId, cancellationToken);
         return result.IsSuccess ? NoContent() : ToActionResult(result.Error);
     }
 
-    private string CurrentUserId() => User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "System";
+    private bool TryGetActorId(out string actorId)
+    {
+        if (User.Identity?.IsAuthenticated == true
+            && Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var parsed)
+            && parsed != Guid.Empty)
+        {
+            actorId = parsed.ToString();
+            return true;
+        }
+
+        actorId = string.Empty;
+        return false;
+    }
 
     private static (IReadOnlyList<Guid>? Value, string? Error) ParseProjectIds(string? value)
     {

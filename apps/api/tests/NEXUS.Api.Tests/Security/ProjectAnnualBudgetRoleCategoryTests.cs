@@ -184,16 +184,17 @@ public sealed class ProjectAnnualBudgetRoleCategoryTests
     }
 
     [Fact]
-    public async Task Protected_admin_can_receive_explicit_annual_budget_grants_without_losing_its_baseline()
+    public async Task Tenant_admin_role_can_receive_any_unprotected_project_permissions()
     {
         var tenantId = Guid.NewGuid();
         var actorId = Guid.NewGuid();
         using var trustedTenant = TrustedTenantExecutionContext.Enter(tenantId);
         await using var db = CreateDatabase(tenantId);
-        var baseline = db.Permissions.Local
-            .Where(permission => ProtectedTenantAdminPolicy.MandatoryPermissionKeys.Contains($"{permission.Resource}.{permission.Action}"))
-            .ToList();
-        Assert.Equal(ProtectedTenantAdminPolicy.MandatoryPermissionKeys.Count, baseline.Count);
+        Assert.Empty(PermissionProtectionPolicy.Empty.ProtectedPermissionKeys);
+        var baseline = new[]
+        {
+            "Roles.ConfigurePermissions", "Users.AssignRoles", "Users.SetStatus"
+        }.Select(key => db.Permissions.Local.Single(permission => permission.Name == key)).ToList();
 
         var adminRole = new Role
         {
@@ -228,13 +229,12 @@ public sealed class ProjectAnnualBudgetRoleCategoryTests
         await db.SaveChangesAsync();
 
         var actorPermissions = new HashSet<string>(
-            ProtectedTenantAdminPolicy.MandatoryPermissionKeys.Concat(["Roles.Create", "Roles.EditDetails", "Roles.ConfigurePermissions", "TenantAdministration.ManageScope"]),
+            baseline.Select(permission => permission.Name)
+                .Concat(["Roles.Create", "Roles.EditDetails", "TenantAdministration.ManageScope"]),
             StringComparer.Ordinal);
         var service = CreateService(db, tenantId, actorId, actorPermissions);
         var permissionIds = baseline.Select(permission => permission.Id)
-            .Concat(AnnualBudgetWorkflowPermissions
-                .Where(key => key != "ProjectAnnualBudget.ConfigureDraftApproval")
-                .Select(PermissionId))
+            .Concat(AnnualBudgetWorkflowPermissions.Select(PermissionId))
             .ToList();
         var saved = await service.UpdateAsync(adminRole.Id, new SaveRoleDto
         {
@@ -244,30 +244,27 @@ public sealed class ProjectAnnualBudgetRoleCategoryTests
         }, actorId, tenantId);
 
         Assert.True(saved.IsSuccess, saved.Error?.Message);
-        Assert.All(ProtectedTenantAdminPolicy.MandatoryPermissionKeys,
+        Assert.All(AnnualBudgetWorkflowPermissions,
             key => Assert.Contains(saved.Value!.Permissions, permission => permission.Name == key));
-        Assert.All(AnnualBudgetWorkflowPermissions.Where(key => key != "ProjectAnnualBudget.ConfigureDraftApproval"),
-            key => Assert.Contains(saved.Value!.Permissions, permission => permission.Name == key));
-        Assert.DoesNotContain(
-            "ProjectAnnualBudget.ConfigureDraftApproval",
-            ProtectedTenantAdminPolicy.MandatoryPermissionKeys);
 
-        var rejectedBaselineRemoval = await service.UpdateAsync(adminRole.Id, new SaveRoleDto
+        var removedOrdinaryAdminPermission = await service.UpdateAsync(adminRole.Id, new SaveRoleDto
         {
             Name = adminRole.Name,
             Category = adminRole.Category,
             PermissionIds = permissionIds.Where(id => id != PermissionId("Roles.ConfigurePermissions")).ToList()
         }, actorId, tenantId);
-        Assert.True(rejectedBaselineRemoval.IsFailure);
-        Assert.Equal(409, rejectedBaselineRemoval.Error?.StatusCode);
+        Assert.True(removedOrdinaryAdminPermission.IsSuccess, removedOrdinaryAdminPermission.Error?.Message);
+        Assert.DoesNotContain(removedOrdinaryAdminPermission.Value!.Permissions,
+            permission => permission.Name == "Roles.ConfigurePermissions");
+        Assert.True(ProtectedTenantAdminPolicy.IsProtectedSystemAdminRole(adminRole));
 
-        var mandatoryAdminGrant = await db.Permissions.SingleAsync(permission => permission.TenantId == tenantId && permission.Name == "Roles.ConfigurePermissions");
+        var administrationGrant = await db.Permissions.SingleAsync(permission => permission.TenantId == tenantId && permission.Name == "Roles.ConfigurePermissions");
         var nonMandatoryBudgetGrant = await db.Permissions.SingleAsync(permission => permission.TenantId == tenantId && permission.Name == "ProjectAnnualBudget.Create");
         db.UserPermissionOverrides.AddRange(
             new UserPermissionOverride
             {
-                Id = Guid.NewGuid(), TenantId = tenantId, UserId = actorId, PermissionId = mandatoryAdminGrant.Id,
-                Permission = mandatoryAdminGrant, Effect = PermissionOverrideEffect.Deny, CreatedBy = "test"
+                Id = Guid.NewGuid(), TenantId = tenantId, UserId = actorId, PermissionId = administrationGrant.Id,
+                Permission = administrationGrant, Effect = PermissionOverrideEffect.Deny, CreatedBy = "test"
             },
             new UserPermissionOverride
             {
@@ -277,7 +274,7 @@ public sealed class ProjectAnnualBudgetRoleCategoryTests
         await db.SaveChangesAsync();
 
         var effective = await new UserEffectivePermissionService(db).GetEffectivePermissionsAsync(actorId, tenantId);
-        Assert.Contains("Roles.ConfigurePermissions", effective);
+        Assert.DoesNotContain("Roles.ConfigurePermissions", effective);
         Assert.Contains("Users.AssignRoles", effective);
         Assert.DoesNotContain("ProjectAnnualBudget.Create", effective);
     }
@@ -376,7 +373,7 @@ public sealed class ProjectAnnualBudgetRoleCategoryTests
             Assert.True(permission.IsAssignable);
             Assert.Equal(PermissionScope.Project, permission.Scope);
             Assert.Contains("ProjectAnnualBudget.View", permission.RequiredPermissionKeys);
-            Assert.False(permission.IsTenantAdminBaseline);
+            Assert.False(PermissionProtectionPolicy.Empty.IsProtected(permission.Key));
             Assert.Equal(RoleCategories.Selectable, permission.AllowedCategories);
         }
 
@@ -386,7 +383,7 @@ public sealed class ProjectAnnualBudgetRoleCategoryTests
         Assert.Equal(PermissionScope.Project, draftApprovalConfiguration.Scope);
         Assert.Contains("ProjectAnnualBudget.View", draftApprovalConfiguration.RequiredPermissionKeys);
         Assert.Contains("ProjectAnnualBudget.EditDraft", draftApprovalConfiguration.RequiredPermissionKeys);
-        Assert.False(draftApprovalConfiguration.IsTenantAdminBaseline);
+        Assert.False(PermissionProtectionPolicy.Empty.IsProtected(draftApprovalConfiguration.Key));
         Assert.Equal(RoleCategories.Selectable, draftApprovalConfiguration.AllowedCategories);
 
         foreach (var key in new[] { "ProjectAnnualBudget.EditDraft", "ProjectAnnualBudget.SubmitForReview" })

@@ -1,9 +1,9 @@
-using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using NEXUS.Modules.ProjectManagement.Application;
 using NEXUS.Modules.ProjectManagement.Application.DTOs;
+using NEXUS.SharedKernel.Management;
 
 namespace NEXUS.Modules.ProjectManagement.Api;
 
@@ -13,13 +13,20 @@ namespace NEXUS.Modules.ProjectManagement.Api;
 public sealed class StakeholderInvitationController : ControllerBase
 {
     private readonly IStakeholderInvitationService _service;
+    private readonly IManagementContextAccessor? _managementContext;
 
-    public StakeholderInvitationController(IStakeholderInvitationService service) => _service = service;
+    public StakeholderInvitationController(IStakeholderInvitationService service, IManagementContextAccessor? managementContext = null)
+    {
+        _service = service;
+        _managementContext = managementContext;
+    }
 
     [HttpPost]
     public async Task<IActionResult> Send(Guid projectId, Guid stakeholderId, CancellationToken cancellationToken)
     {
-        var result = await _service.SendAsync(projectId, stakeholderId, ActorId(), cancellationToken);
+        var denied = ManagementActorBinding.RequireActor(this, _managementContext, requireWritable: true, out var actorId);
+        if (denied is not null) return denied;
+        var result = await _service.SendAsync(projectId, stakeholderId, actorId, cancellationToken);
         return result.IsFailure ? Map(result.Error!) : Ok(result.Value);
     }
 
@@ -33,11 +40,11 @@ public sealed class StakeholderInvitationController : ControllerBase
     [HttpPost("revoke")]
     public async Task<IActionResult> Revoke(Guid projectId, Guid stakeholderId, CancellationToken cancellationToken)
     {
-        var result = await _service.RevokeAsync(projectId, stakeholderId, ActorId(), cancellationToken);
+        var denied = ManagementActorBinding.RequireActor(this, _managementContext, requireWritable: true, out var actorId);
+        if (denied is not null) return denied;
+        var result = await _service.RevokeAsync(projectId, stakeholderId, actorId, cancellationToken);
         return result.IsFailure ? Map(result.Error!) : Ok(result.Value);
     }
-
-    private string ActorId() => User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "System";
 
     private static IActionResult Map(NEXUS.SharedKernel.Error error) => error.StatusCode switch
     {

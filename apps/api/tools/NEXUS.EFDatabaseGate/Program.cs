@@ -541,8 +541,9 @@ internal static class EfDatabaseGate
             !string.Equals(generatedDigest, approvedHash, StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException(
-                $"Reviewed SQL hash does not match the current target's generated SQL. " +
-                $"Expected reviewed hash: {generatedDigest}. No database write was performed.");
+                "Reviewed SQL hash does not match the current target's generated SQL. " +
+                "Re-run preflight, review the newly generated SQL file, and calculate its SHA-256 from that file. " +
+                "Do not copy a hash from this error message or from any prior output. No database write was performed.");
         }
 
         if (options.TryGetValue("backup-directory", out var backupDirectory)

@@ -30,7 +30,7 @@ public sealed class CostUtilizationExportAuthorizationTests
         Assert.Equal(PermissionLevel.View, permission.Level);
         Assert.Equal(PermissionScope.Project, permission.Scope);
         Assert.True(permission.IsAssignable);
-        Assert.False(permission.IsTenantAdminBaseline);
+        Assert.False(PermissionProtectionPolicy.Empty.IsProtected(permission.Key));
         Assert.Empty(permission.RequiredPermissionKeys);
 
         var authorization = CreateAuthorizationService();
@@ -63,7 +63,7 @@ public sealed class CostUtilizationExportAuthorizationTests
         Assert.Equal(PermissionScope.Tenant, permission.Scope);
         Assert.True(permission.IsAssignable);
         Assert.True(permission.IsSensitive);
-        Assert.False(permission.IsTenantAdminBaseline);
+        Assert.False(PermissionProtectionPolicy.Empty.IsProtected(permission.Key));
         Assert.Contains("Resource.View", permission.RequiredPermissionKeys);
         Assert.False(string.IsNullOrWhiteSpace(permission.LabelEn));
         Assert.False(string.IsNullOrWhiteSpace(permission.LabelAr));

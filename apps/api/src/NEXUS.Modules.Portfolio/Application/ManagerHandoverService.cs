@@ -8,6 +8,7 @@ using NEXUS.Modules.Notifications.Domain;
 using NEXUS.Modules.Notifications.Application;
 using NEXUS.Modules.Portfolio.Domain;
 using NEXUS.SharedKernel;
+using NEXUS.SharedKernel.Management;
 using PortfolioEntity = NEXUS.Modules.Portfolio.Domain.Portfolio;
 
 namespace NEXUS.Modules.Portfolio.Application;
@@ -18,13 +19,15 @@ public sealed class ManagerHandoverService : IManagerHandoverService
     private readonly INotificationService _notifications;
     private readonly IUserEffectivePermissionService _effectivePermissions;
     private readonly IResourceReferenceLookup? _resourceLookup;
+    private readonly IManagementContextAccessor _management;
 
     public ManagerHandoverService(DbContext db, INotificationService notifications, IUserEffectivePermissionService effectivePermissions,
-        IResourceReferenceLookup? resourceLookup = null)
+        IManagementContextAccessor management, IResourceReferenceLookup? resourceLookup = null)
     {
         _db = db;
         _notifications = notifications;
         _effectivePermissions = effectivePermissions;
+        _management = management;
         _resourceLookup = resourceLookup;
     }
 
@@ -33,7 +36,11 @@ public sealed class ManagerHandoverService : IManagerHandoverService
         var program = await _db.Set<Program>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
         if (program is null || !await IsSameTenantAsync(userId, program.TenantId, ct)) return Result<IReadOnlyList<ManagerHandoverManagerDto>>.Failure(Error.NotFound("Program not found"));
         var permissions = await _effectivePermissions.GetEffectivePermissionsAsync(userId, program.TenantId, ct);
-        if (!permissions.Contains("Handover.Manage") && !permissions.Contains("Handover.AdminInitiate")) return Result<IReadOnlyList<ManagerHandoverManagerDto>>.Failure(Error.Forbidden("You do not have permission to initiate handovers"));
+        var canManagerInitiate = permissions.Contains("Handover.Manage") && program.ProgramManagerId == userId;
+        var canAdminInitiate = permissions.Contains("Handover.AdminInitiate");
+        if ((!canManagerInitiate && !canAdminInitiate)
+            || !HasProgramScope(userId, program.TenantId, program, requireWrite: true))
+            return Result<IReadOnlyList<ManagerHandoverManagerDto>>.Failure(Error.Forbidden("You do not have permission or scope to initiate handovers for this Program"));
         return Result<IReadOnlyList<ManagerHandoverManagerDto>>.Success(await GetEligibleManagersAsync(
             program.TenantId, program.ProgramManagerId, ct, "Program.View", "ProgramManager"));
     }
@@ -43,7 +50,11 @@ public sealed class ManagerHandoverService : IManagerHandoverService
         var portfolio = await _db.Set<PortfolioEntity>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
         if (portfolio is null || !await IsSameTenantAsync(userId, portfolio.TenantId, ct)) return Result<IReadOnlyList<ManagerHandoverManagerDto>>.Failure(Error.NotFound("Portfolio not found"));
         var permissions = await _effectivePermissions.GetEffectivePermissionsAsync(userId, portfolio.TenantId, ct);
-        if (!permissions.Contains("Handover.Manage") && !permissions.Contains("Handover.AdminInitiate")) return Result<IReadOnlyList<ManagerHandoverManagerDto>>.Failure(Error.Forbidden("You do not have permission to initiate handovers"));
+        var canManagerInitiate = permissions.Contains("Handover.Manage") && portfolio.OwnerId == userId;
+        var canAdminInitiate = permissions.Contains("Handover.AdminInitiate");
+        if ((!canManagerInitiate && !canAdminInitiate)
+            || !HasPortfolioScope(userId, portfolio.TenantId, portfolio.Id, requireWrite: true))
+            return Result<IReadOnlyList<ManagerHandoverManagerDto>>.Failure(Error.Forbidden("You do not have permission or scope to initiate handovers for this Portfolio"));
         return Result<IReadOnlyList<ManagerHandoverManagerDto>>.Success(await GetEligibleManagersAsync(
             portfolio.TenantId, portfolio.OwnerId, ct, "Portfolio.View", "PortfolioManager"));
     }
@@ -110,6 +121,10 @@ public sealed class ManagerHandoverService : IManagerHandoverService
         if (program is null) return Result<ManagerHandoverRequestDto>.Failure(Error.NotFound("Program not found"));
         var requiredPermission = initiationType == ManagerHandoverInitiationType.ManagerInitiated ? "Handover.Manage" : "Handover.AdminInitiate";
         if (!await IsSameTenantAsync(userId, program.TenantId, ct) || !await HasPermissionAsync(userId, program.TenantId, requiredPermission, ct)) return Result<ManagerHandoverRequestDto>.Failure(Error.Forbidden("You do not have permission to initiate this handover"));
+        if (!HasWritableActorContext(userId, program.TenantId))
+            return Result<ManagerHandoverRequestDto>.Failure(Error.Forbidden("Read-only management views cannot initiate handovers"));
+        if (!HasProgramScope(userId, program.TenantId, program))
+            return Result<ManagerHandoverRequestDto>.Failure(Error.NotFound("Program not found"));
         if (initiationType == ManagerHandoverInitiationType.ManagerInitiated && program.ProgramManagerId != userId) return Result<ManagerHandoverRequestDto>.Failure(Error.Forbidden("Only the current Program Manager can request a handover"));
         if (initiationType == ManagerHandoverInitiationType.AdminInitiated && !program.ProgramManagerId.HasValue) return Result<ManagerHandoverRequestDto>.Failure(Error.Conflict("This Program has no assigned manager. Use initial assignment instead."));
         if (initiationType == ManagerHandoverInitiationType.InitialAssignment && program.ProgramManagerId.HasValue) return Result<ManagerHandoverRequestDto>.Failure(Error.Conflict("This Program already has a manager. Use administrative handover instead."));
@@ -133,6 +148,10 @@ public sealed class ManagerHandoverService : IManagerHandoverService
         if (portfolio is null) return Result<ManagerHandoverRequestDto>.Failure(Error.NotFound("Portfolio not found"));
         var requiredPermission = initiationType == ManagerHandoverInitiationType.ManagerInitiated ? "Handover.Manage" : "Handover.AdminInitiate";
         if (!await IsSameTenantAsync(userId, portfolio.TenantId, ct) || !await HasPermissionAsync(userId, portfolio.TenantId, requiredPermission, ct)) return Result<ManagerHandoverRequestDto>.Failure(Error.Forbidden("You do not have permission to initiate this handover"));
+        if (!HasWritableActorContext(userId, portfolio.TenantId))
+            return Result<ManagerHandoverRequestDto>.Failure(Error.Forbidden("Read-only management views cannot initiate handovers"));
+        if (!HasPortfolioScope(userId, portfolio.TenantId, portfolio.Id))
+            return Result<ManagerHandoverRequestDto>.Failure(Error.NotFound("Portfolio not found"));
         if (initiationType == ManagerHandoverInitiationType.ManagerInitiated && portfolio.OwnerId != userId) return Result<ManagerHandoverRequestDto>.Failure(Error.Forbidden("Only the current Portfolio Manager can request a handover"));
         if (initiationType == ManagerHandoverInitiationType.AdminInitiated && !portfolio.OwnerId.HasValue) return Result<ManagerHandoverRequestDto>.Failure(Error.Conflict("This Portfolio has no assigned manager. Use initial assignment instead."));
         if (initiationType == ManagerHandoverInitiationType.InitialAssignment && portfolio.OwnerId.HasValue) return Result<ManagerHandoverRequestDto>.Failure(Error.Conflict("This Portfolio already has a manager. Use administrative handover instead."));
@@ -154,6 +173,9 @@ public sealed class ManagerHandoverService : IManagerHandoverService
         var program = await _db.Set<Program>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted, ct);
         if (program is null || !await IsSameTenantAsync(userId, program.TenantId, ct)) return Result<ManagerHandoverCapabilitiesDto>.Failure(Error.NotFound("Program not found"));
         var permissions = await _effectivePermissions.GetEffectivePermissionsAsync(userId, program.TenantId, ct);
+        if (!HasProgramScope(userId, program.TenantId, program))
+            return Result<ManagerHandoverCapabilitiesDto>.Failure(Error.NotFound("Program not found"));
+        var writableScope = HasProgramScope(userId, program.TenantId, program, requireWrite: true);
         var pending = await _db.Set<ProgramHandoverRequest>().AsNoTracking().FirstOrDefaultAsync(x => x.ProgramId == id && x.TenantId == program.TenantId && x.Status == ManagerHandoverStatus.Pending && !x.IsDeleted, ct);
         var requesterCanCancel = pending is not null && pending.RequestedBy == userId
             && permissions.Contains(pending.InitiationType == ManagerHandoverInitiationType.ManagerInitiated ? "Handover.Manage" : "Handover.AdminInitiate");
@@ -162,12 +184,12 @@ public sealed class ManagerHandoverService : IManagerHandoverService
             CurrentManagerId = program.ProgramManagerId,
             CurrentManagerName = await ResolveUserNameAsync(program.ProgramManagerId, program.TenantId, ct),
             CanViewRequests = permissions.Contains("Handover.View"),
-            CanInitiate = pending is null && program.ProgramManagerId == userId && permissions.Contains("Handover.Manage"),
-            CanAdminInitiate = pending is null && program.ProgramManagerId.HasValue && permissions.Contains("Handover.AdminInitiate"),
-            CanAssignInitial = pending is null && !program.ProgramManagerId.HasValue && permissions.Contains("Handover.AdminInitiate"),
-            CanApproveIncoming = pending?.NewProgramManagerId == userId && permissions.Contains("Handover.Approve")
+            CanInitiate = writableScope && pending is null && program.ProgramManagerId == userId && permissions.Contains("Handover.Manage"),
+            CanAdminInitiate = writableScope && pending is null && program.ProgramManagerId.HasValue && permissions.Contains("Handover.AdminInitiate"),
+            CanAssignInitial = writableScope && pending is null && !program.ProgramManagerId.HasValue && permissions.Contains("Handover.AdminInitiate"),
+            CanApproveIncoming = writableScope && pending?.NewProgramManagerId == userId && permissions.Contains("Handover.Approve")
                 && await IsActiveManagementUserAsync(userId, program.TenantId, ct),
-            CanCancelOwnPending = requesterCanCancel,
+            CanCancelOwnPending = writableScope && requesterCanCancel,
             HasPendingRequest = pending is not null
         });
     }
@@ -177,6 +199,9 @@ public sealed class ManagerHandoverService : IManagerHandoverService
         var portfolio = await _db.Set<PortfolioEntity>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted, ct);
         if (portfolio is null || !await IsSameTenantAsync(userId, portfolio.TenantId, ct)) return Result<ManagerHandoverCapabilitiesDto>.Failure(Error.NotFound("Portfolio not found"));
         var permissions = await _effectivePermissions.GetEffectivePermissionsAsync(userId, portfolio.TenantId, ct);
+        if (!HasPortfolioScope(userId, portfolio.TenantId, portfolio.Id))
+            return Result<ManagerHandoverCapabilitiesDto>.Failure(Error.NotFound("Portfolio not found"));
+        var writableScope = HasPortfolioScope(userId, portfolio.TenantId, portfolio.Id, requireWrite: true);
         var pending = await _db.Set<PortfolioHandoverRequest>().AsNoTracking().FirstOrDefaultAsync(x => x.PortfolioId == id && x.TenantId == portfolio.TenantId && x.Status == ManagerHandoverStatus.Pending && !x.IsDeleted, ct);
         var requesterCanCancel = pending is not null && pending.RequestedBy == userId
             && permissions.Contains(pending.InitiationType == ManagerHandoverInitiationType.ManagerInitiated ? "Handover.Manage" : "Handover.AdminInitiate");
@@ -185,12 +210,12 @@ public sealed class ManagerHandoverService : IManagerHandoverService
             CurrentManagerId = portfolio.OwnerId,
             CurrentManagerName = await ResolveUserNameAsync(portfolio.OwnerId, portfolio.TenantId, ct),
             CanViewRequests = permissions.Contains("Handover.View"),
-            CanInitiate = pending is null && portfolio.OwnerId == userId && permissions.Contains("Handover.Manage"),
-            CanAdminInitiate = pending is null && portfolio.OwnerId.HasValue && permissions.Contains("Handover.AdminInitiate"),
-            CanAssignInitial = pending is null && !portfolio.OwnerId.HasValue && permissions.Contains("Handover.AdminInitiate"),
-            CanApproveIncoming = pending?.NewPortfolioManagerId == userId && permissions.Contains("Handover.Approve")
+            CanInitiate = writableScope && pending is null && portfolio.OwnerId == userId && permissions.Contains("Handover.Manage"),
+            CanAdminInitiate = writableScope && pending is null && portfolio.OwnerId.HasValue && permissions.Contains("Handover.AdminInitiate"),
+            CanAssignInitial = writableScope && pending is null && !portfolio.OwnerId.HasValue && permissions.Contains("Handover.AdminInitiate"),
+            CanApproveIncoming = writableScope && pending?.NewPortfolioManagerId == userId && permissions.Contains("Handover.Approve")
                 && await IsActiveManagementUserAsync(userId, portfolio.TenantId, ct),
-            CanCancelOwnPending = requesterCanCancel,
+            CanCancelOwnPending = writableScope && requesterCanCancel,
             HasPendingRequest = pending is not null
         });
     }
@@ -200,6 +225,7 @@ public sealed class ManagerHandoverService : IManagerHandoverService
         var program = await _db.Set<Program>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted, ct);
         if (program is null || !await IsSameTenantAsync(userId, program.TenantId, ct)) return Result<IReadOnlyList<ManagerHandoverRequestDto>>.Failure(Error.NotFound("Program not found"));
         if (!await HasPermissionAsync(userId, program.TenantId, "Handover.View", ct)) return Result<IReadOnlyList<ManagerHandoverRequestDto>>.Failure(Error.Forbidden("You do not have permission to view handovers"));
+        if (!HasProgramScope(userId, program.TenantId, program)) return Result<IReadOnlyList<ManagerHandoverRequestDto>>.Failure(Error.NotFound("Program not found"));
         var requests = await _db.Set<ProgramHandoverRequest>().Where(x => x.ProgramId == id && x.TenantId == program.TenantId && !x.IsDeleted).OrderByDescending(x => x.RequestedAt).ToListAsync(ct);
         return Result<IReadOnlyList<ManagerHandoverRequestDto>>.Success(await MapProgramRequestsAsync(requests, ct));
     }
@@ -209,6 +235,7 @@ public sealed class ManagerHandoverService : IManagerHandoverService
         var portfolio = await _db.Set<PortfolioEntity>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted, ct);
         if (portfolio is null || !await IsSameTenantAsync(userId, portfolio.TenantId, ct)) return Result<IReadOnlyList<ManagerHandoverRequestDto>>.Failure(Error.NotFound("Portfolio not found"));
         if (!await HasPermissionAsync(userId, portfolio.TenantId, "Handover.View", ct)) return Result<IReadOnlyList<ManagerHandoverRequestDto>>.Failure(Error.Forbidden("You do not have permission to view handovers"));
+        if (!HasPortfolioScope(userId, portfolio.TenantId, portfolio.Id)) return Result<IReadOnlyList<ManagerHandoverRequestDto>>.Failure(Error.NotFound("Portfolio not found"));
         var requests = await _db.Set<PortfolioHandoverRequest>().Where(x => x.PortfolioId == id && x.TenantId == portfolio.TenantId && !x.IsDeleted).OrderByDescending(x => x.RequestedAt).ToListAsync(ct);
         return Result<IReadOnlyList<ManagerHandoverRequestDto>>.Success(await MapPortfolioRequestsAsync(requests, ct));
     }
@@ -342,6 +369,7 @@ public sealed class ManagerHandoverService : IManagerHandoverService
         if (request.NewProgramManagerId != userId) return Result<ManagerHandoverRequestDto>.Failure(Error.Forbidden("Only the selected new manager can accept this request"));
         if (!await IsSameTenantAsync(userId, request.TenantId, ct) || !await HasPermissionAsync(userId, request.TenantId, "Handover.Approve", ct)
             || !await IsActiveManagementUserAsync(userId, request.TenantId, ct)) return Result<ManagerHandoverRequestDto>.Failure(Error.Forbidden("You do not have permission to approve handovers"));
+        if (!HasWritableActorContext(userId, request.TenantId)) return Result<ManagerHandoverRequestDto>.Failure(Error.Forbidden("Read-only management views cannot accept handovers"));
         var program = await _db.Set<Program>().FirstOrDefaultAsync(x => x.Id == request.ProgramId && x.TenantId == request.TenantId && !x.IsDeleted, ct);
         if (program is null) return Result<ManagerHandoverRequestDto>.Failure(Error.NotFound("Program not found"));
         if (program.ProgramManagerId != request.CurrentProgramManagerId) return Result<ManagerHandoverRequestDto>.Failure(Error.Conflict("The current Program Manager has changed"));
@@ -375,6 +403,7 @@ public sealed class ManagerHandoverService : IManagerHandoverService
         if (request.NewPortfolioManagerId != userId) return Result<ManagerHandoverRequestDto>.Failure(Error.Forbidden("Only the selected new manager can accept this request"));
         if (!await IsSameTenantAsync(userId, request.TenantId, ct) || !await HasPermissionAsync(userId, request.TenantId, "Handover.Approve", ct)
             || !await IsActiveManagementUserAsync(userId, request.TenantId, ct)) return Result<ManagerHandoverRequestDto>.Failure(Error.Forbidden("You do not have permission to approve handovers"));
+        if (!HasWritableActorContext(userId, request.TenantId)) return Result<ManagerHandoverRequestDto>.Failure(Error.Forbidden("Read-only management views cannot accept handovers"));
         var portfolio = await _db.Set<PortfolioEntity>().FirstOrDefaultAsync(x => x.Id == request.PortfolioId && x.TenantId == request.TenantId && !x.IsDeleted, ct);
         if (portfolio is null) return Result<ManagerHandoverRequestDto>.Failure(Error.NotFound("Portfolio not found"));
         if (portfolio.OwnerId != request.CurrentPortfolioManagerId) return Result<ManagerHandoverRequestDto>.Failure(Error.Conflict("The current Portfolio Manager has changed"));
@@ -413,6 +442,7 @@ public sealed class ManagerHandoverService : IManagerHandoverService
         if (status == ManagerHandoverStatus.Rejected && request.NewProgramManagerId != userId) return Result<ManagerHandoverRequestDto>.Failure(Error.Forbidden("Only the selected new manager can reject this request"));
         var requiredPermission = status == ManagerHandoverStatus.Rejected ? "Handover.Approve" : request.InitiationType == ManagerHandoverInitiationType.ManagerInitiated ? "Handover.Manage" : "Handover.AdminInitiate";
         if (!await IsSameTenantAsync(userId, request.TenantId, ct) || !await HasPermissionAsync(userId, request.TenantId, requiredPermission, ct)) return Result<ManagerHandoverRequestDto>.Failure(Error.Forbidden("You do not have permission to change this handover request"));
+        if (!HasWritableActorContext(userId, request.TenantId)) return Result<ManagerHandoverRequestDto>.Failure(Error.Forbidden("Read-only management views cannot change handover requests"));
         if (status == ManagerHandoverStatus.Rejected && !await IsActiveManagementUserAsync(userId, request.TenantId, ct)) return Result<ManagerHandoverRequestDto>.Failure(Error.Forbidden("An active Management-category role is required to approve handovers"));
         if (status == ManagerHandoverStatus.Cancelled && request.RequestedBy != userId) return Result<ManagerHandoverRequestDto>.Failure(Error.Forbidden("Only the requester can cancel this request"));
         if (status == ManagerHandoverStatus.Rejected && string.IsNullOrWhiteSpace(reason)) return Result<ManagerHandoverRequestDto>.Failure(Error.Validation("A rejection reason is required"));
@@ -434,6 +464,7 @@ public sealed class ManagerHandoverService : IManagerHandoverService
         if (status == ManagerHandoverStatus.Rejected && request.NewPortfolioManagerId != userId) return Result<ManagerHandoverRequestDto>.Failure(Error.Forbidden("Only the selected new manager can reject this request"));
         var requiredPermission = status == ManagerHandoverStatus.Rejected ? "Handover.Approve" : request.InitiationType == ManagerHandoverInitiationType.ManagerInitiated ? "Handover.Manage" : "Handover.AdminInitiate";
         if (!await IsSameTenantAsync(userId, request.TenantId, ct) || !await HasPermissionAsync(userId, request.TenantId, requiredPermission, ct)) return Result<ManagerHandoverRequestDto>.Failure(Error.Forbidden("You do not have permission to change this handover request"));
+        if (!HasWritableActorContext(userId, request.TenantId)) return Result<ManagerHandoverRequestDto>.Failure(Error.Forbidden("Read-only management views cannot change handover requests"));
         if (status == ManagerHandoverStatus.Rejected && !await IsActiveManagementUserAsync(userId, request.TenantId, ct)) return Result<ManagerHandoverRequestDto>.Failure(Error.Forbidden("An active Management-category role is required to approve handovers"));
         if (status == ManagerHandoverStatus.Cancelled && request.RequestedBy != userId) return Result<ManagerHandoverRequestDto>.Failure(Error.Forbidden("Only the requester can cancel this request"));
         if (status == ManagerHandoverStatus.Rejected && string.IsNullOrWhiteSpace(reason)) return Result<ManagerHandoverRequestDto>.Failure(Error.Validation("A rejection reason is required"));
@@ -451,6 +482,7 @@ public sealed class ManagerHandoverService : IManagerHandoverService
         var program = await _db.Set<Program>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted, ct);
         if (program is null || !await IsSameTenantAsync(userId, program.TenantId, ct)) return Result<IReadOnlyList<ManagerAssignmentDto>>.Failure(Error.NotFound("Program not found"));
         if (!await HasPermissionAsync(userId, program.TenantId, "Handover.View", ct)) return Result<IReadOnlyList<ManagerAssignmentDto>>.Failure(Error.Forbidden("You do not have permission to view handover history"));
+        if (!HasProgramScope(userId, program.TenantId, program)) return Result<IReadOnlyList<ManagerAssignmentDto>>.Failure(Error.NotFound("Program not found"));
         var items = await _db.Set<ProgramManagerAssignment>().Where(x => x.TenantId == program.TenantId && x.ProgramId == id && !x.IsDeleted).OrderByDescending(x => x.StartDate).ToListAsync(ct);
         return Result<IReadOnlyList<ManagerAssignmentDto>>.Success(await MapAssignmentsAsync(program.TenantId, items.Select(x => (x.Id, id, x.ProgramManagerId, x.StartDate, x.EndDate, x.IsCurrent, x.HandoverDate, x.HandoverReason, x.HandoverNotes)).ToList(), ct));
     }
@@ -460,6 +492,7 @@ public sealed class ManagerHandoverService : IManagerHandoverService
         var portfolio = await _db.Set<PortfolioEntity>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted, ct);
         if (portfolio is null || !await IsSameTenantAsync(userId, portfolio.TenantId, ct)) return Result<IReadOnlyList<ManagerAssignmentDto>>.Failure(Error.NotFound("Portfolio not found"));
         if (!await HasPermissionAsync(userId, portfolio.TenantId, "Handover.View", ct)) return Result<IReadOnlyList<ManagerAssignmentDto>>.Failure(Error.Forbidden("You do not have permission to view handover history"));
+        if (!HasPortfolioScope(userId, portfolio.TenantId, portfolio.Id)) return Result<IReadOnlyList<ManagerAssignmentDto>>.Failure(Error.NotFound("Portfolio not found"));
         var items = await _db.Set<PortfolioManagerAssignment>().Where(x => x.TenantId == portfolio.TenantId && x.PortfolioId == id && !x.IsDeleted).OrderByDescending(x => x.StartDate).ToListAsync(ct);
         return Result<IReadOnlyList<ManagerAssignmentDto>>.Success(await MapAssignmentsAsync(portfolio.TenantId, items.Select(x => (x.Id, id, x.PortfolioManagerId, x.StartDate, x.EndDate, x.IsCurrent, x.HandoverDate, x.HandoverReason, x.HandoverNotes)).ToList(), ct));
     }
@@ -469,6 +502,7 @@ public sealed class ManagerHandoverService : IManagerHandoverService
         var program = await _db.Set<Program>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted, ct);
         if (program is null || !await IsSameTenantAsync(userId, program.TenantId, ct)) return Result<IReadOnlyList<ManagerSnapshotDto>>.Failure(Error.NotFound("Program not found"));
         if (!await HasPermissionAsync(userId, program.TenantId, "Handover.View", ct)) return Result<IReadOnlyList<ManagerSnapshotDto>>.Failure(Error.Forbidden("You do not have permission to view handover snapshots"));
+        if (!HasProgramScope(userId, program.TenantId, program)) return Result<IReadOnlyList<ManagerSnapshotDto>>.Failure(Error.NotFound("Program not found"));
         var items = await _db.Set<ProgramSnapshot>().Where(x => x.TenantId == program.TenantId && x.ProgramId == id && !x.IsDeleted).OrderByDescending(x => x.SnapshotNumber).ToListAsync(ct);
         return Result<IReadOnlyList<ManagerSnapshotDto>>.Success(await MapSnapshotsAsync(program.TenantId, items.Select(x => (x.Id, id, x.SnapshotNumber, x.Name, x.SnapshotDate, x.EffectiveEndDate, x.PreviousProgramManagerId, x.NewProgramManagerId, x.HandoverReason, x.HandoverNotes, x.Data)).ToList(), ct));
     }
@@ -478,8 +512,35 @@ public sealed class ManagerHandoverService : IManagerHandoverService
         var portfolio = await _db.Set<PortfolioEntity>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted, ct);
         if (portfolio is null || !await IsSameTenantAsync(userId, portfolio.TenantId, ct)) return Result<IReadOnlyList<ManagerSnapshotDto>>.Failure(Error.NotFound("Portfolio not found"));
         if (!await HasPermissionAsync(userId, portfolio.TenantId, "Handover.View", ct)) return Result<IReadOnlyList<ManagerSnapshotDto>>.Failure(Error.Forbidden("You do not have permission to view handover snapshots"));
+        if (!HasPortfolioScope(userId, portfolio.TenantId, portfolio.Id)) return Result<IReadOnlyList<ManagerSnapshotDto>>.Failure(Error.NotFound("Portfolio not found"));
         var items = await _db.Set<PortfolioSnapshot>().Where(x => x.TenantId == portfolio.TenantId && x.PortfolioId == id && !x.IsDeleted).OrderByDescending(x => x.SnapshotNumber).ToListAsync(ct);
         return Result<IReadOnlyList<ManagerSnapshotDto>>.Success(await MapSnapshotsAsync(portfolio.TenantId, items.Select(x => (x.Id, id, x.SnapshotNumber, x.Name, x.SnapshotDate, x.EffectiveEndDate, x.PreviousPortfolioManagerId, x.NewPortfolioManagerId, x.HandoverReason, x.HandoverNotes, x.Data)).ToList(), ct));
+    }
+
+    private bool HasWritableActorContext(Guid userId, Guid tenantId)
+    {
+        var context = _management.Current;
+        return context is not null && context.UserId == userId && context.TenantId == tenantId
+            && !context.EffectiveReadOnly;
+    }
+
+    private bool HasPortfolioScope(Guid userId, Guid tenantId, Guid portfolioId, bool requireWrite = false)
+    {
+        var context = _management.Current;
+        return context is not null && context.UserId == userId && context.TenantId == tenantId
+            && (!requireWrite || !context.EffectiveReadOnly)
+            && ((!requireWrite && context.CanReadAllTenantPortfolioProgramData)
+                || context.Scope.PortfolioIds.Contains(portfolioId));
+    }
+
+    private bool HasProgramScope(Guid userId, Guid tenantId, Program program, bool requireWrite = false)
+    {
+        var context = _management.Current;
+        return context is not null && context.UserId == userId && context.TenantId == tenantId
+            && (!requireWrite || !context.EffectiveReadOnly)
+            && ((!requireWrite && context.CanReadAllTenantPortfolioProgramData)
+                || context.Scope.ProgramIds.Contains(program.Id)
+                || context.Scope.PortfolioIds.Contains(program.PortfolioId));
     }
 
     private static Error? Validate(CreateManagerHandoverRequestDto dto, Guid? currentId, bool initialAssignment) =>

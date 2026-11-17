@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using FluentValidation;
 using NEXUS.Modules.ResourceManagement.Application;
 using NEXUS.Modules.ResourceManagement.Application.DTOs;
+using NEXUS.SharedKernel.Management;
 
 namespace NEXUS.Modules.ResourceManagement.Api;
 
@@ -15,15 +16,18 @@ public class ResourceController : ControllerBase
     private readonly IResourceService _resourceService;
     private readonly IValidator<CreateResourceDto> _createValidator;
     private readonly IValidator<UpdateResourceDto> _updateValidator;
+    private readonly IManagementContextAccessor? _managementContext;
 
     public ResourceController(
         IResourceService resourceService,
         IValidator<CreateResourceDto> createValidator,
-        IValidator<UpdateResourceDto> updateValidator)
+        IValidator<UpdateResourceDto> updateValidator,
+        IManagementContextAccessor? managementContext = null)
     {
         _resourceService = resourceService;
         _createValidator = createValidator;
         _updateValidator = updateValidator;
+        _managementContext = managementContext;
     }
 
     [HttpGet("{id:guid}")]
@@ -61,6 +65,9 @@ public class ResourceController : ControllerBase
     [Authorize(Policy = "Resource.Create")]
     public async Task<IActionResult> Create([FromBody] CreateResourceDto dto, CancellationToken cancellationToken)
     {
+        var actorError = ResourceManagementActorBinding.RequireActor(this, _managementContext, requireManagementContext: true, out var userId);
+        if (actorError is not null) return actorError;
+
         var validation = await _createValidator.ValidateAsync(dto, cancellationToken);
         if (!validation.IsValid)
         {
@@ -77,7 +84,6 @@ public class ResourceController : ControllerBase
             return BadRequest(problem);
         }
 
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
         var result = await _resourceService.CreateAsync(dto, userId, cancellationToken);
         if (result.IsFailure) return MapError(result.Error!);
         return CreatedAtAction(nameof(GetById), new { id = result.Value!.Id }, result.Value);
@@ -87,6 +93,9 @@ public class ResourceController : ControllerBase
     [Authorize(Policy = "Resource.Edit")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateResourceDto dto, CancellationToken cancellationToken)
     {
+        var actorError = ResourceManagementActorBinding.RequireActor(this, _managementContext, requireManagementContext: true, out var userId);
+        if (actorError is not null) return actorError;
+
         var validation = await _updateValidator.ValidateAsync(dto, cancellationToken);
         if (!validation.IsValid)
         {
@@ -103,7 +112,6 @@ public class ResourceController : ControllerBase
             return BadRequest(problem);
         }
 
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
         var result = await _resourceService.UpdateAsync(id, dto, userId, cancellationToken);
         if (result.IsFailure) return MapError(result.Error!);
         return Ok(result.Value);
@@ -137,7 +145,8 @@ public class ResourceController : ControllerBase
     [Authorize(Policy = "Resource.Delete")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        var actorError = ResourceManagementActorBinding.RequireActor(this, _managementContext, requireManagementContext: true, out var userId);
+        if (actorError is not null) return actorError;
         var result = await _resourceService.DeleteAsync(id, userId, cancellationToken);
         if (result.IsFailure) return NotFound(new { error = result.Error?.Message });
         return NoContent();

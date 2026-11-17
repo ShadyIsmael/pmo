@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using NEXUS.Modules.ProjectManagement.Application;
 using NEXUS.Modules.ProjectManagement.Application.DTOs;
+using NEXUS.SharedKernel.Management;
 
 namespace NEXUS.Modules.ProjectManagement.Api;
 
@@ -12,11 +13,13 @@ public sealed class ProjectPeopleController : ControllerBase
 {
     private readonly IProjectPeopleService _service;
     private readonly IAuthorizationService _authorization;
+    private readonly IManagementContextAccessor? _managementContext;
 
-    public ProjectPeopleController(IProjectPeopleService service, IAuthorizationService authorization)
+    public ProjectPeopleController(IProjectPeopleService service, IAuthorizationService authorization, IManagementContextAccessor? managementContext = null)
     {
         _service = service;
         _authorization = authorization;
+        _managementContext = managementContext;
     }
 
     [Authorize(Policy = "Project.View")]
@@ -24,31 +27,47 @@ public sealed class ProjectPeopleController : ControllerBase
     public async Task<IActionResult> Get(Guid projectId, CancellationToken cancellationToken)
     {
         var result = await _service.GetAsync(projectId, cancellationToken);
-        return result.IsFailure ? Map(result.Error!) : Ok(result.Value);
+        if (result.IsFailure) return Map(result.Error!);
+        var canReadResourceContacts = (await _authorization.AuthorizeAsync(User, "Resources.View")).Succeeded;
+        var canReadStakeholderContacts = (await _authorization.AuthorizeAsync(User, "Stakeholders.Read")).Succeeded;
+        foreach (var person in result.Value!)
+        {
+            var canReadEmail = string.Equals(person.Source, "Stakeholder", StringComparison.OrdinalIgnoreCase)
+                ? canReadStakeholderContacts
+                : canReadResourceContacts;
+            if (!canReadEmail) person.Email = null;
+        }
+        return Ok(result.Value);
     }
 
     [HttpPost]
     public async Task<IActionResult> Add(Guid projectId, [FromBody] CreateProjectPersonDto dto, CancellationToken cancellationToken)
     {
+        var denied = ManagementActorBinding.RequireActor(this, _managementContext, requireWritable: true, out var actorId);
+        if (denied is not null) return denied;
         if (!await CanManageAsync(dto.RelationshipType)) return Forbid();
         if (dto.TeamId.HasValue && !(await _authorization.AuthorizeAsync(User, "Team.View")).Succeeded) return Forbid();
-        var result = await _service.AddAsync(projectId, dto, ActorId(), cancellationToken);
+        var result = await _service.AddAsync(projectId, dto, actorId, cancellationToken);
         return result.IsFailure ? Map(result.Error!) : Ok(result.Value);
     }
 
     [HttpPut("{personId:guid}")]
     public async Task<IActionResult> Update(Guid projectId, Guid personId, [FromBody] UpdateProjectPersonDto dto, CancellationToken cancellationToken)
     {
+        var denied = ManagementActorBinding.RequireActor(this, _managementContext, requireWritable: true, out var actorId);
+        if (denied is not null) return denied;
         if (!await CanManageAsync(dto.RelationshipType ?? dto.Source)) return Forbid();
         if ((dto.TeamId.HasValue || await _service.IsTeamGroupAssignmentAsync(projectId, personId, cancellationToken))
             && !(await _authorization.AuthorizeAsync(User, "Team.View")).Succeeded) return Forbid();
-        var result = await _service.UpdateAsync(projectId, personId, dto, ActorId(), cancellationToken);
+        var result = await _service.UpdateAsync(projectId, personId, dto, actorId, cancellationToken);
         return result.IsFailure ? Map(result.Error!) : Ok(result.Value);
     }
 
     [HttpPost("{personId:guid}/remove")]
     public async Task<IActionResult> Remove(Guid projectId, Guid personId, [FromBody] RemoveProjectPersonDto dto, CancellationToken cancellationToken)
     {
+        var denied = ManagementActorBinding.RequireActor(this, _managementContext, requireWritable: true, out var actorId);
+        if (denied is not null) return denied;
         if (!await CanManageAsync(dto.Source)) return Forbid();
         if ((dto.TeamId.HasValue || await _service.IsTeamGroupAssignmentAsync(projectId, personId, cancellationToken))
             && !(await _authorization.AuthorizeAsync(User, "Team.View")).Succeeded) return Forbid();
@@ -58,15 +77,17 @@ public sealed class ProjectPeopleController : ControllerBase
             try { rowVersion = Convert.FromBase64String(dto.RowVersion); }
             catch (FormatException) { return BadRequest(new { error = "RowVersion must be valid Base64" }); }
         }
-        var result = await _service.RevokeOrRemoveAsync(projectId, personId, dto.Source, rowVersion, ActorId(), cancellationToken);
+        var result = await _service.RevokeOrRemoveAsync(projectId, personId, dto.Source, rowVersion, actorId, cancellationToken);
         return result.IsFailure ? Map(result.Error!) : Ok(result.Value);
     }
 
     [HttpDelete("sponsor")]
     public async Task<IActionResult> ClearSponsor(Guid projectId, CancellationToken cancellationToken)
     {
+        var denied = ManagementActorBinding.RequireActor(this, _managementContext, requireWritable: true, out var actorId);
+        if (denied is not null) return denied;
         if (!await CanManageAsync(ProjectRelationshipType.Sponsor)) return Forbid();
-        var result = await _service.ClearSponsorAsync(projectId, ActorId(), cancellationToken);
+        var result = await _service.ClearSponsorAsync(projectId, actorId, cancellationToken);
         return result.IsFailure ? Map(result.Error!) : NoContent();
     }
 
@@ -87,8 +108,6 @@ public sealed class ProjectPeopleController : ControllerBase
 
         return false;
     }
-
-    private string ActorId() => User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
 
     private static IActionResult Map(NEXUS.SharedKernel.Error error) => error.StatusCode switch
     {

@@ -7,8 +7,7 @@ public static class EffectivePermissionResolver
 {
     public static HashSet<string> Resolve(
         IEnumerable<string> inheritedPermissions,
-        IEnumerable<(string Permission, PermissionOverrideEffect Effect)> overrides,
-        IEnumerable<string>? mandatoryPermissions = null)
+        IEnumerable<(string Permission, PermissionOverrideEffect Effect)> overrides)
     {
         var effective = inheritedPermissions.ToHashSet(StringComparer.Ordinal);
         var denied = new HashSet<string>(StringComparer.Ordinal);
@@ -21,11 +20,6 @@ public static class EffectivePermissionResolver
         }
 
         effective.ExceptWith(denied);
-        // A protected tenant Admin baseline is a mandatory system invariant. Deny
-        // still wins across ordinary role and direct grants, but a malformed or
-        // historical override cannot remove a protected baseline capability.
-        if (mandatoryPermissions is not null)
-            effective.UnionWith(mandatoryPermissions);
         return effective;
     }
 }

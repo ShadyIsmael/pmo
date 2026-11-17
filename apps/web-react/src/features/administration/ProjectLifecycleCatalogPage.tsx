@@ -12,7 +12,8 @@ import { SideSheet, SideSheetBody, SideSheetFooter } from "@components/ui/SideSh
 import { useConfirm } from "@components/ui/ConfirmProvider";
 import { useAuth } from "@auth/AuthProvider";
 import { useI18n } from "@i18n/messages";
-import { hasPermission, Permissions } from "@lib/permissions";
+import { hasAnyPermission, hasPermission, Permissions } from "@lib/permissions";
+import { useOrganizationProfiles } from "./api/settings";
 import {
   useCreateProjectLifecycleItem,
   useProjectLifecycleCatalog,
@@ -70,7 +71,7 @@ function Summary({ label, value, icon, accent }: { label: string; value: number;
 export function ProjectLifecycleCatalogPage() {
   const { t, locale, formatNumber } = useI18n();
   const { user } = useAuth();
-  const { snapshot, canMutate, loading: managementLoading } = useManagement();
+  const { canMutate, loading: managementLoading } = useManagement();
   const confirm = useConfirm();
   const [activeKind, setActiveKind] = React.useState<ProjectLifecycleCatalogKind>("phases");
   const [organizationId, setOrganizationId] = React.useState("");
@@ -83,18 +84,41 @@ export function ProjectLifecycleCatalogPage() {
   const [actionError, setActionError] = React.useState<string | null>(null);
   const [pendingActionId, setPendingActionId] = React.useState<string | null>(null);
 
-  const scope = snapshot?.selectedContext?.scope ?? snapshot?.scope;
-  const organizations = React.useMemo(() => {
-    if (!scope) return [];
-    const allowedIds = new Set(scope.organizationIds ?? []);
-    return (scope.organizationReferences ?? []).filter((organization) => allowedIds.has(organization.id));
-  }, [scope]);
-  const organizationIsAllowed = !organizationId || organizations.some((organization) => organization.id === organizationId);
-  const canView = (kind: ProjectLifecycleCatalogKind) => Boolean(user && hasPermission(user.permissions, permissionKeys[kind].view));
-  const canCreate = (kind: ProjectLifecycleCatalogKind) => Boolean(canMutate && user && hasPermission(user.permissions, permissionKeys[kind].create));
-  const canEdit = (kind: ProjectLifecycleCatalogKind) => Boolean(canMutate && user && hasPermission(user.permissions, permissionKeys[kind].edit));
-  const canChangeStatus = (kind: ProjectLifecycleCatalogKind) => Boolean(canMutate && user && hasPermission(user.permissions, permissionKeys[kind].status));
-  const phaseQuery = useProjectLifecycleCatalog("phases", organizationId || null, true, organizationIsAllowed && canView("phases"));
+  const userPermissions = user?.permissions ?? [];
+  const canViewOrganizationConfiguration = hasAnyPermission(userPermissions, [Permissions.OrganizationConfiguration.View, Permissions.OrganizationConfiguration.Manage]);
+  const organizationProfiles = useOrganizationProfiles(
+    canViewOrganizationConfiguration || hasPermission(userPermissions, Permissions.Settings.View),
+    true,
+  );
+  const organizations = organizationProfiles.data ?? [];
+  const organizationIsAllowed = organizationId
+    ? organizations.some((organization) => organization.id === organizationId)
+    : (Object.keys(permissionKeys) as ProjectLifecycleCatalogKind[]).some((kind) => hasPermission(userPermissions, permissionKeys[kind].view));
+  const selectedOrganization = organizations.find((organization) => organization.id === organizationId);
+  const canManageSelectedOrganization = Boolean(
+    organizationId
+    && organizationIsAllowed
+    && selectedOrganization?.canManageSettings === true
+    && hasPermission(userPermissions, Permissions.OrganizationConfiguration.Manage),
+  );
+  const canView = (kind: ProjectLifecycleCatalogKind) => Boolean(user && (
+    organizationId
+      ? organizationIsAllowed && (hasPermission(userPermissions, permissionKeys[kind].view) || canViewOrganizationConfiguration)
+      : organizationIsAllowed && hasPermission(userPermissions, permissionKeys[kind].view)
+  ));
+  const canCreate = (kind: ProjectLifecycleCatalogKind) => Boolean(canMutate && user && organizationIsAllowed
+    && (hasPermission(userPermissions, permissionKeys[kind].create) || canManageSelectedOrganization));
+  const canEdit = (kind: ProjectLifecycleCatalogKind) => Boolean(canMutate && user && organizationIsAllowed
+    && (hasPermission(userPermissions, permissionKeys[kind].edit) || canManageSelectedOrganization));
+  const canChangeStatus = (kind: ProjectLifecycleCatalogKind) => Boolean(canMutate && user && organizationIsAllowed
+    && (hasPermission(userPermissions, permissionKeys[kind].status) || canManageSelectedOrganization));
+  const canEditItem = (kind: ProjectLifecycleCatalogKind, item: ProjectLifecycleCatalogItem) =>
+    (canEdit(kind) && hasPermission(userPermissions, permissionKeys[kind].edit))
+    || Boolean(item.organizationId && item.organizationId === organizationId && canManageSelectedOrganization && canMutate);
+  const canChangeItemStatus = (kind: ProjectLifecycleCatalogKind, item: ProjectLifecycleCatalogItem) =>
+    (canChangeStatus(kind) && hasPermission(userPermissions, permissionKeys[kind].status))
+    || Boolean(item.organizationId && item.organizationId === organizationId && canManageSelectedOrganization && canMutate);
+  const phaseQuery = useProjectLifecycleCatalog("phases", organizationId || null, true, Boolean(organizationId) && organizationIsAllowed && canView("phases"));
   const statusQuery = useProjectLifecycleCatalog("statuses", organizationId || null, true, organizationIsAllowed && canView("statuses"));
   const activeQuery = activeKind === "phases" ? phaseQuery : statusQuery;
   const createMutation = useCreateProjectLifecycleItem(activeKind);
@@ -103,9 +127,15 @@ export function ProjectLifecycleCatalogPage() {
   const deactivateMutation = useProjectLifecycleItemAction(activeKind, "deactivate");
   const makeDefaultMutation = useProjectLifecycleItemAction(activeKind, "default");
 
+  const canViewTenantCatalog = (Object.keys(permissionKeys) as ProjectLifecycleCatalogKind[])
+    .some((kind) => hasPermission(userPermissions, permissionKeys[kind].view));
   React.useEffect(() => {
-    setOrganizationId((current) => organizations.some((organization) => organization.id === current) ? current : "");
-  }, [organizations]);
+    setOrganizationId((current) => {
+      if (current && organizations.some((organization) => organization.id === current)) return current;
+      if (organizations.length > 0) return organizations[0].id;
+      return canViewTenantCatalog ? "" : "";
+    });
+  }, [organizations, canViewTenantCatalog]);
   const catalogItems = React.useMemo(() => {
     const query = search.trim().toLocaleLowerCase();
     return [...(activeQuery.data ?? [])]
@@ -122,7 +152,9 @@ export function ProjectLifecycleCatalogPage() {
   const defaultItem = allItems.find((item) => item.isDefault);
   const busy = createMutation.isPending || updateMutation.isPending || activateMutation.isPending || deactivateMutation.isPending;
   const namespace = "administration.projectLifecycleCatalog";
-  const visibleKinds = (["phases", "statuses"] as const).filter(canView);
+  const visibleKinds = (["phases", "statuses"] as const).filter((kind) =>
+    hasPermission(userPermissions, permissionKeys[kind].view)
+    || (canViewOrganizationConfiguration && (organizationProfiles.isLoading || organizations.length > 0)));
 
   React.useEffect(() => {
     if (visibleKinds.length && !visibleKinds.includes(activeKind)) setActiveKind(visibleKinds[0]);
@@ -137,6 +169,7 @@ export function ProjectLifecycleCatalogPage() {
   }
 
   function openEdit(item: ProjectLifecycleCatalogItem) {
+    if (!canEditItem(activeKind, item)) return;
     setEditing(item);
     setForm({
       code: item.code,
@@ -168,7 +201,7 @@ export function ProjectLifecycleCatalogPage() {
 
   async function saveItem(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (editing ? !canEdit(activeKind) : !canCreate(activeKind)) return;
+    if (editing ? !canEditItem(activeKind, editing) : !canCreate(activeKind)) return;
     const code = form.code.trim();
     const nameEn = form.nameEn.trim();
     const nameAr = form.nameAr.trim();
@@ -202,11 +235,14 @@ export function ProjectLifecycleCatalogPage() {
   }
 
   async function setItemActive(item: ProjectLifecycleCatalogItem) {
-    if (!canChangeStatus(activeKind) || pendingActionId) return;
+    if (!canChangeItemStatus(activeKind, item) || pendingActionId) return;
     const activate = !item.isActive;
     if (!activate && !await confirm({
       title: t(`${namespace}.deactivateTitle`),
-      description: t(`${namespace}.deactivateConfirm`, { name: itemName(item, locale), count: formatNumber(item.referencedProjectCount) }),
+      description: t(`${namespace}.deactivateConfirm`, {
+        name: itemName(item, locale),
+        count: item.referencedProjectCount === null ? t(`${namespace}.notAvailable`) : formatNumber(item.referencedProjectCount),
+      }),
       confirmLabel: t(`${namespace}.deactivate`),
       destructive: true,
     })) return;
@@ -222,7 +258,7 @@ export function ProjectLifecycleCatalogPage() {
   }
 
   async function setItemDefault(item: ProjectLifecycleCatalogItem) {
-    if (!canEdit(activeKind) || item.isDefault || !item.isActive || pendingActionId) return;
+    if (!canEditItem(activeKind, item) || item.isDefault || !item.isActive || pendingActionId) return;
     setPendingActionId(item.id);
     setActionError(null);
     try {
@@ -234,7 +270,7 @@ export function ProjectLifecycleCatalogPage() {
     }
   }
 
-  const loadingScope = managementLoading && !scope;
+  const loadingScope = managementLoading || (canViewOrganizationConfiguration && organizationProfiles.isLoading);
   const currentTabCanView = canView(activeKind);
   const isDefaultName = defaultItem ? itemName(defaultItem, locale) : t(`${namespace}.none`);
 
@@ -272,7 +308,7 @@ export function ProjectLifecycleCatalogPage() {
           </div>
         </div>
         <div className="grid w-full gap-3 sm:grid-cols-2 lg:max-w-2xl">
-          <div className="space-y-1.5"><Label htmlFor="lifecycle-scope">{t(`${namespace}.scope`)}</Label><select id="lifecycle-scope" value={organizationId} onChange={(event) => { setOrganizationId(event.target.value); setSearch(""); }} disabled={loadingScope} className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="">{t(`${namespace}.tenantScope`)}</option>{organizations.map((organization) => <option key={organization.id} value={organization.id}>{organization.name}</option>)}</select></div>
+          <div className="space-y-1.5"><Label htmlFor="lifecycle-scope">{t(`${namespace}.scope`)}</Label><select id="lifecycle-scope" value={organizationId} onChange={(event) => { setOrganizationId(event.target.value); setSearch(""); }} disabled={loadingScope || (!canViewTenantCatalog && organizations.length === 0)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm">{canViewTenantCatalog ? <option value="">{t(`${namespace}.tenantScope`)}</option> : null}{organizations.map((organization) => <option key={organization.id} value={organization.id}>{organization.name}</option>)}</select></div>
           <div className="space-y-1.5"><Label htmlFor="lifecycle-search">{t(`${namespace}.search`)}</Label><div className="relative"><Search aria-hidden="true" className="absolute start-3 top-3 h-4 w-4 text-muted-foreground" /><Input id="lifecycle-search" className="ps-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t(`${namespace}.searchPlaceholder`)} disabled={!organizationIsAllowed || !currentTabCanView} /></div></div>
         </div>
       </CardHeader>
@@ -291,16 +327,18 @@ export function ProjectLifecycleCatalogPage() {
                 : catalogItems.length === 0 ? <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed p-10 text-center"><span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-muted text-muted-foreground"><Search className="h-5 w-5" /></span><p className="text-sm font-medium">{search || viewFilter !== "all" ? t(`${namespace}.noMatches`) : t(`${namespace}.empty`)}</p><p className="max-w-lg text-xs text-muted-foreground">{t(`${namespace}.emptyDescription`)}</p>{search || viewFilter !== "all" ? <Button size="sm" variant="outline" onClick={() => { setSearch(""); setViewFilter("all"); }}>{t(`${namespace}.clearFilters`)}</Button> : null}</div>
                   : <div className="grid gap-3 xl:grid-cols-2">
                     {catalogItems.map((item) => {
-                      const canManageItem = canEdit(activeKind) || canChangeStatus(activeKind);
+                      const canEditThisItem = canEditItem(activeKind, item);
+                      const canChangeThisItemStatus = canChangeItemStatus(activeKind, item);
+                      const canManageItem = canEditThisItem || canChangeThisItemStatus;
                       return <article key={item.id} className={`group rounded-xl border bg-card p-4 transition-shadow hover:shadow-sm ${!item.isActive ? "opacity-80" : ""}`}>
                         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                           <div className="min-w-0 flex-1">
                             <div className="flex flex-wrap items-center gap-2"><h3 className="text-sm font-semibold">{itemName(item, locale)}</h3><span className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${item.isActive ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" : "border-muted-foreground/25 bg-muted text-muted-foreground"}`}>{item.isActive ? t(`${namespace}.active`) : t(`${namespace}.inactive`)}</span>{item.isDefault ? <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary"><Check className="h-3 w-3" />{t(`${namespace}.default`)}</span> : null}{activeKind === "phases" && item.isContinuousActivity ? <span className="rounded-full border border-violet-500/25 bg-violet-500/10 px-2 py-0.5 text-[11px] font-medium text-violet-700 dark:text-violet-300">{t(`${namespace}.continuousActivity`)}</span> : null}</div>
                             <p className="mt-1 text-xs text-muted-foreground">{locale === "ar" ? item.nameEn : item.nameAr}</p>
-                            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground"><span className="font-mono">{item.code}</span><span>{t(`${namespace}.orderValue`, { order: formatNumber(item.displayOrder) })}</span><span>{t(`${namespace}.projectReferences`, { count: formatNumber(item.referencedProjectCount) })}</span>{activeKind === "statuses" ? <span>{t(`${namespace}.reportingCategory.${item.reportingCategory ?? "InProgress"}`)}</span> : null}{activeKind === "statuses" && item.attentionLevel && item.attentionLevel !== "None" ? <span>{t(`${namespace}.attentionLevel.${item.attentionLevel}`)}</span> : null}</div>
+                            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground"><span className="font-mono">{item.code}</span><span>{t(`${namespace}.orderValue`, { order: formatNumber(item.displayOrder) })}</span><span>{item.referencedProjectCount === null ? t(`${namespace}.notAvailable`) : t(`${namespace}.projectReferences`, { count: formatNumber(item.referencedProjectCount) })}</span>{activeKind === "statuses" ? <span>{t(`${namespace}.reportingCategory.${item.reportingCategory ?? "InProgress"}`)}</span> : null}{activeKind === "statuses" && item.attentionLevel && item.attentionLevel !== "None" ? <span>{t(`${namespace}.attentionLevel.${item.attentionLevel}`)}</span> : null}</div>
                             {(item.descriptionEn || item.descriptionAr) ? <p className="mt-3 line-clamp-2 text-sm text-muted-foreground">{locale === "ar" ? item.descriptionAr || item.descriptionEn : item.descriptionEn || item.descriptionAr}</p> : null}
                           </div>
-                          {canManageItem || (canEdit(activeKind) && !item.isDefault && item.isActive) ? <div className="flex shrink-0 gap-1 self-end sm:self-start">{canEdit(activeKind) ? <><Button size="icon" variant="ghost" onClick={() => openEdit(item)} aria-label={`${t(`${namespace}.edit`)} ${itemName(item, locale)}`} disabled={busy || pendingActionId !== null}><Pencil className="h-4 w-4" /></Button>{!item.isDefault && item.isActive ? <Button size="icon" variant="ghost" onClick={() => void setItemDefault(item)} aria-label={`${t(`${namespace}.makeDefault`)} ${itemName(item, locale)}`} disabled={busy || pendingActionId !== null}><Star className="h-4 w-4" /></Button> : null}</> : null}{canChangeStatus(activeKind) ? <Button size="icon" variant="ghost" onClick={() => void setItemActive(item)} aria-label={`${item.isActive ? t(`${namespace}.deactivate`) : t(`${namespace}.activate`)} ${itemName(item, locale)}`} disabled={busy || pendingActionId !== null}><Power className={`h-4 w-4 ${item.isActive ? "text-muted-foreground" : "text-emerald-600 dark:text-emerald-400"}`} /></Button> : null}</div> : null}
+                          {canManageItem || (canEditThisItem && !item.isDefault && item.isActive) ? <div className="flex shrink-0 gap-1 self-end sm:self-start">{canEditThisItem ? <><Button size="icon" variant="ghost" onClick={() => openEdit(item)} aria-label={`${t(`${namespace}.edit`)} ${itemName(item, locale)}`} disabled={busy || pendingActionId !== null}><Pencil className="h-4 w-4" /></Button>{!item.isDefault && item.isActive ? <Button size="icon" variant="ghost" onClick={() => void setItemDefault(item)} aria-label={`${t(`${namespace}.makeDefault`)} ${itemName(item, locale)}`} disabled={busy || pendingActionId !== null}><Star className="h-4 w-4" /></Button> : null}</> : null}{canChangeThisItemStatus ? <Button size="icon" variant="ghost" onClick={() => void setItemActive(item)} aria-label={`${item.isActive ? t(`${namespace}.deactivate`) : t(`${namespace}.activate`)} ${itemName(item, locale)}`} disabled={busy || pendingActionId !== null}><Power className={`h-4 w-4 ${item.isActive ? "text-muted-foreground" : "text-emerald-600 dark:text-emerald-400"}`} /></Button> : null}</div> : null}
                         </div>
                         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t pt-3 text-xs text-muted-foreground"><span>{item.organizationId ? organizations.find((organization) => organization.id === item.organizationId)?.name ?? t(`${namespace}.organizationScope`) : t(`${namespace}.tenantScope`)}</span></div>
                       </article>;
@@ -328,7 +366,7 @@ export function ProjectLifecycleCatalogPage() {
           </div>
           {formError ? <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{formError}</p> : null}
         </SideSheetBody>
-        <SideSheetFooter><Button type="button" variant="outline" onClick={() => closeSheet(false)} disabled={busy}>{t(`${namespace}.cancel`)}</Button><Button type="submit" disabled={busy || (editing ? !canEdit(activeKind) : !canCreate(activeKind))}>{busy ? <><Loader2 className="me-2 h-4 w-4 animate-spin" />{t(`${namespace}.saving`)}</> : t(`${namespace}.save`)}</Button></SideSheetFooter>
+        <SideSheetFooter><Button type="button" variant="outline" onClick={() => closeSheet(false)} disabled={busy}>{t(`${namespace}.cancel`)}</Button><Button type="submit" disabled={busy || (editing ? !canEditItem(activeKind, editing) : !canCreate(activeKind))}>{busy ? <><Loader2 className="me-2 h-4 w-4 animate-spin" />{t(`${namespace}.saving`)}</> : t(`${namespace}.save`)}</Button></SideSheetFooter>
       </form>
     </SideSheet>
   </div>;

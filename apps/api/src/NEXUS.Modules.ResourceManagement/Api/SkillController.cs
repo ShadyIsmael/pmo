@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using NEXUS.Modules.ResourceManagement.Application;
 using NEXUS.Modules.ResourceManagement.Application.DTOs;
+using NEXUS.SharedKernel.Management;
 
 namespace NEXUS.Modules.ResourceManagement.Api;
 
@@ -11,10 +12,12 @@ namespace NEXUS.Modules.ResourceManagement.Api;
 public class SkillController : ControllerBase
 {
     private readonly ISkillService _skillService;
+    private readonly IManagementContextAccessor? _managementContext;
 
-    public SkillController(ISkillService skillService)
+    public SkillController(ISkillService skillService, IManagementContextAccessor? managementContext = null)
     {
         _skillService = skillService;
+        _managementContext = managementContext;
     }
 
     [HttpGet("{id:guid}")]
@@ -38,7 +41,8 @@ public class SkillController : ControllerBase
     [Authorize(Policy = "Resource.Create")]
     public async Task<IActionResult> Create([FromBody] CreateSkillDto dto, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        var actorError = ResourceManagementActorBinding.RequireActor(this, _managementContext, requireManagementContext: true, out var userId);
+        if (actorError is not null) return actorError;
         var result = await _skillService.CreateAsync(dto, userId, cancellationToken);
         if (result.IsFailure) return BadRequest(new { error = result.Error?.Message });
         return CreatedAtAction(nameof(GetById), new { id = result.Value!.Id }, result.Value);
@@ -48,7 +52,8 @@ public class SkillController : ControllerBase
     [Authorize(Policy = "Resource.Edit")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateSkillDto dto, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        var actorError = ResourceManagementActorBinding.RequireActor(this, _managementContext, requireManagementContext: true, out var userId);
+        if (actorError is not null) return actorError;
         var result = await _skillService.UpdateAsync(id, dto, userId, cancellationToken);
         if (result.IsFailure) return NotFound(new { error = result.Error?.Message });
         return Ok(result.Value);
@@ -58,7 +63,8 @@ public class SkillController : ControllerBase
     [Authorize(Policy = "Resource.Delete")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        var actorError = ResourceManagementActorBinding.RequireActor(this, _managementContext, requireManagementContext: true, out var userId);
+        if (actorError is not null) return actorError;
         var result = await _skillService.DeleteAsync(id, userId, cancellationToken);
         if (result.IsFailure) return NotFound(new { error = result.Error?.Message });
         return NoContent();

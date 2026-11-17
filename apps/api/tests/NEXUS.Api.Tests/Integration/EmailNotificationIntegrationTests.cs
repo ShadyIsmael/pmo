@@ -506,6 +506,10 @@ public sealed class EmailNotificationIntegrationTests
     {
         public Task<bool> HasAccessAsync(Guid organizationId, bool manage, CancellationToken cancellationToken = default) =>
             Task.FromResult(allowed);
+
+        public Task<bool> HasScopedOrganizationAdminAuthorityAsync(
+            Guid organizationId, bool manage, CancellationToken cancellationToken = default) =>
+            HasAccessAsync(organizationId, manage, cancellationToken);
     }
 
     private sealed class LoopbackTestDestinationPolicy : ISmtpDestinationPolicy

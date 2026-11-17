@@ -82,12 +82,12 @@ export function useWorkItemWorkflowUserLookup(enabled = true) {
   });
 }
 
-export function useRiskWorkflowUserLookup(enabled = true) {
+export function useRiskWorkflowUserLookup(enabled = true, projectId?: string) {
   return useQuery({
-    queryKey: ["workflow-lookups", "risks", "users"],
-    queryFn: () => api.get<WorkflowUserLookupDto[]>(endpoints.users.riskWorkflowLookup),
+    queryKey: ["workflow-lookups", "risks", "users", projectId ?? ""],
+    queryFn: () => api.get<WorkflowUserLookupDto[]>(endpoints.users.riskWorkflowLookup, { projectId }),
     staleTime: 60_000,
-    enabled,
+    enabled: enabled && Boolean(projectId),
   });
 }
 

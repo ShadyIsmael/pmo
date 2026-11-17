@@ -46,13 +46,13 @@ export function EmailNotificationSettingsPage() {
   const [scope, setScope] = React.useState<EmailNotificationScope>("Tenant");
   const [organizationId, setOrganizationId] = React.useState("");
   const canReadTenant = access.data?.canReadTenant === true;
-  const organizations = useOrganizationProfiles(canReadTenant, true);
+  const organizations = useOrganizationProfiles(true, true);
 
   const availableScopes = React.useMemo(() => {
     const scopes: EmailNotificationScope[] = [];
     if (access.data?.canReadPlatform) scopes.push("Platform");
     if (canReadTenant) scopes.push("Tenant");
-    if (canReadTenant && (organizations.data?.length ?? 0) > 0) scopes.push("Organization");
+    if ((organizations.data?.length ?? 0) > 0) scopes.push("Organization");
     return scopes;
   }, [access.data?.canReadPlatform, canReadTenant, organizations.data]);
 
@@ -68,7 +68,13 @@ export function EmailNotificationSettingsPage() {
 
   if (access.isLoading) return <p className="py-10 text-center text-sm text-muted-foreground" role="status">{t("administration.emailNotifications.loading")}</p>;
   if (access.isError || !access.data) return <ErrorState title={t("administration.emailNotifications.loadError")} onRetry={() => void access.refetch()} />;
-  if (!access.data.canReadTenant && !access.data.canReadPlatform) return <Navigate to="/administration" replace />;
+  const canReadOrganization = (organizations.data?.length ?? 0) > 0;
+  if (!access.data.canReadTenant && !access.data.canReadPlatform && !canReadOrganization) {
+    if (organizations.isLoading) return <p className="py-10 text-center text-sm text-muted-foreground" role="status">{t("administration.emailNotifications.loading")}</p>;
+    if (organizations.isError) return <ErrorState title={t("administration.emailNotifications.loadError")} onRetry={() => void organizations.refetch()} />;
+    return <Navigate to="/administration" replace />;
+  }
+  if (!availableScopes.includes(scope)) return <p className="py-10 text-center text-sm text-muted-foreground" role="status">{t("administration.emailNotifications.loading")}</p>;
   if (scope === "Organization" && organizations.isLoading) return <p className="py-10 text-center text-sm text-muted-foreground" role="status">{t("administration.emailNotifications.loading")}</p>;
   if (scope === "Organization" && organizations.isError) return <ErrorState title={t("administration.emailNotifications.loadError")} onRetry={() => void organizations.refetch()} />;
 

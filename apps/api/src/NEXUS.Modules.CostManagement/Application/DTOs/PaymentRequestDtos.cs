@@ -32,6 +32,12 @@ public sealed record DecidePaymentRequestApprovalDto(
     string? Comment,
     byte[] RowVersion);
 
+public sealed record ReassignPaymentRequestApproverDto(
+    Guid CurrentApproverId,
+    Guid ReplacementApproverId,
+    string Reason,
+    byte[] RowVersion);
+
 public sealed record CancelPaymentRequestDto(byte[] RowVersion);
 
 public sealed record CreatePaymentReversalDto(decimal Amount, string Reason, Guid IdempotencyKey);
@@ -142,7 +148,10 @@ public sealed record PaymentRequestApproverDto(
     DateTime? DecidedAt,
     string? Comment,
     bool IsActive,
-    bool CanDecide);
+    bool CanDecide)
+{
+    public bool CanReassign { get; init; }
+}
 
 public sealed record PaymentRequestEligibleApproverDto(Guid UserId, string DisplayName);
 

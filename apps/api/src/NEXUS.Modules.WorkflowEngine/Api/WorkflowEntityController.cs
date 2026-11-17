@@ -7,6 +7,7 @@ using NEXUS.Modules.WorkflowEngine.Application.Contracts;
 using NEXUS.Modules.WorkflowEngine.Domain;
 using NEXUS.Modules.WorkflowEngine.Application.Services;
 using NEXUS.SharedKernel;
+using NEXUS.SharedKernel.Management;
 
 namespace NEXUS.Modules.WorkflowEngine.Api;
 
@@ -39,6 +40,8 @@ public class WorkflowEntityController : ControllerBase
         CancellationToken cancellationToken = default)
     {
         var ctx = BuildExecutionContext();
+        var identityError = ValidateExecutionIdentity(ctx);
+        if (identityError is not null) return identityError;
         var result = await _instanceService.GetInstanceAsync(entityType, entityId, ctx, cancellationToken);
         return result.IsSuccess ? Ok(result.Value) : HandleError(result.Error!);
     }
@@ -51,6 +54,8 @@ public class WorkflowEntityController : ControllerBase
         CancellationToken cancellationToken = default)
     {
         var ctx = BuildExecutionContext();
+        var identityError = ValidateExecutionIdentity(ctx);
+        if (identityError is not null) return identityError;
         var result = await _instanceService.ProvisionAsync(entityType, entityId, request.WorkflowDefinitionCode, ctx, cancellationToken);
         return result.IsSuccess ? Ok(result.Value) : HandleError(result.Error!);
     }
@@ -62,6 +67,8 @@ public class WorkflowEntityController : ControllerBase
         CancellationToken cancellationToken = default)
     {
         var ctx = BuildExecutionContext();
+        var identityError = ValidateExecutionIdentity(ctx);
+        if (identityError is not null) return identityError;
         var result = await _transitionQueryService.GetAvailableTransitionsAsync(entityType, entityId, ctx, cancellationToken);
         return result.IsSuccess ? Ok(result.Value) : HandleError(result.Error!);
     }
@@ -75,6 +82,8 @@ public class WorkflowEntityController : ControllerBase
         CancellationToken cancellationToken = default)
     {
         var ctx = BuildExecutionContext();
+        var identityError = ValidateExecutionIdentity(ctx);
+        if (identityError is not null) return identityError;
         var transitionRequest = new WorkflowTransitionRequest(
             entityType,
             entityId,
@@ -98,6 +107,8 @@ public class WorkflowEntityController : ControllerBase
         CancellationToken cancellationToken = default)
     {
         var ctx = BuildExecutionContext();
+        var identityError = ValidateExecutionIdentity(ctx);
+        if (identityError is not null) return identityError;
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 100);
 
@@ -157,8 +168,13 @@ public class WorkflowEntityController : ControllerBase
         var tenantIdClaim = User.FindFirst("tenantId")?.Value;
         var tenantId = Guid.TryParse(tenantIdClaim, out var parsed) ? parsed : Guid.Empty;
 
-        var userId = User.FindFirst("sub")?.Value ?? User.FindFirst("userId")?.Value ?? "unknown";
-        var userName = User.FindFirst("name")?.Value ?? User.FindFirst("preferred_username")?.Value;
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? User.FindFirst("sub")?.Value
+            ?? User.FindFirst("userId")?.Value
+            ?? "unknown";
+        var userName = User.FindFirstValue(ClaimTypes.Name)
+            ?? User.FindFirst("name")?.Value
+            ?? User.FindFirst("preferred_username")?.Value;
 
         var readOnly = User.FindFirst("readOnly")?.Value == "true" || User.FindFirst("viewAs")?.Value == "true";
 
@@ -180,6 +196,19 @@ public class WorkflowEntityController : ControllerBase
             CorrelationId: correlationId,
             Comment: null,
             Metadata: metadata);
+    }
+
+    private IActionResult? ValidateExecutionIdentity(WorkflowExecutionContext context)
+    {
+        if (context.TenantId == Guid.Empty || !Guid.TryParse(context.UserId, out var actorId) || actorId == Guid.Empty)
+            return Unauthorized(new { error = "A valid authenticated tenant and user identity are required for workflow access." });
+
+        var managementContext = HttpContext.RequestServices.GetService(typeof(IManagementContextAccessor)) as IManagementContextAccessor;
+        if (managementContext?.Current is { } current
+            && (current.TenantId != context.TenantId || current.UserId != actorId))
+            return Forbid();
+
+        return null;
     }
 
     private IActionResult HandleError(Error error)

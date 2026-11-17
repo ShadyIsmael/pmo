@@ -45,8 +45,8 @@ public sealed class ProjectSettingsAuthorizationTests
         Assert.Equal("projects", view.ModuleId);
         Assert.Equal("settings", view.ScreenId);
         Assert.Contains("ProjectSettings.View", edit.RequiredPermissionKeys);
-        Assert.False(view.IsTenantAdminBaseline);
-        Assert.False(edit.IsTenantAdminBaseline);
+        Assert.False(PermissionProtectionPolicy.Empty.IsProtected(view.Key));
+        Assert.False(PermissionProtectionPolicy.Empty.IsProtected(edit.Key));
         Assert.False(string.IsNullOrWhiteSpace(view.LabelEn));
         Assert.False(string.IsNullOrWhiteSpace(view.LabelAr));
         Assert.False(string.IsNullOrWhiteSpace(view.DescriptionEn));

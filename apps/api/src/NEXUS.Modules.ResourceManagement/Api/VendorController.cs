@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using NEXUS.Modules.ResourceManagement.Application;
 using NEXUS.Modules.ResourceManagement.Application.DTOs;
+using NEXUS.SharedKernel.Management;
 
 namespace NEXUS.Modules.ResourceManagement.Api;
 
@@ -11,10 +12,12 @@ namespace NEXUS.Modules.ResourceManagement.Api;
 public class VendorController : ControllerBase
 {
     private readonly IVendorService _vendorService;
+    private readonly IManagementContextAccessor? _managementContext;
 
-    public VendorController(IVendorService vendorService)
+    public VendorController(IVendorService vendorService, IManagementContextAccessor? managementContext = null)
     {
         _vendorService = vendorService;
+        _managementContext = managementContext;
     }
 
     [HttpGet("{id:guid}")]
@@ -46,11 +49,13 @@ public class VendorController : ControllerBase
     [Authorize(Policy = "Resource.Create")]
     public async Task<IActionResult> Create([FromBody] CreateVendorDto dto, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        var actorError = ResourceManagementActorBinding.RequireActor(this, _managementContext, requireManagementContext: true, out var userId);
+        if (actorError is not null) return actorError;
         var result = await _vendorService.CreateAsync(dto, userId, cancellationToken);
         if (result.IsFailure)
             return result.Error?.StatusCode switch
             {
+                401 => Unauthorized(),
                 409 => Conflict(new { error = result.Error.Message }),
                 _ => BadRequest(new { error = result.Error?.Message })
             };
@@ -61,11 +66,13 @@ public class VendorController : ControllerBase
     [Authorize(Policy = "Resource.Edit")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateVendorDto dto, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        var actorError = ResourceManagementActorBinding.RequireActor(this, _managementContext, requireManagementContext: true, out var userId);
+        if (actorError is not null) return actorError;
         var result = await _vendorService.UpdateAsync(id, dto, userId, cancellationToken);
         if (result.IsFailure)
             return result.Error?.StatusCode switch
             {
+                401 => Unauthorized(),
                 404 => NotFound(new { error = result.Error.Message }),
                 409 => Conflict(new { error = result.Error.Message }),
                 _ => BadRequest(new { error = result.Error?.Message })
@@ -77,11 +84,13 @@ public class VendorController : ControllerBase
     [Authorize(Policy = "Resource.Delete")]
     public async Task<IActionResult> Deactivate(Guid id, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        var actorError = ResourceManagementActorBinding.RequireActor(this, _managementContext, requireManagementContext: true, out var userId);
+        if (actorError is not null) return actorError;
         var result = await _vendorService.DeactivateAsync(id, userId, cancellationToken);
         if (result.IsFailure)
             return result.Error?.StatusCode switch
             {
+                401 => Unauthorized(),
                 404 => NotFound(new { error = result.Error.Message }),
                 _ => BadRequest(new { error = result.Error?.Message })
             };
@@ -92,11 +101,13 @@ public class VendorController : ControllerBase
     [Authorize(Policy = "Resource.Delete")]
     public async Task<IActionResult> Reactivate(Guid id, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        var actorError = ResourceManagementActorBinding.RequireActor(this, _managementContext, requireManagementContext: true, out var userId);
+        if (actorError is not null) return actorError;
         var result = await _vendorService.ReactivateAsync(id, userId, cancellationToken);
         if (result.IsFailure)
             return result.Error?.StatusCode switch
             {
+                401 => Unauthorized(),
                 404 => NotFound(new { error = result.Error.Message }),
                 _ => BadRequest(new { error = result.Error?.Message })
             };
@@ -107,15 +118,18 @@ public class VendorController : ControllerBase
     [Authorize(Policy = "Resource.Delete")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        var actorError = ResourceManagementActorBinding.RequireActor(this, _managementContext, requireManagementContext: true, out var userId);
+        if (actorError is not null) return actorError;
         var result = await _vendorService.DeleteAsync(id, userId, cancellationToken);
         if (result.IsFailure)
             return result.Error?.StatusCode switch
             {
+                401 => Unauthorized(),
                 404 => NotFound(new { error = result.Error.Message }),
                 409 => Conflict(new { error = result.Error.Message }),
                 _ => BadRequest(new { error = result.Error?.Message })
             };
         return NoContent();
     }
+
 }

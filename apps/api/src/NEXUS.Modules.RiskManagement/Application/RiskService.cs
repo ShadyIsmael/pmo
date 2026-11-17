@@ -24,8 +24,9 @@ public sealed class RiskService : IRiskService
     private readonly IProjectWorkflowConfigurationService? _projectWorkflowConfiguration;
     private readonly IWorkflowInstanceService? _workflowInstanceService;
     private readonly IManagementContextAccessor? _managementContext;
+    private readonly IProjectAudienceLookup? _projectAudience;
 
-    public RiskService(DbContext context, IAuditService auditService, IProjectReferenceLookup projectLookup, IResourceReferenceLookup resourceLookup, IHttpContextAccessor httpContextAccessor, IProjectWorkflowConfigurationService? projectWorkflowConfiguration = null, IWorkflowInstanceService? workflowInstanceService = null, IManagementContextAccessor? managementContext = null)
+    public RiskService(DbContext context, IAuditService auditService, IProjectReferenceLookup projectLookup, IResourceReferenceLookup resourceLookup, IHttpContextAccessor httpContextAccessor, IProjectWorkflowConfigurationService? projectWorkflowConfiguration = null, IWorkflowInstanceService? workflowInstanceService = null, IManagementContextAccessor? managementContext = null, IProjectAudienceLookup? projectAudience = null)
     {
         _context = context;
         _auditService = auditService;
@@ -35,6 +36,7 @@ public sealed class RiskService : IRiskService
         _projectWorkflowConfiguration = projectWorkflowConfiguration;
         _workflowInstanceService = workflowInstanceService;
         _managementContext = managementContext;
+        _projectAudience = projectAudience;
     }
 
     public async Task<Result<RiskDto>> CreateAsync(CreateRiskDto dto, string userId, CancellationToken cancellationToken = default)
@@ -47,9 +49,10 @@ public sealed class RiskService : IRiskService
         if (!IsDefined(dto.RiskLevel)) return Failure<RiskDto>("Risk level is invalid");
         var impactAssessment = dto.ImpactAssessment;
         if (impactAssessment is not null && !ValidateImpact(impactAssessment.ImpactTypes, impactAssessment.Description)) return Failure<RiskDto>("Impact types must be valid, unique, and include a shared impact description");
+        if (!IsProjectInScope(dto.ProjectId)) return Result<RiskDto>.Failure(Error.NotFound("Project not found"));
         var project = await _projectLookup.FindAsync(dto.ProjectId, cancellationToken);
         if (project is null) return Result<RiskDto>.Failure(Error.NotFound("Project not found"));
-        if (!await IsValidOwnerAsync(dto.OwnerResourceId, dto.OwnerUserId, cancellationToken)) return Failure<RiskDto>("Specify either a valid Resource owner or an active same-tenant System User owner, not both.");
+        if (!await IsValidOwnerAsync(dto.ProjectId, dto.OwnerResourceId, dto.OwnerUserId, cancellationToken)) return Failure<RiskDto>("Specify either an active Resource or System User associated with this project, not both.");
         var workflowSelection = _projectWorkflowConfiguration is null
             ? Result<ProjectWorkflowSelection?>.Success(null)
             : await _projectWorkflowConfiguration.ResolveForNewRecordAsync(dto.ProjectId, WorkflowDomains.Risk, RiskWorkflow.EntityType, BuildWorkflowContext(userId), cancellationToken);
@@ -96,7 +99,7 @@ public sealed class RiskService : IRiskService
         if (risk is null) return Result<RiskDto>.Failure(Error.NotFound("Risk not found"));
         if (string.IsNullOrWhiteSpace(dto.Title) || string.IsNullOrWhiteSpace(dto.Description)) return Failure<RiskDto>("Title and description are required");
         if (!IsDefined(dto.RiskLevel)) return Failure<RiskDto>("Risk level is invalid");
-        if (!await IsValidOwnerAsync(dto.OwnerResourceId, dto.OwnerUserId, cancellationToken)) return Failure<RiskDto>("Specify either a valid Resource owner or an active same-tenant System User owner, not both.");
+        if (!await IsValidOwnerAsync(risk.ProjectId, dto.OwnerResourceId, dto.OwnerUserId, cancellationToken)) return Failure<RiskDto>("Specify either an active Resource or System User associated with this project, not both.");
         if (dto.RowVersion.Length > 0) _context.Entry(risk).Property(r => r.RowVersion).OriginalValue = dto.RowVersion;
         risk.Title = dto.Title.Trim(); risk.Description = dto.Description.Trim(); risk.RiskLevel = dto.RiskLevel; risk.Impact = dto.Impact?.Trim() ?? string.Empty; risk.Likelihood = dto.Likelihood?.Trim() ?? string.Empty; risk.OwnerResourceId = dto.OwnerResourceId; risk.OwnerUserId = dto.OwnerUserId; risk.UpdatedBy = userId;
         try { await _context.SaveChangesAsync(cancellationToken); }
@@ -296,7 +299,7 @@ public sealed class RiskService : IRiskService
         if (risk is null) return Result<RiskActionDto>.Failure(Error.NotFound("Risk not found"));
         if (string.IsNullOrWhiteSpace(dto.Title)) return Failure<RiskActionDto>("Action title is required");
         if (dto.Status.HasValue && !IsDefined(dto.Status.Value)) return Failure<RiskActionDto>("Action status is invalid");
-        if (!await IsValidOwnerAsync(dto.OwnerResourceId, dto.OwnerUserId, cancellationToken)) return Failure<RiskActionDto>("Specify either a valid Resource owner or an active same-tenant System User owner, not both.");
+        if (!await IsValidOwnerAsync(risk.ProjectId, dto.OwnerResourceId, dto.OwnerUserId, cancellationToken)) return Failure<RiskActionDto>("Specify either an active Resource or System User associated with this project, not both.");
         var action = new RiskAction { TenantId = risk.TenantId, RiskId = risk.Id, Title = dto.Title.Trim(), Description = dto.Description.Trim(), OwnerResourceId = dto.OwnerResourceId, OwnerUserId = dto.OwnerUserId, TargetDate = dto.TargetDate, NextFollowUpDate = ToPersistenceDate(dto.NextFollowUpDate), Status = dto.Status ?? RiskActionStatus.Planned, SortOrder = dto.SortOrder, CreatedBy = userId };
         _context.Set<RiskAction>().Add(action);
         if (risk.Status == RiskStatus.Identified) risk.Status = RiskStatus.ActionRequired;
@@ -309,11 +312,12 @@ public sealed class RiskService : IRiskService
     public async Task<Result<RiskActionDto>> UpdateActionAsync(Guid riskId, Guid actionId, UpdateRiskActionDto dto, string userId, CancellationToken cancellationToken = default)
     {
         if (!await IsRiskInScopeAsync(riskId, cancellationToken)) return Result<RiskActionDto>.Failure(Error.NotFound("Action not found"));
-        var action = await _context.Set<RiskAction>().FirstOrDefaultAsync(a => a.Id == actionId && a.RiskId == riskId, cancellationToken);
+        var action = await _context.Set<RiskAction>().Include(item => item.Risk)
+            .FirstOrDefaultAsync(a => a.Id == actionId && a.RiskId == riskId, cancellationToken);
         if (action is null) return Result<RiskActionDto>.Failure(Error.NotFound("Action not found"));
         if (string.IsNullOrWhiteSpace(dto.Title)) return Failure<RiskActionDto>("Action title is required");
         if (!IsDefined(dto.Status)) return Failure<RiskActionDto>("Action status is invalid");
-        if (!await IsValidOwnerAsync(dto.OwnerResourceId, dto.OwnerUserId, cancellationToken)) return Failure<RiskActionDto>("Specify either a valid Resource owner or an active same-tenant System User owner, not both.");
+        if (!await IsValidOwnerAsync(action.Risk.ProjectId, dto.OwnerResourceId, dto.OwnerUserId, cancellationToken)) return Failure<RiskActionDto>("Specify either an active Resource or System User associated with this project, not both.");
         if (dto.RowVersion.Length > 0 && !dto.RowVersion.SequenceEqual(action.RowVersion)) return Result<RiskActionDto>.Failure(Error.Conflict("Action was changed by another user"));
 
         var title = dto.Title.Trim();
@@ -418,20 +422,21 @@ public sealed class RiskService : IRiskService
             ? query.Where(_ => false)
             : query.Where(risk => projectIds.Contains(risk.ProjectId));
     }
+    private bool IsProjectInScope(Guid projectId) =>
+        _managementContext?.Current?.Scope.ProjectIds.Contains(projectId) == true;
     private Task<bool> IsRiskInScopeAsync(Guid riskId, CancellationToken cancellationToken) =>
         ScopedRisks().AnyAsync(risk => risk.Id == riskId, cancellationToken);
-    private async Task<bool> IsValidResourceAsync(Guid? id, CancellationToken cancellationToken) => !id.HasValue || await _resourceLookup.ExistsAsync(id.Value, cancellationToken);
-    private async Task<bool> IsValidOwnerAsync(Guid? resourceId, Guid? userId, CancellationToken cancellationToken)
+    private async Task<bool> IsValidOwnerAsync(Guid projectId, Guid? resourceId, Guid? userId, CancellationToken cancellationToken)
     {
         if (resourceId.HasValue && userId.HasValue) return false;
-        if (!await IsValidResourceAsync(resourceId, cancellationToken)) return false;
-        if (!userId.HasValue) return true;
+        if (!resourceId.HasValue && !userId.HasValue) return true;
+        if (_projectAudience is null) return false;
         var tenantId = GetCurrentTenantId();
-        return await _context.Set<User>().AnyAsync(user => user.Id == userId.Value
-            && user.TenantId == tenantId
-            && user.IsActive
-            && !user.IsDeleted,
-            cancellationToken);
+        if (resourceId.HasValue)
+            return await _projectAudience.IsActiveProjectResourceAsync(tenantId, projectId, resourceId.Value, cancellationToken);
+
+        var eligibleUsers = await _projectAudience.GetProjectUsersAsync(tenantId, projectId, new[] { userId!.Value }, cancellationToken);
+        return eligibleUsers.ContainsKey(userId.Value);
     }
 
     private async Task<string?> GetActiveUserNameAsync(Guid userId, Guid tenantId, CancellationToken cancellationToken) =>

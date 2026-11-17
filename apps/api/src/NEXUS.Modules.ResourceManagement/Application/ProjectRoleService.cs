@@ -6,6 +6,7 @@ using NEXUS.Modules.Audit.Domain;
 using NEXUS.Modules.Organization.Domain;
 using NEXUS.SharedKernel;
 using NEXUS.SharedKernel.Helpers;
+using NEXUS.SharedKernel.Management;
 
 namespace NEXUS.Modules.ResourceManagement.Application;
 
@@ -19,12 +20,18 @@ public class ProjectRoleService : IProjectRoleService
     private readonly DbContext _context;
     private readonly IAuditService _auditService;
     private readonly IHttpContextAccessor? _httpContextAccessor;
+    private readonly IManagementContextAccessor? _managementContextAccessor;
 
-    public ProjectRoleService(DbContext context, IAuditService auditService, IHttpContextAccessor? httpContextAccessor = null)
+    public ProjectRoleService(
+        DbContext context,
+        IAuditService auditService,
+        IHttpContextAccessor? httpContextAccessor = null,
+        IManagementContextAccessor? managementContextAccessor = null)
     {
         _context = context;
         _auditService = auditService;
         _httpContextAccessor = httpContextAccessor;
+        _managementContextAccessor = managementContextAccessor;
     }
 
     /// <summary>
@@ -82,6 +89,9 @@ public class ProjectRoleService : IProjectRoleService
 
     public async Task<Result<LookupDto>> CreateAsync(CreateLookupDto dto, string userId, CancellationToken cancellationToken = default)
     {
+        var actorError = ResourceManagementWriteGuard.RequireActorContext(_httpContextAccessor, _managementContextAccessor, userId);
+        if (actorError is not null) return Result<LookupDto>.Failure(actorError);
+
         var tenantId = CurrentTenantId();
 
         // A blank code means "assign the next generic one". The unique-index check below
@@ -133,6 +143,9 @@ public class ProjectRoleService : IProjectRoleService
 
     public async Task<Result<LookupDto>> UpdateAsync(Guid id, UpdateLookupDto dto, string userId, CancellationToken cancellationToken = default)
     {
+        var actorError = ResourceManagementWriteGuard.RequireActorContext(_httpContextAccessor, _managementContextAccessor, userId);
+        if (actorError is not null) return Result<LookupDto>.Failure(actorError);
+
         var lookup = await _context.Set<Lookup>()
             .FirstOrDefaultAsync(l => l.Id == id && l.Category == Category && !l.IsDeleted, cancellationToken);
         if (lookup is null) return Result<LookupDto>.Failure(Error.NotFound("Project Role not found"));
@@ -174,6 +187,9 @@ public class ProjectRoleService : IProjectRoleService
 
     public async Task<Result> DeactivateAsync(Guid id, string userId, CancellationToken cancellationToken = default)
     {
+        var actorError = ResourceManagementWriteGuard.RequireActorContext(_httpContextAccessor, _managementContextAccessor, userId);
+        if (actorError is not null) return Result.Failure(actorError);
+
         var lookup = await _context.Set<Lookup>()
             .FirstOrDefaultAsync(l => l.Id == id && l.Category == Category && !l.IsDeleted, cancellationToken);
         if (lookup is null) return Result.Failure(Error.NotFound("Project Role not found"));

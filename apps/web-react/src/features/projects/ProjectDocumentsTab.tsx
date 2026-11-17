@@ -20,15 +20,14 @@ import { useAuth } from "@auth/AuthProvider";
 import { ApiError } from "@api/client";
 import { getLocalizedApiErrorMessage, type ApiErrorLocale } from "@api/api-error-localization";
 import { useManagement } from "@api/management";
-import { shouldLoadProjectLookup } from "./lib/project-lookups";
 import {
   documentApi,
   useActivateDocument,
   useArchiveDocument,
   useProjectDocument,
-  useDocumentCategories,
   useManagedDocumentCategories,
   useTemplateCategoryOptions,
+  useProjectUploadCategoryOptions,
   useProjectDocuments,
   useUploadDocument,
   useUploadDocumentVersion,
@@ -96,6 +95,8 @@ function DocumentCenter({ projectId, internalProjectId, compact }: { projectId?:
   const [templateStatus, setTemplateStatus] = React.useState("Active");
   const [templateCategoryId, setTemplateCategoryId] = React.useState("");
   const [selectedOrganizationId, setSelectedOrganizationId] = React.useState("");
+  const [uploadTemplateOrganizationId, setUploadTemplateOrganizationId] = React.useState("");
+  const [uploadTemplateCategoryId, setUploadTemplateCategoryId] = React.useState("");
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [showUpload, setShowUpload] = React.useState(false);
   const [uploadAsTemplate, setUploadAsTemplate] = React.useState(false);
@@ -120,7 +121,8 @@ function DocumentCenter({ projectId, internalProjectId, compact }: { projectId?:
     return (organizationScope.organizationReferences ?? []).filter((organization) => allowedIds.has(organization.id));
   }, [organizationScope]);
   const selectedOrganizationIsAllowed = organizations.some((organization) => organization.id === selectedOrganizationId);
-  const canUploadTemplate = canCreate && canTemplate && selectedOrganizationIsAllowed;
+  const canUploadTemplate = canCreate && canTemplate && organizations.length > 0;
+  const uploadTemplateOrganizationIsAllowed = organizations.some((organization) => organization.id === uploadTemplateOrganizationId);
   React.useEffect(() => {
     setSelectedOrganizationId((current) => {
       if (organizations.some((organization) => organization.id === current)) return current;
@@ -139,19 +141,30 @@ function DocumentCenter({ projectId, internalProjectId, compact }: { projectId?:
     includeArchived: !compact && templateStatus !== "Active",
   }, canViewDocuments && (Boolean(projectId) || (!compact && selectedOrganizationIsAllowed)));
   const templatesQuery = useProjectDocuments({ page: 1, pageSize: 50, forProjectId: internalProjectId, templatesOnly: true }, canViewDocuments && (showTemplateStart || (showUpload && compact && !uploadAsTemplate)) && Boolean(internalProjectId));
-  const categories = useDocumentCategories({
-    organizationId: compact ? undefined : selectedOrganizationId || undefined,
-    projectId: compact ? projectId : undefined,
-  }, compact && canViewDocuments && canCreate && shouldLoadProjectLookup(showUpload) && Boolean(projectId));
   const managedLibraryCategories = useManagedDocumentCategories({ organizationId: selectedOrganizationId || undefined }, !compact && canViewDocuments && canViewCategories && selectedOrganizationIsAllowed);
-  const templateCategoryOptions = useTemplateCategoryOptions(selectedOrganizationId, !compact && canUploadTemplate && showUpload && uploadAsTemplate);
+  const templateCategoryOptions = useTemplateCategoryOptions(uploadTemplateOrganizationId, !compact && canCreate && canTemplate && showUpload && uploadAsTemplate && uploadTemplateOrganizationIsAllowed);
+  const projectUploadCategoryOptions = useProjectUploadCategoryOptions(internalProjectId ?? "", compact && canCreate && showUpload && !uploadAsTemplate && Boolean(internalProjectId));
   const availableLibraryCategories = React.useMemo(() =>
     (managedLibraryCategories.data ?? []).filter((category) => category.isActive === true && (!category.organizationId || category.organizationId === selectedOrganizationId)),
   [managedLibraryCategories.data, selectedOrganizationId]);
   const libraryFilterCategories = availableLibraryCategories;
-  const uploadCategories = uploadAsTemplate ? templateCategoryOptions.data ?? [] : categories.data ?? [];
-  const uploadCategoriesLoading = uploadAsTemplate ? templateCategoryOptions.isLoading : categories.isLoading;
-  const uploadCategoriesError = uploadAsTemplate ? templateCategoryOptions.isError : categories.isError;
+  const uploadCategoryLookup = uploadAsTemplate ? templateCategoryOptions : projectUploadCategoryOptions;
+  const uploadCategories = uploadCategoryLookup.data ?? [];
+  const uploadCategoriesLoading = uploadCategoryLookup.isLoading;
+  const uploadCategoriesError = uploadCategoryLookup.isError;
+  const retryUploadCategories = () => {
+    if (uploadAsTemplate) void templateCategoryOptions.refetch();
+    else void projectUploadCategoryOptions.refetch();
+  };
+  const uploadCategoryStatus = uploadCategoriesError
+    ? <div role="alert" className="mt-1 flex items-center gap-2 text-xs text-destructive"><span>{t("documents.categoryLoadError")}</span><Button type="button" variant="link" size="sm" className="h-auto p-0 text-xs" onClick={retryUploadCategories}>{t("documents.categoryRetry")}</Button></div>
+    : uploadCategoriesLoading
+      ? <span role="status" className="mt-1 block text-xs text-muted-foreground">{t("documents.categoryLoading")}</span>
+      : uploadAsTemplate && !uploadTemplateOrganizationIsAllowed
+        ? <span role="status" className="mt-1 block text-xs text-muted-foreground">{t("documents.categorySelectOrganization")}</span>
+        : !uploadCategories.length
+          ? <span role="status" className="mt-1 block text-xs text-muted-foreground">{t("documents.categoryNoAvailable")}</span>
+          : null;
   const totalsEnabled = !compact && canViewDocuments && selectedOrganizationIsAllowed;
   const libraryTotal = useProjectDocuments({ organizationId: selectedOrganizationId || undefined, page: 1, pageSize: 1, includeArchived: true }, totalsEnabled);
   const activeTemplatesTotal = useProjectDocuments({ organizationId: selectedOrganizationId || undefined, page: 1, pageSize: 1, templatesOnly: true, status: "Active" }, totalsEnabled);
@@ -190,10 +203,25 @@ function DocumentCenter({ projectId, internalProjectId, compact }: { projectId?:
     const blob = await documentApi.download(item.id, versionNumber);
     const url = URL.createObjectURL(blob); const anchor = document.createElement("a"); anchor.href = url; anchor.download = `${item.name}-v${versionNumber}${item.fileName?.includes(".") ? `.${item.fileName.split(".").pop()}` : ""}`; anchor.click(); URL.revokeObjectURL(url);
   };
-  const openUpload = (asTemplate: boolean) => { setUploadError(null); setUploadAsTemplate(asTemplate); setUploadSourceTemplateId(""); setShowUpload(true); };
+  const openUpload = (asTemplate: boolean) => {
+    setUploadError(null);
+    setUploadAsTemplate(asTemplate);
+    setUploadSourceTemplateId("");
+    setUploadTemplateOrganizationId(asTemplate && selectedOrganizationIsAllowed ? selectedOrganizationId : "");
+    setUploadTemplateCategoryId("");
+    setShowUpload(true);
+  };
   const submitUpload = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault(); const formElement = event.currentTarget; const form = new FormData(formElement); if (internalProjectId) form.set("ProjectId", internalProjectId);
-    if (uploadAsTemplate) { form.set("IsTemplate", "true"); form.set("OrganizationId", selectedOrganizationId); }
+    if (uploadAsTemplate) {
+      if (!uploadTemplateOrganizationIsAllowed || !uploadTemplateCategoryId) {
+        setUploadError(t("documents.actionFailed"));
+        return;
+      }
+      form.set("IsTemplate", "true");
+      form.set("OrganizationId", uploadTemplateOrganizationId);
+      form.set("CategoryId", uploadTemplateCategoryId);
+    }
     if (compact && internalProjectId && uploadSourceTemplateId) {
       const sourceTemplate = templatesQuery.data?.items.find((item) => item.id === uploadSourceTemplateId);
       const sourceVersion = uploadSourceTemplate.data?.versions.find((item) => item.isCurrent);
@@ -207,7 +235,7 @@ function DocumentCenter({ projectId, internalProjectId, compact }: { projectId?:
       form.set("SourceTemplateVersionNumber", String(sourceVersion.versionNumber));
     }
     setUploadError(null);
-    try { await upload.mutateAsync(form); setShowUpload(false); setUploadSourceTemplateId(""); formElement.reset(); }
+    try { await upload.mutateAsync(form); setShowUpload(false); setUploadSourceTemplateId(""); setUploadTemplateOrganizationId(""); setUploadTemplateCategoryId(""); formElement.reset(); }
     catch (error) { setUploadError(uploadErrorMessage(error, t, locale as ApiErrorLocale)); }
   };
   const submitVersion = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -254,7 +282,7 @@ function DocumentCenter({ projectId, internalProjectId, compact }: { projectId?:
       </> : null}
     </Tabs>
     <SideSheet open={!!selectedId} onOpenChange={(open) => { if (!open) setSelectedId(null); }} title={selectedDetail?.document.name || t("documents.details")} description={selectedDetail?.document.fileName || t("documents.detailsDescription")} size="lg"><SideSheetBody>{actionError ? <MutationError message={actionError} /> : null}{selected.isLoading ? <div className="space-y-2"><Skeleton className="h-10" /><Skeleton className="h-10" /><Skeleton className="h-10" /><Skeleton className="h-10" /><Skeleton className="h-10" /></div> : selectedDetail ? <DocumentDetails detail={selectedDetail} icon={Icon} locale={locale} t={t} canEdit={canEdit && (!selectedDetail.document.isTemplate || canTemplate)} canArchive={canArchive && (!selectedDetail.document.isTemplate || canTemplate)} canActivate={canEdit && canTemplate && selectedDetail.document.isArchived} onDownload={() => void download(selectedDetail.document)} onPreview={() => void preview(selectedDetail.document)} onVersion={() => { setVersionError(null); setShowVersion(true); }} onDownloadVersion={(versionNumber) => void downloadVersion(selectedDetail.document, versionNumber)} onArchive={() => { void archiveSelected(selectedDetail.document.id); }} onActivate={() => { void activateSelected(selectedDetail.document.id); }} /> : null}</SideSheetBody></SideSheet>
-    <SideSheet open={showUpload} onOpenChange={(open) => { setShowUpload(open); if (!open) setUploadSourceTemplateId(""); }} title={t(uploadAsTemplate ? "documents.uploadTemplateTitle" : "documents.uploadTitle")} description={projectId ? t("documents.projectUploadDescription") : uploadAsTemplate ? t("documents.templateUploadDescription") : t("documents.uploadDescription")}><form onSubmit={(event) => void submitUpload(event)}><SideSheetBody className="space-y-4">{uploadError ? <MutationError message={uploadError} /> : null}{uploadAsTemplate ? <p className="rounded-md border border-border bg-muted/20 p-3 text-sm text-muted-foreground">{t("documents.externalApprovalWarning")}</p> : null}<label className="block text-sm font-medium">{t("documents.fields.name")}<Input name="Name" className="mt-1" required /></label><label className="block text-sm font-medium">{t("documents.fields.description")}<Input name="Description" className="mt-1" /></label>{uploadAsTemplate ? <label className="flex items-center gap-2 text-sm font-medium"><input type="checkbox" name="IsMandatory" value="true" className="h-4 w-4 rounded border-input" />{t("documents.fields.mandatoryDocument")}</label> : null}<label className="block text-sm font-medium">{t("documents.fields.category")}<select name="CategoryId" className="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm" disabled={uploadCategoriesLoading || uploadCategoriesError || !uploadCategories.length}><option value="">{t("documents.chooseCategory")}</option>{uploadCategories.map((category) => <option key={category.id} value={category.id}>{categoryDisplayName(category, locale)}</option>)}</select>{uploadCategoriesError ? <span className="mt-1 block text-xs text-destructive">{t("documents.categoryLoadError")}</span> : null}</label>{compact && internalProjectId && !uploadAsTemplate ? <label className="block text-sm font-medium">{t("documents.sourceTemplate")}<select value={uploadSourceTemplateId} onChange={(event) => setUploadSourceTemplateId(event.target.value)} className="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm" disabled={templatesQuery.isLoading || templatesQuery.isError}><option value="">{t("documents.sourceTemplateOptional")}</option>{templatesQuery.data?.items.filter((template) => !template.isArchived).map((template) => <option key={template.id} value={template.id}>{template.name} · {template.categoryName || t("documents.categoryFallback")} · v{template.version}</option>)}</select>{templatesQuery.isLoading ? <span className="mt-1 block text-xs text-muted-foreground">{t("common.loading")}</span> : null}{templatesQuery.isError || uploadSourceTemplate.isError ? <span className="mt-1 block text-xs text-destructive">{t("documents.loadError")}</span> : null}{uploadSourceTemplateId && uploadSourceTemplate.data ? <span className="mt-1 block text-xs text-muted-foreground">{t("documents.templateVersionSource", { version: uploadSourceTemplate.data.versions.find((item) => item.isCurrent)?.versionNumber ?? uploadSourceTemplate.data.document.version })}</span> : null}{uploadSourceTemplateId && !uploadSourceTemplate.isLoading && uploadSourceTemplate.data && !uploadSourceTemplate.data.versions.some((item) => item.isCurrent) ? <span className="mt-1 block text-xs text-destructive">{t("documents.unavailable")}</span> : null}</label> : null}<label className="block text-sm font-medium">{t("documents.fields.file")}<Input name="File" type="file" className="mt-1" required /></label></SideSheetBody><SideSheetFooter><Button type="button" variant="outline" onClick={() => setShowUpload(false)}>{t("documents.cancel")}</Button><Button type="submit" disabled={upload.isPending || Boolean(uploadSourceTemplateId && (uploadSourceTemplate.isLoading || !uploadSourceTemplate.data?.versions.some((item) => item.isCurrent)))}>{upload.isPending ? t("documents.saving") : t(uploadAsTemplate ? "documents.uploadTemplate" : "documents.upload")}</Button></SideSheetFooter></form></SideSheet>
+    <SideSheet open={showUpload} onOpenChange={(open) => { setShowUpload(open); if (!open) setUploadSourceTemplateId(""); }} title={t(uploadAsTemplate ? "documents.uploadTemplateTitle" : "documents.uploadTitle")} description={projectId ? t("documents.projectUploadDescription") : uploadAsTemplate ? t("documents.templateUploadDescription") : t("documents.uploadDescription")}><form onSubmit={(event) => void submitUpload(event)}><SideSheetBody className="space-y-4">{uploadError ? <MutationError message={uploadError} /> : null}{uploadAsTemplate ? <><p className="rounded-md border border-border bg-muted/20 p-3 text-sm text-muted-foreground">{t("documents.externalApprovalWarning")}</p><label className="block text-sm font-medium">{t("documents.fields.organization")}<select name="OrganizationId" value={uploadTemplateOrganizationId} onChange={(event) => { setUploadTemplateOrganizationId(event.target.value); setUploadTemplateCategoryId(""); }} required className="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="">{t("documents.organizationSelect")}</option>{organizations.map((organization) => <option key={organization.id} value={organization.id}>{organization.name}</option>)}</select></label><label className="block text-sm font-medium">{t("documents.fields.category")}<select name="CategoryId" value={uploadTemplateCategoryId} onChange={(event) => setUploadTemplateCategoryId(event.target.value)} required className="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm" disabled={!uploadTemplateOrganizationIsAllowed || uploadCategoriesLoading || uploadCategoriesError || !uploadCategories.length}><option value="">{t("documents.chooseCategory")}</option>{uploadCategories.map((category) => <option key={category.id} value={category.id}>{categoryDisplayName(category, locale)}</option>)}</select></label>{uploadCategoryStatus}</> : null}<label className="block text-sm font-medium">{t("documents.fields.name")}<Input name="Name" className="mt-1" required /></label><label className="block text-sm font-medium">{t("documents.fields.description")}<Input name="Description" className="mt-1" /></label>{uploadAsTemplate ? <label className="flex items-center gap-2 text-sm font-medium"><input type="checkbox" name="IsMandatory" value="true" className="h-4 w-4 rounded border-input" />{t("documents.fields.mandatoryDocument")}</label> : null}{!uploadAsTemplate ? <><label className="block text-sm font-medium">{t("documents.fields.category")}<select name="CategoryId" className="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm" disabled={uploadCategoriesLoading || uploadCategoriesError || !uploadCategories.length}><option value="">{t("documents.chooseCategory")}</option>{uploadCategories.map((category) => <option key={category.id} value={category.id}>{categoryDisplayName(category, locale)}</option>)}</select></label>{uploadCategoryStatus}</> : null}{compact && internalProjectId && !uploadAsTemplate ? <label className="block text-sm font-medium">{t("documents.sourceTemplate")}<select value={uploadSourceTemplateId} onChange={(event) => setUploadSourceTemplateId(event.target.value)} className="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm" disabled={templatesQuery.isLoading || templatesQuery.isError}><option value="">{t("documents.sourceTemplateOptional")}</option>{templatesQuery.data?.items.filter((template) => !template.isArchived).map((template) => <option key={template.id} value={template.id}>{template.name} · {template.categoryName || t("documents.categoryFallback")} · v{template.version}</option>)}</select>{templatesQuery.isLoading ? <span className="mt-1 block text-xs text-muted-foreground">{t("common.loading")}</span> : null}{templatesQuery.isError || uploadSourceTemplate.isError ? <span className="mt-1 block text-xs text-destructive">{t("documents.loadError")}</span> : null}{uploadSourceTemplateId && uploadSourceTemplate.data ? <span className="mt-1 block text-xs text-muted-foreground">{t("documents.templateVersionSource", { version: uploadSourceTemplate.data.versions.find((item) => item.isCurrent)?.versionNumber ?? uploadSourceTemplate.data.document.version })}</span> : null}{uploadSourceTemplateId && !uploadSourceTemplate.isLoading && uploadSourceTemplate.data && !uploadSourceTemplate.data.versions.some((item) => item.isCurrent) ? <span className="mt-1 block text-xs text-destructive">{t("documents.unavailable")}</span> : null}</label> : null}<label className="block text-sm font-medium">{t("documents.fields.file")}<Input name="File" type="file" className="mt-1" required /></label></SideSheetBody><SideSheetFooter><Button type="button" variant="outline" onClick={() => setShowUpload(false)}>{t("documents.cancel")}</Button><Button type="submit" disabled={upload.isPending || (uploadAsTemplate && (!uploadTemplateOrganizationIsAllowed || !uploadTemplateCategoryId)) || Boolean(uploadSourceTemplateId && (uploadSourceTemplate.isLoading || !uploadSourceTemplate.data?.versions.some((item) => item.isCurrent)))}>{upload.isPending ? t("documents.saving") : t(uploadAsTemplate ? "documents.uploadTemplate" : "documents.upload")}</Button></SideSheetFooter></form></SideSheet>
     <SideSheet open={showVersion} onOpenChange={setShowVersion} title={t("documents.newVersionTitle")}><form onSubmit={(event) => void submitVersion(event)}><SideSheetBody className="space-y-4">{versionError ? <MutationError message={versionError} /> : null}<label className="block text-sm font-medium">{t("documents.fields.file")}<Input name="file" type="file" className="mt-1" required /></label><label className="block text-sm font-medium">{t("documents.fields.changeNotes")}<Input name="changeNotes" className="mt-1" /></label></SideSheetBody><SideSheetFooter><Button type="button" variant="outline" onClick={() => setShowVersion(false)}>{t("documents.cancel")}</Button><Button type="submit" disabled={version.isPending}>{t("documents.saveVersion")}</Button></SideSheetFooter></form></SideSheet>
     <SideSheet open={showTemplateStart} onOpenChange={(open) => { setShowTemplateStart(open); if (!open) { setSelectedTemplateId(null); setTemplateStartError(null); } }} title={t("documents.startFromTemplate")} description={t("documents.startFromTemplateDescription")} size="lg"><SideSheetBody className="space-y-4">{templatesQuery.isLoading ? <div className="space-y-2"><Skeleton className="h-10" /><Skeleton className="h-10" /><Skeleton className="h-10" /><Skeleton className="h-10" /></div> : templatesQuery.isError ? <ErrorState title={t("documents.loadError")} onRetry={() => void templatesQuery.refetch()} /> : !templatesQuery.data?.items.length ? <EmptyState icon={<BookOpen className="h-10 w-10" />} title={t("documents.templatesEmptyTitle")} description={t("documents.templatesEmptyDescription")} /> : <div className="space-y-2">{templatesQuery.data.items.map((template) => { const isSelected = template.id === selectedTemplateId; const TemplateIcon = fileIcon(template.fileType); return <button key={template.id} type="button" onClick={() => { setTemplateStartError(null); setSelectedTemplateId(template.id); }} className={`flex w-full items-center gap-3 rounded-lg border p-3 text-start transition-colors ${isSelected ? "border-primary bg-primary/5" : "border-border hover:bg-muted/30"}`}><TemplateIcon className="h-5 w-5 shrink-0 text-primary" /><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{template.name}</span><span className="block text-xs text-muted-foreground">{template.fileName} · v{template.version}</span></span>{isSelected ? <Check className="h-4 w-4 text-primary" /> : null}</button>; })}</div>}{(() => { const template = templatesQuery.data?.items.find((item) => item.id === selectedTemplateId); if (!template) return null; if (selectedTemplate.isError) return <ErrorState title={t("documents.loadError")} onRetry={() => void selectedTemplate.refetch()} />; const hasCurrentVersion = Boolean(selectedTemplate.data?.versions.some((templateVersion) => templateVersion.isCurrent)); return <TemplateStartForm key={selectedTemplateId} template={template} t={t} onDownload={() => void download(template)} onSubmit={submitTemplateStart} pending={upload.isPending || selectedTemplate.isLoading || !hasCurrentVersion} error={templateStartError} />; })()}</SideSheetBody></SideSheet>
   </div>;

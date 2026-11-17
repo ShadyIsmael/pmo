@@ -1,24 +1,48 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using NEXUS.Modules.WorkflowEngine.Application.Contracts;
 using NEXUS.Modules.WorkflowEngine.Application.Services;
+using NEXUS.SharedKernel.Management;
 
 namespace NEXUS.Modules.WorkflowEngine.Api;
 
 [ApiController]
 [Route("api/projects/{projectId:guid}/workflows")]
 [Authorize(Policy = "ProjectSettings.View")]
-public sealed class ProjectWorkflowController(IProjectWorkflowConfigurationService service) : ControllerBase
+public sealed class ProjectWorkflowController : ControllerBase
 {
+    private readonly IProjectWorkflowConfigurationService _service;
+    private readonly IManagementContextAccessor _managementContext;
+
+    public ProjectWorkflowController(IProjectWorkflowConfigurationService service, IManagementContextAccessor managementContext)
+    {
+        _service = service;
+        _managementContext = managementContext;
+    }
+
     [HttpGet]
-    public async Task<IActionResult> Get(Guid projectId, CancellationToken cancellationToken) => Handle(await service.GetAsync(projectId, cancellationToken));
+    public async Task<IActionResult> Get(Guid projectId, CancellationToken cancellationToken) => Handle(await _service.GetAsync(projectId, cancellationToken));
 
     [HttpPut("{domain}")]
     [Authorize(Policy = "ProjectSettings.Edit")]
     public async Task<IActionResult> Save(Guid projectId, string domain, [FromBody] SaveProjectWorkflowConfigurationRequest request, CancellationToken cancellationToken)
     {
-        var actor = User.FindFirst("sub")?.Value ?? User.FindFirst("userId")?.Value ?? User.Identity?.Name ?? "System";
-        return Handle(await service.SaveAsync(projectId, domain, request, actor, cancellationToken));
+        var principal = User;
+        var nameIdentifier = principal.FindFirst(ClaimTypes.NameIdentifier);
+        var actorValue = nameIdentifier?.Value ?? (nameIdentifier is null ? principal.FindFirst("sub")?.Value : null);
+        if (principal.Identity?.IsAuthenticated != true
+            || !Guid.TryParse(actorValue, out var actorId)
+            || actorId == Guid.Empty
+            || !Guid.TryParse(principal.FindFirst("tenantId")?.Value, out var tenantId)
+            || tenantId == Guid.Empty)
+            return Unauthorized();
+
+        var context = _managementContext.Current;
+        if (context is null || context.UserId != actorId || context.TenantId != tenantId || context.EffectiveReadOnly)
+            return Forbid();
+
+        return Handle(await _service.SaveAsync(projectId, domain, request, actorId.ToString("D"), cancellationToken));
     }
 
     private static IActionResult Handle<T>(NEXUS.SharedKernel.Result<T> result) => result.IsSuccess ? new OkObjectResult(result.Value) : Error(result.Error!);

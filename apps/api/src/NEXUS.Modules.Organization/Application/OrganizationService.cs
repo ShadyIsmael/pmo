@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Http;
 using NEXUS.Modules.Audit.Application;
 using NEXUS.Modules.Audit.Domain;
 using NEXUS.SharedKernel;
+using NEXUS.SharedKernel.Management;
 using OrganizationEntity = NEXUS.Modules.Organization.Domain.Organization;
 
 namespace NEXUS.Modules.Organization.Application;
@@ -15,17 +16,20 @@ public class OrganizationService : IOrganizationService
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly IAuditService _auditService;
     private readonly IOrganizationSettingsAccessService _settingsAccess;
+    private readonly IManagementContextAccessor? _managementContextAccessor;
 
     public OrganizationService(
         DbContext context,
         IHttpContextAccessor httpContextAccessor,
         IAuditService auditService,
-        IOrganizationSettingsAccessService settingsAccess)
+        IOrganizationSettingsAccessService settingsAccess,
+        IManagementContextAccessor? managementContextAccessor = null)
     {
         _context = context;
         _httpContextAccessor = httpContextAccessor;
         _auditService = auditService;
         _settingsAccess = settingsAccess;
+        _managementContextAccessor = managementContextAccessor;
     }
 
     public async Task<Result<OrganizationResponseDto>> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
@@ -58,6 +62,22 @@ public class OrganizationService : IOrganizationService
         return new PagedResult<OrganizationResponseDto>(items, page, pageSize, total);
     }
 
+    public async Task<PagedResult<OrganizationDirectoryItemDto>> GetPagedDirectoryAsync(
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        var query = _context.Set<OrganizationEntity>().AsNoTracking();
+        var total = await query.CountAsync(cancellationToken);
+        var items = await query
+            .OrderBy(organization => organization.Name).ThenBy(organization => organization.Id)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(organization => new OrganizationDirectoryItemDto(organization.Id, organization.Name))
+            .ToArrayAsync(cancellationToken);
+        return new PagedResult<OrganizationDirectoryItemDto>(items, page, pageSize, total);
+    }
+
     public async Task<IReadOnlyList<OrganizationProfileDto>> GetProfilesAsync(CancellationToken cancellationToken = default)
     {
         if (!TryGetTenantId(out var tenantId)) return Array.Empty<OrganizationProfileDto>();
@@ -83,6 +103,9 @@ public class OrganizationService : IOrganizationService
         UpdateOrganizationProfileRequest request,
         CancellationToken cancellationToken = default)
     {
+        if (_managementContextAccessor?.Current?.EffectiveReadOnly == true)
+            return new OrganizationProfileUpdateResult(OrganizationProfileUpdateCode.AccessDenied,
+                Error: "Organization changes are unavailable in read-only management mode.");
         if (!TryGetTenantId(out var tenantId))
             return new OrganizationProfileUpdateResult(OrganizationProfileUpdateCode.TenantContextMissing,
                 Error: "A trusted tenant context is required.");

@@ -50,10 +50,17 @@ try {
     if ($inspectExitCode -eq 0) {
         if (Test-Path -LiteralPath $ScriptOutput -PathType Leaf) {
             Write-Output "EF pending SQL generated for review: $ScriptOutput"
+            Write-Output "Pending migration set and generated SQL are verified by the EF gate; review this exact file and calculate its SHA-256 before authorization."
         }
         else {
             Write-Output 'No pending migrations; the EF gate generated no SQL artifact.'
         }
+    }
+    elseif ($inspectExitCode -eq 2) {
+        Write-Host "Inspection completed with pending migrations or schema differences (exit code 2). Review only the SQL file path printed above for this run; do not reuse an artifact from a previous or failed run."
+    }
+    else {
+        Write-Host "Inspection failed (exit code $inspectExitCode). No SQL artifact was generated or refreshed by this run; do not review, hash, approve, or apply any previously generated SQL."
     }
     exit $inspectExitCode
 }

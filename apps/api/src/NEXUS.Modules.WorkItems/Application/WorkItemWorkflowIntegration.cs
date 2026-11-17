@@ -426,6 +426,20 @@ public sealed class WorkItemWorkflowAdapter : IWorkflowEntityAdapter
             : Result.Success();
     }
 
+    public async Task<Result> AuthorizeProvisionAsync(WorkflowExecutionContext context, Guid entityId, CancellationToken cancellationToken = default)
+    {
+        if (context.ReadOnly || _managementContext.Current?.EffectiveReadOnly == true)
+            return Result.Failure(WorkflowErrors.ReadOnlyViewAs);
+        var principal = _httpContextAccessor.HttpContext?.User;
+        if (principal?.Identity?.IsAuthenticated != true)
+            return Result.Failure(Error.Unauthorized("An authenticated user is required."));
+        if (!principal.HasClaim("permission", "WorkItem.Create"))
+            return Result.Failure(Error.Forbidden("Work Item creation permission is required to provision its workflow."));
+        return await FindAccessibleAsync(entityId, context, cancellationToken) is null
+            ? Result.Failure(WorkflowErrors.EntityNotAccessible(EntityType, entityId))
+            : Result.Success();
+    }
+
     /// <summary>
     /// Status transitions are writes: <c>WorkItem.View</c> must not be enough to move a
     /// task or issue through its workflow.

@@ -42,6 +42,7 @@ export const documentApi = {
   categories: (query: DocumentCategoryQuery = {}) => api.get<DocumentCategory[]>(endpoints.documents.categories, { ...query } as Record<string, string | number | boolean | undefined>),
   managedCategories: (query: DocumentCategoryQuery) => api.get<DocumentCategory[]>(endpoints.documentCategories.root, { ...query } as Record<string, string | number | boolean | undefined>),
   templateCategoryOptions: (organizationId: string) => api.get<TemplateCategoryOption[]>(endpoints.documentCategories.templateOptions, { organizationId }),
+  projectUploadCategoryOptions: (projectId: string) => api.get<TemplateCategoryOption[]>(endpoints.documentCategories.projectUploadOptions, { projectId }),
   createCategory: (input: SaveDocumentCategoryInput) => api.post<DocumentCategory>(endpoints.documentCategories.root, input),
   updateCategory: ({ id, input }: { id: string; input: Omit<SaveDocumentCategoryInput, "organizationId"> }) => api.put<DocumentCategory>(endpoints.documentCategories.detail(id), input),
   setCategoryStatus: ({ id, isActive }: { id: string; isActive: boolean }) => api.patch<DocumentCategory>(endpoints.documentCategories.status(id), { isActive }),
@@ -69,6 +70,9 @@ export function useManagedDocumentCategories(query: DocumentCategoryQuery, enabl
 }
 export function useTemplateCategoryOptions(organizationId: string, enabled = true) {
   return useQuery({ queryKey: ["documents", "template-category-options", organizationId], queryFn: () => documentApi.templateCategoryOptions(organizationId), enabled: enabled && Boolean(organizationId), staleTime: 30_000 });
+}
+export function useProjectUploadCategoryOptions(projectId: string, enabled = true) {
+  return useQuery({ queryKey: ["documents", "project-upload-category-options", projectId], queryFn: () => documentApi.projectUploadCategoryOptions(projectId), enabled: enabled && Boolean(projectId), staleTime: 30_000 });
 }
 export function useCreateDocumentCategory() {
   const client = useQueryClient();

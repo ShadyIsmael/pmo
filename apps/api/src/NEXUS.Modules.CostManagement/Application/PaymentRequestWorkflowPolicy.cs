@@ -31,10 +31,14 @@ public static class PaymentRequestWorkflowPolicy
         return errors;
     }
 
+    public static bool IsRequesterEligibleForApproval(Guid? requesterUserId, Guid approverUserId) =>
+        !requesterUserId.HasValue || requesterUserId.Value != approverUserId;
+
     public static IReadOnlyList<string> ValidateApprovalSetup(
         string? projectApprovalMode,
         string? requestApprovalMode,
-        IReadOnlyCollection<PaymentRequestApproverSelectionDto>? approvers)
+        IReadOnlyCollection<PaymentRequestApproverSelectionDto>? approvers,
+        Guid? requesterUserId = null)
     {
         var errors = new List<string>();
         var selectedApprovers = approvers?.ToArray() ?? [];
@@ -59,6 +63,10 @@ public static class PaymentRequestWorkflowPolicy
 
         if (selectedApprovers.Select(item => item.UserId).Distinct().Count() != selectedApprovers.Length)
             errors.Add("approver_users_must_be_unique");
+
+        // No persisted request-type exception policy exists yet, so maker-checker is deny-by-default.
+        if (requesterUserId.HasValue && selectedApprovers.Any(item => !IsRequesterEligibleForApproval(requesterUserId, item.UserId)))
+            errors.Add("requester_cannot_approve");
 
         var isSequential = string.Equals(requestApprovalMode, PaymentRequestApprovalModes.Sequential, StringComparison.OrdinalIgnoreCase);
         if (isSequential && selectedApprovers.Any(item => item.Position is null or < 1))

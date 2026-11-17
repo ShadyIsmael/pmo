@@ -27,13 +27,13 @@ public sealed class WorkItemAssigneeLookup : IWorkItemAssigneeLookup
                 && !member.IsDeleted
                 && member.ResourceId.HasValue
                 && member.StartDate.Date <= today && member.EndDate.Date >= today
-                && resource.IsActive && !resource.IsDeleted
+                && resource.IsActive && resource.Status == "Active" && !resource.IsDeleted
                 // Work Items are assigned to tenant-scoped Resources, not system User IDs.
                 // An unlinked Resource can still be an eligible project assignee; when a
                 // Resource is linked to a system account, keep inactive/missing accounts out.
                 && (!resource.UserId.HasValue
                     || resource.UserId.Value == Guid.Empty
-                    || (user != null && user.IsActive))
+                    || (user != null && user.IsActive && !user.IsDeleted))
             orderby resource.Name
             select new WorkItemAssigneeReference(
                 resource.Id,
@@ -57,8 +57,8 @@ public sealed class WorkItemAssigneeLookup : IWorkItemAssigneeLookup
                 && teamMember.IsActive && !teamMember.IsDeleted
                 && teamMember.EffectiveFrom.Date <= today
                 && (!teamMember.EffectiveTo.HasValue || teamMember.EffectiveTo.GetValueOrDefault().Date >= today)
-                && resource.IsActive && !resource.IsDeleted
-                && (!resource.UserId.HasValue || resource.UserId.GetValueOrDefault() == Guid.Empty || (user != null && user.IsActive))
+                && resource.IsActive && resource.Status == "Active" && !resource.IsDeleted
+                && (!resource.UserId.HasValue || resource.UserId.GetValueOrDefault() == Guid.Empty || (user != null && user.IsActive && !user.IsDeleted))
             orderby resource.Name
             select new WorkItemAssigneeReference(
                 resource.Id,
@@ -73,12 +73,21 @@ public sealed class WorkItemAssigneeLookup : IWorkItemAssigneeLookup
             .ToList();
     }
 
-    public async Task<IReadOnlyList<WorkItemTeamReference>> GetEligibleTeamsAsync(CancellationToken cancellationToken = default)
-        => await _context.Set<Team>().AsNoTracking()
-            .Where(team => team.IsActive && !team.IsDeleted)
+    public async Task<IReadOnlyList<WorkItemTeamReference>> GetEligibleTeamsAsync(Guid projectId, CancellationToken cancellationToken = default)
+    {
+        var today = DateTime.UtcNow.Date;
+        var projectTeamIds = _context.Set<ProjectMember>().AsNoTracking()
+            .Where(member => member.ProjectId == projectId && member.TeamId.HasValue
+                && member.Status == "Active" && !member.IsDeleted
+                && member.StartDate.Date <= today && member.EndDate.Date >= today)
+            .Select(member => member.TeamId!.Value);
+
+        return await _context.Set<Team>().AsNoTracking()
+            .Where(team => projectTeamIds.Contains(team.Id) && team.IsActive && !team.IsDeleted)
             .OrderBy(team => team.Name)
             .Select(team => new WorkItemTeamReference(team.Id, team.Name, team.Code))
             .ToListAsync(cancellationToken);
+    }
 
     public async Task<bool> IsActiveProjectMemberAsync(Guid projectId, Guid resourceId, CancellationToken cancellationToken = default)
     {
@@ -86,8 +95,15 @@ public sealed class WorkItemAssigneeLookup : IWorkItemAssigneeLookup
         return candidates.Any(candidate => candidate.ResourceId == resourceId);
     }
 
-    public Task<bool> IsActiveTeamAsync(Guid teamId, CancellationToken cancellationToken = default)
-        => _context.Set<Team>().AnyAsync(team => team.Id == teamId && team.IsActive && !team.IsDeleted, cancellationToken);
+    public async Task<bool> IsActiveProjectTeamAsync(Guid projectId, Guid teamId, CancellationToken cancellationToken = default)
+    {
+        var today = DateTime.UtcNow.Date;
+        return await _context.Set<ProjectMember>().AnyAsync(member => member.ProjectId == projectId
+            && member.TeamId == teamId && member.Status == "Active" && !member.IsDeleted
+            && member.StartDate.Date <= today && member.EndDate.Date >= today
+            && _context.Set<Team>().Any(team => team.Id == teamId && team.IsActive && !team.IsDeleted),
+            cancellationToken);
+    }
 
     public async Task<IReadOnlyList<Guid>> GetActiveTeamIdsForUserAsync(Guid userId, CancellationToken cancellationToken = default)
         => await (

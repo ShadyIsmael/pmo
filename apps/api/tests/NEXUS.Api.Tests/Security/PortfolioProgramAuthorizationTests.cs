@@ -264,6 +264,9 @@ public sealed class PortfolioProgramAuthorizationTests
         public Task<IReadOnlySet<string>> GetEffectivePermissionsAsync(Guid userId, Guid tenantId, CancellationToken cancellationToken = default) =>
             Task.FromResult(permissions);
 
+        public Task<IReadOnlySet<string>> GetEffectivePermissionsForOrganizationAsync(Guid userId, Guid tenantId, Guid organizationId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(permissions);
+
         public Task<IReadOnlySet<string>> GetEffectiveRoleNamesAsync(Guid userId, Guid tenantId, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlySet<string>>(new HashSet<string>(StringComparer.Ordinal));
     }

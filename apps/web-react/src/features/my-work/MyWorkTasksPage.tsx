@@ -102,8 +102,7 @@ export function MyWorkTasksPage() {
   const query = useFullWorkItems(listParams);
   const createMutation = useFullWorkItemMutations().create;
   const projectsQuery = useProjects({ page: 1, pageSize: 200 }, createOpen);
-  const draftProjectPublicId = projectsQuery.data?.items.find((project) => project.id === draft.projectId)?.publicId;
-  const assigneesQuery = useFullWorkItemAssignees(draftProjectPublicId, createOpen && Boolean(draft.projectId));
+  const assigneesQuery = useFullWorkItemAssignees(draft.projectId || undefined, createOpen && Boolean(draft.projectId));
   const tasks = query.data?.items ?? [];
   const allTasks = allTasksQuery.data?.items ?? [];
   const terminalStatuses = [doneCode, cancelledCode].filter((code): code is string => Boolean(code));

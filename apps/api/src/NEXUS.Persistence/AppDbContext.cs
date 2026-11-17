@@ -265,19 +265,21 @@ public class AppDbContext : DbContext
         // leaving the SQL Server rowversion behavior untouched.
         if (Database.ProviderName == "Microsoft.EntityFrameworkCore.Sqlite")
         {
-            // SQLite does not accept SQL Server national string literals (N'...') inside
-            // check constraints, so test schemas translate them to plain literals. The
-            // SQL Server model, its snapshot, and the applied migrations are unchanged.
+            // SQLite does not accept SQL Server national string literals (N'...') or
+            // SQL Server collation names inside check constraints. Translate only the
+            // provider-specific tokens used by the test schema; the SQL Server model,
+            // its snapshot, and applied migrations retain exact binary key comparisons.
             foreach (var entityType in modelBuilder.Model.GetEntityTypes())
             foreach (var constraint in entityType.GetDeclaredCheckConstraints().ToArray())
             {
+                var sqliteConstraintSql = constraint.Sql
+                    .Replace("N'", "'", StringComparison.Ordinal)
+                    .Replace("COLLATE Latin1_General_100_BIN2", "COLLATE BINARY", StringComparison.Ordinal);
                 if (constraint.Name is { } name
-                    && constraint.Sql.Contains("N'", StringComparison.Ordinal))
+                    && !string.Equals(sqliteConstraintSql, constraint.Sql, StringComparison.Ordinal))
                 {
                     entityType.RemoveCheckConstraint(name);
-                    entityType.AddCheckConstraint(
-                        name,
-                        constraint.Sql.Replace("N'", "'", StringComparison.Ordinal));
+                    entityType.AddCheckConstraint(name, sqliteConstraintSql);
                 }
             }
 

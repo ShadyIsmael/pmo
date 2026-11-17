@@ -7,7 +7,9 @@ import { Button } from "@components/ui/Button";
 import { Input } from "@components/ui/Input";
 import { Label } from "@components/ui/Label";
 import { getApiFieldErrors, ApiError } from "@api/client";
+import { useAuth } from "@auth/AuthProvider";
 import { useI18n } from "@i18n/messages";
+import { Permissions } from "@lib/permissions";
 import { useBaseCalendars, type ResourceBaseCalendarDto } from "@features/resources/api/resources";
 import { PlatformSettingsPage } from "./AdminPages";
 import { PhaseGateRequirementsCard } from "@features/organization/PhaseGateRequirementsCard";
@@ -201,10 +203,8 @@ type ProfileDraft = Omit<OrganizationProfile, "id" | "updatedAt" | "canManageSet
 
 export function OrganizationGeneralSettingsPage() {
   const { t } = useI18n();
-  const access = useSettingsAccess();
-  const canRead = access.data?.canReadTenant === true;
-  const canWriteTenant = access.data?.canWriteTenant === true;
-  const profiles = useOrganizationProfiles(canRead, true);
+  const { user } = useAuth();
+  const profiles = useOrganizationProfiles(true, true);
   const updateProfile = useUpdateOrganizationProfile();
   const [selectedId, setSelectedId] = React.useState("");
   const [draft, setDraft] = React.useState<ProfileDraft | null>(null);
@@ -243,15 +243,11 @@ export function OrganizationGeneralSettingsPage() {
     return () => window.removeEventListener("beforeunload", warnBeforeLeave);
   }, [dirty]);
 
-  const settings = useOrganizationSettings(selectedId, canRead && Boolean(selectedId));
-  const tenantSettings = useTenantSettings(canRead);
+  const settings = useOrganizationSettings(selectedId, Boolean(selectedId));
   const scopedSettings = React.useMemo(() => settings.data ? settingsForScope(settings.data, "Organization") : null, [settings.data]);
-  const inheritedValues = React.useMemo(() => ({
-    "workingCalendar.defaultCalendarId": tenantSettings.data?.settings.find(setting => setting.key === "workingCalendar.defaultCalendarId")?.value ?? null,
-  }), [tenantSettings.data]);
-  if (access.isLoading) return <LoadingState />;
-  if (access.isError || !access.data) return <ErrorState />;
-  if (!canRead) return <Navigate to="/administration" replace />;
+  const actorPermissions = user?.permissions ?? [];
+  const canManageSelected = actorPermissions.includes(Permissions.Settings.ManageTenantConfiguration)
+    || (actorPermissions.includes(Permissions.OrganizationConfiguration.Manage) && selected?.canManageSettings === true);
   if (profiles.isLoading) return <LoadingState />;
   if (profiles.isError) return <ErrorState />;
 
@@ -271,7 +267,7 @@ export function OrganizationGeneralSettingsPage() {
 
   const saveProfileChanges = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!selected || !draft || !profileDirty || !canWriteTenant || !selected.canManageSettings) return;
+    if (!selected || !draft || !profileDirty || !canManageSelected) return;
     setSaveError("");
     setServerErrors({});
     setSaveMessage("");
@@ -285,7 +281,6 @@ export function OrganizationGeneralSettingsPage() {
     }
   };
 
-  const canManageSelected = canWriteTenant && selected?.canManageSettings === true;
   return (
     <div className="mx-auto w-full max-w-6xl space-y-6">
       <PageHeader title={t("administration.settingsWorkspace.organizationTitle")} description={t("administration.settingsWorkspace.organizationDescription")} />
@@ -352,15 +347,14 @@ export function OrganizationGeneralSettingsPage() {
           <CardDescription>{t("administration.settingsWorkspace.organizationScopeDescription")}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {settings.isLoading || tenantSettings.isLoading ? <p className="text-sm text-muted-foreground">{t("administration.settingsWorkspace.loading")}</p>
-            : settings.isError || !settings.data || tenantSettings.isError || !tenantSettings.data ? <p role="alert" className="text-sm text-destructive">{t("administration.settingsWorkspace.loadError")}</p>
+          {settings.isLoading ? <p className="text-sm text-muted-foreground">{t("administration.settingsWorkspace.loading")}</p>
+            : settings.isError || !settings.data ? <p role="alert" className="text-sm text-destructive">{t("administration.settingsWorkspace.loadError")}</p>
               : <>
                 {!settings.data.persistenceAvailable && <PersistenceNotice />}
                 <SettingsEditor
                   response={scopedSettings!}
                   scope="Organization"
                   canWrite={canManageSelected && settings.data.persistenceAvailable}
-                  inheritedValues={inheritedValues}
                   onDirtyChange={setSettingsDirty}
                   warnUnsaved={false}
                 />
@@ -573,7 +567,11 @@ function SettingsEditor({
         </div>
         <div className="space-y-2">
           <SettingInput setting={setting} scope={scope} value={value}
-            inheritedValue={inheritedValues && Object.prototype.hasOwnProperty.call(inheritedValues, setting.key) ? inheritedValues[setting.key] : setting.value}
+            inheritedValue={inheritedValues && Object.prototype.hasOwnProperty.call(inheritedValues, setting.key)
+              ? inheritedValues[setting.key]
+              : scope === "Organization" && setting.key === "workingCalendar.defaultCalendarId"
+                ? setting.isInherited ? setting.value : undefined
+                : setting.value}
             disabled={!canEdit || updateSetting.isPending || resetSetting.isPending
               || (setting.key === "regional.defaultCurrency" && (currencyOptions.isLoading || currencyOptions.isError))}
             currencies={currencyOptions.data ?? []}
@@ -687,12 +685,15 @@ function WorkingCalendarSettingInput({ setting, scope, value, inheritedValue, di
   const selectedValue = value === null || value === undefined ? "" : String(value);
   const configured = (calendars.data ?? []).filter(calendar => calendar.isConfigured);
   const isOrganization = scope === "Organization";
+  const hasInheritedValue = inheritedValue !== undefined;
   const inheritedId = inheritedValue === null || inheritedValue === undefined ? "" : String(inheritedValue);
   const inheritedCalendar = (calendars.data ?? []).find(calendar => calendar.id === inheritedId);
   const inheritedCalendarLabel = inheritedCalendar?.name ?? (inheritedId
     ? t("administration.settingsWorkspace.calendarUnavailable", { id: inheritedId })
     : t("administration.settingsWorkspace.noCalendarSelected"));
-  const inheritLabel = t("administration.settingsWorkspace.inheritTenantCalendar", { calendar: inheritedCalendarLabel });
+  const inheritLabel = hasInheritedValue
+    ? t("administration.settingsWorkspace.inheritTenantCalendar", { calendar: inheritedCalendarLabel })
+    : t("administration.settingsWorkspace.inheritTenantValue");
   const currentCalendar = (calendars.data ?? []).find(calendar => calendar.id === selectedValue);
   const currentCalendarUnavailable = Boolean(selectedValue && selectedValue !== INHERIT_TENANT_CALENDAR
     && !configured.some(calendar => calendar.id === selectedValue));

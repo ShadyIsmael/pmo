@@ -12,6 +12,7 @@ import { useI18n } from "@i18n/messages";
 import { useCurrencies, useCreateCurrency, useUpdateCurrency, useDeleteCurrency, type CurrencyDto, type SaveCurrencyInput } from "./api/admin";
 import { useAuth } from "@auth/AuthProvider";
 import { DirectoryAccessPermissions, hasAnyPermission, hasPermission, Permissions, ProjectLifecycleCatalogAccessPermissions } from "@lib/permissions";
+import { useOrganizationProfiles } from "./api/settings";
 import { brand } from "@lib/brand";
 import * as React from "react";
 
@@ -19,7 +20,11 @@ export function ReferenceDataPage() {
   const { t } = useI18n();
   const { user } = useAuth();
   const area = "administration.areas.referenceData";
+  const permissions = user?.permissions ?? [];
   const canViewGeneralReferenceData = Boolean(user && hasPermission(user.permissions, Permissions.ReferenceData.View));
+  const canViewOrganizationConfiguration = hasAnyPermission(permissions, [Permissions.OrganizationConfiguration.View, Permissions.OrganizationConfiguration.Manage]);
+  const organizationProfiles = useOrganizationProfiles(canViewOrganizationConfiguration);
+  const hasAuthorizedOrganization = (organizationProfiles.data?.length ?? 0) > 0;
   const items = [
     { id: "project-roles", href: "/administration/reference-data/project-roles", icon: UsersRound, title: t(`${area}.projectRoles.title`), description: t(`${area}.projectRoles.description`) },
     { id: "vendor-categories", href: "/administration/reference-data/vendor-categories", icon: Tag, title: t(`${area}.vendorCategories.title`), description: t(`${area}.vendorCategories.description`) },
@@ -30,7 +35,8 @@ export function ReferenceDataPage() {
   ].filter((item) => item.id === "document-categories"
     ? Boolean(user && hasPermission(user.permissions, Permissions.DocumentCategory.View))
     : item.id === "project-lifecycle"
-      ? hasAnyPermission(user?.permissions ?? [], ProjectLifecycleCatalogAccessPermissions)
+      ? hasAnyPermission(permissions, ProjectLifecycleCatalogAccessPermissions)
+        || (canViewOrganizationConfiguration && hasAuthorizedOrganization)
     : canViewGeneralReferenceData);
   return (
     <div className="space-y-6">

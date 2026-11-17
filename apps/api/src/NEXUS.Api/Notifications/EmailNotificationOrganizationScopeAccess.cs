@@ -9,4 +9,7 @@ public sealed class EmailNotificationOrganizationScopeAccess(IOrganizationSettin
 {
     public Task<bool> HasAccessAsync(Guid organizationId, bool manage, CancellationToken cancellationToken = default) =>
         organizationAccess.HasAccessAsync(organizationId, manage, cancellationToken);
+
+    public Task<bool> HasScopedOrganizationAdminAuthorityAsync(Guid organizationId, bool manage, CancellationToken cancellationToken = default) =>
+        organizationAccess.HasScopedOrganizationAdminAuthorityAsync(organizationId, manage, cancellationToken);
 }

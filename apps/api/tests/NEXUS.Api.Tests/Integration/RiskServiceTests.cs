@@ -3,13 +3,16 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Moq;
 using NEXUS.Modules.Audit.Application;
+using NEXUS.Modules.Identity.Domain;
 using NEXUS.Modules.ProjectManagement.Domain;
 using NEXUS.Modules.ResourceManagement.Domain;
 using NEXUS.Modules.RiskManagement.Application;
 using NEXUS.Modules.RiskManagement.Application.DTOs;
 using NEXUS.Modules.RiskManagement.Domain;
 using NEXUS.Persistence;
+using NEXUS.Persistence.Lookups;
 using NEXUS.SharedKernel;
+using NEXUS.SharedKernel.Management;
 using System.Security.Claims;
 using Xunit;
 
@@ -20,6 +23,7 @@ public sealed class RiskServiceTests : IDisposable
     private readonly SqliteConnection _connection = new("Data Source=:memory:");
     private readonly AppDbContext _context;
     private readonly Mock<IHttpContextAccessor> _accessor = new();
+    private readonly Mock<IManagementContextAccessor> _management = new();
     private readonly Mock<IAuditService> _audit = new();
     private readonly ProjectReferenceLookup _projects;
     private readonly ResourceReferenceLookup _resources;
@@ -27,6 +31,8 @@ public sealed class RiskServiceTests : IDisposable
     private readonly Guid _tenantA = Guid.NewGuid();
     private readonly Guid _tenantB = Guid.NewGuid();
     private readonly Guid _user = Guid.NewGuid();
+    private readonly HashSet<Guid> _projectScope = new();
+    private ManagementContext? _currentManagementContext;
 
     public RiskServiceTests()
     {
@@ -34,9 +40,11 @@ public sealed class RiskServiceTests : IDisposable
         _context = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options);
         _context.Database.EnsureCreated();
         _audit.Setup(a => a.LogAsync(It.IsAny<NEXUS.Modules.Audit.Domain.AuditEntry>(), It.IsAny<CancellationToken>())).ReturnsAsync(Result.Success());
+        _management.SetupGet(a => a.Current).Returns(() => _currentManagementContext);
         _projects = new ProjectReferenceLookup(_context);
         _resources = new ResourceReferenceLookup(_context);
-        _service = new RiskService(_context, _audit.Object, _projects, _resources, _accessor.Object);
+        _service = new RiskService(_context, _audit.Object, _projects, _resources, _accessor.Object,
+            managementContext: _management.Object, projectAudience: new ProjectAudienceLookup(_context));
     }
 
     [Fact]
@@ -44,6 +52,7 @@ public sealed class RiskServiceTests : IDisposable
     {
         var project = await AddProjectAsync(_tenantA, "Project A");
         var owner = await AddResourceAsync(_tenantA, "Owner A");
+        await AddProjectResourceMemberAsync(project.Id, owner.Id);
         SetTenant(_tenantA);
 
         var result = await _service.CreateAsync(new CreateRiskDto
@@ -99,6 +108,19 @@ public sealed class RiskServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Create_ProjectOutsideManagementScopeIsRejectedBeforePersistence()
+    {
+        var project = await AddProjectAsync(_tenantA, "Out of scope project", includeInManagementScope: false);
+        SetTenant(_tenantA);
+
+        var result = await _service.CreateAsync(ValidDto(project.Id), _user.ToString());
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(404, result.Error!.StatusCode);
+        Assert.Empty(await _context.Risks.IgnoreQueryFilters().ToListAsync());
+    }
+
+    [Fact]
     public async Task Create_InvalidOwnerIsRejected()
     {
         var project = await AddProjectAsync(_tenantA, "Project A");
@@ -111,6 +133,107 @@ public sealed class RiskServiceTests : IDisposable
         Assert.True(result.IsFailure);
         Assert.Contains("owner", result.Error!.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Empty(await _context.Risks.IgnoreQueryFilters().ToListAsync());
+    }
+
+    [Fact]
+    public async Task Create_TenantResourceOutsideProjectIsRejectedAsOwner()
+    {
+        var project = await AddProjectAsync(_tenantA, "Project A");
+        var otherProject = await AddProjectAsync(_tenantA, "Project B");
+        var owner = await AddResourceAsync(_tenantA, "Project B owner");
+        await AddProjectResourceMemberAsync(otherProject.Id, owner.Id);
+        SetTenant(_tenantA);
+
+        var dto = ValidDto(project.Id);
+        dto.OwnerResourceId = owner.Id;
+        var result = await _service.CreateAsync(dto, _user.ToString());
+
+        Assert.True(result.IsFailure);
+        Assert.Contains("associated with this project", result.Error!.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(await _context.Risks.IgnoreQueryFilters().ToListAsync());
+    }
+
+    [Fact]
+    public async Task Create_AcceptsActiveProjectStakeholderUserOwnerAndRejectsOtherTenantUser()
+    {
+        var project = await AddProjectAsync(_tenantA, "Project A");
+        var ownerUserId = Guid.NewGuid();
+        _context.Set<User>().Add(new User
+        {
+            Id = ownerUserId,
+            TenantId = _tenantA,
+            FirstName = "Project",
+            LastName = "Stakeholder",
+            Email = "stakeholder@example.test",
+            IsActive = true,
+            CreatedBy = _user.ToString()
+        });
+        _context.Set<ProjectStakeholder>().Add(new ProjectStakeholder
+        {
+            TenantId = _tenantA,
+            ProjectId = project.Id,
+            UserId = ownerUserId,
+            Name = "Project Stakeholder",
+            Role = "Stakeholder",
+            RelationshipType = "Stakeholder",
+            Status = ProjectStakeholderStatus.Active,
+            CreatedBy = _user.ToString()
+        });
+        await _context.SaveChangesAsync();
+        SetTenant(_tenantA);
+
+        var dto = ValidDto(project.Id);
+        dto.OwnerUserId = ownerUserId;
+        var result = await _service.CreateAsync(dto, _user.ToString());
+        Assert.True(result.IsSuccess, result.Error?.Message);
+
+        var unassociatedUserId = Guid.NewGuid();
+        _context.Set<User>().Add(new User
+        {
+            Id = unassociatedUserId,
+            TenantId = _tenantA,
+            FirstName = "Tenant",
+            LastName = "User",
+            Email = "tenant.user@example.test",
+            IsActive = true,
+            CreatedBy = _user.ToString()
+        });
+        await _context.SaveChangesAsync();
+        var unassociatedDto = ValidDto(project.Id);
+        unassociatedDto.OwnerUserId = unassociatedUserId;
+
+        var unassociatedResult = await _service.CreateAsync(unassociatedDto, _user.ToString());
+        Assert.True(unassociatedResult.IsFailure);
+        Assert.Contains("associated with this project", unassociatedResult.Error!.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Single(await _context.Risks.IgnoreQueryFilters().ToListAsync());
+    }
+
+    [Fact]
+    public async Task UpdateAction_RejectsOwnerWhoIsNotAssociatedWithRiskProject()
+    {
+        var project = await AddProjectAsync(_tenantA, "Project A");
+        SetTenant(_tenantA);
+        var risk = await _service.CreateAsync(ValidDto(project.Id), _user.ToString());
+        Assert.True(risk.IsSuccess, risk.Error?.Message);
+        var owner = await AddResourceAsync(_tenantA, "Other project owner");
+        var action = await _service.CreateActionAsync(risk.Value!.Id, new CreateRiskActionDto
+        {
+            Title = "Validate supplier schedule"
+        }, _user.ToString());
+        Assert.True(action.IsSuccess, action.Error?.Message);
+
+        var result = await _service.UpdateActionAsync(risk.Value.Id, action.Value!.Id, new UpdateRiskActionDto
+        {
+            Title = action.Value.Title,
+            Description = action.Value.Description,
+            OwnerResourceId = owner.Id,
+            Status = action.Value.Status,
+            SortOrder = action.Value.SortOrder,
+            RowVersion = action.Value.RowVersion
+        }, _user.ToString());
+
+        Assert.True(result.IsFailure);
+        Assert.Contains("associated with this project", result.Error!.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -383,11 +506,12 @@ public sealed class RiskServiceTests : IDisposable
         RiskLevel = RiskLevel.Medium
     };
 
-    private async Task<Project> AddProjectAsync(Guid tenantId, string name)
+    private async Task<Project> AddProjectAsync(Guid tenantId, string name, bool includeInManagementScope = true)
     {
         var project = new Project { TenantId = tenantId, Name = name, Code = Guid.NewGuid().ToString("N"), CreatedBy = _user.ToString() };
         _context.Projects.Add(project);
         await _context.SaveChangesAsync();
+        if (includeInManagementScope) _projectScope.Add(project.Id);
         return project;
     }
 
@@ -399,6 +523,24 @@ public sealed class RiskServiceTests : IDisposable
         return resource;
     }
 
+    private async Task AddProjectResourceMemberAsync(Guid projectId, Guid resourceId)
+    {
+        var today = DateTime.UtcNow.Date;
+        _context.Set<ProjectMember>().Add(new ProjectMember
+        {
+            TenantId = _tenantA,
+            ProjectId = projectId,
+            ResourceId = resourceId,
+            Role = "TeamMember",
+            AllocationPercentage = 100m,
+            StartDate = today,
+            EndDate = today.AddDays(1),
+            Status = "Active",
+            CreatedBy = _user.ToString()
+        });
+        await _context.SaveChangesAsync();
+    }
+
     private void SetTenant(Guid tenantId)
     {
         var httpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity(new[]
@@ -407,6 +549,15 @@ public sealed class RiskServiceTests : IDisposable
             new Claim(ClaimTypes.NameIdentifier, _user.ToString())
         }, "test")) };
         _accessor.Setup(a => a.HttpContext).Returns(httpContext);
+        _currentManagementContext = new ManagementContext(
+            _user,
+            tenantId,
+            ManagementPerspective.ProjectManager,
+            ManagementViewMode.Native,
+            null,
+            null,
+            null,
+            new ManagementScope(new HashSet<Guid>(), new HashSet<Guid>(), _projectScope));
         AppDbContext.ConfigureTenantResolution(_accessor.Object);
     }
 
@@ -435,8 +586,10 @@ public sealed class RiskServiceTests : IDisposable
         public Task<bool> ExistsAsync(Guid resourceId, CancellationToken cancellationToken = default) => context.Resources.AnyAsync(resource => resource.Id == resourceId, cancellationToken);
         public async Task<IReadOnlyDictionary<Guid, string>> GetNamesAsync(IEnumerable<Guid> resourceIds, CancellationToken cancellationToken = default) => await context.Resources.Where(resource => resourceIds.Contains(resource.Id)).ToDictionaryAsync(resource => resource.Id, resource => resource.Name, cancellationToken);
         public Task<ResourceReference?> FindAsync(Guid resourceId, CancellationToken cancellationToken = default) => context.Resources.Where(resource => resource.Id == resourceId).Select(resource => new ResourceReference(resource.Id, resource.UserId, resource.Name, resource.Email, resource.JobTitle, resource.Type, resource.Status, resource.IsActive)).FirstOrDefaultAsync(cancellationToken);
+        public Task<ResourceReference?> FindInTenantAsync(Guid resourceId, Guid tenantId, CancellationToken cancellationToken = default) => context.Resources.Where(resource => resource.Id == resourceId && resource.TenantId == tenantId).Select(resource => new ResourceReference(resource.Id, resource.UserId, resource.Name, resource.Email, resource.JobTitle, resource.Type, resource.Status, resource.IsActive)).FirstOrDefaultAsync(cancellationToken);
         public Task<ResourceReference?> FindByUserIdAsync(Guid userId, CancellationToken cancellationToken = default) => context.Resources.Where(resource => resource.UserId == userId).Select(resource => new ResourceReference(resource.Id, resource.UserId, resource.Name, resource.Email, resource.JobTitle, resource.Type, resource.Status, resource.IsActive)).FirstOrDefaultAsync(cancellationToken);
         public async Task<IReadOnlyDictionary<Guid, ResourceReference>> GetDetailsAsync(IEnumerable<Guid> resourceIds, CancellationToken cancellationToken = default) => await context.Resources.Where(resource => resourceIds.Contains(resource.Id)).Select(resource => new ResourceReference(resource.Id, resource.UserId, resource.Name, resource.Email, resource.JobTitle, resource.Type, resource.Status, resource.IsActive)).ToDictionaryAsync(resource => resource.Id, cancellationToken);
         public async Task<IReadOnlyDictionary<Guid, ResourceReference>> GetDetailsByUserIdsAsync(IEnumerable<Guid> userIds, CancellationToken cancellationToken = default) => await context.Resources.Where(resource => resource.UserId.HasValue && userIds.Contains(resource.UserId.Value)).Select(resource => new ResourceReference(resource.Id, resource.UserId, resource.Name, resource.Email, resource.JobTitle, resource.Type, resource.Status, resource.IsActive)).ToDictionaryAsync(resource => resource.UserId!.Value, cancellationToken);
+        public async Task<IReadOnlyDictionary<Guid, ResourceReference>> GetDetailsByUserIdsInTenantAsync(IEnumerable<Guid> userIds, Guid tenantId, CancellationToken cancellationToken = default) => await context.Resources.Where(resource => resource.TenantId == tenantId && resource.UserId.HasValue && userIds.Contains(resource.UserId.Value)).Select(resource => new ResourceReference(resource.Id, resource.UserId, resource.Name, resource.Email, resource.JobTitle, resource.Type, resource.Status, resource.IsActive)).ToDictionaryAsync(resource => resource.UserId!.Value, cancellationToken);
     }
 }

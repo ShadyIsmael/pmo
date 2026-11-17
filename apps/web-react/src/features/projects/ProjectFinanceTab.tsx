@@ -91,6 +91,8 @@ export function ProjectFinanceTab() {
     && hasPermission(user.permissions, Permissions.ProjectPaymentRequest.Submit));
   const canApprovePaymentRequests = Boolean(user && canWriteInScope
     && hasPermission(user.permissions, Permissions.ProjectPaymentRequest.Approve));
+  const canManageAssignmentRecovery = Boolean(user && canWriteInScope
+    && hasPermission(user.permissions, Permissions.AssignmentRecovery.Manage));
   const canCancelPaymentRequests = Boolean(user && canWriteInScope
     && hasPermission(user.permissions, Permissions.ProjectPaymentRequest.Cancel));
 
@@ -263,6 +265,7 @@ export function ProjectFinanceTab() {
             canApprove={canApproveAnnualBudget}
             canPrepareClosing={canPrepareAnnualBudgetClosing}
             canApproveClosing={canApproveAnnualBudgetClosing}
+            canManageAssignmentRecovery={canManageAssignmentRecovery}
             canCarryForward={canCarryForwardAnnualBudget}
             projectCurrency={project.currency ?? null}
             activeSection={section}
@@ -282,6 +285,7 @@ export function ProjectFinanceTab() {
               canSubmitRequests={canSubmitPaymentRequests}
               canCancelRequests={canCancelPaymentRequests}
               canApproveRequests={canApprovePaymentRequests}
+              canManageAssignmentRecovery={canManageAssignmentRecovery}
               canRecordSettlements={canRecordSettlements}
               canCreateReversals={canCreateReversals}
               canApproveReversals={canApproveReversals}

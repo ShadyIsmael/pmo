@@ -5,7 +5,7 @@ import {
   GitBranch, ListFilter, Plug, Shield, Workflow as WorkflowIcon, User as UserIcon,
   type LucideIcon,
 } from "lucide-react";
-import { DirectoryAccessPermissions, Permissions } from "./permissions";
+import { DirectoryAccessPermissions, Permissions, ProjectLifecycleCatalogAccessPermissions } from "./permissions";
 
 export type NavigationReadiness = "ready" | "context" | "deferred";
 export type NavigationMatch = "exact" | "prefix";
@@ -20,6 +20,8 @@ export interface NavItem {
   requiredAnyPermission?: string[];
   requiredPlatformAccess?: boolean;
   requiredOrganizationAccess?: boolean;
+  requiredTenantAccess?: boolean;
+  requiredOrganizationAccessForPermissions?: string[];
   requiredPlugin?: string;
   readiness?: NavigationReadiness;
   match?: NavigationMatch;
@@ -47,14 +49,16 @@ export interface AdministrationCategory {
   requiredPermissions: string[];
   requiredPlatformAccess?: boolean;
   requiredOrganizationAccess?: boolean;
+  requiredTenantAccess?: boolean;
+  requiredOrganizationAccessForPermissions?: string[];
 }
 
 export const administrationCategoryConfig: AdministrationCategory[] = [
-  { id: "organization", href: "/administration/organization", labelKey: "nav.organization", icon: Building2, requiredPermissions: [Permissions.Settings.View] },
-  { id: "tenant-settings", href: "/administration/tenant-settings", labelKey: "nav.tenantSettings", icon: Settings2, requiredPermissions: [Permissions.Settings.View] },
-  { id: "organization-settings", href: "/administration/organization-settings", labelKey: "nav.organizationSettings", icon: Building2, requiredPermissions: [Permissions.Settings.View], requiredOrganizationAccess: true },
+  { id: "organization", href: "/administration/organization", labelKey: "nav.organization", icon: Building2, requiredPermissions: [Permissions.Settings.View], requiredTenantAccess: true },
+  { id: "tenant-settings", href: "/administration/tenant-settings", labelKey: "nav.tenantSettings", icon: Settings2, requiredPermissions: [Permissions.Settings.View], requiredTenantAccess: true },
+  { id: "organization-settings", href: "/administration/organization-settings", labelKey: "nav.organizationSettings", icon: Building2, requiredPermissions: [Permissions.Settings.View, Permissions.OrganizationConfiguration.View], requiredOrganizationAccess: true },
   { id: "access", href: "/administration/access", labelKey: "nav.accessSecurity", icon: Shield, requiredPermissions: [Permissions.Users.View, Permissions.Users.ManageAccounts, Permissions.Users.SetStatus, Permissions.Users.AssignRoles, Permissions.Users.ManageOverrides, Permissions.Roles.View, Permissions.Roles.Create, Permissions.Roles.EditDetails, Permissions.Roles.ConfigurePermissions, Permissions.Roles.Delete] },
-  { id: "reference-data", href: "/administration/reference-data", labelKey: "nav.referenceData", icon: ListFilter, requiredPermissions: [Permissions.ReferenceData.View, Permissions.DocumentCategory.View] },
+  { id: "reference-data", href: "/administration/reference-data", labelKey: "nav.referenceData", icon: ListFilter, requiredPermissions: [Permissions.ReferenceData.View, Permissions.DocumentCategory.View, ...ProjectLifecycleCatalogAccessPermissions, Permissions.OrganizationConfiguration.View, Permissions.OrganizationConfiguration.Manage], requiredOrganizationAccessForPermissions: [Permissions.OrganizationConfiguration.View, Permissions.OrganizationConfiguration.Manage] },
   { id: "platform-settings", href: "/administration/settings", labelKey: "nav.platformSettings", icon: Settings2, requiredPermissions: [], requiredPlatformAccess: true },
   { id: "integrations", href: "/administration/integrations", labelKey: "nav.integrations", icon: Plug, requiredPermissions: [Permissions.Settings.View, ...DirectoryAccessPermissions] },
   { id: "governance", href: "/administration/governance", labelKey: "nav.governance", icon: GitBranch, requiredPermissions: [Permissions.Settings.View, Permissions.Workflow.View, Permissions.AssignmentRecovery.View, Permissions.AssignmentRecovery.Initiate, Permissions.AssignmentRecovery.Manage] },
@@ -135,7 +139,7 @@ export const navigationConfig: NavSection[] = [
     labelKey: "nav.sections.administration",
     icon: Settings2,
     order: 80,
-    items: administrationCategoryConfig.map(({ id, href, labelKey, icon, requiredPermissions, requiredPlatformAccess, requiredOrganizationAccess }) =>
+    items: administrationCategoryConfig.map(({ id, href, labelKey, icon, requiredPermissions, requiredPlatformAccess, requiredOrganizationAccess, requiredTenantAccess, requiredOrganizationAccessForPermissions }) =>
       item({
         id,
         href,
@@ -144,6 +148,8 @@ export const navigationConfig: NavSection[] = [
         requiredAnyPermission: requiredPermissions.length > 0 ? requiredPermissions : undefined,
         requiredPlatformAccess,
         requiredOrganizationAccess,
+        requiredTenantAccess,
+        requiredOrganizationAccessForPermissions,
       })
     ),
   },
@@ -159,7 +165,7 @@ export const deferredNavigation = [
   { id: "global-commitments", labelKey: "nav.commitments", reason: "Commitments are currently project-context financials." },
 ];
 
-export function filterSections(sections: NavSection[], permissions: string[], canReadPlatform = false, canReadOrganizations = false): NavSection[] {
+export function filterSections(sections: NavSection[], permissions: string[], canReadPlatform = false, canReadOrganizations = false, canReadTenant = false): NavSection[] {
   // If no permissions loaded yet (still bootstrapping), show unrestricted items so shell never looks empty.
   return sections
     .map((section) => {
@@ -168,6 +174,11 @@ export function filterSections(sections: NavSection[], permissions: string[], ca
         if (navItem.requiredAnyPermission && !navItem.requiredAnyPermission.some((p) => permissions.includes(p))) return false;
         if (navItem.requiredPlatformAccess && !canReadPlatform) return false;
         if (navItem.requiredOrganizationAccess && !canReadOrganizations) return false;
+        if (navItem.requiredTenantAccess && !canReadTenant) return false;
+        const hasScopedOrganizationPermission = navItem.requiredOrganizationAccessForPermissions?.some((permission) => permissions.includes(permission)) ?? false;
+        const hasOtherPermission = navItem.requiredAnyPermission?.some((permission) =>
+          !navItem.requiredOrganizationAccessForPermissions?.includes(permission) && permissions.includes(permission)) ?? false;
+        if (hasScopedOrganizationPermission && !hasOtherPermission && !canReadOrganizations) return false;
         return true;
       });
       if (visibleItems.length === 0) return null;

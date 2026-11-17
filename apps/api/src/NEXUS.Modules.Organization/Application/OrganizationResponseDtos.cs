@@ -3,6 +3,8 @@ using OrganizationEntity = NEXUS.Modules.Organization.Domain.Organization;
 
 namespace NEXUS.Modules.Organization.Application;
 
+public sealed record OrganizationDirectoryItemDto(Guid Id, string Name);
+
 /// <summary>
 /// Finite API response contracts for Organization, Business Unit, Department and
 /// Team reads. These types intentionally contain scalar foreign keys instead of

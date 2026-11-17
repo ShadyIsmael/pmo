@@ -7,6 +7,7 @@ using NEXUS.Modules.Audit.Domain;
 using NEXUS.Modules.WorkflowEngine.Application.Contracts;
 using NEXUS.Modules.WorkflowEngine.Domain;
 using NEXUS.SharedKernel;
+using NEXUS.SharedKernel.Management;
 
 namespace NEXUS.Modules.WorkflowEngine.Application.Services;
 
@@ -48,6 +49,7 @@ public sealed class WorkflowManagementService : IWorkflowManagementService
     private readonly IEnumerable<IWorkflowActionHandler> _actionHandlers;
     private readonly IAuditService _auditService;
     private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly IManagementContextAccessor? _managementContextAccessor;
 
     public WorkflowManagementService(
         DbContext context,
@@ -58,7 +60,8 @@ public sealed class WorkflowManagementService : IWorkflowManagementService
         IEnumerable<IWorkflowGuardHandler> guardHandlers,
         IEnumerable<IWorkflowActionHandler> actionHandlers,
         IAuditService auditService,
-        IHttpContextAccessor httpContextAccessor)
+        IHttpContextAccessor httpContextAccessor,
+        IManagementContextAccessor? managementContextAccessor = null)
     {
         _context = context;
         _validator = validator;
@@ -69,6 +72,7 @@ public sealed class WorkflowManagementService : IWorkflowManagementService
         _actionHandlers = actionHandlers;
         _auditService = auditService;
         _httpContextAccessor = httpContextAccessor;
+        _managementContextAccessor = managementContextAccessor;
     }
 
     public async Task<Result<IReadOnlyList<WorkflowDefinitionListItemDto>>> ListDefinitionsAsync(string? search, bool? isActive, string? entityType, string? domain, CancellationToken cancellationToken = default)
@@ -144,7 +148,7 @@ public sealed class WorkflowManagementService : IWorkflowManagementService
 
     public async Task<Result<WorkflowDefinitionDetailsDto>> CreateDefinitionAsync(CreateWorkflowDefinitionRequest request, string actor, CancellationToken cancellationToken = default)
     {
-        var writable = EnsureWritable();
+        var writable = EnsureWritable(actor);
         if (writable.IsFailure) return Result<WorkflowDefinitionDetailsDto>.Failure(writable.Error!);
         var tenantId = CurrentTenantId();
         if (!tenantId.HasValue)
@@ -187,7 +191,7 @@ public sealed class WorkflowManagementService : IWorkflowManagementService
 
     public async Task<Result<WorkflowDefinitionDetailsDto>> UpdateDefinitionAsync(Guid definitionId, UpdateWorkflowDefinitionRequest request, string actor, CancellationToken cancellationToken = default)
     {
-        var writable = EnsureWritable();
+        var writable = EnsureWritable(actor);
         if (writable.IsFailure) return Result<WorkflowDefinitionDetailsDto>.Failure(writable.Error!);
         var definition = await _context.Set<WorkflowDefinition>().FirstOrDefaultAsync(item => item.Id == definitionId, cancellationToken);
         if (definition is null) return Result<WorkflowDefinitionDetailsDto>.Failure(Error.NotFound("Workflow definition not found."));
@@ -205,7 +209,7 @@ public sealed class WorkflowManagementService : IWorkflowManagementService
 
     public async Task<Result<WorkflowVersionDetailsDto>> CreateDraftAsync(Guid definitionId, CreateDraftRequest request, string actor, CancellationToken cancellationToken = default)
     {
-        var writable = EnsureWritable();
+        var writable = EnsureWritable(actor);
         if (writable.IsFailure) return Result<WorkflowVersionDetailsDto>.Failure(writable.Error!);
         var definition = await _context.Set<WorkflowDefinition>().FirstOrDefaultAsync(item => item.Id == definitionId, cancellationToken);
         if (definition is null) return Result<WorkflowVersionDetailsDto>.Failure(Error.NotFound("Workflow definition not found."));
@@ -271,7 +275,7 @@ public sealed class WorkflowManagementService : IWorkflowManagementService
 
     public async Task<Result> DeleteDraftAsync(Guid versionId, byte[]? rowVersion, string actor, CancellationToken cancellationToken = default)
     {
-        var writable = EnsureWritable();
+        var writable = EnsureWritable(actor);
         if (writable.IsFailure) return writable;
         var version = await _context.Set<WorkflowDefinitionVersion>().FirstOrDefaultAsync(item => item.Id == versionId, cancellationToken);
         if (version is null) return Result.Failure(Error.NotFound("Workflow version not found."));
@@ -288,6 +292,8 @@ public sealed class WorkflowManagementService : IWorkflowManagementService
 
     public async Task<Result<WorkflowStateDto>> CreateStateAsync(Guid versionId, SaveWorkflowStateRequest request, string actor, CancellationToken cancellationToken = default)
     {
+        var writable = EnsureWritable(actor);
+        if (writable.IsFailure) return Result<WorkflowStateDto>.Failure(writable.Error!);
         var versionResult = await DraftVersionAsync(versionId, cancellationToken);
         if (versionResult.IsFailure) return Result<WorkflowStateDto>.Failure(versionResult.Error!);
         var version = versionResult.Value!;
@@ -304,6 +310,8 @@ public sealed class WorkflowManagementService : IWorkflowManagementService
 
     public async Task<Result<WorkflowStateDto>> UpdateStateAsync(Guid stateId, SaveWorkflowStateRequest request, string actor, CancellationToken cancellationToken = default)
     {
+        var writable = EnsureWritable(actor);
+        if (writable.IsFailure) return Result<WorkflowStateDto>.Failure(writable.Error!);
         var state = await _context.Set<WorkflowState>().FirstOrDefaultAsync(item => item.Id == stateId, cancellationToken);
         if (state is null) return Result<WorkflowStateDto>.Failure(Error.NotFound("Workflow state not found."));
         var draft = await DraftVersionAsync(state.WorkflowDefinitionVersionId, cancellationToken);
@@ -324,6 +332,8 @@ public sealed class WorkflowManagementService : IWorkflowManagementService
 
     public async Task<Result> DeleteStateAsync(Guid stateId, byte[]? rowVersion, string actor, CancellationToken cancellationToken = default)
     {
+        var writable = EnsureWritable(actor);
+        if (writable.IsFailure) return writable;
         var state = await _context.Set<WorkflowState>().FirstOrDefaultAsync(item => item.Id == stateId, cancellationToken);
         if (state is null) return Result.Failure(Error.NotFound("Workflow state not found."));
         var draft = await DraftVersionAsync(state.WorkflowDefinitionVersionId, cancellationToken);
@@ -338,6 +348,8 @@ public sealed class WorkflowManagementService : IWorkflowManagementService
 
     public async Task<Result<WorkflowTransitionDto>> CreateTransitionAsync(Guid versionId, SaveWorkflowTransitionRequest request, string actor, CancellationToken cancellationToken = default)
     {
+        var writable = EnsureWritable(actor);
+        if (writable.IsFailure) return Result<WorkflowTransitionDto>.Failure(writable.Error!);
         var versionResult = await DraftVersionAsync(versionId, cancellationToken);
         if (versionResult.IsFailure) return Result<WorkflowTransitionDto>.Failure(versionResult.Error!);
         var version = versionResult.Value!;
@@ -352,6 +364,8 @@ public sealed class WorkflowManagementService : IWorkflowManagementService
 
     public async Task<Result<WorkflowTransitionDto>> UpdateTransitionAsync(Guid transitionId, SaveWorkflowTransitionRequest request, string actor, CancellationToken cancellationToken = default)
     {
+        var writable = EnsureWritable(actor);
+        if (writable.IsFailure) return Result<WorkflowTransitionDto>.Failure(writable.Error!);
         var transition = await _context.Set<WorkflowTransition>().Include(item => item.FromState).Include(item => item.ToState).FirstOrDefaultAsync(item => item.Id == transitionId, cancellationToken);
         if (transition is null) return Result<WorkflowTransitionDto>.Failure(Error.NotFound("Workflow transition not found."));
         var versionResult = await DraftVersionAsync(transition.WorkflowDefinitionVersionId, cancellationToken);
@@ -369,6 +383,8 @@ public sealed class WorkflowManagementService : IWorkflowManagementService
 
     public async Task<Result> DeleteTransitionAsync(Guid transitionId, byte[]? rowVersion, string actor, CancellationToken cancellationToken = default)
     {
+        var writable = EnsureWritable(actor);
+        if (writable.IsFailure) return writable;
         var transition = await _context.Set<WorkflowTransition>().FirstOrDefaultAsync(item => item.Id == transitionId, cancellationToken);
         if (transition is null) return Result.Failure(Error.NotFound("Workflow transition not found."));
         var draft = await DraftVersionAsync(transition.WorkflowDefinitionVersionId, cancellationToken); if (draft.IsFailure) return Result.Failure(draft.Error!);
@@ -380,6 +396,8 @@ public sealed class WorkflowManagementService : IWorkflowManagementService
 
     public async Task<Result<WorkflowGuardDto>> CreateGuardAsync(Guid transitionId, SaveWorkflowGuardRequest request, string actor, CancellationToken cancellationToken = default)
     {
+        var writable = EnsureWritable(actor);
+        if (writable.IsFailure) return Result<WorkflowGuardDto>.Failure(writable.Error!);
         var transition = await LoadTransitionAsync(transitionId, cancellationToken); if (transition is null) return Result<WorkflowGuardDto>.Failure(Error.NotFound("Workflow transition not found."));
         var draft = await DraftVersionAsync(transition.WorkflowDefinitionVersionId, cancellationToken); if (draft.IsFailure) return Result<WorkflowGuardDto>.Failure(draft.Error!);
         var config = await ValidateRuleAsync(request.GuardType, request.Configuration, true, cancellationToken); if (config.IsFailure) return Result<WorkflowGuardDto>.Failure(config.Error!);
@@ -389,6 +407,8 @@ public sealed class WorkflowManagementService : IWorkflowManagementService
 
     public async Task<Result<WorkflowGuardDto>> UpdateGuardAsync(Guid guardId, SaveWorkflowGuardRequest request, string actor, CancellationToken cancellationToken = default)
     {
+        var writable = EnsureWritable(actor);
+        if (writable.IsFailure) return Result<WorkflowGuardDto>.Failure(writable.Error!);
         var guard = await _context.Set<WorkflowTransitionGuard>().FirstOrDefaultAsync(item => item.Id == guardId, cancellationToken); if (guard is null) return Result<WorkflowGuardDto>.Failure(Error.NotFound("Workflow guard not found."));
         var transition = await LoadTransitionAsync(guard.WorkflowTransitionId, cancellationToken); if (transition is null) return Result<WorkflowGuardDto>.Failure(Error.NotFound("Workflow transition not found."));
         var draft = await DraftVersionAsync(transition.WorkflowDefinitionVersionId, cancellationToken); if (draft.IsFailure) return Result<WorkflowGuardDto>.Failure(draft.Error!);
@@ -400,6 +420,8 @@ public sealed class WorkflowManagementService : IWorkflowManagementService
 
     public async Task<Result> DeleteGuardAsync(Guid guardId, byte[]? rowVersion, string actor, CancellationToken cancellationToken = default)
     {
+        var writable = EnsureWritable(actor);
+        if (writable.IsFailure) return writable;
         var guard = await _context.Set<WorkflowTransitionGuard>().FirstOrDefaultAsync(item => item.Id == guardId, cancellationToken); if (guard is null) return Result.Failure(Error.NotFound("Workflow guard not found."));
         var transition = await LoadTransitionAsync(guard.WorkflowTransitionId, cancellationToken); if (transition is null) return Result.Failure(Error.NotFound("Workflow transition not found."));
         var draft = await DraftVersionAsync(transition.WorkflowDefinitionVersionId, cancellationToken); if (draft.IsFailure) return Result.Failure(draft.Error!);
@@ -409,6 +431,8 @@ public sealed class WorkflowManagementService : IWorkflowManagementService
 
     public async Task<Result<WorkflowActionDto>> CreateActionAsync(Guid transitionId, SaveWorkflowActionRequest request, string actor, CancellationToken cancellationToken = default)
     {
+        var writable = EnsureWritable(actor);
+        if (writable.IsFailure) return Result<WorkflowActionDto>.Failure(writable.Error!);
         var transition = await LoadTransitionAsync(transitionId, cancellationToken); if (transition is null) return Result<WorkflowActionDto>.Failure(Error.NotFound("Workflow transition not found."));
         var draft = await DraftVersionAsync(transition.WorkflowDefinitionVersionId, cancellationToken); if (draft.IsFailure) return Result<WorkflowActionDto>.Failure(draft.Error!);
         var config = await ValidateRuleAsync(request.ActionType, request.Configuration, false, cancellationToken); if (config.IsFailure) return Result<WorkflowActionDto>.Failure(config.Error!);
@@ -418,6 +442,8 @@ public sealed class WorkflowManagementService : IWorkflowManagementService
 
     public async Task<Result<WorkflowActionDto>> UpdateActionAsync(Guid actionId, SaveWorkflowActionRequest request, string actor, CancellationToken cancellationToken = default)
     {
+        var writable = EnsureWritable(actor);
+        if (writable.IsFailure) return Result<WorkflowActionDto>.Failure(writable.Error!);
         var action = await _context.Set<WorkflowTransitionAction>().FirstOrDefaultAsync(item => item.Id == actionId, cancellationToken); if (action is null) return Result<WorkflowActionDto>.Failure(Error.NotFound("Workflow action not found."));
         var transition = await LoadTransitionAsync(action.WorkflowTransitionId, cancellationToken); if (transition is null) return Result<WorkflowActionDto>.Failure(Error.NotFound("Workflow transition not found."));
         var draft = await DraftVersionAsync(transition.WorkflowDefinitionVersionId, cancellationToken); if (draft.IsFailure) return Result<WorkflowActionDto>.Failure(draft.Error!);
@@ -428,6 +454,8 @@ public sealed class WorkflowManagementService : IWorkflowManagementService
 
     public async Task<Result> DeleteActionAsync(Guid actionId, byte[]? rowVersion, string actor, CancellationToken cancellationToken = default)
     {
+        var writable = EnsureWritable(actor);
+        if (writable.IsFailure) return writable;
         var action = await _context.Set<WorkflowTransitionAction>().FirstOrDefaultAsync(item => item.Id == actionId, cancellationToken); if (action is null) return Result.Failure(Error.NotFound("Workflow action not found."));
         var transition = await LoadTransitionAsync(action.WorkflowTransitionId, cancellationToken); if (transition is null) return Result.Failure(Error.NotFound("Workflow transition not found."));
         var draft = await DraftVersionAsync(transition.WorkflowDefinitionVersionId, cancellationToken); if (draft.IsFailure) return Result.Failure(draft.Error!);
@@ -444,7 +472,7 @@ public sealed class WorkflowManagementService : IWorkflowManagementService
 
     public async Task<Result<WorkflowVersionDetailsDto>> PublishAsync(Guid versionId, PublishWorkflowRequest request, string actor, CancellationToken cancellationToken = default)
     {
-        var writable = EnsurePublishable(); if (writable.IsFailure) return Result<WorkflowVersionDetailsDto>.Failure(writable.Error!);
+        var writable = EnsurePublishable(actor); if (writable.IsFailure) return Result<WorkflowVersionDetailsDto>.Failure(writable.Error!);
         var version = await LoadVersionAsync(versionId, cancellationToken); if (version is null) return Result<WorkflowVersionDetailsDto>.Failure(Error.NotFound("Workflow version not found."));
         if (version.LifecycleStatus != WorkflowDefinitionVersionLifecycleStatus.Draft) return Result<WorkflowVersionDetailsDto>.Failure(Error.Conflict("Only Draft workflow versions can be published."));
         var validation = await ValidateVersionAsync(version, cancellationToken);
@@ -598,9 +626,22 @@ public sealed class WorkflowManagementService : IWorkflowManagementService
 
     private WorkflowDefinitionVersion NewVersion(WorkflowDefinition definition, int number, string? changeLog, string actor) => new() { TenantId = definition.TenantId, WorkflowDefinitionId = definition.Id, VersionNumber = number, LifecycleStatus = WorkflowDefinitionVersionLifecycleStatus.Draft, ChangeLog = Normalize(changeLog), CreatedBy = actor };
 
-    private Result EnsureWritable() => IsReadOnly() ? Result.Failure(WorkflowErrors.ReadOnlyViewAs) : Result.Success();
-    private Result EnsurePublishable() => IsReadOnly() ? Result.Failure(WorkflowErrors.ReadOnlyViewAs) : Result.Success();
-    private bool IsReadOnly() => _httpContextAccessor.HttpContext?.User.FindFirstValue("readOnly") == "true" || _httpContextAccessor.HttpContext?.User.FindFirstValue("viewAs") == "true";
+    private Result EnsureWritable(string actor)
+    {
+        if (IsReadOnly()) return Result.Failure(WorkflowErrors.ReadOnlyViewAs);
+        var user = _httpContextAccessor.HttpContext?.User;
+        var authenticatedActor = user?.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? user?.FindFirstValue("sub")
+            ?? user?.FindFirstValue("userId");
+        if (string.IsNullOrWhiteSpace(authenticatedActor) || !string.Equals(actor, authenticatedActor, StringComparison.Ordinal))
+            return Result.Failure(Error.Unauthorized("A valid authenticated workflow actor is required."));
+        return Result.Success();
+    }
+
+    private Result EnsurePublishable(string actor) => EnsureWritable(actor);
+    private bool IsReadOnly() => _managementContextAccessor?.Current?.EffectiveReadOnly == true
+        || _httpContextAccessor.HttpContext?.User.FindFirstValue("readOnly") == "true"
+        || _httpContextAccessor.HttpContext?.User.FindFirstValue("viewAs") == "true";
     private Guid? CurrentTenantId()
     {
         var user = _httpContextAccessor.HttpContext?.User;

@@ -18,8 +18,7 @@ public sealed class PlanGridCommandHistoryController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetState(Guid projectId, Guid planId, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        if (string.IsNullOrWhiteSpace(userId)) return Unauthorized();
+        if (!TryGetActorId(out var userId)) return Unauthorized();
         var result = await _history.GetStateAsync(projectId, planId, userId, cancellationToken);
         if (result.IsFailure) return result.Error?.StatusCode == 404 ? NotFound(new { error = result.Error.Message }) : BadRequest(new { error = result.Error?.Message });
         return Ok(result.Value);
@@ -37,8 +36,7 @@ public sealed class PlanGridCommandHistoryController : ControllerBase
 
     private async Task<IActionResult> Apply(Guid projectId, Guid planId, Guid commandId, bool isRedo, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        if (string.IsNullOrWhiteSpace(userId)) return Unauthorized();
+        if (!TryGetActorId(out var userId)) return Unauthorized();
         var result = isRedo
             ? await _history.RedoAsync(projectId, planId, commandId, userId, cancellationToken)
             : await _history.UndoAsync(projectId, planId, commandId, userId, cancellationToken);
@@ -50,5 +48,11 @@ public sealed class PlanGridCommandHistoryController : ControllerBase
                 _ => BadRequest(new { error = result.Error?.Message })
             };
         return Ok(result.Value);
+    }
+
+    private bool TryGetActorId(out string actorId)
+    {
+        actorId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? string.Empty;
+        return User.Identity?.IsAuthenticated == true && Guid.TryParse(actorId, out var parsed) && parsed != Guid.Empty;
     }
 }

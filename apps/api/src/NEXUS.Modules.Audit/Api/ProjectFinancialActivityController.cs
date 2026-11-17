@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using NEXUS.Modules.Audit.Application;
@@ -37,8 +38,7 @@ public sealed class ProjectFinancialActivityController : ControllerBase
         [FromQuery] string? reference = null,
         CancellationToken cancellationToken = default)
     {
-        if (!Guid.TryParse(User.FindFirst("tenantId")?.Value, out var tenantId)) return Unauthorized();
-        if (_management.Current?.Scope.ProjectIds.Contains(projectId) != true) return NotFound();
+        if (!TryGetIdentityScope(projectId, out var tenantId)) return ScopeFailure();
 
         var scope = await _scopeProvider.ResolveAsync(projectId, tenantId, cancellationToken);
         if (scope is null) return NotFound(new { error = "The requested project was not found." });
@@ -73,8 +73,7 @@ public sealed class ProjectFinancialActivityController : ControllerBase
     [HttpGet("facets")]
     public async Task<IActionResult> GetFacets(Guid projectId, CancellationToken cancellationToken)
     {
-        if (!Guid.TryParse(User.FindFirst("tenantId")?.Value, out var tenantId)) return Unauthorized();
-        if (_management.Current?.Scope.ProjectIds.Contains(projectId) != true) return NotFound();
+        if (!TryGetIdentityScope(projectId, out var tenantId)) return ScopeFailure();
 
         var scope = await _scopeProvider.ResolveAsync(projectId, tenantId, cancellationToken);
         if (scope is null) return NotFound(new { error = "The requested project was not found." });
@@ -95,6 +94,25 @@ public sealed class ProjectFinancialActivityController : ControllerBase
             ? normalized.Date.AddDays(1).AddTicks(-1)
             : normalized;
     }
+
+    private bool TryGetIdentityScope(Guid projectId, out Guid tenantId)
+    {
+        tenantId = Guid.Empty;
+        var current = _management.Current;
+        return current is not null
+            && Guid.TryParse(User.FindFirst("tenantId")?.Value, out tenantId)
+            && tenantId != Guid.Empty
+            && Guid.TryParse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var actorId)
+            && actorId != Guid.Empty
+            && current.TenantId == tenantId
+            && current.UserId == actorId
+            && current.Scope.ProjectIds.Contains(projectId);
+    }
+
+    private IActionResult ScopeFailure() => Guid.TryParse(User.FindFirst("tenantId")?.Value, out var tenantId)
+        && tenantId != Guid.Empty
+        ? NotFound(new { error = "The requested project was not found." })
+        : Unauthorized();
 }
 
 public sealed record ProjectFinancialActivityFacetsResponse(

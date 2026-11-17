@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using NEXUS.Modules.Organization.Domain;
 using NEXUS.SharedKernel;
 using NEXUS.SharedKernel.Helpers;
+using NEXUS.SharedKernel.Management;
 
 namespace NEXUS.Modules.Organization.Application;
 
@@ -13,17 +14,23 @@ public sealed class OrganizationalUnitService : IOrganizationalUnitService
     private readonly DbContext _context;
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly IResourceReferenceLookup _resourceLookup;
+    private readonly IManagementContextAccessor _managementContext;
 
-    public OrganizationalUnitService(DbContext context, IHttpContextAccessor httpContextAccessor, IResourceReferenceLookup resourceLookup)
+    public OrganizationalUnitService(
+        DbContext context,
+        IHttpContextAccessor httpContextAccessor,
+        IResourceReferenceLookup resourceLookup,
+        IManagementContextAccessor managementContext)
     {
         _context = context;
         _httpContextAccessor = httpContextAccessor;
         _resourceLookup = resourceLookup;
+        _managementContext = managementContext;
     }
 
     public async Task<IReadOnlyList<OrganizationalUnitDto>> GetUnitsAsync(bool includeInactive, CancellationToken cancellationToken = default)
     {
-        await EnsureDefaultTypesAsync(cancellationToken);
+        if (!IsReadOnlyViewAs) await EnsureDefaultTypesAsync(cancellationToken);
         var tenantId = CurrentTenantId();
         var units = await _context.Set<OrganizationalUnit>()
             .Where(unit => unit.TenantId == tenantId && (includeInactive || unit.IsActive))
@@ -115,7 +122,7 @@ public sealed class OrganizationalUnitService : IOrganizationalUnitService
 
     public async Task<IReadOnlyList<OrganizationalUnitTypeDto>> GetTypesAsync(bool includeInactive, CancellationToken cancellationToken = default)
     {
-        await EnsureDefaultTypesAsync(cancellationToken);
+        if (!IsReadOnlyViewAs) await EnsureDefaultTypesAsync(cancellationToken);
         var query = _context.Set<Lookup>().Where(item => item.Category == DefaultTypeCategory);
         if (!includeInactive) query = query.Where(item => item.IsActive);
         return await query.OrderBy(item => item.DisplayOrder).ThenBy(item => item.Code).Select(item => ToTypeDto(item)).ToListAsync(cancellationToken);
@@ -370,6 +377,7 @@ public sealed class OrganizationalUnitService : IOrganizationalUnitService
     private Guid CurrentTenantId() => Guid.TryParse(_httpContextAccessor.HttpContext?.User.FindFirstValue("tenantId"), out var tenantId) && tenantId != Guid.Empty
         ? tenantId
         : throw new InvalidOperationException("A trusted tenant context is required.");
+    private bool IsReadOnlyViewAs => _managementContext.Current?.EffectiveReadOnly == true;
     private static string? Normalize(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
 }

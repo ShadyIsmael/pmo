@@ -21,6 +21,7 @@ public sealed class PlanningImportService : IPlanningImportService
     private readonly IResourceService _resourceService;
     private readonly IAuditService _auditService;
     private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly IProjectResourcePlanningContextLookup _planningContextLookup;
     private readonly SummaryTaskRollupService _summaryRollup;
 
     public PlanningImportService(
@@ -29,6 +30,7 @@ public sealed class PlanningImportService : IPlanningImportService
         IResourceService resourceService,
         IAuditService auditService,
         IHttpContextAccessor httpContextAccessor,
+        IProjectResourcePlanningContextLookup planningContextLookup,
         SummaryTaskRollupService? summaryRollup = null)
     {
         _providers = providers.ToList();
@@ -36,6 +38,7 @@ public sealed class PlanningImportService : IPlanningImportService
         _resourceService = resourceService;
         _auditService = auditService;
         _httpContextAccessor = httpContextAccessor;
+        _planningContextLookup = planningContextLookup;
         _summaryRollup = summaryRollup ?? new SummaryTaskRollupService(context);
     }
 
@@ -92,8 +95,7 @@ public sealed class PlanningImportService : IPlanningImportService
         var document = DeserializeDocument(session.ParsedDocumentJson);
         var state = DeserializeResolutionState(session.ResolutionJson);
         var candidates = await LoadResourceCandidatesAsync(document.Resources, cancellationToken);
-        var review = BuildSessionReview(session, document, candidates, state);
-        await _context.SaveChangesAsync(cancellationToken);
+        var review = BuildSessionReview(session, document, candidates, state, updateSessionStatus: false);
         return Result<PlanImportSessionDto>.Success(review);
     }
 
@@ -216,6 +218,20 @@ public sealed class PlanningImportService : IPlanningImportService
         if (!request.TargetPlanId.HasValue && request.NewPlanType is null)
             return Result<PlanImportResultDto>.Failure(Error.Validation("A Plan type is required when creating a new Plan"));
 
+        var ignoredAssignments = document.Assignments
+            .Where(item => string.Equals(state.Assignments.GetValueOrDefault(AssignmentSourceId(item)), "Ignore", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(state.Resources.GetValueOrDefault(item.ResourceSourceId)?.Resolution, "Ignore", StringComparison.OrdinalIgnoreCase))
+            .Select(AssignmentSourceId)
+            .ToHashSet(StringComparer.Ordinal);
+        var assignmentMemberError = await ValidateSessionAssignmentProjectMembershipAsync(
+            projectId,
+            document,
+            state,
+            ignoredAssignments,
+            cancellationToken);
+        if (assignmentMemberError is not null)
+            return Result<PlanImportResultDto>.Failure(assignmentMemberError);
+
         await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
         try
         {
@@ -240,11 +256,6 @@ public sealed class PlanningImportService : IPlanningImportService
                 }
             }
 
-            var ignoredAssignments = document.Assignments
-                .Where(item => string.Equals(state.Assignments.GetValueOrDefault(AssignmentSourceId(item)), "Ignore", StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(state.Resources.GetValueOrDefault(item.ResourceSourceId)?.Resolution, "Ignore", StringComparison.OrdinalIgnoreCase))
-                .Select(AssignmentSourceId)
-                .ToHashSet(StringComparer.Ordinal);
             var ignoredCalendars = document.Calendars
                 .Where(item => string.Equals(state.Calendars.GetValueOrDefault(CalendarSourceId(item)), "Ignore", StringComparison.OrdinalIgnoreCase))
                 .Select(CalendarSourceId)
@@ -442,7 +453,12 @@ public sealed class PlanningImportService : IPlanningImportService
         return Result<PlanImportSessionDto>.Success(review);
     }
 
-    private static PlanImportSessionDto BuildSessionReview(PlanImportSession session, PlanningImportDocument document, IReadOnlyDictionary<string, List<ResourceDto>> candidates, ImportResolutionState state)
+    private static PlanImportSessionDto BuildSessionReview(
+        PlanImportSession session,
+        PlanningImportDocument document,
+        IReadOnlyDictionary<string, List<ResourceDto>> candidates,
+        ImportResolutionState state,
+        bool updateSessionStatus = true)
     {
         var preview = BuildPreview(document, session.FileName, new Dictionary<string, ResourceDto>(StringComparer.Ordinal));
         var issues = session.Issues.Select(issue => new PlanImportIssueDto
@@ -489,11 +505,12 @@ public sealed class PlanningImportService : IPlanningImportService
             return new PlanImportCalendarPreviewDto { SourceId = sourceId, Name = calendar.Name, IsDefault = calendar.IsDefault, WorkingDays = calendar.Days.Count(item => item.IsWorkingDay), Holidays = calendar.Holidays.Count, Resolution = resolution, RequiresReview = requiresCalendarReview };
         }).ToList();
         var blocking = issues.Count(item => item.IsBlocking && item.Resolution is not "Ignore");
-        session.Status = blocking > 0 ? PlanImportSessionStatus.NeedsReview : PlanImportSessionStatus.ReadyToCommit;
+        var reviewStatus = blocking > 0 ? PlanImportSessionStatus.NeedsReview : PlanImportSessionStatus.ReadyToCommit;
+        if (updateSessionStatus) session.Status = reviewStatus;
         return new PlanImportSessionDto
         {
             Id = session.Id, ProjectId = session.ProjectId, FileName = session.FileName, Format = session.Format, SuggestedPlanName = session.SuggestedPlanName,
-            Status = session.Status.ToString(), Statistics = preview.Statistics, Tasks = preview.Tasks, Dependencies = preview.Dependencies,
+            Status = reviewStatus.ToString(), Statistics = preview.Statistics, Tasks = preview.Tasks, Dependencies = preview.Dependencies,
             Resources = document.Resources.Select(source => new PlanImportResourcePreviewDto
             {
                 SourceId = source.SourceId, Name = source.Name, Email = source.Email, AssignmentCount = document.Assignments.Count(item => item.ResourceSourceId == source.SourceId),
@@ -633,6 +650,15 @@ public sealed class PlanningImportService : IPlanningImportService
         }
 
         var matches = await MatchResourcesAsync(document.Resources, cancellationToken);
+        var assignmentMemberError = await ValidateAssignmentProjectMembershipAsync(
+            request.ProjectId,
+            document,
+            matches,
+            ignoredAssignments: null,
+            cancellationToken: cancellationToken);
+        if (assignmentMemberError is not null)
+            return Result<PlanImportResultDto>.Failure(assignmentMemberError);
+
         var importWarnings = document.Warnings.Select(ToDto).ToList();
         var unmatchedAssignments = document.Assignments.Count(assignment => !matches.ContainsKey(assignment.ResourceSourceId));
         if (unmatchedAssignments > 0)
@@ -807,6 +833,68 @@ public sealed class PlanningImportService : IPlanningImportService
             if (candidates.Count == 1) result[source.SourceId] = candidates[0];
         }
         return result;
+    }
+
+    private async Task<Error?> ValidateSessionAssignmentProjectMembershipAsync(
+        Guid projectId,
+        PlanningImportDocument document,
+        ImportResolutionState state,
+        IReadOnlySet<string> ignoredAssignments,
+        CancellationToken cancellationToken)
+    {
+        var assignedResourceSources = document.Assignments
+            .Where(assignment => !ignoredAssignments.Contains(AssignmentSourceId(assignment)))
+            .Select(assignment => assignment.ResourceSourceId)
+            .Distinct(StringComparer.Ordinal);
+
+        foreach (var resourceSourceId in assignedResourceSources)
+        {
+            var resolution = state.Resources.GetValueOrDefault(resourceSourceId);
+            var source = document.Resources.FirstOrDefault(item => item.SourceId == resourceSourceId);
+            if (resolution?.Resolution == "CreateNew")
+            {
+                return Error.Validation($"Resource '{source?.Name ?? resourceSourceId}' cannot be assigned until it is added as an active project member. Map an existing project member or ignore the imported assignment.");
+            }
+
+            if (resolution?.Resolution != "MapExisting" || !resolution.ResourceId.HasValue)
+                continue; // BuildSessionReview blocks unresolved assignments before this method.
+
+            var resourceResult = await _resourceService.GetByIdAsync(resolution.ResourceId.Value, cancellationToken);
+            if (resourceResult.IsFailure || resourceResult.Value is null || !resourceResult.Value.IsActive)
+                return Error.Validation("A mapped resource is no longer active. Refresh the import review and choose an active project member.");
+
+            var membership = await _planningContextLookup.GetPlanningContextAsync(projectId, resourceResult.Value.Id, cancellationToken);
+            if (membership is null || !membership.IsActive || membership.ProjectId != projectId || membership.ResourceId != resourceResult.Value.Id)
+            {
+                return Error.Validation($"Resource '{source?.Name ?? resourceResult.Value.Name}' is not an active member of this project. Add it as a project member first or ignore the imported assignment.");
+            }
+        }
+
+        return null;
+    }
+
+    private async Task<Error?> ValidateAssignmentProjectMembershipAsync(
+        Guid projectId,
+        PlanningImportDocument document,
+        IReadOnlyDictionary<string, ResourceDto> resourceMatches,
+        IReadOnlySet<string>? ignoredAssignments,
+        CancellationToken cancellationToken)
+    {
+        var assignedResources = document.Assignments
+            .Where(assignment => ignoredAssignments?.Contains(AssignmentSourceId(assignment)) != true
+                && resourceMatches.ContainsKey(assignment.ResourceSourceId))
+            .Select(assignment => assignment.ResourceSourceId)
+            .Distinct(StringComparer.Ordinal);
+
+        foreach (var resourceSourceId in assignedResources)
+        {
+            var resource = resourceMatches[resourceSourceId];
+            var membership = await _planningContextLookup.GetPlanningContextAsync(projectId, resource.Id, cancellationToken);
+            if (membership is null || !membership.IsActive || membership.ProjectId != projectId || membership.ResourceId != resource.Id)
+                return Error.Validation($"Resource '{resource.Name}' is not an active member of this project. Add it as a project member first or ignore the imported assignment.");
+        }
+
+        return null;
     }
 
     private static void AddImportedModel(

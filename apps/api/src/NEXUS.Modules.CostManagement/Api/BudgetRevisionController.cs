@@ -61,7 +61,7 @@ public sealed class BudgetRevisionController(IBudgetRevisionService revisionServ
     public async Task<IActionResult> Delete(Guid id, [FromQuery] byte[]? rowVersion, CancellationToken cancellationToken) =>
         ToActionResult(await revisionService.DeleteAsync(id, rowVersion ?? [], UserId(), cancellationToken));
 
-    private string UserId() => User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+    private string UserId() => User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? string.Empty;
 
     private IActionResult ToActionResult<T>(Result<T> result, string? createdAction = null) =>
         result.IsFailure ? ErrorResult(result.Error) :

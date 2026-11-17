@@ -35,6 +35,7 @@ public sealed class FinancialApprovalDelegationBoundaryTests
         var tenantId = Guid.NewGuid();
         var actorId = Guid.NewGuid();
         await using var db = CreateDatabase(tenantId);
+        using var tenantScope = TrustedTenantExecutionContext.Enter(tenantId);
         db.Users.Add(NewUser(tenantId, actorId, "Delegation", "Admin"));
         await db.SaveChangesAsync();
 
@@ -56,7 +57,7 @@ public sealed class FinancialApprovalDelegationBoundaryTests
             FirstName = "Budget",
             LastName = "Configurer",
             IsActive = true,
-            Roles = [annualBudgetRole.Name]
+            RoleIds = [annualBudgetRole.Id]
         }, actorId.ToString());
 
         Assert.True(created.IsSuccess, created.Error?.Message);
@@ -93,6 +94,7 @@ public sealed class FinancialApprovalDelegationBoundaryTests
         var tenantId = Guid.NewGuid();
         var actorId = Guid.NewGuid();
         await using var db = CreateDatabase(tenantId);
+        using var tenantScope = TrustedTenantExecutionContext.Enter(tenantId);
         db.Users.Add(NewUser(tenantId, actorId, "Limited", "Admin"));
         var role = await AddAnnualBudgetRoleAsync(db, tenantId, "Annual Budget Configurers");
         var actorPermissions = RoleAndUserDelegationPermissions();
@@ -105,7 +107,7 @@ public sealed class FinancialApprovalDelegationBoundaryTests
             Email = $"missing-scope-{Guid.NewGuid():N}@test.local",
             FirstName = "Missing",
             LastName = "Scope",
-            Roles = [role.Name]
+            RoleIds = [role.Id]
         }, actorId.ToString());
 
         Assert.True(result.IsFailure);
@@ -123,6 +125,7 @@ public sealed class FinancialApprovalDelegationBoundaryTests
         var tenantId = Guid.NewGuid();
         var actorId = Guid.NewGuid();
         await using var db = CreateDatabase(tenantId);
+        using var tenantScope = TrustedTenantExecutionContext.Enter(tenantId);
         db.Users.Add(NewUser(tenantId, actorId, "Denied", "Admin"));
         var role = await AddAnnualBudgetRoleAsync(db, tenantId, "Annual Budget Configurers");
         var deniedPermission = await db.Permissions.IgnoreQueryFilters().SingleAsync(permission =>
@@ -143,7 +146,7 @@ public sealed class FinancialApprovalDelegationBoundaryTests
             Email = $"actor-deny-{Guid.NewGuid():N}@test.local",
             FirstName = "Denied",
             LastName = "Delegation",
-            Roles = [role.Name]
+            RoleIds = [role.Id]
         }, actorId.ToString());
 
         Assert.True(result.IsFailure);
@@ -160,6 +163,7 @@ public sealed class FinancialApprovalDelegationBoundaryTests
         var foreignTenantId = Guid.NewGuid();
         var actorId = Guid.NewGuid();
         await using var db = CreateDatabase(tenantId);
+        using var tenantScope = TrustedTenantExecutionContext.Enter(tenantId);
         db.Users.Add(NewUser(tenantId, actorId, "Scope", "Admin"));
 
         var foreignView = new Permission
@@ -194,7 +198,7 @@ public sealed class FinancialApprovalDelegationBoundaryTests
             Email = $"foreign-role-{Guid.NewGuid():N}@test.local",
             FirstName = "Foreign",
             LastName = "Role",
-            Roles = [foreignRole.Name]
+            RoleIds = [foreignRole.Id]
         }, actorId.ToString());
 
         Assert.True(result.IsFailure);
@@ -210,6 +214,7 @@ public sealed class FinancialApprovalDelegationBoundaryTests
         var tenantId = Guid.NewGuid();
         var actorId = Guid.NewGuid();
         await using var db = CreateDatabase(tenantId);
+        using var tenantScope = TrustedTenantExecutionContext.Enter(tenantId);
         db.Users.Add(NewUser(tenantId, actorId, "Self", "Admin"));
         var role = await AddAnnualBudgetRoleAsync(db, tenantId, "Annual Budget Configurers");
         await db.SaveChangesAsync();
@@ -221,7 +226,7 @@ public sealed class FinancialApprovalDelegationBoundaryTests
             FirstName = "Self",
             LastName = "Admin",
             IsActive = true,
-            Roles = [role.Name]
+            RoleIds = [role.Id]
         }, actorId.ToString());
 
         Assert.True(result.IsFailure);
@@ -232,11 +237,12 @@ public sealed class FinancialApprovalDelegationBoundaryTests
     }
 
     [Fact]
-    public async Task Bootstrap_only_financial_permissions_cannot_be_added_to_a_system_role()
+    public async Task Financial_permissions_can_be_granted_to_a_system_role_by_an_authorized_actor()
     {
         var tenantId = Guid.NewGuid();
         var actorId = Guid.NewGuid();
         await using var db = CreateDatabase(tenantId);
+        using var tenantScope = TrustedTenantExecutionContext.Enter(tenantId);
         var adminRole = new Role
         {
             TenantId = tenantId,
@@ -245,7 +251,7 @@ public sealed class FinancialApprovalDelegationBoundaryTests
             CreatedBy = "test"
         };
         adminRole.AssignSystemRoleKey(Role.TenantAdminSystemRoleKey, tenantId);
-        foreach (var key in ProtectedTenantAdminPolicy.MandatoryPermissionKeys)
+        foreach (var key in PermissionProtectionPolicy.Empty.ProtectedPermissionKeys)
             adminRole.Permissions.Add(await db.Permissions.IgnoreQueryFilters().SingleAsync(permission =>
                 permission.TenantId == tenantId && permission.Name == key));
         var actor = NewUser(tenantId, actorId, "System", "Admin");
@@ -255,7 +261,7 @@ public sealed class FinancialApprovalDelegationBoundaryTests
         await db.SaveChangesAsync();
 
         var actorPermissions = new HashSet<string>(
-            ProtectedTenantAdminPolicy.MandatoryPermissionKeys
+            PermissionProtectionPolicy.Empty.ProtectedPermissionKeys
                 .Concat(["Roles.Create", "Roles.ConfigurePermissions", "TenantAdministration.ManageScope"]),
             StringComparer.Ordinal);
         var service = CreateRoleService(db, tenantId, actorId, actorPermissions);
@@ -270,10 +276,9 @@ public sealed class FinancialApprovalDelegationBoundaryTests
             PermissionIds = selectedIds
         }, actorId, tenantId);
 
-        Assert.True(result.IsFailure);
-        Assert.Equal(403, result.Error?.StatusCode);
-        Assert.DoesNotContain(adminRole.Permissions, permission => permission.Name == "ProjectAnnualBudget.View");
-        Assert.DoesNotContain(adminRole.Permissions, permission => permission.Name == "ProjectAnnualBudget.ManageApprovalConfiguration");
+        Assert.True(result.IsSuccess, result.Error?.Message);
+        Assert.Contains(result.Value!.Permissions, permission => permission.Name == "ProjectAnnualBudget.View");
+        Assert.Contains(result.Value.Permissions, permission => permission.Name == "ProjectAnnualBudget.ManageApprovalConfiguration");
     }
 
     [Fact]
@@ -294,7 +299,7 @@ public sealed class FinancialApprovalDelegationBoundaryTests
             var admin = await db.Roles.IgnoreQueryFilters().Include(role => role.Permissions)
                 .SingleAsync(role => role.SystemRoleKey == Role.TenantAdminSystemRoleKey);
             var projectManager = await db.Roles.IgnoreQueryFilters().Include(role => role.Permissions)
-                .SingleAsync(role => role.SystemRoleKey == "tenant.project-manager");
+                .SingleAsync(role => role.RoleKey == "tenant.project-manager");
 
             var categoryManagementKeys = new[]
             {
@@ -348,7 +353,9 @@ public sealed class FinancialApprovalDelegationBoundaryTests
             admin = await db.Roles.IgnoreQueryFilters().Include(role => role.Permissions)
                 .SingleAsync(role => role.SystemRoleKey == Role.TenantAdminSystemRoleKey);
             projectManager = await db.Roles.IgnoreQueryFilters().Include(role => role.Permissions)
-                .SingleAsync(role => role.SystemRoleKey == "tenant.project-manager");
+                .SingleAsync(role => role.RoleKey == "tenant.project-manager");
+            Assert.False(projectManager.IsSystem);
+            Assert.Null(projectManager.SystemRoleKey);
 
             Assert.All(historicalAdminKeys, key => Assert.Contains(admin.Permissions, permission => permission.Name == key));
             Assert.All(categoryManagementKeys, key => Assert.Contains(admin.Permissions, permission => permission.Name == key));
@@ -372,6 +379,7 @@ public sealed class FinancialApprovalDelegationBoundaryTests
     {
         var context = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        using var tenantScope = TrustedTenantExecutionContext.Enter(tenantId);
         context.Permissions.AddRange(PermissionCatalog.CreateSeedPermissions(tenantId));
         context.SaveChanges();
         return context;
@@ -427,6 +435,7 @@ public sealed class FinancialApprovalDelegationBoundaryTests
             CreatedBy = "test",
             Permissions = [view, manage]
         };
+        role.AssignOrganization(Guid.NewGuid());
         db.Roles.Add(role);
         await db.SaveChangesAsync();
         return role;
@@ -462,13 +471,21 @@ public sealed class FinancialApprovalDelegationBoundaryTests
         audit.Setup(service => service.AppendAsync(It.IsAny<AuditEntry>(), It.IsAny<CancellationToken>()))
             .Callback<AuditEntry, CancellationToken>((entry, _) => db.AuditEntries.Add(entry))
             .ReturnsAsync(Result.Success());
+        var httpContext = CreateHttpContext(actorId, tenantId);
+        var organizationDirectory = new Mock<IUserOrganizationDirectory>();
+        organizationDirectory
+            .Setup(directory => directory.GetActiveNamesAsync(tenantId, It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Guid _, IEnumerable<Guid> organizationIds, CancellationToken _) =>
+                (IReadOnlyDictionary<Guid, string>)organizationIds.Distinct().ToDictionary(id => id, id => id.ToString("D")));
+        permissionService.Setup(service => service.GetEffectivePermissionsForOrganizationAsync(
+                actorId, tenantId, It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(effectivePermissions);
+        var assignmentAuthorization = new RoleAssignmentAuthorizationService(
+            db, permissionService.Object, httpContext, organizationDirectory.Object);
         return new UserAdministrationService(
-            db,
-            new PasswordHasher<User>(),
-            CreateHttpContext(actorId, tenantId),
-            permissionService.Object,
-            audit.Object,
-            Options.Create(new LocalPasswordPolicyOptions()));
+            db, new PasswordHasher<User>(), httpContext, permissionService.Object, audit.Object,
+            assignmentAuthorization, Options.Create(new LocalPasswordPolicyOptions()), organizationDirectory.Object,
+            Mock.Of<IUserOrganizationMembershipIntegrity>());
     }
 
     private static HttpContextAccessor CreateHttpContext(Guid actorId, Guid tenantId) => new()

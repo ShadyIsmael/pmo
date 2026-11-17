@@ -150,6 +150,43 @@ public sealed class PortfolioManagementTenantReadTests : IDisposable
     }
 
     [Fact]
+    public async Task Native_program_manager_query_cannot_expand_middleware_narrowed_organization_scope()
+    {
+        var requestScope = new ManagementScope(
+            new HashSet<Guid>(),
+            new HashSet<Guid> { _programA },
+            new HashSet<Guid>());
+        var context = new ManagementContext(
+            _ownerA,
+            _tenantA,
+            ManagementPerspective.ProgramManager,
+            ManagementViewMode.Native,
+            null,
+            null,
+            null,
+            requestScope);
+        var management = new Mock<IManagementContextAccessor>();
+        management.Setup(accessor => accessor.Current).Returns(context);
+        var widenedSnapshot = new ManagementPerspectiveSnapshot(
+            [ManagementPerspective.ProgramManager],
+            Array.Empty<ManagementPerspectiveAvailability>(),
+            ManagementPerspective.ProgramManager,
+            false,
+            new ManagementScope(new HashSet<Guid>(), new HashSet<Guid> { _programA, _programA2 }, new HashSet<Guid>()),
+            null);
+        var scopeResolver = new Mock<IManagementScopeResolver>();
+        scopeResolver.Setup(resolver => resolver.GetPerspectiveSnapshotAsync(
+                _ownerA, _tenantA, null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(widenedSnapshot);
+        var service = new ProgramManagementService(_db, management.Object, scopeResolver.Object);
+
+        var result = await service.GetProgramsAsync(1, 50, null);
+
+        var onlyProgram = Assert.Single(result.Items);
+        Assert.Equal(_programA, onlyProgram.Id);
+    }
+
+    [Fact]
     public async Task Tenant_admin_read_scope_can_open_unassigned_program_inside_tenant_only()
     {
         var management = new Mock<IManagementContextAccessor>();

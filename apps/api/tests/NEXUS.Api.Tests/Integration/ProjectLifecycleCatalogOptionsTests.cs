@@ -29,6 +29,7 @@ using NEXUS.Persistence;
 using NEXUS.SharedKernel;
 using NEXUS.SharedKernel.Management;
 using PortfolioEntity = NEXUS.Modules.Portfolio.Domain.Portfolio;
+using ProgramEntity = NEXUS.Modules.Portfolio.Domain.Program;
 using Xunit;
 
 namespace NEXUS.Api.Tests.Integration;
@@ -74,6 +75,10 @@ public sealed class ProjectLifecycleCatalogOptionsTests : IDisposable
         var inactive = Phase(tenantId, Guid.NewGuid(), "inactive-phase", "Inactive phase");
         inactive.OrganizationId = organizationId;
         inactive.IsActive = false;
+        var tenantStatus = Status(tenantId, Guid.NewGuid(), "not-started", "Not Started", isDefault: true);
+        var organizationStatus = Status(tenantId, Guid.NewGuid(), "org-status", "Organization status", isDefault: true);
+        organizationStatus.OrganizationId = organizationId;
+        var foreignTenantStatus = Status(otherTenantId, Guid.NewGuid(), "cross-tenant-status", "Cross tenant status", isDefault: true);
 
         var databaseName = $"project-lifecycle-http-{Guid.NewGuid():N}";
         var http = new HttpContextAccessor();
@@ -84,12 +89,19 @@ public sealed class ProjectLifecycleCatalogOptionsTests : IDisposable
             .Options;
         await using (var seed = new AppDbContext(options))
         {
+            using var tenantScope = TrustedTenantExecutionContext.Enter(tenantId);
             seed.AddRange(ownership.Organization, ownership.Portfolio, project, inaccessibleProject,
-                crossTenantProject, configured, preInitiation, unrelated, legacy, inactive);
+                configured, preInitiation, unrelated, legacy, inactive, tenantStatus, organizationStatus);
             await seed.SaveChangesAsync();
         }
+        await using (var foreignSeed = new AppDbContext(options))
+        {
+            using var foreignTenantScope = TrustedTenantExecutionContext.Enter(otherTenantId);
+            foreignSeed.AddRange(crossTenantProject, foreignTenantStatus);
+            await foreignSeed.SaveChangesAsync();
+        }
 
-        var scope = new ManagementScope(new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid> { projectId })
+        var scope = new ManagementScope(new HashSet<Guid> { portfolioId }, new HashSet<Guid>(), new HashSet<Guid> { projectId })
         {
             OrganizationIds = new HashSet<Guid> { organizationId, otherOrganizationId },
             OrganizationReferences =
@@ -115,6 +127,14 @@ public sealed class ProjectLifecycleCatalogOptionsTests : IDisposable
         builder.Services.AddSingleton<IHttpContextAccessor>(http);
         builder.Services.AddSingleton<IManagementContextAccessor>(management);
         builder.Services.AddSingleton(scopeResolver.Object);
+        var effectivePermissions = new Mock<IUserEffectivePermissionService>();
+        effectivePermissions.Setup(service => service.GetEffectivePermissionsForOrganizationAsync(
+                It.IsAny<Guid>(), tenantId, It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlySet<string>)new HashSet<string>
+            {
+                "Project.Create", ProjectLifecyclePermissions.PhaseChange
+            });
+        builder.Services.AddSingleton(effectivePermissions.Object);
         builder.Services.AddDbContext<AppDbContext>(db => db
             .UseInMemoryDatabase(databaseName)
             .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning)));
@@ -129,7 +149,9 @@ public sealed class ProjectLifecycleCatalogOptionsTests : IDisposable
                 "lifecycle-test", auth => { auth.TenantId = tenantId; auth.UserId = userId; });
         builder.Services.AddAuthorization(auth => auth.AddPolicy(
             ProjectLifecyclePermissions.OptionsLookup,
-            policy => policy.RequireAuthenticatedUser().RequireClaim("permission", ProjectLifecyclePermissions.PhaseChange)));
+            policy => policy.RequireAuthenticatedUser().RequireAssertion(context =>
+                context.User.HasClaim("permission", ProjectLifecyclePermissions.PhaseChange)
+                || context.User.HasClaim("permission", "Project.Create"))));
 
         await using var app = builder.Build();
         app.UseRouting();
@@ -171,6 +193,41 @@ public sealed class ProjectLifecycleCatalogOptionsTests : IDisposable
             optionsResult.Phases.Select(option => option.Id).Should().NotContain(legacy.Id);
             optionsResult.Phases.Select(option => option.Id).Should().NotContain(unrelated.Id);
             optionsResult.Phases.Select(option => option.Id).Should().NotContain(inactive.Id);
+
+            var unscopedOptions = await client.GetAsync("/api/project-lifecycle/options");
+            unscopedOptions.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
+            var unscopedError = await unscopedOptions.Content.ReadAsStringAsync();
+            unscopedError.Should().Contain("VALIDATION_ERROR");
+            unscopedError.Should().Contain("Project lifecycle options require an Organization or in-scope Project context.");
+
+            var createWithoutPortfolio = await client.GetAsync(
+                "/api/project-lifecycle/options?purpose=create");
+            createWithoutPortfolio.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+            var emptyCreateOptions = await createWithoutPortfolio.Content.ReadFromJsonAsync<ProjectLifecycleOptionsDto>();
+            emptyCreateOptions.Should().NotBeNull();
+            emptyCreateOptions!.Phases.Should().BeEmpty();
+            emptyCreateOptions.Statuses.Select(option => option.Id).Should()
+                .BeEquivalentTo(new[] { tenantStatus.Id });
+            emptyCreateOptions.Statuses.Select(option => option.Id).Should().NotContain(organizationStatus.Id);
+            emptyCreateOptions.Statuses.Select(option => option.Id).Should().NotContain(foreignTenantStatus.Id);
+
+            var createOptions = await client.GetAsync(
+                $"/api/project-lifecycle/options?purpose=create&portfolioId={portfolioId:D}");
+            createOptions.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+            var createResult = await createOptions.Content.ReadFromJsonAsync<ProjectLifecycleOptionsDto>();
+            createResult.Should().NotBeNull();
+            createResult!.Phases.Select(option => option.Id).Should()
+                .BeEquivalentTo(new[] { preInitiation.Id, configured.Id });
+            createResult.Phases.Select(option => option.Id).Should().NotContain(legacy.Id);
+            createResult.Phases.Select(option => option.Id).Should().NotContain(unrelated.Id);
+            createResult.Statuses.Select(option => option.Id).Should()
+                .BeEquivalentTo(new[] { tenantStatus.Id });
+            createResult.Statuses.Select(option => option.Id).Should().NotContain(organizationStatus.Id);
+            createResult.Statuses.Select(option => option.Id).Should().NotContain(foreignTenantStatus.Id);
+
+            var crossScopeCreate = await client.GetAsync(
+                $"/api/project-lifecycle/options?purpose=create&portfolioId={Guid.NewGuid():D}");
+            crossScopeCreate.StatusCode.Should().Be(System.Net.HttpStatusCode.NotFound);
 
             var mismatch = await client.GetAsync(
                 $"/api/project-lifecycle/options?projectId={projectPublicId:D}&organizationId={otherOrganizationId:D}");
@@ -389,6 +446,248 @@ public sealed class ProjectLifecycleCatalogOptionsTests : IDisposable
         result.Value.Statuses.Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task Phase_catalog_get_is_non_mutating_and_reports_missing_protected_phase()
+    {
+        var tenantId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var database = NewDatabase(tenantId, userId, Guid.NewGuid(), ProjectLifecyclePermissions.PhaseView);
+        await using var db = database.Db;
+        var service = new ProjectLifecycleCatalogService(
+            db, database.Http, Mock.Of<NEXUS.Modules.Audit.Application.IAuditService>(), database.Management,
+            new ProjectOrganizationLookup(db));
+
+        var result = await service.GetPhasesAsync(organizationId: null, includeInactive: false, search: null);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error!.StatusCode.Should().Be(409);
+        result.Error.Message.Should().Contain("Pre-Initiation");
+        (await db.ProjectPhaseCatalogEntries.IgnoreQueryFilters().ToListAsync()).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Project_options_get_is_non_mutating_and_reports_missing_organization_phase()
+    {
+        var tenantId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var projectId = Guid.NewGuid();
+        var organizationId = Guid.NewGuid();
+        var portfolioId = Guid.NewGuid();
+        var project = new Project
+        {
+            Id = projectId, TenantId = tenantId, Name = "Options without phase", Code = "OPTIONS-NO-PHASE",
+            PortfolioId = portfolioId, CreatedBy = userId.ToString()
+        };
+        var database = NewDatabase(tenantId, userId, projectId, "Project.View");
+        await using var db = database.Db;
+        var ownership = Ownership(tenantId, organizationId, portfolioId);
+        db.AddRange(ownership.Organization, ownership.Portfolio, project);
+        await db.SaveChangesAsync();
+        var service = new ProjectLifecycleCatalogService(
+            db, database.Http, Mock.Of<NEXUS.Modules.Audit.Application.IAuditService>(), database.Management,
+            new ProjectOrganizationLookup(db));
+
+        var result = await service.GetOptionsAsync(organizationId: null, projectId);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error!.StatusCode.Should().Be(409);
+        result.Error.Message.Should().Contain("Pre-Initiation");
+        (await db.ProjectPhaseCatalogEntries.IgnoreQueryFilters().ToListAsync()).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Create_options_before_portfolio_selection_return_only_tenant_statuses_without_a_protected_phase_conflict()
+    {
+        var tenantId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var organizationId = Guid.NewGuid();
+        var database = NewDatabase(tenantId, userId, Guid.NewGuid(), "Project.Create");
+        await using var db = database.Db;
+        var tenantStatus = Status(tenantId, Guid.NewGuid(), "not-started", "Not Started", isDefault: true);
+        var organizationStatus = Status(tenantId, Guid.NewGuid(), "org-status", "Organization status", isDefault: true);
+        organizationStatus.OrganizationId = organizationId;
+        db.AddRange(tenantStatus, organizationStatus);
+        await db.SaveChangesAsync();
+        var service = new ProjectLifecycleCatalogService(
+            db, database.Http, Mock.Of<NEXUS.Modules.Audit.Application.IAuditService>(), database.Management,
+            new ProjectOrganizationLookup(db));
+
+        var result = await service.GetOptionsAsync(
+            organizationId: null, projectId: null, portfolioId: null, programId: null, createPurpose: true);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.Phases.Should().BeEmpty();
+        result.Value.Statuses.Select(item => item.Id).Should().BeEquivalentTo(new[] { tenantStatus.Id });
+        result.Value.Statuses.Should().NotContain(item => item.Id == organizationStatus.Id);
+        // Status-only create options must never provision or repair the Organization-scoped
+        // Pre-Initiation phase before a Portfolio (and therefore an Organization) is chosen.
+        (await db.ProjectPhaseCatalogEntries.IgnoreQueryFilters().ToListAsync()).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Create_options_resolve_the_active_portfolio_organization_without_tenant_or_other_organization_fallback()
+    {
+        var tenantId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var organizationId = Guid.NewGuid();
+        var otherOrganizationId = Guid.NewGuid();
+        var portfolioId = Guid.NewGuid();
+        var otherPortfolioId = Guid.NewGuid();
+        var programId = Guid.NewGuid();
+        var mismatchedProgramId = Guid.NewGuid();
+        var inactiveProgramId = Guid.NewGuid();
+        var database = NewDatabase(tenantId, userId, Guid.NewGuid(), "Project.Create");
+        var scope = new ManagementScope(
+            new HashSet<Guid> { portfolioId }, new HashSet<Guid> { programId, mismatchedProgramId, inactiveProgramId }, new HashSet<Guid>());
+        database.Management.Set(new ManagementContext(
+            userId, tenantId, ManagementPerspective.PortfolioManager, ManagementViewMode.Native,
+            portfolioId, null, null, scope));
+        await using var db = database.Db;
+
+        var ownership = Ownership(tenantId, organizationId, portfolioId);
+        var otherOrganization = new Organization
+        {
+            Id = otherOrganizationId, TenantId = tenantId, Name = "Other organization", IsActive = true,
+            CreatedBy = "lifecycle-test"
+        };
+        var otherPortfolio = new PortfolioEntity
+        {
+            Id = otherPortfolioId, TenantId = tenantId, OrganizationId = otherOrganizationId,
+            Name = "Other portfolio", Code = "PF-OTHER", Status = "Active", CreatedBy = "lifecycle-test"
+        };
+        var protectedPhase = Phase(tenantId, Guid.NewGuid(), "pre-initiation", "Pre-Initiation", isDefault: true);
+        protectedPhase.OrganizationId = organizationId;
+        var tenantPhase = Phase(tenantId, Guid.NewGuid(), "tenant-phase", "Tenant phase", order: 1);
+        var unrelatedOrganizationPhase = Phase(tenantId, Guid.NewGuid(), "other-org-phase", "Other organization phase");
+        unrelatedOrganizationPhase.OrganizationId = otherOrganizationId;
+        var organizationStatus = Status(tenantId, Guid.NewGuid(), "status-open", "Open", isDefault: true);
+        organizationStatus.OrganizationId = organizationId;
+        var tenantStatus = Status(tenantId, Guid.NewGuid(), "tenant-status", "Tenant status", isDefault: true);
+        var unrelatedOrganizationStatus = Status(tenantId, Guid.NewGuid(), "other-org-status", "Other organization status");
+        unrelatedOrganizationStatus.OrganizationId = otherOrganizationId;
+        var program = new ProgramEntity
+        {
+            Id = programId, TenantId = tenantId, PortfolioId = portfolioId,
+            Name = "Owned program", Code = "PGM-OWNED", Status = "Active", CreatedBy = "lifecycle-test"
+        };
+        var mismatchedProgram = new ProgramEntity
+        {
+            Id = mismatchedProgramId, TenantId = tenantId, PortfolioId = otherPortfolioId,
+            Name = "Other program", Code = "PGM-OTHER", Status = "Active", CreatedBy = "lifecycle-test"
+        };
+        var inactiveProgram = new ProgramEntity
+        {
+            Id = inactiveProgramId, TenantId = tenantId, PortfolioId = portfolioId,
+            Name = "Inactive program", Code = "PGM-INACTIVE", Status = "Archived", CreatedBy = "lifecycle-test"
+        };
+        db.AddRange(ownership.Organization, ownership.Portfolio, otherOrganization, otherPortfolio,
+            protectedPhase, tenantPhase, unrelatedOrganizationPhase, organizationStatus, tenantStatus,
+            unrelatedOrganizationStatus, program, mismatchedProgram, inactiveProgram);
+        await db.SaveChangesAsync();
+        var service = new ProjectLifecycleCatalogService(
+            db, database.Http, Mock.Of<NEXUS.Modules.Audit.Application.IAuditService>(), database.Management,
+            new ProjectOrganizationLookup(db));
+
+        var withoutProgram = await service.GetOptionsAsync(
+            organizationId: null, projectId: null, portfolioId, programId: null, createPurpose: true);
+        var withProgram = await service.GetOptionsAsync(
+            organizationId: null, projectId: null, portfolioId, programId, createPurpose: true);
+        var mismatched = await service.GetOptionsAsync(
+            organizationId: null, projectId: null, portfolioId, mismatchedProgramId, createPurpose: true);
+        var unassignedPortfolio = await service.GetOptionsAsync(
+            organizationId: null, projectId: null, otherPortfolioId, programId: null, createPurpose: true);
+        var inactiveProgramResult = await service.GetOptionsAsync(
+            organizationId: null, projectId: null, portfolioId, inactiveProgramId, createPurpose: true);
+
+        withoutProgram.IsSuccess.Should().BeTrue();
+        withProgram.IsSuccess.Should().BeTrue();
+        foreach (var result in new[] { withoutProgram, withProgram })
+        {
+            result.Value!.Phases.Select(item => item.Id).Should().BeEquivalentTo(new[] { protectedPhase.Id });
+            result.Value.Phases.Should().NotContain(item => item.Id == tenantPhase.Id);
+            result.Value.Phases.Should().NotContain(item => item.Id == unrelatedOrganizationPhase.Id);
+            result.Value.Statuses.Select(item => item.Id).Should().BeEquivalentTo(new[] { tenantStatus.Id });
+            result.Value.Statuses.Should().NotContain(item => item.Id == organizationStatus.Id);
+            result.Value.Statuses.Should().NotContain(item => item.Id == unrelatedOrganizationStatus.Id);
+        }
+        mismatched.IsFailure.Should().BeTrue();
+        mismatched.Error!.StatusCode.Should().Be(404);
+        unassignedPortfolio.IsFailure.Should().BeTrue();
+        unassignedPortfolio.Error!.StatusCode.Should().Be(404);
+        inactiveProgramResult.IsFailure.Should().BeTrue();
+        inactiveProgramResult.Error!.StatusCode.Should().Be(404);
+    }
+
+    [Fact]
+    public async Task Create_options_reject_unassigned_or_inactive_portfolios()
+    {
+        var tenantId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var organizationId = Guid.NewGuid();
+        var portfolioId = Guid.NewGuid();
+        var database = NewDatabase(tenantId, userId, Guid.NewGuid(), "Project.Create");
+        await using var db = database.Db;
+        var ownership = Ownership(tenantId, organizationId, portfolioId);
+        ownership.Portfolio.Status = "Archived";
+        db.AddRange(ownership.Organization, ownership.Portfolio);
+        await db.SaveChangesAsync();
+        var service = new ProjectLifecycleCatalogService(
+            db, database.Http, Mock.Of<NEXUS.Modules.Audit.Application.IAuditService>(), database.Management,
+            new ProjectOrganizationLookup(db));
+
+        var result = await service.GetOptionsAsync(
+            organizationId: null, projectId: null, portfolioId, programId: null, createPurpose: true);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error!.StatusCode.Should().Be(404);
+    }
+
+    [Fact]
+    public async Task Lifecycle_catalog_mutators_reject_read_only_management_context_before_writing()
+    {
+        var tenantId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var database = NewDatabase(tenantId, userId, Guid.NewGuid());
+        database.Management.Set(database.Management.Current! with { ViewMode = ManagementViewMode.ReadOnlyViewAs });
+        var permissions = new[]
+        {
+            ProjectLifecyclePermissions.PhaseCreate,
+            ProjectLifecyclePermissions.PhaseEdit,
+            ProjectLifecyclePermissions.PhaseActivateDeactivate,
+            ProjectLifecyclePermissions.StatusCreate,
+            ProjectLifecyclePermissions.StatusEdit,
+            ProjectLifecyclePermissions.StatusActivateDeactivate
+        };
+        database.Http.HttpContext!.User.AddIdentity(new ClaimsIdentity(
+            permissions.Select(permission => new Claim("permission", permission)), "lifecycle-read-only-test"));
+        await using var db = database.Db;
+        var service = new ProjectLifecycleCatalogService(
+            db, database.Http, Mock.Of<NEXUS.Modules.Audit.Application.IAuditService>(), database.Management,
+            new ProjectOrganizationLookup(db));
+        var request = new ProjectLifecycleCatalogRequest(
+            null, "phase-new", "New phase", "مرحلة جديدة", null, null, 10, false, true);
+        var actorId = userId;
+        var results = new[]
+        {
+            await service.CreatePhaseAsync(request, actorId),
+            await service.CreateStatusAsync(request, actorId),
+            await service.UpdatePhaseAsync(Guid.NewGuid(), request, actorId),
+            await service.UpdateStatusAsync(Guid.NewGuid(), request, actorId),
+            await service.SetPhaseActiveAsync(Guid.NewGuid(), false, Array.Empty<byte>(), actorId),
+            await service.SetStatusActiveAsync(Guid.NewGuid(), false, Array.Empty<byte>(), actorId),
+            await service.SetPhaseDefaultAsync(Guid.NewGuid(), Array.Empty<byte>(), actorId),
+            await service.SetStatusDefaultAsync(Guid.NewGuid(), Array.Empty<byte>(), actorId)
+        };
+
+        Assert.All(results, result =>
+        {
+            Assert.True(result.IsFailure);
+            Assert.Equal(403, result.Error!.StatusCode);
+        });
+        (await db.ProjectPhaseCatalogEntries.IgnoreQueryFilters().ToListAsync()).Should().BeEmpty();
+        (await db.ProjectStatusCatalogEntries.IgnoreQueryFilters().ToListAsync()).Should().BeEmpty();
+    }
+
     [Theory]
     [InlineData("Project.View", true)]
     [InlineData("StatusReport.View", false)]
@@ -418,9 +717,12 @@ public sealed class ProjectLifecycleCatalogOptionsTests : IDisposable
         await using var db = database.Db;
         var configuredPhase = Phase(tenantId, phaseId, "phase-report", "Report phase");
         configuredPhase.OrganizationId = organizationId;
+        var preInitiation = Phase(tenantId, Guid.NewGuid(), "pre-initiation", "Pre-Initiation", isDefault: true);
+        preInitiation.OrganizationId = organizationId;
+        var tenantPreInitiation = Phase(tenantId, Guid.NewGuid(), "pre-initiation", "Pre-Initiation", isDefault: true);
         var tenantPhase = Phase(tenantId, Guid.NewGuid(), "tenant-search-phase", "Tenant Search Phase");
         var ownership = Ownership(tenantId, organizationId, portfolioId);
-        db.AddRange(ownership.Organization, ownership.Portfolio, project, configuredPhase, tenantPhase,
+        db.AddRange(ownership.Organization, ownership.Portfolio, project, configuredPhase, preInitiation, tenantPreInitiation, tenantPhase,
             Status(tenantId, statusId, "status-report", "Report status", isDefault: true));
         await db.SaveChangesAsync();
         var service = new ProjectLifecycleCatalogService(
@@ -431,7 +733,10 @@ public sealed class ProjectLifecycleCatalogOptionsTests : IDisposable
 
         result.IsSuccess.Should().BeTrue();
         if (includesPhases)
-            result.Value!.Phases.Should().ContainSingle(item => item.Id == phaseId);
+        {
+            result.Value!.Phases.Should().Contain(item => item.Id == phaseId);
+            result.Value.Phases.Should().Contain(item => item.Id == preInitiation.Id);
+        }
         else
             result.Value!.Phases.Should().BeEmpty();
         result.Value!.Statuses.Should().ContainSingle(item => item.Id == statusId);
@@ -444,9 +749,10 @@ public sealed class ProjectLifecycleCatalogOptionsTests : IDisposable
         else if (permission == "Project.View")
         {
             var searchOptions = await service.GetOptionsAsync(organizationId: null, projectId: null);
-            searchOptions.IsSuccess.Should().BeTrue();
-            searchOptions.Value!.Phases.Should().ContainSingle(item => item.Id == tenantPhase.Id);
-            searchOptions.Value.Statuses.Should().ContainSingle(item => item.Id == statusId);
+            searchOptions.IsFailure.Should().BeTrue();
+            searchOptions.Error!.Code.Should().Be("VALIDATION_ERROR");
+            searchOptions.Error.StatusCode.Should().Be(400);
+            searchOptions.Error.Message.Should().Contain("Organization or in-scope Project context");
         }
     }
 
@@ -483,8 +789,10 @@ public sealed class ProjectLifecycleCatalogOptionsTests : IDisposable
         var userId = Guid.NewGuid();
         var statusId = Guid.NewGuid();
         var projectId = Guid.NewGuid();
-        var database = NewDatabase(tenantId, userId, projectId);
+        var database = NewDatabase(tenantId, userId, projectId, "Project.Create");
         await using var db = database.Db;
+        db.ProjectPhaseCatalogEntries.Add(Phase(
+            tenantId, Guid.NewGuid(), "pre-initiation", "Pre-Initiation", isDefault: true));
         var status = Status(tenantId, statusId, "status-review", "Under Review", isDefault: true);
         status.ReportingCategory = ProjectStatusReportingCategories.Completed;
         status.AttentionLevel = ProjectStatusAttentionLevels.NeedsAttention;
@@ -494,7 +802,8 @@ public sealed class ProjectLifecycleCatalogOptionsTests : IDisposable
             db, database.Http, Mock.Of<NEXUS.Modules.Audit.Application.IAuditService>(), database.Management,
             new ProjectOrganizationLookup(db));
 
-        var result = await service.GetOptionsAsync(organizationId: null, projectId: null);
+        var result = await service.GetOptionsAsync(
+            organizationId: null, projectId: null, portfolioId: null, programId: null, createPurpose: true);
 
         result.IsSuccess.Should().BeTrue();
         var option = result.Value!.Statuses.Should().ContainSingle(item => item.Id == statusId).Which;
@@ -523,6 +832,9 @@ public sealed class ProjectLifecycleCatalogOptionsTests : IDisposable
 
         var effectivePermissions = new Mock<IUserEffectivePermissionService>();
         effectivePermissions.Setup(item => item.GetEffectivePermissionsAsync(userId, tenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlySet<string>)new HashSet<string> { "ProjectStatus.Change" });
+        effectivePermissions.Setup(item => item.GetEffectivePermissionsForOrganizationAsync(
+                userId, tenantId, organizationId, It.IsAny<CancellationToken>()))
             .ReturnsAsync((IReadOnlySet<string>)new HashSet<string> { "ProjectStatus.Change" });
         var audit = new Mock<NEXUS.Modules.Audit.Application.IAuditService>();
         var organizationLookup = new Mock<NEXUS.SharedKernel.IProjectOrganizationLookup>();
@@ -567,7 +879,7 @@ public sealed class ProjectLifecycleCatalogOptionsTests : IDisposable
         }, new PortfolioEntity
         {
             Id = portfolioId, TenantId = tenantId, OrganizationId = organizationId,
-            Name = "Lifecycle portfolio", CreatedBy = "lifecycle-test"
+            Name = "Lifecycle portfolio", Code = "PF-LIFECYCLE", Status = "Active", CreatedBy = "lifecycle-test"
         });
 
     private static (AppDbContext Db, HttpContextAccessor Http, ManagementContextAccessor Management) NewDatabase(
@@ -654,7 +966,8 @@ public sealed class LifecycleOptionsTestAuthHandler(
         {
             new Claim(ClaimTypes.NameIdentifier, Options.UserId.ToString()),
             new Claim("tenantId", Options.TenantId.ToString()),
-            new Claim("permission", ProjectLifecyclePermissions.PhaseChange)
+            new Claim("permission", ProjectLifecyclePermissions.PhaseChange),
+            new Claim("permission", "Project.Create")
         };
         var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, Scheme.Name));
         var ticket = new AuthenticationTicket(principal, Scheme.Name);

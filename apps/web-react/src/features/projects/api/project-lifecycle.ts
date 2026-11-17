@@ -42,7 +42,7 @@ export interface ProjectStatusTransitionResult {
 export interface ProjectLifecycleOptionsScope {
   purpose?: "create";
   portfolioId?: string;
-  departmentId?: string;
+  programId?: string;
 }
 
 export const projectLifecycleKeys = {
@@ -59,7 +59,7 @@ export const projectLifecycleKeys = {
     organizationId ?? "",
     scope?.purpose ?? "",
     scope?.portfolioId ?? "",
-    scope?.departmentId ?? "",
+    scope?.programId ?? "",
   ] as const,
 };
 
@@ -69,17 +69,17 @@ export function useProjectLifecycleOptions({
   organizationId,
   purpose,
   portfolioId,
-  departmentId,
+  programId,
 }: {
   enabled?: boolean;
   projectId?: string;
   organizationId?: string;
   purpose?: "create";
   portfolioId?: string;
-  departmentId?: string;
+  programId?: string;
 } = {}) {
   const { user } = useAuth();
-  // The create lookup resolves the Organization from the portfolio/department scope.
+  // The create lookup resolves the Organization from the selected Portfolio.
   // It must never send a project or Organization identifier, and its scope must be
   // part of the query key so switching scope cannot reuse another scope's options.
   const createMode = purpose === "create";
@@ -89,16 +89,19 @@ export function useProjectLifecycleOptions({
     queryKey: projectLifecycleKeys.options(user?.tenantId, scopedProjectId, scopedOrganizationId, {
       purpose,
       portfolioId: createMode ? portfolioId : undefined,
-      departmentId: createMode ? departmentId : undefined,
+      programId: createMode ? programId : undefined,
     }),
     queryFn: () => api.get<ProjectLifecycleOptions>("/api/project-lifecycle/options", {
       ...(createMode ? { purpose: "create" } : {}),
       ...(createMode && portfolioId ? { portfolioId } : {}),
-      ...(createMode && departmentId ? { departmentId } : {}),
+      ...(createMode && programId ? { programId } : {}),
       ...(!createMode && projectId ? { projectId } : {}),
       ...(!createMode && organizationId ? { organizationId } : {}),
     }),
-    enabled: Boolean(enabled && user),
+    // Non-create lookups must be scoped to an authorized Organization or Project.
+    // Create mode is allowed before Portfolio selection because it returns no
+    // Organization phases until the selected Portfolio resolves that scope.
+    enabled: Boolean(enabled && user && (createMode || scopedProjectId || scopedOrganizationId)),
     staleTime: 30_000,
   });
 }

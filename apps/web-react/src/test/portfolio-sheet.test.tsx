@@ -15,6 +15,7 @@ const fixtures = vi.hoisted(() => ({
   permissions: ["Portfolio.Create", "Portfolio.Edit", "Handover.AdminInitiate"],
   canMutate: true,
   effectiveReadOnly: false,
+  organizationReferences: [{ id: "org-1", name: "Operations" }],
   portfolios: [{
     id: "portfolio-1", name: "Delivery Transformation", code: "PF-001", ownerName: "Nexus Manager", status: "Active", health: "Amber", currency: "USD",
     programCount: 2, directProjectCount: 1, totalProjectCount: 3, projectsRequiringAttention: 1, programsRequiringAttention: 2,
@@ -31,7 +32,7 @@ vi.mock("@features/delivery/api/delivery", () => ({
 vi.mock("@auth/AuthProvider", () => ({ useAuth: () => ({ user: { permissions: fixtures.permissions } }) }));
 vi.mock("@api/management", () => ({
   managementCacheScopeKey: (userId?: string) => userId ?? "anonymous",
-  useManagement: () => ({ canMutate: fixtures.canMutate, effectiveReadOnly: fixtures.effectiveReadOnly }),
+  useManagement: () => ({ canMutate: fixtures.canMutate, effectiveReadOnly: fixtures.effectiveReadOnly, snapshot: { scope: { organizationReferences: fixtures.organizationReferences } } }),
 }));
 
 vi.mock("@features/projects/lib/project-lookups", () => ({
@@ -40,7 +41,7 @@ vi.mock("@features/projects/lib/project-lookups", () => ({
   toUserSelectOptions: (users: { id: string; fullName: string }[] | undefined) => (users ?? []).map((user) => ({ value: user.id, label: user.fullName, keywords: [] })),
 }));
 
-function renderSheet(canSave = true, portfolio?: { id: string; name: string; description?: string; ownerId?: string; status?: string; currency?: string; code?: string }) {
+function renderSheet(canSave = true, portfolio?: { id: string; organizationId?: string; name: string; description?: string; ownerId?: string; status?: string; currency?: string; code?: string }) {
   const onOpenChange = vi.fn();
   render(<I18nProvider><PortfolioSheet open onOpenChange={onOpenChange} portfolio={portfolio} canSave={canSave} canAssignInitialManager /></I18nProvider>);
   return onOpenChange;
@@ -57,6 +58,7 @@ describe("portfolio management sheet", () => {
     fixtures.permissions = ["Portfolio.Create", "Portfolio.Edit", "Handover.AdminInitiate"];
     fixtures.canMutate = true;
     fixtures.effectiveReadOnly = false;
+    fixtures.organizationReferences = [{ id: "org-1", name: "Operations" }];
   });
 
   it("creates a Portfolio from an eligible System User without requiring a Resource", async () => {
@@ -68,6 +70,7 @@ describe("portfolio management sheet", () => {
 
     await waitFor(() => expect(fixtures.create).toHaveBeenCalledWith({
       name: "Delivery Transformation",
+      organizationId: "org-1",
       description: "",
       ownerId: "manager-1",
       status: "Active",
@@ -96,7 +99,7 @@ describe("portfolio management sheet", () => {
   });
 
   it("loads and updates an existing portfolio", async () => {
-    const onOpenChange = renderSheet(true, { id: "portfolio-1", name: "Existing Portfolio", description: "Original", ownerId: "manager-1", status: "Active", currency: "USD", code: "PF-001" });
+    const onOpenChange = renderSheet(true, { id: "portfolio-1", organizationId: "org-1", name: "Existing Portfolio", description: "Original", ownerId: "manager-1", status: "Active", currency: "USD", code: "PF-001" });
     expect(screen.getByLabelText("Name *")).toHaveValue("Existing Portfolio");
     fireEvent.change(screen.getByLabelText("Name *"), { target: { value: "Updated Portfolio" } });
     fireEvent.click(screen.getByRole("button", { name: "Save Portfolio" }));

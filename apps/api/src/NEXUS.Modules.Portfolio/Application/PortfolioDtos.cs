@@ -32,6 +32,7 @@ public sealed class PortfolioMetricsDto
 public sealed class PortfolioDto
 {
     public Guid Id { get; set; }
+    public Guid? OrganizationId { get; set; }
     public string Name { get; set; } = "";
     public string Code { get; set; } = "";
     public string? Description { get; set; }
@@ -64,6 +65,7 @@ public sealed class PortfolioLookupDto
 public sealed class SavePortfolioDto
 {
     public string Name { get; set; } = "";
+    public Guid? OrganizationId { get; set; }
     public string? Description { get; set; }
     public Guid? OwnerId { get; set; }
     public string Status { get; set; } = "Active";

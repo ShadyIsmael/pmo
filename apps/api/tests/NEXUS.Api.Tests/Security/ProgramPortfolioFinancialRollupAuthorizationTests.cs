@@ -110,7 +110,7 @@ public sealed class ProgramPortfolioFinancialRollupAuthorizationTests
         Assert.True(permission.IsActive);
         Assert.True(permission.IsAssignable);
         Assert.True(permission.IsSensitive);
-        Assert.False(permission.IsTenantAdminBaseline);
+        Assert.False(PermissionProtectionPolicy.Empty.IsProtected(permission.Key));
         Assert.Equal(PermissionLevel.View, permission.Level);
         Assert.Equal(scope, permission.Scope);
         Assert.Empty(permission.RequiredPermissionKeys);

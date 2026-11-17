@@ -1,0 +1,165 @@
+  NEXUS.SharedKernel -> C:\Projects\pmo\apps\api\src\NEXUS.SharedKernel\bin\Debug\net10.0\NEXUS.SharedKernel.dll
+  NEXUS.Modules.IssueManagement -> C:\Projects\pmo\apps\api\src\NEXUS.Modules.IssueManagement\bin\Debug\net10.0\NEXUS.Modules.IssueManagement.dll
+  NEXUS.Modules.Reporting -> C:\Projects\pmo\apps\api\src\NEXUS.Modules.Reporting\bin\Debug\net10.0\NEXUS.Modules.Reporting.dll
+  NEXUS.Modules.PluginManagement -> C:\Projects\pmo\apps\api\src\NEXUS.Modules.PluginManagement\bin\Debug\net10.0\NEXUS.Modules.PluginManagement.dll
+  NEXUS.Modules.Audit -> C:\Projects\pmo\apps\api\src\NEXUS.Modules.Audit\bin\Debug\net10.0\NEXUS.Modules.Audit.dll
+  NEXUS.Modules.AIPlanning -> C:\Projects\pmo\apps\api\src\NEXUS.Modules.AIPlanning\bin\Debug\net10.0\NEXUS.Modules.AIPlanning.dll
+  NEXUS.Modules.Documents -> C:\Projects\pmo\apps\api\src\NEXUS.Modules.Documents\bin\Debug\net10.0\NEXUS.Modules.Documents.dll
+  NEXUS.Modules.Identity -> C:\Projects\pmo\apps\api\src\NEXUS.Modules.Identity\bin\Debug\net10.0\NEXUS.Modules.Identity.dll
+  NEXUS.Modules.Notifications -> C:\Projects\pmo\apps\api\src\NEXUS.Modules.Notifications\bin\Debug\net10.0\NEXUS.Modules.Notifications.dll
+  NEXUS.Modules.Meetings -> C:\Projects\pmo\apps\api\src\NEXUS.Modules.Meetings\bin\Debug\net10.0\NEXUS.Modules.Meetings.dll
+  NEXUS.Modules.Approvals -> C:\Projects\pmo\apps\api\src\NEXUS.Modules.Approvals\bin\Debug\net10.0\NEXUS.Modules.Approvals.dll
+  NEXUS.Modules.WorkflowEngine -> C:\Projects\pmo\apps\api\src\NEXUS.Modules.WorkflowEngine\bin\Debug\net10.0\NEXUS.Modules.WorkflowEngine.dll
+  NEXUS.Modules.WorkItems -> C:\Projects\pmo\apps\api\src\NEXUS.Modules.WorkItems\bin\Debug\net10.0\NEXUS.Modules.WorkItems.dll
+  NEXUS.Modules.Organization -> C:\Projects\pmo\apps\api\src\NEXUS.Modules.Organization\bin\Debug\net10.0\NEXUS.Modules.Organization.dll
+  NEXUS.Modules.RiskManagement -> C:\Projects\pmo\apps\api\src\NEXUS.Modules.RiskManagement\bin\Debug\net10.0\NEXUS.Modules.RiskManagement.dll
+  NEXUS.Modules.ResourceManagement -> C:\Projects\pmo\apps\api\src\NEXUS.Modules.ResourceManagement\bin\Debug\net10.0\NEXUS.Modules.ResourceManagement.dll
+  NEXUS.Modules.Portfolio -> C:\Projects\pmo\apps\api\src\NEXUS.Modules.Portfolio\bin\Debug\net10.0\NEXUS.Modules.Portfolio.dll
+  NEXUS.Modules.CostManagement -> C:\Projects\pmo\apps\api\src\NEXUS.Modules.CostManagement\bin\Debug\net10.0\NEXUS.Modules.CostManagement.dll
+  NEXUS.Modules.Integrations -> C:\Projects\pmo\apps\api\src\NEXUS.Modules.Integrations\bin\Debug\net10.0\NEXUS.Modules.Integrations.dll
+  NEXUS.Modules.ProjectPlanning -> C:\Projects\pmo\apps\api\src\NEXUS.Modules.ProjectPlanning\bin\Debug\net10.0\NEXUS.Modules.ProjectPlanning.dll
+  NEXUS.Modules.ProjectPlanning.MppAdapter -> C:\Projects\pmo\apps\api\src\NEXUS.Modules.ProjectPlanning.MppAdapter\bin\Debug\net10.0\NEXUS.Modules.ProjectPlanning.MppAdapter.dll
+  NEXUS.Modules.ProjectManagement -> C:\Projects\pmo\apps\api\src\NEXUS.Modules.ProjectManagement\bin\Debug\net10.0\NEXUS.Modules.ProjectManagement.dll
+  NEXUS.Persistence -> C:\Projects\pmo\apps\api\src\NEXUS.Persistence\bin\Debug\net10.0\NEXUS.Persistence.dll
+  NEXUS.Api -> C:\Projects\pmo\apps\api\src\NEXUS.Api\bin\Debug\net10.0\NEXUS.Api.dll
+  NEXUS.Api.Tests -> C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll
+Test run for C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\bin\Debug\net10.0\NEXUS.Api.Tests.dll (.NETCoreApp,Version=v10.0)
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:09.99]     NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.Role_category_does_not_restrict_permission_grants_or_retained_grants_on_category_change [FAIL]
+[xUnit.net 00:00:10.29]     NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.Protected_system_admin_role_rejects_and_audits_mandatory_permission_removal [FAIL]
+  Failed NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.Role_category_does_not_restrict_permission_grants_or_retained_grants_on_category_change [41 ms]
+  Error Message:
+   Only an authorized Tenant administrator may create Organization-owned Roles.
+  Stack Trace:
+     at NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.Role_category_does_not_restrict_permission_grants_or_retained_grants_on_category_change() in C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Integration\UserPermissionAdministrationTests.cs:line 73
+--- End of stack trace from previous location ---
+  Failed NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.Protected_system_admin_role_rejects_and_audits_mandatory_permission_removal [260 ms]
+  Error Message:
+   Assert.Single() Failure: The collection was empty
+  Stack Trace:
+     at NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.Protected_system_admin_role_rejects_and_audits_mandatory_permission_removal() in C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Integration\UserPermissionAdministrationTests.cs:line 1621
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:10.53]     NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.Unassigned_custom_role_is_soft_deleted_and_audited [FAIL]
+[xUnit.net 00:00:10.66]     NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.Middleware_replaces_stale_token_permission_claims_with_current_permissions [FAIL]
+[xUnit.net 00:00:10.95]     NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.Planning_bootstrap_assigns_a_custom_role_to_another_same_tenant_user [FAIL]
+[xUnit.net 00:00:11.09]     NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.Role_api_rejects_new_inactive_grants_and_removes_existing_legacy_grants_on_reconciliation [FAIL]
+[xUnit.net 00:00:11.15]     NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.Role_update_cannot_remove_the_actor_last_role_management_permission [FAIL]
+  Failed NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.Unassigned_custom_role_is_soft_deleted_and_audited [28 ms]
+  Error Message:
+   Assert.True() Failure
+Expected: True
+Actual:   False
+  Stack Trace:
+     at NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.Unassigned_custom_role_is_soft_deleted_and_audited() in C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Integration\UserPermissionAdministrationTests.cs:line 1642
+--- End of stack trace from previous location ---
+  Failed NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.Middleware_replaces_stale_token_permission_claims_with_current_permissions [66 ms]
+  Error Message:
+   Assert.Contains() Failure: Filter not matched in collection
+Collection: []
+  Stack Trace:
+     at NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.<>c.<Middleware_replaces_stale_token_permission_claims_with_current_permissions>b__18_0(HttpContext context) in C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Integration\UserPermissionAdministrationTests.cs:line 643
+   at NEXUS.Modules.Identity.Infrastructure.UserPermissionClaimsMiddleware.InvokeAsync(HttpContext context, IUserEffectivePermissionService permissions, IUserSessionValidator sessions, ITenantRegistryStatusValidator tenantRegistry) in C:\Projects\pmo\apps\api\src\NEXUS.Modules.Identity\Infrastructure\UserPermissionClaimsMiddleware.cs:line 94
+   at NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.Middleware_replaces_stale_token_permission_claims_with_current_permissions() in C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Integration\UserPermissionAdministrationTests.cs:line 650
+--- End of stack trace from previous location ---
+  Failed NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.Planning_bootstrap_assigns_a_custom_role_to_another_same_tenant_user [33 ms]
+  Error Message:
+   An unresolved legacy Role has no verified Organization and cannot be assigned.
+  Stack Trace:
+     at NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.Planning_bootstrap_assigns_a_custom_role_to_another_same_tenant_user() in C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Integration\UserPermissionAdministrationTests.cs:line 1982
+--- End of stack trace from previous location ---
+  Failed NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.Role_api_rejects_new_inactive_grants_and_removes_existing_legacy_grants_on_reconciliation [23 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 400
+Actual:   403
+  Stack Trace:
+     at NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.Role_api_rejects_new_inactive_grants_and_removes_existing_legacy_grants_on_reconciliation() in C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Integration\UserPermissionAdministrationTests.cs:line 1671
+--- End of stack trace from previous location ---
+  Failed NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.Role_update_cannot_remove_the_actor_last_role_management_permission [24 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 409
+Actual:   403
+  Stack Trace:
+     at NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.Role_update_cannot_remove_the_actor_last_role_management_permission() in C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Integration\UserPermissionAdministrationTests.cs:line 1582
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:11.30]     NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.Role_details_editor_without_configure_permission_keeps_effective_access_visibility_ceiling [FAIL]
+[xUnit.net 00:00:11.64]     NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.Authorized_role_admin_can_delegate_and_revoke_project_settings_without_bypassing_user_deny [FAIL]
+[xUnit.net 00:00:12.08]     NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.Existing_Planning_Edit_holder_can_assign_non_system_Project_Manager [FAIL]
+  Failed NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.Role_details_editor_without_configure_permission_keeps_effective_access_visibility_ceiling [116 ms]
+  Error Message:
+   Assert.DoesNotContain() Failure: Filter matched in collection
+             ↓ (pos 0)
+Collection: [RoleSummaryDto { AssignedUserCount = 0, CanDelete = False, CanEditDetails = False, CanManagePermissions = False, Category = null, ··· }, RoleSummaryDto { AssignedUserCount = 1, CanDelete = False, CanEditDetails = False, CanManagePermissions = False, Category = null, ··· }]
+  Stack Trace:
+     at NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.Role_details_editor_without_configure_permission_keeps_effective_access_visibility_ceiling() in C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Integration\UserPermissionAdministrationTests.cs:line 1437
+--- End of stack trace from previous location ---
+  Failed NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.Authorized_role_admin_can_delegate_and_revoke_project_settings_without_bypassing_user_deny [33 ms]
+  Error Message:
+   Only an authorized Tenant administrator may create Organization-owned Roles.
+  Stack Trace:
+     at NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.Authorized_role_admin_can_delegate_and_revoke_project_settings_without_bypassing_user_deny() in C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Integration\UserPermissionAdministrationTests.cs:line 1736
+--- End of stack trace from previous location ---
+  Failed NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.Existing_Planning_Edit_holder_can_assign_non_system_Project_Manager [16 ms]
+  Error Message:
+   A matching user account, role assignment, or status permission is required.
+  Stack Trace:
+     at NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.Existing_Planning_Edit_holder_can_assign_non_system_Project_Manager() in C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Integration\UserPermissionAdministrationTests.cs:line 2064
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:12.29]     NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.Role_administrator_can_edit_custom_role_with_ordinary_permissions_outside_actor_access [FAIL]
+[xUnit.net 00:00:12.39]     NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.Role_configurator_can_assign_non_system_Project_Manager_without_Planning_Edit [FAIL]
+[xUnit.net 00:00:12.47]     NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.System_roles_cannot_be_renamed_or_deleted_and_assigned_custom_roles_cannot_be_deleted [FAIL]
+[xUnit.net 00:00:12.57]     NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.User_role_assignments_are_audited_and_the_actor_cannot_change_their_own_roles [FAIL]
+  Failed NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.Role_administrator_can_edit_custom_role_with_ordinary_permissions_outside_actor_access [53 ms]
+  Error Message:
+   Assert.True() Failure
+Expected: True
+Actual:   False
+  Stack Trace:
+     at NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.Role_administrator_can_edit_custom_role_with_ordinary_permissions_outside_actor_access() in C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Integration\UserPermissionAdministrationTests.cs:line 1103
+--- End of stack trace from previous location ---
+  Failed NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.Role_configurator_can_assign_non_system_Project_Manager_without_Planning_Edit [18 ms]
+  Error Message:
+   A matching user account, role assignment, or status permission is required.
+  Stack Trace:
+     at NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.Role_configurator_can_assign_non_system_Project_Manager_without_Planning_Edit() in C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Integration\UserPermissionAdministrationTests.cs:line 2026
+--- End of stack trace from previous location ---
+  Failed NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.System_roles_cannot_be_renamed_or_deleted_and_assigned_custom_roles_cannot_be_deleted [35 ms]
+  Error Message:
+   The role has an invalid canonical System identity.
+  Stack Trace:
+     at NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.System_roles_cannot_be_renamed_or_deleted_and_assigned_custom_roles_cannot_be_deleted() in C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Integration\UserPermissionAdministrationTests.cs:line 1527
+--- End of stack trace from previous location ---
+  Failed NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.User_role_assignments_are_audited_and_the_actor_cannot_change_their_own_roles [28 ms]
+  Error Message:
+   Assert.True() Failure
+Expected: True
+Actual:   False
+  Stack Trace:
+     at NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.User_role_assignments_are_audited_and_the_actor_cannot_change_their_own_roles() in C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Integration\UserPermissionAdministrationTests.cs:line 926
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:12.79]     NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.Role_create_and_update_save_permission_sets_and_audit_changes [FAIL]
+[xUnit.net 00:00:13.10]     NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.Budget_revision_actions_can_be_granted_saved_reloaded_and_revoked_across_role_categories [FAIL]
+  Failed NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.Role_create_and_update_save_permission_sets_and_audit_changes [21 ms]
+  Error Message:
+   Assert.True() Failure
+Expected: True
+Actual:   False
+  Stack Trace:
+     at NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.Role_create_and_update_save_permission_sets_and_audit_changes() in C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Integration\UserPermissionAdministrationTests.cs:line 989
+--- End of stack trace from previous location ---
+  Failed NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.Budget_revision_actions_can_be_granted_saved_reloaded_and_revoked_across_role_categories [38 ms]
+  Error Message:
+   The role has an invalid canonical System identity.
+  Stack Trace:
+     at NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.Budget_revision_actions_can_be_granted_saved_reloaded_and_revoked_across_role_categories() in C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Integration\UserPermissionAdministrationTests.cs:line 1213
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:13.28]     NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.Authorized_role_creator_can_create_custom_role_with_ordinary_scoped_permissions [FAIL]
+  Failed NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.Authorized_role_creator_can_create_custom_role_with_ordinary_scoped_permissions [29 ms]
+  Error Message:
+   Only an authorized Tenant administrator may create Organization-owned Roles.
+  Stack Trace:
+     at NEXUS.Api.Tests.Integration.UserPermissionAdministrationTests.Authorized_role_creator_can_create_custom_role_with_ordinary_scoped_permissions() in C:\Projects\pmo\apps\api\tests\NEXUS.Api.Tests\Integration\UserPermissionAdministrationTests.cs:line 1144
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:    17, Passed:    31, Skipped:     0, Total:    48, Duration: 9 s - NEXUS.Api.Tests.dll (net10.0)

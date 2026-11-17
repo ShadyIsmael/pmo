@@ -132,20 +132,20 @@ Nested plan, plan-version, plan-content, and plan-import identifiers are checked
 
 ### Project manager handovers
 
-All handover resources and candidate users are scoped to the authenticated tenant. The selected incoming manager must be active and have effective `Handover.Approve`. Manager-initiated requests require the current manager plus `Handover.Manage`; administrative handover and first assignment require `Handover.AdminInitiate`. For a handover effective today, acceptance applies the manager change and captures its snapshot transactionally. For a future date, acceptance records an approved scheduled request; the current manager and permissions remain unchanged until the effective date, when the scheduler applies the transition and captures one snapshot. Backdated requests are rejected because historical project state cannot be reconstructed. Only one pending or approved scheduled handover may exist for a project; completed history is retained and does not prevent the next sequential handover.
+Handover permission checks for a Project resolve its active owning Organization and evaluate Organization-owned Role grants in that Organization only. `Handover.AdminInitiate` is distinct from `Handover.View` (and retains its catalog dependency on View); it authorizes administrative initiation, while listing requests requires View. A View-only user can list but cannot initiate. The pending-for-me collection is narrowed to requests whose Project Organization grants the assigned manager effective `Handover.Approve`; request detail and decision routes recheck the permission against the request's Project. Tenant Admin's explicit protected baseline remains tenant-scoped. The selected incoming manager must be active and have effective `Handover.Approve` in the Project's Organization. Manager-initiated requests require the current manager plus `Handover.Manage`; administrative handover and first assignment require `Handover.AdminInitiate`. For a handover effective today, acceptance applies the manager change and captures its snapshot transactionally. For a future date, acceptance records an approved scheduled request; the current manager and permissions remain unchanged until the effective date, when the scheduler applies the transition and captures one snapshot. Backdated requests are rejected because historical project state cannot be reconstructed. Only one pending or approved scheduled handover may exist for a project; completed history is retained and does not prevent the next sequential handover.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/projects/{id}/handover-capabilities` | Resolve the current user's available handover actions |
 | GET | `/projects/{id}/handover-managers` | List eligible active same-tenant incoming managers |
-| GET | `/projects/{id}/handover-requests` | List requests for the Project (`Handover.View`, `Handover.Manage`, or `Handover.AdminInitiate`) |
+| GET | `/projects/{id}/handover-requests` | List requests for the Project; requires effective `Handover.View` in the Project's Organization for Organization-owned Role grants. The controller maps service failures to 404. |
 | POST | `/projects/{id}/handover-requests` | Current manager requests a transfer (`Handover.Manage`) |
 | POST | `/projects/{id}/handover-requests/admin` | Administrator starts a transfer for an assigned Project (`Handover.AdminInitiate`) |
 | POST | `/projects/{id}/handover-requests/initial-assignment` | Administrator requests the first manager for an unassigned Project (`Handover.AdminInitiate`) |
-| GET | `/handover-requests/pending-for-me` | List pending requests addressed to the current manager (`Handover.Approve`) |
-| GET | `/handover-requests/{requestId}/review` | Read the bounded projection for the assigned incoming Project manager (`Handover.Approve`) |
-| POST | `/handover-requests/{requestId}/accept` | Accept a due request or approve a future-dated request for scheduled application (`Handover.Approve`) |
-| POST | `/handover-requests/{requestId}/reject` | Reject the request with a reason (`Handover.Approve`) |
+| GET | `/handover-requests/pending-for-me` | List pending requests addressed to the current manager with effective `Handover.Approve` in each request Project's Organization |
+| GET | `/handover-requests/{requestId}/review` | Read the bounded projection for the assigned incoming Project manager with effective `Handover.Approve` in the request Project's Organization |
+| POST | `/handover-requests/{requestId}/accept` | Accept a due request or approve a future-dated request for scheduled application with effective `Handover.Approve` in the request Project's Organization |
+| POST | `/handover-requests/{requestId}/reject` | Reject the request with a reason and effective `Handover.Approve` in the request Project's Organization |
 | POST | `/handover-requests/{requestId}/cancel` | Requester cancels their pending request; requires the permission matching its initiation type |
 
 For Project handovers, only manager-to-manager transfers capture a prior-owner snapshot. Initial Project assignment behavior is unchanged by the Portfolio and Program handover snapshot policy below.

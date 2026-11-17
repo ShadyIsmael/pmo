@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 using NEXUS.Modules.ProjectPlanning.Application;
 using NEXUS.Modules.ProjectPlanning.Application.DTOs;
 
@@ -35,7 +36,7 @@ public class PlanActivityController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create(Guid projectId, Guid planId, [FromBody] CreatePlanActivityDto dto, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        if (!TryGetActorId(out var userId)) return Unauthorized();
         var result = await _activityService.CreateAsync(planId, dto, userId, cancellationToken);
         if (result.IsFailure)
             return result.Error?.StatusCode switch
@@ -51,7 +52,7 @@ public class PlanActivityController : ControllerBase
     [HttpPut("{activityId:guid}")]
     public async Task<IActionResult> Update(Guid projectId, Guid planId, Guid activityId, [FromBody] UpdatePlanActivityDto dto, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        if (!TryGetActorId(out var userId)) return Unauthorized();
         var result = await _activityService.UpdateAsync(planId, activityId, dto, userId, cancellationToken);
         if (result.IsFailure)
             return result.Error?.StatusCode switch
@@ -67,7 +68,7 @@ public class PlanActivityController : ControllerBase
     [HttpPost("bulk-update")]
     public async Task<IActionResult> BulkUpdate(Guid projectId, Guid planId, [FromBody] BulkUpdatePlanActivitiesDto dto, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        if (!TryGetActorId(out var userId)) return Unauthorized();
         var result = await _activityService.BulkUpdateAsync(planId, dto, userId, cancellationToken);
         if (result.IsFailure)
             return result.Error?.StatusCode switch
@@ -83,7 +84,7 @@ public class PlanActivityController : ControllerBase
     [HttpPost("{activityId:guid}/move")]
     public async Task<IActionResult> Move(Guid projectId, Guid planId, Guid activityId, [FromBody] MovePlanActivityDto dto, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        if (!TryGetActorId(out var userId)) return Unauthorized();
         var result = await _activityService.MoveAsync(planId, activityId, dto, userId, cancellationToken);
         if (result.IsFailure)
             return result.Error?.StatusCode switch
@@ -99,7 +100,7 @@ public class PlanActivityController : ControllerBase
     [HttpDelete("{activityId:guid}")]
     public async Task<IActionResult> Delete(Guid projectId, Guid planId, Guid activityId, [FromQuery] byte[] rowVersion, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        if (!TryGetActorId(out var userId)) return Unauthorized();
         var result = await _activityService.DeleteAsync(planId, activityId, rowVersion, userId, cancellationToken);
         if (result.IsFailure)
             return result.Error?.StatusCode switch
@@ -109,5 +110,11 @@ public class PlanActivityController : ControllerBase
                 _ => BadRequest(new { error = result.Error?.Message })
             };
         return NoContent();
+    }
+
+    private bool TryGetActorId(out string actorId)
+    {
+        actorId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? string.Empty;
+        return User.Identity?.IsAuthenticated == true && Guid.TryParse(actorId, out var parsed) && parsed != Guid.Empty;
     }
 }

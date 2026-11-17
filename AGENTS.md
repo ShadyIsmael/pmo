@@ -33,6 +33,30 @@ Use the host-capable wrappers documented in [Development database connectivity a
 Do not mark database work complete while required Development model/schema synchronization is pending or unverified. Every completion report must include: model synchronized; pending migration count and names; target environment and database identity verified; backup status (`Not requested` is valid for Development/UAT); migrations applied; required seed mode and idempotency verified; physical schema verified; persistence tests; and blockers. Use `Not run` or `No` when evidence is unavailable.
 
 
+## Database Migration Workflow (Mandatory)
+
+For every feature requiring database schema changes:
+
+1. Read `docs/development/ef-core-database-workflow.md` and `docs/development/development-database-connectivity-and-runner.md`.
+2. Use the existing repository migration tools and EF Database Gate only: `scripts/dev/db-preflight.ps1`, `scripts/dev/db-migrations-status.ps1`, `scripts/database/ef-database-gate.ps1`, and `scripts/dev/db-apply-migrations.ps1`. Do not invent alternative execution procedures.
+3. Generate and review non-destructive migrations.
+4. Verify the Development database identity before any writes: live `SERVERPROPERTY('ServerName')`, `DB_NAME()`, and database ID must match the approved `Shady` / `NexusPmo` target and the API's effective Development endpoint.
+5. Generate pending SQL exclusively through the approved EF Database Gate workflow (`inspect`/`script` actions). Never use direct `dotnet ef migrations script` output as an approval artifact.
+6. Review the exact generated SQL file and calculate SHA-256 from that file.
+7. Apply migrations only through `scripts/dev/db-apply-migrations.ps1` with the reviewed SQL path, reviewed SHA-256, an active Product Owner authorization reference, and `-ConfirmDevelopmentApply`.
+8. Verify migration history, physical schema, and EF Model synchronization.
+9. Report migration completion separately from compilation results.
+10. Never reset or seed the database without explicit authorization.
+
+Additional permanent safeguards:
+
+- Initialize `ASPNETCORE_ENVIRONMENT=Development` and `DOTNET_ENVIRONMENT=Development` explicitly before any EF Database Gate invocation.
+- Stop immediately when any mandatory step fails. Never read, hash, approve, or apply a stale or unrelated SQL artifact.
+- Use unique or freshly regenerated SQL output artifacts and verify the generated SQL corresponds exactly to the current pending migration set.
+- Treat the offline `model` check as model/snapshot verification only; it is not live database verification.
+- If application is explicitly deferred, report the feature as **Database Migration Pending**, not Complete.
+- A database-dependent feature is complete only when: migration generated and reviewed; Development migration applied when authorized; applied migrations match repository migrations; pending migrations = 0; EF Model synchronized; physical schema verified; build succeeds.
+
 ## Frontend data integrity
 
 All frontend changes must comply with the frontend-data-integrity skill. Operational data must originate from authoritative sources. Hardcoded business values, unapproved currency fallbacks, untranslated user-facing labels, and misleading status placeholders are prohibited.

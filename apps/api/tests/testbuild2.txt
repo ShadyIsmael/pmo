@@ -1,0 +1,23 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  NEXUS.SharedKernel -> C:\Projects\pmo\apps\api\src\NEXUS.SharedKernel\bin\Debug\net10.0\NEXUS.SharedKernel.dll
+  NEXUS.Modules.PluginManagement -> C:\Projects\pmo\apps\api\src\NEXUS.Modules.PluginManagement\bin\Debug\net10.0\NEXUS.Modules.PluginManagement.dll
+  NEXUS.Modules.AIPlanning -> C:\Projects\pmo\apps\api\src\NEXUS.Modules.AIPlanning\bin\Debug\net10.0\NEXUS.Modules.AIPlanning.dll
+  NEXUS.Modules.Audit -> C:\Projects\pmo\apps\api\src\NEXUS.Modules.Audit\bin\Debug\net10.0\NEXUS.Modules.Audit.dll
+  NEXUS.Modules.Reporting -> C:\Projects\pmo\apps\api\src\NEXUS.Modules.Reporting\bin\Debug\net10.0\NEXUS.Modules.Reporting.dll
+  NEXUS.Modules.IssueManagement -> C:\Projects\pmo\apps\api\src\NEXUS.Modules.IssueManagement\bin\Debug\net10.0\NEXUS.Modules.IssueManagement.dll
+  NEXUS.Modules.Approvals -> C:\Projects\pmo\apps\api\src\NEXUS.Modules.Approvals\bin\Debug\net10.0\NEXUS.Modules.Approvals.dll
+  NEXUS.Modules.Documents -> C:\Projects\pmo\apps\api\src\NEXUS.Modules.Documents\bin\Debug\net10.0\NEXUS.Modules.Documents.dll
+  NEXUS.Modules.WorkflowEngine -> C:\Projects\pmo\apps\api\src\NEXUS.Modules.WorkflowEngine\bin\Debug\net10.0\NEXUS.Modules.WorkflowEngine.dll
+C:\Projects\pmo\apps\api\src\NEXUS.Modules.Identity\Infrastructure\RoleAdministrationService.cs(13,49): error CS0535: 'RoleAdministrationService' does not implement interface member 'IRoleAdministrationService.GetAssignableRolesAsync(Guid, Guid, CancellationToken)' [C:\Projects\pmo\apps\api\src\NEXUS.Modules.Identity\NEXUS.Modules.Identity.csproj]
+C:\Projects\pmo\apps\api\src\NEXUS.Modules.Identity\Infrastructure\RoleAdministrationService.cs(13,49): error CS0535: 'RoleAdministrationService' does not implement interface member 'IRoleAdministrationService.GetManagedRoleOrganizationsAsync(Guid, Guid, CancellationToken)' [C:\Projects\pmo\apps\api\src\NEXUS.Modules.Identity\NEXUS.Modules.Identity.csproj]
+  NEXUS.Modules.WorkItems -> C:\Projects\pmo\apps\api\src\NEXUS.Modules.WorkItems\bin\Debug\net10.0\NEXUS.Modules.WorkItems.dll
+
+Build FAILED.
+
+C:\Projects\pmo\apps\api\src\NEXUS.Modules.Identity\Infrastructure\RoleAdministrationService.cs(13,49): error CS0535: 'RoleAdministrationService' does not implement interface member 'IRoleAdministrationService.GetAssignableRolesAsync(Guid, Guid, CancellationToken)' [C:\Projects\pmo\apps\api\src\NEXUS.Modules.Identity\NEXUS.Modules.Identity.csproj]
+C:\Projects\pmo\apps\api\src\NEXUS.Modules.Identity\Infrastructure\RoleAdministrationService.cs(13,49): error CS0535: 'RoleAdministrationService' does not implement interface member 'IRoleAdministrationService.GetManagedRoleOrganizationsAsync(Guid, Guid, CancellationToken)' [C:\Projects\pmo\apps\api\src\NEXUS.Modules.Identity\NEXUS.Modules.Identity.csproj]
+    0 Warning(s)
+    2 Error(s)
+
+Time Elapsed 00:00:12.32

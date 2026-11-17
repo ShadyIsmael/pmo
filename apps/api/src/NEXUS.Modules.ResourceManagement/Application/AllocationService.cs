@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Http;
 using NEXUS.Modules.Audit.Application;
 using NEXUS.Modules.Audit.Domain;
 using NEXUS.Modules.Organization.Domain;
@@ -14,12 +15,18 @@ public class AllocationService : IAllocationService
     private readonly DbContext _context;
     private readonly IAuditService _auditService;
     private readonly IManagementContextAccessor? _managementContext;
+    private readonly IHttpContextAccessor? _httpContextAccessor;
 
-    public AllocationService(DbContext context, IAuditService auditService, IManagementContextAccessor? managementContext = null)
+    public AllocationService(
+        DbContext context,
+        IAuditService auditService,
+        IManagementContextAccessor? managementContext = null,
+        IHttpContextAccessor? httpContextAccessor = null)
     {
         _context = context;
         _auditService = auditService;
         _managementContext = managementContext;
+        _httpContextAccessor = httpContextAccessor;
     }
 
     public async Task<PagedResult<AllocationDto>> GetPagedAsync(int page, int pageSize, Guid? resourceId = null, Guid? projectId = null, string? status = null, CancellationToken cancellationToken = default)
@@ -96,11 +103,17 @@ public class AllocationService : IAllocationService
 
     public async Task<Result<AllocationDto>> CreateAsync(CreateAllocationDto dto, string userId, CancellationToken cancellationToken = default)
     {
-        var validation = await ValidateAllocationAsync(dto.ResourceId, dto.StartDate, dto.EndDate, dto.AllocationPercentage, null, userId, cancellationToken);
-        if (validation.IsFailure) return Result<AllocationDto>.Failure(validation.Error!);
-
+        var actorError = ResourceManagementWriteGuard.RequireActorContext(_httpContextAccessor, _managementContext, userId);
+        if (actorError is not null)
+            return Result<AllocationDto>.Failure(actorError);
+        var writableContextError = EnsureWritableManagementContext();
+        if (writableContextError is not null)
+            return Result<AllocationDto>.Failure(writableContextError);
         if (!IsProjectInScope(dto.ProjectId))
             return Result<AllocationDto>.Failure(Error.NotFound("Project not found"));
+
+        var validation = await ValidateAllocationAsync(dto.ResourceId, dto.StartDate, dto.EndDate, dto.AllocationPercentage, null, dto.ProjectId, userId, cancellationToken);
+        if (validation.IsFailure) return Result<AllocationDto>.Failure(validation.Error!);
 
         var resource = await _context.Set<Resource>().FirstOrDefaultAsync(r => r.Id == dto.ResourceId && !r.IsDeleted, cancellationToken);
         if (resource is null) return Result<AllocationDto>.Failure(Error.NotFound("Resource not found"));
@@ -142,6 +155,12 @@ public class AllocationService : IAllocationService
 
     public async Task<Result<AllocationDto>> UpdateAsync(Guid id, UpdateAllocationDto dto, string userId, CancellationToken cancellationToken = default)
     {
+        var actorError = ResourceManagementWriteGuard.RequireActorContext(_httpContextAccessor, _managementContext, userId);
+        if (actorError is not null)
+            return Result<AllocationDto>.Failure(actorError);
+        var writableContextError = EnsureWritableManagementContext();
+        if (writableContextError is not null)
+            return Result<AllocationDto>.Failure(writableContextError);
         var allocation = await _context.Set<ResourceAllocation>()
             .Include(a => a.Resource)
             .FirstOrDefaultAsync(a => a.Id == id && !a.IsDeleted, cancellationToken);
@@ -156,7 +175,8 @@ public class AllocationService : IAllocationService
         var endDate = dto.EndDate ?? allocation.EndDate;
         var percentage = dto.AllocationPercentage ?? allocation.AllocationPercentage;
 
-        var validation = await ValidateAllocationAsync(allocation.ResourceId, startDate, endDate, percentage, id, userId, cancellationToken);
+        var targetProjectId = dto.ProjectId ?? allocation.ProjectId;
+        var validation = await ValidateAllocationAsync(allocation.ResourceId, startDate, endDate, percentage, id, targetProjectId, userId, cancellationToken);
         if (validation.IsFailure) return Result<AllocationDto>.Failure(validation.Error!);
 
         if (dto.ProjectId.HasValue) allocation.ProjectId = dto.ProjectId;
@@ -190,6 +210,12 @@ public class AllocationService : IAllocationService
 
     public async Task<Result> DeleteAsync(Guid id, string userId, CancellationToken cancellationToken = default)
     {
+        var actorError = ResourceManagementWriteGuard.RequireActorContext(_httpContextAccessor, _managementContext, userId);
+        if (actorError is not null)
+            return Result.Failure(actorError);
+        var writableContextError = EnsureWritableManagementContext();
+        if (writableContextError is not null)
+            return Result.Failure(writableContextError);
         var allocation = await _context.Set<ResourceAllocation>()
             .FirstOrDefaultAsync(a => a.Id == id && !a.IsDeleted, cancellationToken);
         if (allocation is null || !IsProjectInScope(allocation.ProjectId))
@@ -212,8 +238,10 @@ public class AllocationService : IAllocationService
         return Result.Success();
     }
 
-    private async Task<Result> ValidateAllocationAsync(Guid resourceId, DateTime startDate, DateTime endDate, decimal allocationPercentage, Guid? excludeId, string userId, CancellationToken cancellationToken)
+    private async Task<Result> ValidateAllocationAsync(Guid resourceId, DateTime startDate, DateTime endDate, decimal allocationPercentage, Guid? excludeId, Guid? projectId, string userId, CancellationToken cancellationToken)
     {
+        if (!IsProjectInScope(projectId))
+            return Result.Failure(Error.NotFound("Project not found"));
         if (startDate >= endDate)
             return Result.Failure(Error.Validation("Start date must be before end date"));
         if (allocationPercentage <= 0 || allocationPercentage > 100)
@@ -240,6 +268,14 @@ public class AllocationService : IAllocationService
             var totalPercentage = overlapping.Sum(a => a.AllocationPercentage) + allocationPercentage;
             if (totalPercentage > 100)
             {
+                var visibleProjectIds = _managementContext?.Current?.Scope.ProjectIds;
+                var hasOutOfScopeProjectConflict = overlapping.Any(allocation =>
+                    allocation.ProjectId.HasValue
+                    && (visibleProjectIds is null || !visibleProjectIds.Contains(allocation.ProjectId.Value)));
+                if (hasOutOfScopeProjectConflict)
+                    return Result.Failure(Error.Validation(
+                        "Over-allocation detected: one or more conflicting allocations exist outside the current project scope."));
+
                 var conflicts = overlapping.Select(a => $"{a.ProjectName ?? "Unnamed"} ({a.AllocationPercentage}%)");
                 return Result.Failure(Error.Validation(
                     $"Over-allocation detected: total would be {totalPercentage}%. Conflicting allocations: {string.Join(", ", conflicts)}"));
@@ -277,9 +313,19 @@ public class AllocationService : IAllocationService
 
     private bool IsProjectInScope(Guid? projectId)
     {
-        if (!projectId.HasValue) return true;
-        var projectIds = _managementContext?.Current?.Scope.ProjectIds;
-        return projectIds is not null && projectIds.Contains(projectId.Value);
+        var management = _managementContext?.Current;
+        if (management?.Scope is null) return false;
+        return !projectId.HasValue || management.Scope.ProjectIds.Contains(projectId.Value);
+    }
+
+    private Error? EnsureWritableManagementContext()
+    {
+        var management = _managementContext?.Current;
+        if (management?.Scope is null || management.TenantId == Guid.Empty)
+            return Error.Forbidden("A trusted management context is required for allocation changes.");
+        if (management.EffectiveReadOnly)
+            return Error.Forbidden("Allocations cannot be changed in a read-only management view.");
+        return null;
     }
 
     private async Task<PagedResult<AllocationDto>> ToPagedResultAsync(IQueryable<ResourceAllocation> query, int page, int pageSize, CancellationToken cancellationToken)

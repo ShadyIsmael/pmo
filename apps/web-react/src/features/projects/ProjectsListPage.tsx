@@ -22,7 +22,6 @@ import { useCurrencyFormatter } from "./lib/currency";
 import { useAuth } from "@auth/AuthProvider";
 import { hasPermission, Permissions } from "@lib/permissions";
 import { getStatusTone, statusToneClasses } from "@lib/status-presentation";
-import { projectLifecycleLabel, useProjectLifecycleOptions } from "./api/project-lifecycle";
 
 const ProjectAdvancedSearch = React.lazy(() => import("./components/ProjectAdvancedSearch").then((module) => ({ default: module.ProjectAdvancedSearch })));
 
@@ -66,17 +65,35 @@ export function ProjectsListPage() {
     page: 1,
     pageSize: 50,
   });
-  const lifecycleOptions = useProjectLifecycleOptions({ enabled: Boolean(user && hasPermission(user.permissions, Permissions.Project.View)) });
 
   const currencyFormatter = useCurrencyFormatter();
   const { healthLabel } = useProjectEnumLabels();
 
   const items = data?.items ?? [];
-  const lifecycleStatuses = lifecycleOptions.data?.statuses ?? [];
+  const statusOptions = React.useMemo(() => {
+    const byCode = new Map<string, { id: string; code: string; nameEn: string; nameAr: string }>();
+    for (const project of items) {
+      const code = project.status?.trim();
+      if (!code) continue;
+      const normalizedCode = code.toLocaleUpperCase();
+      if (byCode.has(normalizedCode)) continue;
+      const nameEn = project.statusNameEn?.trim() || code;
+      const nameAr = project.statusNameAr?.trim() || nameEn;
+      byCode.set(normalizedCode, {
+        id: project.statusId || code,
+        code,
+        nameEn,
+        nameAr,
+      });
+    }
+    return [...byCode.values()];
+  }, [items]);
   const statusLabel = (code?: string | null, nameEn?: string | null, nameAr?: string | null) => {
     if (!code) return "";
-    const status = lifecycleStatuses.find((item) => item.code.toLocaleUpperCase() === code.toLocaleUpperCase());
-    return status ? projectLifecycleLabel(status, locale, code) : (locale === "ar" ? nameAr || nameEn : nameEn || nameAr) || code;
+    const status = statusOptions.find((item) => item.code.toLocaleUpperCase() === code.toLocaleUpperCase());
+    const englishLabel = nameEn?.trim() || status?.nameEn || code;
+    const arabicLabel = nameAr?.trim() || status?.nameAr || status?.nameEn || code;
+    return locale === "ar" ? arabicLabel : englishLabel;
   };
 
   const activeFilterCount =
@@ -317,10 +334,8 @@ export function ProjectsListPage() {
           setFilterCode={setFilterCode}
           filterStatuses={filterStatuses}
           toggleStatus={toggleStatus}
-          statusOptions={lifecycleStatuses}
-          statusOptionsLoading={lifecycleOptions.isLoading}
-          statusOptionsError={lifecycleOptions.isError}
-          retryStatusOptions={() => void lifecycleOptions.refetch()}
+          statusOptions={statusOptions}
+          statusOptionsLoading={isLoading}
           filterHealths={filterHealths}
           toggleHealth={toggleHealth}
           filterProgressMin={filterProgressMin}

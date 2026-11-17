@@ -187,7 +187,7 @@ var addedProtectedAdminProjectSettingsKeys = role.Permissions
 | `20261102190321_AddRolePermissionScope` | Add Scope to Permission | Tenant/Organization/Project/Portfolio/Program |
 | `20261102190322_AddPermissionCatalogFlags` | Add IsAssignable, IsTenantAdminBaseline, etc. | Catalog metadata on Permission rows |
 
-**All migrations applied in Development** (per offline EF model check). **Not verified against live database** — SQL identity probe failed.
+**Current Development status (verified 2026-11-16):** All 30 repository migrations are applied on `Shady / NexusPmo`, DB_ID 5; pending migrations = 0, EF Model synchronized, and no missing schema objects. This live status supersedes the report-time note below; the report's generated date and earlier reconciliation analysis remain historical.
 
 ---
 

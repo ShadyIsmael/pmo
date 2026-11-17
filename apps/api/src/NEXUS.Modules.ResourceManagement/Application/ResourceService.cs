@@ -12,6 +12,7 @@ using NEXUS.Modules.ResourceManagement.Application.Validators;
 using NEXUS.Modules.ResourceManagement.Domain;
 using NEXUS.SharedKernel;
 using NEXUS.SharedKernel.Helpers;
+using NEXUS.SharedKernel.Management;
 
 namespace NEXUS.Modules.ResourceManagement.Application;
 
@@ -22,6 +23,7 @@ public class ResourceService : IResourceService, IResourceReferenceLookup, IReso
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly IValidator<CreateResourceDto> _createValidator;
     private readonly IValidator<UpdateResourceDto> _updateValidator;
+    private readonly IManagementContextAccessor? _managementContextAccessor;
 
     public ResourceService(
         DbContext context,
@@ -29,13 +31,15 @@ public class ResourceService : IResourceService, IResourceReferenceLookup, IReso
         IUserReferenceLookup userLookup,
         IHttpContextAccessor httpContextAccessor,
         IValidator<CreateResourceDto> createValidator,
-        IValidator<UpdateResourceDto> updateValidator)
+        IValidator<UpdateResourceDto> updateValidator,
+        IManagementContextAccessor? managementContextAccessor = null)
     {
         _context = context;
         _auditService = auditService;
         _httpContextAccessor = httpContextAccessor;
         _createValidator = createValidator;
         _updateValidator = updateValidator;
+        _managementContextAccessor = managementContextAccessor;
     }
 
     public Task<bool> ExistsAsync(Guid resourceId, CancellationToken cancellationToken = default)
@@ -55,6 +59,12 @@ public class ResourceService : IResourceService, IResourceReferenceLookup, IReso
     public Task<ResourceReference?> FindAsync(Guid resourceId, CancellationToken cancellationToken = default) =>
         _context.Set<Resource>()
             .Where(resource => resource.Id == resourceId && !resource.IsDeleted)
+            .Select(resource => new ResourceReference(resource.Id, resource.UserId == Guid.Empty ? null : resource.UserId, resource.Name, resource.Email, resource.JobTitle, resource.Type, resource.Status, resource.IsActive))
+            .FirstOrDefaultAsync(cancellationToken);
+
+    public Task<ResourceReference?> FindInTenantAsync(Guid resourceId, Guid tenantId, CancellationToken cancellationToken = default) =>
+        _context.Set<Resource>()
+            .Where(resource => resource.Id == resourceId && resource.TenantId == tenantId && !resource.IsDeleted)
             .Select(resource => new ResourceReference(resource.Id, resource.UserId == Guid.Empty ? null : resource.UserId, resource.Name, resource.Email, resource.JobTitle, resource.Type, resource.Status, resource.IsActive))
             .FirstOrDefaultAsync(cancellationToken);
 
@@ -113,6 +123,17 @@ public class ResourceService : IResourceService, IResourceReferenceLookup, IReso
         if (ids.Count == 0) return new Dictionary<Guid, ResourceReference>();
         return await _context.Set<Resource>()
             .Where(resource => resource.UserId.HasValue && resource.UserId != Guid.Empty && ids.Contains(resource.UserId.Value) && !resource.IsDeleted)
+            .Select(resource => new ResourceReference(resource.Id, resource.UserId == Guid.Empty ? null : resource.UserId, resource.Name, resource.Email, resource.JobTitle, resource.Type, resource.Status, resource.IsActive))
+            .ToDictionaryAsync(resource => resource.UserId!.Value, cancellationToken);
+    }
+
+    public async Task<IReadOnlyDictionary<Guid, ResourceReference>> GetDetailsByUserIdsInTenantAsync(IEnumerable<Guid> userIds, Guid tenantId, CancellationToken cancellationToken = default)
+    {
+        var ids = userIds.Distinct().ToList();
+        if (tenantId == Guid.Empty || ids.Count == 0) return new Dictionary<Guid, ResourceReference>();
+        return await _context.Set<Resource>()
+            .Where(resource => resource.TenantId == tenantId && resource.UserId.HasValue && resource.UserId != Guid.Empty
+                && ids.Contains(resource.UserId.Value) && !resource.IsDeleted)
             .Select(resource => new ResourceReference(resource.Id, resource.UserId == Guid.Empty ? null : resource.UserId, resource.Name, resource.Email, resource.JobTitle, resource.Type, resource.Status, resource.IsActive))
             .ToDictionaryAsync(resource => resource.UserId!.Value, cancellationToken);
     }
@@ -313,6 +334,9 @@ public class ResourceService : IResourceService, IResourceReferenceLookup, IReso
 
     public async Task<Result<ResourceDto>> CreateAsync(CreateResourceDto dto, string userId, CancellationToken cancellationToken = default)
     {
+        var actorError = ResourceManagementWriteGuard.RequireActorContext(_httpContextAccessor, _managementContextAccessor, userId);
+        if (actorError is not null) return Result<ResourceDto>.Failure(actorError);
+
         var inputValidation = await _createValidator.ValidateAsync(dto, cancellationToken);
         if (!inputValidation.IsValid)
             return Result<ResourceDto>.Failure(Error.Validation(
@@ -429,6 +453,9 @@ public class ResourceService : IResourceService, IResourceReferenceLookup, IReso
 
     public async Task<Result<ResourceDto>> UpdateAsync(Guid id, UpdateResourceDto dto, string userId, CancellationToken cancellationToken = default)
     {
+        var actorError = ResourceManagementWriteGuard.RequireActorContext(_httpContextAccessor, _managementContextAccessor, userId);
+        if (actorError is not null) return Result<ResourceDto>.Failure(actorError);
+
         var inputValidation = await _updateValidator.ValidateAsync(dto, cancellationToken);
         if (!inputValidation.IsValid)
             return Result<ResourceDto>.Failure(Error.Validation(
@@ -578,6 +605,9 @@ public class ResourceService : IResourceService, IResourceReferenceLookup, IReso
 
     public async Task<Result> DeleteAsync(Guid id, string userId, CancellationToken cancellationToken = default)
     {
+        var actorError = ResourceManagementWriteGuard.RequireActorContext(_httpContextAccessor, _managementContextAccessor, userId);
+        if (actorError is not null) return Result.Failure(actorError);
+
         var resource = await _context.Set<Resource>()
             .FirstOrDefaultAsync(r => r.Id == id && !r.IsDeleted, cancellationToken);
 

@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 using NEXUS.Modules.ProjectPlanning.Application;
 using NEXUS.Modules.ProjectPlanning.Application.DTOs;
 
@@ -35,7 +36,7 @@ public class PlanDependencyController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create(Guid projectId, Guid planId, [FromBody] CreatePlanDependencyDto dto, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        if (!TryGetActorId(out var userId)) return Unauthorized();
         var result = await _dependencyService.CreateAsync(planId, dto, userId, cancellationToken);
         if (result.IsFailure)
             return result.Error?.StatusCode switch
@@ -51,7 +52,7 @@ public class PlanDependencyController : ControllerBase
     [HttpPut("{dependencyId:guid}")]
     public async Task<IActionResult> Update(Guid projectId, Guid planId, Guid dependencyId, [FromBody] UpdatePlanDependencyDto dto, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        if (!TryGetActorId(out var userId)) return Unauthorized();
         var result = await _dependencyService.UpdateAsync(planId, dependencyId, dto, userId, cancellationToken);
         if (result.IsFailure)
             return result.Error?.StatusCode switch
@@ -67,7 +68,7 @@ public class PlanDependencyController : ControllerBase
     [HttpDelete("{dependencyId:guid}")]
     public async Task<IActionResult> Delete(Guid projectId, Guid planId, Guid dependencyId, [FromQuery] byte[] rowVersion, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        if (!TryGetActorId(out var userId)) return Unauthorized();
         var result = await _dependencyService.DeleteAsync(planId, dependencyId, rowVersion, userId, cancellationToken);
         if (result.IsFailure)
             return result.Error?.StatusCode switch
@@ -83,7 +84,7 @@ public class PlanDependencyController : ControllerBase
     [HttpPut("predecessors")]
     public async Task<IActionResult> ReplacePredecessors(Guid projectId, Guid planId, [FromBody] ReplacePlanPredecessorsDto dto, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        if (!TryGetActorId(out var userId)) return Unauthorized();
         var result = await _dependencyService.ReplacePredecessorsAsync(planId, dto, userId, cancellationToken);
         if (result.IsFailure)
             return result.Error?.StatusCode switch
@@ -99,7 +100,7 @@ public class PlanDependencyController : ControllerBase
     [HttpPut("bulk-predecessors")]
     public async Task<IActionResult> ReplacePredecessorsBulk(Guid projectId, Guid planId, [FromBody] BulkReplacePlanPredecessorsDto dto, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        if (!TryGetActorId(out var userId)) return Unauthorized();
         var result = await _dependencyService.ReplacePredecessorsBulkAsync(planId, dto, userId, cancellationToken);
         if (result.IsFailure)
             return result.Error?.StatusCode switch
@@ -109,5 +110,11 @@ public class PlanDependencyController : ControllerBase
                 _ => BadRequest(new { error = result.Error?.Message })
             };
         return Ok(result.Value);
+    }
+
+    private bool TryGetActorId(out string actorId)
+    {
+        actorId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? string.Empty;
+        return User.Identity?.IsAuthenticated == true && Guid.TryParse(actorId, out var parsed) && parsed != Guid.Empty;
     }
 }

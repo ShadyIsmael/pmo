@@ -8,6 +8,7 @@ using NEXUS.Modules.ProjectPlanning.Application.DTOs;
 using NEXUS.Modules.ProjectPlanning.Application.Import;
 using NEXUS.Modules.ProjectPlanning.Application.Mapping;
 using NEXUS.Modules.ProjectPlanning.Domain;
+using NEXUS.Modules.ProjectManagement.Application;
 using NEXUS.Modules.ResourceManagement.Application;
 using NEXUS.Modules.ResourceManagement.Application.DTOs;
 using NEXUS.Modules.ResourceManagement.Domain;
@@ -24,6 +25,8 @@ public sealed class PlanningImportServiceTests : IDisposable
     private readonly DefaultHttpContext _httpContext = new();
     private readonly Mock<IResourceService> _resources = new();
     private readonly Mock<IAuditService> _audit = new();
+    private readonly Mock<IProjectResourcePlanningContextLookup> _planningContextLookup = new();
+    private readonly HashSet<Guid> _activeProjectMemberResourceIds = new();
     private readonly Guid _tenantId = Guid.NewGuid();
     private readonly Guid _userId = Guid.NewGuid();
     private readonly Guid _projectId = Guid.NewGuid();
@@ -40,13 +43,22 @@ public sealed class PlanningImportServiceTests : IDisposable
         _context.Database.EnsureCreated();
         _audit.Setup(value => value.LogAsync(It.IsAny<Modules.Audit.Domain.AuditEntry>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success());
+        _planningContextLookup
+            .Setup(value => value.GetPlanningContextAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .Returns((Guid projectId, Guid resourceId, CancellationToken _) => Task.FromResult<ProjectResourcePlanningContext?>(
+                _activeProjectMemberResourceIds.Contains(resourceId)
+                    ? new ProjectResourcePlanningContext(
+                        Guid.NewGuid(), projectId, resourceId, "UseResourceCalendar", null, [], true, 100m,
+                        DateTime.MinValue, DateTime.MaxValue)
+                    : null));
     }
 
     [Fact]
     public async Task ImportNewPlan_MapsHierarchyDependencyResourceAndCalendarToWorkingVersion()
     {
         var resourceId = Guid.NewGuid();
-        SetResources(new ResourceDto { Id = resourceId, Name = "Developer", Email = "dev@example.com" });
+        SetResources(new ResourceDto { Id = resourceId, Name = "Developer", Email = "dev@example.com", IsActive = true });
+        SetActiveProjectMembers(resourceId);
         var service = CreateService(FixtureDocument());
 
         var result = await service.ImportAsync(new MemoryStream([1]), "fixture.mpp", new CommitPlanImportDto
@@ -89,6 +101,26 @@ public sealed class PlanningImportServiceTests : IDisposable
         Assert.Equal(-2, dependency.Lag);
         Assert.Equal(resourceId, Assert.Single(version.Assignments).ResourceId);
         Assert.Equal(2, Assert.Single(version.Calendars).DayRules.Count);
+    }
+
+    [Fact]
+    public async Task ImportNewPlan_RejectsAssignmentToResourceOutsideActiveProjectMembership()
+    {
+        var resourceId = Guid.NewGuid();
+        SetResources(new ResourceDto { Id = resourceId, Name = "Developer", Email = "dev@example.com" });
+
+        var result = await CreateService(FixtureDocument()).ImportAsync(new MemoryStream([1]), "fixture.mpp", new CommitPlanImportDto
+        {
+            ProjectId = _projectId,
+            NewPlanName = "Must not import assignment",
+            NewPlanType = PlanType.Execution
+        }, _userId.ToString());
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(400, result.Error!.StatusCode);
+        Assert.Contains("active member of this project", result.Error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(await _context.Plans.IgnoreQueryFilters().ToListAsync());
+        Assert.Empty(await _context.PlanAssignments.IgnoreQueryFilters().ToListAsync());
     }
 
     [Fact]
@@ -150,6 +182,29 @@ public sealed class PlanningImportServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task GetSession_ComputesReviewStatusWithoutPersistingLifecycleChanges()
+    {
+        SetResources();
+        var service = CreateService(FixtureDocument());
+        var session = await service.CreateSessionAsync(new MemoryStream([1]), "fixture.mpp", _projectId, null, _userId.ToString());
+        Assert.True(session.IsSuccess, session.Error?.Message);
+
+        var storedSession = await _context.PlanImportSessions.IgnoreQueryFilters().SingleAsync(item => item.Id == session.Value!.Id);
+        storedSession.Status = PlanImportSessionStatus.Parsed;
+        await _context.SaveChangesAsync();
+
+        var review = await service.GetSessionAsync(_projectId, session.Value!.Id);
+
+        Assert.True(review.IsSuccess, review.Error?.Message);
+        Assert.Equal(PlanImportSessionStatus.NeedsReview.ToString(), review.Value!.Status);
+        var persistedStatus = await _context.PlanImportSessions.IgnoreQueryFilters().AsNoTracking()
+            .Where(item => item.Id == session.Value.Id)
+            .Select(item => item.Status)
+            .SingleAsync();
+        Assert.Equal(PlanImportSessionStatus.Parsed, persistedStatus);
+    }
+
+    [Fact]
     public async Task CommitSession_RechecksResourceCreateAfterResourceResolution()
     {
         SetPermissions("Planning.View", "Planning.Edit", "Resource.Create");
@@ -176,6 +231,29 @@ public sealed class PlanningImportServiceTests : IDisposable
         Assert.Equal(403, result.Error!.StatusCode);
         _resources.Verify(resource => resource.CreateAsync(It.IsAny<CreateResourceDto>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
         Assert.Empty(await _context.Plans.IgnoreQueryFilters().ToListAsync());
+    }
+
+    [Fact]
+    public async Task CommitSession_RejectsAssignmentToResourceOutsideActiveProjectMembership()
+    {
+        var resourceId = Guid.NewGuid();
+        SetResources(new ResourceDto { Id = resourceId, Name = "Developer", Email = "dev@example.com", IsActive = true });
+        var service = CreateService(FixtureDocument());
+        var session = await service.CreateSessionAsync(new MemoryStream([1]), "fixture.mpp", _projectId, null, _userId.ToString());
+        Assert.True(session.IsSuccess, session.Error?.Message);
+
+        var result = await service.CommitSessionAsync(_projectId, session.Value!.Id, new CommitPlanImportDto
+        {
+            ProjectId = _projectId,
+            NewPlanName = "Must not import assignment",
+            NewPlanType = PlanType.Execution
+        }, _userId.ToString());
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(400, result.Error!.StatusCode);
+        Assert.Contains("active member of this project", result.Error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(await _context.Plans.IgnoreQueryFilters().ToListAsync());
+        Assert.Empty(await _context.PlanAssignments.IgnoreQueryFilters().ToListAsync());
     }
 
     [Fact]
@@ -239,12 +317,16 @@ public sealed class PlanningImportServiceTests : IDisposable
         var fixturePath = Environment.GetEnvironmentVariable("NEXUS_MPP_UAT_FIXTURE");
         if (string.IsNullOrWhiteSpace(fixturePath)) return;
 
-        SetResources(
-            new ResourceDto { Id = Guid.NewGuid(), Name = "BDC" },
-            new ResourceDto { Id = Guid.NewGuid(), Name = "KN" },
-            new ResourceDto { Id = Guid.NewGuid(), Name = "Developer" });
+        var resources = new[]
+        {
+            new ResourceDto { Id = Guid.NewGuid(), Name = "BDC", IsActive = true },
+            new ResourceDto { Id = Guid.NewGuid(), Name = "KN", IsActive = true },
+            new ResourceDto { Id = Guid.NewGuid(), Name = "Developer", IsActive = true }
+        };
+        SetResources(resources);
+        SetActiveProjectMembers(resources.Select(resource => resource.Id).ToArray());
         var service = new PlanningImportService(
-            [new MppPlanningImportProvider()], _context, _resources.Object, _audit.Object, _accessor.Object);
+            [new MppPlanningImportProvider()], _context, _resources.Object, _audit.Object, _accessor.Object, _planningContextLookup.Object);
 
         await using var stream = File.OpenRead(fixturePath);
         var result = await service.ImportAsync(stream, Path.GetFileName(fixturePath), new CommitPlanImportDto
@@ -292,7 +374,7 @@ public sealed class PlanningImportServiceTests : IDisposable
     }
 
     private PlanningImportService CreateService(PlanningImportDocument document) => new(
-        [new FakeImportProvider(document)], _context, _resources.Object, _audit.Object, _accessor.Object);
+        [new FakeImportProvider(document)], _context, _resources.Object, _audit.Object, _accessor.Object, _planningContextLookup.Object);
 
     private void SetPermissions(params string[] permissionKeys)
     {
@@ -308,6 +390,12 @@ public sealed class PlanningImportServiceTests : IDisposable
     private void SetResources(params ResourceDto[] resources) =>
         _resources.Setup(value => value.GetPagedAsync(It.IsAny<ResourceFilterDto>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new PagedResult<ResourceDto>(resources, 1, 5000, resources.Length));
+
+    private void SetActiveProjectMembers(params Guid[] resourceIds)
+    {
+        _activeProjectMemberResourceIds.Clear();
+        foreach (var resourceId in resourceIds) _activeProjectMemberResourceIds.Add(resourceId);
+    }
 
     private static PlanningImportDocument FixtureDocument() => new()
     {

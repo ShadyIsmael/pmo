@@ -5,9 +5,11 @@ public interface IResourceReferenceLookup
     Task<bool> ExistsAsync(Guid resourceId, CancellationToken cancellationToken = default);
     Task<IReadOnlyDictionary<Guid, string>> GetNamesAsync(IEnumerable<Guid> resourceIds, CancellationToken cancellationToken = default);
     Task<ResourceReference?> FindAsync(Guid resourceId, CancellationToken cancellationToken = default);
+    Task<ResourceReference?> FindInTenantAsync(Guid resourceId, Guid tenantId, CancellationToken cancellationToken = default);
     Task<ResourceReference?> FindByUserIdAsync(Guid userId, CancellationToken cancellationToken = default);
     Task<IReadOnlyDictionary<Guid, ResourceReference>> GetDetailsAsync(IEnumerable<Guid> resourceIds, CancellationToken cancellationToken = default);
     Task<IReadOnlyDictionary<Guid, ResourceReference>> GetDetailsByUserIdsAsync(IEnumerable<Guid> userIds, CancellationToken cancellationToken = default);
+    Task<IReadOnlyDictionary<Guid, ResourceReference>> GetDetailsByUserIdsInTenantAsync(IEnumerable<Guid> userIds, Guid tenantId, CancellationToken cancellationToken = default);
 }
 
 public interface IResourceIdentityLinker

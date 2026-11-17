@@ -11,7 +11,7 @@ import { ProjectOverviewTab } from "../features/projects/ProjectOverviewTab";
 import { ProjectChangeTrackerTab } from "../features/projects/ProjectGovernanceTabs";
 import { setTokens } from "../api/client";
 
-const adminUser = { id: "admin", email: "admin@nexus.com", firstName: "Alex", lastName: "Admin", fullName: "Alex Admin", roles: [{ id: "r1", name: "Administrator" }], permissions: ["Project.View", "Project.View", "Project.Create", "Project.Edit", "Project.Delete", "ChangeRequest.Manage", "Handover.Manage", "Resource.Assign", "ProjectFinance.View", "ProjectAnnualBudget.View", "ProjectPaymentRequest.View", "ProjectSettlement.View", "ProjectAnnualBudgetClosing.View", "Stakeholders.Read", "Stakeholders.Manage"] };
+const adminUser = { id: "admin", email: "admin@nexus.com", firstName: "Alex", lastName: "Admin", fullName: "Alex Admin", roles: [{ id: "r1", name: "Administrator" }], permissions: ["Project.View", "Project.View", "Project.Create", "Project.Edit", "Project.Delete", "ChangeRequest.Manage", "Handover.View", "Handover.Manage", "Resource.Assign", "ProjectFinance.View", "ProjectAnnualBudget.View", "ProjectPaymentRequest.View", "ProjectSettlement.View", "ProjectAnnualBudgetClosing.View", "Stakeholders.Read", "Stakeholders.Manage"] };
 
 adminUser.permissions.push("ChangeRequest.View");
 

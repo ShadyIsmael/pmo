@@ -15,12 +15,15 @@ const mocks = vi.hoisted(() => ({
   useUpdateDocumentCategory: vi.fn(),
   useSetDocumentCategoryStatus: vi.fn(),
   useTemplateCategoryOptions: vi.fn(),
+  useProjectUploadCategoryOptions: vi.fn(),
   useProjectDocument: vi.fn(),
   useArchiveDocument: vi.fn(),
   useActivateDocument: vi.fn(),
   useUploadDocument: vi.fn(),
   useUploadDocumentVersion: vi.fn(),
   confirm: vi.fn(),
+  organizationIds: ["org-1"],
+  organizationReferences: [{ id: "org-1", name: "FOPX Organization" }],
   permissions: ["Document.View", "DocumentCategory.View", "Document.Create", "Document.Edit", "Document.Archive", "Document.TemplateManage"],
 }));
 
@@ -33,6 +36,7 @@ vi.mock("../features/projects/api/documents", () => ({
   useUpdateDocumentCategory: mocks.useUpdateDocumentCategory,
   useSetDocumentCategoryStatus: mocks.useSetDocumentCategoryStatus,
   useTemplateCategoryOptions: mocks.useTemplateCategoryOptions,
+  useProjectUploadCategoryOptions: mocks.useProjectUploadCategoryOptions,
   useProjectDocument: mocks.useProjectDocument,
   useArchiveDocument: mocks.useArchiveDocument,
   useActivateDocument: mocks.useActivateDocument,
@@ -46,10 +50,13 @@ vi.mock("@components/ui/ConfirmProvider", async (importOriginal) => {
 });
 
 vi.mock("@auth/AuthProvider", () => ({ useAuth: () => ({ user: { permissions: mocks.permissions } }) }));
-vi.mock("@api/management", () => ({ useManagement: () => ({ canMutate: true, effectiveReadOnly: false, context: null, snapshot: {
-  scope: { portfolioIds: [], programIds: [], projectIds: [], organizationIds: ["org-native"], organizationReferences: [{ id: "org-native", name: "Native organization" }] },
-  selectedContext: { selectedPerspective: "ProjectManager", viewMode: "Native", effectiveReadOnly: false, scope: { portfolioIds: [], programIds: [], projectIds: [], organizationIds: ["org-1"], organizationReferences: [{ id: "org-1", name: "FOPX Organization" }] } },
-} }) }));
+vi.mock("@api/management", () => ({ useManagement: () => {
+  const scope = { portfolioIds: [], programIds: [], projectIds: [], organizationIds: mocks.organizationIds, organizationReferences: mocks.organizationReferences };
+  return { canMutate: true, effectiveReadOnly: false, context: null, snapshot: {
+    scope,
+    selectedContext: { selectedPerspective: "ProjectManager", viewMode: "Native", effectiveReadOnly: false, scope },
+  } };
+} }));
 
 const listData = {
   items: [{ id: "doc-1", name: "Delivery Plan", fileName: "delivery-plan.pdf", fileType: "PDF", fileSize: 2048, contentType: "application/pdf", status: "Active", version: 2, isTemplate: false, isArchived: false, createdAt: "2026-03-01T00:00:00Z", updatedAt: "2026-03-02T00:00:00Z" }],
@@ -81,6 +88,8 @@ function renderProjectCenter() {
 describe("Document Center source parity", () => {
   beforeEach(() => {
     window.localStorage.setItem("nexus-locale", "en");
+    mocks.organizationIds = ["org-1"];
+    mocks.organizationReferences = [{ id: "org-1", name: "FOPX Organization" }];
     mocks.useProjectDocuments.mockReset();
     mocks.useProjectDocuments.mockImplementation((query: { projectId?: string; templatesOnly?: boolean; status?: string }) => ({ data: query.projectId ? listData : query.status === "Archived" ? archivedTemplateListData : templateListData, isLoading: false, isError: false, refetch: vi.fn() }));
     mocks.useDocumentCategories.mockReset();
@@ -93,7 +102,21 @@ describe("Document Center source parity", () => {
     mocks.useUpdateDocumentCategory.mockReturnValue({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false });
     mocks.useSetDocumentCategoryStatus.mockReset();
     mocks.useSetDocumentCategoryStatus.mockReturnValue({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false });
-    mocks.useTemplateCategoryOptions.mockReset().mockReturnValue({ data: [{ id: "category-1", nameEn: "Policies", nameAr: "السياسات" }], isLoading: false, isError: false });
+    mocks.useTemplateCategoryOptions.mockReset().mockImplementation((organizationId: string) => ({
+      data: organizationId === "org-2"
+        ? [{ id: "category-2", nameEn: "Procedures", nameAr: "الإجراءات" }]
+        : organizationId === "org-1" ? [{ id: "category-1", nameEn: "Policies", nameAr: "السياسات" }] : [],
+      isLoading: false,
+      isError: false,
+    }));
+    mocks.useProjectUploadCategoryOptions.mockReset().mockImplementation((projectId: string) => ({
+      data: projectId === "internal-42"
+        ? [{ id: "category-1", nameEn: "Policies", nameAr: "????????" }]
+        : [],
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    }));
     mocks.confirm.mockReset();
     mocks.confirm.mockResolvedValue(true);
     mocks.useProjectDocument.mockReset();
@@ -194,11 +217,106 @@ describe("Document Center source parity", () => {
     expect(screen.queryByRole("link", { name: "Manage Categories" })).not.toBeInTheDocument();
   });
 
+  it("distinguishes loading, empty and failed category lookups and offers retry", () => {
+    const refetch = vi.fn();
+    mocks.useTemplateCategoryOptions.mockReturnValue({ data: undefined, isLoading: true, isError: false, refetch });
+    const view = renderGlobalCenter();
+
+    fireEvent.click(screen.getByRole("button", { name: "Upload document" }));
+    const category = screen.getByRole("combobox", { name: "Category" });
+    expect(category).toBeDisabled();
+    expect(screen.getByRole("status")).toHaveTextContent("Loading categories…");
+
+    mocks.useTemplateCategoryOptions.mockReturnValue({ data: [], isLoading: false, isError: false, refetch });
+    view.rerender(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><I18nProvider><MemoryRouter><DocumentsCenterPage /></MemoryRouter></I18nProvider></QueryClientProvider>);
+    expect(screen.getByRole("status")).toHaveTextContent("No active categories are available for this organization.");
+
+    mocks.useTemplateCategoryOptions.mockReturnValue({ data: undefined, isLoading: false, isError: true, refetch });
+    view.rerender(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><I18nProvider><MemoryRouter><DocumentsCenterPage /></MemoryRouter></I18nProvider></QueryClientProvider>);
+    expect(screen.getByRole("alert")).toHaveTextContent("Document categories could not be loaded.");
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(refetch).toHaveBeenCalledOnce();
+  });
+
+  it("loads project upload categories with Document.Create alone", async () => {
+    mocks.permissions = ["Document.Create"];
+    const upload = vi.fn().mockResolvedValue(undefined);
+    mocks.useUploadDocument.mockReturnValue({ mutateAsync: upload, isPending: false });
+    renderProjectCenter();
+
+    fireEvent.click(screen.getByRole("button", { name: "Upload document" }));
+    const form = screen.getByLabelText("File").closest("form");
+    expect(form).not.toBeNull();
+    if (!form) return;
+    const category = within(form).getByRole("combobox", { name: "Category" });
+    expect(category).toBeEnabled();
+    expect(within(category).getByRole("option", { name: "Policies" })).toHaveValue("category-1");
+    await waitFor(() => expect(mocks.useProjectUploadCategoryOptions).toHaveBeenCalledWith("internal-42", true));
+
+    fireEvent.change(category, { target: { value: "category-1" } });
+    fireEvent.change(within(form).getByRole("textbox", { name: "Name" }), { target: { value: "Project document" } });
+    fireEvent.change(screen.getByLabelText("File"), { target: { files: [new File(["content"], "project.txt", { type: "text/plain" })] } });
+    fireEvent.submit(form);
+
+    await waitFor(() => expect(upload).toHaveBeenCalledOnce());
+    const submitted = upload.mock.calls[0][0] as FormData;
+    expect(submitted.get("ProjectId")).toBe("internal-42");
+    expect(submitted.get("CategoryId")).toBe("category-1");
+  });
+
+  it("requires an authorized Organization, reloads and clears Category on change, and submits both IDs", async () => {
+    mocks.permissions = ["Document.View", "Document.Create", "Document.TemplateManage"];
+    mocks.organizationIds = ["org-1", "org-2"];
+    mocks.organizationReferences = [
+      { id: "org-1", name: "FOPX Organization" },
+      { id: "org-2", name: "Operations Organization" },
+      { id: "org-unmanaged", name: "Unmanaged Organization" },
+    ];
+    const upload = vi.fn().mockResolvedValue(undefined);
+    mocks.useUploadDocument.mockReturnValue({ mutateAsync: upload, isPending: false });
+    renderGlobalCenter();
+
+    fireEvent.click(screen.getByRole("button", { name: "Upload document" }));
+    const file = screen.getByLabelText("File");
+    const form = file.closest("form");
+    expect(form).not.toBeNull();
+    if (!form) return;
+    const organization = within(form).getByRole("combobox", { name: "Organization" });
+    const category = within(form).getByRole("combobox", { name: "Category" });
+    expect(Array.from(form.querySelectorAll("select")).map((select) => select.name)).toEqual(["OrganizationId", "CategoryId"]);
+    expect(organization).toBeRequired();
+    expect(within(organization).queryByRole("option", { name: "Unmanaged Organization" })).not.toBeInTheDocument();
+    expect(category).toBeRequired();
+    expect(category).toBeDisabled();
+
+    fireEvent.change(organization, { target: { value: "org-1" } });
+    await waitFor(() => expect(category).not.toBeDisabled());
+    expect(within(category).getByRole("option", { name: "Policies" })).toHaveValue("category-1");
+    fireEvent.change(category, { target: { value: "category-1" } });
+    expect(category).toHaveValue("category-1");
+
+    fireEvent.change(organization, { target: { value: "org-2" } });
+    expect(category).toHaveValue("");
+    await waitFor(() => expect(mocks.useTemplateCategoryOptions).toHaveBeenCalledWith("org-2", true));
+    expect(within(category).queryByRole("option", { name: "Policies" })).not.toBeInTheDocument();
+    expect(within(category).getByRole("option", { name: "Procedures" })).toHaveValue("category-2");
+    fireEvent.change(category, { target: { value: "category-2" } });
+    fireEvent.change(within(form).getByRole("textbox", { name: "Name" }), { target: { value: "Operating procedure" } });
+    fireEvent.change(file, { target: { files: [new File(["%PDF-1.7"], "procedure.pdf", { type: "application/pdf" })] } });
+    fireEvent.submit(form);
+
+    await waitFor(() => expect(upload).toHaveBeenCalledOnce());
+    const submitted = upload.mock.calls[0][0] as FormData;
+    expect(submitted.get("OrganizationId")).toBe("org-2");
+    expect(submitted.get("CategoryId")).toBe("category-2");
+  });
+
   it("keeps the template upload sheet open and displays a localized API failure", async () => {
     const upload = vi.fn().mockRejectedValue(new Error("rejected upload"));
     mocks.useUploadDocument.mockReturnValue({ mutateAsync: upload, isPending: false });
     renderGlobalCenter();
     fireEvent.click(screen.getByRole("button", { name: "Upload document" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Category" }), { target: { value: "category-1" } });
     const uploadName = screen.getByRole("textbox", { name: "Name" });
     const uploadForm = uploadName.closest("form");
     expect(uploadForm).not.toBeNull();
@@ -240,6 +358,7 @@ describe("Document Center source parity", () => {
     fireEvent.click(screen.getByRole("button", { name: "Upload document" }));
     const checkbox = screen.getByRole("checkbox", { name: "Mandatory Document" });
     if (checked) fireEvent.click(checkbox);
+    fireEvent.change(screen.getByRole("combobox", { name: "Category" }), { target: { value: "category-1" } });
     fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Mandatory policy" } });
     fireEvent.change(screen.getByLabelText("File"), {
       target: { files: [new File(["%PDF-1.7"], "policy.pdf", { type: "application/pdf" })] },

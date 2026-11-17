@@ -34,7 +34,7 @@ interface ErrorStateProps {
 export function ErrorState({ title, description, onRetry, className }: ErrorStateProps) {
   const { t } = useI18n();
   return (
-    <div className={cn("flex flex-col items-center justify-center gap-4 py-12 text-center", className)}>
+    <div role="alert" className={cn("flex flex-col items-center justify-center gap-4 py-12 text-center", className)}>
       <AlertCircle className="h-8 w-8 text-destructive" />
       <div>
         <h3 className="text-sm font-medium text-destructive">{title}</h3>

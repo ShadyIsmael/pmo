@@ -103,12 +103,13 @@ public sealed class WorkflowManagementController : ControllerBase
     [Authorize(Policy = "Workflow.Manage")]
     public async Task<IActionResult> DeleteAction(Guid actionId, [FromBody] DeleteVersionRequest request, CancellationToken cancellationToken) => Handle(await _service.DeleteActionAsync(actionId, request.RowVersion, Actor(), cancellationToken));
 
-    private string Actor() => User.FindFirstValue("sub") ?? User.FindFirstValue("userId") ?? User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "System";
+    private string Actor() => User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? User.FindFirstValue("userId") ?? string.Empty;
 
     private static IActionResult Handle<T>(Result<T> result) => result.IsSuccess ? new OkObjectResult(result.Value) : ErrorResult(result.Error!);
     private static IActionResult Handle(Result result) => result.IsSuccess ? new NoContentResult() : ErrorResult(result.Error!);
     private static IActionResult ErrorResult(Error error) => error.StatusCode switch
     {
+        401 => new UnauthorizedObjectResult(new { code = error.Code, error = error.Message }),
         404 => new NotFoundObjectResult(new { code = error.Code, error = error.Message }),
         403 => new ObjectResult(new { code = error.Code, error = error.Message }) { StatusCode = 403 },
         409 => new ConflictObjectResult(new { code = error.Code, error = error.Message }),

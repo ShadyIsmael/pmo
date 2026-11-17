@@ -1,3 +1,4 @@
+using NEXUS.Api.Management;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -7,6 +8,7 @@ using NEXUS.Modules.ProjectManagement.Application;
 using NEXUS.Modules.ProjectManagement.Application.DTOs;
 using Xunit;
 using NEXUS.SharedKernel;
+using NEXUS.SharedKernel.Management;
 
 namespace NEXUS.Api.Tests.Unit;
 
@@ -28,22 +30,29 @@ public sealed class ProjectManagerUpdateControllerTests
     {
         var projectId = Guid.NewGuid();
         var actorId = Guid.NewGuid();
+        var tenantId = Guid.NewGuid();
         var projectService = new Mock<IProjectService>();
         projectService
             .Setup(service => service.UpdateAsync(projectId, It.IsAny<UpdateProjectDto>(), actorId.ToString(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<ProjectDto>.Failure(Error.Conflict("Project Manager changes must use the authorized Handover workflow.")));
 
+        var management = new ManagementContextAccessor();
+        management.Set(new ManagementContext(
+            actorId, tenantId, ManagementPerspective.ProjectManager, ManagementViewMode.Native,
+            null, null, projectId, ManagementScope.Empty));
         var controller = new ProjectController(
             projectService.Object,
             projectSnapshotService: null!,
             projectHandoverRequestService: null!,
             projectStatusReportService: null!,
             projectOverviewService: null!,
-            projectReportingService: null!);
+            projectReportingService: null!,
+            managementContext: management);
         var context = new DefaultHttpContext();
         context.User = new ClaimsPrincipal(new ClaimsIdentity(new[]
         {
-            new Claim(ClaimTypes.NameIdentifier, actorId.ToString())
+            new Claim(ClaimTypes.NameIdentifier, actorId.ToString()),
+            new Claim("tenantId", tenantId.ToString())
         }, "test"));
         controller.ControllerContext = new ControllerContext { HttpContext = context };
 

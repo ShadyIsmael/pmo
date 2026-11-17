@@ -211,7 +211,78 @@ export function getLocalizedApiFieldError(
 }
 
 function isGenericServerMessage(message: string): boolean {
-  return /^(?:validation failed|business validation failed|request failed|the request failed|an error occurred|something went wrong)[.! ]*$/i.test(message.trim());
+  return /^(?:validation failed|business validation failed|request failed|the request failed|an error occurred|something went wrong|forbidden|unauthorized|access denied)[.! ]*$/i.test(message.trim());
+}
+
+const localizedServerMessages = {
+  en: {
+    ...enMessages.apiErrors,
+    handoverViewPermissionDenied: enMessages.managerHandover.viewPermissionRequired,
+    incomingManagerActionRequired: enMessages.managerHandover.approvePermissionHint,
+    handoverReadOnlyActionUnavailable: enMessages.managerHandover.readOnlyHandover,
+    handoverProjectManagerMissing: enMessages.managerHandover.noCurrentManager,
+    handoverProjectManagerAlreadyAssigned: enMessages.managerHandover.managerChangeViaHandover,
+    handoverDateAfterProjectEndMessage: enMessages.managerHandover.handoverDateAfterProjectEnd,
+  },
+  ar: {
+    ...arMessages.apiErrors,
+    handoverViewPermissionDenied: arMessages.managerHandover.viewPermissionRequired,
+    incomingManagerActionRequired: arMessages.managerHandover.approvePermissionHint,
+    handoverReadOnlyActionUnavailable: arMessages.managerHandover.readOnlyHandover,
+    handoverProjectManagerMissing: arMessages.managerHandover.noCurrentManager,
+    handoverProjectManagerAlreadyAssigned: arMessages.managerHandover.managerChangeViaHandover,
+    handoverDateAfterProjectEndMessage: arMessages.managerHandover.handoverDateAfterProjectEnd,
+  },
+} as const;
+
+type LocalizedServerMessageKey = keyof typeof localizedServerMessages.en;
+
+const serverMessageRules: Array<{ pattern: RegExp; key: LocalizedServerMessageKey }> = [
+  { pattern: /you do not have permission to view handovers/i, key: "handoverViewPermissionDenied" },
+  { pattern: /you do not have permission to initiate this handover/i, key: "handoverInitiatePermissionDenied" },
+  { pattern: /only the current project manager can request a handover/i, key: "currentProjectManagerRequired" },
+  { pattern: /only the current program manager can request a handover/i, key: "currentProgramManagerRequired" },
+  { pattern: /only the current portfolio manager can request a handover/i, key: "currentPortfolioManagerRequired" },
+  { pattern: /only the selected new manager can accept this request/i, key: "incomingManagerActionRequired" },
+  { pattern: /only the selected new manager can reject this request/i, key: "incomingManagerActionRequired" },
+  { pattern: /only the requester can cancel this request/i, key: "requesterCancelRequired" },
+  { pattern: /an active management-category role is required to approve handovers/i, key: "managementRoleRequiredForHandoverApproval" },
+  { pattern: /read-only management views cannot accept handovers/i, key: "handoverReadOnlyActionUnavailable" },
+  { pattern: /read-only management views cannot change handover requests/i, key: "handoverReadOnlyActionUnavailable" },
+  { pattern: /this project has no assigned manager/i, key: "handoverProjectManagerMissing" },
+  { pattern: /this project already has a manager/i, key: "handoverProjectManagerAlreadyAssigned" },
+  { pattern: /new project manager must be different/i, key: "newProjectManagerMustDiffer" },
+  { pattern: /handover date cannot be after the project end date/i, key: "handoverDateAfterProjectEndMessage" },
+  { pattern: /only the requester or a pmo administrator can cancel this change request/i, key: "changeRequestRequesterOrPmoAdminCancelRequired" },
+  { pattern: /only the requester or an authorized manager can cancel this change request/i, key: "changeRequestRequesterOrAuthorizedManagerCancelRequired" },
+  { pattern: /only an authorized reviewer can approve a change request/i, key: "changeRequestAuthorizedReviewerApproveRequired" },
+  { pattern: /only an authorized reviewer can reject a change request/i, key: "changeRequestAuthorizedReviewerRejectRequired" },
+  { pattern: /a change request requester cannot approve their own request/i, key: "changeRequestSelfApprovalDenied" },
+  { pattern: /the authenticated user is not active in this tenant|the authenticated user is not an active user in this tenant/i, key: "tenantUserInactive" },
+  { pattern: /this action is not available while using read-only perspective mode/i, key: "readOnlyPerspectiveUnavailable" },
+  { pattern: /project is outside the current management scope|the project is outside the current management scope/i, key: "projectOutsideManagementScope" },
+];
+
+const viewPermissionMessageKeys: Record<string, LocalizedServerMessageKey> = {
+  handovers: "handoverViewPermissionDenied",
+  "change requests": "changeRequestsViewPermissionDenied",
+  "status reports": "statusReportsViewPermissionDenied",
+  snapshots: "snapshotsViewPermissionDenied",
+  "audit logs": "auditLogsViewPermissionDenied",
+  history: "auditLogsViewPermissionDenied",
+};
+
+function localizeServerMessage(
+  message: string,
+  locale: ApiErrorLocale,
+): string | undefined {
+  if (locale === "en") return message;
+  const rule = serverMessageRules.find(({ pattern }) => pattern.test(message));
+  if (rule) return localizedServerMessages[locale][rule.key];
+
+  const viewMatch = /^you do not have permission to view\s+(.+?)[.! ]*$/i.exec(message.trim());
+  const viewKey = viewMatch && viewPermissionMessageKeys[viewMatch[1].toLowerCase()];
+  return viewKey ? localizedServerMessages[locale][viewKey] : undefined;
 }
 
 function formatParameter(value: unknown, locale: ApiErrorLocale): string {
@@ -256,11 +327,15 @@ export function getLocalizedApiErrorMessage(
     "BUSINESS_VALIDATION_ERROR",
     "CONFLICT",
     "REQUEST_FAILED",
+    "FORBIDDEN",
   ].includes(code);
   if (serverMessage && isGenericCode) {
     const trimmedMessage = serverMessage.trim();
-    if (!isGenericServerMessage(trimmedMessage) && locale === "en" && isSafeServerMessage(trimmedMessage))
-      return trimmedMessage;
+    if (!isGenericServerMessage(trimmedMessage) && isSafeServerMessage(trimmedMessage)) {
+      const serverTranslated = localizeServerMessage(trimmedMessage, locale);
+      if (serverTranslated) return serverTranslated;
+      if (locale === "en") return trimmedMessage;
+    }
     const fieldParts = getFieldMessageParts(trimmedMessage);
     const translated = fieldParts && localizeFieldMessage(fieldParts[0], fieldParts[1], locale);
     if (translated) return translated;

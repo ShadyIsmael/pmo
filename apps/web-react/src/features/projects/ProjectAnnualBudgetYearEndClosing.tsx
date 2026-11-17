@@ -5,6 +5,10 @@ import { Badge } from "@components/ui/Badge";
 import { Button } from "@components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@components/ui/Card";
 import { Input } from "@components/ui/Input";
+import { Label } from "@components/ui/Label";
+import { SideSheet, SideSheetBody, SideSheetFooter } from "@components/ui/SideSheet";
+import { Textarea } from "@components/ui/Textarea";
+import { useConfirm } from "@components/ui/ConfirmProvider";
 import { useI18n } from "@i18n/messages";
 import { useAuth } from "@auth/AuthProvider";
 import { useProjectAnnualBudgets } from "./api/project-annual-budgets";
@@ -13,9 +17,12 @@ import {
   useDecideProjectAnnualBudgetClosing,
   usePrepareProjectAnnualBudgetClosing,
   useProjectAnnualBudgetClosingApprovers,
+  useProjectAnnualBudgetClosingRecoveryApprovers,
   useProjectAnnualBudgetClosings,
   useProjectFinancialFoundation,
   useSubmitProjectAnnualBudgetClosing,
+  useReassignProjectAnnualBudgetClosingApprover,
+  useRecoverCancelProjectAnnualBudgetClosing,
   type PaymentRequestApproverSelection,
   type ProjectAnnualBudgetClosing,
 } from "./api/project-financials";
@@ -24,6 +31,7 @@ type Props = {
   projectId: string;
   canPrepare: boolean;
   canApprove: boolean;
+  canManageAssignmentRecovery: boolean;
   canCarryForward: boolean;
   active?: boolean;
   selectedFiscalYear: number | null;
@@ -36,9 +44,10 @@ const newIdempotencyKey = () => globalThis.crypto?.randomUUID?.()
     return (character === "x" ? random : (random & 0x3) | 0x8).toString(16);
   });
 
-export function ProjectAnnualBudgetYearEndClosing({ projectId, canPrepare, canApprove, canCarryForward, active = true, selectedFiscalYear, onFiscalYearChange }: Props) {
+export function ProjectAnnualBudgetYearEndClosing({ projectId, canPrepare, canApprove, canManageAssignmentRecovery, canCarryForward, active = true, selectedFiscalYear, onFiscalYearChange }: Props) {
   const { t, formatCurrency, formatDateTime } = useI18n();
   const { user } = useAuth();
+  const confirm = useConfirm();
   const closings = useProjectAnnualBudgetClosings(projectId, active);
   const budgets = useProjectAnnualBudgets(projectId, active);
   const foundation = useProjectFinancialFoundation(projectId, active);
@@ -46,6 +55,7 @@ export function ProjectAnnualBudgetYearEndClosing({ projectId, canPrepare, canAp
   const submit = useSubmitProjectAnnualBudgetClosing(projectId);
   const decide = useDecideProjectAnnualBudgetClosing(projectId);
   const cancel = useCancelProjectAnnualBudgetClosing(projectId);
+  const recoverCancel = useRecoverCancelProjectAnnualBudgetClosing(projectId);
   const approvers = useProjectAnnualBudgetClosingApprovers(projectId, active && canPrepare);
   const [freeCarryForward, setFreeCarryForward] = React.useState("0");
   const [newFunding, setNewFunding] = React.useState("0");
@@ -56,6 +66,8 @@ export function ProjectAnnualBudgetYearEndClosing({ projectId, canPrepare, canAp
   const [selected, setSelected] = React.useState<Record<string, "Mandatory" | "Optional">>({});
   const [comment, setComment] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
+  const [recoveryCancelReason, setRecoveryCancelReason] = React.useState("");
+  const [recoveryCancelError, setRecoveryCancelError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     setFreeCarryForward("0");
@@ -193,11 +205,48 @@ export function ProjectAnnualBudgetYearEndClosing({ projectId, canPrepare, canAp
   };
 
   const cancelClosing = async (closing: ProjectAnnualBudgetClosing) => {
+    const accepted = await confirm({
+      title: t("projects.yearEndClosingCancelConfirmTitle"),
+      description: t("projects.yearEndClosingCancelConfirmDescription"),
+      confirmLabel: t("projects.yearEndClosingCancelConfirm"),
+      destructive: true,
+    });
+    if (!accepted) return;
     setError(null);
     try {
-      await cancel.mutateAsync({ closingId: closing.id, rowVersion: closing.rowVersion });
+      await cancel.mutateAsync({ closingId: closing.id, rowVersion: closing.rowVersion, approvalRowVersion: closing.approvalRowVersion });
     } catch (cause) {
       setError(errorMessage(cause));
+    }
+  };
+
+  const cancelForRecovery = async (closing: ProjectAnnualBudgetClosing, assignmentId: string) => {
+    const reason = recoveryCancelReason.trim();
+    if (!reason || reason.length > 1000 || !closing.approvalRowVersion) {
+      setRecoveryCancelError(t("projects.yearEndClosingRecoveryCancelFieldsRequired"));
+      return;
+    }
+    const accepted = await confirm({
+      title: t("projects.yearEndClosingRecoveryCancelTitle"),
+      description: t("projects.yearEndClosingRecoveryCancelDescription"),
+      confirmLabel: t("projects.yearEndClosingRecoveryCancel"),
+      destructive: true,
+    });
+    if (!accepted) return;
+    setRecoveryCancelError(null);
+    try {
+      await recoverCancel.mutateAsync({
+        closingId: closing.id,
+        assignmentId,
+        rowVersion: closing.rowVersion,
+        approvalRowVersion: closing.approvalRowVersion,
+        reason,
+      });
+      setRecoveryCancelReason("");
+    } catch (cause) {
+      setRecoveryCancelError(cause instanceof ApiError && cause.status === 409
+        ? t("projects.paymentRequestRecoveryRefresh")
+        : t("projects.yearEndClosingRecoveryCancelFailed"));
     }
   };
 
@@ -258,12 +307,44 @@ export function ProjectAnnualBudgetYearEndClosing({ projectId, canPrepare, canAp
           })}</p> : null}
         {activeClosing.approverDecisions.length > 0 ? <div>
           <h4 className="text-sm font-medium">{t("projects.yearEndClosingApprovers")}</h4>
-          <ul className="mt-2 space-y-1">{activeClosing.approverDecisions.map(item => <li key={item.userId} className="flex flex-wrap justify-between gap-2 text-sm">
+          <ul className="mt-2 space-y-2">{activeClosing.approverDecisions.map(item => <li key={item.assignmentId || item.userId} className="flex flex-wrap items-center justify-between gap-2 rounded border p-2 text-sm">
             <span>{item.userName || item.userId} · {t(item.requirement === "Mandatory" ? "projects.paymentRequestMandatory" : "projects.paymentRequestOptional")}</span>
             <span>{item.decision ? t(`projects.yearEndClosingDecision${item.decision}`) : t("projects.yearEndClosingDecisionPending")}{item.decidedAtUtc ? ` · ${formatDateTime(item.decidedAtUtc)}` : ""}</span>
+            {activeClosing.status === "PendingApproval" && item.state === "Pending" && item.canReassignAssignment
+              && canApprove && canManageAssignmentRecovery && activeClosing.approvalRowVersion
+              ? <ClosingApproverRecoveryControl projectId={projectId} closing={activeClosing} assignmentId={item.assignmentId} /> : null}
           </li>)}</ul>
         </div> : null}
 
+        {activeClosing.canCancel && !activeClosing.canRecoverCancel && canPrepare
+          && activeClosing.preparedBy === user?.id
+          ? <div className="border-t pt-3">
+            <Button variant="outline" onClick={() => void cancelClosing(activeClosing)} disabled={cancel.isPending}>
+              {cancel.isPending ? t("common.saving") : t("common.cancel")}
+            </Button>
+          </div> : null}
+
+        {activeClosing.status === "PendingApproval" && activeClosing.canRecoverCancel && canApprove && canManageAssignmentRecovery
+          ? <section className="space-y-3 rounded-md border border-destructive/40 bg-destructive/5 p-3">
+            <div>
+              <h4 className="font-medium">{t("projects.yearEndClosingRecoveryCancelTitle")}</h4>
+              <p className="mt-1 text-sm text-muted-foreground">{t("projects.yearEndClosingRecoveryCancelDescription")}</p>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="closing-recovery-cancel-reason">{t("projects.yearEndClosingRecoveryCancelReason")}</Label>
+              <Textarea id="closing-recovery-cancel-reason" value={recoveryCancelReason}
+                onChange={event => { setRecoveryCancelReason(event.target.value); setRecoveryCancelError(null); }}
+                rows={3} maxLength={1000} required />
+            </div>
+            {recoveryCancelError ? <p role="alert" className="text-sm text-destructive">{recoveryCancelError}</p> : null}
+            <Button variant="destructive" onClick={() => {
+              const blocked = activeClosing.approverDecisions.find(item => item.canRecoverCancelAssignment && item.state === "Pending");
+              if (blocked) void cancelForRecovery(activeClosing, blocked.assignmentId);
+            }} disabled={recoverCancel.isPending || !recoveryCancelReason.trim() || !activeClosing.approvalRowVersion
+              || !activeClosing.approverDecisions.some(item => item.canRecoverCancelAssignment && item.state === "Pending")}>
+              {recoverCancel.isPending ? t("common.saving") : t("projects.yearEndClosingRecoveryCancel")}
+            </Button>
+          </section> : null}
         {activeClosing.canSubmit ? <div className="space-y-3 border-t pt-3">
           <div className="flex flex-wrap items-end gap-3">
             <div><label htmlFor="closing-approval-mode" className="text-sm font-medium">{t("projects.financeApprovalMode")}</label>
@@ -275,7 +356,7 @@ export function ProjectAnnualBudgetYearEndClosing({ projectId, canPrepare, canAp
             <Button onClick={() => void submitClosing(activeClosing)} disabled={submit.isPending || selectedApprovers.length === 0}>
               {submit.isPending ? t("common.loading") : t("projects.yearEndClosingSubmit")}
             </Button>
-            {activeClosing.canCancel ? <Button variant="outline" onClick={() => void cancelClosing(activeClosing)} disabled={cancel.isPending}>{t("common.cancel")}</Button> : null}
+
           </div>
           {approvers.isLoading ? <p role="status" className="text-sm text-muted-foreground">{t("common.loading")}</p>
             : approvers.isError ? <p role="alert" className="text-sm text-destructive">{t("projects.yearEndClosingApproversLoadFailed")}</p>
@@ -325,4 +406,90 @@ export function ProjectAnnualBudgetYearEndClosing({ projectId, canPrepare, canAp
       <p className="text-xs text-muted-foreground">{t("projects.yearEndClosingReadOnlyHistoryHint")}</p>
     </CardContent>
   </Card>;
+}
+
+function ClosingApproverRecoveryControl({ projectId, closing, assignmentId }: {
+  projectId: string;
+  closing: ProjectAnnualBudgetClosing;
+  assignmentId: string;
+}) {
+  const { t } = useI18n();
+  const [open, setOpen] = React.useState(false);
+  const [replacementApproverId, setReplacementApproverId] = React.useState("");
+  const [reason, setReason] = React.useState("");
+  const [error, setError] = React.useState<string | null>(null);
+  const options = useProjectAnnualBudgetClosingRecoveryApprovers(projectId, closing.id, assignmentId, open);
+  const reassign = useReassignProjectAnnualBudgetClosingApprover(projectId);
+
+  const close = (next: boolean) => {
+    setOpen(next);
+    if (!next) {
+      setReplacementApproverId("");
+      setReason("");
+      setError(null);
+    }
+  };
+
+  const save = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const normalizedReason = reason.trim();
+    if (!replacementApproverId || !normalizedReason || normalizedReason.length > 1000 || !closing.approvalRowVersion) {
+      setError(t("projects.paymentRequestRecoveryFieldsRequired"));
+      return;
+    }
+    setError(null);
+    try {
+      await reassign.mutateAsync({
+        closingId: closing.id,
+        assignmentId,
+        replacementApproverId,
+        reason: normalizedReason,
+        rowVersion: closing.rowVersion,
+        approvalRowVersion: closing.approvalRowVersion,
+      });
+      close(false);
+    } catch (cause) {
+      setError(cause instanceof ApiError && cause.status === 409
+        ? t("projects.paymentRequestRecoveryRefresh")
+        : t("projects.paymentRequestRecoverySaveFailed"));
+    }
+  };
+
+  return <>
+    <Button type="button" size="sm" variant="outline" onClick={() => { setError(null); setOpen(true); }}>
+      {t("projects.paymentRequestRecoveryReassign")}
+    </Button>
+    <SideSheet open={open} onOpenChange={close}
+      title={t("projects.paymentRequestRecoveryTitle")}
+      description={t("projects.paymentRequestRecoveryDescription")}>
+      <form onSubmit={event => void save(event)} className="flex min-h-0 flex-1 flex-col">
+        <SideSheetBody className="space-y-4">
+          {options.isLoading ? <p role="status" className="text-sm text-muted-foreground">{t("common.loading")}</p>
+            : options.isError ? <p role="alert" className="text-sm text-destructive">{t("projects.paymentRequestRecoveryOptionsFailed")}</p>
+              : options.data?.length === 0 ? <p role="status" className="rounded-md border p-3 text-sm text-muted-foreground">{t("projects.paymentRequestRecoveryNoReplacement")}</p>
+                : <div className="space-y-1.5">
+                  <Label htmlFor={`closing-recovery-approver-${assignmentId}`}>{t("projects.paymentRequestRecoverySelectReplacement")}</Label>
+                  <select id={`closing-recovery-approver-${assignmentId}`} className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+                    value={replacementApproverId} onChange={event => setReplacementApproverId(event.target.value)} required>
+                    <option value="">{t("projects.paymentRequestRecoverySelectReplacement")}</option>
+                    {(options.data ?? []).map(candidate => <option key={candidate.userId} value={candidate.userId}>{candidate.displayName}</option>)}
+                  </select>
+                </div>}
+          <div className="space-y-1.5">
+            <Label htmlFor={`closing-recovery-reason-${assignmentId}`}>{t("projects.paymentRequestRecoveryReason")}</Label>
+            <Textarea id={`closing-recovery-reason-${assignmentId}`} value={reason}
+              onChange={event => setReason(event.target.value)} rows={4} maxLength={1000} required />
+          </div>
+          {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
+        </SideSheetBody>
+        <SideSheetFooter>
+          <Button type="button" variant="outline" onClick={() => close(false)}>{t("common.cancel")}</Button>
+          <Button type="submit" disabled={reassign.isPending || options.isLoading || options.isError
+            || !options.data?.length || !replacementApproverId || !reason.trim() || !closing.approvalRowVersion}>
+            {reassign.isPending ? t("common.saving") : t("projects.paymentRequestRecoveryReassign")}
+          </Button>
+        </SideSheetFooter>
+      </form>
+    </SideSheet>
+  </>;
 }

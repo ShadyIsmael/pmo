@@ -1102,6 +1102,9 @@ public sealed class MeetingService : IMeetingService
 
     private async Task<Error?> ValidateMeetingAsync(CreateMeetingRequest request, string userId, CancellationToken cancellationToken)
     {
+        if (!IsTrustedActor(userId))
+            return Error.Unauthorized("A valid authenticated actor and tenant management context are required.");
+
         if (string.IsNullOrWhiteSpace(request.Title) || request.Title.Trim().Length > 500) return Error.Validation("Title is required and cannot exceed 500 characters");
         if (!MeetingLinkPolicy.TryNormalize(request.MeetingLink, out _)) return Error.Validation("Meeting link must be an absolute http or https URL");
         if (request.EndTime <= request.StartTime) return Error.Validation("End time must be later than start time");
@@ -1259,7 +1262,41 @@ public sealed class MeetingService : IMeetingService
     private bool IsProjectInScope(Guid projectId)
     {
         var context = _managementContext?.Current;
-        return context is not null && context.Scope.ProjectIds.Contains(projectId);
+        return HasTrustedManagementContext(context) && context!.Scope.ProjectIds.Contains(projectId);
+    }
+
+    private bool IsTrustedActor(string userId)
+    {
+        if (!Guid.TryParse(userId, out var actorId) || actorId == Guid.Empty)
+            return false;
+
+        var context = _managementContext.Current;
+        if (!HasTrustedManagementContext(context) || context!.UserId != actorId)
+            return false;
+
+        var httpContext = _httpContextAccessor.HttpContext;
+        if (httpContext is null)
+            return true;
+
+        return httpContext.User.Identity?.IsAuthenticated == true
+            && Guid.TryParse(httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier), out var claimActorId)
+            && claimActorId == actorId;
+    }
+
+    private bool HasTrustedManagementContext(NEXUS.SharedKernel.Management.ManagementContext? context)
+    {
+        if (context is null || context.UserId == Guid.Empty || context.TenantId == Guid.Empty)
+            return false;
+
+        var httpContext = _httpContextAccessor.HttpContext;
+        if (httpContext is null)
+            return true;
+
+        return httpContext.User.Identity?.IsAuthenticated == true
+            && Guid.TryParse(httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier), out var actorId)
+            && actorId == context.UserId
+            && Guid.TryParse(httpContext.User.FindFirstValue("tenantId"), out var tenantId)
+            && tenantId == context.TenantId;
     }
 
     private bool IsWorkItemInScope(WorkItemReference workItem) =>
@@ -1331,9 +1368,9 @@ public sealed class MeetingService : IMeetingService
     private IQueryable<Meeting> InScope(IQueryable<Meeting> query)
     {
         var context = _managementContext?.Current;
-        if (context is null) return query.Where(_ => false);
+        if (!HasTrustedManagementContext(context)) return query.Where(_ => false);
 
-        var userId = context.UserId;
+        var userId = context!.UserId;
         var projectIds = context.Scope.ProjectIds;
         return query.Where(meeting =>
             (meeting.ProjectId.HasValue && projectIds.Contains(meeting.ProjectId.Value)) ||

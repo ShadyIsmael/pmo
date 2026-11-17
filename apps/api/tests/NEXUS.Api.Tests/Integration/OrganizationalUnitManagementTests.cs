@@ -8,6 +8,7 @@ using NEXUS.Modules.Organization.Domain;
 using NEXUS.Persistence;
 using NEXUS.SharedKernel;
 using NEXUS.SharedKernel.Helpers;
+using NEXUS.SharedKernel.Management;
 using Xunit;
 
 namespace NEXUS.Api.Tests.Integration;
@@ -18,6 +19,7 @@ public sealed class OrganizationalUnitManagementTests : IDisposable
     private readonly AppDbContext _context;
     private readonly Mock<IHttpContextAccessor> _http = new();
     private readonly Mock<IResourceReferenceLookup> _resources = new();
+    private readonly Mock<IManagementContextAccessor> _managementContext = new();
     private readonly Guid _tenantA = Guid.NewGuid();
     private readonly Guid _tenantB = Guid.NewGuid();
     private readonly Guid _resourceA = Guid.NewGuid();
@@ -44,6 +46,32 @@ public sealed class OrganizationalUnitManagementTests : IDisposable
 
         Assert.Single(units);
         Assert.Equal("A Root", units[0].Name);
+    }
+
+    [Fact]
+    public async Task ReadOnly_View_As_Get_Does_Not_Seed_Default_Organizational_Unit_Types()
+    {
+        _context.Lookups.RemoveRange(_context.Lookups.IgnoreQueryFilters()
+            .Where(item => item.TenantId == _tenantA && item.Category == ReferenceDataCategories.OrganizationalUnitType));
+        await _context.SaveChangesAsync();
+
+        _managementContext.SetupGet(accessor => accessor.Current).Returns(new ManagementContext(
+            Guid.NewGuid(),
+            _tenantA,
+            ManagementPerspective.ProjectManager,
+            ManagementViewMode.ReadOnlyViewAs,
+            null,
+            null,
+            null,
+            ManagementScope.Empty));
+
+        var service = CreateService();
+        Assert.Empty(await service.GetTypesAsync(includeInactive: true));
+        Assert.Empty(await service.GetUnitsAsync(includeInactive: true));
+
+        Assert.Empty(await _context.Lookups.IgnoreQueryFilters()
+            .Where(item => item.TenantId == _tenantA && item.Category == ReferenceDataCategories.OrganizationalUnitType)
+            .ToListAsync());
     }
 
     [Fact]
@@ -126,7 +154,7 @@ public sealed class OrganizationalUnitManagementTests : IDisposable
         Assert.Equal(409, result.Error!.StatusCode);
     }
 
-    private OrganizationalUnitService CreateService() => new(_context, _http.Object, _resources.Object);
+    private OrganizationalUnitService CreateService() => new(_context, _http.Object, _resources.Object, _managementContext.Object);
 
     private void SetTenant(Guid tenantId)
     {

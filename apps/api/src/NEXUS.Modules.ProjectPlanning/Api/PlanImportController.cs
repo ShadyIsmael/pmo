@@ -24,10 +24,11 @@ public sealed class PlanImportController : ControllerBase
     [RequestSizeLimit(MaximumFileSize)]
     public async Task<IActionResult> CreateSession(Guid projectId, IFormFile file, [FromForm] Guid? targetPlanId, CancellationToken cancellationToken)
     {
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
         var validation = ValidateFile(file);
         if (validation is not null) return BadRequest(new { error = validation.Message });
         await using var stream = file.OpenReadStream();
-        var result = await _importService.CreateSessionAsync(stream, file.FileName, projectId, targetPlanId, CurrentUserId(), cancellationToken);
+        var result = await _importService.CreateSessionAsync(stream, file.FileName, projectId, targetPlanId, actorId, cancellationToken);
         return ToActionResult(result);
     }
 
@@ -38,22 +39,32 @@ public sealed class PlanImportController : ControllerBase
 
     [Authorize(Policy = "Planning.Edit")]
     [HttpPatch("sessions/{sessionId:guid}/resources/{sourceResourceId}")]
-    public async Task<IActionResult> ResolveResource(Guid projectId, Guid sessionId, string sourceResourceId, [FromBody] PlanImportResourceResolutionDto resolution, CancellationToken cancellationToken) =>
-        ToActionResult(await _importService.ResolveResourceAsync(projectId, sessionId, sourceResourceId, resolution, CurrentUserId(), cancellationToken));
+    public async Task<IActionResult> ResolveResource(Guid projectId, Guid sessionId, string sourceResourceId, [FromBody] PlanImportResourceResolutionDto resolution, CancellationToken cancellationToken)
+    {
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        return ToActionResult(await _importService.ResolveResourceAsync(projectId, sessionId, sourceResourceId, resolution, actorId, cancellationToken));
+    }
 
     [Authorize(Policy = "Planning.Edit")]
     [HttpPatch("sessions/{sessionId:guid}/assignments/{sourceAssignmentId}")]
-    public async Task<IActionResult> ResolveAssignment(Guid projectId, Guid sessionId, string sourceAssignmentId, [FromBody] PlanImportAssignmentResolutionDto resolution, CancellationToken cancellationToken) =>
-        ToActionResult(await _importService.ResolveAssignmentAsync(projectId, sessionId, sourceAssignmentId, resolution, CurrentUserId(), cancellationToken));
+    public async Task<IActionResult> ResolveAssignment(Guid projectId, Guid sessionId, string sourceAssignmentId, [FromBody] PlanImportAssignmentResolutionDto resolution, CancellationToken cancellationToken)
+    {
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        return ToActionResult(await _importService.ResolveAssignmentAsync(projectId, sessionId, sourceAssignmentId, resolution, actorId, cancellationToken));
+    }
 
     [Authorize(Policy = "Planning.Edit")]
     [HttpPatch("sessions/{sessionId:guid}/calendars/{sourceCalendarId}")]
-    public async Task<IActionResult> ResolveCalendar(Guid projectId, Guid sessionId, string sourceCalendarId, [FromBody] PlanImportCalendarResolutionDto resolution, CancellationToken cancellationToken) =>
-        ToActionResult(await _importService.ResolveCalendarAsync(projectId, sessionId, sourceCalendarId, resolution, CurrentUserId(), cancellationToken));
+    public async Task<IActionResult> ResolveCalendar(Guid projectId, Guid sessionId, string sourceCalendarId, [FromBody] PlanImportCalendarResolutionDto resolution, CancellationToken cancellationToken)
+    {
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        return ToActionResult(await _importService.ResolveCalendarAsync(projectId, sessionId, sourceCalendarId, resolution, actorId, cancellationToken));
+    }
 
     [HttpPost("sessions/{sessionId:guid}/commit")]
     public async Task<IActionResult> Commit(Guid projectId, Guid sessionId, [FromBody] CommitPlanImportDto request, CancellationToken cancellationToken)
     {
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
         if (!User.HasClaim("permission", "Planning.Edit")
             || (!request.TargetPlanId.HasValue && !User.HasClaim("permission", "ProjectPlan.Create")))
         {
@@ -61,15 +72,22 @@ public sealed class PlanImportController : ControllerBase
         }
 
         request.ProjectId = projectId;
-        return ToActionResult(await _importService.CommitSessionAsync(projectId, sessionId, request, CurrentUserId(), cancellationToken));
+        return ToActionResult(await _importService.CommitSessionAsync(projectId, sessionId, request, actorId, cancellationToken));
     }
 
     [Authorize(Policy = "Planning.Edit")]
     [HttpPost("sessions/{sessionId:guid}/cancel")]
-    public async Task<IActionResult> Cancel(Guid projectId, Guid sessionId, CancellationToken cancellationToken) =>
-        ToActionResult(await _importService.CancelSessionAsync(projectId, sessionId, CurrentUserId(), cancellationToken));
+    public async Task<IActionResult> Cancel(Guid projectId, Guid sessionId, CancellationToken cancellationToken)
+    {
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        return ToActionResult(await _importService.CancelSessionAsync(projectId, sessionId, actorId, cancellationToken));
+    }
 
-    private string CurrentUserId() => User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "System";
+    private bool TryGetActorId(out string actorId)
+    {
+        actorId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? string.Empty;
+        return User.Identity?.IsAuthenticated == true && Guid.TryParse(actorId, out var parsed) && parsed != Guid.Empty;
+    }
 
     private static Error? ValidateFile(IFormFile? file)
     {

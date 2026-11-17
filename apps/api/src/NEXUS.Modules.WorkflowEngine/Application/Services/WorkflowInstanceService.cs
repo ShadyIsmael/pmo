@@ -27,7 +27,12 @@ public sealed class WorkflowInstanceService : IWorkflowInstanceService
         if (adapter is null)
             return Result<WorkflowInstanceSummary>.Failure(WorkflowErrors.UnknownEntityType(entityType));
 
-        var authorizeResult = await adapter.AuthorizeAsync(context, entityId, cancellationToken);
+        if (context.ReadOnly)
+            return Result<WorkflowInstanceSummary>.Failure(WorkflowErrors.ReadOnlyViewAs);
+        if (string.IsNullOrWhiteSpace(context.UserId) || string.Equals(context.UserId, "unknown", StringComparison.OrdinalIgnoreCase))
+            return Result<WorkflowInstanceSummary>.Failure(Error.Unauthorized("An authenticated actor is required to provision a workflow."));
+
+        var authorizeResult = await adapter.AuthorizeProvisionAsync(context, entityId, cancellationToken);
         if (authorizeResult.IsFailure)
             return Result<WorkflowInstanceSummary>.Failure(authorizeResult.Error!);
 

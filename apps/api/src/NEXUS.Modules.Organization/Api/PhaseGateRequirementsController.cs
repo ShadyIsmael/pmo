@@ -15,8 +15,6 @@ public sealed class PhaseGateRequirementsController : ControllerBase
     public PhaseGateRequirementsController(IPhaseGateConfigurationService service) => _service = service;
 
     [HttpGet("transitions")]
-    [Authorize(Policy = "Settings.View")]
-    [Authorize(Policy = "Document.View")]
     public async Task<IActionResult> GetTransitions(Guid organizationId, CancellationToken cancellationToken)
     {
         var result = await _service.GetPhasePairsAsync(organizationId, cancellationToken);
@@ -30,8 +28,6 @@ public sealed class PhaseGateRequirementsController : ControllerBase
     }
 
     [HttpGet]
-    [Authorize(Policy = "Settings.View")]
-    [Authorize(Policy = "Document.View")]
     public async Task<IActionResult> GetConfiguration(
         Guid organizationId,
         [FromQuery] Guid? sourcePhaseId,
@@ -47,8 +43,6 @@ public sealed class PhaseGateRequirementsController : ControllerBase
     }
 
     [HttpGet("history")]
-    [Authorize(Policy = "Settings.View")]
-    [Authorize(Policy = "Document.View")]
     public async Task<IActionResult> GetHistory(
         Guid organizationId,
         [FromQuery] Guid? sourcePhaseId,
@@ -64,8 +58,6 @@ public sealed class PhaseGateRequirementsController : ControllerBase
     }
 
     [HttpPut]
-    [Authorize(Policy = "Settings.ManageTenantConfiguration")]
-    [Authorize(Policy = "Document.View")]
     public async Task<IActionResult> SaveConfiguration(
         Guid organizationId,
         [FromQuery] Guid? sourcePhaseId,
@@ -83,8 +75,6 @@ public sealed class PhaseGateRequirementsController : ControllerBase
     }
 
     [HttpGet("templates-by-category")]
-    [Authorize(Policy = "Settings.View")]
-    [Authorize(Policy = "Document.View")]
     public async Task<IActionResult> GetTemplatesByCategory(
         Guid organizationId,
         [FromQuery] Guid? sourcePhaseId,

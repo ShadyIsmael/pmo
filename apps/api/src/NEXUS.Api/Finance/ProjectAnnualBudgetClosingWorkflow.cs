@@ -9,6 +9,7 @@ using NEXUS.Modules.CostManagement.Application;
 using NEXUS.Modules.CostManagement.Application.DTOs;
 using NEXUS.Modules.CostManagement.Domain;
 using NEXUS.Modules.Identity.Application;
+using NEXUS.Modules.Identity.Infrastructure;
 using NEXUS.Modules.Organization.Application.Settings;
 using NEXUS.Modules.ProjectManagement.Domain;
 using NEXUS.Persistence;
@@ -22,6 +23,7 @@ public sealed partial class ProjectPaymentRequestWorkflow
     private const string ClosingViewPermission = "ProjectAnnualBudgetClosing.View";
     private const string ClosingPreparePermission = "ProjectAnnualBudget.Close";
     private const string ClosingApprovePermission = "ProjectAnnualBudget.CloseApprove";
+    private const string AssignmentRecoveryPermission = "Governance.AssignmentRecovery.Manage";
     private const string CarryForwardPermission = "ProjectAnnualBudget.CarryForward";
     private const string ClosingApprovalType = "ProjectAnnualBudgetClosing";
 
@@ -38,6 +40,11 @@ public sealed partial class ProjectPaymentRequestWorkflow
             .ToListAsync(cancellationToken);
         var approvalIds = rows.Where(item => item.ApprovalRequestId.HasValue)
             .Select(item => item.ApprovalRequestId!.Value).Distinct().ToArray();
+        var approvalVersions = approvalIds.Length == 0 ? new Dictionary<Guid, byte[]>()
+            : await db.ApprovalRequests.IgnoreQueryFilters().AsNoTracking()
+                .Where(item => item.TenantId == tenantId && approvalIds.Contains(item.Id)
+                    && item.Type == ClosingApprovalType && !item.IsDeleted)
+                .ToDictionaryAsync(item => item.Id, item => item.RowVersion, cancellationToken);
         var assignments = approvalIds.Length == 0 ? [] : await db.PaymentRequestApproverAssignments.IgnoreQueryFilters()
             .AsNoTracking().Where(item => item.TenantId == tenantId && !item.IsDeleted && approvalIds.Contains(item.ApprovalRequestId))
             .OrderBy(item => item.Position).ThenBy(item => item.CreatedAt).ToListAsync(cancellationToken);
@@ -51,10 +58,15 @@ public sealed partial class ProjectPaymentRequestWorkflow
             ? await GetEligibleClosingApproverIdsAsync(tenantId, projectId, cancellationToken) : new HashSet<Guid>();
         var canPrepare = effective.Contains(ClosingPreparePermission)
             && management.Current?.EffectiveReadOnly != true;
+        var canRecover = effective.Contains(ClosingApprovePermission)
+            && effective.Contains(AssignmentRecoveryPermission)
+            && management.Current?.EffectiveReadOnly != true
+            && management.Current?.Scope.ProjectIds.Contains(projectId) == true;
         var items = rows.Select(row => MapClosing(row,
             row.ApprovalRequestId.HasValue ? assignments.Where(item => item.ApprovalRequestId == row.ApprovalRequestId).ToArray() : [],
             row.ApprovalRequestId.HasValue ? actions.Where(item => item.ApprovalRequestId == row.ApprovalRequestId).ToArray() : [],
-            names, actorId, eligible, canPrepare, effective.Contains(CarryForwardPermission))).ToArray();
+            names, actorId, eligible, canPrepare, effective.Contains(CarryForwardPermission), canRecover,
+            approvalVersions.GetValueOrDefault(row.ApprovalRequestId ?? Guid.Empty))).ToArray();
         var current = await tenantFiscalYear.ResolveForTimestampAsync(tenantId, DateTimeOffset.UtcNow, cancellationToken);
         return Result<ProjectAnnualBudgetClosingPageDto>.Success(new ProjectAnnualBudgetClosingPageDto(current.FiscalYear, items));
     }
@@ -72,6 +84,314 @@ public sealed partial class ProjectPaymentRequestWorkflow
         return Result<IReadOnlyList<PaymentRequestEligibleApproverDto>>.Success(eligible
             .OrderBy(id => names.GetValueOrDefault(id), StringComparer.OrdinalIgnoreCase)
             .Select(id => new PaymentRequestEligibleApproverDto(id, names.GetValueOrDefault(id) ?? string.Empty)).ToArray());
+    }
+
+    public async Task<Result<IReadOnlyList<PaymentRequestEligibleApproverDto>>> GetEligibleClosingRecoveryApproversAsync(
+        Guid tenantId, Guid projectId, Guid closingId, Guid assignmentId, Guid actorId,
+        CancellationToken cancellationToken)
+    {
+        var accessError = await ValidateClosingAccessAsync(tenantId, projectId, actorId,
+            ClosingApprovePermission, cancellationToken);
+        if (accessError is not null)
+            return Result<IReadOnlyList<PaymentRequestEligibleApproverDto>>.Failure(accessError);
+        if (!await HasPermissionAsync(actorId, tenantId, AssignmentRecoveryPermission, cancellationToken))
+            return Result<IReadOnlyList<PaymentRequestEligibleApproverDto>>.Failure(Error.Forbidden(
+                $"{AssignmentRecoveryPermission} is required to recover a closing approval."));
+        var actorError = await ValidateActiveActorAsync(tenantId, actorId, cancellationToken);
+        if (actorError is not null)
+            return Result<IReadOnlyList<PaymentRequestEligibleApproverDto>>.Failure(actorError);
+        var closing = await db.ProjectAnnualBudgetClosings.IgnoreQueryFilters().AsNoTracking()
+            .FirstOrDefaultAsync(item => item.TenantId == tenantId && item.ProjectId == projectId
+                && item.Id == closingId && !item.IsDeleted, cancellationToken);
+        if (closing is null)
+            return Result<IReadOnlyList<PaymentRequestEligibleApproverDto>>.Failure(Error.NotFound("Closing statement not found."));
+        if (closing.Status != ProjectAnnualBudgetClosingStatuses.PendingApproval || !closing.ApprovalRequestId.HasValue)
+            return Result<IReadOnlyList<PaymentRequestEligibleApproverDto>>.Failure(Error.Conflict(
+                "Only a pending closing approval can be reassigned."));
+        var approval = await db.ApprovalRequests.IgnoreQueryFilters().AsNoTracking()
+            .FirstOrDefaultAsync(item => item.TenantId == tenantId && item.Id == closing.ApprovalRequestId
+                && !item.IsDeleted && item.Type == ClosingApprovalType, cancellationToken);
+        if (approval is null || approval.Status != PaymentRequestStatuses.Pending)
+            return Result<IReadOnlyList<PaymentRequestEligibleApproverDto>>.Failure(Error.Conflict(
+                "The shared closing approval record is unavailable or finalized."));
+        if (approval.RequestedBy != closing.SubmittedBy)
+            return Result<IReadOnlyList<PaymentRequestEligibleApproverDto>>.Failure(Error.Conflict(
+                "The closing preparer and approval requester do not match."));
+        var assignment = await db.PaymentRequestApproverAssignments.IgnoreQueryFilters().AsNoTracking()
+            .FirstOrDefaultAsync(item => item.TenantId == tenantId && item.ApprovalRequestId == closing.ApprovalRequestId
+                && item.Id == assignmentId && item.State == PaymentRequestAssignmentStates.Pending && !item.IsDeleted,
+                cancellationToken);
+        if (assignment is null)
+            return Result<IReadOnlyList<PaymentRequestEligibleApproverDto>>.Failure(Error.NotFound("Pending closing approval assignment not found."));
+        if (await db.ApprovalActions.IgnoreQueryFilters().AsNoTracking().AnyAsync(item => item.TenantId == tenantId
+                && item.ApprovalRequestId == closing.ApprovalRequestId
+                && item.ApproverAssignmentId == assignment.Id && !item.IsDeleted, cancellationToken))
+            return Result<IReadOnlyList<PaymentRequestEligibleApproverDto>>.Failure(Error.Conflict(
+                "A closing assignment with a recorded decision cannot be reassigned."));
+
+        var assignedIds = await db.PaymentRequestApproverAssignments.IgnoreQueryFilters().AsNoTracking()
+            .Where(item => item.TenantId == tenantId && item.ApprovalRequestId == closing.ApprovalRequestId
+                && !item.IsDeleted && item.Id != assignment.Id)
+            .Select(item => item.ApproverUserId).ToListAsync(cancellationToken);
+        var eligible = await GetEligibleClosingApproverIdsAsync(tenantId, projectId, cancellationToken);
+        if (eligible.Contains(assignment.ApproverUserId))
+            return Result<IReadOnlyList<PaymentRequestEligibleApproverDto>>.Failure(Error.Conflict(
+                "The assigned approver remains eligible; reassignment is not available."));
+        eligible.Remove(closing.SubmittedBy ?? Guid.Empty);
+        eligible.Remove(closing.PreparedBy ?? Guid.Empty);
+        eligible.Remove(approval.RequestedBy ?? Guid.Empty);
+        eligible.Remove(assignment.ApproverUserId);
+        eligible.ExceptWith(assignedIds);
+        var names = await LoadUserNamesAsync(tenantId, eligible, cancellationToken);
+        return Result<IReadOnlyList<PaymentRequestEligibleApproverDto>>.Success(eligible
+            .OrderBy(id => names.GetValueOrDefault(id), StringComparer.OrdinalIgnoreCase)
+            .Select(id => new PaymentRequestEligibleApproverDto(id, names.GetValueOrDefault(id) ?? string.Empty)).ToArray());
+    }
+
+    public async Task<Result<ProjectAnnualBudgetClosingDto>> ReassignClosingApproverAsync(
+        Guid tenantId, Guid projectId, Guid closingId, Guid actorId, string? actorName,
+        ReassignProjectAnnualBudgetClosingApproverDto dto, CancellationToken cancellationToken)
+    {
+        var accessError = await ValidateClosingAccessAsync(tenantId, projectId, actorId,
+            ClosingApprovePermission, cancellationToken);
+        if (accessError is not null) return Result<ProjectAnnualBudgetClosingDto>.Failure(accessError);
+        if (dto.AssignmentId == Guid.Empty || dto.ReplacementApproverId == Guid.Empty)
+            return Result<ProjectAnnualBudgetClosingDto>.Failure(Error.Validation("A pending assignment and replacement approver are required."));
+        var reason = dto.Reason?.Trim();
+        if (string.IsNullOrWhiteSpace(reason) || reason.Length > 1000)
+            return Result<ProjectAnnualBudgetClosingDto>.Failure(Error.Validation("A reassignment reason of 1 to 1000 characters is required."));
+        if (dto.RowVersion is not { Length: > 0 } || dto.ApprovalRowVersion is not { Length: > 0 })
+            return Result<ProjectAnnualBudgetClosingDto>.Failure(Error.Validation("Current closing and approval row versions are required."));
+        if (!await HasPermissionAsync(actorId, tenantId, AssignmentRecoveryPermission, cancellationToken))
+            return Result<ProjectAnnualBudgetClosingDto>.Failure(Error.Forbidden(
+                $"{AssignmentRecoveryPermission} is required to reassign a closing approver."));
+
+        await using var mutation = await TenantAdminMutationGuard.AcquireAsync(db, tenantId, cancellationToken);
+        var actorPermissions = await permissions.GetEffectivePermissionsAsync(actorId, tenantId, cancellationToken);
+        if (!actorPermissions.Contains(ClosingApprovePermission) || !actorPermissions.Contains(AssignmentRecoveryPermission))
+            return Result<ProjectAnnualBudgetClosingDto>.Failure(Error.Forbidden(
+                "Closing approval and recovery permissions must remain effective when reassignment starts."));
+        var actorError = await ValidateActiveActorAsync(tenantId, actorId, cancellationToken);
+        if (actorError is not null) return Result<ProjectAnnualBudgetClosingDto>.Failure(actorError);
+
+        var project = await FindProjectForUpdateAsync(tenantId, projectId, cancellationToken);
+        if (project is null) return Result<ProjectAnnualBudgetClosingDto>.Failure(Error.NotFound("Project not found."));
+        var closing = await db.ProjectAnnualBudgetClosings.IgnoreQueryFilters().FirstOrDefaultAsync(item => item.TenantId == tenantId
+            && item.ProjectId == projectId && item.Id == closingId && !item.IsDeleted, cancellationToken);
+        if (closing is null) return Result<ProjectAnnualBudgetClosingDto>.Failure(Error.NotFound("Closing statement not found."));
+        if (!MatchesVersion(closing.RowVersion, dto.RowVersion))
+            return Result<ProjectAnnualBudgetClosingDto>.Failure(Error.Conflict("Closing statement changed. Refresh before reassigning an approver."));
+        if (closing.Status != ProjectAnnualBudgetClosingStatuses.PendingApproval || !closing.ApprovalRequestId.HasValue)
+            return Result<ProjectAnnualBudgetClosingDto>.Failure(Error.Conflict("Only a pending closing approval can be reassigned."));
+        var approval = await db.ApprovalRequests.IgnoreQueryFilters().FirstOrDefaultAsync(item => item.TenantId == tenantId
+            && item.Id == closing.ApprovalRequestId && !item.IsDeleted && item.Type == ClosingApprovalType, cancellationToken);
+        if (approval is null || approval.Status != PaymentRequestStatuses.Pending)
+            return Result<ProjectAnnualBudgetClosingDto>.Failure(Error.Conflict("The shared closing approval record is unavailable or finalized."));
+        if (!MatchesVersion(approval.RowVersion, dto.ApprovalRowVersion))
+            return Result<ProjectAnnualBudgetClosingDto>.Failure(Error.Conflict("The closing approval changed. Refresh before reassigning an approver."));
+        if (approval.RequestedBy != closing.SubmittedBy)
+            return Result<ProjectAnnualBudgetClosingDto>.Failure(Error.Conflict("The closing preparer and approval requester do not match."));
+
+        var assignment = await db.PaymentRequestApproverAssignments.IgnoreQueryFilters().FirstOrDefaultAsync(item => item.TenantId == tenantId
+            && item.ApprovalRequestId == approval.Id && item.Id == dto.AssignmentId
+            && item.State == PaymentRequestAssignmentStates.Pending && !item.IsDeleted, cancellationToken);
+        if (assignment is null)
+            return Result<ProjectAnnualBudgetClosingDto>.Failure(Error.NotFound("Pending closing approval assignment not found."));
+        if (await db.ApprovalActions.IgnoreQueryFilters().AnyAsync(item => item.TenantId == tenantId
+                && item.ApprovalRequestId == approval.Id && item.ApproverAssignmentId == assignment.Id && !item.IsDeleted,
+                cancellationToken))
+            return Result<ProjectAnnualBudgetClosingDto>.Failure(Error.Conflict("A closing assignment with a recorded decision cannot be reassigned."));
+        if (dto.ReplacementApproverId == assignment.ApproverUserId
+            || dto.ReplacementApproverId == approval.RequestedBy
+            || dto.ReplacementApproverId == closing.PreparedBy)
+            return Result<ProjectAnnualBudgetClosingDto>.Failure(Error.Validation(
+                "Choose a different approver; the closing preparer/requester cannot approve the same closing."));
+        if (await db.PaymentRequestApproverAssignments.IgnoreQueryFilters().AnyAsync(item => item.TenantId == tenantId
+                && item.ApprovalRequestId == approval.Id && item.ApproverUserId == dto.ReplacementApproverId
+                && item.Id != assignment.Id && !item.IsDeleted, cancellationToken))
+            return Result<ProjectAnnualBudgetClosingDto>.Failure(Error.Conflict("The replacement approver is already assigned to this closing."));
+
+        var eligible = await GetEligibleClosingApproverIdsAsync(tenantId, projectId, cancellationToken);
+        if (eligible.Contains(assignment.ApproverUserId))
+            return Result<ProjectAnnualBudgetClosingDto>.Failure(Error.Conflict(
+                "The assigned approver remains eligible; reassignment is not available."));
+        if (!eligible.Contains(dto.ReplacementApproverId))
+            return Result<ProjectAnnualBudgetClosingDto>.Failure(Error.Validation(
+                "The replacement must be an active Project Team member with ProjectAnnualBudget.CloseApprove permission."));
+        var names = await LoadUserNamesAsync(tenantId, [assignment.ApproverUserId, dto.ReplacementApproverId], cancellationToken);
+        var oldApproverId = assignment.ApproverUserId;
+        var oldApproverName = names.GetValueOrDefault(oldApproverId) ?? oldApproverId.ToString("D");
+        var replacementName = names.GetValueOrDefault(dto.ReplacementApproverId) ?? dto.ReplacementApproverId.ToString("D");
+        var before = new
+        {
+            closing.Status,
+            approvalRequestId = approval.Id,
+            approverAssignmentId = assignment.Id,
+            approverUserId = oldApproverId,
+            approverName = oldApproverName
+        };
+        assignment.ApproverUserId = dto.ReplacementApproverId;
+        assignment.UpdatedBy = actorId.ToString("D");
+        approval.UpdatedBy = actorId.ToString("D");
+        if (closing.ApprovalMode == PaymentRequestApprovalModes.Sequential && approval.CurrentApproverId == oldApproverId)
+            approval.CurrentApproverId = dto.ReplacementApproverId;
+        AddClosingRecoveryAudit(project, closing, actorId, actorName, "ClosingApproverReassigned",
+            $"Year-end closing approver reassigned from {oldApproverName} to {replacementName}: {reason}",
+            before, new
+            {
+                closing.Status,
+                approvalRequestId = approval.Id,
+                approverAssignmentId = assignment.Id,
+                previousApproverId = oldApproverId,
+                previousApproverName = oldApproverName,
+                replacementApproverId = dto.ReplacementApproverId,
+                replacementApproverName = replacementName,
+                reason
+            }, "approvalRequestId,approverAssignmentId,approverUserId,reason");
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+            await mutation.CommitAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Result<ProjectAnnualBudgetClosingDto>.Failure(Error.Conflict("Closing approval changed during reassignment. Refresh and retry."));
+        }
+        catch (DbUpdateException)
+        {
+            return Result<ProjectAnnualBudgetClosingDto>.Failure(Error.Conflict("Closing approver reassignment conflicted with another update."));
+        }
+        return Result<ProjectAnnualBudgetClosingDto>.Success(await MapClosingAsync(closing, actorId, cancellationToken));
+    }
+
+    public async Task<Result<ProjectAnnualBudgetClosingDto>> RecoverCancelClosingAsync(
+        Guid tenantId, Guid projectId, Guid closingId, Guid actorId, string? actorName,
+        RecoverCancelProjectAnnualBudgetClosingDto dto, CancellationToken cancellationToken)
+    {
+        var accessError = await ValidateClosingAccessAsync(tenantId, projectId, actorId,
+            ClosingApprovePermission, cancellationToken);
+        if (accessError is not null) return Result<ProjectAnnualBudgetClosingDto>.Failure(accessError);
+        if (dto.AssignmentId == Guid.Empty)
+            return Result<ProjectAnnualBudgetClosingDto>.Failure(Error.Validation("A blocked pending approver assignment is required for recovery cancellation."));
+        var reason = dto.Reason?.Trim();
+        if (string.IsNullOrWhiteSpace(reason) || reason.Length > 2000)
+            return Result<ProjectAnnualBudgetClosingDto>.Failure(Error.Validation("A recovery cancellation reason of 1 to 2000 characters is required."));
+        if (dto.RowVersion is not { Length: > 0 } || dto.ApprovalRowVersion is not { Length: > 0 })
+            return Result<ProjectAnnualBudgetClosingDto>.Failure(Error.Validation("Current closing and approval row versions are required."));
+        if (!await HasPermissionAsync(actorId, tenantId, AssignmentRecoveryPermission, cancellationToken))
+            return Result<ProjectAnnualBudgetClosingDto>.Failure(Error.Forbidden(
+                $"{AssignmentRecoveryPermission} is required to cancel a pending closing for recovery."));
+
+        await using var mutation = await TenantAdminMutationGuard.AcquireAsync(db, tenantId, cancellationToken);
+        var actorPermissions = await permissions.GetEffectivePermissionsAsync(actorId, tenantId, cancellationToken);
+        if (!actorPermissions.Contains(ClosingApprovePermission) || !actorPermissions.Contains(AssignmentRecoveryPermission))
+            return Result<ProjectAnnualBudgetClosingDto>.Failure(Error.Forbidden(
+                "Closing approval and recovery permissions must remain effective when cancellation starts."));
+        var actorError = await ValidateActiveActorAsync(tenantId, actorId, cancellationToken);
+        if (actorError is not null) return Result<ProjectAnnualBudgetClosingDto>.Failure(actorError);
+
+        var project = await FindProjectForUpdateAsync(tenantId, projectId, cancellationToken);
+        if (project is null) return Result<ProjectAnnualBudgetClosingDto>.Failure(Error.NotFound("Project not found."));
+        var closing = await db.ProjectAnnualBudgetClosings.IgnoreQueryFilters().FirstOrDefaultAsync(item => item.TenantId == tenantId
+            && item.ProjectId == projectId && item.Id == closingId && !item.IsDeleted, cancellationToken);
+        if (closing is null) return Result<ProjectAnnualBudgetClosingDto>.Failure(Error.NotFound("Closing statement not found."));
+        if (!MatchesVersion(closing.RowVersion, dto.RowVersion))
+            return Result<ProjectAnnualBudgetClosingDto>.Failure(Error.Conflict("Closing statement changed. Refresh before recovery cancellation."));
+        if (closing.Status != ProjectAnnualBudgetClosingStatuses.PendingApproval || !closing.ApprovalRequestId.HasValue)
+            return Result<ProjectAnnualBudgetClosingDto>.Failure(Error.Conflict("Only a pending closing approval can be recovery-cancelled."));
+        var approval = await db.ApprovalRequests.IgnoreQueryFilters().FirstOrDefaultAsync(item => item.TenantId == tenantId
+            && item.Id == closing.ApprovalRequestId && !item.IsDeleted && item.Type == ClosingApprovalType, cancellationToken);
+        if (approval is null || approval.Status != PaymentRequestStatuses.Pending)
+            return Result<ProjectAnnualBudgetClosingDto>.Failure(Error.Conflict("The shared closing approval record is unavailable or finalized."));
+        if (!MatchesVersion(approval.RowVersion, dto.ApprovalRowVersion))
+            return Result<ProjectAnnualBudgetClosingDto>.Failure(Error.Conflict("The closing approval changed. Refresh before recovery cancellation."));
+        if (approval.RequestedBy != closing.SubmittedBy)
+            return Result<ProjectAnnualBudgetClosingDto>.Failure(Error.Conflict("The closing preparer and approval requester do not match."));
+
+        var assignments = await db.PaymentRequestApproverAssignments.IgnoreQueryFilters()
+            .Where(item => item.TenantId == tenantId && item.ApprovalRequestId == approval.Id && !item.IsDeleted)
+            .OrderBy(item => item.Position).ToListAsync(cancellationToken);
+        var blockedAssignment = assignments.FirstOrDefault(item => item.Id == dto.AssignmentId
+            && item.State == PaymentRequestAssignmentStates.Pending);
+        if (blockedAssignment is null)
+            return Result<ProjectAnnualBudgetClosingDto>.Failure(Error.NotFound("Pending closing assignment selected for recovery was not found."));
+        if (await db.ApprovalActions.IgnoreQueryFilters().AnyAsync(item => item.TenantId == tenantId
+                && item.ApprovalRequestId == approval.Id && item.ApproverAssignmentId == blockedAssignment.Id && !item.IsDeleted,
+                cancellationToken))
+            return Result<ProjectAnnualBudgetClosingDto>.Failure(Error.Conflict(
+                "The selected closing assignment has a recorded action and cannot be recovery-cancelled."));
+        var eligibleForRecovery = await GetEligibleClosingApproverIdsAsync(tenantId, projectId, cancellationToken);
+        eligibleForRecovery.Remove(approval.RequestedBy ?? Guid.Empty);
+        eligibleForRecovery.Remove(closing.SubmittedBy ?? Guid.Empty);
+        eligibleForRecovery.Remove(closing.PreparedBy ?? Guid.Empty);
+        if (eligibleForRecovery.Contains(blockedAssignment.ApproverUserId))
+            return Result<ProjectAnnualBudgetClosingDto>.Failure(Error.Conflict(
+                "The selected approver remains eligible; use the decision path or reassign another blocked step."));
+        eligibleForRecovery.ExceptWith(assignments.Where(item => item.Id != blockedAssignment.Id)
+            .Select(item => item.ApproverUserId));
+        if (eligibleForRecovery.Count > 0)
+            return Result<ProjectAnnualBudgetClosingDto>.Failure(Error.Conflict(
+                "An eligible replacement exists for the selected assignment. Reassign it instead of cancelling the closing."));
+        var now = DateTime.UtcNow;
+        var before = new
+        {
+            closingStatus = closing.Status,
+            approvalStatus = approval.Status,
+            approvalRequestId = approval.Id,
+            recoveryBlockedAssignmentId = blockedAssignment.Id,
+            recoveryBlockedApproverId = blockedAssignment.ApproverUserId,
+            pendingAssignments = assignments.Where(item => item.State == PaymentRequestAssignmentStates.Pending)
+                .Select(item => new { assignmentId = item.Id, approverUserId = item.ApproverUserId }).ToArray()
+        };
+        approval.Status = PaymentRequestStatuses.Cancelled;
+        approval.CurrentApproverId = null;
+        approval.UpdatedBy = actorId.ToString("D");
+        foreach (var assignment in assignments.Where(item => item.State == PaymentRequestAssignmentStates.Pending))
+        {
+            assignment.State = PaymentRequestAssignmentStates.Cancelled;
+            assignment.UpdatedBy = actorId.ToString("D");
+            db.ApprovalActions.Add(new ApprovalAction
+            {
+                TenantId = tenantId,
+                ApprovalRequestId = approval.Id,
+                ApproverId = actorId,
+                ApproverAssignmentId = assignment.Id,
+                Action = PaymentRequestAssignmentStates.Cancelled,
+                Comments = reason,
+                ActionedAt = now,
+                ApprovalLevel = closing.ApprovalMode == PaymentRequestApprovalModes.Sequential ? assignment.Position ?? 0 : 0,
+                CreatedBy = actorId.ToString("D")
+            });
+        }
+        closing.Status = ProjectAnnualBudgetClosingStatuses.Cancelled;
+        closing.CompletedBy = actorId;
+        closing.CompletedAtUtc = now;
+        closing.UpdatedBy = actorId.ToString("D");
+        AddClosingRecoveryAudit(project, closing, actorId, actorName, "YearEndClosingRecoveryCancelled",
+            $"Pending year-end closing cancelled by an authorized recovery manager: {reason}", before,
+            new
+            {
+                closingStatus = closing.Status,
+                approvalStatus = approval.Status,
+                approvalRequestId = approval.Id,
+                recoveryBlockedAssignmentId = blockedAssignment.Id,
+                recoveryBlockedApproverId = blockedAssignment.ApproverUserId,
+                reason
+            }, "status,approvalRequestId,approverAssignments,reason");
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+            await mutation.CommitAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Result<ProjectAnnualBudgetClosingDto>.Failure(Error.Conflict("Closing approval changed during recovery cancellation. Refresh and retry."));
+        }
+        catch (DbUpdateException)
+        {
+            return Result<ProjectAnnualBudgetClosingDto>.Failure(Error.Conflict("Closing recovery cancellation conflicted with another update."));
+        }
+        return Result<ProjectAnnualBudgetClosingDto>.Success(await MapClosingAsync(closing, actorId, cancellationToken));
     }
 
     public async Task<Result<ProjectAnnualBudgetClosingDto>> PrepareClosingAsync(
@@ -473,8 +793,8 @@ public sealed partial class ProjectPaymentRequestWorkflow
     }
 
     public async Task<Result<ProjectAnnualBudgetClosingDto>> CancelClosingAsync(
-        Guid tenantId, Guid projectId, Guid closingId, Guid actorId, string? actorName, byte[] rowVersion,
-        CancellationToken cancellationToken)
+        Guid tenantId, Guid projectId, Guid closingId, Guid actorId, string? actorName,
+        CancelProjectAnnualBudgetClosingDto dto, CancellationToken cancellationToken)
     {
         var accessError = await ValidateClosingAccessAsync(tenantId, projectId, actorId, ClosingPreparePermission, cancellationToken);
         if (accessError is not null) return Result<ProjectAnnualBudgetClosingDto>.Failure(accessError);
@@ -486,28 +806,86 @@ public sealed partial class ProjectPaymentRequestWorkflow
         if (closing is null) return Result<ProjectAnnualBudgetClosingDto>.Failure(Error.NotFound("Closing statement not found."));
         if (closing.PreparedBy != actorId || closing.Status is not (ProjectAnnualBudgetClosingStatuses.Review or ProjectAnnualBudgetClosingStatuses.PendingApproval))
             return Result<ProjectAnnualBudgetClosingDto>.Failure(Error.Forbidden("Only the preparer may cancel a Review or Pending closing."));
-        if (!MatchesVersion(closing.RowVersion, rowVersion)) return Result<ProjectAnnualBudgetClosingDto>.Failure(Error.Conflict("Closing changed. Refresh before cancelling."));
+        if (dto.RowVersion is not { Length: > 0 } || !MatchesVersion(closing.RowVersion, dto.RowVersion))
+            return Result<ProjectAnnualBudgetClosingDto>.Failure(Error.Conflict("Closing changed. Refresh before cancelling."));
         var previous = closing.Status;
+        ApprovalRequest? approval = null;
+        List<PaymentRequestApproverAssignment> pendingAssignments = [];
+        if (closing.Status == ProjectAnnualBudgetClosingStatuses.PendingApproval && !closing.ApprovalRequestId.HasValue)
+            return Result<ProjectAnnualBudgetClosingDto>.Failure(Error.Conflict("The pending closing has no linked approval request."));
         if (closing.ApprovalRequestId.HasValue)
         {
-            var approval = await db.ApprovalRequests.IgnoreQueryFilters().FirstOrDefaultAsync(item => item.TenantId == tenantId
-                && item.Id == closing.ApprovalRequestId && !item.IsDeleted, cancellationToken);
-            if (approval?.Status == PaymentRequestStatuses.Pending)
+            approval = await db.ApprovalRequests.IgnoreQueryFilters().FirstOrDefaultAsync(item => item.TenantId == tenantId
+                && item.Id == closing.ApprovalRequestId && !item.IsDeleted && item.Type == ClosingApprovalType, cancellationToken);
+            if (approval is null || approval.Status != PaymentRequestStatuses.Pending
+                || closing.Status != ProjectAnnualBudgetClosingStatuses.PendingApproval)
+                return Result<ProjectAnnualBudgetClosingDto>.Failure(Error.Conflict("The closing approval is finalized or inconsistent; refresh before cancelling."));
+            if (dto.ApprovalRowVersion is not { Length: > 0 } || !MatchesVersion(approval.RowVersion, dto.ApprovalRowVersion))
+                return Result<ProjectAnnualBudgetClosingDto>.Failure(Error.Conflict("Closing approval changed. Refresh before cancelling."));
+            if (approval.RequestedBy != closing.SubmittedBy)
+                return Result<ProjectAnnualBudgetClosingDto>.Failure(Error.Conflict("The closing preparer and approval requester do not match."));
+            pendingAssignments = await db.PaymentRequestApproverAssignments.IgnoreQueryFilters()
+                .Where(item => item.TenantId == tenantId && item.ApprovalRequestId == approval.Id
+                    && !item.IsDeleted && item.State == PaymentRequestAssignmentStates.Pending)
+                .OrderBy(item => item.Position).ToListAsync(cancellationToken);
+            var pendingIds = pendingAssignments.Select(item => item.Id).ToArray();
+            if (pendingIds.Length > 0 && await db.ApprovalActions.IgnoreQueryFilters().AnyAsync(item => item.TenantId == tenantId
+                    && item.ApprovalRequestId == approval.Id && item.ApproverAssignmentId.HasValue
+                    && pendingIds.Contains(item.ApproverAssignmentId.Value) && !item.IsDeleted, cancellationToken))
+                return Result<ProjectAnnualBudgetClosingDto>.Failure(Error.Conflict(
+                    "A pending closing assignment already has an action; refresh and reconcile the approval state."));
+        }
+        var now = DateTime.UtcNow;
+        var before = new
+        {
+            status = previous,
+            approvalRequestId = approval?.Id,
+            approvalStatus = approval?.Status,
+            pendingAssignmentIds = pendingAssignments.Select(item => item.Id).ToArray()
+        };
+        if (approval is not null)
+        {
+            approval.Status = PaymentRequestStatuses.Cancelled;
+            approval.CurrentApproverId = null;
+            approval.UpdatedBy = actorId.ToString("D");
+            foreach (var assignment in pendingAssignments)
             {
-                approval.Status = PaymentRequestStatuses.Cancelled;
-                approval.CurrentApproverId = null;
-                approval.UpdatedBy = actorId.ToString("D");
+                assignment.State = PaymentRequestAssignmentStates.Cancelled;
+                assignment.UpdatedBy = actorId.ToString("D");
+                db.ApprovalActions.Add(new ApprovalAction
+                {
+                    TenantId = tenantId,
+                    ApprovalRequestId = approval.Id,
+                    ApproverId = actorId,
+                    ApproverAssignmentId = assignment.Id,
+                    Action = PaymentRequestAssignmentStates.Cancelled,
+                    Comments = "Year-end closing cancelled by its preparer.",
+                    ActionedAt = now,
+                    ApprovalLevel = closing.ApprovalMode == PaymentRequestApprovalModes.Sequential ? assignment.Position ?? 0 : 0,
+                    CreatedBy = actorId.ToString("D")
+                });
             }
         }
         closing.Status = ProjectAnnualBudgetClosingStatuses.Cancelled;
         closing.CompletedBy = actorId;
-        closing.CompletedAtUtc = DateTime.UtcNow;
+        closing.CompletedAtUtc = now;
         closing.UpdatedBy = actorId.ToString("D");
         AddClosingAudit(project, closing, actorId, actorName, "YearEndClosingCancelled",
-            "Closing attempt cancelled before approval; no fiscal lock or transfer was created.",
-            new { status = previous }, new { status = closing.Status });
-        await db.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
+            "Closing attempt cancelled by its preparer; pending approval assignments were cancelled and no fiscal lock or transfer was created.",
+            before, new { status = closing.Status, approvalRequestId = approval?.Id, approvalStatus = approval?.Status });
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Result<ProjectAnnualBudgetClosingDto>.Failure(Error.Conflict("Closing or approval changed concurrently. Refresh before cancelling."));
+        }
+        catch (DbUpdateException)
+        {
+            return Result<ProjectAnnualBudgetClosingDto>.Failure(Error.Conflict("Closing cancellation conflicted with another update."));
+        }
         return Result<ProjectAnnualBudgetClosingDto>.Success(await MapClosingAsync(closing, actorId, cancellationToken));
     }
 
@@ -820,6 +1198,12 @@ public sealed partial class ProjectPaymentRequestWorkflow
         ProjectAnnualBudgetClosing closing, Guid actorId, CancellationToken cancellationToken)
     {
         var effective = await permissions.GetEffectivePermissionsAsync(actorId, closing.TenantId, cancellationToken);
+        var approvalRowVersion = closing.ApprovalRequestId.HasValue
+            ? await db.ApprovalRequests.IgnoreQueryFilters().AsNoTracking()
+                .Where(item => item.TenantId == closing.TenantId && item.Id == closing.ApprovalRequestId
+                    && item.Type == ClosingApprovalType && !item.IsDeleted)
+                .Select(item => item.RowVersion).FirstOrDefaultAsync(cancellationToken)
+            : null;
         var assignments = closing.ApprovalRequestId.HasValue
             ? await db.PaymentRequestApproverAssignments.IgnoreQueryFilters().AsNoTracking()
                 .Where(item => item.TenantId == closing.TenantId && item.ApprovalRequestId == closing.ApprovalRequestId && !item.IsDeleted)
@@ -835,17 +1219,45 @@ public sealed partial class ProjectPaymentRequestWorkflow
         {
             var action = actions.FirstOrDefault(candidate => candidate.ApproverAssignmentId == item.Id);
             return new ProjectAnnualBudgetClosingDecisionDto(item.ApproverUserId, names.GetValueOrDefault(item.ApproverUserId),
-                item.Position, item.Requirement, item.State, action?.Action, action?.ActionedAt, action?.Comments);
+                item.Position, item.Requirement, item.State, action?.Action, action?.ActionedAt, action?.Comments)
+            {
+                AssignmentId = item.Id
+            };
         }).ToArray();
         var issues = DeserializeIssues(closing.IntegrityIssuesJson);
         var canPrepare = effective.Contains(ClosingPreparePermission)
             && management.Current?.EffectiveReadOnly != true && management.Current?.Scope.ProjectIds.Contains(closing.ProjectId) == true;
+        var canRecover = effective.Contains(ClosingApprovePermission)
+            && effective.Contains(AssignmentRecoveryPermission)
+            && management.Current?.EffectiveReadOnly != true
+            && management.Current?.Scope.ProjectIds.Contains(closing.ProjectId) == true;
         var eligible = closing.SubmittedBy != actorId && effective.Contains(ClosingApprovePermission)
             && assignments.Any(item => item.ApproverUserId == actorId && item.State == PaymentRequestAssignmentStates.Pending)
             && closing.Status == ProjectAnnualBudgetClosingStatuses.PendingApproval;
         var canSubmit = canPrepare && closing.Status == ProjectAnnualBudgetClosingStatuses.Review && closing.IntegrityIssueCount == 0
             && ((closing.ProposedFreeCarryForward == 0m && closing.OutstandingCommitments == 0m)
                 || effective.Contains(CarryForwardPermission));
+        var recoveryEligible = canRecover
+            ? await GetEligibleClosingApproverIdsAsync(closing.TenantId, closing.ProjectId, cancellationToken)
+            : new HashSet<Guid>();
+        var canRecoverCancel = canRecover
+            && HasUnrecoverablePendingAssignment(closing, assignments, recoveryEligible);
+        var canReassign = canRecover && closing.Status == ProjectAnnualBudgetClosingStatuses.PendingApproval
+            && assignments.Any(item => item.State == PaymentRequestAssignmentStates.Pending);
+        decisions = decisions.Select(decision =>
+        {
+            var assignment = assignments.FirstOrDefault(item => item.Id == decision.AssignmentId);
+            var hasReplacement = canRecover && assignment is not null
+                && HasEligibleRecoveryReplacement(closing, assignment, assignments, recoveryEligible);
+            return decision with
+            {
+                CanReassignAssignment = hasReplacement,
+                CanRecoverCancelAssignment = canRecover && assignment is not null
+                    && IsUnrecoverablePendingAssignment(closing, assignment, assignments, recoveryEligible)
+            };
+        }).ToArray();
+        var canCancel = canRecoverCancel || (canPrepare && closing.PreparedBy == actorId
+            && closing.Status is ProjectAnnualBudgetClosingStatuses.Review or ProjectAnnualBudgetClosingStatuses.PendingApproval);
         return new ProjectAnnualBudgetClosingDto(closing.Id, closing.ProjectId, closing.SourceAnnualBudgetId,
             closing.FiscalYear, $"FY {closing.FiscalYear}", closing.FiscalYearStartDate, closing.FiscalYearEndDate,
             closing.Currency, closing.Status, closing.ApprovalMode, closing.ApprovalRequestId,
@@ -859,24 +1271,49 @@ public sealed partial class ProjectPaymentRequestWorkflow
             closing.PendingPaymentRequestCount, closing.PendingReversalRequestCount, closing.UnresolvedLegacyRequestCount,
             closing.IntegrityIssueCount, issues, decisions, closing.PreparedBy, closing.PreparedAtUtc,
             closing.SubmittedBy, closing.SubmittedAtUtc, closing.CompletedBy, closing.CompletedAtUtc,
-            closing.RowVersion, canSubmit, eligible, canPrepare && closing.PreparedBy == actorId
-                && closing.Status is ProjectAnnualBudgetClosingStatuses.Review or ProjectAnnualBudgetClosingStatuses.PendingApproval);
+            closing.RowVersion, canSubmit, eligible, canCancel)
+        {
+            CanReassignApprover = canReassign,
+            CanRecoverCancel = canRecoverCancel,
+            ApprovalRowVersion = approvalRowVersion
+        };
     }
 
     private ProjectAnnualBudgetClosingDto MapClosing(ProjectAnnualBudgetClosing closing,
         IReadOnlyCollection<PaymentRequestApproverAssignment> assignments, IReadOnlyCollection<ApprovalAction> actions,
         IReadOnlyDictionary<Guid, string> names, Guid actorId, IReadOnlySet<Guid> eligibleApprovers,
-        bool canPrepare, bool canCarry)
+        bool canPrepare, bool canCarry, bool canRecover, byte[]? approvalRowVersion)
     {
         var decisions = assignments.Select(item =>
         {
             var action = actions.FirstOrDefault(candidate => candidate.ApproverAssignmentId == item.Id);
             return new ProjectAnnualBudgetClosingDecisionDto(item.ApproverUserId, names.GetValueOrDefault(item.ApproverUserId),
-                item.Position, item.Requirement, item.State, action?.Action, action?.ActionedAt, action?.Comments);
+                item.Position, item.Requirement, item.State, action?.Action, action?.ActionedAt, action?.Comments)
+            {
+                AssignmentId = item.Id
+            };
         }).ToArray();
         var issues = DeserializeIssues(closing.IntegrityIssuesJson);
         var canApprove = closing.Status == ProjectAnnualBudgetClosingStatuses.PendingApproval && closing.SubmittedBy != actorId
             && eligibleApprovers.Contains(actorId) && assignments.Any(item => item.ApproverUserId == actorId && item.State == PaymentRequestAssignmentStates.Pending);
+        var canRecoverCancel = canRecover
+            && HasUnrecoverablePendingAssignment(closing, assignments, eligibleApprovers);
+        var canReassign = canRecover && closing.Status == ProjectAnnualBudgetClosingStatuses.PendingApproval
+            && assignments.Any(item => item.State == PaymentRequestAssignmentStates.Pending);
+        decisions = decisions.Select(decision =>
+        {
+            var assignment = assignments.FirstOrDefault(item => item.Id == decision.AssignmentId);
+            var hasReplacement = canRecover && assignment is not null
+                && HasEligibleRecoveryReplacement(closing, assignment, assignments, eligibleApprovers);
+            return decision with
+            {
+                CanReassignAssignment = hasReplacement,
+                CanRecoverCancelAssignment = canRecover && assignment is not null
+                    && IsUnrecoverablePendingAssignment(closing, assignment, assignments, eligibleApprovers)
+            };
+        }).ToArray();
+        var canCancel = canRecoverCancel || (canPrepare && closing.PreparedBy == actorId
+            && closing.Status is ProjectAnnualBudgetClosingStatuses.Review or ProjectAnnualBudgetClosingStatuses.PendingApproval);
         return new ProjectAnnualBudgetClosingDto(closing.Id, closing.ProjectId, closing.SourceAnnualBudgetId,
             closing.FiscalYear, $"FY {closing.FiscalYear}", closing.FiscalYearStartDate, closing.FiscalYearEndDate,
             closing.Currency, closing.Status, closing.ApprovalMode, closing.ApprovalRequestId,
@@ -894,7 +1331,12 @@ public sealed partial class ProjectPaymentRequestWorkflow
             canPrepare && closing.Status == ProjectAnnualBudgetClosingStatuses.Review && closing.IntegrityIssueCount == 0
                 && ((closing.ProposedFreeCarryForward == 0m && closing.OutstandingCommitments == 0m) || canCarry),
             canApprove,
-            canPrepare && closing.PreparedBy == actorId && closing.Status is ProjectAnnualBudgetClosingStatuses.Review or ProjectAnnualBudgetClosingStatuses.PendingApproval);
+            canCancel)
+        {
+            CanReassignApprover = canReassign,
+            CanRecoverCancel = canRecoverCancel,
+            ApprovalRowVersion = approvalRowVersion
+        };
     }
 
     private void AddClosingAudit(Project project, ProjectAnnualBudgetClosing closing, Guid actorId, string? actorName,
@@ -921,6 +1363,71 @@ public sealed partial class ProjectPaymentRequestWorkflow
             }),
             ChangedFields = "fiscalYear,annualBudgetId,destinationAnnualBudgetId,currency,proposedFreeCarryForward,outstandingCommitments,status",
             Source = "User", CreatedBy = actorId.ToString("D")
+        });
+    }
+
+    private static bool HasUnrecoverablePendingAssignment(
+        ProjectAnnualBudgetClosing closing,
+        IReadOnlyCollection<PaymentRequestApproverAssignment> assignments,
+        IReadOnlySet<Guid> eligibleApproverIds)
+    {
+        if (closing.Status != ProjectAnnualBudgetClosingStatuses.PendingApproval)
+            return false;
+        return assignments.Where(item => item.State == PaymentRequestAssignmentStates.Pending)
+            .Any(item => IsUnrecoverablePendingAssignment(closing, item, assignments, eligibleApproverIds));
+    }
+
+    private static bool IsUnrecoverablePendingAssignment(
+        ProjectAnnualBudgetClosing closing,
+        PaymentRequestApproverAssignment pending,
+        IReadOnlyCollection<PaymentRequestApproverAssignment> assignments,
+        IReadOnlySet<Guid> eligibleApproverIds)
+    {
+        return closing.Status == ProjectAnnualBudgetClosingStatuses.PendingApproval
+            && pending.State == PaymentRequestAssignmentStates.Pending
+            && !eligibleApproverIds.Contains(pending.ApproverUserId)
+            && !HasEligibleRecoveryReplacement(closing, pending, assignments, eligibleApproverIds);
+    }
+
+    private static bool HasEligibleRecoveryReplacement(
+        ProjectAnnualBudgetClosing closing,
+        PaymentRequestApproverAssignment pending,
+        IReadOnlyCollection<PaymentRequestApproverAssignment> assignments,
+        IReadOnlySet<Guid> eligibleApproverIds)
+    {
+        if (closing.Status != ProjectAnnualBudgetClosingStatuses.PendingApproval
+            || pending.State != PaymentRequestAssignmentStates.Pending)
+            return false;
+        var candidates = eligibleApproverIds.ToHashSet();
+        candidates.Remove(closing.SubmittedBy ?? Guid.Empty);
+        candidates.Remove(closing.PreparedBy ?? Guid.Empty);
+        if (candidates.Contains(pending.ApproverUserId)) return false;
+        var otherAssignments = assignments.Where(item => item.Id != pending.Id)
+            .Select(item => item.ApproverUserId).ToHashSet();
+        return candidates.Any(candidate => !otherAssignments.Contains(candidate));
+    }
+
+    private void AddClosingRecoveryAudit(Project project, ProjectAnnualBudgetClosing closing, Guid actorId, string? actorName,
+        string action, string description, object before, object after, string changedFields)
+    {
+        var now = DateTime.UtcNow;
+        db.AuditEntries.Add(new AuditEntry
+        {
+            TenantId = project.TenantId,
+            ProjectId = project.Id,
+            EntityType = "ProjectAnnualBudgetClosing",
+            EntityId = closing.Id,
+            Action = action,
+            UserId = actorId,
+            UserName = string.IsNullOrWhiteSpace(actorName) ? null : actorName.Trim(),
+            Timestamp = now,
+            Description = description,
+            Changes = JsonSerializer.Serialize(new { before, after }),
+            OriginalValues = JsonSerializer.Serialize(before),
+            NewValues = JsonSerializer.Serialize(after),
+            ChangedFields = changedFields,
+            Source = "User",
+            CreatedBy = actorId.ToString("D")
         });
     }
 

@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using NEXUS.Modules.Identity.Application;
 using NEXUS.Api.ProgramManagement;
 using Xunit;
@@ -15,9 +16,12 @@ public sealed class PermissionCatalogArchitectureTests
         "ProjectFinancialCeiling.ApproveChange"
     };
 
-    private static readonly HashSet<string> ExternalDataPermissionExceptions = new(StringComparer.Ordinal)
+    private static readonly HashSet<string> CrossScreenViewExceptions = new(StringComparer.Ordinal)
     {
-        "CostUtilization.Export"
+        "CostUtilization.Export",
+        "PaymentSettlement.Record",
+        "ProjectPaymentReversal.Create",
+        "ProjectAnnualBudget.ManageApprovalConfiguration"
     };
 
     [Fact]
@@ -34,11 +38,11 @@ public sealed class PermissionCatalogArchitectureTests
         var entries = PermissionCatalog.Entries;
         var activeEntries = entries.Where(item => item.IsActive).ToArray();
 
-        Assert.Equal(185, entries.Count);
-        Assert.Equal(185, entries.Select(item => item.Key).Distinct(StringComparer.Ordinal).Count());
-        Assert.Equal(185, activeEntries.Length);
-        Assert.Equal(49, activeEntries.Count(item => item.Level == PermissionLevel.View));
-        Assert.Equal(136, activeEntries.Count(item => item.Level == PermissionLevel.Action));
+        Assert.Equal(190, entries.Count);
+        Assert.Equal(190, entries.Select(item => item.Key).Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(190, activeEntries.Length);
+        Assert.Equal(50, activeEntries.Count(item => item.Level == PermissionLevel.View));
+        Assert.Equal(140, activeEntries.Count(item => item.Level == PermissionLevel.Action));
         Assert.Empty(entries.Where(item => !item.IsActive));
         Assert.DoesNotContain("Resource.Allocate", PermissionCatalog.ByKey.Keys);
         Assert.DoesNotContain("Resource.ManageRates", PermissionCatalog.ByKey.Keys);
@@ -107,10 +111,19 @@ public sealed class PermissionCatalogArchitectureTests
         });
     }
 
-    private static string FindRepositoryRoot()
+    private static string FindRepositoryRoot([CallerFilePath] string sourceFilePath = "")
     {
-        foreach (var start in new[] { Environment.CurrentDirectory, AppContext.BaseDirectory })
+        var starts = new[]
         {
+            Environment.CurrentDirectory,
+            AppContext.BaseDirectory,
+            Path.GetDirectoryName(sourceFilePath)
+        };
+
+        foreach (var start in starts)
+        {
+            if (string.IsNullOrWhiteSpace(start)) continue;
+
             for (var directory = new DirectoryInfo(start); directory is not null; directory = directory.Parent)
             {
                 if (File.Exists(Path.Combine(directory.FullName, "AGENTS.md"))
@@ -137,78 +150,17 @@ public sealed class PermissionCatalogArchitectureTests
     }
 
     [Fact]
-    public void Protected_admin_baseline_tracks_active_tenant_administration_catalog_entries_only()
+    public void Default_permission_protection_is_empty_and_category_metadata_is_non_restrictive()
     {
-        var template = PermissionCatalog.ByKey["Roles.Create"];
-        var futureTenantPermission = template with
-        {
-            SeedId = Guid.NewGuid().ToString(),
-            Key = "TenantAdmin.FutureAction",
-            Resource = "TenantAdmin",
-            Action = "FutureAction",
-            Scope = PermissionScope.Tenant
-        };
-        var organizationPermission = futureTenantPermission with
-        {
-            Key = "TenantAdmin.OrganizationAction",
-            Action = "OrganizationAction",
-            Scope = PermissionScope.Organization
-        };
-        var platformPermission = futureTenantPermission with
-        {
-            Key = "TenantAdmin.PlatformAction",
-            Action = "PlatformAction",
-            Scope = PermissionScope.Platform
-        };
-        var inactivePermission = futureTenantPermission with
-        {
-            Key = "TenantAdmin.InactiveAction",
-            Action = "InactiveAction",
-            IsActive = false
-        };
+        var policy = PermissionProtectionPolicy.Empty;
 
-        var baseline = ProtectedTenantAdminPolicy.GetAllTenantPermissionKeys(
-            [futureTenantPermission, organizationPermission, platformPermission, inactivePermission]);
-
-        Assert.Contains("TenantAdmin.FutureAction", baseline);
-        Assert.DoesNotContain("TenantAdmin.OrganizationAction", baseline);
-        Assert.DoesNotContain("TenantAdmin.PlatformAction", baseline);
-        Assert.DoesNotContain("TenantAdmin.InactiveAction", baseline);
+        Assert.Empty(policy.ProtectedPermissionKeys);
+        Assert.All(PermissionCatalog.Entries.Where(entry => entry.IsActive), entry =>
+        {
+            Assert.True(policy.IsGrantable(entry), entry.Key);
+            Assert.Equal(RoleCategories.Selectable, entry.AllowedCategories);
+        });
     }
-
-    [Fact]
-    public void Protected_admin_baseline_contains_approved_portfolio_program_and_handover_keys_but_not_cross_portfolio_scope()
-    {
-        var baseline = ProtectedTenantAdminPolicy.MandatoryPermissionKeys;
-
-        Assert.Contains("Portfolio.Create", baseline);
-        Assert.Contains("Portfolio.Edit", baseline);
-        Assert.Contains("Portfolio.Archive", baseline);
-        Assert.Contains("Program.Create", baseline);
-        Assert.Contains("Program.Edit", baseline);
-        Assert.Contains("Program.Archive", baseline);
-        Assert.Contains("Handover.AdminInitiate", baseline);
-        Assert.DoesNotContain("Program.CreateAcrossPortfolios", baseline);
-        Assert.DoesNotContain("Program.Manage", baseline);
-        Assert.DoesNotContain("Portfolio.Manage", baseline);
-    }
-
-    [Fact]
-    public void Protected_admin_baseline_includes_active_tenant_reference_data_permissions()
-    {
-        var mandatory = ProtectedTenantAdminPolicy.MandatoryPermissionKeys;
-
-        Assert.Equal(59, mandatory.Count);
-        Assert.Contains("ReferenceData.View", mandatory);
-        Assert.Contains("ReferenceData.Create", mandatory);
-        Assert.Contains("ReferenceData.Edit", mandatory);
-        Assert.Contains("ReferenceData.Delete", mandatory);
-        Assert.Contains("Plugin.View", mandatory);
-        Assert.Contains("Directory.ManageConnection", mandatory);
-        Assert.DoesNotContain("ReferenceData.Import", mandatory);
-        Assert.DoesNotContain("ReferenceData.Export", mandatory);
-    }
-
     [Fact]
     public void Document_category_permissions_are_granular_localized_and_grantable_to_all_tenant_roles()
     {
@@ -234,8 +186,8 @@ public sealed class PermissionCatalogArchitectureTests
             Assert.False(string.IsNullOrWhiteSpace(permission.DescriptionEn));
             Assert.False(string.IsNullOrWhiteSpace(permission.DescriptionAr));
             Assert.Equal(RoleCategories.Selectable, permission.AllowedCategories);
-            Assert.True(permission.IsTenantAdminBaseline);
-            Assert.Contains(key, ProtectedTenantAdminPolicy.MandatoryPermissionKeys);
+            Assert.False(PermissionProtectionPolicy.Empty.IsProtected(permission.Key));
+            Assert.True(PermissionProtectionPolicy.Empty.IsGrantable(permission));
 
             if (level == PermissionLevel.Action)
                 Assert.Contains("DocumentCategory.View", permission.RequiredPermissionKeys);
@@ -254,8 +206,9 @@ public sealed class PermissionCatalogArchitectureTests
         Assert.True(plugin.IsActive);
         Assert.Equal(PermissionScope.Tenant, plugin.Scope);
         Assert.Equal(PermissionLevel.View, plugin.Level);
-        Assert.DoesNotContain("Issue.View", ProtectedTenantAdminPolicy.MandatoryPermissionKeys);
-        Assert.Contains("Plugin.View", ProtectedTenantAdminPolicy.MandatoryPermissionKeys);
+        Assert.DoesNotContain("Issue.View", PermissionProtectionPolicy.Empty.ProtectedPermissionKeys);
+        Assert.DoesNotContain("Plugin.View", PermissionProtectionPolicy.Empty.ProtectedPermissionKeys);
+        Assert.True(PermissionProtectionPolicy.Empty.IsGrantable(plugin));
     }
 
     [Fact]
@@ -283,12 +236,12 @@ public sealed class PermissionCatalogArchitectureTests
         Assert.False(string.IsNullOrWhiteSpace(create.DescriptionAr));
 
         Assert.Equal(PermissionLevel.View, view.Level);
-        Assert.DoesNotContain("ProjectPlan.Create", ProtectedTenantAdminPolicy.MandatoryPermissionKeys);
-        Assert.DoesNotContain("Planning.Edit", ProtectedTenantAdminPolicy.MandatoryPermissionKeys);
-        Assert.DoesNotContain("Planning.View", ProtectedTenantAdminPolicy.MandatoryPermissionKeys);
-        Assert.False(create.IsTenantAdminBaseline);
-        Assert.False(edit.IsTenantAdminBaseline);
-        Assert.False(view.IsTenantAdminBaseline);
+        Assert.DoesNotContain("ProjectPlan.Create", PermissionProtectionPolicy.Empty.ProtectedPermissionKeys);
+        Assert.DoesNotContain("Planning.Edit", PermissionProtectionPolicy.Empty.ProtectedPermissionKeys);
+        Assert.DoesNotContain("Planning.View", PermissionProtectionPolicy.Empty.ProtectedPermissionKeys);
+        Assert.False(PermissionProtectionPolicy.Empty.IsProtected(create.Key));
+        Assert.False(PermissionProtectionPolicy.Empty.IsProtected(edit.Key));
+        Assert.False(PermissionProtectionPolicy.Empty.IsProtected(view.Key));
     }
 
     [Fact]
@@ -336,14 +289,14 @@ public sealed class PermissionCatalogArchitectureTests
         Assert.True(view.IsActive);
         Assert.True(view.IsAssignable);
         Assert.True(view.IsSensitive);
-        Assert.False(view.IsTenantAdminBaseline);
+        Assert.False(PermissionProtectionPolicy.Empty.IsProtected(view.Key));
 
         Assert.Equal(PermissionScope.Project, manageApprovalConfiguration.Scope);
         Assert.Equal(PermissionLevel.Action, manageApprovalConfiguration.Level);
         Assert.True(manageApprovalConfiguration.IsActive);
         Assert.True(manageApprovalConfiguration.IsAssignable);
         Assert.True(manageApprovalConfiguration.IsSensitive);
-        Assert.False(manageApprovalConfiguration.IsTenantAdminBaseline);
+        Assert.False(PermissionProtectionPolicy.Empty.IsProtected(manageApprovalConfiguration.Key));
         Assert.Contains(view.Key, manageApprovalConfiguration.RequiredPermissionKeys);
 
         Assert.Equal(PermissionScope.Project, configureDraftApproval.Scope);
@@ -351,13 +304,13 @@ public sealed class PermissionCatalogArchitectureTests
         Assert.True(configureDraftApproval.IsActive);
         Assert.True(configureDraftApproval.IsAssignable);
         Assert.True(configureDraftApproval.IsSensitive);
-        Assert.False(configureDraftApproval.IsTenantAdminBaseline);
+        Assert.False(PermissionProtectionPolicy.Empty.IsProtected(configureDraftApproval.Key));
         Assert.Contains(view.Key, configureDraftApproval.RequiredPermissionKeys);
         Assert.Contains("ProjectAnnualBudget.EditDraft", configureDraftApproval.RequiredPermissionKeys);
 
-        Assert.DoesNotContain(view.Key, ProtectedTenantAdminPolicy.MandatoryPermissionKeys);
-        Assert.DoesNotContain(manageApprovalConfiguration.Key, ProtectedTenantAdminPolicy.MandatoryPermissionKeys);
-        Assert.DoesNotContain(configureDraftApproval.Key, ProtectedTenantAdminPolicy.MandatoryPermissionKeys);
+        Assert.DoesNotContain(view.Key, PermissionProtectionPolicy.Empty.ProtectedPermissionKeys);
+        Assert.DoesNotContain(manageApprovalConfiguration.Key, PermissionProtectionPolicy.Empty.ProtectedPermissionKeys);
+        Assert.DoesNotContain(configureDraftApproval.Key, PermissionProtectionPolicy.Empty.ProtectedPermissionKeys);
 
         var projectAnnualBudgetKeys = new[]
         {
@@ -368,7 +321,7 @@ public sealed class PermissionCatalogArchitectureTests
         {
             var permission = PermissionCatalog.ByKey[key];
             Assert.Equal(PermissionScope.Project, permission.Scope);
-            Assert.False(permission.IsTenantAdminBaseline);
+            Assert.False(PermissionProtectionPolicy.Empty.IsProtected(permission.Key));
         }
     }
 
@@ -382,7 +335,7 @@ public sealed class PermissionCatalogArchitectureTests
         Assert.Equal("financial-overview", foundation.ScreenId);
         Assert.True(foundation.IsAssignable);
         Assert.True(foundation.IsSensitive);
-        Assert.False(foundation.IsTenantAdminBaseline);
+        Assert.False(PermissionProtectionPolicy.Empty.IsProtected(foundation.Key));
         Assert.Empty(foundation.RequiredPermissionKeys);
 
         var export = PermissionCatalog.ByKey["CostUtilization.Export"];
@@ -392,11 +345,11 @@ public sealed class PermissionCatalogArchitectureTests
         Assert.Equal("cost-utilization", export.ScreenId);
         Assert.True(export.IsAssignable);
         Assert.True(export.IsSensitive);
-        Assert.False(export.IsTenantAdminBaseline);
+        Assert.False(PermissionProtectionPolicy.Empty.IsProtected(export.Key));
         Assert.Contains("Resource.View", export.RequiredPermissionKeys);
 
-        Assert.DoesNotContain(foundation.Key, ProtectedTenantAdminPolicy.MandatoryPermissionKeys);
-        Assert.DoesNotContain(export.Key, ProtectedTenantAdminPolicy.MandatoryPermissionKeys);
+        Assert.DoesNotContain(foundation.Key, PermissionProtectionPolicy.Empty.ProtectedPermissionKeys);
+        Assert.DoesNotContain(export.Key, PermissionProtectionPolicy.Empty.ProtectedPermissionKeys);
     }
 
     [Fact]
@@ -409,7 +362,7 @@ public sealed class PermissionCatalogArchitectureTests
         Assert.Equal("program-financial-rollup", program.ScreenId);
         Assert.True(program.IsAssignable);
         Assert.True(program.IsSensitive);
-        Assert.False(program.IsTenantAdminBaseline);
+        Assert.False(PermissionProtectionPolicy.Empty.IsProtected(program.Key));
         Assert.Empty(program.RequiredPermissionKeys);
 
         var portfolio = PermissionCatalog.ByKey["PortfolioFinancialRollup.View"];
@@ -419,12 +372,12 @@ public sealed class PermissionCatalogArchitectureTests
         Assert.Equal("portfolio-financial-rollup", portfolio.ScreenId);
         Assert.True(portfolio.IsAssignable);
         Assert.True(portfolio.IsSensitive);
-        Assert.False(portfolio.IsTenantAdminBaseline);
+        Assert.False(PermissionProtectionPolicy.Empty.IsProtected(portfolio.Key));
         Assert.Empty(portfolio.RequiredPermissionKeys);
 
         Assert.DoesNotContain("ProjectFinancialRollup.View", PermissionCatalog.ByKey.Keys);
-        Assert.DoesNotContain(program.Key, ProtectedTenantAdminPolicy.MandatoryPermissionKeys);
-        Assert.DoesNotContain(portfolio.Key, ProtectedTenantAdminPolicy.MandatoryPermissionKeys);
+        Assert.DoesNotContain(program.Key, PermissionProtectionPolicy.Empty.ProtectedPermissionKeys);
+        Assert.DoesNotContain(portfolio.Key, PermissionProtectionPolicy.Empty.ProtectedPermissionKeys);
     }
 
     [Fact]
@@ -494,13 +447,40 @@ public sealed class PermissionCatalogArchitectureTests
     }
 
     [Fact]
+    public void Active_permission_dependency_graph_has_no_cycles()
+    {
+        var entries = PermissionCatalog.Entries
+            .Where(item => item.IsActive)
+            .ToDictionary(item => item.Key, StringComparer.Ordinal);
+        var visiting = new HashSet<string>(StringComparer.Ordinal);
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+
+        void Visit(string key)
+        {
+            if (visited.Contains(key)) return;
+            Assert.True(visiting.Add(key), $"Permission dependency cycle includes '{key}'.");
+
+            foreach (var dependency in entries[key].RequiredPermissionKeys)
+            {
+                Assert.Contains(dependency, entries.Keys);
+                Visit(dependency);
+            }
+
+            visiting.Remove(key);
+            visited.Add(key);
+        }
+
+        foreach (var key in entries.Keys) Visit(key);
+    }
+
+    [Fact]
     public void Active_actions_require_their_screen_view_except_assigned_review_actions()
     {
         var entries = PermissionCatalog.Entries.Where(item => item.IsActive).ToDictionary(item => item.Key, StringComparer.Ordinal);
 
         foreach (var action in entries.Values.Where(item => item.Level == PermissionLevel.Action
             && !AssignedReviewExceptions.Contains(item.Key)
-            && !ExternalDataPermissionExceptions.Contains(item.Key)))
+            && !CrossScreenViewExceptions.Contains(item.Key)))
         {
             Assert.Contains(action.RequiredPermissionKeys, dependency => entries.TryGetValue(dependency, out var view) && view.Level == PermissionLevel.View && view.ScreenId == action.ScreenId);
         }

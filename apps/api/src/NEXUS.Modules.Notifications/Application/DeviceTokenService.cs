@@ -20,6 +20,14 @@ public sealed class DeviceTokenService : IDeviceTokenService
         var tokenHash = HashToken(request.Token);
         await using var transaction = await _context.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
 
+        var matches = await _context.Set<UserDeviceToken>().IgnoreQueryFilters()
+            .Where(item => item.TokenHash == tokenHash)
+            .OrderByDescending(item => item.IsActive)
+            .ThenByDescending(item => item.LastSeenAt)
+            .ToListAsync(cancellationToken);
+        if (matches.Any(item => item.IsActive && (item.TenantId != tenantId || item.UserId != userId)))
+            throw new DeviceTokenOwnershipConflictException();
+
         if (request.PreviousDeviceId.HasValue)
         {
             var previous = await _context.Set<UserDeviceToken>().IgnoreQueryFilters().SingleOrDefaultAsync(item =>
@@ -27,26 +35,24 @@ public sealed class DeviceTokenService : IDeviceTokenService
             if (previous is not null && previous.TokenHash != tokenHash) Deactivate(previous, userId);
         }
 
-        var matches = await _context.Set<UserDeviceToken>().IgnoreQueryFilters()
-            .Where(item => item.TokenHash == tokenHash)
-            .OrderByDescending(item => item.IsActive)
-            .ThenByDescending(item => item.LastSeenAt)
-            .ToListAsync(cancellationToken);
         var device = matches.FirstOrDefault(item => item.IsActive && !item.IsDeleted
             && item.TenantId == tenantId && item.UserId == userId);
-        foreach (var staleOwner in matches.Where(item => item.IsActive && item != device))
-            Deactivate(staleOwner, userId);
+        foreach (var duplicateOwnedDevice in matches.Where(item => item.IsActive
+            && item != device
+            && item.TenantId == tenantId
+            && item.UserId == userId))
+            Deactivate(duplicateOwnedDevice, userId);
 
         if (device is null)
         {
-            // Reuse this user's inactive row when possible. If another identity owned
-            // the active token, persist its deactivation before inserting the new owner
-            // so the filtered unique index remains safe within the transaction.
+            // Reuse this user's inactive row when possible. If this same owner has a
+            // legacy active/deleted row, persist its deactivation before inserting so
+            // the filtered unique index remains safe within the transaction.
             device = matches.FirstOrDefault(item => !item.IsActive && !item.IsDeleted
                 && item.TenantId == tenantId && item.UserId == userId);
             if (device is null)
             {
-                if (matches.Any(item => item.IsActive))
+                if (matches.Any(item => item.IsActive && item.TenantId == tenantId && item.UserId == userId))
                     await _context.SaveChangesAsync(cancellationToken);
                 device = new UserDeviceToken { CreatedBy = userId.ToString() };
                 _context.Set<UserDeviceToken>().Add(device);

@@ -6,6 +6,8 @@ import { RequirePermission } from "../auth/RequirePermission";
 import { RequireFreshPermission } from "../auth/RequireFreshPermission";
 import { DirectoryAccessPermissions, Permissions, ProjectLifecycleCatalogAccessPermissions, ReferenceDataAccessPermissions } from "../lib/permissions";
 import { useI18n } from "../i18n/messages";
+import { ErrorState } from "../components/ui/StateDisplay";
+import { useSettingsAccess } from "../features/administration/api/settings";
 // Eager: migration order 1–6 core (Home, Projects, My Work, Resources, Vendors, Teams)
 import { HomePage } from "../features/home/HomePage";
 import { LoginPage } from "../features/home/LoginPage";
@@ -113,6 +115,15 @@ function Guard({ permissions, children }: { permissions: string | string[]; chil
   return <RequirePermission permissions={permissions}>{children}</RequirePermission>;
 }
 
+function TenantOrganizationStructureRoute() {
+  const { t } = useI18n();
+  const access = useSettingsAccess();
+  if (access.isLoading) return <div className="route-state" role="status">{t("auth.loadingAuthorization")}</div>;
+  if (access.isError || !access.data) return <ErrorState title={t("administration.settingsWorkspace.loadError")} onRetry={() => void access.refetch()} />;
+  if (!access.data.canReadTenant) return <Navigate to="/administration" replace />;
+  return <Suspended><OrganizationPage /></Suspended>;
+}
+
 export function AppRoutes() {
   return (
     <Routes>
@@ -217,22 +228,22 @@ export function AppRoutes() {
 
         <Route path="/administration" element={<Suspended><AdministrationHub /></Suspended>} />
         <Route element={<Suspended><AdministrationLayout /></Suspended>}>
-          <Route path="/administration/organization" element={<Guard permissions={Permissions.Settings.View}><OrganizationPage /></Guard>} />
+          <Route path="/administration/organization" element={<Guard permissions={Permissions.Settings.View}><TenantOrganizationStructureRoute /></Guard>} />
           <Route path="/administration/access" element={<Guard permissions={[Permissions.Users.View, Permissions.Users.ManageAccounts, Permissions.Users.SetStatus, Permissions.Users.AssignRoles, Permissions.Users.ManageOverrides, Permissions.Roles.View, Permissions.Roles.Create, Permissions.Roles.EditDetails, Permissions.Roles.ConfigurePermissions, Permissions.Roles.Delete]}><Suspended><AccessPage /></Suspended></Guard>} />
           <Route path="/administration/access/users" element={<Guard permissions={[Permissions.Users.View, Permissions.Users.ManageAccounts]}><Suspended><AccessUsersPage /></Suspended></Guard>} />
           <Route path="/administration/access/users/:userId/permissions" element={<Guard permissions={Permissions.Users.ManageOverrides}><Suspended><UserPermissionsPage /></Suspended></Guard>} />
           <Route path="/administration/access/roles" element={<Guard permissions={[Permissions.Roles.View, Permissions.Roles.Create, Permissions.Roles.EditDetails, Permissions.Roles.ConfigurePermissions, Permissions.Roles.Delete, Permissions.Users.View]}><Suspended><RolesPage /></Suspended></Guard>} />
           <Route path="/administration/users" element={<Navigate to="/administration/access/users" replace />} />
           <Route path="/administration/roles" element={<Navigate to="/administration/access/roles" replace />} />
-          <Route path="/administration/reference-data" element={<Guard permissions={[...ReferenceDataAccessPermissions, Permissions.DocumentCategory.View, ...ProjectLifecycleCatalogAccessPermissions]}><Suspended><ReferenceDataPage /></Suspended></Guard>} />
+          <Route path="/administration/reference-data" element={<Guard permissions={[...ReferenceDataAccessPermissions, Permissions.DocumentCategory.View, ...ProjectLifecycleCatalogAccessPermissions, Permissions.OrganizationConfiguration.View, Permissions.OrganizationConfiguration.Manage]}><Suspended><ReferenceDataPage /></Suspended></Guard>} />
           <Route path="/administration/reference-data/document-categories" element={<Guard permissions={Permissions.DocumentCategory.View}><Suspended><DocumentCategoriesPage /></Suspended></Guard>} />
-          <Route path="/administration/reference-data/project-lifecycle" element={<Guard permissions={ProjectLifecycleCatalogAccessPermissions}><Suspended><ProjectLifecycleCatalogPage /></Suspended></Guard>} />
+          <Route path="/administration/reference-data/project-lifecycle" element={<Guard permissions={[...ProjectLifecycleCatalogAccessPermissions, Permissions.OrganizationConfiguration.View, Permissions.OrganizationConfiguration.Manage]}><Suspended><ProjectLifecycleCatalogPage /></Suspended></Guard>} />
           <Route path="/administration/reference-data/project-roles" element={<Guard permissions={[...ReferenceDataAccessPermissions, Permissions.Resources.View]}><Suspended><ProjectRolesPage /></Suspended></Guard>} />
           <Route path="/administration/reference-data/vendor-categories" element={<Guard permissions={ReferenceDataAccessPermissions}><Suspended><VendorCategoriesPage /></Suspended></Guard>} />
           <Route path="/administration/reference-data/work-item-statuses" element={<Guard permissions={ReferenceDataAccessPermissions}><Suspended><WorkItemStatusesPage /></Suspended></Guard>} />
           <Route path="/administration/settings" element={<Suspended><PlatformGeneralSettingsPage /></Suspended>} />
           <Route path="/administration/tenant-settings" element={<Guard permissions={Permissions.Settings.View}><Suspended><TenantGeneralSettingsPage /></Suspended></Guard>} />
-          <Route path="/administration/organization-settings" element={<Guard permissions={Permissions.Settings.View}><Suspended><OrganizationGeneralSettingsPage /></Suspended></Guard>} />
+          <Route path="/administration/organization-settings" element={<Guard permissions={[Permissions.Settings.View, Permissions.OrganizationConfiguration.View]}><Suspended><OrganizationGeneralSettingsPage /></Suspended></Guard>} />
           <Route path="/administration/email-notifications" element={<Suspended><EmailNotificationSettingsPage /></Suspended>} />
           <Route path="/administration/integrations" element={<Guard permissions={[Permissions.Settings.View, ...DirectoryAccessPermissions]}><Suspended><IntegrationsPage /></Suspended></Guard>} />
           <Route path="/administration/integrations/directory" element={<Guard permissions={DirectoryAccessPermissions}><Suspended><DirectoryIntegrationPage /></Suspended></Guard>} />

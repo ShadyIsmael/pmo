@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api } from "@api/client";
+import { ApiError, api } from "@api/client";
 import { endpoints } from "@api/endpoints";
 
 export interface ProjectDto {
@@ -148,6 +148,7 @@ export interface ProjectRoleRefDto {
 
 export interface ProjectTeamMemberAllocationDto {
   allocationId: string;
+  isRestrictedConflict?: boolean;
   resourceId: string;
   resourceName: string;
   resourceJobTitle?: string;
@@ -968,6 +969,8 @@ export function useProjectTeamCapacity(
     ),
     enabled: Boolean(id && startDate && endDate && enabled),
     staleTime: 30_000,
+    retry: false,
+    retryOnMount: false,
   });
 }
 
@@ -1164,12 +1167,18 @@ export interface ProjectHandoverCapabilitiesDto {
 
 export type ProjectHandoverInitiationType = "ManagerInitiated" | "AdminInitiated" | "InitialAssignment";
 
+export function shouldRetryHandoverQuery(failureCount: number, error: Error): boolean {
+  if (error instanceof ApiError && [401, 403, 404].includes(error.status)) return false;
+  return failureCount < 1;
+}
+
 export function useProjectHandoverManagers(projectId: string, enabled = true) {
   return useQuery({
     queryKey: projectKeys.handoverManagers(projectId),
     queryFn: () => api.get<ProjectHandoverManagerDto[]>(endpoints.projects.handoverManagers(projectId)),
     enabled: Boolean(projectId) && enabled,
     staleTime: 60_000,
+    retry: shouldRetryHandoverQuery,
   });
 }
 
@@ -1179,6 +1188,7 @@ export function useProjectHandoverCapabilities(projectId: string, enabled = true
     queryFn: () => api.get<ProjectHandoverCapabilitiesDto>(`/api/projects/${projectId}/handover-capabilities`),
     enabled: Boolean(projectId) && enabled,
     staleTime: 10_000,
+    retry: shouldRetryHandoverQuery,
   });
 }
 
@@ -1188,6 +1198,7 @@ export function useProjectHandoverRequests(projectId: string, enabled = true) {
     queryFn: () => api.get<ProjectHandoverRequestDto[]>(`/api/projects/${projectId}/handover-requests`),
     enabled: Boolean(projectId) && enabled,
     staleTime: 15_000,
+    retry: shouldRetryHandoverQuery,
   });
 }
 

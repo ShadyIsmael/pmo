@@ -37,6 +37,7 @@ import { useI18n } from "@i18n/messages";
 import { formatCurrencyValue } from "@lib/formatting/currency";
 import { formatNumberValue } from "@lib/formatting/number";
 import { useAuth } from "@auth/AuthProvider";
+import { ApiError } from "@api/client";
 import { hasPermission, Permissions } from "@lib/permissions";
 import { formatDate, cn } from "@lib/utils";
 import { getRiskLevelTextClass, getStatusTextClass, getStatusTone } from "@lib/status-presentation";
@@ -378,6 +379,7 @@ function OverviewQuestionDashboard({
   overview,
   locale,
   teamCapacityQuery,
+  canViewTeamCapacity,
   capacityPeriodType,
   onCapacityPeriodTypeChange,
 }: {
@@ -385,6 +387,7 @@ function OverviewQuestionDashboard({
   overview: ProjectOverviewDto;
   locale: string;
   teamCapacityQuery: ReturnType<typeof useProjectTeamCapacity>;
+  canViewTeamCapacity: boolean;
   capacityPeriodType: ProjectCapacityPeriodType;
   onCapacityPeriodTypeChange: (periodType: ProjectCapacityPeriodType) => void;
 }) {
@@ -402,7 +405,9 @@ function OverviewQuestionDashboard({
   const financialChartData = financialSummaryData.filter((item): item is { key: string; name: string; value: number; color: string } => isFiniteNumber(item.value) && item.value > 0);
   const hasFinancialSummary = [approved, spent, committed].some(isFiniteNumber);
 
-  const teamCapacity = teamCapacityQuery.data;
+  const capacityAccessDenied = teamCapacityQuery.error instanceof ApiError && teamCapacityQuery.error.status === 403;
+  const capacityAccessUnavailable = !canViewTeamCapacity || capacityAccessDenied;
+  const teamCapacity = capacityAccessUnavailable ? undefined : teamCapacityQuery.data;
   const capacityDataReady = teamCapacity?.isCapacityDataAvailable === true
     && teamCapacity.isAllocationDataAvailable === true;
   const capacityDataIncomplete = Boolean(teamCapacity && !capacityDataReady && teamCapacity.activeResourceCount !== 0);
@@ -561,7 +566,9 @@ function OverviewQuestionDashboard({
           />
         </CardHeader>
         <CardContent className={cn(PREMIUM_CARD_CONTENT, "space-y-4")}>
-          {teamCapacityQuery.isLoading ? (
+          {capacityAccessUnavailable ? (
+            <EmptyPanel title={t("projects.teamCapacityUnavailable")} description={t("projects.teamCapacityAccessUnavailable")} />
+          ) : teamCapacityQuery.isLoading ? (
             <Skeleton className="mx-auto h-52 w-full max-w-[440px]" role="status" aria-label={t("common.loading")} />
           ) : teamCapacityQuery.isError ? (
             <ErrorState title={t("projects.teamCapacityUnavailable")} onRetry={() => void teamCapacityQuery.refetch()} />
@@ -783,6 +790,9 @@ export function ProjectOverviewTab() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const canViewPlanning = Boolean(user && hasPermission(user.permissions, Permissions.Planning.View));
+  const canViewTeamCapacity = Boolean(user
+    && hasPermission(user.permissions, Permissions.Project.View)
+    && hasPermission(user.permissions, Permissions.Resources.View));
   const query = useProjectOverview(projectId, Boolean(projectId));
   const [capacityPeriodType, setCapacityPeriodType] = React.useState<ProjectCapacityPeriodType>("Month");
   const capacityPeriod = React.useMemo(() => getCapacityReportingPeriod(capacityPeriodType, new Date(), firstDayOfWeek), [capacityPeriodType, firstDayOfWeek]);
@@ -791,7 +801,7 @@ export function ProjectOverviewTab() {
     capacityPeriodType,
     capacityPeriod.startDate,
     capacityPeriod.endDate,
-    Boolean(projectId),
+    Boolean(projectId && canViewTeamCapacity),
   );
   const overview = query.data;
   const projectInformation = <ProjectInformationCard project={project} overview={overview} locale={locale} />;
@@ -864,6 +874,7 @@ export function ProjectOverviewTab() {
         overview={overview}
         locale={locale}
         teamCapacityQuery={teamCapacityQuery}
+        canViewTeamCapacity={canViewTeamCapacity}
         capacityPeriodType={capacityPeriodType}
         onCapacityPeriodTypeChange={setCapacityPeriodType}
       />

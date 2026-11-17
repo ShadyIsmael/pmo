@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Mvc.Routing;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using NEXUS.Api.Finance;
+using NEXUS.Api.Management;
 using NEXUS.Modules.CostManagement.Api;
 using NEXUS.Modules.Identity.Api;
 using NEXUS.Modules.Identity.Application;
@@ -27,6 +28,7 @@ using NEXUS.Modules.ResourceManagement.Api;
 using NEXUS.Modules.ResourceManagement.Application.DTOs;
 using NEXUS.Api.Governance;
 using NEXUS.SharedKernel;
+using NEXUS.SharedKernel.Management;
 using Moq;
 using Xunit;
 using AspNetAuthorizationService = Microsoft.AspNetCore.Authorization.IAuthorizationService;
@@ -533,6 +535,7 @@ public sealed class PermissionAuthorizationContractTests
     public async Task Handover_review_returns_success_for_an_assigned_request_and_404_for_an_unavailable_request()
     {
         var userId = Guid.NewGuid();
+        var tenantId = Guid.NewGuid();
         var requestId = Guid.NewGuid();
         var missingRequestId = Guid.NewGuid();
         var review = new ApprovalReviewDto { ApprovalId = requestId, ApprovalType = "ProjectHandover" };
@@ -541,14 +544,28 @@ public sealed class PermissionAuthorizationContractTests
             .ReturnsAsync(Result<ApprovalReviewDto>.Success(review));
         service.Setup(item => item.GetApprovalReviewAsync(missingRequestId, userId.ToString(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<ApprovalReviewDto>.Failure(Error.NotFound("This approval is no longer available.")));
-        var controller = new HandoverRequestController(service.Object)
+        var management = new ManagementContextAccessor();
+        management.Set(new ManagementContext(
+            userId,
+            tenantId,
+            ManagementPerspective.ProjectManager,
+            ManagementViewMode.Native,
+            null,
+            null,
+            null,
+            ManagementScope.Empty));
+        var controller = new HandoverRequestController(service.Object, management)
         {
             ControllerContext = new ControllerContext
             {
                 HttpContext = new DefaultHttpContext
                 {
                     User = new ClaimsPrincipal(new ClaimsIdentity(
-                        [new Claim(ClaimTypes.NameIdentifier, userId.ToString())], "test"))
+                        [
+                            new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
+                            new Claim("tenantId", tenantId.ToString())
+                        ],
+                        "test"))
                 }
             }
         };
@@ -606,7 +623,7 @@ public sealed class PermissionAuthorizationContractTests
         var organizationalUnits = new Mock<IOrganizationalUnitService>();
         organizationalUnits.Setup(service => service.GetProjectLookupAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<OrganizationalUnitLookupDto>());
-        await new OrganizationalUnitController(organizationalUnits.Object) { ControllerContext = ProjectCreateControllerContext() }
+        await new OrganizationalUnitController(organizationalUnits.Object, Moq.Mock.Of<NEXUS.SharedKernel.Management.IManagementContextAccessor>()) { ControllerContext = ProjectCreateControllerContext() }
             .GetProjectLookup(CancellationToken.None);
         organizationalUnits.Verify(service => service.GetProjectLookupAsync(It.IsAny<CancellationToken>()), Times.Once);
         organizationalUnits.Verify(service => service.GetUnitsAsync(It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);

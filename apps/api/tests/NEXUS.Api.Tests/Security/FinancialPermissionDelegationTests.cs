@@ -24,7 +24,7 @@ public sealed class FinancialPermissionDelegationTests
         var catalogEntry = PermissionCatalog.ByKey[candidateKey];
         Assert.True(catalogEntry.IsActive);
         Assert.True(catalogEntry.IsAssignable);
-        Assert.False(catalogEntry.IsTenantAdminBaseline);
+        Assert.False(PermissionProtectionPolicy.Empty.IsProtected(catalogEntry.Key));
 
         await using var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);

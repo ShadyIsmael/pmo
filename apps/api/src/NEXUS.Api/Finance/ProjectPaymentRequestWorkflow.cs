@@ -12,6 +12,7 @@ using NEXUS.Modules.CostManagement.Application.DTOs;
 using NEXUS.Modules.CostManagement.Domain;
 using NEXUS.Modules.Identity.Application;
 using NEXUS.Modules.Identity.Domain;
+using NEXUS.Modules.Identity.Infrastructure;
 using NEXUS.Modules.Organization.Application.Settings;
 using NEXUS.Modules.Organization.Domain;
 using NEXUS.Modules.ProjectManagement.Domain;
@@ -53,10 +54,11 @@ public sealed partial class ProjectPaymentRequestWorkflow(
         var projectExists = await FindProjectQuery(tenantId, projectId).AnyAsync(cancellationToken);
         if (!projectExists) return Result<IReadOnlyList<PaymentRequestEligibleApproverDto>>.Failure(Error.NotFound("Project not found"));
 
+        var requesterId = management.Current?.UserId ?? Guid.Empty;
         var candidateIds = await ProjectTeamApproverEligibility.GetActiveLinkedUserIdsAsync(
             db, tenantId, projectId, cancellationToken);
         var items = await db.Users.IgnoreQueryFilters().AsNoTracking()
-            .Where(user => candidateIds.Contains(user.Id) && user.TenantId == tenantId
+            .Where(user => user.Id != requesterId && candidateIds.Contains(user.Id) && user.TenantId == tenantId
                 && user.IsActive && !user.IsDeleted)
             .OrderBy(user => user.FirstName)
             .ThenBy(user => user.LastName)
@@ -74,6 +76,68 @@ public sealed partial class ProjectPaymentRequestWorkflow(
         }
 
         return Result<IReadOnlyList<PaymentRequestEligibleApproverDto>>.Success(eligible);
+    }
+
+    public async Task<Result<IReadOnlyList<PaymentRequestEligibleApproverDto>>> GetEligibleRecoveryApproversAsync(
+        Guid tenantId, Guid projectId, Guid requestId, Guid currentApproverId, Guid actorId,
+        CancellationToken cancellationToken)
+    {
+        var access = await ValidateServiceAccessAsync(tenantId, projectId, actorId,
+            requireWrite: true, cancellationToken, actionPermission: ApprovePermission);
+        if (access.Error is not null)
+            return Result<IReadOnlyList<PaymentRequestEligibleApproverDto>>.Failure(access.Error);
+        var actorPermissions = await permissions.GetEffectivePermissionsAsync(actorId, tenantId, cancellationToken);
+        if (!actorPermissions.Contains("Governance.AssignmentRecovery.Manage"))
+            return Result<IReadOnlyList<PaymentRequestEligibleApproverDto>>.Failure(Error.Forbidden(
+                "Governance.AssignmentRecovery.Manage is required to view approver recovery options."));
+        var actorError = await ValidateActiveActorAsync(tenantId, actorId, cancellationToken);
+        if (actorError is not null)
+            return Result<IReadOnlyList<PaymentRequestEligibleApproverDto>>.Failure(actorError);
+
+        var row = await FindRequestAsync(tenantId, projectId, requestId, cancellationToken);
+        if (row is null || row.Value.Detail.RequestKind != ProjectPaymentRequestKinds.PaymentRequest)
+            return Result<IReadOnlyList<PaymentRequestEligibleApproverDto>>.Failure(Error.NotFound("Payment Request not found."));
+        if (row.Value.Request.Status != PaymentRequestStatuses.Pending || row.Value.Detail.ApprovalMode is null)
+            return Result<IReadOnlyList<PaymentRequestEligibleApproverDto>>.Failure(Error.Conflict(
+                "Approver recovery options are available only for a pending Payment Request."));
+
+        var assignments = await GetAssignmentsAsync(tenantId, requestId, tracked: false, cancellationToken);
+        var pending = assignments.Where(item => item.ApproverUserId == currentApproverId
+            && item.State == PaymentRequestAssignmentStates.Pending).Take(2).ToArray();
+        if (pending.Length != 1)
+            return Result<IReadOnlyList<PaymentRequestEligibleApproverDto>>.Failure(Error.Conflict(
+                "The selected approver must have exactly one pending assignment on this request."));
+        if (await db.ApprovalActions.IgnoreQueryFilters().AnyAsync(item => item.TenantId == tenantId
+                && !item.IsDeleted && item.ApprovalRequestId == requestId
+                && item.ApproverAssignmentId == pending[0].Id, cancellationToken))
+            return Result<IReadOnlyList<PaymentRequestEligibleApproverDto>>.Failure(Error.Conflict(
+                "An assignment with a recorded decision cannot be recovered."));
+
+        var eligible = await GetEligibleApproverIdsAsync(tenantId, projectId, cancellationToken);
+        if (eligible.Contains(currentApproverId))
+            return Result<IReadOnlyList<PaymentRequestEligibleApproverDto>>.Failure(Error.Conflict(
+                "The assigned approver remains eligible; reassignment is not available."));
+        eligible.Remove(row.Value.Request.RequestedBy ?? Guid.Empty);
+        eligible.ExceptWith(assignments.Select(item => item.ApproverUserId));
+        return Result<IReadOnlyList<PaymentRequestEligibleApproverDto>>.Success(
+            await MapEligibleApproversAsync(tenantId, eligible, cancellationToken));
+    }
+
+    private async Task<IReadOnlyList<PaymentRequestEligibleApproverDto>> MapEligibleApproversAsync(
+        Guid tenantId, IReadOnlySet<Guid> eligibleIds, CancellationToken cancellationToken)
+    {
+        if (eligibleIds.Count == 0) return Array.Empty<PaymentRequestEligibleApproverDto>();
+        var users = await db.Users.IgnoreQueryFilters().AsNoTracking()
+            .Where(user => user.TenantId == tenantId && user.IsActive && !user.IsDeleted
+                && eligibleIds.Contains(user.Id))
+            .OrderBy(user => user.FirstName).ThenBy(user => user.LastName)
+            .Select(user => new { user.Id, user.FirstName, user.LastName, user.Email })
+            .ToListAsync(cancellationToken);
+        return users.Select(user => new PaymentRequestEligibleApproverDto(user.Id,
+                string.IsNullOrWhiteSpace($"{user.FirstName} {user.LastName}".Trim())
+                    ? user.Email
+                    : $"{user.FirstName} {user.LastName}".Trim()))
+            .ToArray();
     }
 
     public async Task<Result<IReadOnlyList<PaymentRequestMilestoneOptionDto>>> GetActiveMilestonesAsync(
@@ -123,6 +187,10 @@ public sealed partial class ProjectPaymentRequestWorkflow(
         var canSubmit = writableContext && effective.Contains(SubmitPermission);
         var canApprove = writableContext && effective.Contains(ApprovePermission);
         var canCancel = writableContext && effective.Contains(CancelPermission);
+        var canRecoverAssignments = canApprove && effective.Contains(AssignmentRecoveryPermission);
+        var eligibleRecoveryApprovers = canRecoverAssignments
+            ? await GetEligibleApproverIdsAsync(tenantId, projectId, cancellationToken)
+            : new HashSet<Guid>();
 
         var now = DateTimeOffset.UtcNow;
         var period = await tenantFiscalYear.ResolveForTimestampAsync(tenantId, now, cancellationToken);
@@ -172,6 +240,7 @@ public sealed partial class ProjectPaymentRequestWorkflow(
             assignments.Where(item => item.ApprovalRequestId == row.request.Id).ToArray(),
             actions.Where(item => item.ApprovalRequestId == row.request.Id).ToArray(),
             names, actorId, canEdit, canSubmit, canApprove, canCancel,
+            canRecoverAssignments ? eligibleRecoveryApprovers : null, canRecoverAssignments,
             row.detail.ProjectAnnualBudgetId.HasValue && budgets.TryGetValue(row.detail.ProjectAnnualBudgetId.Value, out var budget)
                 ? budget
                 : null)).ToArray();
@@ -596,7 +665,8 @@ public sealed partial class ProjectPaymentRequestWorkflow(
         if (!await IsConfiguredCurrencyAsync(NormalizeCurrency(project.Currency), cancellationToken))
             return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Conflict("The project currency is not configured in the currency catalog."));
 
-        var validation = PaymentRequestWorkflowPolicy.ValidateApprovalSetup(project.FinanceApprovalMode, approvalMode, selected);
+        var validation = PaymentRequestWorkflowPolicy.ValidateApprovalSetup(
+            project.FinanceApprovalMode, approvalMode, selected, request.RequestedBy);
         if (validation.Count > 0) return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Validation(string.Join(",", validation)));
         var eligibility = await GetEligibleApproverIdsAsync(tenantId, projectId, cancellationToken);
         if (selected.Any(item => !eligibility.Contains(item.UserId)))
@@ -653,12 +723,15 @@ public sealed partial class ProjectPaymentRequestWorkflow(
         var names = await LoadUserNamesAsync(tenantId, selected.Select(item => item.UserId), cancellationToken);
         var approverSummary = string.Join(", ", selected.OrderBy(item => item.Position ?? int.MaxValue)
             .Select(item => $"{names.GetValueOrDefault(item.UserId) ?? item.UserId.ToString("D")} ({item.Requirement})"));
+        var approvalPlanSnapshot = selected.OrderBy(item => item.Position ?? int.MaxValue)
+            .Select(item => new { approverUserId = item.UserId, item.Position, item.Requirement })
+            .ToArray();
         var before = AuditValues(request, detail, null, statusOverride: PaymentRequestStatuses.Draft);
         AddAudit(project, request, actorId, actorName, "Submitted", "Payment Request submitted for approval", before,
-            AuditValues(request, detail, new { approvalMode, approvers = approverSummary }),
+            AuditValues(request, detail, new { approvalMode, approvers = approverSummary, approvalPlan = approvalPlanSnapshot }),
             "status,approvalMode,approvers,amount,currency,annualBudgetId,fiscalYear");
         AddAudit(project, request, actorId, actorName, "ApproversAssigned", $"Approvers assigned to {Reference(request)}: {approverSummary}",
-            null, AuditValues(request, detail, new { approvalMode, approvers = approverSummary }),
+            null, AuditValues(request, detail, new { approvalMode, approvers = approverSummary, approvalPlan = approvalPlanSnapshot }),
             "approvalMode,approvers");
 
         try
@@ -671,6 +744,132 @@ public sealed partial class ProjectPaymentRequestWorkflow(
             return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Conflict("Payment Request changed. Refresh before submitting."));
         }
         return Result<ProjectPaymentRequestDetailDto>.Success(await ToDetailAsync(request, detail, actorId, cancellationToken));
+    }
+
+    public async Task<Result<ProjectPaymentRequestDetailDto>> ReassignApproverAsync(
+        Guid tenantId,
+        Guid projectId,
+        Guid requestId,
+        Guid actorId,
+        string? actorName,
+        ReassignPaymentRequestApproverDto dto,
+        CancellationToken cancellationToken)
+    {
+        var serviceAccess = await ValidateServiceAccessAsync(tenantId, projectId, actorId, requireWrite: true,
+            cancellationToken, actionPermission: ApprovePermission);
+        if (serviceAccess.Error is not null)
+            return Result<ProjectPaymentRequestDetailDto>.Failure(serviceAccess.Error);
+
+        var actorPermissions = await permissions.GetEffectivePermissionsAsync(actorId, tenantId, cancellationToken);
+        if (!actorPermissions.Contains("Governance.AssignmentRecovery.Manage"))
+            return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Forbidden(
+                "Governance.AssignmentRecovery.Manage is required to reassign an approver."));
+        var reason = dto.Reason?.Trim();
+        if (dto.CurrentApproverId == Guid.Empty || dto.ReplacementApproverId == Guid.Empty
+            || dto.CurrentApproverId == dto.ReplacementApproverId)
+            return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Validation(
+                "Choose distinct current and replacement approvers."));
+        if (string.IsNullOrWhiteSpace(reason) || reason.Length > 1000)
+            return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Validation(
+                "A reassignment reason of 1 to 1000 characters is required."));
+
+        await using var mutation = await TenantAdminMutationGuard.AcquireAsync(db, tenantId, cancellationToken);
+        actorPermissions = await permissions.GetEffectivePermissionsAsync(actorId, tenantId, cancellationToken);
+        if (!actorPermissions.Contains(ApprovePermission)
+            || !actorPermissions.Contains("Governance.AssignmentRecovery.Manage"))
+            return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Forbidden(
+                "Approver reassignment permissions must remain effective when the operation starts."));
+        var activeActorError = await ValidateActiveActorAsync(tenantId, actorId, cancellationToken);
+        if (activeActorError is not null)
+            return Result<ProjectPaymentRequestDetailDto>.Failure(activeActorError);
+
+        var project = await FindProjectForUpdateAsync(tenantId, projectId, cancellationToken);
+        if (project is null)
+            return Result<ProjectPaymentRequestDetailDto>.Failure(Error.NotFound("Project not found."));
+        var row = await FindRequestTrackedAsync(tenantId, projectId, requestId, cancellationToken);
+        if (row is null)
+            return Result<ProjectPaymentRequestDetailDto>.Failure(Error.NotFound("Payment Request not found."));
+        var (request, detail) = row.Value;
+        if (!MatchesVersion(request.RowVersion, dto.RowVersion))
+            return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Conflict(
+                "Payment Request changed. Refresh before reassigning an approver."));
+        if (request.Status != PaymentRequestStatuses.Pending || detail.ApprovalMode is null)
+            return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Conflict(
+                "Only a pending Payment Request can have an approver reassigned."));
+        if (request.RequestedBy == dto.ReplacementApproverId)
+            return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Validation(
+                "The requester cannot be assigned to approve their own Payment Request."));
+
+        var assignments = await GetAssignmentsAsync(tenantId, requestId, tracked: true, cancellationToken);
+        var pendingAssignments = assignments.Where(item => item.ApproverUserId == dto.CurrentApproverId
+            && item.State == PaymentRequestAssignmentStates.Pending).Take(2).ToArray();
+        if (pendingAssignments.Length != 1)
+            return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Conflict(
+                "The selected approver must have exactly one pending assignment on this request."));
+        var assignment = pendingAssignments[0];
+        var actions = await db.ApprovalActions.IgnoreQueryFilters()
+            .Where(item => item.TenantId == tenantId && !item.IsDeleted && item.ApprovalRequestId == requestId)
+            .ToListAsync(cancellationToken);
+        if (actions.Any(item => item.ApproverAssignmentId == assignment.Id))
+            return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Conflict(
+                "An approver assignment with a recorded decision cannot be reassigned."));
+        if (assignments.Any(item => item.Id != assignment.Id && item.ApproverUserId == dto.ReplacementApproverId))
+            return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Validation(
+                "The replacement approver is already assigned to this approval plan."));
+
+        var eligibleApprovers = await GetEligibleApproverIdsAsync(tenantId, projectId, cancellationToken);
+        if (eligibleApprovers.Contains(dto.CurrentApproverId))
+            return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Conflict(
+                "The assigned approver remains eligible; reassignment is not available."));
+        if (!eligibleApprovers.Contains(dto.ReplacementApproverId))
+            return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Validation(
+                "The replacement must be an active Project Team member with ProjectPaymentRequest.Approve permission."));
+
+        var before = AuditValues(request, detail, new
+        {
+            approverAssignmentId = assignment.Id,
+            currentApproverId = assignment.ApproverUserId
+        });
+        var currentNames = await LoadUserNamesAsync(tenantId,
+            [dto.CurrentApproverId, dto.ReplacementApproverId], cancellationToken);
+        assignment.ApproverUserId = dto.ReplacementApproverId;
+        assignment.UpdatedBy = actorId.ToString("D");
+        request.UpdatedBy = actorId.ToString("D");
+        if (detail.ApprovalMode == PaymentRequestApprovalModes.Sequential
+            && request.CurrentApproverId == dto.CurrentApproverId)
+            request.CurrentApproverId = dto.ReplacementApproverId;
+        AddAudit(project, request, actorId, actorName, "ApproverReassigned",
+            $"Payment Request {Reference(request)} approver reassigned from "
+                + $"{currentNames.GetValueOrDefault(dto.CurrentApproverId) ?? dto.CurrentApproverId.ToString("D")} to "
+                + $"{currentNames.GetValueOrDefault(dto.ReplacementApproverId) ?? dto.ReplacementApproverId.ToString("D")}: {reason}",
+            before,
+            AuditValues(request, detail, new
+            {
+                approverAssignmentId = assignment.Id,
+                previousApproverId = dto.CurrentApproverId,
+                replacementApproverId = dto.ReplacementApproverId,
+                reason
+            }),
+            "approver,approvalPlan,reason");
+
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+            await mutation.CommitAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Conflict(
+                "Payment Request changed during approver reassignment. Refresh and try again."));
+        }
+        catch (DbUpdateException)
+        {
+            return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Conflict(
+                "Approver reassignment conflicted with another update."));
+        }
+
+        return Result<ProjectPaymentRequestDetailDto>.Success(
+            await ToDetailAsync(request, detail, actorId, cancellationToken));
     }
 
     public async Task<Result<ProjectPaymentRequestDetailDto>> DecideAsync(
@@ -695,6 +894,9 @@ public sealed partial class ProjectPaymentRequestWorkflow(
             return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Conflict("Payment Request changed. Refresh before deciding."));
         if (request.Status != PaymentRequestStatuses.Pending || detail.ApprovalMode is null)
             return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Conflict("This Payment Request is no longer awaiting approval."));
+        if (!PaymentRequestWorkflowPolicy.IsRequesterEligibleForApproval(request.RequestedBy, actorId))
+            return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Forbidden(
+                "The requester cannot approve their own Payment Request unless an explicit request-type policy allows it."));
 
         var eligibleApprovers = await GetEligibleApproverIdsAsync(tenantId, projectId, cancellationToken);
         if (!eligibleApprovers.Contains(actorId))
@@ -961,10 +1163,16 @@ public sealed partial class ProjectPaymentRequestWorkflow(
             .ToListAsync(cancellationToken);
         var ids = assignments.Select(item => item.ApproverUserId).Append(request.RequestedBy ?? Guid.Empty).Where(id => id != Guid.Empty);
         var names = await LoadUserNamesAsync(detail.TenantId, ids, cancellationToken);
-        var approvers = MapApprovers(request, detail, assignments, actions, names, actorId);
-        var requesterName = names.GetValueOrDefault(request.RequestedBy ?? Guid.Empty) ?? string.Empty;
         var effective = await permissions.GetEffectivePermissionsAsync(actorId, detail.TenantId, cancellationToken);
         var writableContext = management.Current?.EffectiveReadOnly != true;
+        var canRecoverAssignments = writableContext && effective.Contains(ApprovePermission)
+            && effective.Contains(AssignmentRecoveryPermission);
+        var eligibleRecoveryApprovers = canRecoverAssignments
+            ? await GetEligibleApproverIdsAsync(detail.TenantId, detail.ProjectId, cancellationToken)
+            : new HashSet<Guid>();
+        var approvers = MapApprovers(request, detail, assignments, actions, names, actorId,
+            canRecoverAssignments ? eligibleRecoveryApprovers : null, canRecoverAssignments);
+        var requesterName = names.GetValueOrDefault(request.RequestedBy ?? Guid.Empty) ?? string.Empty;
         var canEdit = writableContext && effective.Contains(EditDraftPermission)
             && request.Status == PaymentRequestStatuses.Draft && request.RequestedBy == actorId;
         var canSubmit = writableContext && effective.Contains(SubmitPermission)
@@ -1019,9 +1227,12 @@ public sealed partial class ProjectPaymentRequestWorkflow(
         bool canSubmitPermission,
         bool canApprovePermission,
         bool canCancelPermission,
+        IReadOnlySet<Guid>? eligibleRecoveryApprovers,
+        bool canRecoverAssignments,
         ProjectAnnualBudget? annualBudget)
     {
-        var approvers = MapApprovers(request, detail, assignments, actions, names, actorId);
+        var approvers = MapApprovers(request, detail, assignments, actions, names, actorId,
+            eligibleRecoveryApprovers, canRecoverAssignments);
         var canEdit = canEditPermission && request.Status == PaymentRequestStatuses.Draft && request.RequestedBy == actorId;
         var canSubmit = canSubmitPermission && request.Status == PaymentRequestStatuses.Draft && request.RequestedBy == actorId;
         return new ProjectPaymentRequestListItemDto(
@@ -1041,7 +1252,7 @@ public sealed partial class ProjectPaymentRequestWorkflow(
             request.RowVersion,
             canEdit,
             canSubmit,
-            canApprovePermission && approvers.Any(item => item.IsActive && item.UserId == actorId),
+            canApprovePermission && approvers.Any(item => item.CanDecide),
             canCancelPermission && PaymentRequestWorkflowPolicy.CanCancelBeforeApproval(request.Status) && request.RequestedBy == actorId,
             detail.ProjectAnnualBudgetId,
             detail.AnnualBudgetFiscalYear,
@@ -1054,7 +1265,9 @@ public sealed partial class ProjectPaymentRequestWorkflow(
         IReadOnlyCollection<PaymentRequestApproverAssignment> assignments,
         IReadOnlyCollection<ApprovalAction> actions,
         IReadOnlyDictionary<Guid, string> names,
-        Guid actorId)
+        Guid actorId,
+        IReadOnlySet<Guid>? eligibleRecoveryApprovers = null,
+        bool canRecoverAssignments = false)
     {
         var actionByAssignment = actions.Where(item => item.ApproverAssignmentId.HasValue)
             .GroupBy(item => item.ApproverAssignmentId!.Value)
@@ -1081,7 +1294,19 @@ public sealed partial class ProjectPaymentRequestWorkflow(
                     action?.ActionedAt,
                     action?.Comments,
                     isActive,
-                    isActive && item.ApproverUserId == actorId);
+                    isActive && item.ApproverUserId == actorId
+                        && PaymentRequestWorkflowPolicy.IsRequesterEligibleForApproval(request.RequestedBy, item.ApproverUserId))
+                {
+                    CanReassign = canRecoverAssignments
+                        && request.Status == PaymentRequestStatuses.Pending
+                        && item.State == PaymentRequestAssignmentStates.Pending
+                        && action is null
+                        && eligibleRecoveryApprovers is not null
+                        && !eligibleRecoveryApprovers.Contains(item.ApproverUserId)
+                        && eligibleRecoveryApprovers.Any(candidate => candidate != item.ApproverUserId
+                            && candidate != (request.RequestedBy ?? Guid.Empty)
+                            && assignments.All(assigned => assigned.ApproverUserId != candidate))
+                };
             })
             .ToArray();
     }

@@ -343,7 +343,7 @@ export function ProjectMembersTab() {
           {conflictCheckEnabled && conflictsQuery.isFetching ? <p className="text-xs text-muted-foreground">{t("projects.checkingAllocationConflicts")}</p> : null}
           {allocationConflicts.length > 0 ? <div className="space-y-2 rounded-md border border-warning/40 bg-warning/10 p-3" role="alert">
             <p className="text-sm font-medium text-warning-foreground">{t("projects.conflictsDetected")}</p>
-            <div className="space-y-1">{allocationConflicts.map((conflict) => <div key={conflict.allocationId} className="flex flex-wrap items-center justify-between gap-2 text-xs"><span>{conflict.resourceName}{conflict.role ? ` · ${conflict.role}` : ""}</span><span className="text-muted-foreground">{formatNumber(conflict.allocationPercentage)}% · {conflict.startDate.slice(0, 10)} – {conflict.endDate.slice(0, 10)}</span></div>)}</div>
+            <div className="space-y-1">{allocationConflicts.map((conflict) => <div key={conflict.allocationId} className="flex flex-wrap items-center justify-between gap-2 text-xs">{conflict.isRestrictedConflict ? <span>{t("projects.conflictInAnotherProject")}</span> : <><span>{conflict.resourceName}{conflict.role ? ` · ${conflict.role}` : ""}</span><span className="text-muted-foreground">{formatNumber(conflict.allocationPercentage)}% · {conflict.startDate.slice(0, 10)} – {conflict.endDate.slice(0, 10)}</span></>}</div>)}</div>
           </div> : null}
           {error ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}
         </SideSheetBody>

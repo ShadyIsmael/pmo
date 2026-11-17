@@ -34,12 +34,31 @@ public class RolesController : ControllerBase
         return roles.IsSuccess ? Ok(roles.Value) : ToError(roles.Error);
     }
 
+    /// <summary>Lists only roles this actor may assign in the current Tenant.</summary>
+    [Authorize(Policy = "Users.AssignRoles")]
+    [HttpGet("assignable")]
+    public async Task<IActionResult> GetAssignable(CancellationToken cancellationToken)
+    {
+        if (!TryGetActor(out var actorId, out var tenantId)) return Forbid();
+        var result = await _roleAdministrationService.GetAssignableRolesAsync(actorId, tenantId, cancellationToken);
+        return result.IsSuccess ? Ok(result.Value) : ToError(result.Error);
+    }
+
     [Authorize(Policy = "Roles.View")]
     [HttpGet("manage")]
     public async Task<IActionResult> GetManageable(CancellationToken cancellationToken)
     {
         if (!TryGetActor(out var actorId, out var tenantId)) return Forbid();
         var result = await _roleAdministrationService.GetManageableRolesAsync(actorId, tenantId, cancellationToken);
+        return result.IsSuccess ? Ok(result.Value) : ToError(result.Error);
+    }
+
+    [Authorize(Policy = "Roles.View")]
+    [HttpGet("organization-options")]
+    public async Task<IActionResult> GetManagedRoleOrganizations(CancellationToken cancellationToken)
+    {
+        if (!TryGetActor(out var actorId, out var tenantId)) return Forbid();
+        var result = await _roleAdministrationService.GetManagedRoleOrganizationsAsync(actorId, tenantId, cancellationToken);
         return result.IsSuccess ? Ok(result.Value) : ToError(result.Error);
     }
 
@@ -102,6 +121,7 @@ public class RolesController : ControllerBase
         403 => StatusCode(StatusCodes.Status403Forbidden, new { error = error.Message, error.Code, error.FieldName, error.Details }),
         404 => NotFound(new { error = error.Message, error.Code, error.FieldName, error.Details }),
         409 => Conflict(new { error = error.Message, error.Code, error.FieldName, error.Details }),
+        503 => StatusCode(StatusCodes.Status503ServiceUnavailable, new { error = error.Message, error.Code, error.FieldName, error.Details }),
         _ => BadRequest(new { error = error?.Message ?? "The role request is invalid", error?.Code, error?.FieldName, error?.Details })
     };
 }

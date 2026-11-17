@@ -1,15 +1,20 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Moq;
+using NEXUS.Api.Management;
 using NEXUS.Api.Tests.Testing;
 using NEXUS.Modules.Audit.Application;
+using NEXUS.Modules.Audit.Domain;
+using NEXUS.Modules.WorkflowEngine.Api;
 using NEXUS.Modules.WorkflowEngine.Application;
 using NEXUS.Modules.WorkflowEngine.Application.Contracts;
 using NEXUS.Modules.WorkflowEngine.Application.Services;
 using NEXUS.Modules.WorkflowEngine.Domain;
 using NEXUS.Persistence;
+using NEXUS.SharedKernel.Management;
 using Xunit;
 
 namespace NEXUS.Api.Tests.Security;
@@ -22,6 +27,7 @@ public sealed class WorkflowDefinitionTenantIsolationTests : IDisposable
 
     private readonly SqliteConnection _connection = new("Data Source=:memory:");
     private readonly HttpContextAccessor _httpContextAccessor;
+    private readonly ManagementContextAccessor _managementContextAccessor = new();
     private readonly AppDbContext _db;
     private readonly WorkflowManagementService _service;
     private readonly Guid _definitionAId = Guid.NewGuid();
@@ -39,6 +45,9 @@ public sealed class WorkflowDefinitionTenantIsolationTests : IDisposable
         _db = new SqliteTestAppDbContext(options);
         _db.Database.EnsureCreated();
         AppDbContext.ConfigureTenantResolution(_httpContextAccessor);
+        _managementContextAccessor.Set(new ManagementContext(
+            Guid.NewGuid(), TenantA, ManagementPerspective.ProjectManager, ManagementViewMode.Native,
+            null, null, null, ManagementScope.Empty));
 
         SeedDefinition(TenantA, _definitionAId, _draftAId, "TENANT_A_FLOW");
         SeedDefinition(TenantB, _definitionBId, _draftBId, "TENANT_B_FLOW");
@@ -56,7 +65,8 @@ public sealed class WorkflowDefinitionTenantIsolationTests : IDisposable
             Array.Empty<IWorkflowGuardHandler>(),
             Array.Empty<IWorkflowActionHandler>(),
             Mock.Of<IAuditService>(),
-            _httpContextAccessor);
+            _httpContextAccessor,
+            _managementContextAccessor);
     }
 
     [Fact]
@@ -101,6 +111,108 @@ public sealed class WorkflowDefinitionTenantIsolationTests : IDisposable
 
         Assert.True(sameTenantUpdate.IsSuccess, sameTenantUpdate.Error?.Message);
         Assert.Equal("Tenant A Updated", sameTenantUpdate.Value!.Name);
+    }
+
+    [Fact]
+    public async Task DraftDefinitionMutations_RejectReadOnlyManagementContextBeforeReadingOrWriting()
+    {
+        _managementContextAccessor.Set(_managementContextAccessor.Current! with
+        {
+            ViewMode = ManagementViewMode.ReadOnlyViewAs
+        });
+        var actor = "tenant-a-user";
+        var stateRequest = new SaveWorkflowStateRequest
+        {
+            Code = "Added",
+            NameEn = "Added",
+            NameAr = "Added",
+            IsInitial = true,
+            IsActive = true
+        };
+        var transitionRequest = new SaveWorkflowTransitionRequest
+        {
+            Code = "Added",
+            NameEn = "Added",
+            NameAr = "Added",
+            FromStateId = Guid.NewGuid(),
+            ToStateId = Guid.NewGuid(),
+            IsActive = true
+        };
+        var guardRequest = new SaveWorkflowGuardRequest { GuardType = "RequireComment" };
+        var actionRequest = new SaveWorkflowActionRequest { ActionType = "AuditProjection" };
+
+        var statusCodes = new List<int>
+        {
+            (await _service.CreateDefinitionAsync(new CreateWorkflowDefinitionRequest { Name = "Created", Code = "CREATED" }, actor)).Error!.StatusCode,
+            (await _service.UpdateDefinitionAsync(_definitionAId, new UpdateWorkflowDefinitionRequest { Name = "Changed" }, actor)).Error!.StatusCode,
+            (await _service.CreateDraftAsync(_definitionAId, new CreateDraftRequest(), actor)).Error!.StatusCode,
+            (await _service.DeleteDraftAsync(_draftAId, null, actor)).Error!.StatusCode,
+            (await _service.PublishAsync(_draftAId, new PublishWorkflowRequest(), actor)).Error!.StatusCode,
+            (await _service.CreateStateAsync(_draftAId, stateRequest, actor)).Error!.StatusCode,
+            (await _service.UpdateStateAsync(Guid.NewGuid(), stateRequest, actor)).Error!.StatusCode,
+            (await _service.DeleteStateAsync(Guid.NewGuid(), null, actor)).Error!.StatusCode,
+            (await _service.CreateTransitionAsync(_draftAId, transitionRequest, actor)).Error!.StatusCode,
+            (await _service.UpdateTransitionAsync(Guid.NewGuid(), transitionRequest, actor)).Error!.StatusCode,
+            (await _service.DeleteTransitionAsync(Guid.NewGuid(), null, actor)).Error!.StatusCode,
+            (await _service.CreateGuardAsync(Guid.NewGuid(), guardRequest, actor)).Error!.StatusCode,
+            (await _service.UpdateGuardAsync(Guid.NewGuid(), guardRequest, actor)).Error!.StatusCode,
+            (await _service.DeleteGuardAsync(Guid.NewGuid(), null, actor)).Error!.StatusCode,
+            (await _service.CreateActionAsync(Guid.NewGuid(), actionRequest, actor)).Error!.StatusCode,
+            (await _service.UpdateActionAsync(Guid.NewGuid(), actionRequest, actor)).Error!.StatusCode,
+            (await _service.DeleteActionAsync(Guid.NewGuid(), null, actor)).Error!.StatusCode
+        };
+
+        Assert.All(statusCodes, statusCode => Assert.Equal(403, statusCode));
+        Assert.Empty(_db.Set<WorkflowState>());
+        Assert.Empty(_db.Set<WorkflowTransition>());
+        Assert.Empty(_db.Set<WorkflowTransitionGuard>());
+        Assert.Empty(_db.Set<WorkflowTransitionAction>());
+        Assert.Empty(_db.Set<AuditEntry>().Where(entry => entry.EntityType == "WorkflowManagement"));
+        Assert.True(_db.WorkflowDefinitions.Single(item => item.Id == _definitionAId).IsActive);
+        Assert.Equal(1, _db.WorkflowDefinitionVersions.Count(item => item.WorkflowDefinitionId == _definitionAId));
+    }
+
+    [Fact]
+    public async Task DefinitionMutation_RejectsActorThatDoesNotMatchAuthenticatedIdentity()
+    {
+        var result = await _service.UpdateDefinitionAsync(
+            _definitionAId,
+            new UpdateWorkflowDefinitionRequest { Name = "Spoofed actor update" },
+            "different-user");
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(401, result.Error!.StatusCode);
+        Assert.Equal("TENANT_A_FLOW", _db.WorkflowDefinitions.Single(item => item.Id == _definitionAId).Name);
+        Assert.Empty(_db.Set<AuditEntry>().Where(entry => entry.EntityType == "WorkflowManagement"));
+    }
+
+    [Fact]
+    public async Task WorkflowManagementController_MapsMissingActorIdentityToUnauthorized()
+    {
+        var httpContext = _httpContextAccessor.HttpContext!;
+        var originalUser = httpContext.User;
+        httpContext.User = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim("tenantId", TenantA.ToString())],
+            authenticationType: "test"));
+        try
+        {
+            var controller = new WorkflowManagementController(_service)
+            {
+                ControllerContext = new ControllerContext { HttpContext = httpContext }
+            };
+
+            var result = await controller.Update(
+                _definitionAId,
+                new UpdateWorkflowDefinitionRequest { Name = "Missing actor update" },
+                CancellationToken.None);
+
+            Assert.IsType<UnauthorizedObjectResult>(result);
+            Assert.Equal("TENANT_A_FLOW", _db.WorkflowDefinitions.Single(item => item.Id == _definitionAId).Name);
+        }
+        finally
+        {
+            httpContext.User = originalUser;
+        }
     }
 
     private void SeedDefinition(Guid tenantId, Guid definitionId, Guid draftId, string code)

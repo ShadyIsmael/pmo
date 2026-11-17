@@ -34,6 +34,7 @@ export const endpoints = {
     detail: (categoryId: string) => id("/api/document-categories", categoryId),
     status: (categoryId: string) => `${id("/api/document-categories", categoryId)}/status`,
     templateOptions: "/api/document-categories/template-options",
+    projectUploadOptions: "/api/document-categories/project-upload-options",
   },
   projects: {
     root: "/api/projects",
@@ -331,10 +332,13 @@ export const endpoints = {
     roles: "/api/roles",
     permissions: (v: string) => `${id("/api/users", v)}/permissions`,
     resetPassword: (v: string) => `${id("/api/users", v)}/reset-password`,
+    organizationOptions: "/api/users/organization-options",
   },
   roleManagement: {
     root: "/api/roles",
     manageable: "/api/roles/manage",
+    assignable: "/api/roles/assignable",
+    organizationOptions: "/api/roles/organization-options",
     permissionCatalog: "/api/roles/permissions",
     detail: (v: string) => id("/api/roles", v),
   },

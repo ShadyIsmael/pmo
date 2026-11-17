@@ -8,6 +8,7 @@ import { PageHeader } from "@components/layout/PageHeader";
 import { Card, CardContent } from "@components/ui/Card";
 import { Skeleton } from "@components/ui/Skeleton";
 import { useI18n } from "@i18n/messages";
+import { getApiErrorMessage } from "@api/client";
 import { useAuth } from "@auth/AuthProvider";
 import { useManagement } from "@api/management";
 import { hasPermission, Permissions } from "@lib/permissions";
@@ -40,13 +41,11 @@ export function ProjectDetailPage() {
   const shellQuery = useProjectShell(id ?? "", Boolean(id));
   const overviewIsActive = Boolean(id && /\/overview\/?$/.test(location.pathname));
   const overviewQuery = useProjectOverview(id ?? "", overviewIsActive);
-  const canAccessHandover = Boolean(user && hasPermission(user.permissions, Permissions.Handover.View)
-    || user && hasPermission(user.permissions, Permissions.Handover.Manage)
-    || user && hasPermission(user.permissions, Permissions.Handover.AdminInitiate));
-  const handoverCapabilities = useProjectHandoverCapabilities(id ?? "", canAccessHandover);
-  const handoverQuery = useProjectHandoverRequests(id ?? "", handoverOpen && overviewIsActive && canAccessHandover);
+  const handoverCapabilities = useProjectHandoverCapabilities(id ?? "", Boolean(user && overviewIsActive));
+  const canViewHandovers = Boolean(user && handoverCapabilities.isSuccess && handoverCapabilities.data);
+  const handoverQuery = useProjectHandoverRequests(id ?? "", handoverOpen && overviewIsActive && canViewHandovers);
   const canManageChangeRequests = Boolean(user && hasPermission(user.permissions, Permissions.ChangeRequest.Manage) && canMutate && !effectiveReadOnly);
-  const canManageHandovers = Boolean(canMutate && !effectiveReadOnly && (handoverCapabilities.data?.canInitiate || handoverCapabilities.data?.canAdminInitiate || handoverCapabilities.data?.canAssignInitial));
+  const canManageHandovers = Boolean(canViewHandovers && canMutate && !effectiveReadOnly && (handoverCapabilities.data?.canInitiate || handoverCapabilities.data?.canAdminInitiate || handoverCapabilities.data?.canAssignInitial));
 
   React.useEffect(() => {
     if (overviewIsActive) return;
@@ -90,7 +89,7 @@ export function ProjectDetailPage() {
       />
       <Outlet context={{ projectId: id!, project }} />
       {overviewIsActive && canManageChangeRequests ? <ProjectChangeRequestActionSheet open={changeRequestOpen} onOpenChange={setChangeRequestOpen} project={project} /> : null}
-      {overviewIsActive && canManageHandovers ? <ProjectHandoverActionSheet open={handoverOpen} onOpenChange={setHandoverOpen} project={project} requests={handoverQuery.data ?? []} requestsLoading={handoverQuery.isLoading} requestsError={handoverQuery.isError} /> : null}
+      {overviewIsActive && canManageHandovers ? <ProjectHandoverActionSheet open={handoverOpen} onOpenChange={setHandoverOpen} project={project} requests={handoverQuery.data ?? []} requestsLoading={handoverQuery.isLoading} requestsError={handoverQuery.isError} requestsErrorMessage={handoverQuery.isError ? getApiErrorMessage(handoverQuery.error, t("managerHandover.loadFailed")) : undefined} /> : null}
     </div>
   );
 }

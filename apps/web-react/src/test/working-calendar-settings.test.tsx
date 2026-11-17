@@ -9,8 +9,10 @@ const fixtures = vi.hoisted(() => ({
   canRead: true,
   canWrite: true,
   profileCanManage: true,
+  actorPermissions: [] as string[],
   organizationSettings: null as Record<string, unknown> | null,
   tenantSettings: null as Record<string, unknown> | null,
+  tenantSettingsReadCount: 0,
   calendars: [
     { id: "calendar-1", name: "Tenant Standard", isDefault: true, isConfigured: true, workingDaysPerWeek: 5 },
     { id: "calendar-2", name: "Alternate Week", isDefault: false, isConfigured: true, workingDaysPerWeek: 4 },
@@ -28,7 +30,10 @@ vi.mock("../features/administration/api/settings", () => ({
   useSettingsAccess: () => ({ data: { canReadTenant: fixtures.canRead, canWriteTenant: fixtures.canWrite, canReadPlatform: false, canWritePlatform: false }, isLoading: false, isError: false }),
   useOrganizationProfiles: () => ({ data: [{ id: "organization-1", name: "Operations", canManageSettings: fixtures.profileCanManage }], isLoading: false, isError: false }),
   useOrganizationSettings: (organizationId: string) => ({ data: organizationId ? fixtures.organizationSettings : undefined, isLoading: false, isError: false }),
-  useTenantSettings: () => ({ data: fixtures.tenantSettings, isLoading: false, isError: false }),
+  useTenantSettings: (enabled = true) => {
+    if (enabled) fixtures.tenantSettingsReadCount++;
+    return { data: fixtures.tenantSettings, isLoading: false, isError: false };
+  },
   useUpdateSetting: (scope: string, organizationId?: string) => {
     fixtures.updateScope = scope;
     fixtures.updateOrganizationId = organizationId ?? "";
@@ -47,6 +52,10 @@ vi.mock("../features/administration/api/settings", () => ({
   usePlatformSettings: () => ({ data: undefined, isLoading: false, isError: false }),
   useSaveOrganizationSettingsGrant: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useRevokeOrganizationSettingsGrant: () => ({ mutateAsync: vi.fn(), isPending: false }),
+}));
+
+vi.mock("@auth/AuthProvider", () => ({
+  useAuth: () => ({ user: { id: "organization-admin", permissions: fixtures.actorPermissions } }),
 }));
 
 vi.mock("@features/resources/api/resources", () => ({
@@ -89,6 +98,8 @@ describe("working calendar setting", () => {
     fixtures.canRead = true;
     fixtures.canWrite = true;
     fixtures.profileCanManage = true;
+    fixtures.actorPermissions = ["OrganizationConfiguration.Manage"];
+    fixtures.tenantSettingsReadCount = 0;
     fixtures.organizationSettings = {
       scope: "Organization",
       persistenceAvailable: true,
@@ -133,7 +144,10 @@ describe("working calendar setting", () => {
     expect(fixtures.updateScope).toBe("Tenant");
   });
 
-  it("saves an Organization override through the Organization settings scope", async () => {
+  it("saves an Organization override without Tenant settings permissions", async () => {
+    fixtures.canRead = false;
+    fixtures.canWrite = false;
+    fixtures.profileCanManage = true;
     renderOrganization();
     const selector = await screen.findByRole("combobox", { name: enMessages.administration.settingsWorkspace.defaultWorkingCalendar });
 
@@ -147,23 +161,18 @@ describe("working calendar setting", () => {
     }));
     expect(fixtures.updateScope).toBe("Organization");
     expect(fixtures.updateOrganizationId).toBe("organization-1");
+    expect(fixtures.tenantSettingsReadCount).toBe(0);
   });
 
-  it("shows the effective Tenant calendar in the inherit option and resets an Organization override", async () => {
+  it("shows a generic inherit option and resets an Organization override without reading Tenant settings", async () => {
     fixtures.organizationSettings = {
       scope: "Organization",
       persistenceAvailable: true,
       ownerId: "organization-1",
       settings: [calendarSetting("calendar-2", { source: "OrganizationOverride" })],
     };
-    fixtures.tenantSettings = {
-      scope: "Tenant",
-      persistenceAvailable: true,
-      ownerId: "tenant-1",
-      settings: [calendarSetting("calendar-1", { source: "TenantOverride" })],
-    };
     renderOrganization();
-    const inheritOption = await screen.findByRole("option", { name: "Inherit tenant calendar (currently: Tenant Standard)" });
+    const inheritOption = await screen.findByRole("option", { name: enMessages.administration.settingsWorkspace.inheritTenantValue });
     const selector = screen.getByRole("combobox", { name: enMessages.administration.settingsWorkspace.defaultWorkingCalendar });
 
     fireEvent.change(selector, { target: { value: inheritOption.getAttribute("value")! } });
@@ -175,26 +184,58 @@ describe("working calendar setting", () => {
     }));
     expect(fixtures.resetScope).toBe("Organization");
     expect(fixtures.update).not.toHaveBeenCalledWith(expect.objectContaining({ value: null }));
+    expect(fixtures.tenantSettingsReadCount).toBe(0);
   });
 
-  it("localizes the selector and inheritance label in English and Arabic", async () => {
+  it("uses the scoped effective inherited value in English and Arabic without Tenant Settings access", async () => {
+    fixtures.canRead = false;
+    fixtures.canWrite = false;
+    fixtures.profileCanManage = true;
+    fixtures.organizationSettings = {
+      scope: "Organization",
+      persistenceAvailable: true,
+      ownerId: "organization-1",
+      settings: [calendarSetting("calendar-1", { source: "TenantOverride", inherited: true })],
+    };
     const rendered = renderOrganization("en");
     expect(await screen.findByRole("combobox", { name: enMessages.administration.settingsWorkspace.defaultWorkingCalendar })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "Inherit tenant calendar (currently: Tenant Standard)" })).toBeInTheDocument();
+    expect(fixtures.tenantSettingsReadCount).toBe(0);
 
     rendered.unmount();
     renderOrganization("ar");
     await waitFor(() => expect(document.documentElement.dir).toBe("rtl"));
+    expect(fixtures.tenantSettingsReadCount).toBe(0);
     expect(await screen.findByRole("combobox", { name: arMessages.administration.settingsWorkspace.defaultWorkingCalendar })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "استخدام تقويم المستأجر (الحالي: Tenant Standard)" })).toBeInTheDocument();
   });
 
-  it("keeps the selector read-only without tenant configuration management access", async () => {
+  it("keeps the Organization selector read-only without its scoped manage grant", async () => {
+    fixtures.canRead = false;
     fixtures.canWrite = false;
     fixtures.profileCanManage = false;
     renderOrganization();
 
     expect(await screen.findByRole("combobox", { name: enMessages.administration.settingsWorkspace.defaultWorkingCalendar })).toBeDisabled();
     expect(screen.queryAllByRole("button", { name: enMessages.administration.settingsWorkspace.save })).toHaveLength(0);
+  });
+
+  it("requires both Organization configuration permission and the selected server scope grant", async () => {
+    fixtures.actorPermissions = [];
+    fixtures.profileCanManage = true;
+    renderOrganization();
+
+    expect(await screen.findByRole("textbox", { name: enMessages.administration.settingsWorkspace.name })).toBeDisabled();
+    expect(screen.getByRole("combobox", { name: enMessages.administration.settingsWorkspace.defaultWorkingCalendar })).toBeDisabled();
+    expect(screen.queryAllByRole("button", { name: enMessages.administration.settingsWorkspace.save })).toHaveLength(0);
+  });
+
+  it("allows Tenant Administration authority to manage the selected Organization", async () => {
+    fixtures.actorPermissions = ["Settings.ManageTenantConfiguration"];
+    fixtures.profileCanManage = false;
+    renderOrganization();
+
+    expect(await screen.findByRole("textbox", { name: enMessages.administration.settingsWorkspace.name })).toBeEnabled();
+    expect(screen.getByRole("combobox", { name: enMessages.administration.settingsWorkspace.defaultWorkingCalendar })).toBeEnabled();
   });
 });

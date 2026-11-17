@@ -95,6 +95,9 @@ public class VendorService : IVendorService
 
     public async Task<Result<VendorDto>> CreateAsync(CreateVendorDto dto, string userId, CancellationToken cancellationToken = default)
     {
+        if (!IsTrustedActor(userId))
+            return Result<VendorDto>.Failure(Error.Unauthorized("A valid authenticated actor is required."));
+
         var validation = Validate(dto);
         if (validation is not null)
             return Result<VendorDto>.Failure(validation);
@@ -131,6 +134,9 @@ public class VendorService : IVendorService
 
     public async Task<Result<VendorDto>> UpdateAsync(Guid id, UpdateVendorDto dto, string userId, CancellationToken cancellationToken = default)
     {
+        if (!IsTrustedActor(userId))
+            return Result<VendorDto>.Failure(Error.Unauthorized("A valid authenticated actor is required."));
+
         var vendor = await _context.Set<Vendor>().FirstOrDefaultAsync(v => v.Id == id && !v.IsDeleted, cancellationToken);
         if (vendor is null)
             return Result<VendorDto>.Failure(Error.NotFound("Vendor not found"));
@@ -170,6 +176,9 @@ public class VendorService : IVendorService
 
     public async Task<Result<VendorDto>> DeactivateAsync(Guid id, string userId, CancellationToken cancellationToken = default)
     {
+        if (!IsTrustedActor(userId))
+            return Result<VendorDto>.Failure(Error.Unauthorized("A valid authenticated actor is required."));
+
         var vendor = await _context.Set<Vendor>().FirstOrDefaultAsync(v => v.Id == id && !v.IsDeleted, cancellationToken);
         if (vendor is null)
             return Result<VendorDto>.Failure(Error.NotFound("Vendor not found"));
@@ -196,6 +205,9 @@ public class VendorService : IVendorService
 
     public async Task<Result<VendorDto>> ReactivateAsync(Guid id, string userId, CancellationToken cancellationToken = default)
     {
+        if (!IsTrustedActor(userId))
+            return Result<VendorDto>.Failure(Error.Unauthorized("A valid authenticated actor is required."));
+
         var vendor = await _context.Set<Vendor>().FirstOrDefaultAsync(v => v.Id == id && !v.IsDeleted, cancellationToken);
         if (vendor is null)
             return Result<VendorDto>.Failure(Error.NotFound("Vendor not found"));
@@ -222,6 +234,9 @@ public class VendorService : IVendorService
 
     public async Task<Result> DeleteAsync(Guid id, string userId, CancellationToken cancellationToken = default)
     {
+        if (!IsTrustedActor(userId))
+            return Result.Failure(Error.Unauthorized("A valid authenticated actor is required."));
+
         var vendor = await _context.Set<Vendor>().FirstOrDefaultAsync(v => v.Id == id && !v.IsDeleted, cancellationToken);
         if (vendor is null)
             return Result.Failure(Error.NotFound("Vendor not found"));
@@ -298,6 +313,23 @@ public class VendorService : IVendorService
         Guid.TryParse(_httpContextAccessor?.HttpContext?.User.FindFirstValue("tenantId"), out var tenantId) && tenantId != Guid.Empty
             ? tenantId
             : throw new InvalidOperationException("A trusted tenant context is required.");
+
+    private bool IsTrustedActor(string userId)
+    {
+        if (!Guid.TryParse(userId, out var actorId) || actorId == Guid.Empty)
+            return false;
+
+        var httpContext = _httpContextAccessor?.HttpContext;
+        if (httpContext is null)
+            return false;
+
+        var principal = httpContext.User;
+        var actorClaim = principal.FindFirst(ClaimTypes.NameIdentifier);
+        var actorValue = actorClaim?.Value ?? (actorClaim is null ? principal.FindFirst("sub")?.Value : null);
+        return principal.Identity?.IsAuthenticated == true
+            && Guid.TryParse(actorValue, out var claimActorId)
+            && claimActorId == actorId;
+    }
 
     private async Task<Lookup?> FindCategoryAsync(Guid categoryId, CancellationToken cancellationToken)
     {

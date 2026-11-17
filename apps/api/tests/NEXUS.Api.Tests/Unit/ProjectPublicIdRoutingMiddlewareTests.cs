@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using NEXUS.Api.Management;
+using NEXUS.Modules.Identity.Application;
 using NEXUS.Modules.ProjectManagement.Domain;
 using NEXUS.Modules.ProjectPlanning.Domain;
 using NEXUS.Modules.Meetings.Domain;
@@ -17,6 +18,7 @@ using Xunit;
 
 namespace NEXUS.Api.Tests.Unit;
 
+[Collection("Static tenant resolution")]
 public sealed class ProjectPublicIdRoutingMiddlewareTests
 {
     [Fact]
@@ -99,7 +101,7 @@ public sealed class ProjectPublicIdRoutingMiddlewareTests
         var accessor = new ManagementContextAccessor();
         var controllerReached = false;
         var resourceScope = new ProjectResourceScopeMiddleware(_ => { controllerReached = true; return Task.CompletedTask; });
-        var management = new ManagementContextMiddleware(http => resourceScope.InvokeAsync(http, db, accessor));
+        var management = new ManagementContextMiddleware(http => resourceScope.InvokeAsync(http, db, accessor, EmptyEffectivePermissions()));
         var routing = new ProjectPublicIdRoutingMiddleware(http => management.InvokeAsync(
             http,
             resolver.Object,
@@ -308,7 +310,7 @@ public sealed class ProjectPublicIdRoutingMiddlewareTests
         var accessor = new ManagementContextAccessor();
         var nextCalled = false;
         var resourceScope = new ProjectResourceScopeMiddleware(_ => { nextCalled = true; return Task.CompletedTask; });
-        var management = new ManagementContextMiddleware(http => resourceScope.InvokeAsync(http, db, accessor));
+        var management = new ManagementContextMiddleware(http => resourceScope.InvokeAsync(http, db, accessor, EmptyEffectivePermissions()));
         var routing = new ProjectPublicIdRoutingMiddleware(http => management.InvokeAsync(http, resolver.Object, accessor, NullLogger<ManagementContextMiddleware>.Instance, Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>()));
 
         await routing.InvokeAsync(context, db, NullLogger<ProjectPublicIdRoutingMiddleware>.Instance, Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>());
@@ -343,7 +345,7 @@ public sealed class ProjectPublicIdRoutingMiddlewareTests
         var accessor = new ManagementContextAccessor();
         var nextCalled = false;
         var resourceScope = new ProjectResourceScopeMiddleware(_ => { nextCalled = true; return Task.CompletedTask; });
-        var management = new ManagementContextMiddleware(http => resourceScope.InvokeAsync(http, db, accessor));
+        var management = new ManagementContextMiddleware(http => resourceScope.InvokeAsync(http, db, accessor, EmptyEffectivePermissions()));
         var routing = new ProjectPublicIdRoutingMiddleware(http => management.InvokeAsync(http, resolver.Object, accessor, NullLogger<ManagementContextMiddleware>.Instance, Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>()));
 
         await routing.InvokeAsync(context, db, NullLogger<ProjectPublicIdRoutingMiddleware>.Instance, Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>());
@@ -370,7 +372,7 @@ public sealed class ProjectPublicIdRoutingMiddlewareTests
         var nextCalled = false;
         var middleware = new ProjectResourceScopeMiddleware(_ => { nextCalled = true; return Task.CompletedTask; });
 
-        await middleware.InvokeAsync(context, db, accessor);
+        await middleware.InvokeAsync(context, db, accessor, EmptyEffectivePermissions());
 
         Assert.Equal(expectedStatus, context.Response.StatusCode);
         Assert.Equal(inScope, nextCalled);
@@ -396,7 +398,7 @@ public sealed class ProjectPublicIdRoutingMiddlewareTests
         var nextCalled = false;
         var middleware = new ProjectResourceScopeMiddleware(_ => { nextCalled = true; return Task.CompletedTask; });
 
-        await middleware.InvokeAsync(context, db, accessor);
+        await middleware.InvokeAsync(context, db, accessor, EmptyEffectivePermissions());
 
         Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
         Assert.False(nextCalled);
@@ -426,7 +428,7 @@ public sealed class ProjectPublicIdRoutingMiddlewareTests
         var nextCalled = false;
         var middleware = new ProjectResourceScopeMiddleware(_ => { nextCalled = true; return Task.CompletedTask; });
 
-        await middleware.InvokeAsync(context, db, accessor);
+        await middleware.InvokeAsync(context, db, accessor, EmptyEffectivePermissions());
 
         Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
         Assert.False(nextCalled);
@@ -450,7 +452,7 @@ public sealed class ProjectPublicIdRoutingMiddlewareTests
         var nextCalled = false;
 
         await new ProjectResourceScopeMiddleware(_ => { nextCalled = true; return Task.CompletedTask; })
-            .InvokeAsync(context, db, accessor);
+            .InvokeAsync(context, db, accessor, EmptyEffectivePermissions());
 
         Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
         Assert.True(nextCalled);
@@ -477,7 +479,7 @@ public sealed class ProjectPublicIdRoutingMiddlewareTests
         validContext.Items[ProjectRequestContext.InternalProjectIdKey] = projectA.Id;
         var validNextCalled = false;
         await new ProjectResourceScopeMiddleware(_ => { validNextCalled = true; return Task.CompletedTask; })
-            .InvokeAsync(validContext, db, accessor);
+            .InvokeAsync(validContext, db, accessor, EmptyEffectivePermissions());
 
         var foreignPlanContext = AuthenticatedContext(tenantId);
         foreignPlanContext.Request.Path = $"/api/projects/{projectA.PublicId:D}/plans/{planB.Id:D}/assignments/batch";
@@ -487,7 +489,7 @@ public sealed class ProjectPublicIdRoutingMiddlewareTests
         foreignPlanContext.Items[ProjectRequestContext.InternalProjectIdKey] = projectA.Id;
         var foreignPlanNextCalled = false;
         await new ProjectResourceScopeMiddleware(_ => { foreignPlanNextCalled = true; return Task.CompletedTask; })
-            .InvokeAsync(foreignPlanContext, db, accessor);
+            .InvokeAsync(foreignPlanContext, db, accessor, EmptyEffectivePermissions());
 
         Assert.Equal(StatusCodes.Status200OK, validContext.Response.StatusCode);
         Assert.True(validNextCalled);
@@ -519,7 +521,7 @@ public sealed class ProjectPublicIdRoutingMiddlewareTests
         meetingContext.Request.RouteValues["attachmentId"] = minutesAttachment.Id.ToString("D");
         var meetingNextCalled = false;
         await new ProjectResourceScopeMiddleware(_ => { meetingNextCalled = true; return Task.CompletedTask; })
-            .InvokeAsync(meetingContext, db, accessor);
+            .InvokeAsync(meetingContext, db, accessor, EmptyEffectivePermissions());
 
         var workItemContext = AuthenticatedContext(tenantId);
         workItemContext.Request.Path = $"/api/work-items/{workItemA.Id:D}/attachments/{workItemAttachment.Id:D}/content";
@@ -527,7 +529,7 @@ public sealed class ProjectPublicIdRoutingMiddlewareTests
         workItemContext.Request.RouteValues["attachmentId"] = workItemAttachment.Id.ToString("D");
         var workItemNextCalled = false;
         await new ProjectResourceScopeMiddleware(_ => { workItemNextCalled = true; return Task.CompletedTask; })
-            .InvokeAsync(workItemContext, db, accessor);
+            .InvokeAsync(workItemContext, db, accessor, EmptyEffectivePermissions());
 
         Assert.Equal(StatusCodes.Status404NotFound, meetingContext.Response.StatusCode);
         Assert.Equal(StatusCodes.Status404NotFound, workItemContext.Response.StatusCode);
@@ -554,7 +556,7 @@ public sealed class ProjectPublicIdRoutingMiddlewareTests
         var nextCalled = false;
 
         await new ProjectResourceScopeMiddleware(_ => { nextCalled = true; return Task.CompletedTask; })
-            .InvokeAsync(context, db, accessor);
+            .InvokeAsync(context, db, accessor, EmptyEffectivePermissions());
 
         Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
         Assert.False(nextCalled);
@@ -590,7 +592,7 @@ public sealed class ProjectPublicIdRoutingMiddlewareTests
         var nextCalled = false;
         var middleware = new ProjectResourceScopeMiddleware(_ => { nextCalled = true; return Task.CompletedTask; });
 
-        await middleware.InvokeAsync(context, db, accessor);
+        await middleware.InvokeAsync(context, db, accessor, EmptyEffectivePermissions());
 
         Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
         Assert.False(nextCalled);
@@ -614,13 +616,22 @@ public sealed class ProjectPublicIdRoutingMiddlewareTests
         var nextCalled = false;
 
         await new ProjectResourceScopeMiddleware(_ => { nextCalled = true; return Task.CompletedTask; })
-            .InvokeAsync(context, db, accessor);
+            .InvokeAsync(context, db, accessor, EmptyEffectivePermissions());
 
         Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
         Assert.False(nextCalled);
     }
 
     private static AppDbContext CreateDb(Project project) => CreateDb([project]);
+
+    private static IUserEffectivePermissionService EmptyEffectivePermissions()
+    {
+        var service = new Mock<IUserEffectivePermissionService>();
+        service.Setup(item => item.GetEffectivePermissionsForOrganizationAsync(
+                It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new HashSet<string>(StringComparer.Ordinal));
+        return service.Object;
+    }
 
     private static AppDbContext CreateDb(
         Project[] projects,
@@ -654,7 +665,25 @@ public sealed class ProjectPublicIdRoutingMiddlewareTests
         if (workItems is not null) db.WorkItems.AddRange(workItems);
         if (workItemAttachments is not null) db.WorkItemAttachments.AddRange(workItemAttachments);
         if (projectMembers is not null) db.ProjectMembers.AddRange(projectMembers);
-        db.SaveChanges();
+        if (projects.Select(project => project.TenantId).Distinct().ToArray() is { Length: 1 } tenantIds)
+        {
+            AppDbContext.ConfigureTenantResolution(new HttpContextAccessor
+            {
+                HttpContext = AuthenticatedContext(tenantIds[0])
+            });
+            try
+            {
+                db.SaveChanges();
+            }
+            finally
+            {
+                AppDbContext.ConfigureTenantResolution(new HttpContextAccessor());
+            }
+        }
+        else
+        {
+            db.SaveChanges();
+        }
         return db;
     }
 

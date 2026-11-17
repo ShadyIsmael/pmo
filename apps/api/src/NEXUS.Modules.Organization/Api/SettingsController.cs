@@ -100,7 +100,6 @@ public sealed class SettingsController : ControllerBase
     }
 
     [HttpGet("organizations/{organizationId:guid}")]
-    [Authorize(Policy = "Settings.View")]
     public async Task<IActionResult> GetOrganization(Guid organizationId, CancellationToken cancellationToken)
     {
         try
@@ -141,13 +140,11 @@ public sealed class SettingsController : ControllerBase
         ToActionResultAsync(() => _settings.ResetTenantAsync(key, request, cancellationToken));
 
     [HttpPut("organizations/{organizationId:guid}/{key}")]
-    [Authorize(Policy = "Settings.ManageTenantConfiguration")]
     public Task<IActionResult> UpdateOrganization(
         Guid organizationId, string key, [FromBody] UpdateSettingRequest request, CancellationToken cancellationToken) =>
         ToActionResultAsync(() => _settings.UpdateOrganizationAsync(organizationId, key, request, cancellationToken));
 
     [HttpPost("organizations/{organizationId:guid}/{key}/reset")]
-    [Authorize(Policy = "Settings.ManageTenantConfiguration")]
     public Task<IActionResult> ResetOrganization(
         Guid organizationId, string key, [FromBody] ResetSettingRequest request, CancellationToken cancellationToken) =>
         ToActionResultAsync(() => _settings.ResetOrganizationAsync(organizationId, key, request, cancellationToken));

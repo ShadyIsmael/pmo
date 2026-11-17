@@ -8,6 +8,7 @@ using NEXUS.Modules.Audit.Domain;
 using NEXUS.Modules.CostManagement.Application;
 using NEXUS.Modules.CostManagement.Application.DTOs;
 using NEXUS.Modules.CostManagement.Domain;
+using NEXUS.Modules.Identity.Infrastructure;
 using NEXUS.Modules.ProjectManagement.Domain;
 using NEXUS.Persistence;
 using NEXUS.SharedKernel;
@@ -65,6 +66,9 @@ public sealed partial class ProjectPaymentRequestWorkflow
                 .Select(item => item.ApproverUserId).ToListAsync(cancellationToken))
             .Where(id => id != Guid.Empty).Distinct().ToArray();
         var names = await LoadUserNamesAsync(tenantId, userIds, cancellationToken);
+        var canRecoverAssignments = effective.Contains(ReversalApprovePermission)
+            && effective.Contains(AssignmentRecoveryPermission)
+            && management.Current?.EffectiveReadOnly != true;
         var eligible = effective.Contains(ReversalApprovePermission)
             ? await GetEligibleReversalApproverIdsAsync(tenantId, projectId, cancellationToken)
             : new HashSet<Guid>();
@@ -76,8 +80,12 @@ public sealed partial class ProjectPaymentRequestWorkflow
         {
             var assignments = await GetAssignmentsAsync(tenantId, row.Request.Id, tracked: false, cancellationToken);
             var approvers = MapApprovers(row.Request, row.Detail, assignments,
-                actions.Where(item => item.ApprovalRequestId == row.Request.Id).ToArray(), names, actorId)
-                .Select(item => item with { CanDecide = canApprove && item.CanDecide })
+                actions.Where(item => item.ApprovalRequestId == row.Request.Id).ToArray(), names, actorId,
+                canRecoverAssignments ? eligible : null, canRecoverAssignments)
+                .Select(item => item with
+                {
+                    CanDecide = canApprove && row.Request.RequestedBy != actorId && item.CanDecide
+                })
                 .ToArray();
             var isRequester = row.Request.RequestedBy == actorId;
             items.Add(new ProjectPaymentReversalDto(
@@ -141,11 +149,213 @@ public sealed partial class ProjectPaymentRequestWorkflow
             return Result<IReadOnlyList<PaymentRequestEligibleApproverDto>>.Failure(
                 Error.Forbidden("ProjectPaymentReversal.Create is required to select reversal approvers."));
         var eligible = await GetEligibleReversalApproverIdsAsync(tenantId, projectId, cancellationToken);
+        // No saved Reversal-specific self-approval policy exists, so the requester
+        // must not be offered as an approver even when they are on the Project Team.
+        eligible.Remove(actorId);
         var names = await LoadUserNamesAsync(tenantId, eligible, cancellationToken);
         return Result<IReadOnlyList<PaymentRequestEligibleApproverDto>>.Success(eligible
             .OrderBy(id => names.GetValueOrDefault(id), StringComparer.OrdinalIgnoreCase)
             .Select(id => new PaymentRequestEligibleApproverDto(id, names.GetValueOrDefault(id) ?? string.Empty))
             .ToArray());
+    }
+
+    public async Task<Result<IReadOnlyList<PaymentRequestEligibleApproverDto>>> GetEligibleReversalRecoveryApproversAsync(
+        Guid tenantId, Guid projectId, Guid requestId, Guid reversalId, Guid currentApproverId, Guid actorId,
+        CancellationToken cancellationToken)
+    {
+        var access = await ValidateServiceAccessAsync(tenantId, projectId, actorId, requireWrite: true,
+            cancellationToken, actionPermission: ReversalApprovePermission);
+        if (access.Error is not null)
+            return Result<IReadOnlyList<PaymentRequestEligibleApproverDto>>.Failure(access.Error);
+        var actorPermissions = await permissions.GetEffectivePermissionsAsync(actorId, tenantId, cancellationToken);
+        if (!actorPermissions.Contains("Governance.AssignmentRecovery.Manage"))
+            return Result<IReadOnlyList<PaymentRequestEligibleApproverDto>>.Failure(Error.Forbidden(
+                "Governance.AssignmentRecovery.Manage is required to view reversal recovery options."));
+        var actorError = await ValidateActiveActorAsync(tenantId, actorId, cancellationToken);
+        if (actorError is not null)
+            return Result<IReadOnlyList<PaymentRequestEligibleApproverDto>>.Failure(actorError);
+
+        var original = await FindRequestAsync(tenantId, projectId, requestId, cancellationToken);
+        if (original is null || original.Value.Detail.RequestKind != ProjectPaymentRequestKinds.PaymentRequest)
+            return Result<IReadOnlyList<PaymentRequestEligibleApproverDto>>.Failure(Error.NotFound("Payment Request not found."));
+        var reversal = await FindReversalByIdAsync(tenantId, projectId, requestId, reversalId,
+            tracked: false, cancellationToken);
+        if (reversal is null)
+            return Result<IReadOnlyList<PaymentRequestEligibleApproverDto>>.Failure(Error.NotFound("Reversal Request not found."));
+        if (reversal.Value.Request.Status != PaymentRequestStatuses.Pending || reversal.Value.Detail.ApprovalMode is null)
+            return Result<IReadOnlyList<PaymentRequestEligibleApproverDto>>.Failure(Error.Conflict(
+                "Approver recovery options are available only for a pending Reversal Request."));
+
+        var assignments = await GetAssignmentsAsync(tenantId, reversalId, tracked: false, cancellationToken);
+        var pending = assignments.Where(item => item.ApproverUserId == currentApproverId
+            && item.State == PaymentRequestAssignmentStates.Pending).Take(2).ToArray();
+        if (pending.Length != 1)
+            return Result<IReadOnlyList<PaymentRequestEligibleApproverDto>>.Failure(Error.Conflict(
+                "The selected approver must have exactly one pending assignment on this reversal."));
+        if (await db.ApprovalActions.IgnoreQueryFilters().AnyAsync(item => item.TenantId == tenantId
+                && !item.IsDeleted && item.ApprovalRequestId == reversalId
+                && item.ApproverAssignmentId == pending[0].Id, cancellationToken))
+            return Result<IReadOnlyList<PaymentRequestEligibleApproverDto>>.Failure(Error.Conflict(
+                "An assignment with a recorded decision cannot be recovered."));
+
+        var eligible = await GetEligibleReversalApproverIdsAsync(tenantId, projectId, cancellationToken);
+        var requesterId = reversal.Value.Request.RequestedBy ?? Guid.Empty;
+        eligible.Remove(requesterId);
+        if (eligible.Contains(currentApproverId))
+            return Result<IReadOnlyList<PaymentRequestEligibleApproverDto>>.Failure(Error.Conflict(
+                "The assigned approver remains eligible; reassignment is not available."));
+        eligible.ExceptWith(assignments.Select(item => item.ApproverUserId));
+        var names = await LoadUserNamesAsync(tenantId, eligible, cancellationToken);
+        return Result<IReadOnlyList<PaymentRequestEligibleApproverDto>>.Success(eligible
+            .OrderBy(id => names.GetValueOrDefault(id), StringComparer.OrdinalIgnoreCase)
+            .Select(id => new PaymentRequestEligibleApproverDto(id, names.GetValueOrDefault(id) ?? string.Empty))
+            .ToArray());
+    }
+
+    public async Task<Result<ProjectPaymentReversalDto>> ReassignReversalApproverAsync(
+        Guid tenantId, Guid projectId, Guid requestId, Guid reversalId, Guid actorId, string? actorName,
+        ReassignPaymentRequestApproverDto dto, CancellationToken cancellationToken)
+    {
+        var access = await ValidateServiceAccessAsync(tenantId, projectId, actorId, requireWrite: true,
+            cancellationToken, actionPermission: ReversalApprovePermission);
+        if (access.Error is not null)
+            return Result<ProjectPaymentReversalDto>.Failure(access.Error);
+
+        var actorPermissions = await permissions.GetEffectivePermissionsAsync(actorId, tenantId, cancellationToken);
+        if (!actorPermissions.Contains("Governance.AssignmentRecovery.Manage"))
+            return Result<ProjectPaymentReversalDto>.Failure(Error.Forbidden(
+                "Governance.AssignmentRecovery.Manage is required to reassign a reversal approver."));
+        var reason = dto.Reason?.Trim();
+        if (dto.CurrentApproverId == Guid.Empty || dto.ReplacementApproverId == Guid.Empty
+            || dto.CurrentApproverId == dto.ReplacementApproverId)
+            return Result<ProjectPaymentReversalDto>.Failure(Error.Validation(
+                "Choose distinct current and replacement approvers."));
+        if (string.IsNullOrWhiteSpace(reason) || reason.Length > 1000)
+            return Result<ProjectPaymentReversalDto>.Failure(Error.Validation(
+                "A reassignment reason of 1 to 1000 characters is required."));
+
+        await using var mutation = await TenantAdminMutationGuard.AcquireAsync(db, tenantId, cancellationToken);
+        actorPermissions = await permissions.GetEffectivePermissionsAsync(actorId, tenantId, cancellationToken);
+        if (!actorPermissions.Contains(ReversalApprovePermission)
+            || !actorPermissions.Contains("Governance.AssignmentRecovery.Manage"))
+            return Result<ProjectPaymentReversalDto>.Failure(Error.Forbidden(
+                "Reversal reassignment permissions must remain effective when the operation starts."));
+        var activeActorError = await ValidateActiveActorAsync(tenantId, actorId, cancellationToken);
+        if (activeActorError is not null)
+            return Result<ProjectPaymentReversalDto>.Failure(activeActorError);
+
+        var project = await FindProjectForUpdateAsync(tenantId, projectId, cancellationToken);
+        if (project is null)
+            return Result<ProjectPaymentReversalDto>.Failure(Error.NotFound("Project not found."));
+        var original = await FindRequestTrackedAsync(tenantId, projectId, requestId, cancellationToken);
+        if (original is null || original.Value.Detail.RequestKind != ProjectPaymentRequestKinds.PaymentRequest)
+            return Result<ProjectPaymentReversalDto>.Failure(Error.NotFound("Payment Request not found."));
+        var reversal = await FindReversalByIdAsync(tenantId, projectId, requestId, reversalId,
+            tracked: true, cancellationToken);
+        if (reversal is null)
+            return Result<ProjectPaymentReversalDto>.Failure(Error.NotFound("Reversal Request not found."));
+        if (!MatchesVersion(reversal.Value.Request.RowVersion, dto.RowVersion))
+            return Result<ProjectPaymentReversalDto>.Failure(Error.Conflict(
+                "Reversal Request changed. Refresh before reassigning an approver."));
+        if (reversal.Value.Request.Status != PaymentRequestStatuses.Pending || reversal.Value.Detail.ApprovalMode is null)
+            return Result<ProjectPaymentReversalDto>.Failure(Error.Conflict(
+                "Only a pending Reversal Request can have an approver reassigned."));
+        if (reversal.Value.Request.RequestedBy == dto.ReplacementApproverId)
+            return Result<ProjectPaymentReversalDto>.Failure(Error.Validation(
+                "The requester cannot be assigned to approve their own Reversal Request."));
+
+        var assignments = await GetAssignmentsAsync(tenantId, reversalId, tracked: true, cancellationToken);
+        var pendingAssignments = assignments.Where(item => item.ApproverUserId == dto.CurrentApproverId
+            && item.State == PaymentRequestAssignmentStates.Pending).Take(2).ToArray();
+        if (pendingAssignments.Length != 1)
+            return Result<ProjectPaymentReversalDto>.Failure(Error.Conflict(
+                "The selected approver must have exactly one pending assignment on this reversal."));
+        var assignment = pendingAssignments[0];
+        var actions = await db.ApprovalActions.IgnoreQueryFilters()
+            .Where(item => item.TenantId == tenantId && !item.IsDeleted && item.ApprovalRequestId == reversalId)
+            .ToListAsync(cancellationToken);
+        if (actions.Any(item => item.ApproverAssignmentId == assignment.Id))
+            return Result<ProjectPaymentReversalDto>.Failure(Error.Conflict(
+                "An approver assignment with a recorded decision cannot be reassigned."));
+        if (assignments.Any(item => item.Id != assignment.Id && item.ApproverUserId == dto.ReplacementApproverId))
+            return Result<ProjectPaymentReversalDto>.Failure(Error.Validation(
+                "The replacement approver is already assigned to this approval plan."));
+
+        var eligibleApprovers = await GetEligibleReversalApproverIdsAsync(tenantId, projectId, cancellationToken);
+        eligibleApprovers.Remove(reversal.Value.Request.RequestedBy ?? Guid.Empty);
+        if (eligibleApprovers.Contains(dto.CurrentApproverId))
+            return Result<ProjectPaymentReversalDto>.Failure(Error.Conflict(
+                "The assigned approver remains eligible; reassignment is not available."));
+        if (!eligibleApprovers.Contains(dto.ReplacementApproverId))
+            return Result<ProjectPaymentReversalDto>.Failure(Error.Validation(
+                "The replacement must be an active Project Team member with ProjectPaymentReversal.Approve permission."));
+
+        var balanceResult = await GetReversalBalanceAsync(
+            tenantId, projectId, original.Value.Request, original.Value.Detail, cancellationToken);
+        if (balanceResult.Error is not null || balanceResult.Balance is null)
+            return Result<ProjectPaymentReversalDto>.Failure(balanceResult.Error
+                ?? Error.Conflict("The Payment Request reversal balance could not be calculated."));
+
+        var names = await LoadUserNamesAsync(tenantId,
+            [dto.CurrentApproverId, dto.ReplacementApproverId], cancellationToken);
+        string ApproverSnapshot() => JsonSerializer.Serialize(assignments
+            .OrderBy(item => item.Position)
+            .Select(item => new { item.ApproverUserId, item.Position, item.State }));
+        var beforeApprovers = ApproverSnapshot();
+        var beforeState = new
+        {
+            status = reversal.Value.Request.Status,
+            amount = reversal.Value.Request.Amount,
+            reason = reversal.Value.Request.Description,
+            approvalMode = reversal.Value.Detail.ApprovalMode,
+            approvers = beforeApprovers
+        };
+        assignment.ApproverUserId = dto.ReplacementApproverId;
+        assignment.UpdatedBy = actorId.ToString("D");
+        reversal.Value.Request.UpdatedBy = actorId.ToString("D");
+        if (reversal.Value.Detail.ApprovalMode == PaymentRequestApprovalModes.Sequential
+            && reversal.Value.Request.CurrentApproverId == dto.CurrentApproverId)
+            reversal.Value.Request.CurrentApproverId = dto.ReplacementApproverId;
+        var afterState = new
+        {
+            status = reversal.Value.Request.Status,
+            amount = reversal.Value.Request.Amount,
+            reason = reversal.Value.Request.Description,
+            approvalMode = reversal.Value.Detail.ApprovalMode,
+            approvers = ApproverSnapshot()
+        };
+        AddReversalAudit(project, reversal.Value.Request, original.Value.Request, reversal.Value.Detail,
+            actorId, actorName, "ApproverReassigned",
+            $"Reversal {ReversalReference(reversal.Value.Request)} approver reassigned from "
+                + $"{names.GetValueOrDefault(dto.CurrentApproverId) ?? dto.CurrentApproverId.ToString("D")} to "
+                + $"{names.GetValueOrDefault(dto.ReplacementApproverId) ?? dto.ReplacementApproverId.ToString("D")}: {reason}",
+            balanceResult.Balance, balanceResult.Balance, beforeState, afterState,
+            balanceResult.Balance, reversal.Value.Request.Amount ?? 0m);
+
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+            await mutation.CommitAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Result<ProjectPaymentReversalDto>.Failure(Error.Conflict(
+                "Reversal Request changed during approver reassignment. Refresh and try again."));
+        }
+        catch (DbUpdateException)
+        {
+            return Result<ProjectPaymentReversalDto>.Failure(Error.Conflict(
+                "Reversal approver reassignment conflicted with another update."));
+        }
+
+        var finalBalance = await GetReversalBalanceAsync(
+            tenantId, projectId, original.Value.Request, original.Value.Detail, cancellationToken);
+        if (finalBalance.Error is not null || finalBalance.Balance is null)
+            return Result<ProjectPaymentReversalDto>.Failure(finalBalance.Error
+                ?? Error.Conflict("The Payment Request reversal balance could not be calculated."));
+        return Result<ProjectPaymentReversalDto>.Success(await MapReversalAsync(
+            tenantId, actorId, original.Value.Request, original.Value.Detail,
+            reversal.Value.Request, reversal.Value.Detail, finalBalance.Balance, cancellationToken));
     }
 
     public async Task<Result<ProjectPaymentReversalDto>> CreateReversalAsync(
@@ -358,9 +568,10 @@ public sealed partial class ProjectPaymentRequestWorkflow
         if (setupErrors.Count > 0)
             return Result<ProjectPaymentReversalDto>.Failure(Error.Validation(string.Join(",", setupErrors)));
         var eligible = await GetEligibleReversalApproverIdsAsync(tenantId, projectId, cancellationToken);
+        eligible.Remove(actorId);
         if (selections.Any(item => !eligible.Contains(item.UserId)))
             return Result<ProjectPaymentReversalDto>.Failure(Error.Validation(
-                "Every reversal approver must be an active Project Team member linked to an active user with ProjectPaymentReversal.Approve permission."));
+                "Every reversal approver must be an active eligible Project Team member with ProjectPaymentReversal.Approve permission, and the requester cannot approve their own request."));
         var balanceResult = await GetReversalBalanceAsync(tenantId, projectId, original.Value.Request, original.Value.Detail, cancellationToken);
         if (balanceResult.Error is not null || balanceResult.Balance is null)
             return Result<ProjectPaymentReversalDto>.Failure(balanceResult.Error
@@ -887,14 +1098,18 @@ public sealed partial class ProjectPaymentRequestWorkflow
         var names = await LoadUserNamesAsync(tenantId,
             assignments.Select(item => item.ApproverUserId).Append(reversal.RequestedBy ?? Guid.Empty), cancellationToken);
         var effective = await permissions.GetEffectivePermissionsAsync(actorId, tenantId, cancellationToken);
+        var canRecoverAssignments = effective.Contains(ReversalApprovePermission)
+            && effective.Contains(AssignmentRecoveryPermission)
+            && management.Current?.EffectiveReadOnly != true;
         var eligible = effective.Contains(ReversalApprovePermission)
             ? await GetEligibleReversalApproverIdsAsync(tenantId, reversalDetail.ProjectId, cancellationToken)
-            : [];
-        var canApprove = effective.Contains(ReversalApprovePermission)
-            && management.Current?.EffectiveReadOnly != true && eligible.Contains(actorId);
-        var approvers = MapApprovers(reversal, reversalDetail, assignments, actions, names, actorId)
-            .Select(item => item with { CanDecide = canApprove && item.CanDecide }).ToArray();
+            : new HashSet<Guid>();
         var requester = reversal.RequestedBy == actorId;
+        var canApprove = !requester && effective.Contains(ReversalApprovePermission)
+            && management.Current?.EffectiveReadOnly != true && eligible.Contains(actorId);
+        var approvers = MapApprovers(reversal, reversalDetail, assignments, actions, names, actorId,
+                canRecoverAssignments ? eligible : null, canRecoverAssignments)
+            .Select(item => item with { CanDecide = canApprove && item.CanDecide }).ToArray();
         var project = await FindProjectQuery(reversalDetail.TenantId, reversalDetail.ProjectId)
             .AsNoTracking().FirstOrDefaultAsync(cancellationToken);
         var hasPending = await HasOtherPendingReversalAsync(tenantId, reversalDetail.ProjectId,

@@ -20,6 +20,9 @@ vi.mock("../auth/AuthProvider", () => ({ useAuth: () => ({ user: {
   ],
 } }) }));
 vi.mock("../api/management", () => ({ useManagement: () => ({ snapshot: null, canMutate: true, loading: false }) }));
+vi.mock("../features/administration/api/settings", () => ({
+  useOrganizationProfiles: () => ({ data: [], isLoading: false, isError: false }),
+}));
 vi.mock("@components/ui/ConfirmProvider", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@components/ui/ConfirmProvider")>()),
   useConfirm: () => vi.fn().mockResolvedValue(false),

@@ -56,6 +56,20 @@ public sealed class RiskWorkflowAdapter : IWorkflowEntityAdapter
             : Result.Success();
     }
 
+    public async Task<Result> AuthorizeProvisionAsync(WorkflowExecutionContext context, Guid entityId, CancellationToken cancellationToken = default)
+    {
+        if (context.ReadOnly || _managementContext.Current?.EffectiveReadOnly == true)
+            return Result.Failure(WorkflowErrors.ReadOnlyViewAs);
+        var principal = _httpContextAccessor.HttpContext?.User;
+        if (principal?.Identity?.IsAuthenticated != true)
+            return Result.Failure(Error.Unauthorized("An authenticated user is required."));
+        if (!principal.HasClaim("permission", "Risk.Create"))
+            return Result.Failure(Error.Forbidden("Risk creation permission is required to provision its workflow."));
+        return await FindAccessibleAsync(entityId, context, cancellationToken) is null
+            ? Result.Failure(WorkflowErrors.EntityNotAccessible(EntityType, entityId))
+            : Result.Success();
+    }
+
     /// <summary>
     /// Moving a risk between workflow states is a write operation. Read access
     /// (<c>Risk.View</c>) must never be sufficient, so the transition gate requires the

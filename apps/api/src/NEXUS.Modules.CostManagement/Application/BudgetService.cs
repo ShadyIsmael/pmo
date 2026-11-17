@@ -57,23 +57,31 @@ public sealed class BudgetService : IBudgetService
     {
         var accessError = FinancePermissionGuard.Require(_httpContextAccessor, "Budget.Create");
         if (accessError is not null) return Result<BudgetDto>.Failure(accessError);
-        if (!CanAccessProjectOrPortfolio(dto.ProjectId, dto.PortfolioId))
-            return Result<BudgetDto>.Failure(Error.Forbidden("The budget is outside the actor's current project or portfolio scope."));
+        var writeContextError = FinancePermissionGuard.RequireWritableActorContext(
+            _httpContextAccessor, _managementContext?.Current, userId, CurrentTenant());
+        if (writeContextError is not null) return Result<BudgetDto>.Failure(writeContextError);
+        if (!dto.ProjectId.HasValue || dto.ProjectId.Value == Guid.Empty)
+            return Result<BudgetDto>.Failure(Error.Validation("A Project is required; Portfolio budgets are read-only rollups."));
+        if (!CanAccessProject(dto.ProjectId.Value))
+            return Result<BudgetDto>.Failure(Error.Forbidden("The budget is outside the actor's current project scope."));
         await using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
-        var validation = await ValidateAsync(dto.ProjectId, dto.Name, dto.Category, dto.PlannedAmount, dto.ApprovedAmount, dto.ForecastAmount, dto.Currency, dto.FiscalYear, dto.FiscalQuarter, dto.StartDate, dto.EndDate, cancellationToken);
+        var project = await _projectLookup.FindAsync(dto.ProjectId.Value, cancellationToken);
+        var ownershipError = ProjectBudgetOwnershipGuard.ValidateProjectBudgetOwnership(dto.ProjectId, dto.PortfolioId, project);
+        if (ownershipError is not null) return Result<BudgetDto>.Failure(ownershipError);
+        var validation = await ValidateAsync(dto.ProjectId, dto.Name, dto.Category, dto.PlannedAmount, dto.ApprovedAmount, dto.ForecastAmount, dto.Currency, dto.FiscalYear, dto.FiscalQuarter, dto.StartDate, dto.EndDate, cancellationToken, project);
         if (validation is not null) return Result<BudgetDto>.Failure(validation);
         var allocationError = await BudgetAuthority.ValidateAllocationAsync(_context, _projectLookup, dto.ProjectId, null, dto.ApprovedAmount, cancellationToken);
         if (allocationError is not null) return Result<BudgetDto>.Failure(allocationError);
         var budget = new Budget
         {
-            TenantId = CurrentTenant(), CreatedBy = userId, ProjectId = dto.ProjectId, PortfolioId = dto.PortfolioId,
+            TenantId = CurrentTenant(), CreatedBy = userId, ProjectId = dto.ProjectId, PortfolioId = project!.PortfolioId,
             Name = dto.Name.Trim(), Description = dto.Description?.Trim(), Category = dto.Category.Trim(),
             PlannedAmount = dto.PlannedAmount, ApprovedAmount = dto.ApprovedAmount, ForecastAmount = dto.ForecastAmount,
             Currency = NormalizeCurrency(dto.Currency), FiscalYear = dto.FiscalYear, FiscalQuarter = dto.FiscalQuarter,
             Status = dto.Status.Trim(), StartDate = dto.StartDate, EndDate = dto.EndDate, RowVersion = NewVersion()
         };
         _context.Set<Budget>().Add(budget);
-        await AuditAsync("Budget", budget.Id, "Create", userId, null, dto, cancellationToken);
+        await AuditAsync("Budget", budget.Id, "Create", userId, null, budget.ToDto(), cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return Result<BudgetDto>.Success(await ToDtoAsync(budget, cancellationToken));
@@ -83,12 +91,24 @@ public sealed class BudgetService : IBudgetService
     {
         var accessError = FinancePermissionGuard.Require(_httpContextAccessor, "Budget.Edit");
         if (accessError is not null) return Result<BudgetDto>.Failure(accessError);
+        var writeContextError = FinancePermissionGuard.RequireWritableActorContext(
+            _httpContextAccessor, _managementContext?.Current, userId, CurrentTenant());
+        if (writeContextError is not null) return Result<BudgetDto>.Failure(writeContextError);
         await using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
         var budget = await ApplyManagementScope(_context.Set<Budget>().Where(item => item.TenantId == CurrentTenant()))
             .FirstOrDefaultAsync(item => item.Id == id && !item.IsDeleted, cancellationToken);
         if (budget is null) return Result<BudgetDto>.Failure(Error.NotFound("Budget not found"));
+        if (!ProjectBudgetOwnershipGuard.IsProjectOwned(budget.ProjectId))
+            return Result<BudgetDto>.Failure(Error.Forbidden("Portfolio rollup budgets are read-only."));
+        if (dto.ProjectId.HasValue && dto.ProjectId != budget.ProjectId)
+            return Result<BudgetDto>.Failure(Error.Validation("A budget cannot be moved to another Project."));
+        var project = await _projectLookup.FindAsync(budget.ProjectId.Value, cancellationToken);
+        // PortfolioId is a derived rollup link. Ignore any stale value sent by
+        // an older client and persist the Project's current authoritative parent.
+        var ownershipError = ProjectBudgetOwnershipGuard.ValidateProjectBudgetOwnership(budget.ProjectId, null, project);
+        if (ownershipError is not null) return Result<BudgetDto>.Failure(ownershipError);
         if (!MatchesVersion(budget.RowVersion, dto.RowVersion)) return Result<BudgetDto>.Failure(Error.Conflict("Budget was changed by another user"));
-        var validation = await ValidateAsync(budget.ProjectId, dto.Name, dto.Category, dto.PlannedAmount, dto.ApprovedAmount, dto.ForecastAmount, dto.Currency, dto.FiscalYear, dto.FiscalQuarter, dto.StartDate, dto.EndDate, cancellationToken);
+        var validation = await ValidateAsync(budget.ProjectId, dto.Name, dto.Category, dto.PlannedAmount, dto.ApprovedAmount, dto.ForecastAmount, dto.Currency, dto.FiscalYear, dto.FiscalQuarter, dto.StartDate, dto.EndDate, cancellationToken, project);
         if (validation is not null) return Result<BudgetDto>.Failure(validation);
         if (dto.ApprovedAmount != budget.ApprovedAmount)
         {
@@ -99,9 +119,9 @@ public sealed class BudgetService : IBudgetService
         budget.Name = dto.Name.Trim(); budget.Description = dto.Description?.Trim(); budget.Category = dto.Category.Trim();
         budget.PlannedAmount = dto.PlannedAmount; budget.ApprovedAmount = dto.ApprovedAmount; budget.ForecastAmount = dto.ForecastAmount;
         budget.Currency = NormalizeCurrency(dto.Currency); budget.FiscalYear = dto.FiscalYear; budget.FiscalQuarter = dto.FiscalQuarter;
-        budget.Status = dto.Status.Trim(); budget.StartDate = dto.StartDate; budget.EndDate = dto.EndDate;
+        budget.Status = dto.Status.Trim(); budget.StartDate = dto.StartDate; budget.EndDate = dto.EndDate; budget.PortfolioId = project!.PortfolioId;
         budget.UpdatedBy = userId; budget.UpdatedAt = DateTime.UtcNow; budget.RowVersion = NewVersion();
-        await AuditAsync("Budget", budget.Id, "Update", userId, original, dto, cancellationToken);
+        await AuditAsync("Budget", budget.Id, "Update", userId, original, budget.ToDto(), cancellationToken);
         await _context.SaveChangesAsync(cancellationToken); await transaction.CommitAsync(cancellationToken);
         return Result<BudgetDto>.Success(await ToDtoAsync(budget, cancellationToken));
     }
@@ -110,9 +130,14 @@ public sealed class BudgetService : IBudgetService
     {
         var accessError = FinancePermissionGuard.Require(_httpContextAccessor, "Budget.Delete");
         if (accessError is not null) return Result.Failure(accessError);
+        var writeContextError = FinancePermissionGuard.RequireWritableActorContext(
+            _httpContextAccessor, _managementContext?.Current, userId, CurrentTenant());
+        if (writeContextError is not null) return Result.Failure(writeContextError);
         var budget = await ApplyManagementScope(_context.Set<Budget>().Where(item => item.TenantId == CurrentTenant()))
             .FirstOrDefaultAsync(item => item.Id == id && !item.IsDeleted, cancellationToken);
         if (budget is null) return Result.Failure(Error.NotFound("Budget not found"));
+        if (!ProjectBudgetOwnershipGuard.IsProjectOwned(budget.ProjectId))
+            return Result.Failure(Error.Forbidden("Portfolio rollup budgets are read-only."));
         if (!MatchesVersion(budget.RowVersion, rowVersion)) return Result.Failure(Error.Conflict("Budget was changed by another user"));
         var original = JsonSerializer.Serialize(budget.ToDto());
         budget.IsDeleted = true; budget.UpdatedBy = userId; budget.UpdatedAt = DateTime.UtcNow; budget.RowVersion = NewVersion();
@@ -120,7 +145,7 @@ public sealed class BudgetService : IBudgetService
         await _context.SaveChangesAsync(cancellationToken); return Result.Success();
     }
 
-    private async Task<Error?> ValidateAsync(Guid? projectId, string? name, string? category, decimal planned, decimal approved, decimal forecast, string? currency, int fiscalYear, int? quarter, DateTime? start, DateTime? end, CancellationToken cancellationToken)
+    private async Task<Error?> ValidateAsync(Guid? projectId, string? name, string? category, decimal planned, decimal approved, decimal forecast, string? currency, int fiscalYear, int? quarter, DateTime? start, DateTime? end, CancellationToken cancellationToken, ProjectReference? projectReference = null)
     {
         if (string.IsNullOrWhiteSpace(name)) return Error.Validation("Budget name is required");
         if (string.IsNullOrWhiteSpace(category)) return Error.Validation("Budget category is required");
@@ -131,7 +156,7 @@ public sealed class BudgetService : IBudgetService
         if (start.HasValue && end.HasValue && end < start) return Error.Validation("Budget end date cannot be before start date");
         if (projectId.HasValue)
         {
-            var project = await _projectLookup.FindAsync(projectId.Value, cancellationToken);
+            var project = projectReference ?? await _projectLookup.FindAsync(projectId.Value, cancellationToken);
             if (project is null) return Error.Validation("Project not found");
             if (!string.Equals(NormalizeCurrency(currency), NormalizeCurrency(project.Currency), StringComparison.OrdinalIgnoreCase)) return Error.Validation("Budget currency must match the project currency");
         }
@@ -160,13 +185,11 @@ public sealed class BudgetService : IBudgetService
                 : item.PortfolioId.HasValue && portfolioIds.Contains(item.PortfolioId.Value));
     }
 
-    private bool CanAccessProjectOrPortfolio(Guid? projectId, Guid? portfolioId)
+    private bool CanAccessProject(Guid projectId)
     {
         var management = _managementContext?.Current;
-        if (management is null || management.TenantId != CurrentTenant() || management.Scope is null) return false;
-        if (projectId.HasValue) return management.Scope.ProjectIds.Contains(projectId.Value);
-        if (portfolioId.HasValue) return management.Scope.PortfolioIds.Contains(portfolioId.Value);
-        return false;
+        return management is not null && management.TenantId == CurrentTenant() && management.Scope is not null
+            && management.Scope.ProjectIds.Contains(projectId);
     }
 
     private Guid CurrentTenant() => FinancePermissionGuard.TryGetTenantId(_httpContextAccessor.HttpContext?.User, out var tenant) ? tenant : Guid.Empty;

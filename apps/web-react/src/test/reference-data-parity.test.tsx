@@ -69,6 +69,9 @@ vi.mock("../features/administration/api/admin", () => ({
   useUpdateWorkItemStatus: mocks.updateStatusHook,
   useDeactivateWorkItemStatus: mocks.deactivateStatusHook,
 }));
+vi.mock("../features/administration/api/settings", () => ({
+  useOrganizationProfiles: () => ({ data: [], isLoading: false, isError: false }),
+}));
 vi.mock("../features/resources/api/resources", () => ({
   useProjectRoles: mocks.projectRoles,
   useProjectRoleNextCode: mocks.projectRoleNextCode,

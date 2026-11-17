@@ -11,6 +11,7 @@ public interface IDocumentService
     Task<Result<IReadOnlyList<DocumentCategoryDto>>> GetCategoriesAsync(Guid? organizationId = null, Guid? projectId = null, CancellationToken cancellationToken = default);
     Task<Result<IReadOnlyList<ManagedDocumentCategoryDto>>> GetManagedCategoriesAsync(Guid organizationId, string? search, bool includeInactive, CancellationToken cancellationToken = default);
     Task<Result<IReadOnlyList<DocumentCategoryOptionDto>>> GetTemplateCategoryOptionsAsync(Guid organizationId, CancellationToken cancellationToken = default);
+    Task<Result<IReadOnlyList<DocumentCategoryOptionDto>>> GetProjectUploadCategoryOptionsAsync(Guid projectId, CancellationToken cancellationToken = default);
     Task<Result<ManagedDocumentCategoryDto>> GetManagedCategoryAsync(Guid id, CancellationToken cancellationToken = default);
     Task<Result<ManagedDocumentCategoryDto>> CreateCategoryAsync(DocumentCategoryCreateRequest request, Guid userId, CancellationToken cancellationToken = default);
     Task<Result<ManagedDocumentCategoryDto>> UpdateCategoryAsync(Guid id, DocumentCategoryUpdateRequest request, Guid userId, CancellationToken cancellationToken = default);

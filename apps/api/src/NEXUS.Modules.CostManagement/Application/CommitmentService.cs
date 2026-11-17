@@ -63,8 +63,10 @@ public sealed class CommitmentService : ICommitmentService
     {
         var accessError = FinancePermissionGuard.Require(_httpContextAccessor, "Commitment.Create");
         if (accessError is not null) return Result<PurchaseCommitmentDto>.Failure(accessError);
-        if (!CanAccessProject(dto.ProjectId))
-            return Result<PurchaseCommitmentDto>.Failure(Error.Forbidden("The commitment is outside the actor's current project scope."));
+        var actorContextError = EnsureWritableActorContext(userId);
+        if (actorContextError is not null) return Result<PurchaseCommitmentDto>.Failure(actorContextError);
+        var writeError = EnsureWritableProject(dto.ProjectId);
+        if (writeError is not null) return Result<PurchaseCommitmentDto>.Failure(writeError);
         await using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
         if (dto.ProjectId == Guid.Empty)
             return Result<PurchaseCommitmentDto>.Failure(Error.Validation("ProjectId is required"));
@@ -131,16 +133,39 @@ public sealed class CommitmentService : ICommitmentService
             && management.Scope.ProjectIds.Contains(projectId);
     }
 
+    private Error? EnsureWritableManagementContext() =>
+        FinancePermissionGuard.RequireWritableManagementContext(_managementContext?.Current, CurrentTenant());
+
+    private Error? EnsureWritableActorContext(string actorUserId) =>
+        FinancePermissionGuard.RequireWritableActorContext(
+            _httpContextAccessor,
+            _managementContext?.Current,
+            actorUserId,
+            CurrentTenant());
+
+    private Error? EnsureWritableProject(Guid projectId)
+    {
+        var contextError = EnsureWritableManagementContext();
+        if (contextError is not null) return contextError;
+        return CanAccessProject(projectId)
+            ? null
+            : Error.Forbidden("The commitment is outside the actor's current project scope.");
+    }
+
     public async Task<Result<PurchaseCommitmentDto>> UpdateAsync(
         Guid id, UpdateCommitmentDto dto, string userId, CancellationToken cancellationToken = default)
     {
         var accessError = FinancePermissionGuard.Require(_httpContextAccessor, "Commitment.Edit");
         if (accessError is not null) return Result<PurchaseCommitmentDto>.Failure(accessError);
+        var contextError = EnsureWritableActorContext(userId);
+        if (contextError is not null) return Result<PurchaseCommitmentDto>.Failure(contextError);
         await using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
         var commitment = await ApplyManagementScope(_context.Set<PurchaseCommitment>().Where(item => item.TenantId == CurrentTenant()))
             .FirstOrDefaultAsync(c => c.Id == id && !c.IsDeleted, cancellationToken);
         if (commitment is null)
             return Result<PurchaseCommitmentDto>.Failure(Error.NotFound("Commitment not found"));
+        var writeError = EnsureWritableProject(commitment.ProjectId ?? Guid.Empty);
+        if (writeError is not null) return Result<PurchaseCommitmentDto>.Failure(writeError);
 
         if (!IsEditableStatus(commitment.Status))
             return Result<PurchaseCommitmentDto>.Failure(Error.Validation("Only open or active commitments can be edited"));
@@ -183,10 +208,14 @@ public sealed class CommitmentService : ICommitmentService
     {
         var accessError = FinancePermissionGuard.Require(_httpContextAccessor, "Commitment.Close");
         if (accessError is not null) return Result.Failure(accessError);
+        var contextError = EnsureWritableActorContext(userId);
+        if (contextError is not null) return Result.Failure(contextError);
         var commitment = await ApplyManagementScope(_context.Set<PurchaseCommitment>().Where(item => item.TenantId == CurrentTenant()))
             .FirstOrDefaultAsync(c => c.Id == id && !c.IsDeleted, cancellationToken);
         if (commitment is null)
             return Result.Failure(Error.NotFound("Commitment not found"));
+        var writeError = EnsureWritableProject(commitment.ProjectId ?? Guid.Empty);
+        if (writeError is not null) return Result.Failure(writeError);
 
         if (!IsTransitionAllowed(commitment.Status, "Closed"))
             return Result.Failure(Error.Validation($"Cannot close a commitment with status '{commitment.Status}'"));
@@ -210,10 +239,14 @@ public sealed class CommitmentService : ICommitmentService
     {
         var accessError = FinancePermissionGuard.Require(_httpContextAccessor, "Commitment.Cancel");
         if (accessError is not null) return Result.Failure(accessError);
+        var contextError = EnsureWritableActorContext(userId);
+        if (contextError is not null) return Result.Failure(contextError);
         var commitment = await ApplyManagementScope(_context.Set<PurchaseCommitment>().Where(item => item.TenantId == CurrentTenant()))
             .FirstOrDefaultAsync(c => c.Id == id && !c.IsDeleted, cancellationToken);
         if (commitment is null)
             return Result.Failure(Error.NotFound("Commitment not found"));
+        var writeError = EnsureWritableProject(commitment.ProjectId ?? Guid.Empty);
+        if (writeError is not null) return Result.Failure(writeError);
 
         if (!IsTransitionAllowed(commitment.Status, "Cancelled"))
             return Result.Failure(Error.Validation($"Cannot cancel a commitment with status '{commitment.Status}'"));
@@ -237,10 +270,14 @@ public sealed class CommitmentService : ICommitmentService
     {
         var accessError = FinancePermissionGuard.Require(_httpContextAccessor, "Commitment.Delete");
         if (accessError is not null) return Result.Failure(accessError);
+        var contextError = EnsureWritableActorContext(userId);
+        if (contextError is not null) return Result.Failure(contextError);
         var commitment = await ApplyManagementScope(_context.Set<PurchaseCommitment>().Where(item => item.TenantId == CurrentTenant()))
             .FirstOrDefaultAsync(c => c.Id == id && !c.IsDeleted, cancellationToken);
         if (commitment is null)
             return Result.Failure(Error.NotFound("Commitment not found"));
+        var writeError = EnsureWritableProject(commitment.ProjectId ?? Guid.Empty);
+        if (writeError is not null) return Result.Failure(writeError);
 
         if (!IsEditableStatus(commitment.Status))
             return Result.Failure(Error.Validation("Only open or active commitments can be deleted"));

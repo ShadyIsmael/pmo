@@ -6,6 +6,7 @@ using AspNetAuthorizationService = Microsoft.AspNetCore.Authorization.IAuthoriza
 using NEXUS.Modules.Audit.Application;
 using NEXUS.Modules.Audit.Domain;
 using NEXUS.Modules.Identity.Application;
+using NEXUS.SharedKernel.Management;
 
 namespace NEXUS.Modules.Notifications.Application;
 
@@ -25,6 +26,7 @@ public sealed class EmailNotificationSettingsService : IEmailNotificationSetting
     private readonly AspNetAuthorizationService _authorization;
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly IAuditService _audit;
+    private readonly IManagementContextAccessor? _managementContextAccessor;
 
     public EmailNotificationSettingsService(
         IEmailNotificationProfileStore profiles,
@@ -34,7 +36,8 @@ public sealed class EmailNotificationSettingsService : IEmailNotificationSetting
         IUserRepository users,
         AspNetAuthorizationService authorization,
         IHttpContextAccessor httpContextAccessor,
-        IAuditService audit)
+        IAuditService audit,
+        IManagementContextAccessor? managementContextAccessor = null)
     {
         _profiles = profiles ?? throw new ArgumentNullException(nameof(profiles));
         _organizationAccess = organizationAccess ?? throw new ArgumentNullException(nameof(organizationAccess));
@@ -44,6 +47,7 @@ public sealed class EmailNotificationSettingsService : IEmailNotificationSetting
         _authorization = authorization ?? throw new ArgumentNullException(nameof(authorization));
         _httpContextAccessor = httpContextAccessor ?? throw new ArgumentNullException(nameof(httpContextAccessor));
         _audit = audit ?? throw new ArgumentNullException(nameof(audit));
+        _managementContextAccessor = managementContextAccessor;
     }
 
     public async Task<EmailNotificationSettingsAccessDto> GetAccessAsync(CancellationToken cancellationToken = default)
@@ -66,7 +70,7 @@ public sealed class EmailNotificationSettingsService : IEmailNotificationSetting
     {
         var actor = GetActor(requireTenant: scope is not EmailNotificationProfileScope.Platform);
         ValidateScopeOwner(scope, organizationId);
-        await EnsureAuthorizedAsync(scope, EmailSettingsAction.View, cancellationToken);
+        await EnsureAuthorizedAsync(scope, EmailSettingsAction.View, organizationId, cancellationToken);
         await EnsureOrganizationAccessAsync(scope, organizationId, manage: false, cancellationToken);
 
         var exact = await _profiles.GetExactAsync(scope, OwnerTenantId(scope, actor.TenantId), OwnerOrganizationId(scope, organizationId), cancellationToken);
@@ -75,12 +79,12 @@ public sealed class EmailNotificationSettingsService : IEmailNotificationSetting
             scope == EmailNotificationProfileScope.Organization ? organizationId : null,
             cancellationToken);
 
-        var canManage = await IsScopeAuthorizedAsync(scope, EmailSettingsAction.Manage, cancellationToken)
+        var canManage = await IsScopeAuthorizedAsync(scope, EmailSettingsAction.Manage, organizationId, cancellationToken)
             && (scope != EmailNotificationProfileScope.Organization
                 || await _organizationAccess.HasAccessAsync(organizationId!.Value, manage: true, cancellationToken));
-        var canTest = await IsScopeAuthorizedAsync(scope, EmailSettingsAction.Test, cancellationToken);
+        var canTest = await IsScopeAuthorizedAsync(scope, EmailSettingsAction.Test, organizationId, cancellationToken);
         var canViewLogs = scope is not EmailNotificationProfileScope.Platform
-            && await IsScopeAuthorizedAsync(scope, EmailSettingsAction.Logs, cancellationToken);
+            && await IsScopeAuthorizedAsync(scope, EmailSettingsAction.Logs, organizationId, cancellationToken);
         var trustedRelayAvailable = effective is not null
             && _destinationPolicy.IsTrustedRelayHostAuthorized(
                 OwnerTenantId(scope, actor.TenantId), OwnerOrganizationId(scope, organizationId), NormalizeHost(effective.Profile.Host));
@@ -105,10 +109,11 @@ public sealed class EmailNotificationSettingsService : IEmailNotificationSetting
         UpdateEmailNotificationProfileRequest request,
         CancellationToken cancellationToken = default)
     {
+        EnsureWritableManagementContext();
         ArgumentNullException.ThrowIfNull(request);
         var actor = GetActor(requireTenant: true);
         ValidateScopeOwner(scope, organizationId);
-        await EnsureAuthorizedAsync(scope, EmailSettingsAction.Manage, cancellationToken);
+        await EnsureAuthorizedAsync(scope, EmailSettingsAction.Manage, organizationId, cancellationToken);
         await EnsureOrganizationAccessAsync(scope, organizationId, manage: true, cancellationToken);
 
         var tenantId = OwnerTenantId(scope, actor.TenantId);
@@ -171,9 +176,10 @@ public sealed class EmailNotificationSettingsService : IEmailNotificationSetting
         string? expectedVersion,
         CancellationToken cancellationToken = default)
     {
+        EnsureWritableManagementContext();
         var actor = GetActor(requireTenant: true);
         ValidateScopeOwner(scope, organizationId);
-        await EnsureAuthorizedAsync(scope, EmailSettingsAction.Manage, cancellationToken);
+        await EnsureAuthorizedAsync(scope, EmailSettingsAction.Manage, organizationId, cancellationToken);
         await EnsureOrganizationAccessAsync(scope, organizationId, manage: true, cancellationToken);
         var tenantId = OwnerTenantId(scope, actor.TenantId);
         var ownerOrganizationId = OwnerOrganizationId(scope, organizationId);
@@ -191,7 +197,7 @@ public sealed class EmailNotificationSettingsService : IEmailNotificationSetting
     {
         var actor = GetActor(requireTenant: true);
         ValidateScopeOwner(scope, organizationId);
-        await EnsureAuthorizedAsync(scope, EmailSettingsAction.Test, cancellationToken);
+        await EnsureAuthorizedAsync(scope, EmailSettingsAction.Test, organizationId, cancellationToken);
         await EnsureOrganizationAccessAsync(scope, organizationId, manage: false, cancellationToken);
         var operationTenantId = OwnerTenantId(scope, actor.TenantId);
         var operationOrganizationId = OwnerOrganizationId(scope, organizationId);
@@ -230,7 +236,7 @@ public sealed class EmailNotificationSettingsService : IEmailNotificationSetting
     {
         var actor = GetActor(requireTenant: true);
         ValidateScopeOwner(scope, organizationId);
-        await EnsureAuthorizedAsync(scope, EmailSettingsAction.Test, cancellationToken);
+        await EnsureAuthorizedAsync(scope, EmailSettingsAction.Test, organizationId, cancellationToken);
         await EnsureOrganizationAccessAsync(scope, organizationId, manage: false, cancellationToken);
         var operationTenantId = OwnerTenantId(scope, actor.TenantId);
         var operationOrganizationId = OwnerOrganizationId(scope, organizationId);
@@ -286,7 +292,7 @@ public sealed class EmailNotificationSettingsService : IEmailNotificationSetting
             throw Validation("Platform-wide email delivery logs are not exposed from this workspace.");
         var actor = GetActor(requireTenant: true);
         ValidateScopeOwner(scope, organizationId);
-        await EnsureAuthorizedAsync(scope, EmailSettingsAction.Logs, cancellationToken);
+        await EnsureAuthorizedAsync(scope, EmailSettingsAction.Logs, organizationId, cancellationToken);
         await EnsureOrganizationAccessAsync(scope, organizationId, manage: false, cancellationToken);
         return await _profiles.GetRecentDeliveryLogsAsync(
             scope, actor.TenantId, organizationId, Math.Clamp(limit, 1, 100), cancellationToken);
@@ -300,7 +306,7 @@ public sealed class EmailNotificationSettingsService : IEmailNotificationSetting
     {
         var actor = GetActor(requireTenant: scope is not EmailNotificationProfileScope.Platform);
         ValidateScopeOwner(scope, organizationId);
-        await EnsureAuthorizedAsync(scope, EmailSettingsAction.Manage, cancellationToken);
+        await EnsureAuthorizedAsync(scope, EmailSettingsAction.Manage, organizationId, cancellationToken);
         await EnsureOrganizationAccessAsync(scope, organizationId, manage: true, cancellationToken);
         var normalizedHost = NormalizeHost(host);
         if (!IsValidHost(normalizedHost)) throw Validation("Enter a valid SMTP hostname before checking trusted relay availability.");
@@ -341,6 +347,7 @@ public sealed class EmailNotificationSettingsService : IEmailNotificationSetting
     private async Task EnsureAuthorizedAsync(
         EmailNotificationProfileScope scope,
         EmailSettingsAction action,
+        Guid? organizationId,
         CancellationToken cancellationToken)
     {
         if (scope == EmailNotificationProfileScope.Platform)
@@ -369,6 +376,25 @@ public sealed class EmailNotificationSettingsService : IEmailNotificationSetting
                 _ => null
             };
 
+        if (scope == EmailNotificationProfileScope.Organization
+            && organizationId is { } scopedOrganizationId
+            && action is EmailSettingsAction.View or EmailSettingsAction.Manage)
+        {
+            var legacyAuthorized = policy is not null
+                && await IsAuthorizedAsync(CurrentPrincipal(), policy, cancellationToken);
+            var organizationPermission = action == EmailSettingsAction.View
+                ? "OrganizationConfiguration.View"
+                : "OrganizationConfiguration.Manage";
+            var organizationAdminAuthorized = await IsAuthorizedAsync(CurrentPrincipal(), organizationPermission, cancellationToken)
+                && await _organizationAccess.HasScopedOrganizationAdminAuthorityAsync(
+                    scopedOrganizationId, manage: action == EmailSettingsAction.Manage, cancellationToken);
+            if (legacyAuthorized || organizationAdminAuthorized) return;
+        }
+        else if (policy is not null && await IsAuthorizedAsync(CurrentPrincipal(), policy, cancellationToken))
+        {
+            return;
+        }
+
         if (policy is null || !await IsAuthorizedAsync(CurrentPrincipal(), policy, cancellationToken))
             throw new EmailNotificationSettingsException(403, "emailNotificationAccessDenied", "The required email notification permission is not granted.");
     }
@@ -376,6 +402,7 @@ public sealed class EmailNotificationSettingsService : IEmailNotificationSetting
     private async Task<bool> IsScopeAuthorizedAsync(
         EmailNotificationProfileScope scope,
         EmailSettingsAction action,
+        Guid? organizationId,
         CancellationToken cancellationToken)
     {
         if (scope == EmailNotificationProfileScope.Platform)
@@ -401,7 +428,18 @@ public sealed class EmailNotificationSettingsService : IEmailNotificationSetting
                 EmailSettingsAction.Logs => LogsPermission,
                 _ => null
             };
-        return policy is not null && await IsAuthorizedAsync(CurrentPrincipal(), policy, cancellationToken);
+        var legacyAuthorized = policy is not null
+            && await IsAuthorizedAsync(CurrentPrincipal(), policy, cancellationToken);
+        if (legacyAuthorized) return true;
+        if (scope != EmailNotificationProfileScope.Organization
+            || organizationId is null
+            || action is not (EmailSettingsAction.View or EmailSettingsAction.Manage)) return false;
+        var organizationPermission = action == EmailSettingsAction.View
+            ? "OrganizationConfiguration.View"
+            : "OrganizationConfiguration.Manage";
+        return await IsAuthorizedAsync(CurrentPrincipal(), organizationPermission, cancellationToken)
+            && await _organizationAccess.HasScopedOrganizationAdminAuthorityAsync(
+                organizationId.Value, manage: action == EmailSettingsAction.Manage, cancellationToken);
     }
 
     private async Task EnsureOrganizationAccessAsync(
@@ -413,6 +451,12 @@ public sealed class EmailNotificationSettingsService : IEmailNotificationSetting
         if (scope != EmailNotificationProfileScope.Organization) return;
         if (organizationId is null || !await _organizationAccess.HasAccessAsync(organizationId.Value, manage, cancellationToken))
             throw new EmailNotificationSettingsException(403, "organizationSettingsAccessDenied", "An explicit same-tenant Organization Settings grant is required.");
+    }
+
+    private void EnsureWritableManagementContext()
+    {
+        if (_managementContextAccessor?.Current?.EffectiveReadOnly == true)
+            throw new EmailNotificationSettingsException(403, "readOnlyManagementContext", "Email configuration changes are unavailable in read-only management mode.");
     }
 
     private async Task<bool> IsAuthorizedAsync(ClaimsPrincipal principal, string policy, CancellationToken cancellationToken)

@@ -42,7 +42,7 @@ public sealed class ProjectStakeholderService : IProjectStakeholderService
             return Result<IReadOnlyList<ProjectStakeholderDto>>.Failure(Error.NotFound("Project not found"));
 
         var entities = await _context.Set<ProjectStakeholder>()
-            .Where(x => x.ProjectId == projectId)
+            .Where(x => x.TenantId == GetCurrentTenantId() && x.ProjectId == projectId)
             .OrderBy(x => x.Name)
             .ThenBy(x => x.CreatedAt)
             .ToListAsync(cancellationToken);
@@ -68,7 +68,8 @@ public sealed class ProjectStakeholderService : IProjectStakeholderService
             return Result<ProjectStakeholderDto>.Failure(Error.Validation("The selected user must already exist in Resource Management"));
 
         var duplicate = await _context.Set<ProjectStakeholder>()
-            .AnyAsync(x => x.ProjectId == projectId && x.UserId == dto.UserId && x.Status == ProjectStakeholderStatus.Active, cancellationToken);
+            .AnyAsync(x => x.TenantId == GetCurrentTenantId() && x.ProjectId == projectId
+                && x.UserId == dto.UserId && x.Status == ProjectStakeholderStatus.Active, cancellationToken);
         if (duplicate)
             return Result<ProjectStakeholderDto>.Failure(Error.Conflict("This user is already an active stakeholder on the project"));
 
@@ -134,6 +135,7 @@ public sealed class ProjectStakeholderService : IProjectStakeholderService
                 var normalizedEmail = NormalizeEmail(dto.Email);
                 if (!string.IsNullOrWhiteSpace(normalizedEmail) && await _context.Set<ProjectStakeholder>().AnyAsync(x =>
                         x.Id != entity.Id &&
+                        x.TenantId == GetCurrentTenantId() &&
                         x.ProjectId == projectId &&
                         x.Status == ProjectStakeholderStatus.ContactOnly &&
                         x.NormalizedEmail == normalizedEmail, cancellationToken))
@@ -192,10 +194,12 @@ public sealed class ProjectStakeholderService : IProjectStakeholderService
     }
 
     private async Task<ProjectStakeholder?> FindAsync(Guid projectId, Guid stakeholderId, CancellationToken cancellationToken) =>
-        await _context.Set<ProjectStakeholder>().FirstOrDefaultAsync(x => x.Id == stakeholderId && x.ProjectId == projectId, cancellationToken);
+        await _context.Set<ProjectStakeholder>().FirstOrDefaultAsync(x => x.Id == stakeholderId
+            && x.TenantId == GetCurrentTenantId() && x.ProjectId == projectId, cancellationToken);
 
     private async Task<bool> ProjectExistsAsync(Guid projectId, CancellationToken cancellationToken) =>
-        await _context.Set<Project>().AnyAsync(x => x.Id == projectId, cancellationToken);
+        await _context.Set<Project>().AnyAsync(x => x.Id == projectId
+            && x.TenantId == GetCurrentTenantId() && !x.IsDeleted, cancellationToken);
 
     private async Task SaveAndAuditAsync(ProjectStakeholder entity, string action, string userId, object? values, CancellationToken cancellationToken)
     {

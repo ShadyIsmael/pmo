@@ -49,7 +49,8 @@ public class PlanVersionController : ControllerBase
     [HttpPost("working/from-current-baseline")]
     public async Task<IActionResult> CreateWorking(Guid projectId, Guid planId, CancellationToken cancellationToken)
     {
-        var result = await _versionService.CreateWorkingFromCurrentBaselineAsync(planId, UserId(), cancellationToken);
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        var result = await _versionService.CreateWorkingFromCurrentBaselineAsync(planId, actorId, cancellationToken);
         return ToActionResult(result, value => CreatedAtAction(nameof(GetWorking), new { projectId, planId }, value));
     }
 
@@ -57,7 +58,8 @@ public class PlanVersionController : ControllerBase
     [HttpDelete("working")]
     public async Task<IActionResult> DiscardWorking(Guid projectId, Guid planId, [FromQuery] byte[] rowVersion, CancellationToken cancellationToken)
     {
-        var result = await _versionService.DiscardWorkingVersionAsync(planId, rowVersion, UserId(), cancellationToken);
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        var result = await _versionService.DiscardWorkingVersionAsync(planId, rowVersion, actorId, cancellationToken);
         return result.IsSuccess ? NoContent() : ErrorResult(result.Error);
     }
 
@@ -65,7 +67,8 @@ public class PlanVersionController : ControllerBase
     [HttpPost("baseline/initial")]
     public async Task<IActionResult> CreateInitialBaseline(Guid projectId, Guid planId, [FromQuery] byte[] rowVersion, CancellationToken cancellationToken)
     {
-        var result = await _versionService.CreateInitialBaselineAsync(planId, rowVersion, UserId(), cancellationToken);
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        var result = await _versionService.CreateInitialBaselineAsync(planId, rowVersion, actorId, cancellationToken);
         return ToActionResult(result, value => CreatedAtAction(nameof(GetWorking), new { projectId, planId }, value));
     }
 
@@ -73,9 +76,10 @@ public class PlanVersionController : ControllerBase
     [HttpPost("baseline")]
     public async Task<IActionResult> CaptureBaseline(Guid projectId, Guid planId, [FromQuery] byte[] rowVersion, CancellationToken cancellationToken)
     {
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
         try
         {
-            var result = await _versionService.CaptureBaselineAsync(planId, rowVersion, UserId(), cancellationToken);
+            var result = await _versionService.CaptureBaselineAsync(planId, rowVersion, actorId, cancellationToken);
             return ToActionResult(result, value => CreatedAtAction(nameof(GetWorking), new { projectId, planId }, value));
         }
         catch (Exception exception)
@@ -89,12 +93,16 @@ public class PlanVersionController : ControllerBase
     [HttpPost("baseline/promote")]
     public async Task<IActionResult> Promote(Guid projectId, Guid planId, [FromQuery] byte[] rowVersion, CancellationToken cancellationToken)
     {
-        var result = await _versionService.PromoteWorkingToBaselineAsync(planId, rowVersion, UserId(), cancellationToken);
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        var result = await _versionService.PromoteWorkingToBaselineAsync(planId, rowVersion, actorId, cancellationToken);
         return ToActionResult(result, Ok);
     }
 
-    private string UserId() =>
-        User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+    private bool TryGetActorId(out string actorId)
+    {
+        actorId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? string.Empty;
+        return User.Identity?.IsAuthenticated == true && Guid.TryParse(actorId, out var parsed) && parsed != Guid.Empty;
+    }
 
     private IActionResult ToActionResult<T>(NEXUS.SharedKernel.Result<T> result, Func<T?, IActionResult> success) =>
         result.IsSuccess ? success(result.Value) : ErrorResult(result.Error);

@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 using NEXUS.Modules.Portfolio.Application;
+using NEXUS.SharedKernel;
 
 namespace NEXUS.Modules.Portfolio.Api;
 
@@ -26,6 +28,7 @@ public class ProgramController : ControllerBase
     }
 
     [Authorize(Policy = "Program.View")]
+    [OrganizationScopedCollectionPermission("Program.View")]
     [HttpGet]
     public async Task<IActionResult> GetPaged([FromQuery] int page = 1, [FromQuery] int pageSize = 20, [FromQuery] string? search = null, [FromQuery] string? status = null, [FromQuery] Guid? portfolioId = null, CancellationToken cancellationToken = default)
     {
@@ -61,7 +64,8 @@ public class ProgramController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] SaveProgramDto dto, CancellationToken cancellationToken)
     {
-        var result = await _programService.CreateAsync(dto, UserId(), cancellationToken);
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        var result = await _programService.CreateAsync(dto, actorId, cancellationToken);
         if (result.IsFailure) return Problem(result.Error?.Message, statusCode: result.Error?.StatusCode ?? 400);
         return CreatedAtAction(nameof(GetById), new { id = result.Value!.Id }, result.Value);
     }
@@ -70,7 +74,8 @@ public class ProgramController : ControllerBase
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] SaveProgramDto dto, CancellationToken cancellationToken)
     {
-        var result = await _programService.UpdateAsync(id, dto, UserId(), cancellationToken);
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        var result = await _programService.UpdateAsync(id, dto, actorId, cancellationToken);
         if (result.IsFailure) return Problem(result.Error?.Message, statusCode: result.Error?.StatusCode ?? 400);
         return Ok(result.Value);
     }
@@ -79,7 +84,8 @@ public class ProgramController : ControllerBase
     [HttpPost("{id:guid}/archive")]
     public async Task<IActionResult> Archive(Guid id, CancellationToken cancellationToken)
     {
-        var result = await _programService.ArchiveAsync(id, UserId(), cancellationToken);
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        var result = await _programService.ArchiveAsync(id, actorId, cancellationToken);
         if (result.IsFailure) return Problem(result.Error?.Message, statusCode: result.Error?.StatusCode ?? 400);
         return Ok();
     }
@@ -88,10 +94,23 @@ public class ProgramController : ControllerBase
     [HttpPost("{id:guid}/reactivate")]
     public async Task<IActionResult> Reactivate(Guid id, CancellationToken cancellationToken)
     {
-        var result = await _programService.ReactivateAsync(id, UserId(), cancellationToken);
+        if (!TryGetActorId(out var actorId)) return Unauthorized();
+        var result = await _programService.ReactivateAsync(id, actorId, cancellationToken);
         if (result.IsFailure) return Problem(result.Error?.Message, statusCode: result.Error?.StatusCode ?? 400);
         return Ok();
     }
 
-    private string UserId() => User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+    private bool TryGetActorId(out string actorId)
+    {
+        if (User.Identity?.IsAuthenticated == true
+            && Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var parsed)
+            && parsed != Guid.Empty)
+        {
+            actorId = parsed.ToString();
+            return true;
+        }
+
+        actorId = string.Empty;
+        return false;
+    }
 }

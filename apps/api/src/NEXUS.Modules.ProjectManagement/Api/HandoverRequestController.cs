@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using NEXUS.Modules.ProjectManagement.Application;
 using NEXUS.Modules.ProjectManagement.Application.DTOs;
 using NEXUS.SharedKernel;
+using NEXUS.SharedKernel.Management;
 
 namespace NEXUS.Modules.ProjectManagement.Api;
 
@@ -13,17 +14,21 @@ namespace NEXUS.Modules.ProjectManagement.Api;
 public class HandoverRequestController : ControllerBase
 {
     private readonly IProjectHandoverRequestService _handoverRequestService;
+    private readonly IManagementContextAccessor? _managementContext;
 
-    public HandoverRequestController(IProjectHandoverRequestService handoverRequestService)
+    public HandoverRequestController(IProjectHandoverRequestService handoverRequestService, IManagementContextAccessor? managementContext = null)
     {
         _handoverRequestService = handoverRequestService;
+        _managementContext = managementContext;
     }
 
     [Authorize(Policy = "Handover.Approve")]
+    [OrganizationScopedCollectionPermission("Handover.Approve")]
     [HttpGet("pending-for-me")]
     public async Task<IActionResult> GetPendingForMe(CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        var denied = ManagementActorBinding.RequireActor(this, _managementContext, requireWritable: false, out var userId);
+        if (denied is not null) return denied;
         var result = await _handoverRequestService.GetPendingForMeAsync(userId, cancellationToken);
         if (result.IsFailure)
             return StatusCode(result.Error?.StatusCode ?? StatusCodes.Status400BadRequest,
@@ -31,11 +36,11 @@ public class HandoverRequestController : ControllerBase
         return Ok(result.Value);
     }
 
-    [Authorize(Policy = "Handover.View")]
     [HttpGet("{id:guid}/details")]
     public async Task<IActionResult> GetDetails(Guid id, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? string.Empty;
+        var denied = ManagementActorBinding.RequireActor(this, _managementContext, requireWritable: false, out var userId);
+        if (denied is not null) return denied;
         var result = await _handoverRequestService.GetExistingRequestDetailsAsync(id, userId, cancellationToken);
         if (result.IsFailure)
             return StatusCode(result.Error?.StatusCode ?? StatusCodes.Status404NotFound,
@@ -43,11 +48,11 @@ public class HandoverRequestController : ControllerBase
         return Ok(result.Value);
     }
 
-    [Authorize(Policy = "Handover.Approve")]
     [HttpGet("{id:guid}/review")]
     public async Task<IActionResult> Review(Guid id, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? string.Empty;
+        var denied = ManagementActorBinding.RequireActor(this, _managementContext, requireWritable: false, out var userId);
+        if (denied is not null) return denied;
         var result = await _handoverRequestService.GetApprovalReviewAsync(id, userId, cancellationToken);
         if (result.IsFailure)
             return result.Error?.StatusCode switch
@@ -60,11 +65,11 @@ public class HandoverRequestController : ControllerBase
         return Ok(result.Value);
     }
 
-    [Authorize(Policy = "Handover.Approve")]
     [HttpPost("{id:guid}/accept")]
     public async Task<IActionResult> Accept(Guid id, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        var denied = ManagementActorBinding.RequireActor(this, _managementContext, requireWritable: true, out var userId);
+        if (denied is not null) return denied;
         var result = await _handoverRequestService.AcceptAsync(id, userId, cancellationToken);
         if (result.IsFailure)
             return result.Error?.StatusCode switch
@@ -76,11 +81,11 @@ public class HandoverRequestController : ControllerBase
         return Ok(result.Value);
     }
 
-    [Authorize(Policy = "Handover.Approve")]
     [HttpPost("{id:guid}/reject")]
     public async Task<IActionResult> Reject(Guid id, [FromBody] RejectProjectHandoverRequestDto dto, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        var denied = ManagementActorBinding.RequireActor(this, _managementContext, requireWritable: true, out var userId);
+        if (denied is not null) return denied;
         var result = await _handoverRequestService.RejectAsync(id, dto, userId, cancellationToken);
         if (result.IsFailure)
             return result.Error?.StatusCode switch
@@ -92,11 +97,11 @@ public class HandoverRequestController : ControllerBase
         return Ok(result.Value);
     }
 
-    [Authorize(Policy = "Handover.View")]
     [HttpPost("{id:guid}/cancel")]
     public async Task<IActionResult> Cancel(Guid id, CancellationToken cancellationToken)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System";
+        var denied = ManagementActorBinding.RequireActor(this, _managementContext, requireWritable: true, out var userId);
+        if (denied is not null) return denied;
         var result = await _handoverRequestService.CancelAsync(id, userId, cancellationToken);
         if (result.IsFailure)
             return result.Error?.StatusCode switch

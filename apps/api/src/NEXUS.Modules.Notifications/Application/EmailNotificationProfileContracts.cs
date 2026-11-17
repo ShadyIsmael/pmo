@@ -87,6 +87,7 @@ public interface IEmailNotificationProfileStore
 public interface IEmailNotificationOrganizationScopeAccess
 {
     Task<bool> HasAccessAsync(Guid organizationId, bool manage, CancellationToken cancellationToken = default);
+    Task<bool> HasScopedOrganizationAdminAuthorityAsync(Guid organizationId, bool manage, CancellationToken cancellationToken = default);
 }
 
 public sealed record EmailNotificationDeliveryLogDto(

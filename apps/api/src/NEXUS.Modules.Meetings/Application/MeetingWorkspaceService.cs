@@ -465,13 +465,29 @@ public sealed class MeetingWorkspaceService : IMeetingWorkspaceService
     private IQueryable<Meeting> InScope(IQueryable<Meeting> query)
     {
         var context = _managementContext.Current;
-        if (context is null) return query;
-        var userId = context.UserId;
+        if (!HasTrustedManagementContext(context)) return query.Where(_ => false);
+        var userId = context!.UserId;
         var projectIds = context.Scope.ProjectIds;
         return query.Where(meeting =>
             (meeting.ProjectId.HasValue && projectIds.Contains(meeting.ProjectId.Value))
             || meeting.OrganizerId == userId
             || meeting.Participants.Any(participant => participant.UserId == userId));
+    }
+
+    private bool HasTrustedManagementContext(NEXUS.SharedKernel.Management.ManagementContext? context)
+    {
+        if (context is null || context.UserId == Guid.Empty || context.TenantId == Guid.Empty)
+            return false;
+
+        var httpContext = _httpContextAccessor.HttpContext;
+        if (httpContext is null)
+            return true;
+
+        return httpContext.User.Identity?.IsAuthenticated == true
+            && Guid.TryParse(httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier), out var actorId)
+            && actorId == context.UserId
+            && Guid.TryParse(httpContext.User.FindFirstValue("tenantId"), out var tenantId)
+            && tenantId == context.TenantId;
     }
 
     private async Task<MeetingAgendaItemDto> MapAgendaItemAsync(MeetingAgenda item, CancellationToken cancellationToken)

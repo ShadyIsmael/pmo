@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "../i18n/messages";
+import { ApiError } from "../api/client";
 import { ManagerHandoverPanel } from "../features/delivery/ManagerHandoverPanel";
 
 const fixtures = vi.hoisted(() => ({
@@ -254,6 +255,15 @@ describe("portfolio manager handover panel", () => {
     expect(alert).toHaveTextContent("Unable to load handover details. Try again.");
     expect(within(alert).getByRole("button", { name: "Retry" })).toBeInTheDocument();
     expect(screen.queryByText("No manager handover requests have been submitted.")).not.toBeInTheDocument();
+  });
+
+  it("displays 'You do not have permission to view handovers' clearly when requests fail with 403 Forbidden", async () => {
+    fixtures.requests = [];
+    fixtures.requestsError = new ApiError(403, "You do not have permission to view handovers", "FORBIDDEN");
+    renderPanel();
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("You do not have permission to view handovers");
+    expect(within(alert).getByRole("button", { name: "Retry" })).toBeInTheDocument();
   });
 
   it("renders accept and reject in Arabic with RTL-safe layout", async () => {

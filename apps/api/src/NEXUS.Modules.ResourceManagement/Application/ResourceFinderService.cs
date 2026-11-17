@@ -3,6 +3,7 @@ using NEXUS.Modules.Organization.Domain;
 using NEXUS.Modules.ResourceManagement.Application.DTOs;
 using NEXUS.Modules.ResourceManagement.Domain;
 using NEXUS.SharedKernel;
+using NEXUS.SharedKernel.Management;
 
 namespace NEXUS.Modules.ResourceManagement.Application;
 
@@ -11,16 +12,32 @@ public class ResourceFinderService : IResourceFinderService
     private readonly DbContext _context;
     private readonly ICapacityService _capacityService;
     private readonly IProjectResourcePlanningContextLookup? _planningContextLookup;
+    private readonly IManagementContextAccessor? _managementContext;
 
     public ResourceFinderService(
         DbContext context,
         ICapacityService capacityService,
-        IProjectResourcePlanningContextLookup? planningContextLookup = null)
+        IProjectResourcePlanningContextLookup? planningContextLookup = null,
+        IManagementContextAccessor? managementContext = null)
     {
         _context = context;
         _capacityService = capacityService;
         _planningContextLookup = planningContextLookup;
+        _managementContext = managementContext;
     }
+
+    private IQueryable<ResourceAllocation> ApplyManagementScope(IQueryable<ResourceAllocation> query)
+    {
+        var projectIds = _managementContext?.Current?.Scope.ProjectIds;
+        if (projectIds is null) return query.Where(_ => false);
+        if (projectIds.Count == 0) return query.Where(allocation => allocation.ProjectId == null);
+
+        var scopedProjectIds = projectIds.ToArray();
+        return query.Where(allocation => allocation.ProjectId == null || scopedProjectIds.Contains(allocation.ProjectId.Value));
+    }
+
+    private bool CanAccessProject(Guid projectId) =>
+        _managementContext?.Current?.Scope.ProjectIds.Contains(projectId) == true;
 
     public async Task<PagedResult<ResourceFinderResultDto>> FindAsync(ResourceFinderQueryDto query, CancellationToken cancellationToken = default)
     {
@@ -64,7 +81,7 @@ public class ResourceFinderService : IResourceFinderService
         var startDate = query.StartDate ?? DateTime.UtcNow;
         var endDate = query.EndDate ?? startDate.AddMonths(3);
 
-        var allAllocations = await _context.Set<ResourceAllocation>()
+        var allAllocations = await ApplyManagementScope(_context.Set<ResourceAllocation>())
             .Where(a => a.Status != ResourceAllocation.StatusCancelled && !a.IsDeleted &&
                 a.StartDate < endDate && a.EndDate > startDate)
             .ToListAsync(cancellationToken);
@@ -78,7 +95,9 @@ public class ResourceFinderService : IResourceFinderService
             .Include(calendar => calendar.DayRules)
             .ToListAsync(cancellationToken);
         var defaultCalendar = calendars.FirstOrDefault(calendar => calendar.IsDefault && calendar.HasValidSchedule);
-        var planningContexts = query.ProjectId.HasValue && _planningContextLookup is not null
+        var planningContexts = query.ProjectId.HasValue
+            && _planningContextLookup is not null
+            && CanAccessProject(query.ProjectId.Value)
             ? await _planningContextLookup.GetPlanningContextsAsync(query.ProjectId.Value, resources.Select(resource => resource.Id), cancellationToken)
             : new Dictionary<Guid, ProjectResourcePlanningContext>();
 

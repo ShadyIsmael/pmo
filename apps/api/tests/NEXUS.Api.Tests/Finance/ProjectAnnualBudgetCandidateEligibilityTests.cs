@@ -41,8 +41,9 @@ public sealed class ProjectAnnualBudgetCandidateEligibilityTests
         var managementRole = NewRole(tenantId, "Project Management", "Management");
         var systemRole = NewRole(tenantId, "Tenant Admin", "System", isSystem: true);
         systemRole.AssignSystemRoleKey(Role.TenantAdminSystemRoleKey, tenantId);
-        var secondSystemRole = NewRole(tenantId, "System Reviewer", "System", isSystem: true);
-        secondSystemRole.AssignSystemRoleKey("test.system.reviewer", tenantId);
+        // Role Category and System Role identity are independent. This ordinary
+        // role deliberately keeps the legacy "System" category for candidate-category coverage.
+        var systemCategoryRole = NewRole(tenantId, "System Reviewer", "System");
         var businessRole = NewRole(tenantId, "Business", "Business");
         var foreignManagementRole = NewRole(foreignTenantId, "Foreign Management", "Management");
 
@@ -79,7 +80,7 @@ public sealed class ProjectAnnualBudgetCandidateEligibilityTests
             project,
             managementRole,
             systemRole,
-            secondSystemRole,
+            systemCategoryRole,
             businessRole,
             foreignManagementRole,
             managementResource,
@@ -104,7 +105,7 @@ public sealed class ProjectAnnualBudgetCandidateEligibilityTests
             UserRole(tenantId, projectManager, managementRole),
             UserRole(tenantId, sponsorUser, systemRole),
             UserRole(tenantId, multiRoleUser, managementRole),
-            UserRole(tenantId, multiRoleUser, secondSystemRole),
+            UserRole(tenantId, multiRoleUser, systemCategoryRole),
             UserRole(tenantId, businessUser, businessRole),
             UserRole(tenantId, deniedUser, managementRole),
             UserRole(tenantId, inactiveUser, managementRole),

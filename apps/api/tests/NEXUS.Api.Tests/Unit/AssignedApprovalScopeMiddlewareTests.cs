@@ -1,7 +1,9 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Moq;
 using NEXUS.Api.Management;
+using NEXUS.Modules.Identity.Application;
 using NEXUS.Persistence;
 using NEXUS.SharedKernel.Management;
 using Xunit;
@@ -43,7 +45,11 @@ public sealed class AssignedApprovalScopeMiddlewareTests
             return Task.CompletedTask;
         });
 
-        await middleware.InvokeAsync(context, db, management);
+        var effectivePermissions = new Mock<IUserEffectivePermissionService>();
+        effectivePermissions.Setup(service => service.GetEffectivePermissionsForOrganizationAsync(
+                It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new HashSet<string>(StringComparer.Ordinal));
+        await middleware.InvokeAsync(context, db, management, effectivePermissions.Object);
 
         Assert.True(nextCalled);
     }

@@ -26,33 +26,18 @@ const page = {
   totalPages: 1,
 };
 
-function renderPage(fetchMock: ReturnType<typeof vi.fn>) {
+function renderPage(
+  fetchMock: ReturnType<typeof vi.fn>,
+  managementUser: { id: string; permissions: string[] } | null = null,
+) {
   setTokens("a");
-  vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
-    const mockFetch = fetchMock as unknown as typeof fetch;
-    const response = await mockFetch(input, init);
-    if (String(input).includes("/api/project-lifecycle/options")) {
-      try {
-        const body = await response.clone().json();
-        if (body == null) {
-          return new Response(JSON.stringify({ phases: [
-            { id: "phase-initiation", code: "Initiation", nameEn: "Initiation", nameAr: "البدء", displayOrder: 1, isDefault: true, isActive: true },
-          ], statuses: [
-            { id: "status-active", code: "Active", nameEn: "Active", nameAr: "نشط", displayOrder: 1, isDefault: true, isActive: true, reportingCategory: "InProgress", attentionLevel: "None" },
-          ] }), { status: 200 });
-        }
-      } catch {
-        return response;
-      }
-    }
-    return response;
-  }));
+  vi.stubGlobal("fetch", fetchMock as unknown as typeof fetch);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   return render(
     <QueryClientProvider client={client}>
       <I18nProvider>
         <AuthProvider>
-          <ManagementProvider user={null}>
+          <ManagementProvider user={managementUser}>
             <MemoryRouter initialEntries={["/projects"]}>
               <ProjectsListPage />
               <LocationProbe />
@@ -68,7 +53,7 @@ function renderProjectCreatePageWithManagerLookup(managerLookupStatus = 200, man
   const fetchMock = vi.fn().mockImplementation((input: string, init?: RequestInit) => {
     const url = String(input);
     if (url.includes("/api/auth/me")) {
-      return Promise.resolve(new Response(JSON.stringify({ id: "u", email: "a@b.c", firstName: "A", lastName: "B", fullName: "A B", roles: [], permissions: ["Project.View", "Project.Create"] }), { status: 200 }));
+      return Promise.resolve(new Response(JSON.stringify({ id: "u", email: "a@b.c", firstName: "A", lastName: "B", fullName: "A B", roles: [], permissions: ["Project.View", "Project.Create", "Handover.AdminInitiate"] }), { status: 200 }));
     }
     if (url.includes("/api/me/perspectives")) {
       return Promise.resolve(new Response(JSON.stringify({ availablePerspectives: [], scope: { portfolioIds: [], programIds: [], projectIds: [] } }), { status: 200 }));
@@ -87,15 +72,19 @@ function renderProjectCreatePageWithManagerLookup(managerLookupStatus = 200, man
       return Promise.resolve(new Response(JSON.stringify([{ id: "usd", code: "USD", name: "US Dollar", symbol: "$", exchangeRate: 1, isBase: true }]), { status: 200 }));
     }
     if (url.includes("/api/organization/units")) return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
-    if (url.includes("/api/portfolios")) return Promise.resolve(new Response(JSON.stringify({ items: [] }), { status: 200 }));
+    if (url.includes("/api/portfolios")) return Promise.resolve(new Response(JSON.stringify({ items: [{ id: "portfolio-1", name: "Portfolio One", currency: "USD" }] }), { status: 200 }));
     if (url.includes("/api/programs")) return Promise.resolve(new Response(JSON.stringify({ items: [] }), { status: 200 }));
+    if (url.includes("/api/project-lifecycle/options")) return Promise.resolve(new Response(JSON.stringify({
+      phases: [{ id: "phase-preinit", code: "Pre-Initiation", nameEn: "Pre-Initiation", nameAr: "ما قبل البدء", displayOrder: 1, isDefault: true, isActive: true }],
+      statuses: [{ id: "status-active", code: "Active", nameEn: "Active", nameAr: "نشط", displayOrder: 1, isDefault: true, isActive: true }],
+    }), { status: 200 }));
     if (url.includes("/api/projects") && init?.method === "POST") {
       return Promise.resolve(new Response(JSON.stringify({ id: "test-project", publicId: "test-project-public" }), { status: 201 }));
     }
     if (url.includes("/api/projects")) return Promise.resolve(new Response(JSON.stringify(page), { status: 200 }));
     return Promise.resolve(new Response("null", { status: 200 }));
   });
-  renderPage(fetchMock);
+  renderPage(fetchMock, { id: "u", permissions: ["Project.View", "Project.Create", "Handover.AdminInitiate"] });
   return fetchMock;
 }
 describe("projects list polish", () => {
@@ -109,31 +98,29 @@ describe("projects list polish", () => {
     expect(screen.getByText("Rejected")).not.toHaveClass("bg-destructive/10");
   });
 
-  it("filters by localized database-backed status options without refetching", async () => {
+  it("filters by localized project-projected status values without an unscoped catalog request", async () => {
     const dynamicPage = {
       ...page,
       items: [
-        { ...page.items[0], name: "Queued Project", status: "Queued", statusNameEn: "Preparation Queue" },
-        { ...page.items[1], name: "Released Project", status: "Released", statusNameEn: "Released" },
+        { ...page.items[0], name: "Queued Project", status: "Queued", statusNameEn: "Preparation Queue", statusNameAr: "قائمة التجهيز" },
+        { ...page.items[1], name: "Released Project", status: "Released", statusNameEn: "Released", statusNameAr: "تم الإطلاق" },
       ],
     };
     const fetchMock = vi.fn().mockImplementation((input: string) => {
       if (input.includes("/api/auth/me")) {
-        return Promise.resolve(new Response(JSON.stringify({ id: "u", email: "a@b.c", firstName: "A", lastName: "B", fullName: "A B", roles: [], permissions: ["Project.View", "Project.Create"] }), { status: 200 }));
+        return Promise.resolve(new Response(JSON.stringify({ id: "u", email: "a@b.c", firstName: "A", lastName: "B", fullName: "A B", roles: [], permissions: ["Project.View", "Project.Create", "Handover.AdminInitiate"] }), { status: 200 }));
       }
       if (input.includes("/api/me/perspectives")) {
         return Promise.resolve(new Response(JSON.stringify({ availablePerspectives: [], scope: { portfolioIds: [], programIds: [], projectIds: [] } }), { status: 200 }));
       }
-      if (input.includes("/api/project-lifecycle/options")) return Promise.resolve(new Response(JSON.stringify({ phases: [], statuses: [
-        { id: "queued", code: "Queued", nameEn: "Preparation Queue", nameAr: "قائمة التجهيز", displayOrder: 1, isDefault: true, isActive: true },
-        { id: "released", code: "Released", nameEn: "Released", nameAr: "تم الإطلاق", displayOrder: 2, isDefault: false, isActive: true },
-      ] }), { status: 200 }));
       if (input.includes("/api/projects")) return Promise.resolve(new Response(JSON.stringify(dynamicPage), { status: 200 }));
       if (input.includes("/api/portfolios")) return Promise.resolve(new Response(JSON.stringify({ items: [] }), { status: 200 }));
       return Promise.resolve(new Response("null", { status: 200 }));
     });
-    renderPage(fetchMock);
+    renderPage(fetchMock, { id: "u", permissions: ["Project.View"] });
+    await waitFor(() => expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/me/perspectives"))).toBe(true));
     await waitFor(() => expect(screen.getByText("Queued Project")).toBeInTheDocument());
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/project-lifecycle/options"))).toBe(false);
     const callsBefore = fetchMock.mock.calls.filter(([input]) => String(input).includes("/api/projects") && !String(input).includes("/shell")).length;
     fireEvent.click(await screen.findByRole("button", { name: /Advanced Search/ }, { timeout: 5000 }));
     fireEvent.click(await screen.findByRole("checkbox", { name: "Preparation Queue" }));
@@ -143,7 +130,7 @@ describe("projects list polish", () => {
     expect(callsAfter).toBe(callsBefore);
   });
 
-  it("matches source status badges and defers the advanced-search lookup until expanded", async () => {
+  it("does not load unscoped lifecycle options during ManagementProvider bootstrap", async () => {
     const fetchMock = vi.fn().mockImplementation((input: string) => {
       if (input.includes("/api/auth/me")) {
         return Promise.resolve(new Response(JSON.stringify({ id: "u", email: "a@b.c", firstName: "A", lastName: "B", fullName: "A B", roles: [], permissions: ["Project.View"] }), { status: 200 }));
@@ -157,9 +144,11 @@ describe("projects list polish", () => {
       if (input.includes("/api/portfolios")) return Promise.resolve(new Response(JSON.stringify({ items: [] }), { status: 200 }));
       return Promise.resolve(new Response("null", { status: 200 }));
     });
-    renderPage(fetchMock);
+    renderPage(fetchMock, { id: "u", permissions: ["Project.View"] });
 
     await waitFor(() => expect(screen.getByRole("link", { name: /Healthy Project/ })).toBeInTheDocument());
+    await waitFor(() => expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/me/perspectives"))).toBe(true));
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/project-lifecycle/options"))).toBe(false);
     expect(screen.queryByRole("button", { name: /^(Create|إنشاء)$/ })).not.toBeInTheDocument();
     const projectRow = screen.getByRole("link", { name: /Healthy Project/ });
     expect(within(projectRow).getByText("Active")).toHaveClass("bg-transparent", "text-success");
@@ -184,7 +173,7 @@ describe("projects list polish", () => {
       if (input.includes("/api/projects")) return Promise.resolve(new Response(JSON.stringify(page), { status: 200 }));
       return Promise.resolve(new Response("null", { status: 200 }));
     });
-    renderPage(fetchMock);
+    renderPage(fetchMock, { id: "u", permissions: ["Project.View", "Project.Create", "Handover.AdminInitiate"] });
 
     const tableProject = await screen.findByRole("link", { name: /Healthy Project/ });
     expect(within(tableProject).getByText("65%")).toBeInTheDocument();
@@ -204,7 +193,7 @@ describe("projects list polish", () => {
     const fetchMock = vi.fn().mockImplementation((input: string, init?: RequestInit) => {
       const url = String(input);
       if (url.includes("/api/auth/me")) {
-        return Promise.resolve(new Response(JSON.stringify({ id: "u", email: "a@b.c", firstName: "A", lastName: "B", fullName: "A B", roles: [], permissions: ["Project.View", "Project.Create"] }), { status: 200 }));
+        return Promise.resolve(new Response(JSON.stringify({ id: "u", email: "a@b.c", firstName: "A", lastName: "B", fullName: "A B", roles: [], permissions: ["Project.View", "Project.Create", "Handover.AdminInitiate"] }), { status: 200 }));
       }
       if (url.includes("/api/me/perspectives")) {
         return Promise.resolve(new Response(JSON.stringify({ availablePerspectives: [], scope: { portfolioIds: [], programIds: [], projectIds: [] } }), { status: 200 }));
@@ -229,6 +218,12 @@ describe("projects list polish", () => {
       if (url.includes("/api/portfolios")) {
         return Promise.resolve(new Response(JSON.stringify({ items: [{ id: "portfolio-1", name: "Portfolio One", currency: "GBP" }] }), { status: 200 }));
       }
+      if (url.includes("/api/project-lifecycle/options")) {
+        return Promise.resolve(new Response(JSON.stringify({
+          phases: [{ id: "phase-preinit", code: "Pre-Initiation", nameEn: "Pre-Initiation", nameAr: "ما قبل البدء", displayOrder: 1, isDefault: true, isActive: true }],
+          statuses: [{ id: "status-active", code: "Active", nameEn: "Active", nameAr: "نشط", displayOrder: 1, isDefault: true, isActive: true }],
+        }), { status: 200 }));
+      }
       if (url.includes("/api/programs")) {
         return Promise.resolve(new Response(JSON.stringify({ items: [{ id: "program-1", name: "Program One", portfolioId: "portfolio-1", currency: "JPY" }] }), { status: 200 }));
       }
@@ -238,7 +233,7 @@ describe("projects list polish", () => {
       if (url.includes("/api/projects")) return Promise.resolve(new Response(JSON.stringify(page), { status: 200 }));
       return Promise.resolve(new Response("null", { status: 200 }));
     });
-    renderPage(fetchMock);
+    renderPage(fetchMock, { id: "u", permissions: ["Project.View", "Project.Create", "Handover.AdminInitiate"] });
 
     fireEvent.click(await screen.findByRole("button", { name: /^(Create|إنشاء)$/ }));
     const sheet = await screen.findByRole("dialog", { name: "New Project" });
@@ -246,10 +241,10 @@ describe("projects list polish", () => {
     await waitFor(() => expect(within(sheet).getByText("USD — US Dollar ($)")).toBeInTheDocument());
     expect(within(sheet).getByPlaceholderText("Name")).toHaveValue("Created Project");
 
-    fireEvent.click(within(sheet).getByRole("combobox", { name: "Project Manager" }));
-    fireEvent.click(await screen.findByRole("option", { name: "Project Manager" }));
     fireEvent.click(within(sheet).getByRole("combobox", { name: "Portfolio" }));
     fireEvent.click(await screen.findByRole("option", { name: "Portfolio One" }));
+    fireEvent.click(within(sheet).getByRole("combobox", { name: "Project Manager" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Project Manager" }));
     expect(within(sheet).getByText("GBP — British Pound (£)")).toBeInTheDocument();
     fireEvent.click(within(sheet).getByRole("combobox", { name: "Program" }));
     fireEvent.click(await screen.findByRole("option", { name: "Program One" }));
@@ -270,7 +265,10 @@ describe("projects list polish", () => {
     renderProjectCreatePageWithManagerLookup(200, []);
     fireEvent.click(await screen.findByRole("button", { name: /^(Create|إنشاء)$/ }));
     expect(await screen.findByText("Project Managers are selected from eligible active System Users. A Resource profile or Project Team membership is not required.")).toBeInTheDocument();
-    fireEvent.click(within(screen.getByRole("dialog", { name: "New Project" })).getByRole("combobox", { name: "Project Manager" }));
+    const englishSheet = screen.getByRole("dialog", { name: "New Project" });
+    fireEvent.click(within(englishSheet).getByRole("combobox", { name: "Portfolio" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Portfolio One" }));
+    fireEvent.click(within(englishSheet).getByRole("combobox", { name: "Project Manager" }));
     expect(await screen.findByText("No eligible active Project Managers found.")).toBeInTheDocument();
 
     cleanup();
@@ -278,6 +276,9 @@ describe("projects list polish", () => {
     renderProjectCreatePageWithManagerLookup(200, []);
     fireEvent.click(await screen.findByRole("button", { name: /^(Create|إنشاء)$/ }));
     expect(await screen.findByText("يُختار مديرو المشروعات من مستخدمي النظام النشطين المستوفين لشروط الأهلية. لا يلزم وجود سجل مورد أو عضوية في فريق المشروع.")).toBeInTheDocument();
+    const arabicSheet = screen.getByRole("dialog", { name: "مشروع جديد" });
+    fireEvent.click(within(arabicSheet).getByRole("combobox", { name: "المحفظة" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Portfolio One" }));
     fireEvent.click(screen.getByRole("combobox", { name: "مدير المشروع" }));
     expect(await screen.findByText("لم يتم العثور على مديري مشروعات نشطين مؤهلين.")).toBeInTheDocument();
   });
@@ -285,6 +286,9 @@ describe("projects list polish", () => {
   it("shows a localized authorization message when Project Manager candidates are forbidden", async () => {
     renderProjectCreatePageWithManagerLookup(403);
     fireEvent.click(await screen.findByRole("button", { name: /^(Create|إنشاء)$/ }));
+    const englishSheet = screen.getByRole("dialog", { name: "New Project" });
+    fireEvent.click(within(englishSheet).getByRole("combobox", { name: "Portfolio" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Portfolio One" }));
     expect(await screen.findByText("You do not have permission to load Project Manager candidates. Ask an administrator to review your user lookup access.")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
 
@@ -292,6 +296,9 @@ describe("projects list polish", () => {
     window.localStorage.setItem("nexus-locale", "ar");
     renderProjectCreatePageWithManagerLookup(403);
     fireEvent.click(await screen.findByRole("button", { name: /^(Create|إنشاء)$/ }));
+    const arabicSheet = screen.getByRole("dialog", { name: "مشروع جديد" });
+    fireEvent.click(within(arabicSheet).getByRole("combobox", { name: "المحفظة" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Portfolio One" }));
     expect(await screen.findByText("ليست لديك صلاحية تحميل قائمة مرشحي مديري المشروعات. اطلب من المسؤول مراجعة صلاحية البحث عن المستخدمين.")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "إعادة المحاولة" })).not.toBeInTheDocument();
   });
@@ -301,7 +308,7 @@ describe("projects list polish", () => {
     const fetchMock = vi.fn().mockImplementation((input: string, init?: RequestInit) => {
       const url = String(input);
       if (url.includes("/api/auth/me")) {
-        return Promise.resolve(new Response(JSON.stringify({ id: "u", email: "a@b.c", firstName: "A", lastName: "B", fullName: "A B", roles: [], permissions: ["Project.View", "Project.Create"] }), { status: 200 }));
+        return Promise.resolve(new Response(JSON.stringify({ id: "u", email: "a@b.c", firstName: "A", lastName: "B", fullName: "A B", roles: [], permissions: ["Project.View", "Project.Create", "Handover.AdminInitiate"] }), { status: 200 }));
       }
       if (url.includes("/api/me/perspectives")) {
         return Promise.resolve(new Response(JSON.stringify({ availablePerspectives: [], scope: { portfolioIds: [], programIds: [], projectIds: [] } }), { status: 200 }));
@@ -319,20 +326,26 @@ describe("projects list polish", () => {
         ]), { status: 200 }));
       }
       if (url.includes("/api/organization/units")) return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
-      if (url.includes("/api/portfolios")) return Promise.resolve(new Response(JSON.stringify({ items: [] }), { status: 200 }));
+      if (url.includes("/api/portfolios")) return Promise.resolve(new Response(JSON.stringify({ items: [{ id: "portfolio-1", name: "Portfolio One", currency: "USD" }] }), { status: 200 }));
       if (url.includes("/api/programs")) return Promise.resolve(new Response(JSON.stringify({ items: [] }), { status: 200 }));
+      if (url.includes("/api/project-lifecycle/options")) return Promise.resolve(new Response(JSON.stringify({
+        phases: [{ id: "phase-preinit", code: "Pre-Initiation", nameEn: "Pre-Initiation", nameAr: "ما قبل البدء", displayOrder: 1, isDefault: true, isActive: true }],
+        statuses: [{ id: "status-active", code: "Active", nameEn: "Active", nameAr: "نشط", displayOrder: 1, isDefault: true, isActive: true }],
+      }), { status: 200 }));
       if (url.includes("/api/projects") && init?.method === "POST") {
         return Promise.resolve(new Response(JSON.stringify({ id: "unassigned-project", publicId: "unassigned-project-public" }), { status: 201 }));
       }
       if (url.includes("/api/projects")) return Promise.resolve(new Response(JSON.stringify(page), { status: 200 }));
       return Promise.resolve(new Response("null", { status: 200 }));
     });
-    renderPage(fetchMock);
+    renderPage(fetchMock, { id: "u", permissions: ["Project.View", "Project.Create", "Handover.AdminInitiate"] });
 
     fireEvent.click(await screen.findByRole("button", { name: /^(Create|إنشاء)$/ }));
     const sheet = await screen.findByRole("dialog", { name: "New Project" });
     fireEvent.change(within(sheet).getByPlaceholderText("Name"), { target: { value: "Unassigned Project" } });
     await waitFor(() => expect(within(sheet).getByText(/USD.*US Dollar.*\$/)).toBeInTheDocument());
+    fireEvent.click(within(sheet).getByRole("combobox", { name: "Portfolio" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Portfolio One" }));
     await user.click(within(sheet).getByRole("button", { name: "New Project" }));
 
     await waitFor(() => expect(fetchMock.mock.calls.some(([input, init]) => String(input).includes("/api/projects") && init?.method === "POST")).toBe(true));

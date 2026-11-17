@@ -39,6 +39,7 @@ public sealed class ProjectReportingPersistenceTests : IDisposable
     private readonly AppDbContext _context;
     private readonly Mock<IHttpContextAccessor> _http = new();
     private readonly Mock<IAuditService> _audit = new();
+    private readonly Mock<IManagementContextAccessor> _managementContext = new();
     private readonly Guid _tenantId = Guid.NewGuid();
     private readonly Guid _userId = Guid.NewGuid();
     private readonly Guid _projectId = Guid.NewGuid();
@@ -71,6 +72,15 @@ public sealed class ProjectReportingPersistenceTests : IDisposable
         ], "reporting-test"));
         _http.Setup(item => item.HttpContext).Returns(httpContext);
         AppDbContext.ConfigureTenantResolution(_http.Object);
+        _managementContext.SetupGet(accessor => accessor.Current).Returns(new ManagementContext(
+            _userId,
+            _tenantId,
+            ManagementPerspective.ProjectManager,
+            ManagementViewMode.Native,
+            null,
+            null,
+            null,
+            new ManagementScope(new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid> { _projectId })));
     }
 
     [Fact]
@@ -349,6 +359,91 @@ public sealed class ProjectReportingPersistenceTests : IDisposable
         AssertPerformance(stillFrozen.Value.PerformanceSnapshot!, bac: 1_750_000m, pv: 1_000_000m, ev: 780_000m, ac: 900_000m);
     }
 
+    [Fact]
+    public async Task StatusReportOperationsRejectSameTenantProjectsOutsideManagementProjectScope()
+    {
+        SetTenant();
+        var hiddenProjectId = Guid.NewGuid();
+        var reportId = Guid.NewGuid();
+        _context.Set<Project>().Add(new Project
+        {
+            Id = hiddenProjectId,
+            TenantId = _tenantId,
+            Name = "Out of scope reporting project",
+            Code = "REPORT-HIDDEN",
+            CreatedBy = _userId.ToString()
+        });
+        _context.Set<ProjectStatusReport>().Add(new ProjectStatusReport
+        {
+            Id = reportId,
+            TenantId = _tenantId,
+            ProjectId = hiddenProjectId,
+            ReportDate = StatusDate,
+            PeriodFrom = StatusDate.AddDays(-7),
+            PeriodTo = StatusDate,
+            StatusDate = StatusDate,
+            ReportState = ProjectStatusReportState.Draft,
+            ExecutiveSummary = "Hidden draft remains unchanged.",
+            CreatedBy = _userId.ToString()
+        });
+        await _context.SaveChangesAsync();
+
+        var service = CreateStatusReportService(CreateReportingService());
+        var reportingService = CreateReportingService();
+        var createDto = new CreateProjectStatusReportDto
+        {
+            PeriodFrom = StatusDate.AddDays(-7),
+            PeriodTo = StatusDate,
+            OverallHealth = "Green",
+            OverallProgressPercent = 25m,
+            ExecutiveSummary = "Must not be created."
+        };
+        var updateDto = new UpdateProjectStatusReportDto
+        {
+            PeriodFrom = StatusDate.AddDays(-7),
+            PeriodTo = StatusDate,
+            OverallHealth = "Red",
+            ExecutiveSummary = "Must not be applied."
+        };
+
+        var page = await service.GetPagedAsync(hiddenProjectId, 1, 20);
+        var overview = await service.GetOverviewAsync(hiddenProjectId);
+        var progress = await service.GetCurrentProgressAsync(hiddenProjectId);
+        var detail = await service.GetByIdAsync(hiddenProjectId, reportId);
+        var comparison = await service.ComparePublishedReportsAsync(hiddenProjectId, reportId, Guid.NewGuid());
+        var create = await service.CreateAsync(hiddenProjectId, createDto, _userId.ToString());
+        var update = await service.UpdateAsync(hiddenProjectId, reportId, updateDto, _userId.ToString());
+        var publish = await service.PublishAsync(hiddenProjectId, reportId, updateDto, _userId.ToString());
+        var delete = await service.DeleteAsync(hiddenProjectId, reportId, _userId.ToString());
+        var reportingOptions = await reportingService.GetOptionsAsync(hiddenProjectId);
+        var reportingConfiguration = await reportingService.GetConfigurationAsync(hiddenProjectId);
+        var reportingPerformance = await reportingService.GetPerformanceAsync(hiddenProjectId);
+        var saveReportingConfiguration = await reportingService.SaveConfigurationAsync(hiddenProjectId,
+            Configuration(Array.Empty<ProjectReportingPlanSelectionInputDto>()), _userId.ToString());
+        var financialSummary = await reportingService.GetFinancialSummaryAsync(hiddenProjectId, StatusDate.AddDays(-7), StatusDate);
+
+        Assert.Equal(404, page.Error?.StatusCode);
+        Assert.Equal(404, overview.Error?.StatusCode);
+        Assert.Equal(404, progress.Error?.StatusCode);
+        Assert.Equal(404, detail.Error?.StatusCode);
+        Assert.Equal(404, comparison.Error?.StatusCode);
+        Assert.Equal(404, create.Error?.StatusCode);
+        Assert.Equal(404, update.Error?.StatusCode);
+        Assert.Equal(404, publish.Error?.StatusCode);
+        Assert.Equal(404, delete.Error?.StatusCode);
+        Assert.Equal(404, reportingOptions.Error?.StatusCode);
+        Assert.Equal(404, reportingConfiguration.Error?.StatusCode);
+        Assert.Equal(404, reportingPerformance.Error?.StatusCode);
+        Assert.Equal(404, saveReportingConfiguration.Error?.StatusCode);
+        Assert.Equal(404, financialSummary.Error?.StatusCode);
+
+        var persistedReport = await _context.Set<ProjectStatusReport>().SingleAsync(item => item.Id == reportId);
+        Assert.Equal(ProjectStatusReportState.Draft, persistedReport.ReportState);
+        Assert.Equal("Hidden draft remains unchanged.", persistedReport.ExecutiveSummary);
+        Assert.False(persistedReport.IsDeleted);
+        Assert.Equal(1, await _context.Set<ProjectStatusReport>().CountAsync(item => item.ProjectId == hiddenProjectId));
+    }
+
     private async Task SeedFixtureAsync()
     {
         var calendar = new WorkingCalendar
@@ -549,7 +644,8 @@ public sealed class ProjectReportingPersistenceTests : IDisposable
         _audit.Object,
         new ProjectEvmPlanLookup(_context),
         new ProjectEvmLaborCostLookup(_context, new ActualWorkCostLookup(_context), new ResourceLaborCostCalculator()),
-        new ProjectEvmDirectCostLookup(_context));
+        new ProjectEvmDirectCostLookup(_context),
+        _managementContext.Object);
 
     private ProjectStatusReportService CreateStatusReportService(ProjectReportingService reporting)
     {
@@ -594,7 +690,7 @@ public sealed class ProjectReportingPersistenceTests : IDisposable
             _context, _audit.Object, _http.Object, reporting,
             new ProjectPlanProgressLookup(_context), new CapacityService(_context),
             provisioning.Object, workflowInstances.Object,
-            workflowExecution.Object, Mock.Of<IManagementContextAccessor>(),
+            workflowExecution.Object, _managementContext.Object,
             new FrozenTimeProvider(new DateTimeOffset(StatusDate, TimeSpan.Zero)));
     }
 
