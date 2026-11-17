@@ -558,11 +558,22 @@ public sealed class ProjectLifecycleCatalogService : IProjectLifecycleCatalogSer
                     allowScopedOrganizationAdmin: hasScopedOrganizationAdminManage && !hasTenantLifecycleScope))
                 return Result<ProjectLifecycleCatalogDto>.Failure(Error.NotFound("Project phase not found."));
             
-            // Protect Pre-Initiation phase from modification
-            if (IsPreInitiationPhase(entity))
-                return Result<ProjectLifecycleCatalogDto>.Failure(Error.Conflict("The Pre-Initiation phase is protected and cannot be modified."));
-            
             if (request.OrganizationId != entity.OrganizationId) return Result<ProjectLifecycleCatalogDto>.Failure(Error.Conflict("The Organization scope of a lifecycle entry is stable."));
+            // Pre-Initiation remains protected from identity, label, ordering, and
+            // lifecycle changes. Its Organization-specific category association is
+            // independently configurable, like any other phase's association.
+            if (IsPreInitiationPhase(entity)
+                && (normalized.Code != entity.Code
+                    || normalized.NameEn != entity.NameEn
+                    || normalized.NameAr != entity.NameAr
+                    || normalized.DescriptionEn != entity.DescriptionEn
+                    || normalized.DescriptionAr != entity.DescriptionAr
+                    || request.DisplayOrder != entity.DisplayOrder
+                    || request.IsContinuousActivity != entity.IsContinuousActivity
+                    || request.IsActive != entity.IsActive
+                    || request.IsDefault != entity.IsDefault))
+                return Result<ProjectLifecycleCatalogDto>.Failure(Error.Conflict("The Pre-Initiation phase is protected; only its document category association can be changed."));
+
             if (await PhaseDuplicateExistsAsync(management.TenantId, entity.OrganizationId, normalized.Code!, normalized.NameEn!, normalized.NameAr!, id, cancellationToken))
                 return Result<ProjectLifecycleCatalogDto>.Failure(Error.Conflict("A phase with this code or bilingual name already exists in the selected scope."));
             if (!MatchesRowVersion(entity.RowVersion, request.RowVersion)) return Result<ProjectLifecycleCatalogDto>.Failure(Error.Conflict("The phase changed; reload it before saving."));
@@ -580,7 +591,7 @@ public sealed class ProjectLifecycleCatalogService : IProjectLifecycleCatalogSer
             entity.DocumentCategoryId = request.DocumentCategoryId;
             entity.UpdatedBy = actorId.ToString();
             var saved = await SaveAndAuditAsync(entity, "ProjectLifecyclePhase", "Update", actorId, original,
-                new { entity.NameEn, entity.NameAr, entity.DescriptionEn, entity.DescriptionAr, entity.DisplayOrder, entity.IsContinuousActivity }, cancellationToken);
+                new { entity.NameEn, entity.NameAr, entity.DescriptionEn, entity.DescriptionAr, entity.DisplayOrder, entity.IsContinuousActivity, entity.DocumentCategoryId }, cancellationToken);
             return saved.IsFailure ? Result<ProjectLifecycleCatalogDto>.Failure(saved.Error!) : Result<ProjectLifecycleCatalogDto>.Success(ToDto(entity));
         }
 
@@ -698,13 +709,14 @@ public sealed class ProjectLifecycleCatalogService : IProjectLifecycleCatalogSer
 
         // Include soft-deleted rows so an existing mapping can be preserved during
         // an unrelated edit, while new selections stay limited to active categories
-        // in the exact Tenant/Organization scope.
+        // in the same Tenant and either the exact Organization or Tenant-shared scope.
         var category = await _context.Set<DocumentCategory>()
             .IgnoreQueryFilters()
             .AsNoTracking()
             .Where(item => item.Id == documentCategoryId.Value
                 && item.TenantId == tenantId
-                && item.OrganizationId == organizationId)
+                && (item.OrganizationId == organizationId
+                    || (organizationId.HasValue && item.OrganizationId == null)))
             .Select(item => new { item.IsActive, item.IsDeleted })
             .SingleOrDefaultAsync(cancellationToken);
 

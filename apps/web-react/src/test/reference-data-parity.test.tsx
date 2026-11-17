@@ -43,6 +43,9 @@ const mocks = vi.hoisted(() => ({
   createDocumentCategoryHook: vi.fn(),
   updateDocumentCategoryHook: vi.fn(),
   setDocumentCategoryStatusHook: vi.fn(),
+  projectLifecycleCatalog: vi.fn(),
+  updateProjectPhase: vi.fn(),
+  updateProjectLifecycleItemHook: vi.fn(),
   useManagement: vi.fn(),
   confirm: vi.fn(),
 }));
@@ -58,6 +61,10 @@ vi.mock("../features/projects/api/documents", () => ({
   useCreateDocumentCategory: mocks.createDocumentCategoryHook,
   useUpdateDocumentCategory: mocks.updateDocumentCategoryHook,
   useSetDocumentCategoryStatus: mocks.setDocumentCategoryStatusHook,
+}));
+vi.mock("../features/administration/api/projectLifecycle", () => ({
+  useProjectLifecycleCatalog: mocks.projectLifecycleCatalog,
+  useUpdateProjectLifecycleItem: mocks.updateProjectLifecycleItemHook,
 }));
 vi.mock("../features/administration/api/admin", () => ({
   useVendorCategories: mocks.categories,
@@ -157,6 +164,9 @@ describe("Vendor Categories source parity", () => {
     mocks.createDocumentCategoryHook.mockReturnValue({ mutateAsync: mocks.createDocumentCategory, isPending: false });
     mocks.updateDocumentCategoryHook.mockReturnValue({ mutateAsync: mocks.updateDocumentCategory, isPending: false });
     mocks.setDocumentCategoryStatusHook.mockReturnValue({ mutateAsync: mocks.setDocumentCategoryStatus, isPending: false });
+    mocks.projectLifecycleCatalog.mockReset().mockReturnValue({ data: [], isLoading: false, isError: false, refetch: mocks.refetch });
+    mocks.updateProjectPhase.mockReset().mockResolvedValue(undefined);
+    mocks.updateProjectLifecycleItemHook.mockReturnValue({ mutateAsync: mocks.updateProjectPhase, isPending: false });
     mocks.useManagement.mockReset().mockReturnValue({ canMutate: true, loading: false, snapshot: {
       scope: { organizationIds: ["org-a", "org-b"], organizationReferences: [{ id: "org-a", name: "Alpha Organization" }, { id: "org-b", name: "Beta Organization" }] },
       selectedContext: null,
@@ -248,6 +258,54 @@ describe("Vendor Categories source parity", () => {
     fireEvent.click(screen.getByRole("button", { name: "Deactivate category Policies" }));
     await waitFor(() => expect(mocks.confirm).toHaveBeenCalledWith(expect.objectContaining({ title: "Deactivate category", destructive: true })));
     await waitFor(() => expect(mocks.setDocumentCategoryStatus).toHaveBeenCalledWith({ id: "document-category-1", isActive: false }));
+  });
+
+  it("allows an authorized user to edit a tenant-shared system category", async () => {
+    mocks.managedDocumentCategories.mockReturnValue({
+      data: [{ id: "system-governance", organizationId: null, nameEn: "Governance", nameAr: "الحوكمة", description: "System category", usageCount: 3, isActive: true, canManage: true }],
+      isLoading: false,
+      isError: false,
+      refetch: mocks.refetch,
+    });
+    renderDocumentCategoriesPage();
+    fireEvent.change(screen.getByRole("combobox", { name: "Organization" }), { target: { value: "org-a" } });
+    fireEvent.click(screen.getByRole("button", { name: "Edit category Governance" }));
+    const sheet = screen.getByRole("dialog", { name: "Edit category" });
+    fireEvent.change(within(sheet).getByLabelText("English name"), { target: { value: "Governance Records" } });
+    fireEvent.click(within(sheet).getByRole("button", { name: "Save category" }));
+
+    await waitFor(() => expect(mocks.updateDocumentCategory).toHaveBeenCalledWith({
+      id: "system-governance",
+      input: { nameEn: "Governance Records", nameAr: "الحوكمة", description: "System category" },
+    }));
+  });
+
+  it("assigns a category to selected Organization phases, including protected Pre-Initiation", async () => {
+    const phases = [
+      { id: "phase-preinit", tenantId: "tenant-a", organizationId: "org-a", code: "PRE-INITIATION", nameEn: "Pre-Initiation", nameAr: "ما قبل البدء", displayOrder: 0, isDefault: true, isActive: true, isContinuousActivity: false, documentCategoryId: null, referencedProjectCount: 0, rowVersion: "AQ==" },
+      { id: "phase-planning", tenantId: "tenant-a", organizationId: "org-a", code: "PLANNING", nameEn: "Planning", nameAr: "التخطيط", displayOrder: 10, isDefault: false, isActive: true, isContinuousActivity: false, documentCategoryId: null, referencedProjectCount: 0, rowVersion: "Ag==" },
+      { id: "tenant-phase", tenantId: "tenant-a", organizationId: null, code: "TENANT", nameEn: "Tenant phase", nameAr: "مرحلة عامة", displayOrder: 1, isDefault: false, isActive: true, documentCategoryId: null, referencedProjectCount: 0, rowVersion: "Aw==" },
+    ];
+    mocks.projectLifecycleCatalog.mockReturnValue({ data: phases, isLoading: false, isError: false, refetch: mocks.refetch });
+    mocks.createDocumentCategory.mockResolvedValue({ id: "new-category", organizationId: "org-a", canManage: true });
+    renderDocumentCategoriesPage("en", ["DocumentCategory.View", "DocumentCategory.Create", "DocumentCategory.Edit", "ProjectLifecyclePhase.View", "ProjectLifecyclePhase.Edit"]);
+    fireEvent.change(screen.getByRole("combobox", { name: "Organization" }), { target: { value: "org-a" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create category" }));
+    const sheet = screen.getByRole("dialog", { name: "Create category" });
+    fireEvent.change(within(sheet).getByLabelText("English name"), { target: { value: "Planning Records" } });
+    fireEvent.change(within(sheet).getByLabelText("Arabic name"), { target: { value: "سجلات التخطيط" } });
+    fireEvent.click(within(sheet).getByLabelText("Pre-Initiation"));
+    fireEvent.click(within(sheet).getByLabelText("Planning"));
+    fireEvent.click(within(sheet).getByRole("button", { name: "Save category" }));
+
+    await waitFor(() => expect(mocks.createDocumentCategory).toHaveBeenCalledWith({ organizationId: "org-a", nameEn: "Planning Records", nameAr: "سجلات التخطيط", description: undefined }));
+    await waitFor(() => expect(mocks.updateProjectPhase).toHaveBeenCalledTimes(2));
+    expect(mocks.updateProjectPhase).toHaveBeenCalledWith(expect.objectContaining({
+      id: "phase-preinit",
+      input: expect.objectContaining({ organizationId: "org-a", documentCategoryId: "new-category", rowVersion: "AQ==", isDefault: true }),
+    }));
+    expect(mocks.updateProjectPhase).toHaveBeenCalledWith(expect.objectContaining({ id: "phase-planning" }));
+    expect(mocks.updateProjectPhase).not.toHaveBeenCalledWith(expect.objectContaining({ id: "tenant-phase" }));
   });
 
   it("shows only the exact category operations granted to the current role", () => {

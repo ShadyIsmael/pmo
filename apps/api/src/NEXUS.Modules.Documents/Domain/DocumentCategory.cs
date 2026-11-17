@@ -12,7 +12,7 @@ public class DocumentCategory : BaseEntity
     public string? Description { get; set; }
     public Guid? ParentId { get; set; }
     public int SortOrder { get; set; }
-    /// <summary>Null only for legacy tenant-wide categories retained for historical references.</summary>
+    /// <summary>Null for Tenant-shared categories, including the existing system-provided catalog entries.</summary>
     public Guid? OrganizationId { get; set; }
     public string NormalizedNameEn { get; set; } = string.Empty;
     public string? NormalizedNameAr { get; set; }

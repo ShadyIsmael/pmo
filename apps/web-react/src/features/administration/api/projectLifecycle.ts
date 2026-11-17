@@ -18,6 +18,7 @@ export interface ProjectLifecycleCatalogItem {
   isDefault: boolean;
   isActive: boolean;
   isContinuousActivity?: boolean;
+  documentCategoryId?: string | null;
   reportingCategory?: ProjectStatusReportingCategory;
   attentionLevel?: ProjectStatusAttentionLevel;
   referencedProjectCount: number | null;
@@ -27,7 +28,7 @@ export interface ProjectLifecycleCatalogItem {
 export type SaveProjectLifecycleCatalogItem = Pick<
   ProjectLifecycleCatalogItem,
   "code" | "nameEn" | "nameAr" | "displayOrder"
-> & Partial<Pick<ProjectLifecycleCatalogItem, "descriptionEn" | "descriptionAr" | "isContinuousActivity" | "reportingCategory" | "attentionLevel">> & { organizationId?: string | null };
+> & Partial<Pick<ProjectLifecycleCatalogItem, "descriptionEn" | "descriptionAr" | "isContinuousActivity" | "isActive" | "isDefault" | "documentCategoryId" | "reportingCategory" | "attentionLevel">> & { organizationId?: string | null };
 
 export interface ProjectLifecycleOption {
   id: string;

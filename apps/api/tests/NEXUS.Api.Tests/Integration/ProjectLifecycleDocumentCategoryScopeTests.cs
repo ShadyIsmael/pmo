@@ -106,6 +106,46 @@ public sealed class ProjectLifecycleDocumentCategoryScopeTests : IDisposable
     }
 
     [Fact]
+    public async Task Organization_phase_accepts_tenant_shared_category_and_keeps_the_mapping_on_that_organization_phase()
+    {
+        var tenantId = Guid.NewGuid();
+        var organizationId = Guid.NewGuid();
+        var categoryId = Guid.NewGuid();
+        var (db, http, management) = CreateContext(tenantId, organizationId);
+        await using var context = db;
+        context.AddRange(
+            new Organization { Id = organizationId, TenantId = tenantId, Name = "Phase organization", CreatedBy = "test" },
+            new DocumentCategory
+            {
+                Id = categoryId, TenantId = tenantId, OrganizationId = null,
+                Name = "Shared", NormalizedNameEn = "SHARED", NameAr = "????", NormalizedNameAr = "????",
+                IsActive = true, CreatedBy = "test"
+            });
+        await context.SaveChangesAsync();
+        var audit = new Mock<IAuditService>();
+        audit.Setup(item => item.LogAsync(It.IsAny<AuditEntry>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+        var service = new ProjectLifecycleCatalogService(context, http, audit.Object, management);
+
+        var result = await service.CreatePhaseAsync(new ProjectLifecycleCatalogRequest(
+            OrganizationId: organizationId,
+            Code: "phase-shared-category",
+            NameEn: "Shared category phase",
+            NameAr: "????? ??????? ????????",
+            DescriptionEn: null,
+            DescriptionAr: null,
+            DisplayOrder: 20,
+            IsDefault: false,
+            IsActive: true,
+            DocumentCategoryId: categoryId), Guid.Parse(http.HttpContext!.User.FindFirstValue(ClaimTypes.NameIdentifier)!));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.OrganizationId.Should().Be(organizationId);
+        result.Value.DocumentCategoryId.Should().Be(categoryId);
+        (await context.Set<ProjectPhaseCatalogEntry>().SingleAsync(phase => phase.Id == result.Value.Id)).OrganizationId.Should().Be(organizationId);
+    }
+
+    [Fact]
     public async Task Tenant_scoped_phase_rejects_category_from_another_tenant_even_when_both_scopes_are_tenant_wide()
     {
         var tenantId = Guid.NewGuid();
@@ -115,6 +155,7 @@ public sealed class ProjectLifecycleDocumentCategoryScopeTests : IDisposable
         var categoryId = Guid.NewGuid();
         var foreignTenantId = Guid.NewGuid();
         var foreignUserId = Guid.NewGuid();
+        var originalHttpContext = http.HttpContext!;
         var foreignHttp = new HttpContextAccessor
         {
             HttpContext = new DefaultHttpContext
@@ -142,6 +183,7 @@ public sealed class ProjectLifecycleDocumentCategoryScopeTests : IDisposable
         }
         finally
         {
+            http.HttpContext = originalHttpContext;
             AppDbContext.ConfigureTenantResolution(http);
         }
         var service = new ProjectLifecycleCatalogService(
@@ -299,6 +341,76 @@ public sealed class ProjectLifecycleDocumentCategoryScopeTests : IDisposable
 
         result.IsSuccess.Should().BeTrue();
         result.Value!.DocumentCategoryId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Protected_pre_initiation_allows_only_its_document_category_association_to_change()
+    {
+        var tenantId = Guid.NewGuid();
+        var organizationId = Guid.NewGuid();
+        var categoryId = Guid.NewGuid();
+        var phaseId = Guid.NewGuid();
+        var (db, http, management) = CreateContext(tenantId, organizationId, includePhaseEdit: true);
+        await using var context = db;
+        var phase = new ProjectPhaseCatalogEntry
+        {
+            Id = phaseId, TenantId = tenantId, OrganizationId = organizationId,
+            Code = "pre-initiation", NormalizedCode = "PRE-INITIATION",
+            NameEn = "Pre-Initiation", NameAr = "????? ?? ?????",
+            DisplayOrder = 0, IsActive = true, IsDefault = true,
+            RowVersion = [1], CreatedBy = "test"
+        };
+        context.AddRange(
+            new Organization { Id = organizationId, TenantId = tenantId, Name = "Phase organization", CreatedBy = "test" },
+            new DocumentCategory
+            {
+                Id = categoryId, TenantId = tenantId, OrganizationId = null,
+                Name = "Shared", NormalizedNameEn = "SHARED", IsActive = true, CreatedBy = "test"
+            },
+            phase);
+        await context.SaveChangesAsync();
+        phase.RowVersion = [1];
+        var audit = new Mock<IAuditService>();
+        audit.Setup(item => item.LogAsync(It.IsAny<AuditEntry>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+        var service = new ProjectLifecycleCatalogService(context, http, audit.Object, management);
+        var actorId = Guid.Parse(http.HttpContext!.User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
+        var associationResult = await service.UpdatePhaseAsync(phaseId, new ProjectLifecycleCatalogRequest(
+            OrganizationId: organizationId,
+            Code: phase.Code,
+            NameEn: phase.NameEn,
+            NameAr: phase.NameAr,
+            DescriptionEn: phase.DescriptionEn,
+            DescriptionAr: phase.DescriptionAr,
+            DisplayOrder: phase.DisplayOrder,
+            IsDefault: phase.IsDefault,
+            IsActive: phase.IsActive,
+            IsContinuousActivity: phase.IsContinuousActivity,
+            DocumentCategoryId: categoryId,
+            RowVersion: [1]), actorId);
+
+        associationResult.IsSuccess.Should().BeTrue();
+        associationResult.Value!.DocumentCategoryId.Should().Be(categoryId);
+        associationResult.Value.IsDefault.Should().BeTrue();
+        associationResult.Value.DisplayOrder.Should().Be(0);
+
+        var labelChangeResult = await service.UpdatePhaseAsync(phaseId, new ProjectLifecycleCatalogRequest(
+            OrganizationId: organizationId,
+            Code: phase.Code,
+            NameEn: "Renamed protected phase",
+            NameAr: phase.NameAr,
+            DescriptionEn: phase.DescriptionEn,
+            DescriptionAr: phase.DescriptionAr,
+            DisplayOrder: phase.DisplayOrder,
+            IsDefault: phase.IsDefault,
+            IsActive: phase.IsActive,
+            IsContinuousActivity: phase.IsContinuousActivity,
+            DocumentCategoryId: categoryId,
+            RowVersion: [1]), actorId);
+
+        labelChangeResult.IsFailure.Should().BeTrue();
+        labelChangeResult.Error!.StatusCode.Should().Be(409);
     }
 
     public void Dispose() => AppDbContext.ConfigureTenantResolution(new HttpContextAccessor());

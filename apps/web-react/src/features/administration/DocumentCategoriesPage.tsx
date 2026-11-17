@@ -23,6 +23,7 @@ import {
   type DocumentCategory,
   type SaveDocumentCategoryInput,
 } from "@features/projects/api/documents";
+import { useProjectLifecycleCatalog, useUpdateProjectLifecycleItem } from "@features/administration/api/projectLifecycle";
 
 function categoryDisplayName(category: DocumentCategory, locale: string) {
   return locale === "ar"
@@ -42,6 +43,7 @@ export function DocumentCategoriesPage() {
   const [nameEn, setNameEn] = React.useState("");
   const [nameAr, setNameAr] = React.useState("");
   const [description, setDescription] = React.useState("");
+  const [selectedPhaseIds, setSelectedPhaseIds] = React.useState<string[]>([]);
   const [formError, setFormError] = React.useState<string | null>(null);
   const [actionError, setActionError] = React.useState<string | null>(null);
   const [pendingStatusId, setPendingStatusId] = React.useState<string | null>(null);
@@ -49,6 +51,9 @@ export function DocumentCategoriesPage() {
   const canCreate = Boolean(canMutate && user && hasPermission(user.permissions, Permissions.DocumentCategory.Create));
   const canEdit = Boolean(canMutate && user && hasPermission(user.permissions, Permissions.DocumentCategory.Edit));
   const canChangeStatus = Boolean(canMutate && user && hasPermission(user.permissions, Permissions.DocumentCategory.ActivateDeactivate));
+  const canViewAndEditPhases = Boolean(canMutate && user
+    && hasPermission(user.permissions, Permissions.ProjectLifecyclePhase.View)
+    && hasPermission(user.permissions, Permissions.ProjectLifecyclePhase.Edit));
   const scope = snapshot?.selectedContext ? snapshot.selectedContext.scope : snapshot?.scope;
   const organizations = React.useMemo(() => {
     if (!scope) return [];
@@ -69,16 +74,34 @@ export function DocumentCategoriesPage() {
     search: search.trim() || undefined,
     includeInactive: true,
   }, organizationIsAllowed);
+  const phasesQuery = useProjectLifecycleCatalog("phases", organizationIsAllowed ? organizationId : null, true, formOpen && canViewAndEditPhases);
   const create = useCreateDocumentCategory();
   const update = useUpdateDocumentCategory();
   const setStatus = useSetDocumentCategoryStatus();
-  const saving = create.isPending || update.isPending;
+  const updatePhase = useUpdateProjectLifecycleItem("phases");
+  const saving = create.isPending || update.isPending || updatePhase.isPending;
+  const organizationPhases = React.useMemo(
+    () => (phasesQuery.data ?? []).filter((phase) => phase.organizationId === organizationId),
+    [organizationId, phasesQuery.data],
+  );
+  const phaseOptions = React.useMemo(
+    () => organizationPhases.filter((phase) => phase.isActive || phase.documentCategoryId === editing?.id),
+    [editing?.id, organizationPhases],
+  );
+
+  React.useEffect(() => {
+    if (!formOpen || !editing || !canViewAndEditPhases || phasesQuery.isLoading || phasesQuery.isError || !phasesQuery.data) return;
+    setSelectedPhaseIds(organizationPhases
+      .filter((phase) => phase.documentCategoryId === editing.id)
+      .map((phase) => phase.id));
+  }, [canViewAndEditPhases, editing, formOpen, organizationPhases, phasesQuery.data, phasesQuery.isError, phasesQuery.isLoading]);
 
   const openCreate = () => {
     setEditing(null);
     setNameEn("");
     setNameAr("");
     setDescription("");
+    setSelectedPhaseIds([]);
     setFormError(null);
     setActionError(null);
     setFormOpen(true);
@@ -89,6 +112,7 @@ export function DocumentCategoriesPage() {
     setNameEn(category.nameEn || category.name || "");
     setNameAr(category.nameAr || "");
     setDescription(category.description || "");
+    setSelectedPhaseIds([]);
     setFormError(null);
     setActionError(null);
     setFormOpen(true);
@@ -98,6 +122,7 @@ export function DocumentCategoriesPage() {
     if (!open) {
       setEditing(null);
       setFormError(null);
+      setSelectedPhaseIds([]);
     }
   };
   const saveCategory = async (event?: React.FormEvent<HTMLFormElement>) => {
@@ -119,6 +144,8 @@ export function DocumentCategoriesPage() {
       nameAr: nameAr.trim(),
       description: description.trim() || undefined,
     };
+    let savedCategoryId = editing?.id;
+    let createdCategory: DocumentCategory | null = null;
     try {
       if (editing) {
         await update.mutateAsync({
@@ -126,16 +153,57 @@ export function DocumentCategoriesPage() {
           input: { nameEn: input.nameEn, nameAr: input.nameAr, description: input.description },
         });
       } else {
-        await create.mutateAsync(input);
+        createdCategory = await create.mutateAsync(input);
+        savedCategoryId = createdCategory?.id;
       }
-      closeForm(false);
     } catch (error) {
       const duplicate = (error instanceof ApiError && error.status === 409)
         || (error instanceof Error && /duplicate|already exists/i.test(error.message));
       setFormError(duplicate
         ? t("documents.categoryDuplicate")
         : error instanceof ApiError ? error.message : t("documents.categorySaveFailed"));
+      return;
     }
+
+    if (canViewAndEditPhases && phasesQuery.data && !phasesQuery.isError) {
+      if (!savedCategoryId) {
+        setFormError(t("documents.categoryPhaseAssignmentFailed"));
+        return;
+      }
+      try {
+        const selectedIds = new Set(selectedPhaseIds);
+        for (const phase of organizationPhases) {
+          const shouldAssign = selectedIds.has(phase.id);
+          const isAssignedToCategory = phase.documentCategoryId === savedCategoryId;
+          if (shouldAssign === isAssignedToCategory) continue;
+          if (shouldAssign && phase.documentCategoryId && phase.documentCategoryId !== savedCategoryId) {
+            throw new Error(t("documents.categoryPhaseAlreadyAssigned"));
+          }
+          await updatePhase.mutateAsync({
+            id: phase.id,
+            input: {
+              code: phase.code,
+              nameEn: phase.nameEn,
+              nameAr: phase.nameAr,
+              descriptionEn: phase.descriptionEn,
+              descriptionAr: phase.descriptionAr,
+              organizationId: phase.organizationId,
+              displayOrder: phase.displayOrder,
+              isActive: phase.isActive,
+              isDefault: phase.isDefault,
+              isContinuousActivity: Boolean(phase.isContinuousActivity),
+              documentCategoryId: shouldAssign ? savedCategoryId : null,
+              rowVersion: phase.rowVersion,
+            },
+          });
+        }
+      } catch (error) {
+        if (createdCategory) setEditing(createdCategory);
+        setFormError(error instanceof ApiError ? error.message : error instanceof Error ? error.message : t("documents.categoryPhaseAssignmentFailed"));
+        return;
+      }
+    }
+    closeForm(false);
   };
   const toggleStatus = async (category: DocumentCategory) => {
     if (!canChangeStatus || category.canManage === false || !organizationIsAllowed) return;
@@ -186,7 +254,7 @@ export function DocumentCategoriesPage() {
               id="document-category-organization"
               aria-label={t("documents.fields.organization")}
               value={organizationId}
-              onChange={(event) => setOrganizationId(event.target.value)}
+              onChange={(event) => { setOrganizationId(event.target.value); setSelectedPhaseIds([]); }}
               disabled={loadingOrganizationScope || !organizations.length}
               className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
             >
@@ -243,6 +311,26 @@ export function DocumentCategoriesPage() {
           <div className="space-y-1.5"><Label htmlFor="document-category-name-en">{t("documents.categoryNameEn")}</Label><Input id="document-category-name-en" value={nameEn} onChange={(event) => setNameEn(event.target.value)} required maxLength={150} /></div>
           <div className="space-y-1.5"><Label htmlFor="document-category-name-ar">{t("documents.categoryNameAr")}</Label><Input id="document-category-name-ar" dir="rtl" value={nameAr} onChange={(event) => setNameAr(event.target.value)} required maxLength={150} /></div>
           <div className="space-y-1.5"><Label htmlFor="document-category-description">{t("documents.fields.description")}</Label><Input id="document-category-description" value={description} onChange={(event) => setDescription(event.target.value)} maxLength={500} /></div>
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-medium">{t("documents.categoryPhases")}</legend>
+            <p className="text-xs text-muted-foreground">{t("documents.categoryPhasesHelp")}</p>
+            {!canViewAndEditPhases ? <p className="text-xs text-muted-foreground">{t("documents.categoryPhasePermissionRequired")}</p>
+              : phasesQuery.isLoading ? <p role="status" className="text-sm text-muted-foreground">{t("projects.lifecycle.phaseLookupLoading")}</p>
+                : phasesQuery.isError ? <div className="space-y-2"><p role="alert" className="text-sm text-destructive">{t("documents.categoryPhaseLoadError")}</p><Button type="button" size="sm" variant="outline" onClick={() => void phasesQuery.refetch()}>{t("projects.lifecycle.retry")}</Button></div>
+                  : phaseOptions.length === 0 ? <p className="text-sm text-muted-foreground">{t("documents.categoryPhasesEmpty")}</p>
+                    : <div role="group" aria-label={t("documents.categoryPhases")} className="max-h-48 space-y-1 overflow-y-auto rounded-md border p-2">
+                      {phaseOptions.map((phase) => {
+                        const assignedToAnotherCategory = Boolean(phase.documentCategoryId && phase.documentCategoryId !== editing?.id);
+                        const selected = selectedPhaseIds.includes(phase.id);
+                        const phaseName = locale === "ar" ? phase.nameAr || phase.nameEn : phase.nameEn || phase.nameAr;
+                        return <label key={phase.id} className={`flex items-center gap-2 rounded px-2 py-1.5 text-sm ${assignedToAnotherCategory ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-muted/60"}`}>
+                          <input type="checkbox" checked={selected} disabled={assignedToAnotherCategory || saving} onChange={(event) => setSelectedPhaseIds((current) => event.target.checked ? [...current, phase.id] : current.filter((id) => id !== phase.id))} />
+                          <span>{phaseName}</span>
+                          {assignedToAnotherCategory ? <span className="ms-auto text-xs text-muted-foreground">{t("documents.categoryPhaseAlreadyAssigned")}</span> : null}
+                        </label>;
+                      })}
+                    </div>}
+          </fieldset>
         </SideSheetBody>
         <SideSheetFooter><Button type="button" variant="outline" onClick={() => closeForm(false)} disabled={saving}>{t("documents.cancel")}</Button><Button type="submit" form="document-category-form" onClick={(event) => { event.preventDefault(); void saveCategory(); }} disabled={saving || (editing ? !canEdit : !canCreate)}>{saving ? t("documents.saving") : t("documents.categorySave")}</Button></SideSheetFooter>
       </form>

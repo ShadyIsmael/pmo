@@ -190,7 +190,7 @@ public sealed class DocumentService : IDocumentService
 
         var categories = await _context.Set<DocumentCategory>().AsNoTracking()
             .Where(category => category.TenantId == managementContext.TenantId
-                && category.OrganizationId == organizationId.Value
+                && (category.OrganizationId == organizationId.Value || category.OrganizationId == null)
                 && category.IsActive
                 && !category.IsDeleted)
             .OrderBy(category => category.SortOrder).ThenBy(category => category.Name).ToListAsync(cancellationToken);
@@ -364,9 +364,7 @@ public sealed class DocumentService : IDocumentService
             item => item.Id == id && item.TenantId == managementContext.TenantId && !item.IsDeleted, cancellationToken);
         if (category is null)
             return Result<ManagedDocumentCategoryDto>.Failure(Error.NotFound("Document category not found."));
-        if (!category.OrganizationId.HasValue)
-            return Result<ManagedDocumentCategoryDto>.Failure(Error.Conflict("Legacy tenant-wide categories are read-only to preserve historical references."));
-        if (!CanAccessOrganization(managementContext, category.OrganizationId.Value))
+        if (category.OrganizationId.HasValue && !CanAccessOrganization(managementContext, category.OrganizationId.Value))
             return Result<ManagedDocumentCategoryDto>.Failure(Error.NotFound("Document category not found."));
 
         var names = NormalizeCategoryNames(request.NameEn, request.NameAr);
@@ -374,9 +372,13 @@ public sealed class DocumentService : IDocumentService
             return Result<ManagedDocumentCategoryDto>.Failure(names.Error);
         if (request.Description?.Length > 4000)
             return Result<ManagedDocumentCategoryDto>.Failure(Error.Validation("Category description cannot exceed 4,000 characters.", "description"));
-        if (await CategoryNameExistsAsync(managementContext.TenantId, category.OrganizationId.Value,
+        if (await CategoryNameExistsAsync(managementContext.TenantId, category.OrganizationId,
                 names.NameEnKey!, names.NameArKey!, category.Id, cancellationToken))
-            return Result<ManagedDocumentCategoryDto>.Failure(Error.Conflict("A category with the same English or Arabic name already exists in this organization."));
+            return Result<ManagedDocumentCategoryDto>.Failure(Error.Conflict("A category with the same English or Arabic name already exists in this scope."));
+
+        var affectedOrganizationIds = category.OrganizationId.HasValue
+            ? [category.OrganizationId.Value]
+            : managementContext.Scope.OrganizationReferences.Select(item => item.Id).Distinct().ToArray();
 
         var original = new { category.Name, category.NameAr, category.Description };
         var changedFields = new List<string>();
@@ -385,7 +387,7 @@ public sealed class DocumentService : IDocumentService
         var normalizedDescription = request.Description?.Trim();
         if (category.Description != normalizedDescription) changedFields.Add(nameof(category.Description));
         if (changedFields.Count == 0)
-            return Result<ManagedDocumentCategoryDto>.Success(await ToManagedCategoryDtoAsync(category, managementContext, [category.OrganizationId.Value], cancellationToken));
+            return Result<ManagedDocumentCategoryDto>.Success(await ToManagedCategoryDtoAsync(category, managementContext, affectedOrganizationIds, cancellationToken));
 
         var changes = new
         {
@@ -403,7 +405,7 @@ public sealed class DocumentService : IDocumentService
             string.Join(',', changedFields), cancellationToken);
         if (saved.IsFailure)
             return Result<ManagedDocumentCategoryDto>.Failure(saved.Error!);
-        return Result<ManagedDocumentCategoryDto>.Success(await ToManagedCategoryDtoAsync(category, managementContext, [category.OrganizationId.Value], cancellationToken));
+        return Result<ManagedDocumentCategoryDto>.Success(await ToManagedCategoryDtoAsync(category, managementContext, affectedOrganizationIds, cancellationToken));
     }
 
     public async Task<Result<ManagedDocumentCategoryDto>> SetCategoryStatusAsync(
@@ -420,9 +422,7 @@ public sealed class DocumentService : IDocumentService
             item => item.Id == id && item.TenantId == managementContext.TenantId && !item.IsDeleted, cancellationToken);
         if (category is null)
             return Result<ManagedDocumentCategoryDto>.Failure(Error.NotFound("Document category not found."));
-        if (!category.OrganizationId.HasValue)
-            return Result<ManagedDocumentCategoryDto>.Failure(Error.Conflict("Legacy tenant-wide categories are read-only to preserve historical references."));
-        if (!CanAccessOrganization(managementContext, category.OrganizationId.Value))
+        if (category.OrganizationId.HasValue && !CanAccessOrganization(managementContext, category.OrganizationId.Value))
             return Result<ManagedDocumentCategoryDto>.Failure(Error.NotFound("Document category not found."));
 
         if (category.IsActive != isActive)
@@ -437,8 +437,11 @@ public sealed class DocumentService : IDocumentService
                 return Result<ManagedDocumentCategoryDto>.Failure(saved.Error!);
         }
 
+        var affectedOrganizationIds = category.OrganizationId.HasValue
+            ? [category.OrganizationId.Value]
+            : managementContext.Scope.OrganizationReferences.Select(item => item.Id).Distinct().ToArray();
         return Result<ManagedDocumentCategoryDto>.Success(await ToManagedCategoryDtoAsync(
-            category, managementContext, [category.OrganizationId.Value], cancellationToken));
+            category, managementContext, affectedOrganizationIds, cancellationToken));
     }
 
     public Task<Result<IReadOnlyList<DocumentOrganizationDto>>> GetOrganizationsAsync(CancellationToken cancellationToken = default)
@@ -1466,7 +1469,7 @@ public sealed class DocumentService : IDocumentService
         usageCount,
         category.CreatedAt,
         category.UpdatedAt,
-        category.OrganizationId.HasValue);
+        true);
 
     private async Task<ManagedDocumentCategoryDto> ToManagedCategoryDtoAsync(
         DocumentCategory category,
@@ -1507,7 +1510,7 @@ public sealed class DocumentService : IDocumentService
 
     private async Task<bool> CategoryNameExistsAsync(
         Guid tenantId,
-        Guid organizationId,
+        Guid? organizationId,
         string normalizedNameEn,
         string normalizedNameAr,
         Guid? excludingId,
