@@ -6502,6 +6502,65 @@
       "Settled": "مسدد"
     }
   },
+  "payments": {
+    "title": "المدفوعات المخططة",
+    "description": "تتبع المدفوعات المتوقعة والأرصدة المستحقة وسجل التسويات بشكل منفصل عن المصروفات الفعلية.",
+    "addPayment": "إضافة دفعة مخططة",
+    "editPayment": "تعديل الدفعة",
+    "deletePayment": "حذف الدفعة",
+    "deleteConfirm": "هل تريد حذف الدفعة المخططة {reference}؟",
+    "project": "المشروع",
+    "allProjects": "كل المشاريع",
+    "selectProject": "اختر مشروعًا",
+    "reference": "مرجع الدفع",
+    "purpose": "الغرض",
+    "descriptionField": "الوصف",
+    "amount": "المبلغ المخطط",
+    "plannedAmount": "المبلغ المخطط",
+    "currency": "العملة",
+    "dueDate": "تاريخ الاستحقاق",
+    "milestone": "معلم من خطة المشروع",
+    "noMilestone": "بدون معلم",
+    "milestoneHint": "ربط المعلم معلوماتي فقط؛ ولا يغير التسوية أو تاريخ الاستحقاق.",
+    "notes": "ملاحظات",
+    "status": "حالة الدفع",
+    "actualPaid": "المدفوع فعليًا",
+    "outstandingBalance": "الرصيد المستحق",
+    "settlementProgress": "تقدم التسوية",
+    "plannedPayments": "المدفوعات المخططة",
+    "duePayments": "المدفوعات المستحقة",
+    "showAll": "عرض كل المدفوعات",
+    "viewDetails": "عرض",
+    "paymentDetails": "تفاصيل الدفع",
+    "recordPayment": "تسجيل دفعة",
+    "settlementHistory": "سجل التسويات",
+    "noSettlements": "لا توجد تسويات مسجلة.",
+    "settlementAmount": "المبلغ المدفوع",
+    "settlementDate": "تاريخ المعاملة",
+    "transactionReference": "مرجع المعاملة",
+    "saveFailed": "تعذر حفظ الدفعة المخططة.",
+    "settlementFailed": "تعذر تسجيل التسوية.",
+    "historyFailed": "تعذر تحميل سجل التسويات.",
+    "deleteFailed": "تعذر حذف الدفعة المخططة.",
+    "statuses": {
+      "Upcoming": "قادم",
+      "Due": "مستحق",
+      "Partially Paid": "مدفوع جزئيًا",
+      "Partially Paid and Overdue": "مدفوع جزئيًا · متأخر",
+      "Fully Paid": "مدفوع بالكامل"
+    },
+    "progress": {
+      "Not Paid": "غير مدفوع",
+      "Partially Paid": "مدفوع جزئيًا",
+      "Fully Paid": "مدفوع بالكامل"
+    },
+    "dueStatuses": {
+      "Upcoming": "قادم",
+      "Due": "مستحق",
+      "Overdue": "متأخر",
+      "Settled": "مسدد"
+    }
+  },
   "programManager": {
     "financialRollup": {
       "title": "ملخص مالية المشروعات",
