@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using NEXUS.Modules.Audit.Application;
 using NEXUS.Modules.Audit.Domain;
+using NEXUS.Modules.CostManagement.Application;
 using NEXUS.Modules.CostManagement.Domain;
 using NEXUS.Modules.Organization.Application.Settings;
 using NEXUS.Modules.ProjectManagement.Application.DTOs;
@@ -492,75 +493,74 @@ public sealed class ProjectReportingService : IProjectReportingService
             ? null
             : directCosts.Amount + (laborCosts.HasActualLaborData ? laborCosts.ActualLaborCost.GetValueOrDefault() : 0m);
 
-        var purchaseCommitments = await _context.Set<PurchaseCommitment>().AsNoTracking()
-            .Where(item => item.ProjectId == projectId && item.CommitmentDate.Date <= to)
-            .ToListAsync(cancellationToken);
-        var activeCommitments = purchaseCommitments.Where(item =>
-            !string.Equals(item.Status, "Cancelled", StringComparison.OrdinalIgnoreCase)
-            && !string.Equals(item.Status, "Closed", StringComparison.OrdinalIgnoreCase)).ToArray();
-        var hasCommitmentCurrencyMismatch = activeCommitments.Any(item => NormalizeCurrency(item.Currency) != currency);
-        hasDataQualityGap |= hasCommitmentCurrencyMismatch;
-        var committedCost = !validCurrency || hasCommitmentCurrencyMismatch
-            ? (decimal?)null
-            : activeCommitments.Where(item => NormalizeCurrency(item.Currency) == currency).Sum(item => item.Amount);
-
-        var obligations = await _context.Set<PaymentObligation>().AsNoTracking()
+        var allObligations = await _context.Set<PaymentObligation>().AsNoTracking()
             .Where(item => item.ProjectId == projectId && !item.IsDeleted)
             .ToListAsync(cancellationToken);
 
-        var matchingObligations = obligations.Where(item => NormalizeCurrency(item.Currency) == currency).ToArray();
-        var hasObligationCurrencyMismatch = obligations.Any(item => NormalizeCurrency(item.Currency) != currency);
+        var matchingObligations = allObligations.Where(item => NormalizeCurrency(item.Currency) == currency).ToArray();
+        var hasObligationCurrencyMismatch = allObligations.Any(item => NormalizeCurrency(item.Currency) != currency);
         hasDataQualityGap |= hasObligationCurrencyMismatch;
 
-        var obligationIds = matchingObligations.Select(item => item.Id).ToArray();
+        var plannedPayments = await PlannedPaymentReportingCalculator.CalculateAsync(
+            _context, project.TenantId, projectId, currency, from, to, cancellationToken);
+        hasDataQualityGap |= plannedPayments.HasDataQualityGap;
 
-        var settlements = await _context.Set<PaymentSettlement>().AsNoTracking()
-            .Where(item => !item.IsDeleted
-                && item.PaymentObligationId.HasValue
-                && obligationIds.Contains(item.PaymentObligationId.Value)
-                && item.SettlementDate.Date <= to)
-            .ToListAsync(cancellationToken);
+        // Actual Paid is sourced from confirmed PaymentSettlement facts on both
+        // payment rails (PaymentObligation and ProjectPaymentRequest). The owning
+        // project and currency are resolved through the owner record.
+        var settlementFacts = await ActualPaidSettlementCalculator.LoadForProjectAsync(
+            _context, project.TenantId, projectId, periodTo: to, cancellationToken: cancellationToken);
 
-        var unknownCurrencySettlement = settlements.Any(item => item.Currency is null
-            || NormalizeCurrency(item.Currency) != currency);
-        hasDataQualityGap |= unknownCurrencySettlement;
+        var settlementCurrency = currency;
+        var unresolvedCurrencySettlement = ActualPaidSettlementCalculator.HasUnresolvedCurrency(settlementFacts);
+        var foreignCurrencySettlement = ActualPaidSettlementCalculator.HasForeignCurrency(settlementFacts, settlementCurrency);
+        hasDataQualityGap |= unresolvedCurrencySettlement || foreignCurrencySettlement;
 
-        var knownCurrencySettlements = settlements.Where(item => NormalizeCurrency(item.Currency) == currency).ToArray();
+        var knownCurrencySettlements = settlementFacts
+            .Where(item => ActualPaidSettlementCalculator.NormalizeCurrency(item.Currency) == settlementCurrency)
+            .ToArray();
         var settledByObligation = knownCurrencySettlements
+            .Where(item => item.PaymentObligationId.HasValue)
             .GroupBy(item => item.PaymentObligationId!.Value)
             .ToDictionary(group => group.Key, group => group.Sum(item => item.Amount));
 
         decimal settled(PaymentObligation o) => settledByObligation.TryGetValue(o.Id, out var amount) ? amount : 0m;
 
-        var hasFinancialData = annualBudgets.Count > 0 || hasExpenditureData || purchaseCommitments.Count > 0
-            || obligations.Count > 0 || settlements.Count > 0;
-        var actualPaid = unknownCurrencySettlement
+        var hasFinancialData = annualBudgets.Count > 0 || hasExpenditureData
+            || allObligations.Count > 0 || settlementFacts.Count > 0 || plannedPayments.HasRecordedPlans;
+        var actualPaid = !validCurrency || unresolvedCurrencySettlement
             ? (decimal?)null
-            : knownCurrencySettlements.Where(item => item.SettlementDate.Date >= from && item.SettlementDate.Date <= to)
-                .Sum(item => item.Amount);
+            : ActualPaidSettlementCalculator.SumActualPaid(knownCurrencySettlements, settlementCurrency, from, to);
+        var netAdjustmentAmount = validCurrency
+            ? await ActualPaidSettlementCalculator.SumNetAdjustmentsAsync(
+                _context, project.TenantId, projectId, settlementCurrency,
+                periodFrom: from, periodTo: to, cancellationToken: cancellationToken)
+            : 0m;
+        decimal? netActualPaid = actualPaid.HasValue ? actualPaid.Value + netAdjustmentAmount : null;
 
         var outstandingPlannedPayments = matchingObligations
             .Select(item => Math.Max(0m, item.Amount - settled(item)))
             .Where(amount => amount > 0m)
-            .Sum();
+            .Sum() + plannedPayments.Outstanding;
 
         var paymentsDueWithinPeriod = matchingObligations
             .Where(item => {
                 var outstanding = Math.Max(0m, item.Amount - settled(item));
                 return outstanding > 0m && item.DueDate.Date >= from && item.DueDate.Date <= to;
             })
-            .Sum(item => Math.Max(0m, item.Amount - settled(item)));
+            .Sum(item => Math.Max(0m, item.Amount - settled(item))) + plannedPayments.DueWithinPeriod;
 
         var remainingUnpaidAtPeriodEnd = matchingObligations
             .Where(item => {
                 var outstanding = Math.Max(0m, item.Amount - settled(item));
                 return outstanding > 0m && item.DueDate.Date <= to;
             })
-            .Sum(item => Math.Max(0m, item.Amount - settled(item)));
+            .Sum(item => Math.Max(0m, item.Amount - settled(item))) + plannedPayments.RemainingUnpaidAtPeriodEnd;
 
         var hasMoneyData = matchingApprovedBudgets.Length > 0 || hasExpenditureData && !hasExpenditureGap
-            || activeCommitments.Any(item => NormalizeCurrency(item.Currency) == currency)
-            || matchingObligations.Length > 0 || knownCurrencySettlements.Length > 0;
+            || matchingObligations.Length > 0 || knownCurrencySettlements.Length > 0 || plannedPayments.HasMatchingCurrencyPlans;
+        var outstandingMetricsUnavailable = !validCurrency || hasObligationCurrencyMismatch
+            || unresolvedCurrencySettlement || foreignCurrencySettlement || plannedPayments.HasDataQualityGap;
         var dataStatus = !hasFinancialData ? "empty"
             : !validCurrency || (hasDataQualityGap && !hasMoneyData) ? "unavailable"
             : hasDataQualityGap || !budgetCoverageComplete ? "partial"
@@ -575,11 +575,12 @@ public sealed class ProjectReportingService : IProjectReportingService
             ApprovedBudget = approvedBudget,
             BudgetStatus = budgetStatus,
             Expenditure = expenditure ?? (validCurrency && hasFinancialData && !hasExpenditureData ? 0m : null),
-            CommittedCost = committedCost,
             ActualPaid = actualPaid,
-            OutstandingPlannedPayments = unknownCurrencySettlement || !validCurrency ? null : outstandingPlannedPayments,
-            PaymentsDueWithinPeriod = unknownCurrencySettlement || !validCurrency ? null : paymentsDueWithinPeriod,
-            RemainingUnpaidAtPeriodEnd = unknownCurrencySettlement || !validCurrency ? null : remainingUnpaidAtPeriodEnd,
+            GrossActualPaid = actualPaid,
+            NetActualPaid = netActualPaid,
+            OutstandingPlannedPayments = outstandingMetricsUnavailable ? null : outstandingPlannedPayments,
+            PaymentsDueWithinPeriod = outstandingMetricsUnavailable ? null : paymentsDueWithinPeriod,
+            RemainingUnpaidAtPeriodEnd = outstandingMetricsUnavailable ? null : remainingUnpaidAtPeriodEnd,
             HasFinancialData = hasFinancialData,
             DataStatus = dataStatus,
         });

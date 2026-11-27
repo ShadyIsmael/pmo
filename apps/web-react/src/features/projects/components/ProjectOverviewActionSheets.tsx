@@ -36,7 +36,7 @@ interface ActionSheetProps {
 }
 
 export function ProjectChangeRequestActionSheet({ open, onOpenChange, project, request }: ActionSheetProps & { request?: ProjectChangeRequestDto | null }) {
-  const { t } = useI18n();
+  const { t, formatCurrency } = useI18n();
   const { user } = useAuth();
   const { canMutate, effectiveReadOnly } = useManagement();
   const canManage = Boolean(user && hasPermission(user.permissions, Permissions.ChangeRequest.Manage) && canMutate && !effectiveReadOnly);
@@ -48,6 +48,9 @@ export function ProjectChangeRequestActionSheet({ open, onOpenChange, project, r
   const [savedDraft, setSavedDraft] = React.useState<ProjectChangeRequestDto | null>(null);
   const [approvalStrategy, setApprovalStrategy] = React.useState("AllRequired");
   const [approverIds, setApproverIds] = React.useState<string[]>([]);
+  const [changeType, setChangeType] = React.useState("Administrative");
+  const [budgetDirection, setBudgetDirection] = React.useState("increase");
+  const [budgetAmount, setBudgetAmount] = React.useState("");
   const formRef = React.useRef<HTMLFormElement>(null);
 
   React.useEffect(() => {
@@ -56,6 +59,9 @@ export function ProjectChangeRequestActionSheet({ open, onOpenChange, project, r
     setSavedDraft(request?.status === "Draft" ? request : null);
     setApprovalStrategy(request?.approvalStrategy ?? "AllRequired");
     setApproverIds(request?.selectedApproverUserIds ?? []);
+    setChangeType(request?.type ?? "Administrative");
+    setBudgetDirection("increase");
+    setBudgetAmount("");
     setError(null);
     const form = formRef.current;
     if (!form || !request) return;
@@ -64,9 +70,21 @@ export function ProjectChangeRequestActionSheet({ open, onOpenChange, project, r
       if (input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement || input instanceof HTMLSelectElement)
         input.value = value == null ? "" : String(value);
     };
-    setValue("type", request.type);
-    setValue("reason", request.reason);
-    setValue("budgetChangeAmount", request.budgetChangeAmount);
+     setValue("type", request.type);
+     setChangeType(request.type);
+     setValue("reason", request.reason);
+     if (request.budgetChangeAmount != null) {
+       const amt = Number(request.budgetChangeAmount);
+       const dir = amt < 0 ? "decrease" : "increase";
+       setBudgetDirection(dir);
+       setBudgetAmount(String(Math.abs(amt)));
+       setValue("budgetDirection", dir);
+       setValue("budgetChangeAmount", Math.abs(amt));
+     } else {
+       setBudgetDirection("increase");
+       setBudgetAmount("");
+       setValue("budgetChangeAmount", request.budgetChangeAmount);
+     }
     setValue("justification", request.justification);
     setValue("impact", request.impact);
     setValue("attachments", request.attachments);
@@ -129,10 +147,11 @@ export function ProjectChangeRequestActionSheet({ open, onOpenChange, project, r
             </div>
             <div>
               <Label htmlFor="project-change-type">{t("projects.changeType")} <span aria-hidden="true" className="text-destructive">*</span></Label>
-              <select id="project-change-type" className="input-field mt-1 w-full" name="type" defaultValue="Administrative">
-                <option value="Administrative">{t("projects.changeTypeAdministrative")}</option>
-                <option value="Baseline">{t("projects.changeTypeBaseline")}</option>
-              </select>
+               <select id="project-change-type" className="input-field mt-1 w-full" name="type" defaultValue="Administrative" onChange={(e) => setChangeType(e.target.value)}>
+                 <option value="Administrative">{t("projects.changeTypeAdministrative")}</option>
+                 <option value="Baseline">{t("projects.changeTypeBaseline")}</option>
+                 <option value="BudgetChange">{t("projects.changeTypeBudgetChange")}</option>
+               </select>
             </div>
             <div>
               <Label htmlFor="project-change-reason">{t("projects.changeReason")} <span aria-hidden="true" className="text-destructive">*</span></Label>
@@ -144,11 +163,35 @@ export function ProjectChangeRequestActionSheet({ open, onOpenChange, project, r
               <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-primary"><CircleDollarSign className="h-3.5 w-3.5" /></span>
               <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{t("projects.changeRequestSectionFinancial")}</h3>
             </div>
-            <div>
-              <Label htmlFor="project-change-budget">{t("projects.budgetChangeAmount")}</Label>
-              <Input id="project-change-budget" className="mt-1" name="budgetChangeAmount" type="number" step="0.01" placeholder={t("projects.budgetChangeAmountPlaceholder")} />
-              <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{t("projects.budgetChangeAmountHint")}</p>
-            </div>
+            {changeType === "BudgetChange" ? (
+              <>
+                <div>
+                  <Label>{t("projects.currentApprovedLifetimeBudget")}</Label>
+                  <p className="mt-1 text-sm font-medium">{project.budget == null ? "—" : formatCurrency(project.budget)}</p>
+                </div>
+                <div>
+                  <Label htmlFor="project-change-budget-direction">{t("projects.changeDirection")}</Label>
+                  <select id="project-change-budget-direction" className="input-field mt-1 w-full" name="budgetDirection" value={budgetDirection} onChange={(e) => setBudgetDirection(e.target.value)}>
+                    <option value="increase">{t("projects.changeDirectionIncrease")}</option>
+                    <option value="decrease">{t("projects.changeDirectionDecrease")}</option>
+                  </select>
+                </div>
+                <div>
+                  <Label htmlFor="project-change-budget">{t("projects.requestedChangeAmount")} <span aria-hidden="true" className="text-destructive">*</span></Label>
+                  <Input id="project-change-budget" className="mt-1" name="budgetChangeAmount" type="number" min="0" step="0.01" value={budgetAmount} onChange={(e) => setBudgetAmount(e.target.value)} />
+                </div>
+                <div>
+                  <Label>{t("projects.proposedBudgetAfterChange")}</Label>
+                  <p className="mt-1 text-sm font-medium">
+                    {budgetAmount === "" || !Number.isFinite(Number(budgetAmount)) || project.budget == null
+                      ? "—"
+                      : formatCurrency(project.budget + (budgetDirection === "increase" ? Number(budgetAmount) : -Number(budgetAmount)))}
+                  </p>
+                </div>
+              </>
+            ) : (
+              <p className="text-[11px] leading-relaxed text-muted-foreground">{t("projects.budgetChangeAmountHint")}</p>
+            )}
           </section>
           <section className="space-y-4">
             <div className="flex items-center gap-2 border-b border-border/60 pb-2">

@@ -1,0 +1,521 @@
+{
+  "created_at": "2026-11-27T00:12:02Z",
+  "critical_path_coverage": null,
+  "dependency_awareness_only": [
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Document",
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Domain/Document.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Documents.Domain",
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Domain/Document.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Documents.Domain",
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Domain/DocumentCategory.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "DocumentReview",
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Domain/DocumentReview.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Documents.Domain",
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Domain/DocumentReview.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Documents.Domain",
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Domain/DocumentVersion.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Documents.Domain",
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Domain/TemplateDeletionRequest.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Organization.Domain",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Domain/BusinessUnit.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Organization.Domain",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Domain/ConfigurationSetting.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Organization.Domain",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Domain/CostCentre.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Organization.Domain",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Domain/Currency.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Organization.Domain",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Domain/Department.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Organization.Domain",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Domain/Holiday.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Organization.Domain",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Domain/Location.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Organization.Domain",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Domain/Lookup.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Organization",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Domain/Organization.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Organization.Domain",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Domain/Organization.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "OrganizationPhaseGateConfiguration",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Domain/OrganizationPhaseGateConfiguration.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Organization.Domain",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Domain/OrganizationPhaseGateConfiguration.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Organization.Domain",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Domain/OrganizationSettingsGrant.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Organization.Domain",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Domain/OrganizationalUnit.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Organization.Domain",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Domain/ResourceOrganizationalUnit.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Organization.Domain",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Domain/ResourceReportingLine.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Organization.Domain",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Domain/Team.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Organization.Domain",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Domain/TeamMember.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Organization.Domain",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Domain/Tenant.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Organization.Domain",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Domain/WorkingCalendar.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Organization.Domain",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Domain/WorkingCalendarDayRule.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Domain",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/Baseline.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Domain",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/CalendarPolicyConstants.cs",
+      "relation": "USES_NAMESPACE"
+    }
+  ],
+  "index_updated": false,
+  "limits": [
+    "Router never prevents an agent from manually opening other files; enforce via agent instructions and audit.",
+    "C# and TS relationships are source-text heuristics; compiler-resolved calls and runtime dependency-injection resolution are not proven.",
+    "Unknown/unclassified files may require manual targeted inspection.",
+    "Index sources excluded secrets and build outputs."
+  ],
+  "module_selection_basis": "task-explicit-alias",
+  "nonprimary_modules_not_read_by_router": [
+    "administration",
+    "ai-planning",
+    "approvals",
+    "audit",
+    "cost-management",
+    "documents",
+    "governance",
+    "home",
+    "identity",
+    "integrations",
+    "issues",
+    "management",
+    "meetings",
+    "notifications",
+    "operations",
+    "organization",
+    "permissions",
+    "persistence",
+    "plugins",
+    "portfolios",
+    "programs",
+    "project-planning",
+    "projects",
+    "reports",
+    "resources",
+    "risks",
+    "security",
+    "stakeholder",
+    "tests",
+    "time",
+    "unclassified",
+    "vendors",
+    "work-items",
+    "workflow"
+  ],
+  "planning_state": "focused",
+  "primary_module": "api",
+  "refresh": {
+    "changed_existing": 0,
+    "deleted": 0,
+    "mode": "refresh",
+    "new": 0,
+    "parsed": 0,
+    "unchanged": 1927
+  },
+  "related_tests_candidates": [
+    "apps/api/tests/NEXUS.Api.Tests/ApiProblemDetailsTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Security/ApiAuthorizationFallbackTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Unit/HandoverRequestControllerTests.cs",
+    "apps/web-react/src/test/api-error-localization.test.ts",
+    "apps/web-react/src/test/api-query-retry-policy.test.ts"
+  ],
+  "selected_files": [
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          70
+        ]
+      ],
+      "module": "api",
+      "path": "apps/api/src/NEXUS.Api/Documents/TemplateDeletionRequestController.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 803,
+      "reasons": [
+        "filename-match:controller",
+        "primary-module",
+        "symbol-match:TemplateDeletionRequestController"
+      ],
+      "score": 61,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          133
+        ]
+      ],
+      "module": "api",
+      "path": "apps/api/src/NEXUS.Api/Documents/EfTemplateDeletionReferenceValidator.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 1881,
+      "reasons": [
+        "filename-match:id",
+        "primary-module"
+      ],
+      "score": 57,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          23
+        ]
+      ],
+      "module": "api",
+      "path": "apps/api/src/NEXUS.Api/Documents/ITemplateDeletionReferenceValidator.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 251,
+      "reasons": [
+        "filename-match:id",
+        "primary-module"
+      ],
+      "score": 57,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "test",
+      "line_ranges": [
+        [
+          1,
+          63
+        ]
+      ],
+      "module": "api",
+      "path": "apps/api/tests/NEXUS.Api.Tests/Unit/HandoverRequestControllerTests.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 805,
+      "reasons": [
+        "filename-match:controller",
+        "primary-module",
+        "symbol-match:HandoverRequestControllerTests"
+      ],
+      "score": 53,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          5,
+          5
+        ],
+        [
+          7,
+          7
+        ]
+      ],
+      "module": "api",
+      "path": "apps/api/src/NEXUS.Api/Documents/ITemplateDeletionStorageCleanupProcessor.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 55,
+      "reasons": [
+        "primary-module",
+        "symbol-match:ProcessRequestAsync"
+      ],
+      "score": 49,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          227
+        ]
+      ],
+      "module": "api",
+      "path": "apps/api/src/NEXUS.Api/Documents/TemplateDeletionStorageCleanupProcessor.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 2995,
+      "reasons": [
+        "primary-module",
+        "symbol-match:ProcessPendingAsync"
+      ],
+      "score": 49,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          142,
+          147
+        ],
+        [
+          148,
+          157
+        ],
+        [
+          351,
+          351
+        ],
+        [
+          456,
+          465
+        ],
+        [
+          466,
+          476
+        ]
+      ],
+      "module": "api",
+      "path": "apps/api/src/NEXUS.Api/Documents/TemplateDeletionWorkflowService.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 753,
+      "reasons": [
+        "primary-module",
+        "symbol-match:RollbackQuietlyAsync"
+      ],
+      "score": 49,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          63
+        ]
+      ],
+      "module": "api",
+      "path": "apps/api/src/NEXUS.Api/Notifications/RiskActionFollowUpWorker.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 670,
+      "reasons": [
+        "primary-module",
+        "symbol-match:ExecuteAsync"
+      ],
+      "score": 49,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          738,
+          738
+        ]
+      ],
+      "module": "api",
+      "path": "apps/api/src/NEXUS.Api/Program.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 27,
+      "reasons": [
+        "primary-module",
+        "symbol-match:ChangeInitialPasswordCommand"
+      ],
+      "score": 49,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "test",
+      "line_ranges": [
+        [
+          38,
+          56
+        ],
+        [
+          59,
+          95
+        ]
+      ],
+      "module": "api",
+      "path": "apps/api/tests/NEXUS.Api.Tests/Security/ApiAuthorizationFallbackTests.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 938,
+      "reasons": [
+        "primary-module",
+        "symbol-match:Auth_controller_actions_have_explicit_authorization_or_anonymous_metadata"
+      ],
+      "score": 41,
+      "token_method": "estimated:chars/3.5"
+    }
+  ],
+  "selection_summary": {
+    "critical_path_coverage_percent": null,
+    "files": 10,
+    "symbols": 44,
+    "tokens": 9178
+  },
+  "snapshot": "20261126T220221-d00a29d",
+  "task": "ProjectService CreateAsync ProjectController GetById ProjectInitialPhaseAssignmentTests",
+  "token_plan": {
+    "available_source_budget": 9600,
+    "estimation_order": "Critical-path coverage is evaluated before reading-cost calculation and optional file ranking.",
+    "requested_total_budget": 16000,
+    "reserved_non_source_budget": 6400,
+    "source_reading_tokens": 9178,
+    "warning": "An estimate of selected source reading, NOT full task execution or model hidden reasoning. Some counts may be approximate."
+  }
+}

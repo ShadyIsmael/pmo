@@ -9,7 +9,9 @@ public class Project : BaseEntity
     public string Code { get; set; } = string.Empty;
     public string? Description { get; set; }
     public Guid? ProgramId { get; set; }
-    public string Status { get; set; } = "Initiation";
+    /// <summary>Legacy code projection retained for existing integrations; ProjectStatusId is authoritative.</summary>
+    public string Status { get; set; } = string.Empty;
+    public Guid? ProjectStatusId { get; set; }
     public string Priority { get; set; } = "Medium";
     public string? Category { get; set; }
     public Guid? ProjectManagerId { get; set; }
@@ -23,6 +25,8 @@ public class Project : BaseEntity
     public DateTime? ActualEndDate { get; set; }
     /// <summary>Current approved project budget ceiling. Set at project creation; subsequently changed only by an approved Project Change Request. Never derived from Budget Lines.</summary>
     public decimal? Budget { get; set; }
+    /// <summary>Original approved project budget captured at project creation. Immutable baseline for the lifetime ceiling; never changed by an approved Change Request.</summary>
+    public decimal? OriginalProjectBudget { get; set; }
     public string Currency { get; set; } = "GBP";
     /// <summary>Project-level routing choice for future financial approvals. This stores configuration only; it does not execute an approval workflow.</summary>
     public string? FinanceApprovalMode { get; set; }
@@ -34,7 +38,9 @@ public class Project : BaseEntity
     public string Health { get; set; } = "Unknown";
     public string RagStatus { get; set; } = "Unknown";
     public string ConfidenceLevel { get; set; } = "Green";
+    /// <summary>Legacy code projection retained for existing integrations; ProjectPhaseId is authoritative.</summary>
     public string? Phase { get; set; }
+    public Guid? ProjectPhaseId { get; set; }
     public string? RiskRating { get; set; }
     public string? BusinessCase { get; set; }
     public string? Notes { get; set; }

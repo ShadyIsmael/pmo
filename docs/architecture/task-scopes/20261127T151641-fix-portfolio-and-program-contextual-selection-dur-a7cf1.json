@@ -1,0 +1,505 @@
+{
+  "created_at": "2026-11-27T15:16:41Z",
+  "critical_path_coverage": null,
+  "dependency_awareness_only": [
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/ActualWorkCostLookup.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/ApprovalReviewDto.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/AssignmentRecoveryPermissions.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/BaseDomainEvent.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/BaseEntity.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/BaseValueObject.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/EntityCodeSequence.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/Error.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/IAggregateRoot.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/IApprovalDelegationEligibilityLookup.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/IAuditable.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/ICostUtilizationActivityLookup.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/IMeetingPublicIdLookup.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/IOrganizationLifecycleHandler.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/IProjectAudienceLookup.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/IProjectFinancialLookup.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/IProjectOrganizationLookup.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/IProjectPlanMilestoneLookup.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/IProjectPlanProgressLookup.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/IProjectReferenceLookup.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/IProjectResourcePlanningContextLookup.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/IResourceReferenceLookup.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/ISoftDeletable.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/ITenantEntity.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/ITenantRegistryStatusValidator.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/IUserOrganizationScopeLookup.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/IUserReferenceLookup.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/IWorkItemAssigneeLookup.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/IWorkItemReferenceLookup.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "PagedResult",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/PagedResult.cs",
+      "relation": "REFERENCES_TYPE"
+    }
+  ],
+  "index_updated": false,
+  "limits": [
+    "Router never prevents an agent from manually opening other files; enforce via agent instructions and audit.",
+    "C# and TS relationships are source-text heuristics; compiler-resolved calls and runtime dependency-injection resolution are not proven.",
+    "Unknown/unclassified files may require manual targeted inspection.",
+    "Index sources excluded secrets and build outputs."
+  ],
+  "module_selection_basis": "task-explicit-alias",
+  "nonprimary_modules_not_read_by_router": [
+    "administration",
+    "ai-planning",
+    "api",
+    "approvals",
+    "audit",
+    "cost-management",
+    "documents",
+    "governance",
+    "home",
+    "identity",
+    "integrations",
+    "issues",
+    "management",
+    "meetings",
+    "notifications",
+    "operations",
+    "organization",
+    "permissions",
+    "persistence",
+    "plugins",
+    "programs",
+    "project-planning",
+    "projects",
+    "reports",
+    "resources",
+    "risks",
+    "security",
+    "stakeholder",
+    "tests",
+    "time",
+    "unclassified",
+    "vendors",
+    "work-items",
+    "workflow"
+  ],
+  "planning_state": "focused",
+  "primary_module": "portfolios",
+  "refresh": {
+    "changed_existing": 0,
+    "deleted": 0,
+    "mode": "refresh",
+    "new": 0,
+    "parsed": 0,
+    "unchanged": 1929
+  },
+  "related_tests_candidates": [
+    "apps/api/tests/NEXUS.Api.Tests/Integration/PortfolioManagementTenantReadTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Security/PortfolioProgramAuthorizationTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Security/PortfolioProgramStatusScopeTests.cs",
+    "apps/web-react/src/test/portfolio-handover-panel.test.tsx",
+    "apps/web-react/src/test/portfolio-optimization-parity.test.tsx",
+    "apps/web-react/src/test/portfolio-sheet.test.tsx"
+  ],
+  "selected_files": [
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          17
+        ]
+      ],
+      "module": "portfolios",
+      "path": "apps/api/src/NEXUS.Modules.Portfolio/Domain/PortfolioManagerAssignment.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 175,
+      "reasons": [
+        "filename-match:assignment",
+        "filename-match:portfolio",
+        "primary-module",
+        "symbol-match:PortfolioManagerAssignment"
+      ],
+      "score": 73,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          17
+        ]
+      ],
+      "module": "portfolios",
+      "path": "apps/api/src/NEXUS.Modules.Portfolio/Domain/ProgramManagerAssignment.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 172,
+      "reasons": [
+        "filename-match:assignment",
+        "filename-match:program",
+        "primary-module",
+        "symbol-match:ProgramManagerAssignment"
+      ],
+      "score": 73,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "test",
+      "line_ranges": [
+        [
+          1,
+          285
+        ]
+      ],
+      "module": "portfolios",
+      "path": "apps/api/tests/NEXUS.Api.Tests/Security/PortfolioProgramAuthorizationTests.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 3309,
+      "reasons": [
+        "filename-match:portfolio",
+        "filename-match:program",
+        "primary-module",
+        "symbol-match:PortfolioProgramAuthorizationTests"
+      ],
+      "score": 65,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "test",
+      "line_ranges": [
+        [
+          1,
+          180
+        ]
+      ],
+      "module": "portfolios",
+      "path": "apps/api/tests/NEXUS.Api.Tests/Security/PortfolioProgramStatusScopeTests.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 2616,
+      "reasons": [
+        "filename-match:portfolio",
+        "filename-match:program",
+        "primary-module",
+        "symbol-match:PortfolioProgramStatusScopeTests"
+      ],
+      "score": 65,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          9
+        ]
+      ],
+      "module": "portfolios",
+      "path": "apps/api/src/NEXUS.Api/PortfolioManagement/IPortfolioManagementService.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 132,
+      "reasons": [
+        "filename-match:portfolio",
+        "primary-module",
+        "symbol-match:IPortfolioManagementService"
+      ],
+      "score": 61,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          44
+        ]
+      ],
+      "module": "portfolios",
+      "path": "apps/api/src/NEXUS.Api/PortfolioManagement/PortfolioManagementController.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 659,
+      "reasons": [
+        "filename-match:portfolio",
+        "primary-module",
+        "symbol-match:PortfolioManagementController"
+      ],
+      "score": 61,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          3,
+          19
+        ],
+        [
+          21,
+          45
+        ],
+        [
+          47,
+          62
+        ],
+        [
+          64,
+          77
+        ],
+        [
+          79,
+          95
+        ]
+      ],
+      "module": "portfolios",
+      "path": "apps/api/src/NEXUS.Api/PortfolioManagement/PortfolioManagementDtos.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 1306,
+      "reasons": [
+        "filename-match:portfolio",
+        "primary-module",
+        "symbol-match:PortfolioManagementListItemDto"
+      ],
+      "score": 61,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          48
+        ]
+      ],
+      "module": "portfolios",
+      "path": "apps/api/src/NEXUS.Modules.Portfolio/Api/PortfolioController.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 932,
+      "reasons": [
+        "filename-match:portfolio",
+        "primary-module",
+        "symbol-match:PortfolioController"
+      ],
+      "score": 61,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          14
+        ]
+      ],
+      "module": "portfolios",
+      "path": "apps/api/src/NEXUS.Modules.Portfolio/Application/IPortfolioService.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 293,
+      "reasons": [
+        "filename-match:portfolio",
+        "primary-module",
+        "symbol-match:IPortfolioService"
+      ],
+      "score": 61,
+      "token_method": "estimated:chars/3.5"
+    }
+  ],
+  "selection_summary": {
+    "critical_path_coverage_percent": null,
+    "files": 9,
+    "symbols": 53,
+    "tokens": 9594
+  },
+  "snapshot": "20261127T141352-618e703",
+  "task": "Fix Portfolio and Program contextual selection during Create Project authorized by Project.Create; verify runtime and automatic Pre-Initiation assignment",
+  "token_plan": {
+    "available_source_budget": 9600,
+    "estimation_order": "Critical-path coverage is evaluated before reading-cost calculation and optional file ranking.",
+    "requested_total_budget": 16000,
+    "reserved_non_source_budget": 6400,
+    "source_reading_tokens": 9594,
+    "warning": "An estimate of selected source reading, NOT full task execution or model hidden reasoning. Some counts may be approximate."
+  }
+}

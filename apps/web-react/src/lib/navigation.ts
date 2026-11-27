@@ -3,9 +3,10 @@ import {
   Users, UsersRound, Building2, BarChart3, Coins, TriangleAlert,
   FileText, Settings2, ShieldCheck, BriefcaseBusiness, BadgeCheck, ClipboardCheck,
   GitBranch, ListFilter, Plug, Shield, Workflow as WorkflowIcon, User as UserIcon,
+  Receipt, TrendingUp,
   type LucideIcon,
 } from "lucide-react";
-import { DirectoryAccessPermissions, Permissions } from "./permissions";
+import { DirectoryAccessPermissions, Permissions, ProjectLifecycleCatalogAccessPermissions } from "./permissions";
 
 export type NavigationReadiness = "ready" | "context" | "deferred";
 export type NavigationMatch = "exact" | "prefix";
@@ -54,7 +55,7 @@ export const administrationCategoryConfig: AdministrationCategory[] = [
   { id: "tenant-settings", href: "/administration/tenant-settings", labelKey: "nav.tenantSettings", icon: Settings2, requiredPermissions: [Permissions.Settings.View] },
   { id: "organization-settings", href: "/administration/organization-settings", labelKey: "nav.organizationSettings", icon: Building2, requiredPermissions: [Permissions.Settings.View], requiredOrganizationAccess: true },
   { id: "access", href: "/administration/access", labelKey: "nav.accessSecurity", icon: Shield, requiredPermissions: [Permissions.Users.View, Permissions.Users.ManageAccounts, Permissions.Users.SetStatus, Permissions.Users.AssignRoles, Permissions.Users.ManageOverrides, Permissions.Roles.View, Permissions.Roles.Create, Permissions.Roles.EditDetails, Permissions.Roles.ConfigurePermissions, Permissions.Roles.Delete] },
-  { id: "reference-data", href: "/administration/reference-data", labelKey: "nav.referenceData", icon: ListFilter, requiredPermissions: [Permissions.ReferenceData.View] },
+  { id: "reference-data", href: "/administration/reference-data", labelKey: "nav.referenceData", icon: ListFilter, requiredPermissions: [Permissions.ReferenceData.View, Permissions.DocumentCategory.View, ...ProjectLifecycleCatalogAccessPermissions, Permissions.OrganizationConfiguration.View, Permissions.OrganizationConfiguration.Manage] },
   { id: "platform-settings", href: "/administration/settings", labelKey: "nav.platformSettings", icon: Settings2, requiredPermissions: [], requiredPlatformAccess: true },
   { id: "integrations", href: "/administration/integrations", labelKey: "nav.integrations", icon: Plug, requiredPermissions: [Permissions.Settings.View, ...DirectoryAccessPermissions] },
   { id: "governance", href: "/administration/governance", labelKey: "nav.governance", icon: GitBranch, requiredPermissions: [Permissions.Settings.View, Permissions.Workflow.View, Permissions.AssignmentRecovery.View, Permissions.AssignmentRecovery.Initiate, Permissions.AssignmentRecovery.Manage] },
@@ -115,11 +116,11 @@ export const navigationConfig: NavSection[] = [
     icon: Coins,
     order: 50,
     items: [
-      item({ id: "financial-overview", labelKey: "nav.financialOverview", href: "/costs", icon: BarChart3, requiredPermission: Permissions.Finances.Read }),
-      item({ id: "budget-allocations", labelKey: "nav.budgets", href: "/costs/budgets", icon: Coins, requiredPermission: Permissions.Finances.Read }),
-      item({ id: "actual-costs", labelKey: "nav.actuals", href: "/costs/actuals", icon: Receipt, requiredPermission: Permissions.Finances.Read }),
-      item({ id: "planned-payments", labelKey: "nav.plannedPayments", href: "/costs/payments", icon: Receipt, requiredPermission: Permissions.Finances.Read }),
-      item({ id: "forecasts", labelKey: "nav.forecasts", href: "/costs/forecasts", icon: TrendingUp, requiredPermission: Permissions.Finances.Read }),
+      item({ id: "financial-overview", labelKey: "nav.financialOverview", href: "/costs", icon: BarChart3, requiredPermission: Permissions.ProjectFinancialFoundation.View }),
+      item({ id: "budget-allocations", labelKey: "nav.budgets", href: "/costs/budgets", icon: Coins, requiredPermission: Permissions.ProjectAnnualBudget.View }),
+      item({ id: "actual-costs", labelKey: "nav.actuals", href: "/costs/actuals", icon: Receipt, requiredPermission: Permissions.Cost.View }),
+      item({ id: "planned-payments", labelKey: "nav.plannedPayments", href: "/costs/payments", icon: Receipt, requiredPermission: Permissions.PaymentObligation.View }),
+      item({ id: "forecasts", labelKey: "nav.forecasts", href: "/costs/forecasts", icon: TrendingUp, requiredPermission: Permissions.ProjectFinancialFoundation.View }),
     ],
   },
   {
@@ -169,7 +170,6 @@ export const deferredNavigation = [
   { id: "change-requests", labelKey: "nav.changeRequests", reason: "Change requests are project-context operations." },
   { id: "status-reporting", labelKey: "nav.statusReporting", reason: "Status reporting is project-context functionality." },
   { id: "handovers", labelKey: "nav.handovers", reason: "Handovers are context-specific workflows." },
-  { id: "global-commitments", labelKey: "nav.commitments", reason: "Commitments are currently project-context financials." },
 ];
 
 export function filterSections(sections: NavSection[], permissions: string[], canReadPlatform = false, canReadOrganizations = false): NavSection[] {

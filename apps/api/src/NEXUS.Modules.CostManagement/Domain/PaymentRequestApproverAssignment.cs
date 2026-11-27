@@ -10,6 +10,9 @@ namespace NEXUS.Modules.CostManagement.Domain;
 public sealed class PaymentRequestApproverAssignment : BaseEntity
 {
     public Guid ApprovalRequestId { get; set; }
+    /// <summary>Project and cycle are nullable only for legacy assignments created before cycle snapshots.</summary>
+    public Guid? ProjectId { get; set; }
+    public Guid? ApprovalCycleId { get; set; }
     public Guid ApproverUserId { get; set; }
 
     /// <summary>Sequential position; null for Parallel assignments.</summary>

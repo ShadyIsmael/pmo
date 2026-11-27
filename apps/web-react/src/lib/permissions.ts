@@ -18,6 +18,24 @@ export const Permissions = {
     Edit: "Project.Edit",
     Delete: "Project.Delete",
   },
+  ProjectPhase: {
+    Change: "ProjectPhase.Change",
+  },
+  ProjectStatus: {
+    Change: "ProjectStatus.Change",
+  },
+  ProjectLifecyclePhase: {
+    View: "ProjectLifecyclePhase.View",
+    Create: "ProjectLifecyclePhase.Create",
+    Edit: "ProjectLifecyclePhase.Edit",
+    ActivateDeactivate: "ProjectLifecyclePhase.ActivateDeactivate",
+  },
+  ProjectLifecycleStatus: {
+    View: "ProjectLifecycleStatus.View",
+    Create: "ProjectLifecycleStatus.Create",
+    Edit: "ProjectLifecycleStatus.Edit",
+    ActivateDeactivate: "ProjectLifecycleStatus.ActivateDeactivate",
+  },
   ProjectSettings: {
     View: "ProjectSettings.View",
     Edit: "ProjectSettings.Edit",
@@ -112,6 +130,23 @@ export const Permissions = {
     Edit: "Document.Edit",
     Archive: "Document.Archive",
     TemplateManage: "Document.TemplateManage",
+    TemplateDeletion: {
+      Request: "Document.TemplateDeletion.Request",
+      View: "Document.TemplateDeletion.View",
+      Approve: "Document.TemplateDeletion.Approve",
+      Reject: "Document.TemplateDeletion.Reject",
+    },
+  },
+  DocumentCategory: {
+    View: "DocumentCategory.View",
+    Create: "DocumentCategory.Create",
+    Edit: "DocumentCategory.Edit",
+    ActivateDeactivate: "DocumentCategory.ActivateDeactivate",
+    Delete: "DocumentCategory.Delete",
+  },
+  OrganizationConfiguration: {
+    View: "OrganizationConfiguration.View",
+    Manage: "OrganizationConfiguration.Manage",
   },
   Users: {
     View: "Users.View",
@@ -130,6 +165,10 @@ export const Permissions = {
   },
   TenantAdministration: {
     ManageScope: "TenantAdministration.ManageScope",
+  },
+  Finances: {
+    Read: "finances.read",
+    Write: "finances.write",
   },
   ProjectFinance: {
     View: "ProjectFinance.View",
@@ -158,14 +197,6 @@ export const Permissions = {
     Edit: "Cost.Edit",
     Delete: "Cost.Delete",
   },
-  Commitment: {
-    View: "Commitment.View",
-    Create: "Commitment.Create",
-    Edit: "Commitment.Edit",
-    Close: "Commitment.Close",
-    Cancel: "Commitment.Cancel",
-    Delete: "Commitment.Delete",
-  },
   PaymentObligation: {
     View: "PaymentObligation.View",
     Create: "PaymentObligation.Create",
@@ -179,6 +210,7 @@ export const Permissions = {
     View: "ProjectAnnualBudget.View",
     Create: "ProjectAnnualBudget.Create",
     EditDraft: "ProjectAnnualBudget.EditDraft",
+    ManageLines: "ProjectAnnualBudget.ManageLines",
     ConfigureDraftApproval: "ProjectAnnualBudget.ConfigureDraftApproval",
     SubmitForReview: "ProjectAnnualBudget.SubmitForReview",
     Delete: "ProjectAnnualBudget.Delete",
@@ -277,6 +309,16 @@ export const Permissions = {
 
 export const DirectoryAccessPermissions = [Permissions.Directory.View];
 export const ReferenceDataAccessPermissions = [Permissions.ReferenceData.View];
+export const ProjectLifecycleCatalogAccessPermissions = [
+  Permissions.ProjectLifecyclePhase.View,
+  Permissions.ProjectLifecyclePhase.Create,
+  Permissions.ProjectLifecyclePhase.Edit,
+  Permissions.ProjectLifecyclePhase.ActivateDeactivate,
+  Permissions.ProjectLifecycleStatus.View,
+  Permissions.ProjectLifecycleStatus.Create,
+  Permissions.ProjectLifecycleStatus.Edit,
+  Permissions.ProjectLifecycleStatus.ActivateDeactivate,
+];
 
 export type Permission = (typeof Permissions)[keyof typeof Permissions][keyof typeof Permissions[keyof typeof Permissions]];
 

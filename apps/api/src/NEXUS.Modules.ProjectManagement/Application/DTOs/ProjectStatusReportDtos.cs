@@ -73,7 +73,9 @@ public sealed class ProjectStatusReportDto : ProjectStatusReportListDto
     public decimal? CostVarianceAmountSnapshot { get; init; }
 
     public decimal? ActualPaidSnapshot { get; init; }
+    public string? ActualPaidDataQualitySnapshot { get; init; }
     public decimal? OutstandingPlannedPaymentsSnapshot { get; init; }
+    public string? PlannedPaymentsDataQualitySnapshot { get; init; }
     public decimal? PaymentsDueWithinPeriodSnapshot { get; init; }
     public decimal? RemainingUnpaidAtPeriodEndSnapshot { get; init; }
     public decimal? ScheduleVarianceDaysSnapshot { get; init; }

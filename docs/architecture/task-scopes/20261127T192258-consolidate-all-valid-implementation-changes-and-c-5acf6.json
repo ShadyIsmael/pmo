@@ -1,0 +1,542 @@
+{
+  "created_at": "2026-11-27T19:22:58Z",
+  "critical_path_coverage": null,
+  "dependency_awareness_only": [
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Audit.Application",
+      "module": "audit",
+      "path": "apps/api/src/NEXUS.Modules.Audit/Application/AuditTrailContracts.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "api/projects/{projectId:guid}/planned-payments",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/PlannedPaymentController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "api/projects/{projectId:guid}/annual-budget-closings",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectAnnualBudgetClosingController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "api/projects/{projectId:guid}/annual-budgets",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectAnnualBudgetController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "api/projects/{projectId:guid}/annual-budgets/{budgetId:guid}/approval-configuration",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectAnnualBudgetDraftApprovalConfigurationController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "api/projects/{projectId:guid}/audit",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectAnnualBudgetLineController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "api/projects/{projectId:guid}/audit",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectCashFlowController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "api/projects/{projectId:guid}/audit",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectFinancialFoundationController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "api/projects/{projectId:guid}/audit",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectFinancialReportingController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "api/projects/{projectId:guid}/audit",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectPaymentRequestController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "AuditActorOption",
+      "module": "audit",
+      "path": "apps/api/src/NEXUS.Modules.Audit/Application/AuditTrailContracts.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "User",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Domain/User.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Project",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/Project.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "User",
+      "module": "identity",
+      "path": "packages/shared-types/src/types/identity.ts",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Project",
+      "module": "projects",
+      "path": "packages/shared-types/src/types/project.ts",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "AuditEntry",
+      "module": "audit",
+      "path": "apps/api/src/NEXUS.Modules.Audit/Domain/AuditEntry.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Audit.Domain",
+      "module": "audit",
+      "path": "apps/api/src/NEXUS.Modules.Audit/Domain/AuditEntry.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Tenant",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Domain/Tenant.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "ProjectId",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/Entities/ProjectBaselineVersion.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/ActualWorkCostLookup.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/ApprovalReviewDto.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/AssignmentRecoveryPermissions.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/BaseDomainEvent.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/BaseEntity.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/BaseValueObject.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/EntityCodeSequence.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/Error.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Audit.Domain",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Api/Account/AccountService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "source-call-and-member-type",
+      "evidence": "_audit:IAuditService.AppendAsync at line 262",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Api/Account/AccountService.cs",
+      "relation": "CALLS_TYPED_METHOD"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "IAuditService",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Api/Account/AccountService.cs",
+      "relation": "REFERENCES_TYPE"
+    }
+  ],
+  "index_updated": false,
+  "limits": [
+    "Router never prevents an agent from manually opening other files; enforce via agent instructions and audit.",
+    "C# and TS relationships are source-text heuristics; compiler-resolved calls and runtime dependency-injection resolution are not proven.",
+    "Unknown/unclassified files may require manual targeted inspection.",
+    "Index sources excluded secrets and build outputs."
+  ],
+  "module_selection_basis": "task-explicit-alias",
+  "nonprimary_modules_not_read_by_router": [
+    "administration",
+    "ai-planning",
+    "api",
+    "approvals",
+    "cost-management",
+    "documents",
+    "governance",
+    "home",
+    "identity",
+    "integrations",
+    "issues",
+    "management",
+    "meetings",
+    "notifications",
+    "operations",
+    "organization",
+    "permissions",
+    "persistence",
+    "plugins",
+    "portfolios",
+    "programs",
+    "project-planning",
+    "projects",
+    "reports",
+    "resources",
+    "risks",
+    "security",
+    "stakeholder",
+    "tests",
+    "time",
+    "unclassified",
+    "vendors",
+    "work-items",
+    "workflow"
+  ],
+  "planning_state": "focused",
+  "primary_module": "audit",
+  "refresh": {
+    "changed_existing": 0,
+    "deleted": 0,
+    "mode": "refresh",
+    "new": 0,
+    "parsed": 0,
+    "unchanged": 1931
+  },
+  "related_tests_candidates": [
+    "apps/api/tests/NEXUS.Api.Tests/Integration/AuditServiceSearchTests.cs",
+    "apps/api/tests/NEXUS.Modules.WorkflowEngine.Tests/AuditProjectionActionHandlerTests.cs",
+    "apps/web-react/src/test/audit-log-filters.test.tsx",
+    "apps/web-react/src/test/audit-phase-gate-localization.test.tsx"
+  ],
+  "selected_files": [
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          22
+        ]
+      ],
+      "module": "audit",
+      "path": "apps/api/src/NEXUS.Modules.Audit/Infrastructure/AuditRepository.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 189,
+      "reasons": [
+        "filename-match:audit",
+        "filename-match:repository",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:AuditRepository"
+      ],
+      "score": 88,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "test",
+      "line_ranges": [
+        [
+          8,
+          16
+        ]
+      ],
+      "module": "audit",
+      "path": "apps/web-react/src/test/audit-phase-gate-localization.test.tsx",
+      "read_mode": "symbols",
+      "reading_tokens": 112,
+      "reasons": [
+        "filename-match:audit",
+        "filename-match:local",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:AuditEntityTranslationProbe"
+      ],
+      "score": 80,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          41
+        ]
+      ],
+      "module": "audit",
+      "path": "apps/api/src/NEXUS.Modules.Audit/Api/AuditController.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 507,
+      "reasons": [
+        "filename-match:audit",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:AuditController"
+      ],
+      "score": 76,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          137
+        ]
+      ],
+      "module": "audit",
+      "path": "apps/api/src/NEXUS.Modules.Audit/Api/ProjectAuditController.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 1542,
+      "reasons": [
+        "filename-match:audit",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:ProjectAuditController"
+      ],
+      "score": 76,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          115
+        ]
+      ],
+      "module": "audit",
+      "path": "apps/api/src/NEXUS.Modules.Audit/Application/AuditFieldRedactor.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 1262,
+      "reasons": [
+        "filename-match:audit",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:AuditRedactionResult"
+      ],
+      "score": 76,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          382
+        ]
+      ],
+      "module": "audit",
+      "path": "apps/api/src/NEXUS.Modules.Audit/Application/AuditService.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 5104,
+      "reasons": [
+        "filename-match:audit",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:AuditService"
+      ],
+      "score": 76,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          7,
+          20
+        ]
+      ],
+      "module": "audit",
+      "path": "apps/api/src/NEXUS.Modules.Audit/Application/AuditSources.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 145,
+      "reasons": [
+        "filename-match:audit",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:AuditSources"
+      ],
+      "score": 76,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          21
+        ]
+      ],
+      "module": "audit",
+      "path": "apps/api/src/NEXUS.Modules.Audit/Application/IAuditService.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 395,
+      "reasons": [
+        "filename-match:audit",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:IAuditService"
+      ],
+      "score": 76,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          8,
+          11
+        ],
+        [
+          13,
+          20
+        ]
+      ],
+      "module": "audit",
+      "path": "apps/api/src/NEXUS.Modules.Audit/Application/IProjectAuditScopeProvider.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 123,
+      "reasons": [
+        "filename-match:audit",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:IProjectAuditScopeProvider"
+      ],
+      "score": 76,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          12
+        ]
+      ],
+      "module": "audit",
+      "path": "apps/api/src/NEXUS.Modules.Audit/Domain/AuditActivity.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 106,
+      "reasons": [
+        "filename-match:audit",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:AuditActivity"
+      ],
+      "score": 76,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          13
+        ]
+      ],
+      "module": "audit",
+      "path": "apps/api/src/NEXUS.Modules.Audit/ModuleRegistration/AuditModuleRegistration.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 106,
+      "reasons": [
+        "filename-match:audit",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:AuditModuleRegistration"
+      ],
+      "score": 76,
+      "token_method": "estimated:chars/3.5"
+    }
+  ],
+  "selection_summary": {
+    "critical_path_coverage_percent": null,
+    "files": 11,
+    "symbols": 52,
+    "tokens": 9591
+  },
+  "snapshot": "20261127T185307-ded35c2",
+  "task": "Consolidate all valid implementation changes and commits from local branches, worktrees, stashes and reflogs into main, preserving the latest valid implementation; audit repository state and verify required builds.",
+  "token_plan": {
+    "available_source_budget": 9600,
+    "estimation_order": "Critical-path coverage is evaluated before reading-cost calculation and optional file ranking.",
+    "requested_total_budget": 16000,
+    "reserved_non_source_budget": 6400,
+    "source_reading_tokens": 9591,
+    "warning": "An estimate of selected source reading, NOT full task execution or model hidden reasoning. Some counts may be approximate."
+  }
+}

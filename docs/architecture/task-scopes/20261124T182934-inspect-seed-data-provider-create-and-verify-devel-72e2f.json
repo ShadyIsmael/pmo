@@ -1,0 +1,617 @@
+{
+  "created_at": "2026-11-24T18:29:34Z",
+  "critical_path_coverage": null,
+  "dependency_awareness_only": [
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Documents.Application",
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Application/DocumentCategoryPermissions.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Documents.Application",
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Application/DocumentDtos.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Documents.Application",
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Application/DocumentFileTypeValidator.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Documents.Application",
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Application/DocumentPermissions.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Documents.Application",
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Application/DocumentService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "DocumentUploadLimits",
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Application/DocumentUploadLimits.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Documents.Application",
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Application/DocumentUploadLimits.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Documents.Application",
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Application/TemplateDeletionPermissions.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "DocumentFileType",
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Application/DocumentFileTypeValidator.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Status",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/Entities/ProjectBaselineVersion.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Result",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/Result.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Status",
+      "module": "projects",
+      "path": "modules/projects/ProjectBaselineVersion.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "DocumentCategoryCreateRequest",
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Application/DocumentDtos.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Documents.Domain",
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Domain/Document.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Documents.Domain",
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Domain/DocumentCategory.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Documents.Domain",
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Domain/DocumentReview.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Documents.Domain",
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Domain/DocumentVersion.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Documents.Domain",
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Domain/TemplateDeletionRequest.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Project",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/Project.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/ActualWorkCostLookup.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/ApprovalReviewDto.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/AssignmentRecoveryPermissions.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/BaseDomainEvent.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/BaseEntity.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/BaseValueObject.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/EntityCodeSequence.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/Error.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/IAggregateRoot.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/IApprovalDelegationEligibilityLookup.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/IAuditable.cs",
+      "relation": "USES_NAMESPACE"
+    }
+  ],
+  "index_updated": false,
+  "limits": [
+    "Router never prevents an agent from manually opening other files; enforce via agent instructions and audit.",
+    "C# and TS relationships are source-text heuristics; compiler-resolved calls and runtime dependency-injection resolution are not proven.",
+    "Unknown/unclassified files may require manual targeted inspection.",
+    "Index sources excluded secrets and build outputs."
+  ],
+  "module_selection_basis": "task-explicit-alias",
+  "nonprimary_modules_not_read_by_router": [
+    "administration",
+    "ai-planning",
+    "api",
+    "approvals",
+    "audit",
+    "cost-management",
+    "governance",
+    "home",
+    "identity",
+    "integrations",
+    "issues",
+    "management",
+    "meetings",
+    "notifications",
+    "operations",
+    "organization",
+    "permissions",
+    "persistence",
+    "plugins",
+    "portfolios",
+    "programs",
+    "project-planning",
+    "projects",
+    "reports",
+    "resources",
+    "risks",
+    "security",
+    "stakeholder",
+    "tests",
+    "time",
+    "unclassified",
+    "vendors",
+    "work-items",
+    "workflow"
+  ],
+  "planning_state": "focused",
+  "primary_module": "documents",
+  "refresh": {
+    "changed_existing": 0,
+    "deleted": 0,
+    "mode": "refresh",
+    "new": 0,
+    "parsed": 0,
+    "unchanged": 1923
+  },
+  "related_tests_candidates": [
+    "apps/api/tests/NEXUS.Api.Tests/Integration/DocumentCategoryDeleteTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/DocumentCategorySharedScopeTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/DocumentMandatoryPersistenceTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Security/DocumentCategoryAuthorizationContractTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Security/DocumentContentTypesTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Security/DocumentFileTypeValidatorTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Security/DocumentTemplateComparisonTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Security/DocumentTenantBoundaryTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Security/DocumentsStorageProviderRegistrationTests.cs",
+    "apps/web-react/src/test/document-category-api.test.ts",
+    "apps/web-react/src/test/document-category-save.test.tsx",
+    "apps/web-react/src/test/document-center-parity.test.tsx",
+    "apps/web-react/src/test/document-library-overview.test.tsx",
+    "apps/web-react/src/test/template-deletion-document-center.test.tsx"
+  ],
+  "selected_files": [
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          36
+        ]
+      ],
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Application/DocumentContentTypes.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 416,
+      "reasons": [
+        "filename-match:type",
+        "primary-module",
+        "symbol-match:DocumentContentTypes"
+      ],
+      "score": 61,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          72
+        ]
+      ],
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Application/IStorageProvider.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 1106,
+      "reasons": [
+        "filename-match:provider",
+        "primary-module",
+        "symbol-match:IStorageProvider"
+      ],
+      "score": 61,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          295
+        ]
+      ],
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Infrastructure/LocalStorageProvider.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 3732,
+      "reasons": [
+        "filename-match:provider",
+        "primary-module",
+        "symbol-match:LocalStorageProvider"
+      ],
+      "score": 61,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          16
+        ]
+      ],
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Application/IArchivedProjectTemplateReferenceValidator.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 154,
+      "reasons": [
+        "filename-match:ef",
+        "primary-module"
+      ],
+      "score": 57,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          16
+        ]
+      ],
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Application/IDocumentCategoryReferenceValidator.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 152,
+      "reasons": [
+        "filename-match:ef",
+        "primary-module"
+      ],
+      "score": 57,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "test",
+      "line_ranges": [
+        [
+          1,
+          53
+        ]
+      ],
+      "module": "documents",
+      "path": "apps/api/tests/NEXUS.Api.Tests/Security/DocumentContentTypesTests.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 624,
+      "reasons": [
+        "filename-match:type",
+        "primary-module",
+        "symbol-match:DocumentContentTypesTests"
+      ],
+      "score": 53,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "test",
+      "line_ranges": [
+        [
+          1,
+          33
+        ]
+      ],
+      "module": "documents",
+      "path": "apps/api/tests/NEXUS.Api.Tests/Security/DocumentsStorageProviderRegistrationTests.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 383,
+      "reasons": [
+        "filename-match:provider",
+        "primary-module",
+        "symbol-match:DocumentsStorageProviderRegistrationTests"
+      ],
+      "score": 53,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          13,
+          22
+        ]
+      ],
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Api/DocumentUploadRequestSizeLimitAttribute.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 169,
+      "reasons": [
+        "primary-module",
+        "symbol-match:OnResourceExecutionAsync"
+      ],
+      "score": 49,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          21,
+          21
+        ],
+        [
+          117,
+          124
+        ],
+        [
+          128,
+          134
+        ],
+        [
+          176,
+          176
+        ]
+      ],
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Application/DocumentTemplateComparison.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 215,
+      "reasons": [
+        "primary-module",
+        "symbol-match:DocumentTemplateComparisonResult"
+      ],
+      "score": 49,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          9,
+          9
+        ],
+        [
+          10,
+          10
+        ],
+        [
+          11,
+          11
+        ],
+        [
+          12,
+          12
+        ],
+        [
+          13,
+          13
+        ]
+      ],
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Application/IDocumentService.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 221,
+      "reasons": [
+        "primary-module",
+        "symbol-match:GetByIdAsync"
+      ],
+      "score": 49,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          15,
+          21
+        ]
+      ],
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Infrastructure/DocumentRepository.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 88,
+      "reasons": [
+        "primary-module",
+        "symbol-match:GetByIdAsync"
+      ],
+      "score": 49,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          17,
+          20
+        ]
+      ],
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/ModuleRegistration/DocumentsModuleRegistration.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 38,
+      "reasons": [
+        "primary-module",
+        "symbol-match:LocalStorageProvider"
+      ],
+      "score": 49,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "test",
+      "line_ranges": [
+        [
+          24,
+          147
+        ]
+      ],
+      "module": "documents",
+      "path": "apps/api/tests/NEXUS.Api.Tests/Integration/DocumentCategorySharedScopeTests.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 2060,
+      "reasons": [
+        "primary-module",
+        "symbol-match:Tenant_shared_seed_categories_are_listed_for_an_authorized_organization_and_can_be_edited_in_place"
+      ],
+      "score": 41,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "test",
+      "line_ranges": [
+        [
+          90,
+          102
+        ]
+      ],
+      "module": "documents",
+      "path": "apps/api/tests/NEXUS.Api.Tests/Security/DocumentCategoryAuthorizationContractTests.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 230,
+      "reasons": [
+        "primary-module",
+        "symbol-match:Category_delete_permission_is_assignable_and_part_of_the_protected_admin_baseline"
+      ],
+      "score": 41,
+      "token_method": "estimated:chars/3.5"
+    }
+  ],
+  "selection_summary": {
+    "critical_path_coverage_percent": null,
+    "files": 14,
+    "symbols": 90,
+    "tokens": 9588
+  },
+  "snapshot": "20261124T143831-c08b56f",
+  "task": "Inspect SeedDataProvider.CreateAndVerifyDevelopmentBackupAsync SQL result type and focused regression tests; prepare full Development reset using documented EF database gate and official minimal seed command, with identity guards and post-reset Admin verification",
+  "token_plan": {
+    "available_source_budget": 9600,
+    "estimation_order": "Critical-path coverage is evaluated before reading-cost calculation and optional file ranking.",
+    "requested_total_budget": 16000,
+    "reserved_non_source_budget": 6400,
+    "source_reading_tokens": 9588,
+    "warning": "An estimate of selected source reading, NOT full task execution or model hidden reasoning. Some counts may be approximate."
+  }
+}

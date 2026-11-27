@@ -20,6 +20,7 @@ public static class OrganizationModuleRegistration
         services.AddScoped<ITenantFiscalYearService, TenantFiscalYearService>();
         services.AddScoped<IConfigurationSettingsService, ConfigurationSettingsService>();
         services.AddScoped<IOrganizationSettingsAccessService, OrganizationSettingsAccessService>();
+        services.AddScoped<IPhaseGateConfigurationService, PhaseGateConfigurationService>();
         services.AddScoped<ITenantProvisioningService, TenantProvisioningService>();
         services.AddScoped<NEXUS.SharedKernel.ITenantRegistryStatusValidator, TenantRegistryStatusValidator>();
         services.AddSingleton<IAuthorizationHandler, PlatformSettingsAuthorizationHandler>();

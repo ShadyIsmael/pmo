@@ -66,7 +66,6 @@ const ENTITY_KEYS: Record<string, string> = {
   WorkflowManagement: "operations.auditEntities.workflowManagement",
   WorkflowTransition: "operations.auditEntities.workflowTransition",
   Budget: "operations.auditEntities.budget",
-  Commitment: "operations.auditEntities.commitment",
   Cost: "operations.auditEntities.cost",
 };
 

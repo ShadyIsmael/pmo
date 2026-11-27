@@ -128,10 +128,6 @@ public sealed class ProjectAuditScopeProvider : IProjectAuditScopeProvider
             .Where(item => item.ProjectId == projectId && item.TenantId == tenantId)
             .Select(item => item.Id).ToListAsync(cancellationToken));
 
-        Add(scope, "PurchaseCommitment", await _context.Set<PurchaseCommitment>().IgnoreQueryFilters().AsNoTracking()
-            .Where(item => item.ProjectId == projectId && item.TenantId == tenantId)
-            .Select(item => item.Id).ToListAsync(cancellationToken));
-
         var obligationIds = await _context.Set<PaymentObligation>().IgnoreQueryFilters().AsNoTracking()
             .Where(item => item.ProjectId == projectId && item.TenantId == tenantId)
             .Select(item => item.Id).ToListAsync(cancellationToken);

@@ -216,6 +216,88 @@ describe("Access & Security component pages", () => {
     expect(screen.getByRole("heading", { name: "Access & Security" })).toBeInTheDocument();
   });
 
+  it("shows the localized DocumentCategory.Delete catalog item and lets an eligible Organization role receive it", async () => {
+    const user = userEvent.setup();
+    fixtures.actorPermissions = ["Roles.View", "Roles.Create", "Roles.ConfigurePermissions", "DocumentCategory.View"];
+    const categoryView = {
+      id: "permission-document-category-view",
+      name: "DocumentCategory.View",
+      resource: "DocumentCategory",
+      action: "View",
+      moduleId: "governance",
+      moduleNameEn: "Governance",
+      moduleNameAr: "الحوكمة",
+      screenId: "document-center-categories",
+      screenNameEn: "Document Categories",
+      screenNameAr: "فئات المستندات",
+      scope: "Tenant" as const,
+      level: "View" as const,
+      labelEn: "View document categories",
+      labelAr: "عرض فئات المستندات",
+      descriptionEn: "View categories within authorized tenant and organization scope.",
+      descriptionAr: "عرض الفئات ضمن نطاق المستأجر والمؤسسة المصرح به.",
+      sensitivity: "Low" as const,
+      isSensitive: false,
+      canDelegate: true,
+      canDelegateToCustomRole: true,
+      isAssignable: true,
+      isMandatoryForSystemAdmin: true,
+      allowedCategories: ["Tenant", "Organization"],
+      requiredPermissionKeys: [],
+      isActive: true,
+    };
+    const categoryDelete = {
+      ...categoryView,
+      id: "permission-document-category-delete",
+      name: "DocumentCategory.Delete",
+      action: "Delete",
+      level: "Action" as const,
+      labelEn: "Delete document categories",
+      labelAr: "حذف فئات المستندات",
+      descriptionEn: "Delete unused categories in the authorized scope.",
+      descriptionAr: "حذف الفئات غير المستخدمة ضمن النطاق المصرح به.",
+      sensitivity: "High" as const,
+      isSensitive: true,
+      requiredPermissionKeys: ["DocumentCategory.View"],
+    };
+    fixtures.assignablePermissions = [categoryView, categoryDelete];
+    fixtures.saveRole.mockResolvedValue({
+      id: "role-category-manager",
+      name: "مدير فئات المستندات",
+      description: "",
+      category: "Organization",
+      isSystem: false,
+      permissionCount: 2,
+      assignedUserCount: 0,
+      permissions: [categoryView, categoryDelete],
+    });
+    window.localStorage.setItem("nexus-locale", "ar");
+    renderWithI18n(<MemoryRouter><RolesPage /></MemoryRouter>, "ar");
+
+    await user.click(screen.getByRole("button", { name: "دور جديد" }));
+    const editor = await screen.findByRole("dialog", { name: "دور جديد" });
+    await user.selectOptions(within(editor).getByRole("combobox", { name: "الفئة" }), "Organization");
+    await user.click(within(editor).getByRole("button", { name: /فئات المستندات/ }));
+
+    const deleteCheckbox = permissionCheckbox(editor, "permission-document-category-delete");
+    expect(within(editor).getByText("حذف فئات المستندات")).toBeInTheDocument();
+    expect(deleteCheckbox).toBeEnabled();
+    await user.click(permissionCheckbox(editor, "permission-document-category-view"));
+    await user.click(deleteCheckbox);
+    expect(deleteCheckbox).toBeChecked();
+
+    await user.type(within(editor).getByLabelText("اسم الدور"), "مدير فئات المستندات");
+    await user.click(within(editor).getByRole("button", { name: "حفظ الدور" }));
+
+    await waitFor(() => expect(fixtures.saveRole).toHaveBeenCalledWith(expect.objectContaining({
+      roleId: null,
+      input: expect.objectContaining({
+        category: "Organization",
+        permissionIds: expect.arrayContaining([categoryView.id, categoryDelete.id]),
+      }),
+    })));
+  });
+
   it("opens direct user permissions on their own two-column screen", () => {
     renderWithI18n(
       <MemoryRouter initialEntries={["/administration/access/users"]}>
@@ -1671,12 +1753,83 @@ describe("Access & Security component pages", () => {
     expect(screen.getAllByRole("heading").length).toBeGreaterThan(0);
   });
 
-  it("explains why Financials Read is missing from the assignable role catalog", () => {
+  it("shows Open Finance under Project Finance and grants the existing key to an eligible custom role", async () => {
+    const user = userEvent.setup();
+    fixtures.actorPermissions = ["Roles.View", "Roles.Create", "Roles.ConfigurePermissions"];
+    const openFinance = {
+      id: "project-finance-view",
+      name: "ProjectFinance.View",
+      resource: "ProjectFinance",
+      action: "View",
+      moduleId: "financial-management",
+      moduleNameEn: "Financial Management",
+      moduleNameAr: "الإدارة المالية",
+      screenId: "project-finance",
+      screenNameEn: "Project Finance",
+      screenNameAr: "الشؤون المالية للمشروع",
+      scope: "Tenant" as const,
+      level: "View" as const,
+      labelEn: "Open Finance",
+      labelAr: "فتح الشؤون المالية",
+      descriptionEn: "Open the Project Finance navigation shell. Each finance workspace has its own data View permission and remains separately scoped.",
+      descriptionAr: "فتح هيكل التنقل لمساحة مالية المشروع. لكل مساحة مالية صلاحية عرض بيانات مستقلة وتظل خاضعة لنطاقها الخاص.",
+      canDelegate: false,
+      canDelegateToCustomRole: true,
+      sensitivity: "Low" as const,
+      isSensitive: false,
+      isAssignable: true,
+      isMandatoryForSystemAdmin: false,
+      requiredPermissionKeys: [],
+      isActive: true,
+    };
+    fixtures.assignablePermissions = [openFinance];
+    fixtures.saveRole.mockResolvedValue({
+      id: "project-finance-reader",
+      name: "Project Finance Reader",
+      description: "",
+      category: "Operation",
+      isSystem: false,
+      permissionCount: 1,
+      assignedUserCount: 0,
+      permissions: [openFinance],
+    });
+
+    renderWithI18n(<MemoryRouter><RolesPage /></MemoryRouter>);
+    await user.click(screen.getByRole("button", { name: "New role" }));
+    const editor = await screen.findByRole("dialog", { name: "New role" });
+    await user.selectOptions(within(editor).getByRole("combobox", { name: "Category" }), "Operation");
+    await user.selectOptions(within(editor).getByRole("combobox", { name: "Module" }), "financial-management");
+    const screenToggle = within(editor).getByRole("button", { name: /Project Finance/ });
+    await user.click(screenToggle);
+
+    const permission = permissionCheckbox(editor, openFinance.id);
+    expect(permission).toBeEnabled();
+    expect(within(editor).getByText("Open Finance")).toBeInTheDocument();
+    expect(fixtures.actorPermissions).not.toContain(openFinance.name);
+    await user.click(permission);
+    expect(permission).toBeChecked();
+    await user.click(permission);
+    expect(permission).not.toBeChecked();
+    await user.click(permission);
+    expect(permission).toBeChecked();
+
+    await user.type(within(editor).getByRole("textbox", { name: "Role name" }), "Project Finance Reader");
+    await user.click(within(editor).getByRole("button", { name: "Save role" }));
+    await waitFor(() => expect(fixtures.saveRole).toHaveBeenCalledWith(expect.objectContaining({
+      roleId: null,
+      input: expect.objectContaining({
+        name: "Project Finance Reader",
+        permissionIds: [openFinance.id],
+      }),
+    })));
+  });
+
+  it("explains when Project Financial Foundation is absent from the tenant role catalog", () => {
     fixtures.actorPermissions = ["Roles.View", "Roles.Create", "Roles.ConfigurePermissions"];
     fixtures.assignablePermissions = [];
     renderWithI18n(<MemoryRouter><RolesPage /></MemoryRouter>);
 
     fireEvent.click(screen.getByRole("button", { name: /New role/ }));
-    expect(screen.getByText("If View Project Financial Foundation is missing, your account cannot currently delegate it. Ask a System Administrator who already has it to grant it to your account first.")).toBeInTheDocument();
+    expect(screen.getByText("View Project Financial Foundation is not present in this tenant's role permission catalog.")).toBeInTheDocument();
   });
 });

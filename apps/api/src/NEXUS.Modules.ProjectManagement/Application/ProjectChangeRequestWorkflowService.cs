@@ -631,9 +631,9 @@ public sealed class ProjectChangeRequestWorkflowService : IProjectChangeRequestS
             return Error.Conflict("The financial summary currency does not match the Project currency. Reconcile the financial records before revising the lifetime ceiling.");
         if (proposed < (financials?.AllocatedBudget ?? 0m))
             return Error.Validation($"The proposed Project lifetime ceiling of {currency} {proposed:N2} is below existing Budget Line allocations ({currency} {financials!.AllocatedBudget:N2}). Revise those allocations before approving this Change Request.");
-        var actualAndCommitted = (financials?.ActualCost ?? 0m) + (financials?.CommittedCost ?? 0m);
+        var actualAndCommitted = financials?.ActualCost ?? 0m;
         if (proposed < actualAndCommitted)
-            return Error.Validation($"The proposed Project lifetime ceiling of {currency} {proposed:N2} is below actual costs and outstanding commitments ({currency} {actualAndCommitted:N2}). The ceiling cannot be reduced below current financial obligations.");
+            return Error.Validation($"The proposed Project lifetime ceiling of {currency} {proposed:N2} is below actual costs ({currency} {actualAndCommitted:N2}). The ceiling cannot be reduced below current financial obligations.");
 
         return null;
     }
@@ -1080,6 +1080,11 @@ public sealed class ProjectChangeRequestWorkflowService : IProjectChangeRequestS
         if (!Enum.IsDefined(dto.Type)) return Error.Validation("Select a supported Change Request type.");
         if (string.IsNullOrWhiteSpace(dto.Reason) || dto.Reason.Trim().Length > 500) return Error.Validation("A reason of at most 500 characters is required.");
         if (dto.Justification?.Length > 2000 || dto.Impact?.Length > 2000 || dto.Attachments?.Length > 4000) return Error.Validation("Request details exceed the allowed length.");
+        // A Budget Change request must carry a non-zero financial impact; a non-budget request must not.
+        if (dto.Type == ProjectChangeRequest.ChangeTypes.BudgetChange && !dto.BudgetChangeAmount.HasValue)
+            return Error.Validation("A Budget Change request requires a non-zero change amount.");
+        if (dto.Type != ProjectChangeRequest.ChangeTypes.BudgetChange && dto.BudgetChangeAmount.HasValue)
+            return Error.Validation("Only a Budget Change request can carry a budget impact amount.");
         if (dto.BudgetChangeAmount.HasValue && (dto.BudgetChangeAmount == 0 || decimal.Round(dto.BudgetChangeAmount.Value, 2) != dto.BudgetChangeAmount
             || string.IsNullOrWhiteSpace(dto.Justification) || !project.Budget.HasValue || project.Budget + dto.BudgetChangeAmount < 0))
             return Error.Validation("Budget impact requires a project ceiling, a non-zero amount with at most two decimals, a non-negative resulting budget, and justification.");

@@ -30,7 +30,9 @@ public sealed partial class ProjectPaymentRequestWorkflow(
     ITenantFiscalYearService tenantFiscalYear,
     IFiscalYearCalendarService fiscalYearCalendar,
     IUserEffectivePermissionService permissions,
-    IManagementContextAccessor management)
+    IManagementContextAccessor management,
+    IPlannedPaymentService plannedPayments,
+    IProjectPaymentRequestApprovalNotificationPublisher? approvalNotifications = null)
 {
     private const string EntityType = "ProjectPaymentRequest";
     private const string RequestType = "ProjectPaymentRequest";
@@ -118,9 +120,10 @@ public sealed partial class ProjectPaymentRequestWorkflow(
 
         var effective = await permissions.GetEffectivePermissionsAsync(actorId, tenantId, cancellationToken);
         var writableContext = management.Current?.EffectiveReadOnly != true;
-        var canCreate = writableContext && effective.Contains(CreatePermission);
+        var currentProjectManager = await IsCurrentProjectManagerAsync(tenantId, project, actorId, cancellationToken);
+        var canCreate = writableContext && effective.Contains(CreatePermission) && currentProjectManager;
         var canEdit = writableContext && effective.Contains(EditDraftPermission);
-        var canSubmit = writableContext && effective.Contains(SubmitPermission);
+        var canSubmit = writableContext && effective.Contains(SubmitPermission) && currentProjectManager;
         var canApprove = writableContext && effective.Contains(ApprovePermission);
         var canCancel = writableContext && effective.Contains(CancelPermission);
 
@@ -168,12 +171,23 @@ public sealed partial class ProjectPaymentRequestWorkflow(
             : await db.ProjectAnnualBudgets.IgnoreQueryFilters().AsNoTracking()
                 .Where(item => item.TenantId == tenantId && item.ProjectId == projectId && budgetIds.Contains(item.Id))
                 .ToDictionaryAsync(item => item.Id, cancellationToken);
+        var lineIds = rows.Select(row => row.detail.ProjectAnnualBudgetLineId).Where(id => id.HasValue)
+            .Select(id => id!.Value).Distinct().ToArray();
+        var budgetLines = lineIds.Length == 0
+            ? new Dictionary<Guid, ProjectAnnualBudgetLine>()
+            : await db.ProjectAnnualBudgetLines.IgnoreQueryFilters().AsNoTracking()
+                .Where(item => item.TenantId == tenantId && item.ProjectId == projectId && lineIds.Contains(item.Id))
+                .ToDictionaryAsync(item => item.Id, cancellationToken);
         var list = rows.Select(row => ToListItem(row.request, row.detail,
-            assignments.Where(item => item.ApprovalRequestId == row.request.Id).ToArray(),
+            assignments.Where(item => item.ApprovalRequestId == row.request.Id
+                && item.ApprovalCycleId == row.detail.CurrentApprovalCycleId).ToArray(),
             actions.Where(item => item.ApprovalRequestId == row.request.Id).ToArray(),
             names, actorId, canEdit, canSubmit, canApprove, canCancel,
             row.detail.ProjectAnnualBudgetId.HasValue && budgets.TryGetValue(row.detail.ProjectAnnualBudgetId.Value, out var budget)
                 ? budget
+                : null,
+            row.detail.ProjectAnnualBudgetLineId.HasValue && budgetLines.TryGetValue(row.detail.ProjectAnnualBudgetLineId.Value, out var line)
+                ? line
                 : null)).ToArray();
 
         return Result<ProjectPaymentRequestPageDto>.Success(new ProjectPaymentRequestPageDto(list, page, pageSize, total, budgetAvailability));
@@ -272,6 +286,8 @@ public sealed partial class ProjectPaymentRequestWorkflow(
         var accessError = await ValidateActiveActorAsync(tenantId, actorId, cancellationToken);
         if (accessError is not null)
             return Result<ProjectPaymentRequestSettlementDto>.Failure(accessError);
+        if (!await IsCurrentProjectManagerAsync(tenantId, project, actorId, cancellationToken))
+            return Result<ProjectPaymentRequestSettlementDto>.Failure(Error.Forbidden("Only the current Project Manager may record a Payment Settlement."));
         var row = await FindRequestTrackedAsync(tenantId, projectId, requestId, cancellationToken);
         if (row is null)
             return Result<ProjectPaymentRequestSettlementDto>.Failure(Error.NotFound("Payment Request not found."));
@@ -353,6 +369,7 @@ public sealed partial class ProjectPaymentRequestWorkflow(
             TenantId = tenantId,
             CreatedBy = actorId.ToString("D"),
             ProjectPaymentRequestId = requestId,
+            PlannedPaymentInstallmentId = detail.PlannedPaymentInstallmentId,
             FundingTransferId = currentTransfer?.Id,
             ProjectId = projectId,
             IdempotencyKey = dto.IdempotencyKey,
@@ -367,6 +384,21 @@ public sealed partial class ProjectPaymentRequestWorkflow(
         db.PaymentSettlements.Add(settlement);
         AddSettlementAudit(settlement, request, detail, actorId, actorName, now,
             settledBefore, settledAfter, outstandingBefore, outstandingAfter, beforeStatus, afterStatus, period.FiscalYear);
+
+        if (detail.PlannedPaymentInstallmentId.HasValue)
+        {
+            var installment = await db.PlannedPaymentInstallments.IgnoreQueryFilters()
+                .FirstOrDefaultAsync(item => item.TenantId == tenantId && item.ProjectId == projectId
+                    && item.Id == detail.PlannedPaymentInstallmentId.Value && !item.IsDeleted, cancellationToken);
+            if (installment is null)
+                return Result<ProjectPaymentRequestSettlementDto>.Failure(Error.Conflict(
+                    "The Payment Request references a Planned Payment installment that no longer exists."));
+            var settledByInstallment = await ActualPaidSettlementCalculator.LoadForInstallmentsAsync(
+                db, tenantId, projectId, [installment.Id], ignoreQueryFilters: true, cancellationToken);
+            installment.ActualPaid = settledByInstallment.GetValueOrDefault(installment.Id) + dto.Amount;
+            installment.UpdatedBy = actorId.ToString("D");
+            installment.UpdatedAt = now;
+        }
 
         try
         {
@@ -388,6 +420,106 @@ public sealed partial class ProjectPaymentRequestWorkflow(
             MapPaymentRequestSettlement(settlement, request, period.FiscalYear));
     }
 
+    public async Task<Result<QuickOneOffPaymentRequestResultDto>> CreateQuickOneOffAsync(
+        Guid tenantId,
+        Guid projectId,
+        Guid actorId,
+        string? actorName,
+        CreateQuickOneOffPaymentRequestDto dto,
+        CancellationToken cancellationToken)
+    {
+        var serviceAccess = await ValidateServiceAccessAsync(tenantId, projectId, actorId, requireWrite: true,
+            cancellationToken, actionPermission: CreatePermission);
+        if (serviceAccess.Error is not null)
+            return Result<QuickOneOffPaymentRequestResultDto>.Failure(serviceAccess.Error);
+        if (dto.IdempotencyKey == Guid.Empty)
+            return Result<QuickOneOffPaymentRequestResultDto>.Failure(Error.Validation(
+                "A Quick One-off idempotency key is required."));
+        if (!IsValidVersionlessAmount(dto.Amount))
+            return Result<QuickOneOffPaymentRequestResultDto>.Failure(Error.Validation(
+                "Amount must be positive and use no more than four decimal places."));
+        if (dto.DueDateUtc.Kind != DateTimeKind.Utc)
+            return Result<QuickOneOffPaymentRequestResultDto>.Failure(Error.Validation(
+                "The installment due date must be UTC.", nameof(dto.DueDateUtc)));
+
+        // This is the sole transaction owner for the composite operation. The
+        // existing registration, draft creation, and submission services join it.
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        try
+        {
+            var plannedResult = await plannedPayments.RegisterAsync(
+                tenantId,
+                projectId,
+                actorId,
+                actorName,
+                new CreatePlannedPaymentDto(dto.Description, new[]
+                {
+                    new CreatePlannedPaymentInstallmentDto(
+                        dto.Amount, dto.DueDateUtc, dto.ProjectPlanMilestoneId, dto.Purpose)
+                }, dto.IdempotencyKey),
+                cancellationToken);
+            if (plannedResult.IsFailure)
+                return Result<QuickOneOffPaymentRequestResultDto>.Failure(plannedResult.Error!);
+            var plannedPayment = plannedResult.Value!;
+            if (plannedPayment.Installments.Count != 1)
+                return Result<QuickOneOffPaymentRequestResultDto>.Failure(Error.Conflict(
+                    "A Quick One-off Planned Payment must contain exactly one installment."));
+            var installment = plannedPayment.Installments[0];
+
+            var requestResult = await CreateAsync(tenantId, projectId, actorId, actorName,
+                new CreatePaymentRequestDto(
+                    dto.Description,
+                    dto.Amount,
+                    dto.Purpose,
+                    dto.ProjectPlanMilestoneId,
+                    dto.IdempotencyKey,
+                    installment.Id,
+                    dto.ProjectAnnualBudgetId,
+                    dto.ProjectAnnualBudgetLineId),
+                cancellationToken);
+            if (requestResult.IsFailure)
+                return Result<QuickOneOffPaymentRequestResultDto>.Failure(requestResult.Error!);
+            var paymentRequest = requestResult.Value!;
+
+            var oneOffDetail = await db.ProjectPaymentRequestDetails.IgnoreQueryFilters()
+                .FirstOrDefaultAsync(item => item.TenantId == tenantId && item.ProjectId == projectId
+                    && item.ApprovalRequestId == paymentRequest.Id, cancellationToken);
+            if (oneOffDetail is null)
+                return Result<QuickOneOffPaymentRequestResultDto>.Failure(Error.Conflict(
+                    "The Quick One-off Payment Request detail was not persisted."));
+            oneOffDetail.CreatedFromQuickOneOff = true;
+            await db.SaveChangesAsync(cancellationToken);
+
+            if (dto.SubmitForApproval)
+            {
+                var submissionResult = await SubmitAsync(tenantId, projectId, paymentRequest.Id, actorId, actorName,
+                    new SubmitPaymentRequestDto(
+                        dto.ApprovalMode ?? string.Empty,
+                        dto.Approvers ?? Array.Empty<PaymentRequestApproverSelectionDto>(),
+                        paymentRequest.RowVersion,
+                        dto.IdempotencyKey),
+                    cancellationToken);
+                if (submissionResult.IsFailure)
+                    return Result<QuickOneOffPaymentRequestResultDto>.Failure(submissionResult.Error!);
+                paymentRequest = submissionResult.Value!;
+            }
+
+            await transaction.CommitAsync(cancellationToken);
+            return Result<QuickOneOffPaymentRequestResultDto>.Success(
+                new QuickOneOffPaymentRequestResultDto(plannedPayment, installment, paymentRequest));
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Result<QuickOneOffPaymentRequestResultDto>.Failure(Error.Conflict(
+                "The project funding or payment request changed while creating this Quick One-off. Refresh and retry."));
+        }
+        catch (DbUpdateException)
+        {
+            return Result<QuickOneOffPaymentRequestResultDto>.Failure(Error.Conflict(
+                "A Quick One-off with this idempotency key was created concurrently. Retry with the same key to retrieve it."));
+        }
+    }
+
     public async Task<Result<ProjectPaymentRequestDetailDto>> CreateAsync(
         Guid tenantId, Guid projectId, Guid actorId, string? actorName, CreatePaymentRequestDto dto, CancellationToken cancellationToken)
     {
@@ -400,7 +532,11 @@ public sealed partial class ProjectPaymentRequestWorkflow(
         if (dto.IdempotencyKey is null || dto.IdempotencyKey == Guid.Empty)
             return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Validation("A request idempotency key is required."));
 
-        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        // Join a coordinator-owned transaction for Quick One-off create; standalone
+        // Payment Request creation remains a serializable transaction of its own.
+        await using var transaction = db.Database.CurrentTransaction is null
+            ? await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken)
+            : null;
         var project = await FindProjectForUpdateAsync(tenantId, projectId, cancellationToken);
         if (project is null) return Result<ProjectPaymentRequestDetailDto>.Failure(Error.NotFound("Project not found"));
         var accessError = await ValidateActiveActorAsync(tenantId, actorId, cancellationToken);
@@ -415,11 +551,17 @@ public sealed partial class ProjectPaymentRequestWorkflow(
         var currency = NormalizeCurrency(project.Currency);
         if (!await IsConfiguredCurrencyAsync(currency, cancellationToken))
             return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Conflict("The project currency is not configured in the currency catalog."));
+        if (!dto.PlannedPaymentInstallmentId.HasValue || dto.PlannedPaymentInstallmentId == Guid.Empty
+            || !dto.ProjectAnnualBudgetId.HasValue || dto.ProjectAnnualBudgetId == Guid.Empty
+            || !dto.ProjectAnnualBudgetLineId.HasValue || dto.ProjectAnnualBudgetLineId == Guid.Empty)
+            return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Validation(
+                "A Planned Payment installment, approved Annual Budget, and exactly one Budget Line are required."));
         if (dto.ProjectPlanMilestoneId.HasValue
             && !await milestoneLookup.IsActiveMilestoneForProjectAsync(projectId, dto.ProjectPlanMilestoneId.Value, cancellationToken))
             return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Validation("The selected milestone is not active in a working plan for this project."));
 
-        var fingerprint = Fingerprint(title, dto.Amount, reason, dto.ProjectPlanMilestoneId);
+        var fingerprint = Fingerprint(title, dto.Amount, reason, dto.ProjectPlanMilestoneId,
+            dto.PlannedPaymentInstallmentId, dto.ProjectAnnualBudgetId, dto.ProjectAnnualBudgetLineId);
         var priorDetail = await db.ProjectPaymentRequestDetails.IgnoreQueryFilters()
             .FirstOrDefaultAsync(item => item.TenantId == tenantId
                 && item.ProjectId == projectId
@@ -432,23 +574,25 @@ public sealed partial class ProjectPaymentRequestWorkflow(
             var priorRequest = await PaymentRequestsQuery(tenantId, projectId)
                 .FirstOrDefaultAsync(item => item.Id == priorDetail.ApprovalRequestId, cancellationToken);
             if (priorRequest is null) return Result<ProjectPaymentRequestDetailDto>.Failure(Error.NotFound("Payment Request not found"));
-            await transaction.CommitAsync(cancellationToken);
+            if (transaction is not null) await transaction.CommitAsync(cancellationToken);
             return Result<ProjectPaymentRequestDetailDto>.Success(await ToDetailAsync(priorRequest, priorDetail, actorId, cancellationToken));
         }
 
-        // The API derives the effective financial date from server UTC and the Tenant's
-        // configured time zone. Clients cannot select or override a Fiscal Year.
         var requestedAt = DateTimeOffset.UtcNow;
-        var period = await tenantFiscalYear.ResolveForTimestampAsync(tenantId, requestedAt, cancellationToken);
-        var annualBudget = await db.ProjectAnnualBudgets.IgnoreQueryFilters()
-            .FirstOrDefaultAsync(item => item.TenantId == tenantId && item.ProjectId == projectId
-                && item.FiscalYear == period.FiscalYear && !item.IsDeleted, cancellationToken);
+        var annualBudget = await FindAnnualBudgetForUpdateAsync(
+            tenantId, projectId, dto.ProjectAnnualBudgetId!.Value, cancellationToken);
         if (annualBudget is null)
-            return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Conflict(
-                $"Create an annual budget for FY {period.FiscalYear} before creating a Payment Request."));
-        var budgetError = ValidateAnnualBudgetAssociation(project, annualBudget, period, requireApproved: false);
+            return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Validation("The selected Annual Budget is not available for this project."));
+        var budgetError = ValidateSelectedAnnualBudgetAssociation(project, annualBudget);
         if (budgetError is not null)
             return Result<ProjectPaymentRequestDetailDto>.Failure(budgetError);
+        var budgetLine = await db.ProjectAnnualBudgetLines.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(item => item.Id == dto.ProjectAnnualBudgetLineId!.Value
+                && item.TenantId == tenantId && item.ProjectId == projectId
+                && item.ProjectAnnualBudgetId == annualBudget.Id && !item.IsDeleted, cancellationToken);
+        if (budgetLine is null)
+            return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Validation(
+                "The selected Budget Line does not belong to the selected Annual Budget."));
 
         var request = new ApprovalRequest
         {
@@ -474,9 +618,11 @@ public sealed partial class ProjectPaymentRequestWorkflow(
             TenantId = tenantId,
             ProjectId = projectId,
             ProjectAnnualBudgetId = annualBudget.Id,
+            ProjectAnnualBudgetLineId = budgetLine.Id,
             AnnualBudgetFiscalYear = annualBudget.FiscalYear,
             AnnualBudgetReference = annualBudget.FinancialReference,
             PlanActivityId = dto.ProjectPlanMilestoneId,
+            PlannedPaymentInstallmentId = dto.PlannedPaymentInstallmentId,
             RequestKind = ProjectPaymentRequestKinds.PaymentRequest,
             IdempotencyKey = dto.IdempotencyKey,
             RequestFingerprint = fingerprint
@@ -485,13 +631,26 @@ public sealed partial class ProjectPaymentRequestWorkflow(
         db.ApprovalRequests.Add(request);
         db.ProjectPaymentRequestDetails.Add(detail);
         AddAudit(project, request, actorId, actorName, "Created", "Payment Request created", null,
-            AuditValues(request, detail, new { annualBudgetId = annualBudget.Id, fiscalYear = annualBudget.FiscalYear }),
-            "financialReference,amount,currency,status,annualBudgetId,fiscalYear");
+            AuditValues(request, detail, new
+            {
+                annualBudgetId = annualBudget.Id, fiscalYear = annualBudget.FiscalYear,
+                budgetLineId = budgetLine.Id, budgetLineReference = budgetLine.Reference,
+                plannedPaymentInstallmentId = dto.PlannedPaymentInstallmentId
+            }),
+            "financialReference,amount,currency,status,plannedPaymentInstallmentId,annualBudgetId,fiscalYear,annualBudgetLineId");
+
+        if (dto.PlannedPaymentInstallmentId.HasValue)
+        {
+            var lockResult = await plannedPayments.ApplyPaymentRequestAsync(
+                tenantId, projectId, dto.PlannedPaymentInstallmentId.Value, request.Id,
+                dto.Amount, actorId, actorName, cancellationToken);
+            if (lockResult.IsFailure) return Result<ProjectPaymentRequestDetailDto>.Failure(lockResult.Error!);
+        }
 
         try
         {
             await db.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
+            if (transaction is not null) await transaction.CommitAsync(cancellationToken);
         }
         catch (DbUpdateConcurrencyException)
         {
@@ -518,14 +677,19 @@ public sealed partial class ProjectPaymentRequestWorkflow(
         var (request, detail) = row.Value;
         if (!MatchesVersion(request.RowVersion, dto.RowVersion))
             return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Conflict("Payment Request changed. Refresh before editing."));
-        if (request.Status != PaymentRequestStatuses.Draft || request.RequestedBy != actorId)
-            return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Forbidden("Only the requester may edit a draft Payment Request."));
+        if ((request.Status != PaymentRequestStatuses.Draft
+                && request.Status != PaymentRequestStatuses.ReturnedForRevision)
+            || request.RequestedBy != actorId)
+            return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Forbidden(
+                "Only the requester may edit a draft or returned Payment Request."));
         if (!IsValidVersionlessAmount(dto.Amount))
             return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Validation("Amount must be positive and use no more than four decimal places."));
 
         var title = dto.Title?.Trim() ?? string.Empty;
         var reason = dto.Reason?.Trim() ?? string.Empty;
-        var createShape = new CreatePaymentRequestDto(title, dto.Amount, reason, dto.ProjectPlanMilestoneId, detail.IdempotencyKey);
+        var createShape = new CreatePaymentRequestDto(title, dto.Amount, reason, dto.ProjectPlanMilestoneId,
+            detail.IdempotencyKey, detail.PlannedPaymentInstallmentId, dto.ProjectAnnualBudgetId ?? detail.ProjectAnnualBudgetId,
+            dto.ProjectAnnualBudgetLineId ?? detail.ProjectAnnualBudgetLineId);
         var validation = PaymentRequestWorkflowPolicy.ValidateDraft(createShape, project.Currency);
         if (validation.Count > 0) return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Validation(string.Join(",", validation)));
         if (!await IsConfiguredCurrencyAsync(NormalizeCurrency(project.Currency), cancellationToken))
@@ -534,6 +698,28 @@ public sealed partial class ProjectPaymentRequestWorkflow(
             && !await milestoneLookup.IsActiveMilestoneForProjectAsync(projectId, dto.ProjectPlanMilestoneId.Value, cancellationToken))
             return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Validation("The selected milestone is not active in a working plan for this project."));
 
+        var annualBudgetId = dto.ProjectAnnualBudgetId ?? detail.ProjectAnnualBudgetId;
+        var lineId = dto.ProjectAnnualBudgetLineId ?? detail.ProjectAnnualBudgetLineId;
+        if (!annualBudgetId.HasValue || !lineId.HasValue || !detail.PlannedPaymentInstallmentId.HasValue)
+            return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Conflict(
+                "The Payment Request must retain its Planned Payment installment, Annual Budget, and Budget Line."));
+        var annualBudget = await FindAnnualBudgetForUpdateAsync(tenantId, projectId, annualBudgetId.Value, cancellationToken);
+        if (annualBudget is null || ValidateSelectedAnnualBudgetAssociation(project, annualBudget) is not null)
+            return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Conflict(
+                "The selected Annual Budget is unavailable, closed, or incompatible with the project currency."));
+        var budgetLine = await db.ProjectAnnualBudgetLines.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(item => item.Id == lineId.Value && item.TenantId == tenantId
+                && item.ProjectId == projectId && item.ProjectAnnualBudgetId == annualBudget.Id && !item.IsDeleted,
+                cancellationToken);
+        if (budgetLine is null)
+            return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Validation(
+                "The selected Budget Line does not belong to the selected Annual Budget."));
+        var installmentCheck = await plannedPayments.ApplyPaymentRequestAsync(
+            tenantId, projectId, detail.PlannedPaymentInstallmentId.Value, requestId,
+            dto.Amount, actorId, actorName, cancellationToken);
+        if (installmentCheck.IsFailure)
+            return Result<ProjectPaymentRequestDetailDto>.Failure(installmentCheck.Error!);
+
         var before = AuditValues(request, detail, null);
         request.Title = title;
         request.Description = reason;
@@ -541,9 +727,13 @@ public sealed partial class ProjectPaymentRequestWorkflow(
         request.Currency = NormalizeCurrency(project.Currency);
         request.UpdatedBy = actorId.ToString("D");
         detail.PlanActivityId = dto.ProjectPlanMilestoneId;
-        detail.RequestFingerprint = Fingerprint(title, dto.Amount, reason, dto.ProjectPlanMilestoneId);
+        detail.ProjectAnnualBudgetId = annualBudget.Id;
+        detail.ProjectAnnualBudgetLineId = budgetLine.Id;
+        detail.AnnualBudgetFiscalYear = annualBudget.FiscalYear;
+        detail.AnnualBudgetReference = annualBudget.FinancialReference;
         AddAudit(project, request, actorId, actorName, "Edited", "Payment Request edited", before,
-            AuditValues(request, detail, null), "financialReference,amount,currency,milestone");
+            AuditValues(request, detail, new { budgetLineId = budgetLine.Id, budgetLineReference = budgetLine.Reference }),
+            "financialReference,amount,currency,milestone,annualBudgetId,fiscalYear,annualBudgetLineId");
 
         try
         {
@@ -564,7 +754,13 @@ public sealed partial class ProjectPaymentRequestWorkflow(
             actionPermission: SubmitPermission);
         if (serviceAccess.Error is not null)
             return Result<ProjectPaymentRequestDetailDto>.Failure(serviceAccess.Error);
-        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        if (!dto.IdempotencyKey.HasValue || dto.IdempotencyKey == Guid.Empty)
+            return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Validation("A submission idempotency key is required."));
+        // Quick One-off Submit uses this existing approval workflow inside the
+        // coordinator's transaction; direct submissions retain their own transaction.
+        await using var transaction = db.Database.CurrentTransaction is null
+            ? await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken)
+            : null;
         var project = await FindProjectForUpdateAsync(tenantId, projectId, cancellationToken);
         if (project is null) return Result<ProjectPaymentRequestDetailDto>.Failure(Error.NotFound("Project not found"));
         var accessError = await ValidateActiveActorAsync(tenantId, actorId, cancellationToken);
@@ -574,29 +770,45 @@ public sealed partial class ProjectPaymentRequestWorkflow(
         var (request, detail) = row.Value;
 
         var approvalMode = NormalizeMode(dto.ApprovalMode);
+        if (approvalMode is not (PaymentRequestApprovalModes.Sequential or PaymentRequestApprovalModes.Parallel))
+            return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Validation(
+                "Approval mode must be Sequential or Parallel.", nameof(dto.ApprovalMode)));
         var selected = NormalizeSelections(dto.Approvers, approvalMode);
-        if (request.Status != PaymentRequestStatuses.Draft)
+        if (PaymentRequestWorkflowPolicy.ContainsRequester(request.RequestedBy, selected))
+            return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Validation(
+                $"{PaymentRequestWorkflowPolicy.RequesterCannotBeApprover}: The requester cannot be assigned as an approver on their own Payment Request.",
+                nameof(dto.Approvers)));
+        var submissionFingerprint = SubmissionFingerprint(request, detail, approvalMode, selected);
+        var priorCycle = await db.ProjectPaymentRequestApprovalCycles.IgnoreQueryFilters().AsNoTracking()
+            .FirstOrDefaultAsync(item => item.TenantId == tenantId && item.ProjectId == projectId
+                && item.ApprovalRequestId == requestId && item.SubmitIdempotencyKey == dto.IdempotencyKey.Value
+                && !item.IsDeleted, cancellationToken);
+        if (priorCycle is not null)
         {
-            var existingAssignments = await GetAssignmentsAsync(tenantId, requestId, tracked: false, cancellationToken);
-            if (request.RequestedBy == actorId
-                && request.Status == PaymentRequestStatuses.Pending
-                && string.Equals(detail.ApprovalMode, approvalMode, StringComparison.OrdinalIgnoreCase)
-                && SameSelections(existingAssignments, selected))
-            {
-                await transaction.CommitAsync(cancellationToken);
-                return Result<ProjectPaymentRequestDetailDto>.Success(await ToDetailAsync(request, detail, actorId, cancellationToken));
-            }
-            return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Conflict("Only draft Payment Requests can be submitted."));
+            var replayFingerprint = SubmissionFingerprint(priorCycle, approvalMode, selected);
+            if (!string.Equals(priorCycle.SubmissionFingerprint, replayFingerprint, StringComparison.Ordinal))
+                return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Conflict(
+                    "The submission idempotency key was already used for different approval or funding content."));
+            if (transaction is not null) await transaction.CommitAsync(cancellationToken);
+            return Result<ProjectPaymentRequestDetailDto>.Success(await ToDetailAsync(request, detail, actorId, cancellationToken));
         }
+        if (request.Status != PaymentRequestStatuses.Draft
+            && request.Status != PaymentRequestStatuses.ReturnedForRevision)
+            return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Conflict(
+                "Only Draft or Returned for Revision Payment Requests can be submitted."));
         if (!MatchesVersion(request.RowVersion, dto.RowVersion))
             return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Conflict("Payment Request changed. Refresh before submitting."));
         if (request.RequestedBy != actorId)
             return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Forbidden("Only the requester may submit this Payment Request."));
+        if (!await IsCurrentProjectManagerAsync(tenantId, project, actorId, cancellationToken))
+            return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Forbidden(
+                "Only the current Project Manager may submit or resubmit a Payment Request."));
 
         if (!await IsConfiguredCurrencyAsync(NormalizeCurrency(project.Currency), cancellationToken))
             return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Conflict("The project currency is not configured in the currency catalog."));
 
-        var validation = PaymentRequestWorkflowPolicy.ValidateApprovalSetup(project.FinanceApprovalMode, approvalMode, selected);
+        var validation = PaymentRequestWorkflowPolicy.ValidateApprovalSetup(
+            project.FinanceApprovalMode, approvalMode, selected, request.RequestedBy);
         if (validation.Count > 0) return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Validation(string.Join(",", validation)));
         var eligibility = await GetEligibleApproverIdsAsync(tenantId, projectId, cancellationToken);
         if (selected.Any(item => !eligibility.Contains(item.UserId)))
@@ -605,21 +817,23 @@ public sealed partial class ProjectPaymentRequestWorkflow(
         if (request.Amount is null or <= 0 || !string.Equals(request.Currency, NormalizeCurrency(project.Currency), StringComparison.Ordinal))
             return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Conflict("Payment Request amount or currency no longer matches the project."));
 
-        if (detail.ProjectAnnualBudgetId is null || detail.AnnualBudgetFiscalYear is null)
+        if (detail.ProjectAnnualBudgetId is null || detail.AnnualBudgetFiscalYear is null
+            || detail.ProjectAnnualBudgetLineId is null || detail.PlannedPaymentInstallmentId is null)
             return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Conflict(
-                "This historical Payment Request has no Fiscal Year budget association. Reconcile it before submitting."));
-        var currentPeriod = await tenantFiscalYear.ResolveForTimestampAsync(tenantId, DateTimeOffset.UtcNow, cancellationToken);
-        if (currentPeriod.FiscalYear != detail.AnnualBudgetFiscalYear.Value)
-            return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Conflict(
-                "A draft Payment Request can only be submitted in its associated current Fiscal Year. Create a new request for the current year."));
+                "The Payment Request must reference one Planned Payment installment, Annual Budget, and Budget Line."));
         var annualBudget = await FindAnnualBudgetForUpdateAsync(tenantId, projectId, detail.ProjectAnnualBudgetId.Value, cancellationToken);
         if (annualBudget is null)
             return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Conflict("The associated Annual Budget is unavailable."));
-        var budgetError = ValidateAnnualBudgetAssociation(project, annualBudget, currentPeriod, requireApproved: true);
+        var budgetError = ValidateSelectedAnnualBudgetAssociation(project, annualBudget);
         if (budgetError is not null)
             return Result<ProjectPaymentRequestDetailDto>.Failure(budgetError);
-        if (annualBudget.ClosedAtUtc.HasValue)
-            return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Conflict("The associated Fiscal Year is closed. A new request cannot be submitted against a closed Annual Budget."));
+        var budgetLine = await db.ProjectAnnualBudgetLines.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(item => item.Id == detail.ProjectAnnualBudgetLineId.Value
+                && item.TenantId == tenantId && item.ProjectId == projectId
+                && item.ProjectAnnualBudgetId == annualBudget.Id && !item.IsDeleted, cancellationToken);
+        if (budgetLine is null)
+            return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Conflict(
+                "The associated Budget Line is unavailable or belongs to another Annual Budget."));
         var legacyApprovedCount = await CountLegacyApprovedRequestsAsync(tenantId, projectId, cancellationToken);
         if (legacyApprovedCount > 0)
             return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Conflict(
@@ -631,9 +845,53 @@ public sealed partial class ProjectPaymentRequestWorkflow(
         if (request.Amount.Value > annualBudget.TotalAnnualBudget - currentAllocations.Amount)
             return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Conflict(
                 "The requested amount exceeds the available amount in the associated Annual Budget."));
+        var lineAllocations = await GetActiveBudgetLineAllocationAsync(
+            tenantId, projectId, annualBudget.Id, budgetLine.Id, excludeRequestId: null, cancellationToken);
+        if (lineAllocations.CurrencyMismatch || request.Amount.Value > budgetLine.AuthorizedLimit - lineAllocations.Amount)
+            return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Conflict(
+                "The requested amount exceeds the available amount in the selected Budget Line."));
+
+        var installmentCheck = await plannedPayments.ApplyPaymentRequestAsync(
+            tenantId, projectId, detail.PlannedPaymentInstallmentId.Value, requestId,
+            request.Amount.Value, actorId, actorName, cancellationToken);
+        if (installmentCheck.IsFailure)
+            return Result<ProjectPaymentRequestDetailDto>.Failure(installmentCheck.Error!);
+
+        var cycleNumber = checked(detail.CurrentApprovalCycleNumber + 1);
+        var cycleId = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+        var priorStatus = request.Status;
+        var cycle = new ProjectPaymentRequestApprovalCycle
+        {
+            Id = cycleId,
+            TenantId = tenantId,
+            ProjectId = projectId,
+            ApprovalRequestId = requestId,
+            CycleNumber = cycleNumber,
+            ApprovalMode = approvalMode,
+            Amount = request.Amount.Value,
+            Currency = NormalizeCurrency(request.Currency),
+            PlannedPaymentInstallmentId = detail.PlannedPaymentInstallmentId.Value,
+            ProjectAnnualBudgetId = annualBudget.Id,
+            FiscalYear = annualBudget.FiscalYear,
+            AnnualBudgetReference = annualBudget.FinancialReference,
+            ProjectAnnualBudgetLineId = budgetLine.Id,
+            AnnualBudgetLineReference = budgetLine.Reference,
+            AnnualBudgetLineDescription = budgetLine.Description,
+            RequesterId = actorId,
+            SubmittedAtUtc = now,
+            SubmitIdempotencyKey = dto.IdempotencyKey.Value,
+            SubmissionFingerprint = submissionFingerprint,
+            ApproversSnapshotJson = JsonSerializer.Serialize(selected.OrderBy(item => item.Position ?? int.MaxValue)
+                .Select(item => new { item.UserId, item.Position, item.Requirement })),
+            CreatedBy = actorId.ToString("D")
+        };
 
         detail.ApprovalMode = approvalMode;
-        detail.SubmittedAt = DateTime.UtcNow;
+        detail.CurrentApprovalCycleId = cycleId;
+        detail.CurrentApprovalCycleNumber = cycleNumber;
+        detail.SubmittedAt = now;
+        detail.CompletedAt = null;
         request.Status = PaymentRequestStatuses.Pending;
         request.CurrentApproverId = approvalMode == PaymentRequestApprovalModes.Sequential ? selected.OrderBy(item => item.Position).First().UserId : null;
         request.ApprovalLevel = approvalMode == PaymentRequestApprovalModes.Sequential ? 1 : 0;
@@ -642,7 +900,9 @@ public sealed partial class ProjectPaymentRequestWorkflow(
         var assignments = selected.Select(selection => new PaymentRequestApproverAssignment
         {
             TenantId = tenantId,
+            ProjectId = projectId,
             ApprovalRequestId = requestId,
+            ApprovalCycleId = cycleId,
             ApproverUserId = selection.UserId,
             Position = selection.Position,
             Requirement = selection.Requirement,
@@ -653,18 +913,41 @@ public sealed partial class ProjectPaymentRequestWorkflow(
         var names = await LoadUserNamesAsync(tenantId, selected.Select(item => item.UserId), cancellationToken);
         var approverSummary = string.Join(", ", selected.OrderBy(item => item.Position ?? int.MaxValue)
             .Select(item => $"{names.GetValueOrDefault(item.UserId) ?? item.UserId.ToString("D")} ({item.Requirement})"));
-        var before = AuditValues(request, detail, null, statusOverride: PaymentRequestStatuses.Draft);
+        var before = AuditValues(request, detail, null, statusOverride: priorStatus);
+        db.ProjectPaymentRequestApprovalCycles.Add(cycle);
         AddAudit(project, request, actorId, actorName, "Submitted", "Payment Request submitted for approval", before,
-            AuditValues(request, detail, new { approvalMode, approvers = approverSummary }),
-            "status,approvalMode,approvers,amount,currency,annualBudgetId,fiscalYear");
+            AuditValues(request, detail, new { approvalMode, approvers = approverSummary, cycleId, cycleNumber }),
+            "status,approvalMode,approvers,amount,currency,annualBudgetId,fiscalYear,annualBudgetLineId,approvalCycleId");
         AddAudit(project, request, actorId, actorName, "ApproversAssigned", $"Approvers assigned to {Reference(request)}: {approverSummary}",
-            null, AuditValues(request, detail, new { approvalMode, approvers = approverSummary }),
-            "approvalMode,approvers");
+            null, AuditValues(request, detail, new { approvalMode, approvers = approverSummary, cycleId, cycleNumber }),
+            "approvalMode,approvers,approvalCycleId");
+        AddAudit(project, request, actorId, actorName, "FundingReserved",
+            $"{request.Amount:0.####} {request.Currency} reserved for approval cycle {cycleNumber} against Annual Budget {annualBudget.FinancialReference}, Budget Line {budgetLine.Reference}, and installment {detail.PlannedPaymentInstallmentId}.",
+            null, AuditValues(request, detail, new
+            {
+                cycleId, cycleNumber, allocation = request.Amount, currency = request.Currency,
+                annualBudgetId = annualBudget.Id, fiscalYear = annualBudget.FiscalYear,
+                budgetLineId = budgetLine.Id, installmentId = detail.PlannedPaymentInstallmentId
+            }), "amount,currency,annualBudgetId,fiscalYear,annualBudgetLineId,installmentId,approvalCycleId");
+        if (cycleNumber > 1)
+            AddAudit(project, request, actorId, actorName, "Resubmitted",
+                $"Payment Request {Reference(request)} resubmitted as approval cycle {cycleNumber}.", before,
+                AuditValues(request, detail, new { cycleId, cycleNumber, approvalMode, approvers = approverSummary }),
+                "status,approvalCycleId,approvalCycleNumber,approvalMode,approvers");
+
+        if (approvalNotifications is not null)
+        {
+            var notificationResult = await approvalNotifications.QueueActionableStepsAsync(
+                project, request, cycleId, approvalMode, assignments, eligibility, cancellationToken);
+            if (notificationResult.IsFailure)
+                return Result<ProjectPaymentRequestDetailDto>.Failure(notificationResult.Error
+                    ?? Error.Validation("Payment Request approval notifications could not be queued."));
+        }
 
         try
         {
             await db.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
+            if (transaction is not null) await transaction.CommitAsync(cancellationToken);
         }
         catch (DbUpdateConcurrencyException)
         {
@@ -681,7 +964,19 @@ public sealed partial class ProjectPaymentRequestWorkflow(
         if (serviceAccess.Error is not null)
             return Result<ProjectPaymentRequestDetailDto>.Failure(serviceAccess.Error);
         if (!PaymentRequestDecisions.IsValid(dto.Decision))
-            return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Validation("Decision must be Approved or Rejected."));
+            return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Validation(
+                "Decision must be Approved, Rejected, or Returned for Revision."));
+        var isApprovedDecision = string.Equals(dto.Decision, PaymentRequestDecisions.Approved, StringComparison.OrdinalIgnoreCase);
+        var isRejectedDecision = string.Equals(dto.Decision, PaymentRequestDecisions.Rejected, StringComparison.OrdinalIgnoreCase);
+        var isReturnDecision = string.Equals(dto.Decision, PaymentRequestDecisions.ReturnedForRevision, StringComparison.OrdinalIgnoreCase);
+        if (dto.ApprovedAmount.HasValue && (!isApprovedDecision || dto.ApprovedAmount.Value <= 0m))
+            return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Validation(
+                "Partial approval is not supported; approval must cover the full Payment Request amount."));
+        if (isReturnDecision && string.IsNullOrWhiteSpace(dto.Comment))
+            return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Validation(
+                "A reason is required when returning a Payment Request for revision.", nameof(dto.Comment)));
+        if (dto.Comment?.Trim().Length > 2000)
+            return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Validation("Decision comments cannot exceed 2000 characters."));
 
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
         var project = await FindProjectForUpdateAsync(tenantId, projectId, cancellationToken);
@@ -693,15 +988,23 @@ public sealed partial class ProjectPaymentRequestWorkflow(
         var (request, detail) = row.Value;
         if (!MatchesVersion(request.RowVersion, dto.RowVersion))
             return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Conflict("Payment Request changed. Refresh before deciding."));
+        if (dto.ApprovedAmount.HasValue && request.Amount != dto.ApprovedAmount.Value)
+            return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Validation(
+                "Partial approval is not supported; the approved amount must equal the full Payment Request amount.",
+                nameof(dto.ApprovedAmount)));
         if (request.Status != PaymentRequestStatuses.Pending || detail.ApprovalMode is null)
             return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Conflict("This Payment Request is no longer awaiting approval."));
+
+        if (request.RequestedBy == actorId)
+            return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Forbidden("The requester cannot approve their own Payment Request."));
 
         var eligibleApprovers = await GetEligibleApproverIdsAsync(tenantId, projectId, cancellationToken);
         if (!eligibleApprovers.Contains(actorId))
             return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Forbidden(
                 "An approver must remain an active eligible Project Team member with ProjectPaymentRequest.Approve permission to decide."));
 
-        var assignments = await GetAssignmentsAsync(tenantId, requestId, tracked: true, cancellationToken);
+        var assignments = await GetAssignmentsAsync(tenantId, requestId, tracked: true, cancellationToken,
+            detail.CurrentApprovalCycleId);
         var actions = await db.ApprovalActions.IgnoreQueryFilters()
             .Where(item => item.TenantId == tenantId && !item.IsDeleted && item.ApprovalRequestId == requestId)
             .ToListAsync(cancellationToken);
@@ -716,8 +1019,11 @@ public sealed partial class ProjectPaymentRequestWorkflow(
             return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Conflict("This approver has already decided."));
 
         var now = DateTime.UtcNow;
-        var approved = string.Equals(dto.Decision, PaymentRequestDecisions.Approved, StringComparison.OrdinalIgnoreCase);
-        assignment.State = approved ? PaymentRequestAssignmentStates.Approved : PaymentRequestAssignmentStates.Rejected;
+        var approved = isApprovedDecision;
+        var rejected = isRejectedDecision;
+        var decisionAction = approved ? "Approve" : rejected ? "Reject" : "ReturnForRevision";
+        assignment.State = approved ? PaymentRequestAssignmentStates.Approved
+            : rejected ? PaymentRequestAssignmentStates.Rejected : PaymentRequestAssignmentStates.ReturnedForRevision;
         assignment.UpdatedBy = actorId.ToString("D");
         request.UpdatedBy = actorId.ToString("D");
         db.ApprovalActions.Add(new ApprovalAction
@@ -726,7 +1032,7 @@ public sealed partial class ProjectPaymentRequestWorkflow(
             ApprovalRequestId = requestId,
             ApproverId = actorId,
             ApproverAssignmentId = assignment.Id,
-            Action = approved ? "Approve" : "Reject",
+            Action = decisionAction,
             Comments = dto.Comment?.Trim(),
             ActionedAt = now,
             ApprovalLevel = detail.ApprovalMode == PaymentRequestApprovalModes.Sequential ? assignment.Position ?? 0 : 0,
@@ -734,74 +1040,111 @@ public sealed partial class ProjectPaymentRequestWorkflow(
         });
 
         var prior = AuditValues(request, detail, null, statusOverride: PaymentRequestStatuses.Pending);
-        var individualAction = approved ? "ApproverApproved" : "ApproverRejected";
+        var individualAction = approved ? "ApproverApproved" : rejected ? "ApproverRejected" : "ApproverReturnedForRevision";
         AddAudit(project, request, actorId, actorName, individualAction,
-            $"{(approved ? "Approval" : "Rejection")} recorded by {actorName ?? actorId.ToString("D")} for {Reference(request)}",
-            prior, AuditValues(request, detail, new { decision = approved ? PaymentRequestDecisions.Approved : PaymentRequestDecisions.Rejected, comment = dto.Comment?.Trim() }),
-            "decision,approver,comment,amount,currency");
+            $"{(approved ? "Approval" : rejected ? "Rejection" : "Return for Revision")} recorded by {actorName ?? actorId.ToString("D")} for {Reference(request)}",
+            prior, AuditValues(request, detail, new { decision = dto.Decision, comment = dto.Comment?.Trim(), cycleId = detail.CurrentApprovalCycleId }),
+            "decision,approver,comment,amount,currency,approvalCycleId");
 
-        var projectedStates = BuildStates(assignments, actions, actorId, approved ? "Approve" : "Reject");
+        var projectedStates = BuildStates(assignments, actions, actorId, decisionAction);
         var status = detail.ApprovalMode == PaymentRequestApprovalModes.Sequential
             ? PaymentRequestWorkflowPolicy.EvaluateSequentialStatus(projectedStates)
             : PaymentRequestWorkflowPolicy.EvaluateParallelStatus(projectedStates);
-        if (status is PaymentRequestStatuses.Approved or PaymentRequestStatuses.Rejected)
+        if (status is PaymentRequestStatuses.Approved or PaymentRequestStatuses.Rejected or PaymentRequestStatuses.ReturnedForRevision)
         {
+            var cycle = detail.CurrentApprovalCycleId.HasValue
+                ? await db.ProjectPaymentRequestApprovalCycles.IgnoreQueryFilters()
+                    .FirstOrDefaultAsync(item => item.TenantId == tenantId && item.ProjectId == projectId
+                        && item.ApprovalRequestId == requestId && item.Id == detail.CurrentApprovalCycleId.Value
+                        && !item.IsDeleted, cancellationToken)
+                : null;
             if (status == PaymentRequestStatuses.Approved)
             {
                 if (!await IsConfiguredCurrencyAsync(NormalizeCurrency(project.Currency), cancellationToken))
                     return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Conflict("The project currency is not configured in the currency catalog."));
-                if (detail.ProjectAnnualBudgetId is null || detail.AnnualBudgetFiscalYear is null)
+                if (detail.ProjectAnnualBudgetId is null || detail.AnnualBudgetFiscalYear is null
+                    || detail.ProjectAnnualBudgetLineId is null || request.Amount is null)
                     return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Conflict(
-                        "This historical Payment Request has no Fiscal Year budget association. Reconcile it before approval."));
+                        "This Payment Request has no complete Annual Budget and Budget Line association."));
                 var annualBudget = await FindAnnualBudgetForUpdateAsync(
                     tenantId, projectId, detail.ProjectAnnualBudgetId.Value, cancellationToken);
                 if (annualBudget is null)
                     return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Conflict("The associated Annual Budget is unavailable."));
-                var budgetError = ValidateAnnualBudgetAssociation(project, annualBudget,
-                    detail.AnnualBudgetFiscalYear.Value, requireApproved: true);
-                if (budgetError is not null)
-                    return Result<ProjectPaymentRequestDetailDto>.Failure(budgetError);
-                if (annualBudget.ClosedAtUtc.HasValue)
-                    return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Conflict("A Payment Request cannot be finally approved against a closed Fiscal Year."));
+                var budgetError = ValidateSelectedAnnualBudgetAssociation(project, annualBudget);
+                if (budgetError is not null || annualBudget.FiscalYear != detail.AnnualBudgetFiscalYear.Value)
+                    return Result<ProjectPaymentRequestDetailDto>.Failure(budgetError ?? Error.Conflict(
+                        "The selected Annual Budget fiscal year changed after submission."));
+                var budgetLine = await db.ProjectAnnualBudgetLines.IgnoreQueryFilters()
+                    .FirstOrDefaultAsync(item => item.Id == detail.ProjectAnnualBudgetLineId.Value
+                        && item.TenantId == tenantId && item.ProjectId == projectId
+                        && item.ProjectAnnualBudgetId == annualBudget.Id && !item.IsDeleted, cancellationToken);
+                if (budgetLine is null)
+                    return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Conflict(
+                        "The selected Budget Line is unavailable at final approval."));
                 var legacyApprovedCount = await CountLegacyApprovedRequestsAsync(tenantId, projectId, cancellationToken);
                 if (legacyApprovedCount > 0)
                     return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Conflict(
                         "Approved historical Payment Requests have no Fiscal Year association. Reconcile the project history before approving new requests."));
-                var allocated = await GetActiveApprovedAllocationAsync(tenantId, projectId, annualBudget, cancellationToken);
-        var currency = string.IsNullOrWhiteSpace(project.Currency) ? string.Empty : NormalizeCurrency(project.Currency);
-                if (allocated.CurrencyMismatch || request.Amount is null
+                var allocated = await GetActiveApprovedAllocationAsync(
+                    tenantId, projectId, annualBudget, cancellationToken, excludeRequestId: requestId);
+                var currency = NormalizeCurrency(project.Currency);
+                if (allocated.CurrencyMismatch
                     || !string.Equals(NormalizeCurrency(request.Currency), currency, StringComparison.Ordinal)
                     || !string.Equals(NormalizeCurrency(annualBudget.Currency), currency, StringComparison.Ordinal))
                     return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Conflict(
-                        "Approved requests or the Annual Budget contain an incompatible currency. Resolve the project financial data before approval."));
+                        "Active requests or the Annual Budget contain an incompatible currency. Resolve the project financial data before approval."));
                 var available = annualBudget.TotalAnnualBudget - allocated.Amount;
                 if (request.Amount.Value > available)
                     return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Conflict(
-                        "The approved amount exceeds the available amount in the associated Annual Budget."));
+                        "The approved amount exceeds the remaining Annual Budget after excluding its existing reservation."));
+                var lineAllocation = await GetActiveBudgetLineAllocationAsync(
+                    tenantId, projectId, annualBudget.Id, budgetLine.Id, excludeRequestId: requestId, cancellationToken);
+                if (lineAllocation.CurrencyMismatch || request.Amount.Value > budgetLine.AuthorizedLimit - lineAllocation.Amount)
+                    return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Conflict(
+                        "The approved amount exceeds the remaining Budget Line allocation after excluding its existing reservation."));
+
                 request.Status = PaymentRequestStatuses.Approved;
                 detail.CompletedAt = now;
                 AddAudit(project, request, actorId, actorName, "Approved",
-                    $"Payment Request {Reference(request)} approved against FY {annualBudget.FiscalYear} Annual Budget {annualBudget.FinancialReference}", prior,
-                    AuditValues(request, detail, new { status = PaymentRequestStatuses.Approved }),
-                    "status,amount,currency,annualBudgetId,fiscalYear");
-                AddAudit(project, request, actorId, actorName, "BudgetReserved",
-                    $"{request.Amount:0.####} {currency} reserved against FY {annualBudget.FiscalYear} Annual Budget {annualBudget.FinancialReference} for {Reference(request)}",
-                    null, AuditValues(request, detail, new
-                    {
-                        allocation = request.Amount,
-                        status = PaymentRequestStatuses.Approved,
-                        annualBudgetId = annualBudget.Id,
-                        annualBudgetReference = annualBudget.FinancialReference,
-                        fiscalYear = annualBudget.FiscalYear,
-                        availableAfter = available - request.Amount.Value
-                    }), "financialReference,amount,currency,annualBudgetId,fiscalYear");
+                    $"Payment Request {Reference(request)} approved in full against FY {annualBudget.FiscalYear} Annual Budget {annualBudget.FinancialReference} and Budget Line {budgetLine.Reference}.", prior,
+                    AuditValues(request, detail, new { status = PaymentRequestStatuses.Approved, cycleId = detail.CurrentApprovalCycleId }),
+                    "status,amount,currency,annualBudgetId,fiscalYear,annualBudgetLineId,approvalCycleId");
             }
             else
             {
-                request.Status = PaymentRequestStatuses.Rejected;
+                request.Status = status;
                 detail.CompletedAt = now;
-                AddAudit(project, request, actorId, actorName, "Rejected", $"Payment Request {Reference(request)} rejected", prior,
-                    AuditValues(request, detail, new { status = PaymentRequestStatuses.Rejected }), "status,amount,currency");
+                var action = status == PaymentRequestStatuses.Rejected ? "Rejected" : "ReturnedForRevision";
+                var description = status == PaymentRequestStatuses.Rejected
+                    ? $"Payment Request {Reference(request)} rejected."
+                    : $"Payment Request {Reference(request)} returned for revision; Annual Budget and Budget Line reservations released, while the Planned Payment lifetime reservation remains intact.";
+                AddAudit(project, request, actorId, actorName, action, description, prior,
+                    AuditValues(request, detail, new { status, comment = dto.Comment?.Trim(), cycleId = detail.CurrentApprovalCycleId }),
+                    "status,amount,currency,annualBudgetId,annualBudgetLineId,approvalCycleId,comment");
+                AddAudit(project, request, actorId, actorName, "FundingReleased",
+                    $"The {request.Amount:0.####} {request.Currency} Annual Budget and Budget Line reservation for approval cycle {detail.CurrentApprovalCycleNumber} of {Reference(request)} was released.",
+                    null, AuditValues(request, detail, new
+                    {
+                        cycleId = detail.CurrentApprovalCycleId, cycleNumber = detail.CurrentApprovalCycleNumber,
+                        allocation = request.Amount, currency = request.Currency,
+                        annualBudgetId = detail.ProjectAnnualBudgetId, fiscalYear = detail.AnnualBudgetFiscalYear,
+                        budgetLineId = detail.ProjectAnnualBudgetLineId,
+                        lifetimeReservationPreserved = true
+                    }), "amount,currency,annualBudgetId,fiscalYear,annualBudgetLineId,approvalCycleId");
+            }
+            if (cycle is not null)
+            {
+                cycle.Status = status;
+                cycle.CompletedAtUtc = now;
+                cycle.DecisionComment = dto.Comment?.Trim();
+                cycle.UpdatedAt = now;
+                cycle.UpdatedBy = actorId.ToString("D");
+            }
+            foreach (var other in assignments.Where(item => item.State == PaymentRequestAssignmentStates.Pending))
+            {
+                other.State = PaymentRequestAssignmentStates.Closed;
+                other.UpdatedAt = now;
+                other.UpdatedBy = actorId.ToString("D");
             }
             request.CurrentApproverId = null;
         }
@@ -809,6 +1152,16 @@ public sealed partial class ProjectPaymentRequestWorkflow(
         {
             request.CurrentApproverId = PaymentRequestWorkflowPolicy.GetActiveSequentialApprover(projectedStates);
             request.ApprovalLevel = assignments.FirstOrDefault(item => item.ApproverUserId == request.CurrentApproverId)?.Position ?? request.ApprovalLevel;
+        }
+
+        if (status == PaymentRequestStatuses.Pending && detail.CurrentApprovalCycleId.HasValue && approvalNotifications is not null)
+        {
+            var notificationResult = await approvalNotifications.QueueActionableStepsAsync(
+                project, request, detail.CurrentApprovalCycleId.Value, detail.ApprovalMode, assignments,
+                eligibleApprovers, cancellationToken);
+            if (notificationResult.IsFailure)
+                return Result<ProjectPaymentRequestDetailDto>.Failure(notificationResult.Error
+                    ?? Error.Validation("Payment Request approval notifications could not be queued."));
         }
 
         try
@@ -842,16 +1195,66 @@ public sealed partial class ProjectPaymentRequestWorkflow(
             return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Conflict("Payment Request changed. Refresh before cancelling."));
         if (!PaymentRequestWorkflowPolicy.CanCancelBeforeApproval(request.Status))
             return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Conflict("An approved Payment Request cannot be cancelled. Submit a separate approved Reversal Request."));
-        if (request.RequestedBy != actorId)
-            return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Forbidden("Only the requester may cancel this Payment Request."));
+        if (!await IsCurrentProjectManagerAsync(tenantId, project, actorId, cancellationToken))
+            return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Forbidden(
+                "Only the current Project Manager may cancel an unapproved Payment Request."));
+
+        var hasSettlement = await db.PaymentSettlements.IgnoreQueryFilters().AsNoTracking()
+            .AnyAsync(item => item.TenantId == tenantId && item.ProjectId == projectId
+                && item.ProjectPaymentRequestId == requestId && !item.IsDeleted, cancellationToken);
+        if (hasSettlement)
+            return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Conflict(
+                "A Payment Request with a recorded settlement cannot be cancelled."));
+
+        var cancelledAt = DateTime.UtcNow;
+        if (detail.CreatedFromQuickOneOff)
+        {
+            var oneOffError = await CancelQuickOneOffPlanWhenUnsharedAsync(
+                tenantId, projectId, actorId, actorName, project, request, detail, cancelledAt, cancellationToken);
+            if (oneOffError is not null)
+                return Result<ProjectPaymentRequestDetailDto>.Failure(oneOffError);
+        }
 
         var prior = AuditValues(request, detail, null);
+        var wasReserved = request.Status == PaymentRequestStatuses.Pending;
         request.Status = PaymentRequestStatuses.Cancelled;
         request.CurrentApproverId = null;
         request.UpdatedBy = actorId.ToString("D");
-        detail.CompletedAt = DateTime.UtcNow;
+        detail.CompletedAt = cancelledAt;
+        var assignments = await GetAssignmentsAsync(tenantId, requestId, tracked: true, cancellationToken,
+            detail.CurrentApprovalCycleId);
+        foreach (var assignment in assignments.Where(item => item.State == PaymentRequestAssignmentStates.Pending))
+        {
+            assignment.State = PaymentRequestAssignmentStates.Closed;
+            assignment.UpdatedAt = cancelledAt;
+            assignment.UpdatedBy = actorId.ToString("D");
+        }
+        if (detail.CurrentApprovalCycleId.HasValue)
+        {
+            var cycle = await db.ProjectPaymentRequestApprovalCycles.IgnoreQueryFilters()
+                .FirstOrDefaultAsync(item => item.TenantId == tenantId && item.ProjectId == projectId
+                    && item.ApprovalRequestId == requestId && item.Id == detail.CurrentApprovalCycleId.Value
+                    && !item.IsDeleted, cancellationToken);
+            if (cycle is not null)
+            {
+                cycle.Status = ProjectPaymentRequestApprovalCycleStatuses.Cancelled;
+                cycle.CompletedAtUtc = cancelledAt;
+                cycle.UpdatedAt = cancelledAt;
+                cycle.UpdatedBy = actorId.ToString("D");
+            }
+        }
         AddAudit(project, request, actorId, actorName, "Cancelled", $"Payment Request {Reference(request)} cancelled before approval", prior,
             AuditValues(request, detail, new { status = PaymentRequestStatuses.Cancelled }), "status,financialReference,amount,currency");
+        if (wasReserved)
+            AddAudit(project, request, actorId, actorName, "FundingReleased",
+                $"Pending Annual Budget and Budget Line reservations for approval cycle {detail.CurrentApprovalCycleNumber} of {Reference(request)} were released; the Planned Payment lifetime reservation remains intact.",
+                null, AuditValues(request, detail, new
+                {
+                    cycleId = detail.CurrentApprovalCycleId, cycleNumber = detail.CurrentApprovalCycleNumber,
+                    allocation = request.Amount, currency = request.Currency,
+                    annualBudgetId = detail.ProjectAnnualBudgetId, fiscalYear = detail.AnnualBudgetFiscalYear,
+                    budgetLineId = detail.ProjectAnnualBudgetLineId, lifetimeReservationPreserved = true
+                }), "amount,currency,annualBudgetId,fiscalYear,annualBudgetLineId,approvalCycleId");
 
         try
         {
@@ -863,6 +1266,127 @@ public sealed partial class ProjectPaymentRequestWorkflow(
             return Result<ProjectPaymentRequestDetailDto>.Failure(Error.Conflict("Payment Request changed. Refresh before cancelling."));
         }
         return Result<ProjectPaymentRequestDetailDto>.Success(await ToDetailAsync(request, detail, actorId, cancellationToken));
+    }
+
+    private async Task<Error?> CancelQuickOneOffPlanWhenUnsharedAsync(
+        Guid tenantId, Guid projectId, Guid actorId, string? actorName, Project project,
+        ApprovalRequest request, ProjectPaymentRequestDetail detail, DateTime cancelledAt,
+        CancellationToken cancellationToken)
+    {
+        if (!detail.PlannedPaymentInstallmentId.HasValue)
+            return Error.Conflict("The Quick One-off request has no linked installment; its lifetime reservation cannot be safely resolved.");
+
+        var installment = await db.PlannedPaymentInstallments.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(item => item.TenantId == tenantId && item.ProjectId == projectId
+                && item.Id == detail.PlannedPaymentInstallmentId.Value && !item.IsDeleted, cancellationToken);
+        if (installment is null)
+            return Error.Conflict("The Quick One-off installment is missing; cancellation cannot safely resolve its Plan.");
+
+        var plan = await db.PlannedPayments.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(item => item.TenantId == tenantId && item.ProjectId == projectId
+                && item.Id == installment.PlannedPaymentId && !item.IsDeleted, cancellationToken);
+        if (plan is null)
+            return Error.Conflict("The Quick One-off Planned Payment is missing; cancellation cannot safely resolve its lifetime reservation.");
+
+        var installmentIds = await db.PlannedPaymentInstallments.IgnoreQueryFilters().AsNoTracking()
+            .Where(item => item.TenantId == tenantId && item.ProjectId == projectId
+                && item.PlannedPaymentId == plan.Id && !item.IsDeleted)
+            .Select(item => item.Id)
+            .ToArrayAsync(cancellationToken);
+        if (installmentIds.Length != 1 || installmentIds[0] != installment.Id)
+            return Error.Conflict("The Quick One-off Plan no longer has exactly one installment; it cannot be cancelled as an orphan.");
+
+        var siblingRequestIds = await db.ProjectPaymentRequestDetails.IgnoreQueryFilters().AsNoTracking()
+            .Where(item => item.TenantId == tenantId && item.ProjectId == projectId
+                && item.RequestKind == ProjectPaymentRequestKinds.PaymentRequest
+                && item.PlannedPaymentInstallmentId == installment.Id
+                && item.ApprovalRequestId != request.Id)
+            .Select(item => item.ApprovalRequestId)
+            .ToArrayAsync(cancellationToken);
+        var hasActiveSibling = siblingRequestIds.Length > 0 && await db.ApprovalRequests.IgnoreQueryFilters().AsNoTracking()
+            .AnyAsync(item => item.TenantId == tenantId && siblingRequestIds.Contains(item.Id)
+                && !item.IsDeleted
+                && item.Status != PaymentRequestStatuses.Cancelled
+                && item.Status != PaymentRequestStatuses.Rejected
+                && item.Status != PaymentRequestStatuses.Reversed, cancellationToken);
+        var hasPlanSettlement = await db.PaymentSettlements.IgnoreQueryFilters().AsNoTracking()
+            .AnyAsync(item => item.TenantId == tenantId && item.ProjectId == projectId && !item.IsDeleted
+                && ((item.PlannedPaymentInstallmentId.HasValue
+                        && installmentIds.Contains(item.PlannedPaymentInstallmentId.Value))
+                    || (item.ProjectPaymentRequestId.HasValue
+                        && siblingRequestIds.Contains(item.ProjectPaymentRequestId.Value))), cancellationToken);
+        if (hasActiveSibling || hasPlanSettlement)
+            return null; // The Plan remains owned by another request or an immutable settlement.
+
+        if (plan.State is PlannedPaymentStates.Cancelled or PlannedPaymentStates.Replaced)
+            return null;
+        if (plan.State != PlannedPaymentStates.Locked)
+            return Error.Conflict("The Quick One-off Plan is not in a cancellable locked state.");
+
+        var reservation = await db.PlannedPaymentLifetimeReservations.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(item => item.TenantId == tenantId && item.ProjectId == projectId
+                && item.PlannedPaymentId == plan.Id && !item.IsDeleted, cancellationToken);
+        if (reservation is null || reservation.ReleasedAmount < 0m
+            || reservation.ReleasedAmount > reservation.ReservedAmount)
+            return Error.Conflict("The Quick One-off lifetime reservation is missing or inconsistent.");
+
+        var before = new
+        {
+            state = plan.State,
+            reservedAmount = reservation.ReservedAmount,
+            releasedAmount = reservation.ReleasedAmount
+        };
+        plan.State = PlannedPaymentStates.Cancelled;
+        plan.UpdatedBy = actorId.ToString("D");
+        plan.UpdatedAt = cancelledAt;
+        reservation.ReleasedAmount = reservation.ReservedAmount;
+        reservation.UpdatedBy = actorId.ToString("D");
+        reservation.UpdatedAt = cancelledAt;
+
+        var after = new
+        {
+            state = plan.State,
+            reservedAmount = reservation.ReservedAmount,
+            releasedAmount = reservation.ReleasedAmount,
+            cancelledPaymentRequestId = request.Id
+        };
+        db.AuditEntries.Add(new AuditEntry
+        {
+            TenantId = tenantId,
+            ProjectId = projectId,
+            EntityType = "PlannedPayment",
+            EntityId = plan.Id,
+            Action = "CancelledWithQuickOneOffRequest",
+            UserId = actorId,
+            UserName = string.IsNullOrWhiteSpace(actorName) ? null : actorName.Trim(),
+            Timestamp = cancelledAt,
+            Description = $"Quick One-off Planned Payment {plan.Reference} was cancelled with its unapproved Payment Request.",
+            OriginalValues = JsonSerializer.Serialize(before),
+            NewValues = JsonSerializer.Serialize(after),
+            Changes = JsonSerializer.Serialize(new { before, after }),
+            ChangedFields = "state,reservationReleasedAmount",
+            Source = "User",
+            CreatedBy = actorId.ToString("D")
+        });
+        db.AuditEntries.Add(new AuditEntry
+        {
+            TenantId = tenantId,
+            ProjectId = projectId,
+            EntityType = "PlannedPaymentLifetimeReservation",
+            EntityId = reservation.Id,
+            Action = "ReleasedWithQuickOneOffCancellation",
+            UserId = actorId,
+            UserName = string.IsNullOrWhiteSpace(actorName) ? null : actorName.Trim(),
+            Timestamp = cancelledAt,
+            Description = $"The unused lifetime reservation for Quick One-off Planned Payment {plan.Reference} was released.",
+            OriginalValues = JsonSerializer.Serialize(new { releasedAmount = before.releasedAmount }),
+            NewValues = JsonSerializer.Serialize(new { releasedAmount = reservation.ReleasedAmount }),
+            Changes = JsonSerializer.Serialize(new { releasedAmount = new { from = before.releasedAmount, to = reservation.ReleasedAmount } }),
+            ChangedFields = "releasedAmount",
+            Source = "User",
+            CreatedBy = actorId.ToString("D")
+        });
+        return null;
     }
 
     private IQueryable<Project> FindProjectQuery(Guid tenantId, Guid projectId) => db.Projects.IgnoreQueryFilters()
@@ -955,29 +1479,56 @@ public sealed partial class ProjectPaymentRequestWorkflow(
     private async Task<ProjectPaymentRequestDetailDto> ToDetailAsync(
         ApprovalRequest request, ProjectPaymentRequestDetail detail, Guid actorId, CancellationToken cancellationToken)
     {
-        var assignments = await GetAssignmentsAsync(detail.TenantId, request.Id, tracked: false, cancellationToken);
+        var allAssignments = await db.PaymentRequestApproverAssignments.IgnoreQueryFilters().AsNoTracking()
+            .Where(item => item.TenantId == detail.TenantId && !item.IsDeleted && item.ApprovalRequestId == request.Id)
+            .OrderBy(item => item.Position).ThenBy(item => item.CreatedAt).ToListAsync(cancellationToken);
+        var assignments = allAssignments.Where(item => item.ApprovalCycleId == detail.CurrentApprovalCycleId).ToArray();
         var actions = await db.ApprovalActions.IgnoreQueryFilters().AsNoTracking()
             .Where(item => item.TenantId == detail.TenantId && !item.IsDeleted && item.ApprovalRequestId == request.Id)
             .ToListAsync(cancellationToken);
-        var ids = assignments.Select(item => item.ApproverUserId).Append(request.RequestedBy ?? Guid.Empty).Where(id => id != Guid.Empty);
+        var cycles = await db.ProjectPaymentRequestApprovalCycles.IgnoreQueryFilters().AsNoTracking()
+            .Where(item => item.TenantId == detail.TenantId && item.ProjectId == detail.ProjectId
+                && item.ApprovalRequestId == request.Id && !item.IsDeleted)
+            .OrderBy(item => item.CycleNumber).ToListAsync(cancellationToken);
+        var ids = allAssignments.Select(item => item.ApproverUserId)
+            .Append(request.RequestedBy ?? Guid.Empty).Where(id => id != Guid.Empty);
         var names = await LoadUserNamesAsync(detail.TenantId, ids, cancellationToken);
-        var approvers = MapApprovers(request, detail, assignments, actions, names, actorId);
         var requesterName = names.GetValueOrDefault(request.RequestedBy ?? Guid.Empty) ?? string.Empty;
+        var approvers = MapApprovers(request, detail, assignments, actions, names, actorId);
+        var approvalCycles = cycles.Select(cycle => new ProjectPaymentRequestApprovalCycleDto(
+            cycle.Id, cycle.CycleNumber, cycle.SubmittedAtUtc, cycle.CompletedAtUtc,
+            cycle.ApprovalMode, cycle.Status, cycle.Amount, cycle.Currency,
+            cycle.ProjectAnnualBudgetId, cycle.AnnualBudgetReference, cycle.FiscalYear,
+            cycle.ProjectAnnualBudgetLineId, cycle.AnnualBudgetLineDescription, requesterName,
+            cycle.DecisionComment,
+            MapApprovers(request, new ProjectPaymentRequestDetail { ApprovalMode = cycle.ApprovalMode },
+                allAssignments.Where(item => item.ApprovalCycleId == cycle.Id).ToArray(), actions, names, actorId)))
+            .ToArray();
         var effective = await permissions.GetEffectivePermissionsAsync(actorId, detail.TenantId, cancellationToken);
         var writableContext = management.Current?.EffectiveReadOnly != true;
+        var currentProject = await FindProjectQuery(detail.TenantId, detail.ProjectId).FirstOrDefaultAsync(cancellationToken);
+        var isCurrentProjectManager = currentProject is not null
+            && await IsCurrentProjectManagerAsync(detail.TenantId, currentProject, actorId, cancellationToken);
+        var editableStatus = request.Status == PaymentRequestStatuses.Draft
+            || request.Status == PaymentRequestStatuses.ReturnedForRevision;
         var canEdit = writableContext && effective.Contains(EditDraftPermission)
-            && request.Status == PaymentRequestStatuses.Draft && request.RequestedBy == actorId;
+            && editableStatus && request.RequestedBy == actorId;
         var canSubmit = writableContext && effective.Contains(SubmitPermission)
-            && request.Status == PaymentRequestStatuses.Draft && request.RequestedBy == actorId;
+            && editableStatus && request.RequestedBy == actorId && isCurrentProjectManager;
         var canDecide = writableContext && effective.Contains(ApprovePermission) && approvers.Any(item => item.CanDecide);
         var canCancel = writableContext && effective.Contains(CancelPermission)
-            && PaymentRequestWorkflowPolicy.CanCancelBeforeApproval(request.Status) && request.RequestedBy == actorId;
+            && PaymentRequestWorkflowPolicy.CanCancelBeforeApproval(request.Status) && isCurrentProjectManager;
         var milestoneName = detail.PlanActivityId.HasValue
             ? await milestoneLookup.FindActiveMilestoneNameForProjectAsync(detail.ProjectId, detail.PlanActivityId.Value, cancellationToken)
             : null;
         var annualBudget = detail.ProjectAnnualBudgetId.HasValue
             ? await db.ProjectAnnualBudgets.IgnoreQueryFilters().AsNoTracking()
                 .FirstOrDefaultAsync(item => item.Id == detail.ProjectAnnualBudgetId.Value
+                    && item.TenantId == detail.TenantId && item.ProjectId == detail.ProjectId, cancellationToken)
+            : null;
+        var budgetLine = detail.ProjectAnnualBudgetLineId.HasValue
+            ? await db.ProjectAnnualBudgetLines.IgnoreQueryFilters().AsNoTracking()
+                .FirstOrDefaultAsync(item => item.Id == detail.ProjectAnnualBudgetLineId.Value
                     && item.TenantId == detail.TenantId && item.ProjectId == detail.ProjectId, cancellationToken)
             : null;
         return new ProjectPaymentRequestDetailDto(
@@ -1005,7 +1556,11 @@ public sealed partial class ProjectPaymentRequestWorkflow(
             canCancel,
             detail.ProjectAnnualBudgetId,
             detail.AnnualBudgetFiscalYear,
-            detail.AnnualBudgetReference ?? annualBudget?.FinancialReference);
+            detail.AnnualBudgetReference ?? annualBudget?.FinancialReference,
+            detail.PlannedPaymentInstallmentId,
+            detail.ProjectAnnualBudgetLineId,
+            budgetLine?.Description,
+            approvalCycles);
     }
 
     private ProjectPaymentRequestListItemDto ToListItem(
@@ -1019,11 +1574,14 @@ public sealed partial class ProjectPaymentRequestWorkflow(
         bool canSubmitPermission,
         bool canApprovePermission,
         bool canCancelPermission,
-        ProjectAnnualBudget? annualBudget)
+        ProjectAnnualBudget? annualBudget,
+        ProjectAnnualBudgetLine? budgetLine)
     {
         var approvers = MapApprovers(request, detail, assignments, actions, names, actorId);
-        var canEdit = canEditPermission && request.Status == PaymentRequestStatuses.Draft && request.RequestedBy == actorId;
-        var canSubmit = canSubmitPermission && request.Status == PaymentRequestStatuses.Draft && request.RequestedBy == actorId;
+        var editableStatus = request.Status == PaymentRequestStatuses.Draft
+            || request.Status == PaymentRequestStatuses.ReturnedForRevision;
+        var canEdit = canEditPermission && editableStatus && request.RequestedBy == actorId;
+        var canSubmit = canSubmitPermission && editableStatus && request.RequestedBy == actorId;
         return new ProjectPaymentRequestListItemDto(
             request.Id,
             Reference(request),
@@ -1045,7 +1603,10 @@ public sealed partial class ProjectPaymentRequestWorkflow(
             canCancelPermission && PaymentRequestWorkflowPolicy.CanCancelBeforeApproval(request.Status) && request.RequestedBy == actorId,
             detail.ProjectAnnualBudgetId,
             detail.AnnualBudgetFiscalYear,
-            detail.AnnualBudgetReference ?? annualBudget?.FinancialReference);
+            detail.AnnualBudgetReference ?? annualBudget?.FinancialReference,
+            detail.PlannedPaymentInstallmentId,
+            detail.ProjectAnnualBudgetLineId,
+            budgetLine?.Description);
     }
 
     private IReadOnlyList<PaymentRequestApproverDto> MapApprovers(
@@ -1087,10 +1648,11 @@ public sealed partial class ProjectPaymentRequestWorkflow(
     }
 
     private async Task<List<PaymentRequestApproverAssignment>> GetAssignmentsAsync(
-        Guid tenantId, Guid requestId, bool tracked, CancellationToken cancellationToken)
+        Guid tenantId, Guid requestId, bool tracked, CancellationToken cancellationToken, Guid? cycleId = null)
     {
         var query = db.PaymentRequestApproverAssignments.IgnoreQueryFilters()
-            .Where(item => item.TenantId == tenantId && !item.IsDeleted && item.ApprovalRequestId == requestId);
+            .Where(item => item.TenantId == tenantId && !item.IsDeleted && item.ApprovalRequestId == requestId
+                && item.ApprovalCycleId == cycleId);
         if (!tracked) query = query.AsNoTracking();
         return await query.OrderBy(item => item.Position).ThenBy(item => item.CreatedAt).ToListAsync(cancellationToken);
     }
@@ -1132,7 +1694,8 @@ public sealed partial class ProjectPaymentRequestWorkflow(
     }).ToArray();
 
     private async Task<(decimal Amount, bool CurrencyMismatch)> GetActiveApprovedAllocationAsync(
-        Guid tenantId, Guid projectId, ProjectAnnualBudget budget, CancellationToken cancellationToken)
+        Guid tenantId, Guid projectId, ProjectAnnualBudget budget, CancellationToken cancellationToken,
+        Guid? excludeRequestId = null)
     {
         // Count Approved allocations and Pending (submitted) reservations so concurrent requests
         // cannot collectively exceed the annual budget/lifetime ceiling. Draft/terminal requests do
@@ -1141,6 +1704,7 @@ public sealed partial class ProjectPaymentRequestWorkflow(
             from detail in PaymentDetailsQuery(tenantId, projectId)
             join request in PaymentRequestsQuery(tenantId, projectId) on detail.ApprovalRequestId equals request.Id
             where detail.RequestKind == ProjectPaymentRequestKinds.PaymentRequest
+                && (excludeRequestId == null || detail.ApprovalRequestId != excludeRequestId.Value)
                 && (request.Status == PaymentRequestStatuses.Approved || request.Status == PaymentRequestStatuses.Pending)
             select new
             {
@@ -1465,12 +2029,14 @@ public sealed partial class ProjectPaymentRequestWorkflow(
         Guid actorId,
         CancellationToken cancellationToken)
     {
-        if (request.Status != PaymentRequestStatuses.Pending || detail.ApprovalMode is null
+        if (request.RequestedBy == actorId
+            || request.Status != PaymentRequestStatuses.Pending || detail.ApprovalMode is null
             || management.Current?.EffectiveReadOnly == true
             || !(await GetEligibleApproverIdsAsync(tenantId, projectId, cancellationToken)).Contains(actorId))
             return false;
 
-        var assignments = await GetAssignmentsAsync(tenantId, request.Id, tracked: false, cancellationToken);
+        var assignments = await GetAssignmentsAsync(tenantId, request.Id, tracked: false, cancellationToken,
+            detail.CurrentApprovalCycleId);
         var actions = await db.ApprovalActions.IgnoreQueryFilters().AsNoTracking()
             .Where(item => item.TenantId == tenantId && !item.IsDeleted && item.ApprovalRequestId == request.Id)
             .ToListAsync(cancellationToken);
@@ -1641,11 +2207,15 @@ public sealed partial class ProjectPaymentRequestWorkflow(
                     settlementReference = new { from = settlement.PaymentReference, to = settlement.PaymentReference },
                     annualBudgetId = new { from = detail.ProjectAnnualBudgetId, to = detail.ProjectAnnualBudgetId },
                     annualBudgetReference = new { from = detail.AnnualBudgetReference, to = detail.AnnualBudgetReference },
-                    annualBudgetFiscalYear = new { from = detail.AnnualBudgetFiscalYear, to = detail.AnnualBudgetFiscalYear }
+                    annualBudgetFiscalYear = new { from = detail.AnnualBudgetFiscalYear, to = detail.AnnualBudgetFiscalYear },
+                    annualBudgetLineId = new { from = detail.ProjectAnnualBudgetLineId, to = detail.ProjectAnnualBudgetLineId },
+                    plannedPaymentInstallmentId = new { from = detail.PlannedPaymentInstallmentId, to = detail.PlannedPaymentInstallmentId },
+                    approvalCycleId = new { from = detail.CurrentApprovalCycleId, to = detail.CurrentApprovalCycleId },
+                    approvalCycleNumber = new { from = detail.CurrentApprovalCycleNumber, to = detail.CurrentApprovalCycleNumber }
                 }),
                 OriginalValues = JsonSerializer.Serialize(new { status = statusBefore, settledAmount = settledBefore, outstandingAmount = outstandingBefore }),
                 NewValues = JsonSerializer.Serialize(new { status = statusAfter, settledAmount = settledAfter, outstandingAmount = outstandingAfter, common }),
-                ChangedFields = "settlementStatus,approvedAmount,totalSettled,outstandingAmount,currency,paymentRequestReference,settlementReference,annualBudgetId,annualBudgetReference,annualBudgetFiscalYear",
+                ChangedFields = "settlementStatus,approvedAmount,totalSettled,outstandingAmount,currency,paymentRequestReference,settlementReference,annualBudgetId,annualBudgetReference,annualBudgetFiscalYear,annualBudgetLineId,plannedPaymentInstallmentId,approvalCycleId,approvalCycleNumber",
                 Source = "User",
                 CreatedBy = actorId.ToString("D")
             });
@@ -1688,7 +2258,11 @@ public sealed partial class ProjectPaymentRequestWorkflow(
             approvers = Change(ReadString(beforeJson, "approvers"), ReadString(afterJson, "approvers")),
             decision = Change(ReadString(beforeJson, "decision"), ReadString(afterJson, "decision")),
             comment = Change(ReadString(beforeJson, "comment"), ReadString(afterJson, "comment")),
-            milestone = Change(ReadString(beforeJson, "milestone"), ReadString(afterJson, "milestone"))
+            milestone = Change(ReadString(beforeJson, "milestone"), ReadString(afterJson, "milestone")),
+            annualBudgetLineId = Change(ReadString(beforeJson, "annualBudgetLineId"), ReadString(afterJson, "annualBudgetLineId")),
+            plannedPaymentInstallmentId = Change(ReadString(beforeJson, "plannedPaymentInstallmentId"), ReadString(afterJson, "plannedPaymentInstallmentId")),
+            approvalCycleId = Change(ReadString(beforeJson, "approvalCycleId"), ReadString(afterJson, "approvalCycleId")),
+            approvalCycleNumber = Change(ReadDecimal(beforeJson, "approvalCycleNumber"), ReadDecimal(afterJson, "approvalCycleNumber"))
         };
     }
 
@@ -1705,7 +2279,11 @@ public sealed partial class ProjectPaymentRequestWorkflow(
             ["milestone"] = detail.PlanActivityId?.ToString("D"),
             ["annualBudgetId"] = detail.ProjectAnnualBudgetId?.ToString("D"),
             ["annualBudgetReference"] = detail.AnnualBudgetReference,
-            ["fiscalYear"] = detail.AnnualBudgetFiscalYear
+            ["fiscalYear"] = detail.AnnualBudgetFiscalYear,
+            ["annualBudgetLineId"] = detail.ProjectAnnualBudgetLineId?.ToString("D"),
+            ["plannedPaymentInstallmentId"] = detail.PlannedPaymentInstallmentId?.ToString("D"),
+            ["approvalCycleId"] = detail.CurrentApprovalCycleId?.ToString("D"),
+            ["approvalCycleNumber"] = detail.CurrentApprovalCycleNumber
         };
         if (extra is not null)
         {
@@ -1764,6 +2342,7 @@ public sealed partial class ProjectPaymentRequestWorkflow(
     {
         "Approve" or "Approved" => PaymentRequestDecisions.Approved,
         "Reject" or "Rejected" => PaymentRequestDecisions.Rejected,
+        "ReturnForRevision" or "ReturnedForRevision" => PaymentRequestDecisions.ReturnedForRevision,
         _ => action
     };
 
@@ -1775,9 +2354,57 @@ public sealed partial class ProjectPaymentRequestWorkflow(
 
     private static string NormalizeCurrency(string? currency) => (currency ?? string.Empty).Trim().ToUpperInvariant();
 
-    private static string Fingerprint(string title, decimal amount, string reason, Guid? milestoneId)
+    private static string Fingerprint(
+        string title, decimal amount, string reason, Guid? milestoneId,
+        Guid? plannedPaymentInstallmentId = null, Guid? annualBudgetId = null, Guid? annualBudgetLineId = null)
     {
-        var canonical = JsonSerializer.Serialize(new { title, amount, reason, milestoneId });
+        // Preserve the historical payload for existing records while binding new
+        // idempotent creates to their complete installment and funding selection.
+        var canonical = plannedPaymentInstallmentId.HasValue
+            ? JsonSerializer.Serialize(new
+            {
+                title, amount, reason, milestoneId, plannedPaymentInstallmentId,
+                annualBudgetId, annualBudgetLineId
+            })
+            : JsonSerializer.Serialize(new { title, amount, reason, milestoneId });
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
+    }
+
+    private static string SubmissionFingerprint(
+        ApprovalRequest request,
+        ProjectPaymentRequestDetail detail,
+        string approvalMode,
+        IReadOnlyCollection<PaymentRequestApproverSelectionDto> approvers) =>
+        SubmissionFingerprint(request.Id, request.Amount, request.Currency,
+            detail.PlannedPaymentInstallmentId, detail.ProjectAnnualBudgetId,
+            detail.ProjectAnnualBudgetLineId, approvalMode, approvers);
+
+    private static string SubmissionFingerprint(
+        ProjectPaymentRequestApprovalCycle cycle,
+        string approvalMode,
+        IReadOnlyCollection<PaymentRequestApproverSelectionDto> approvers) =>
+        SubmissionFingerprint(cycle.ApprovalRequestId, cycle.Amount, cycle.Currency,
+            cycle.PlannedPaymentInstallmentId, cycle.ProjectAnnualBudgetId,
+            cycle.ProjectAnnualBudgetLineId, approvalMode, approvers);
+
+    private static string SubmissionFingerprint(
+        Guid requestId, decimal? amount, string? currency, Guid? installmentId,
+        Guid? annualBudgetId, Guid? annualBudgetLineId, string approvalMode,
+        IReadOnlyCollection<PaymentRequestApproverSelectionDto> approvers)
+    {
+        var canonical = JsonSerializer.Serialize(new
+        {
+            requestId,
+            amount,
+            currency = NormalizeCurrency(currency),
+            installmentId,
+            annualBudgetId,
+            annualBudgetLineId,
+            approvalMode,
+            approvers = approvers.OrderBy(item => item.Position ?? int.MaxValue)
+                .ThenBy(item => item.UserId)
+                .Select(item => new { item.UserId, item.Position, item.Requirement })
+        });
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
     }
 

@@ -639,8 +639,12 @@ function StatusReportDetailsDialog({ open, onOpenChange, report, loading, error,
     : report?.performanceSnapshot?.includedReportSections ?? [];
   const hasSection = (section: string) => includedSections.length === 0 || includedSections.includes(section);
   const hasFinancialSummary = Boolean(report?.currencyCodeSnapshot || report?.budgetAmountSnapshot != null);
-  const actualPaidValue = report?.actualCostAmountSnapshot;
-  const outstandingPaymentsValue = report?.committedCostAmountSnapshot;
+  const actualPaidValue = report?.actualPaidSnapshot;
+  const outstandingPaymentsValue = report?.outstandingPlannedPaymentsSnapshot;
+  const actualPaidDataQuality = report?.actualPaidDataQualitySnapshot
+    ?? (actualPaidValue == null ? "NotRecorded" : "Available");
+  const plannedPaymentsDataQuality = report?.plannedPaymentsDataQualitySnapshot
+    ?? (outstandingPaymentsValue == null ? "NotRecorded" : "Available");
   const chartActualPaid = typeof actualPaidValue === "number" && Number.isFinite(actualPaidValue) && actualPaidValue > 0 ? actualPaidValue : 0;
   const chartOutstanding = typeof outstandingPaymentsValue === "number" && Number.isFinite(outstandingPaymentsValue) && outstandingPaymentsValue > 0 ? outstandingPaymentsValue : 0;
   const chartScale = Math.max(chartActualPaid, chartOutstanding);
@@ -694,6 +698,21 @@ function StatusReportDetailsDialog({ open, onOpenChange, report, loading, error,
           {hasFinancialSummary ? <aside dir={locale === "ar" ? "rtl" : "ltr"} className="min-w-0 border-t border-border py-5 lg:border-l lg:border-t-0 lg:pl-6">
             <section className="space-y-3">
               <h3 className="text-base font-semibold text-foreground">{t("projects.statusReportView.sections.financialSummary")}</h3>
+              {actualPaidDataQuality === "CurrencyUnresolved"
+                || actualPaidDataQuality === "CurrencyMismatch"
+                || actualPaidDataQuality === "ProjectCurrencyUnavailable"
+                ? <p role="status" className="text-xs leading-5 text-warning">{t("projects.statusReportActualPaidCurrencyUnavailable")}</p>
+                : actualPaidDataQuality === "NotRecorded"
+                  ? <p role="status" className="text-xs leading-5 text-muted-foreground">{t("projects.statusReportActualPaidNotRecorded")}</p>
+                  : null}
+              {plannedPaymentsDataQuality === "CurrencyUnresolved"
+                || plannedPaymentsDataQuality === "CurrencyMismatch"
+                || plannedPaymentsDataQuality === "ProjectCurrencyUnavailable"
+                || plannedPaymentsDataQuality === "IntegrityIssue"
+                ? <p role="status" className="text-xs leading-5 text-warning">{t("projects.statusReportPlannedPaymentsUnavailable")}</p>
+                : plannedPaymentsDataQuality === "NotRecorded"
+                  ? <p role="status" className="text-xs leading-5 text-muted-foreground">{t("projects.statusReportPlannedPaymentsNotRecorded")}</p>
+                  : null}
               <figure className="space-y-3">
                 <div
                   role="img"
@@ -1006,9 +1025,11 @@ export function ProjectChangeTrackerTab() {
   const reassignOptions = useProjectChangeRequestApproverOptions(project.publicId, Boolean(reassignTarget));
   const canManage = Boolean(user && hasPermission(user.permissions, Permissions.ChangeRequest.Manage) && canMutate && !effectiveReadOnly);
   const rows: ProjectChangeRequestDto[] = canView ? query.data ?? [] : [];
-  function changeTypeLabel(type: string) {
-    return type === "Baseline" ? t("projects.changeTypeBaseline") : t("projects.changeTypeAdministrative");
-  }
+   function changeTypeLabel(type: string) {
+     if (type === "Baseline") return t("projects.changeTypeBaseline");
+     if (type === "BudgetChange") return t("projects.changeTypeBudgetChange");
+     return t("projects.changeTypeAdministrative");
+   }
   function confirmCancel(request: ProjectChangeRequestDto) {
     setCancelError(null);
     setCancellingRequest(request);

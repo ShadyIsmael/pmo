@@ -1,0 +1,414 @@
+{
+  "created_at": "2026-11-27T00:12:49Z",
+  "critical_path_coverage": null,
+  "dependency_awareness_only": [
+    {
+      "confidence": "source-class-declaration",
+      "evidence": "ManagementContextAccessor declares IManagementContextAccessor",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/Management/IManagementContextAccessor.cs",
+      "relation": "IMPLEMENTS_INTERFACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "IManagementContextAccessor",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/Management/IManagementContextAccessor.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel.Management",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/Management/IManagementContextAccessor.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel.Management",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/Management/IManagementScopeResolver.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel.Management",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/Management/ManagementPerspective.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel.Management",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/Management/ManagementReportingRules.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "ManagementContext",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/Management/ManagementScope.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel.Management",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/Management/ManagementScope.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "/api/projects",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/PlannedPaymentController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "/api/projects",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectAnnualBudgetClosingController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "/api/projects",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectAnnualBudgetController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "/api/projects",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectAnnualBudgetDraftApprovalConfigurationController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "/api/projects",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectAnnualBudgetLineController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "/api/projects",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectCashFlowController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "/api/projects",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectFinancialFoundationController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "/api/projects",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectFinancialReportingController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "/api/projects",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectPaymentRequestController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "/api/governance/assignment-recovery",
+      "module": "governance",
+      "path": "apps/api/src/NEXUS.Api/Governance/AssignmentRecoveryController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "ManagementContextMiddleware",
+      "module": "management",
+      "path": "apps/api/src/NEXUS.Api/Management/ProjectPublicIdRoutingMiddleware.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "/api/projects",
+      "module": "audit",
+      "path": "apps/api/src/NEXUS.Modules.Audit/Api/ProjectAuditController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "/api/auth",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Api/AuthController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "User",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Domain/User.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "ManagerHandoverService",
+      "module": "portfolios",
+      "path": "apps/api/src/NEXUS.Modules.Portfolio/Application/ManagerHandoverService.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Portfolio",
+      "module": "portfolios",
+      "path": "apps/api/src/NEXUS.Modules.Portfolio/Domain/Portfolio.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Program",
+      "module": "portfolios",
+      "path": "apps/api/src/NEXUS.Modules.Portfolio/Domain/Program.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "/api/timer",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Api/TimerController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "ProjectService",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/ProjectService.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "ProjectId",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/Entities/ProjectBaselineVersion.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Project",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/Project.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Resource",
+      "module": "resources",
+      "path": "apps/api/src/NEXUS.Modules.ResourceManagement/Domain/Resource.cs",
+      "relation": "REFERENCES_TYPE"
+    }
+  ],
+  "index_updated": false,
+  "limits": [
+    "Router never prevents an agent from manually opening other files; enforce via agent instructions and audit.",
+    "C# and TS relationships are source-text heuristics; compiler-resolved calls and runtime dependency-injection resolution are not proven.",
+    "Unknown/unclassified files may require manual targeted inspection.",
+    "Index sources excluded secrets and build outputs."
+  ],
+  "module_selection_basis": "task-explicit-alias",
+  "nonprimary_modules_not_read_by_router": [
+    "administration",
+    "ai-planning",
+    "api",
+    "approvals",
+    "audit",
+    "cost-management",
+    "documents",
+    "governance",
+    "home",
+    "identity",
+    "integrations",
+    "issues",
+    "meetings",
+    "notifications",
+    "operations",
+    "organization",
+    "permissions",
+    "persistence",
+    "plugins",
+    "portfolios",
+    "programs",
+    "project-planning",
+    "projects",
+    "reports",
+    "resources",
+    "risks",
+    "security",
+    "stakeholder",
+    "tests",
+    "time",
+    "unclassified",
+    "vendors",
+    "work-items",
+    "workflow"
+  ],
+  "planning_state": "focused",
+  "primary_module": "management",
+  "refresh": {
+    "changed_existing": 0,
+    "deleted": 0,
+    "mode": "refresh",
+    "new": 0,
+    "parsed": 0,
+    "unchanged": 1927
+  },
+  "related_tests_candidates": [
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ManagementScopeResolverTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Unit/ManagementContextMiddlewareTests.cs",
+    "apps/api/tests/NEXUS.Modules.ResourceManagement.Tests/NEXUS.Modules.ResourceManagement.Tests.csproj",
+    "apps/web-react/src/test/management-scope.test.ts",
+    "apps/web-react/src/test/test-management-parity.test.tsx"
+  ],
+  "selected_files": [
+    {
+      "approximate": true,
+      "kind": "test",
+      "line_ranges": [
+        [
+          1,
+          44
+        ]
+      ],
+      "module": "management",
+      "path": "apps/api/tests/NEXUS.Modules.ResourceManagement.Tests/NEXUS.Modules.ResourceManagement.Tests.csproj",
+      "read_mode": "full-file",
+      "reading_tokens": 744,
+      "reasons": [
+        "filename-match:management",
+        "filename-match:modules",
+        "filename-match:nexus",
+        "module-mentioned",
+        "path-match:apps",
+        "primary-module"
+      ],
+      "score": 98,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          5,
+          9
+        ]
+      ],
+      "module": "management",
+      "path": "apps/api/src/NEXUS.Api/Management/ManagementContextAccessor.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 60,
+      "reasons": [
+        "filename-match:management",
+        "module-mentioned",
+        "path-match:apps",
+        "path-match:src",
+        "primary-module",
+        "symbol-match:ManagementContextAccessor"
+      ],
+      "score": 96,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          427
+        ]
+      ],
+      "module": "management",
+      "path": "apps/api/src/NEXUS.Api/Management/ManagementContextMiddleware.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 7502,
+      "reasons": [
+        "filename-match:management",
+        "module-mentioned",
+        "path-match:apps",
+        "path-match:src",
+        "primary-module",
+        "symbol-match:ManagementContextMiddleware"
+      ],
+      "score": 96,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          28
+        ]
+      ],
+      "module": "management",
+      "path": "apps/api/src/NEXUS.Api/Management/ManagementController.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 294,
+      "reasons": [
+        "filename-match:management",
+        "module-mentioned",
+        "path-match:apps",
+        "path-match:src",
+        "primary-module",
+        "symbol-match:ManagementController"
+      ],
+      "score": 96,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "test",
+      "line_ranges": [
+        [
+          1,
+          19
+        ]
+      ],
+      "module": "management",
+      "path": "apps/web-react/src/test/management-scope.test.ts",
+      "read_mode": "full-file",
+      "reading_tokens": 296,
+      "reasons": [
+        "filename-match:management",
+        "module-mentioned",
+        "path-match:apps",
+        "path-match:src",
+        "primary-module"
+      ],
+      "score": 84,
+      "token_method": "estimated:chars/3.5"
+    }
+  ],
+  "selection_summary": {
+    "critical_path_coverage_percent": null,
+    "files": 5,
+    "symbols": 27,
+    "tokens": 8896
+  },
+  "snapshot": "20261126T220221-d00a29d",
+  "task": "Inspect exact paths apps/web-react/src/features/projects/components/CreateProjectSheet.tsx and apps/api/src/NEXUS.Modules.ProjectManagement/Application/ProjectService.cs, symbols CreateProjectSheet and CreateAsync; identify any existing API test path for project creation and reload",
+  "token_plan": {
+    "available_source_budget": 9600,
+    "estimation_order": "Critical-path coverage is evaluated before reading-cost calculation and optional file ranking.",
+    "requested_total_budget": 16000,
+    "reserved_non_source_budget": 6400,
+    "source_reading_tokens": 8896,
+    "warning": "An estimate of selected source reading, NOT full task execution or model hidden reasoning. Some counts may be approximate."
+  }
+}

@@ -1,4 +1,4 @@
-﻿using NEXUS.Modules.CostManagement.Domain;
+using NEXUS.Modules.CostManagement.Domain;
 
 namespace NEXUS.Modules.CostManagement.Application.DTOs;
 
@@ -100,52 +100,10 @@ public sealed class DeleteFinancialRecordDto
     public byte[] RowVersion { get; init; } = Array.Empty<byte>();
 }
 
-public sealed class PurchaseCommitmentDto
-{
-    public Guid Id { get; init; }
-    public string PurchaseOrderNumber { get; init; } = string.Empty;
-    public string? Description { get; init; }
-    public string? VendorName { get; init; }
-    public decimal Amount { get; init; }
-    public decimal? InvoicedAmount { get; init; }
-    public string Currency { get; init; } = string.Empty;
-    public DateTime CommitmentDate { get; init; }
-    public DateTime? ExpectedDeliveryDate { get; init; }
-    public string Status { get; init; } = string.Empty;
-    public Guid? BudgetId { get; init; }
-    public Guid? ProjectId { get; init; }
-    public DateTime CreatedAt { get; init; }
-    public DateTime? UpdatedAt { get; init; }
-    public byte[] RowVersion { get; init; } = Array.Empty<byte>();
-}
-
-public sealed class CreateCommitmentDto
-{
-    public Guid ProjectId { get; init; }
-    public Guid? BudgetId { get; init; }
-    public string PurchaseOrderNumber { get; init; } = string.Empty;
-    public string? Description { get; init; }
-    public string? VendorName { get; init; }
-    public decimal Amount { get; init; }
-    public DateTime CommitmentDate { get; init; }
-    public DateTime? ExpectedDeliveryDate { get; init; }
-}
-
-public sealed class UpdateCommitmentDto
-{
-    public string PurchaseOrderNumber { get; init; } = string.Empty;
-    public string? Description { get; init; }
-    public string? VendorName { get; init; }
-    public decimal Amount { get; init; }
-    public DateTime CommitmentDate { get; init; }
-    public DateTime? ExpectedDeliveryDate { get; init; }
-    public byte[] RowVersion { get; init; } = Array.Empty<byte>();
-}
-
 public sealed class PaymentSettlementDto
 {
     public Guid Id { get; init; }
-    public Guid PaymentObligationId { get; init; }
+    public Guid? PaymentObligationId { get; init; }
     public Guid IdempotencyKey { get; init; }
     public decimal Amount { get; init; }
     public DateTime SettlementDate { get; init; }
@@ -230,16 +188,6 @@ public static class CostManagementMappings
         IncurredDate = value.IncurredDate, Type = value.Type, Reference = value.Reference,
         VendorName = value.VendorName, Status = value.Status, IncurredBy = value.IncurredBy,
         CreatedAt = value.CreatedAt, UpdatedAt = value.UpdatedAt, RowVersion = value.RowVersion
-    };
-
-    public static PurchaseCommitmentDto ToDto(this PurchaseCommitment value) => new()
-    {
-        Id = value.Id, PurchaseOrderNumber = value.PurchaseOrderNumber, Description = value.Description,
-        VendorName = value.VendorName, Amount = value.Amount, InvoicedAmount = value.InvoicedAmount,
-        Currency = value.Currency, CommitmentDate = value.CommitmentDate,
-        ExpectedDeliveryDate = value.ExpectedDeliveryDate, Status = value.Status,
-        BudgetId = value.BudgetId, ProjectId = value.ProjectId, CreatedAt = value.CreatedAt,
-        UpdatedAt = value.UpdatedAt, RowVersion = value.RowVersion
     };
 
     public static PaymentSettlementDto ToDto(this PaymentSettlement value) => new()

@@ -1,0 +1,8 @@
+---
+description: Route coding tasks through the project architecture index
+alwaysApply: true
+---
+
+Follow all applicable repository instructions first. For coding, debugging, refactoring, or architecture tasks, read `docs/architecture/INDEX.md` before searching application source. If it is missing, initialize it with `tools/upi/upi.ps1 init --root .` on Windows or `python tools/upi/upi.py init --root .` elsewhere. If the user's request is not in English, route a concise English equivalent that preserves its feature and action terms. Route the task with `tools/upi/upi.ps1 route --root . --task "<task>" --budget 16000` on Windows or the matching Python command elsewhere. Start with the manifest's selected files and symbol ranges; expand only when justified. After application-code changes, run `refresh` and `validate`. Source remains authoritative; indexing must not access or modify databases.
+
+When `critical_path_coverage.active` is true, read the required path steps and relationships before claiming the task scope is complete. Missing critical evidence blocks completion. Inspect and report every unconfirmed relationship; static source evidence does not prove runtime dispatch. Required critical files take priority over optional files and the soft token/file budget. Keep Project Status updates distinct from Project Status Report updates, and do not expand module scope based on dependency awareness alone.

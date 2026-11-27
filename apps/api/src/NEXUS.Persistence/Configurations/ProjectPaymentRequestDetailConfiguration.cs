@@ -32,6 +32,13 @@ public sealed class ProjectPaymentRequestDetailConfiguration : IEntityTypeConfig
                 "CK_ProjectPaymentRequestDetails_AnnualBudgetAssociation",
                 "([ProjectAnnualBudgetId] IS NULL AND [AnnualBudgetFiscalYear] IS NULL AND [AnnualBudgetReference] IS NULL) OR " +
                 "([ProjectAnnualBudgetId] IS NOT NULL AND [AnnualBudgetFiscalYear] BETWEEN 1900 AND 2200 AND [AnnualBudgetReference] IS NOT NULL)");
+            table.HasCheckConstraint(
+                "CK_ProjectPaymentRequestDetails_AnnualBudgetLineAssociation",
+                "[ProjectAnnualBudgetLineId] IS NULL OR [ProjectAnnualBudgetId] IS NOT NULL");
+            table.HasCheckConstraint(
+                "CK_ProjectPaymentRequestDetails_ApprovalCycleNumber",
+                "([CurrentApprovalCycleId] IS NULL AND [CurrentApprovalCycleNumber] = 0) OR " +
+                "([CurrentApprovalCycleId] IS NOT NULL AND [CurrentApprovalCycleNumber] > 0)");
         });
 
         builder.HasKey(item => item.ApprovalRequestId)
@@ -43,6 +50,9 @@ public sealed class ProjectPaymentRequestDetailConfiguration : IEntityTypeConfig
         builder.Property(item => item.ApprovalMode).HasMaxLength(24);
         builder.Property(item => item.RequestKind).HasMaxLength(24).IsRequired();
         builder.Property(item => item.RequestFingerprint).HasMaxLength(128);
+        builder.Property(item => item.PlannedPaymentInstallmentId);
+        builder.Property(item => item.ProjectAnnualBudgetLineId);
+        builder.Property(item => item.CurrentApprovalCycleNumber).HasDefaultValue(0);
         builder.Property(item => item.AnnualBudgetFiscalYear);
         builder.Property(item => item.AnnualBudgetReference).HasMaxLength(100);
         builder.Property(item => item.RowVersion).IsRowVersion().IsConcurrencyToken();
@@ -71,6 +81,24 @@ public sealed class ProjectPaymentRequestDetailConfiguration : IEntityTypeConfig
             .HasPrincipalKey(activity => new { activity.TenantId, activity.Id })
             .OnDelete(DeleteBehavior.Restrict);
 
+        builder.HasOne<PlannedPaymentInstallment>()
+            .WithMany()
+            .HasForeignKey(item => new { item.TenantId, item.ProjectId, item.PlannedPaymentInstallmentId })
+            .HasPrincipalKey(installment => new { installment.TenantId, installment.ProjectId, installment.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne<ProjectAnnualBudgetLine>()
+            .WithMany()
+            .HasForeignKey(item => new { item.TenantId, item.ProjectId, item.ProjectAnnualBudgetId, item.ProjectAnnualBudgetLineId })
+            .HasPrincipalKey(line => new { line.TenantId, line.ProjectId, line.ProjectAnnualBudgetId, line.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne<ProjectPaymentRequestApprovalCycle>()
+            .WithMany()
+            .HasForeignKey(item => new { item.TenantId, item.ProjectId, item.ApprovalRequestId, item.CurrentApprovalCycleId })
+            .HasPrincipalKey(cycle => new { cycle.TenantId, cycle.ProjectId, cycle.ApprovalRequestId, cycle.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+
         builder.HasOne(item => item.ReversesRequest)
             .WithMany()
             .HasForeignKey(item => new { item.TenantId, item.ProjectId, item.ReversesApprovalRequestId })
@@ -87,6 +115,8 @@ public sealed class ProjectPaymentRequestDetailConfiguration : IEntityTypeConfig
             .HasDatabaseName("IX_ProjectPaymentRequestDetails_Tenant_Project_Kind");
         builder.HasIndex(item => new { item.TenantId, item.ProjectId, item.ProjectAnnualBudgetId })
             .HasDatabaseName("IX_ProjectPaymentRequestDetails_AnnualBudget");
+        builder.HasIndex(item => new { item.TenantId, item.ProjectId, item.PlannedPaymentInstallmentId })
+            .HasDatabaseName("IX_ProjectPaymentRequestDetails_PlannedInstallment");
         builder.HasIndex(item => new { item.TenantId, item.ProjectId, item.IdempotencyKey })
             .IsUnique()
             .HasFilter("[IdempotencyKey] IS NOT NULL")

@@ -40,32 +40,13 @@ internal static class BootstrapPermissionDelegationPolicy
         "ProjectAnnualBudget.CloseApprove",
         "ProjectAnnualBudget.CarryForward",
         "ProjectFinancialFoundation.View",
+        "ProjectFinance.View",
         "CostUtilization.Export",
         "ProgramFinancialRollup.View",
         "PortfolioFinancialRollup.View"
     ];
 
     public static IReadOnlySet<string> Keys { get; } = PermissionKeys.ToHashSet(StringComparer.Ordinal);
-
-    private static readonly HashSet<string> ProtectedAdminAnnualBudgetPermissionKeys =
-    [
-        "ProjectAnnualBudget.View",
-        "ProjectAnnualBudget.Create",
-        "ProjectAnnualBudget.EditDraft",
-        "ProjectAnnualBudget.SubmitForReview",
-        "ProjectAnnualBudget.Approve",
-        "ProjectAnnualBudget.ReviseApproved",
-        "ProjectAnnualBudget.ManageApprovalConfiguration",
-        "ProjectAnnualBudget.Delete",
-        "ProjectAnnualBudget.Withdraw",
-        "ProjectAnnualBudgetClosing.View",
-        "ProjectAnnualBudget.Close",
-        "ProjectAnnualBudget.CloseApprove",
-        "ProjectAnnualBudget.CarryForward"
-    ];
-
-    public static bool CanAddToProtectedTenantAdminRole(string permissionKey) =>
-        ProtectedAdminAnnualBudgetPermissionKeys.Contains(permissionKey);
 
     public static async Task<IReadOnlySet<string>> GetDelegableKeysAsync(
         DbContext context,

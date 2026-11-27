@@ -12,11 +12,13 @@ public static class ProjectMapping
             Id = project.Id,
             PublicId = project.PublicId,
             TenantId = project.TenantId,
+            RowVersion = project.RowVersion,
             Name = project.Name,
             Code = project.Code,
             Description = project.Description,
             ProgramId = project.ProgramId,
             Status = project.Status,
+            StatusId = project.ProjectStatusId,
             Priority = project.Priority,
             ProjectManagerId = project.ProjectManagerId,
             SponsorId = project.SponsorId,
@@ -27,6 +29,7 @@ public static class ProjectMapping
             ActualStartDate = project.ActualStartDate,
             ActualEndDate = project.ActualEndDate,
             Budget = project.Budget,
+            OriginalProjectBudget = project.OriginalProjectBudget,
             Currency = project.Currency,
             ActualCost = project.ActualCost,
             PlannedValue = project.PlannedValue,
@@ -37,6 +40,7 @@ public static class ProjectMapping
             ConfidenceLevel = project.ConfidenceLevel,
             WorkingCalendarId = project.WorkingCalendarId,
             Phase = project.Phase,
+            PhaseId = project.ProjectPhaseId,
             RiskRating = project.RiskRating,
             BusinessCase = project.BusinessCase,
             Notes = project.Notes,
@@ -58,8 +62,11 @@ public static class ProjectMapping
             Name = project.Name,
             Code = project.Code,
             Status = project.Status,
+            StatusId = project.ProjectStatusId,
             Health = project.Health,
             RagStatus = project.RagStatus,
+            Phase = project.Phase,
+            PhaseId = project.ProjectPhaseId,
             Progress = project.Progress,
             StartDate = project.StartDate,
             EndDate = project.EndDate,
@@ -102,6 +109,7 @@ public static class ProjectMapping
             Code = dto.Code,
             Description = dto.Description,
             ProgramId = dto.ProgramId,
+            ProjectStatusId = dto.StatusId,
             Status = dto.Status,
             Priority = dto.Priority,
             Category = dto.Category,
@@ -112,6 +120,8 @@ public static class ProjectMapping
             StartDate = dto.StartDate,
             EndDate = dto.EndDate,
             Budget = dto.Budget,
+            // The original lifetime ceiling is the value approved at creation and never changes afterwards.
+            OriginalProjectBudget = dto.Budget,
             Currency = dto.Currency ?? string.Empty,
             BusinessCase = dto.BusinessCase,
             Notes = dto.Notes,
@@ -130,7 +140,10 @@ public static class ProjectMapping
         if (dto.Code != null) project.Code = dto.Code;
         if (dto.Description != null) project.Description = dto.Description;
         if (dto.ProgramId.HasValue) project.ProgramId = dto.ProgramId;
-        if (dto.Status != null) project.Status = dto.Status;
+        // Status is governed by the canonical Reference Data identity. The legacy
+        // Status string is never accepted as an update source; callers must send
+        // StatusId so catalog scope, activation, and transition rules can be enforced.
+        if (dto.StatusId.HasValue) project.ProjectStatusId = dto.StatusId;
         if (dto.Priority != null) project.Priority = dto.Priority;
         if (dto.Category != null) project.Category = dto.Category;
         // Project manager ownership is assigned at creation or changed only through the

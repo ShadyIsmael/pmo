@@ -8,8 +8,12 @@ namespace NEXUS.Modules.CostManagement.Api;
 [ApiController]
 [Route("api/costs")]
 [Authorize]
-public sealed class CostController(ICostService costService) : ControllerBase
+public sealed class CostController(ICostService costService, ICostSummaryService costSummaryService) : ControllerBase
 {
+    [Authorize(Policy = "Cost.View")]
+    [HttpGet("summary")]
+    public async Task<IActionResult> GetSummary(CancellationToken cancellationToken) => Ok(await costSummaryService.GetAsync(cancellationToken));
+
     [Authorize(Policy = "Cost.View")]
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken) => ToActionResult(await costService.GetByIdAsync(id, cancellationToken));

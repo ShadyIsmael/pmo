@@ -12,6 +12,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\NEXUS.SharedKernel\NEXUS.SharedKernel.csproj" />
+    <ProjectReference Include="..\NEXUS.Modules.Approvals\NEXUS.Modules.Approvals.csproj" />
     <ProjectReference Include="..\NEXUS.Modules.Audit\NEXUS.Modules.Audit.csproj" />
     <ProjectReference Include="..\NEXUS.Modules.Organization\NEXUS.Modules.Organization.csproj" />
     <ProjectReference Include="..\NEXUS.Modules.Identity\NEXUS.Modules.Identity.csproj" />

@@ -8,6 +8,19 @@ namespace NEXUS.Modules.CostManagement.Application;
 /// </summary>
 public static class PaymentRequestWorkflowPolicy
 {
+    public const string RequesterCannotBeApprover = "requester_cannot_be_approver";
+
+    /// <summary>
+    /// Pure maker-checker guard: the request creator must not appear in the selected approver plan.
+    /// </summary>
+    public static bool ContainsRequester(
+        Guid? requesterId,
+        IReadOnlyCollection<PaymentRequestApproverSelectionDto>? approvers) =>
+        requesterId.HasValue
+        && requesterId.Value != Guid.Empty
+        && approvers is not null
+        && approvers.Any(item => item.UserId == requesterId.Value);
+
     public static IReadOnlyList<string> ValidateDraft(
         CreatePaymentRequestDto request,
         string? projectCurrency)
@@ -34,10 +47,14 @@ public static class PaymentRequestWorkflowPolicy
     public static IReadOnlyList<string> ValidateApprovalSetup(
         string? projectApprovalMode,
         string? requestApprovalMode,
-        IReadOnlyCollection<PaymentRequestApproverSelectionDto>? approvers)
+        IReadOnlyCollection<PaymentRequestApproverSelectionDto>? approvers,
+        Guid? requesterId = null)
     {
         var errors = new List<string>();
         var selectedApprovers = approvers?.ToArray() ?? [];
+
+        if (ContainsRequester(requesterId, selectedApprovers))
+            errors.Add(RequesterCannotBeApprover);
 
         if (projectApprovalMode is null)
             errors.Add("project_approval_mode_unconfigured");
@@ -87,7 +104,8 @@ public static class PaymentRequestWorkflowPolicy
 
     public static Guid? GetActiveSequentialApprover(IReadOnlyCollection<PaymentRequestApproverState> approvers)
     {
-        if (approvers.Count == 0 || approvers.Any(item => Is(item.Decision, PaymentRequestDecisions.Rejected)))
+        if (approvers.Count == 0 || approvers.Any(item => Is(item.Decision, PaymentRequestDecisions.Rejected)
+            || Is(item.Decision, PaymentRequestDecisions.ReturnedForRevision)))
             return null;
 
         foreach (var approver in approvers.OrderBy(item => item.Position))
@@ -106,6 +124,8 @@ public static class PaymentRequestWorkflowPolicy
 
         if (approvers.Any(item => Is(item.Decision, PaymentRequestDecisions.Rejected)))
             return PaymentRequestStatuses.Rejected;
+        if (approvers.Any(item => Is(item.Decision, PaymentRequestDecisions.ReturnedForRevision)))
+            return PaymentRequestStatuses.ReturnedForRevision;
 
         return approvers.All(item => Is(item.Decision, PaymentRequestDecisions.Approved))
             ? PaymentRequestStatuses.Approved
@@ -123,6 +143,9 @@ public static class PaymentRequestWorkflowPolicy
 
         if (mandatory.Any(item => Is(item.Decision, PaymentRequestDecisions.Rejected)))
             return PaymentRequestStatuses.Rejected;
+
+        if (mandatory.Any(item => Is(item.Decision, PaymentRequestDecisions.ReturnedForRevision)))
+            return PaymentRequestStatuses.ReturnedForRevision;
 
         return mandatory.All(item => Is(item.Decision, PaymentRequestDecisions.Approved))
             ? PaymentRequestStatuses.Approved
@@ -146,7 +169,8 @@ public static class PaymentRequestWorkflowPolicy
 
     public static bool CanCancelBeforeApproval(string requestStatus) =>
         Is(requestStatus, PaymentRequestStatuses.Draft)
-        || Is(requestStatus, PaymentRequestStatuses.Pending);
+        || Is(requestStatus, PaymentRequestStatuses.Pending)
+        || Is(requestStatus, PaymentRequestStatuses.ReturnedForRevision);
 
     /// <summary>
     /// True when the request currently consumes approved/allocation budget in persisted status terms.

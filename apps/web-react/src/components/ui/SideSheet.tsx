@@ -26,17 +26,27 @@ export interface SideSheetProps {
   className?: string;
 }
 
+const activeSideSheetIds: symbol[] = [];
+let originalBodyOverflow = "";
+
 export function SideSheet({ open, onOpenChange, title, description, children, size = "lg", closeLabel = "Close", ariaLabel, panelRef, className }: SideSheetProps) {
   React.useEffect(() => {
     if (!open) return;
+    const sideSheetId = Symbol("side-sheet");
+    if (activeSideSheetIds.length === 0)
+      originalBodyOverflow = document.body.style.overflow;
+    activeSideSheetIds.push(sideSheetId);
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onOpenChange(false);
+      if (e.key === "Escape" && activeSideSheetIds.at(-1) === sideSheetId)
+        onOpenChange(false);
     };
     document.addEventListener("keydown", onKey);
     document.body.style.overflow = "hidden";
     return () => {
       document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = "";
+      const index = activeSideSheetIds.indexOf(sideSheetId);
+      if (index >= 0) activeSideSheetIds.splice(index, 1);
+      document.body.style.overflow = activeSideSheetIds.length > 0 ? "hidden" : originalBodyOverflow;
     };
   }, [open, onOpenChange]);
 

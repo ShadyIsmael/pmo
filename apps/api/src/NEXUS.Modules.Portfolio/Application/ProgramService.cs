@@ -3,10 +3,12 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using NEXUS.Modules.Identity.Application;
 using NEXUS.Modules.Identity.Domain;
+using NEXUS.Modules.Organization.Domain;
 using NEXUS.Modules.Portfolio.Domain;
 using NEXUS.SharedKernel;
 using NEXUS.SharedKernel.Management;
 using Entity = NEXUS.Modules.Portfolio.Domain.Program;
+using OrganizationEntity = NEXUS.Modules.Organization.Domain.Organization;
 
 namespace NEXUS.Modules.Portfolio.Application;
 
@@ -19,14 +21,22 @@ public sealed class ProgramService : IProgramService
     private readonly IManagementContextAccessor? _managementContext;
     private readonly IManagementScopeResolver? _managementScopeResolver;
     private readonly IUserEffectivePermissionService? _effectivePermissions;
+    private readonly IUserOrganizationScopeLookup? _organizationScopeLookup;
 
-    public ProgramService(DbContext db, IHttpContextAccessor http, IManagementContextAccessor? managementContext = null, IManagementScopeResolver? managementScopeResolver = null, IUserEffectivePermissionService? effectivePermissions = null)
+    public ProgramService(
+        DbContext db,
+        IHttpContextAccessor http,
+        IManagementContextAccessor? managementContext = null,
+        IManagementScopeResolver? managementScopeResolver = null,
+        IUserEffectivePermissionService? effectivePermissions = null,
+        IUserOrganizationScopeLookup? organizationScopeLookup = null)
     {
         _db = db;
         _http = http;
         _managementContext = managementContext;
         _managementScopeResolver = managementScopeResolver;
         _effectivePermissions = effectivePermissions;
+        _organizationScopeLookup = organizationScopeLookup;
     }
 
     public async Task<Result<ProgramDto>> GetByIdAsync(Guid id, CancellationToken ct = default)
@@ -64,7 +74,32 @@ public sealed class ProgramService : IProgramService
         if (context is not null && context.TenantId != tenantId)
             return new PagedResult<ProgramLookupDto>(Array.Empty<ProgramLookupDto>(), page, pageSize, 0);
 
-        var query = InScope(_db.Set<Entity>().AsNoTracking().Where(item => item.TenantId == tenantId));
+        var managementContext = _managementContext?.Current;
+        IQueryable<Entity> query;
+        if (_http.HttpContext?.User.HasClaim("permission", "Project.Create") == true)
+        {
+            if (managementContext is null || managementContext.TenantId != tenantId)
+                return new PagedResult<ProgramLookupDto>(Array.Empty<ProgramLookupDto>(), page, pageSize, 0);
+
+            var organizationIds = await GetAuthorizedProjectOrganizationsAsync(managementContext, ct);
+            if (organizationIds.Count == 0)
+                return new PagedResult<ProgramLookupDto>(Array.Empty<ProgramLookupDto>(), page, pageSize, 0);
+
+            query = _db.Set<Entity>().AsNoTracking()
+                .Where(item => item.TenantId == tenantId
+                    && !item.IsDeleted
+                    && _db.Set<Portfolio.Domain.Portfolio>().Any(portfolio =>
+                        portfolio.Id == item.PortfolioId
+                        && portfolio.TenantId == tenantId
+                        && !portfolio.IsDeleted
+                        && portfolio.OrganizationId.HasValue
+                        && organizationIds.Contains(portfolio.OrganizationId.Value)));
+        }
+        else
+        {
+            query = InScope(_db.Set<Entity>().AsNoTracking().Where(item => item.TenantId == tenantId));
+        }
+
         if (!string.IsNullOrWhiteSpace(search))
         {
             var term = search.Trim();
@@ -89,6 +124,24 @@ public sealed class ProgramService : IProgramService
         return new PagedResult<ProgramLookupDto>(items, page, pageSize, total);
     }
 
+    private async Task<HashSet<Guid>> GetAuthorizedProjectOrganizationsAsync(ManagementContext context, CancellationToken ct)
+    {
+        var candidateOrganizationIds = context.Scope.OrganizationIds.ToHashSet();
+        if (_organizationScopeLookup is not null)
+        {
+            var roleOrganizationIds = await _organizationScopeLookup.GetOrganizationIdsAsync(context.UserId, context.TenantId, ct);
+            candidateOrganizationIds.UnionWith(roleOrganizationIds);
+        }
+
+        if (candidateOrganizationIds.Count == 0) return [];
+        return await _db.Set<OrganizationEntity>().AsNoTracking()
+            .Where(organization => organization.TenantId == context.TenantId
+                && !organization.IsDeleted
+                && organization.IsActive
+                && candidateOrganizationIds.Contains(organization.Id))
+            .Select(organization => organization.Id)
+            .ToHashSetAsync(ct);
+    }
     public async Task<Result<IReadOnlyList<ProgramPortfolioLookupDto>>> GetEligiblePortfoliosForCreationAsync(CancellationToken ct = default)
     {
         var context = _managementContext?.Current;
@@ -116,7 +169,15 @@ public sealed class ProgramService : IProgramService
 
         var query = _db.Set<Portfolio.Domain.Portfolio>()
             .AsNoTracking()
-            .Where(item => item.TenantId == context.TenantId && !item.IsDeleted && item.Status == ActivePortfolioStatus);
+            .Where(item => item.TenantId == context.TenantId
+                && !item.IsDeleted
+                && item.Status == ActivePortfolioStatus
+                && item.OrganizationId.HasValue
+                && _db.Set<OrganizationEntity>().Any(organization =>
+                    organization.Id == item.OrganizationId.Value
+                    && organization.TenantId == context.TenantId
+                    && organization.IsActive
+                    && !organization.IsDeleted));
         query = query.Where(item => creationScope.NativePortfolioIds.Contains(item.Id)
             || (hasCreateAcross && item.OrganizationId.HasValue
                 && creationScope.OrganizationIds.Contains(item.OrganizationId.Value)));
@@ -342,10 +403,18 @@ public sealed class ProgramService : IProgramService
     private async Task<bool> IsValidPortfolioAsync(Guid id, CancellationToken ct)
     {
         var tenantId = TenantId();
-        return tenantId != Guid.Empty && id != Guid.Empty
-            && await _db.Set<Portfolio.Domain.Portfolio>().AnyAsync(x => x.Id == id && x.TenantId == tenantId && !x.IsDeleted, ct);
-    }
+        if (tenantId == Guid.Empty || id == Guid.Empty) return false;
 
+        var organizationId = await _db.Set<Portfolio.Domain.Portfolio>().AsNoTracking()
+            .Where(portfolio => portfolio.Id == id && portfolio.TenantId == tenantId && !portfolio.IsDeleted)
+            .Select(portfolio => portfolio.OrganizationId)
+            .FirstOrDefaultAsync(ct);
+        return organizationId.HasValue && await _db.Set<OrganizationEntity>().AsNoTracking()
+            .AnyAsync(organization => organization.Id == organizationId.Value
+                && organization.TenantId == tenantId
+                && organization.IsActive
+                && !organization.IsDeleted, ct);
+    }
     private async Task<bool> IsActivePortfolioAsync(Guid id, CancellationToken ct)
     {
         var tenantId = TenantId();

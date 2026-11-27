@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using System.Data;
 using System.Data.Common;
+using System.Globalization;
 using System.IO;
 using System.Reflection;
 using System.Text.Json;
@@ -526,6 +527,9 @@ public static class SeedDataProvider
             throw new InvalidOperationException("Development Admin password recovery is available only in the Development environment.");
         if (string.IsNullOrWhiteSpace(expectedServer) || string.IsNullOrWhiteSpace(expectedDatabase))
             throw new InvalidOperationException("Pass the expected SQL Server and database returned by the Development EF gate.");
+        if (!string.Equals(expectedServer, "Shady", StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(expectedDatabase, "NexusPmo", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Development Admin recovery is restricted to SQL Server Shady and database NexusPmo.");
         if (context.Database.ProviderName != "Microsoft.EntityFrameworkCore.SqlServer")
             throw new InvalidOperationException("Development Admin password recovery requires the SQL Server provider.");
         if (context.Database.HasPendingModelChanges())
@@ -947,7 +951,7 @@ public static class SeedDataProvider
 
                 var actualServer = reader.GetString(0);
                 var actualDatabase = reader.GetString(1);
-                var databaseId = reader.GetInt32(2);
+                var databaseId = ReadDevelopmentDatabaseId(reader, 2);
                 if (!string.Equals(actualServer, expectedServer, StringComparison.OrdinalIgnoreCase)
                     || !string.Equals(actualDatabase, expectedDatabase, StringComparison.OrdinalIgnoreCase)
                     || databaseId <= 0)
@@ -969,6 +973,22 @@ public static class SeedDataProvider
         {
             if (openedHere)
                 await connection.CloseAsync();
+        }
+    }
+
+    internal static int ReadDevelopmentDatabaseId(DbDataReader reader, int ordinal)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+        if (reader.IsDBNull(ordinal))
+            throw new InvalidOperationException("SQL Server did not return the connected Development database ID.");
+
+        try
+        {
+            return Convert.ToInt32(reader.GetValue(ordinal), CultureInfo.InvariantCulture);
+        }
+        catch (Exception exception) when (exception is InvalidCastException or FormatException or OverflowException)
+        {
+            throw new InvalidOperationException("SQL Server returned an invalid Development database ID.", exception);
         }
     }
 
@@ -2267,10 +2287,11 @@ private static readonly Guid Portfolio1Id = Guid.Parse("a0000001-0000-0000-0000-
         var users = await context.Users.IgnoreQueryFilters().ToListAsync();
         if (users.Count != 1
             || users[0].Id != AdminUserId
+            || users[0].TenantId != TenantId
             || !string.Equals(users[0].Email, SeededDevelopmentAdmin.Email, StringComparison.OrdinalIgnoreCase)
             || !users[0].IsActive
             || users[0].IsDeleted)
-            throw new InvalidOperationException("Minimal Development seed must produce exactly one active canonical Admin user.");
+            throw new InvalidOperationException("Minimal Development seed must produce exactly one active canonical Admin user on the expected Tenant.");
 
         if (await context.Tenants.IgnoreQueryFilters().CountAsync() != 1
             || !await context.Tenants.IgnoreQueryFilters().AnyAsync(tenant => tenant.Id == TenantId
@@ -2296,13 +2317,14 @@ private static readonly Guid Portfolio1Id = Guid.Parse("a0000001-0000-0000-0000-
             "tenant.resource-manager"
         };
         var actualRoles = await context.Roles.IgnoreQueryFilters().ToListAsync();
+        var systemRoles = actualRoles.Where(role => role.IsSystem).ToList();
         if (actualRoles.Count != expectedSystemRoleKeys.Count
-            || !actualRoles.Select(role => role.SystemRoleKey).ToHashSet(StringComparer.Ordinal).SetEquals(expectedSystemRoleKeys)
+            || systemRoles.Count != 1
+            || !systemRoles.Select(role => role.SystemRoleKey).ToHashSet(StringComparer.Ordinal).SetEquals(new[] { Role.TenantAdminSystemRoleKey })
             || actualRoles.Any(role => role.TenantId != TenantId
-                || !role.IsSystem
                 || role.IsDeleted
-                || role.SystemRoleKey is null
-                || !expectedSystemRoleKeys.Contains(role.SystemRoleKey)))
+                || (role.IsSystem && role.SystemRoleKey != Role.TenantAdminSystemRoleKey)
+                || (!role.IsSystem && role.OrganizationId != Guid.Parse("90000001-0000-0000-0000-000000000001"))))
             throw new InvalidOperationException("Minimal Development seed must contain only the canonical Tenant system roles.");
 
         var adminRole = await context.Roles.IgnoreQueryFilters()
@@ -2384,6 +2406,7 @@ private static readonly Guid Portfolio1Id = Guid.Parse("a0000001-0000-0000-0000-
     private static async Task SeedIdentityAsync(AppDbContext context, int temporaryPasswordExpiryHours)
     {
         await EnsureDevelopmentTenantRegistryAsync(context);
+        await EnsureMinimalDevelopmentOrganizationAsync(context);
 
         var passwordHasher = new PasswordHasher<User>();
         var existingRoles = await context.Roles.Include(r => r.Permissions).ToListAsync();
@@ -2409,29 +2432,33 @@ private static readonly Guid Portfolio1Id = Guid.Parse("a0000001-0000-0000-0000-
         var bootstrapTimestampUtc = DateTime.UtcNow;
 
         // The code-defined canonical catalog is the single seed source for permissions.
-        var permissions = PermissionCatalog.CreateSeedPermissions(TenantId);
+        var permissions = PermissionCatalog.CreateSeedPermissions(TenantId).ToList();
 
         var permissionsByKey = permissions.ToDictionary(p => $"{p.Resource}|{p.Action}");
         foreach (var permission in permissions)
         {
-            if (!existingPermissions.Any(e => e.Resource == permission.Resource && e.Action == permission.Action))
+            if (!existingPermissions.Any(e => e.Id == permission.Id
+                    || (e.Resource == permission.Resource && e.Action == permission.Action)))
                 context.Permissions.Add(permission);
         }
 
-        Role CreateSystemRole(Guid id, string systemRoleKey, string name, string description, string category)
+        Role CreateSystemRole(Guid id, string systemRoleKey, string name, string description, string category, bool isSystem, Guid? organizationId)
         {
             var role = new Role
             {
                 Id = id,
                 TenantId = TenantId,
+                OrganizationId = organizationId,
                 Name = name,
                 Description = description,
                 Category = category,
-                IsSystem = true,
+                IsSystem = isSystem,
+                RoleKey = systemRoleKey,
                 CreatedBy = "System",
                 Permissions = new List<Permission>()
             };
-            role.AssignSystemRoleKey(systemRoleKey, TenantId);
+            if (isSystem)
+                role.AssignSystemRoleKey(systemRoleKey, TenantId);
             return role;
         }
 
@@ -2439,14 +2466,14 @@ private static readonly Guid Portfolio1Id = Guid.Parse("a0000001-0000-0000-0000-
         // names remain editable and are not used to identify persisted system roles.
         var roles = new List<Role>
         {
-            CreateSystemRole(AdminRoleId, Role.TenantAdminSystemRoleKey, "admin", "Tenant-scoped administration and approved PMO capabilities", "System"),
-            CreateSystemRole(ExecutiveRoleId, "tenant.executive", "executive", "Executive leadership access", "Leadership"),
-            CreateSystemRole(PortfolioManagerRoleId, "tenant.portfolio-manager", "portfolio.manager", "Portfolio management access", "Management"),
-            CreateSystemRole(ProjectManagerRoleId, "tenant.project-manager", "project.manager", "Project management access", "Management"),
-            CreateSystemRole(TeamMemberRoleId, "tenant.team-member", "team.member", "Team member access", "Operations"),
-            CreateSystemRole(PmoAdminRoleId, "tenant.pmo-admin", "pmo.admin", "PMO administration access", "PMO"),
-            CreateSystemRole(FinanceControllerRoleId, "tenant.finance-controller", "finance.controller", "Financial management access", "Finance"),
-            CreateSystemRole(ResourceManagerRoleId, "tenant.resource-manager", "resource.manager", "Resource management access", "Management")
+            CreateSystemRole(AdminRoleId, Role.TenantAdminSystemRoleKey, "admin", "Tenant-scoped administration and approved PMO capabilities", "System", true, null),
+            CreateSystemRole(ExecutiveRoleId, "tenant.executive", "executive", "Executive leadership access", "Leadership", false, Guid.Parse("90000001-0000-0000-0000-000000000001")),
+            CreateSystemRole(PortfolioManagerRoleId, "tenant.portfolio-manager", "portfolio.manager", "Portfolio management access", "Management", false, Guid.Parse("90000001-0000-0000-0000-000000000001")),
+            CreateSystemRole(ProjectManagerRoleId, "tenant.project-manager", "project.manager", "Project management access", "Management", false, Guid.Parse("90000001-0000-0000-0000-000000000001")),
+            CreateSystemRole(TeamMemberRoleId, "tenant.team-member", "team.member", "Team member access", "Operations", false, Guid.Parse("90000001-0000-0000-0000-000000000001")),
+            CreateSystemRole(PmoAdminRoleId, "tenant.pmo-admin", "pmo.admin", "PMO administration access", "PMO", false, Guid.Parse("90000001-0000-0000-0000-000000000001")),
+            CreateSystemRole(FinanceControllerRoleId, "tenant.finance-controller", "finance.controller", "Financial management access", "Finance", false, Guid.Parse("90000001-0000-0000-0000-000000000001")),
+            CreateSystemRole(ResourceManagerRoleId, "tenant.resource-manager", "resource.manager", "Resource management access", "Management", false, Guid.Parse("90000001-0000-0000-0000-000000000001"))
         };
 
         // Permission-to-role mapping by immutable system-role identity.
@@ -2466,7 +2493,7 @@ private static readonly Guid Portfolio1Id = Guid.Parse("a0000001-0000-0000-0000-
             ["tenant.team-member"] = new() { "Project|View", "Project|View", "Stakeholders|Read", "Risk|View", "Planning|View", "Portfolio|View", "Program|View", "WorkItem|View", "WorkItem|Create", "WorkItem|Edit", "TimeTracking|ViewOwn", "TimeTracking|ManageOwn", MeetingPermissions.ViewKey, DocumentPermissions.ViewKey, DocumentPermissions.CreateKey },
             ["tenant.executive"] = new() { "Project|View", "Project|Delete", "Portfolio|View", "Resource|View", "Users|View", "ProjectFinance|View", "Report|View", "Resource|Assign", "Resource|ViewCostRate", "Resource|EditCostRate", "Project|Create", "Project|Edit", "Stakeholders|Read", "Stakeholders|Manage", "ChangeRequest|View", "ChangeRequest|Manage", "ChangeRequest|Approve", "Handover|View", "Handover|Manage", "Handover|Approve", "Risk|View", "Risk|Create", "Risk|Edit", "Risk|Delete", "Risk|Mitigate", "Planning|View", "Planning|Edit", "Planning|Lifecycle", "Portfolio|Create", "Portfolio|Edit", "Portfolio|Archive", "Portfolio|Reactivate", "Program|View", "Program|Create", "Program|Edit", "Program|Archive", "Program|Reactivate", "WorkItem|View", "TimeTracking|ViewOwn", "TimeTracking|ManageOwn", "TimeTracking|ViewTeam", "TimeTracking|ManageTeam", MeetingPermissions.ViewKey, DocumentPermissions.ViewKey, "StatusReport|View", "StatusReport|Export" },
             ["tenant.pmo-admin"] = new() { "Project|View", "Project|Delete", "Portfolio|View", "Resource|View", "Users|View", "ProjectFinance|View", "Report|View", "Settings|View", "Resource|Assign", "Resource|ViewCostRate", "Resource|EditCostRate", "Project|Create", "Project|Edit", "Stakeholders|Read", "Stakeholders|Manage", "ChangeRequest|View", "ChangeRequest|Manage", "ChangeRequest|Approve", "Handover|View", "Handover|Manage", "Handover|Approve", "Handover|AdminInitiate", "Governance.AssignmentRecovery|View", "Governance.AssignmentRecovery|Initiate", "Governance.AssignmentRecovery|Manage", "Risk|View", "Risk|Create", "Risk|Edit", "Risk|Delete", "Risk|Mitigate", "Planning|View", "Planning|Edit", "Planning|Lifecycle", "Portfolio|Create", "Portfolio|Edit", "Portfolio|Archive", "Portfolio|Reactivate", "Program|View", "Program|Create", "Program|Edit", "Program|Archive", "Program|Reactivate", "WorkItem|View", "WorkItem|Create", "WorkItem|Edit", "WorkItem|Delete", "Workflow|View", "Workflow|Manage", "Workflow|Publish", "TimeTracking|ViewOwn", "TimeTracking|ManageOwn", "TimeTracking|ViewTeam", "TimeTracking|ManageTeam", MeetingPermissions.ViewKey, MeetingPermissions.CreateKey, MeetingPermissions.EditKey, MeetingPermissions.ManageKey, MeetingPermissions.DeleteKey, DocumentPermissions.ViewKey, DocumentPermissions.CreateKey, DocumentPermissions.EditKey, DocumentPermissions.ArchiveKey, DocumentPermissions.TemplateManageKey, "StatusReport|View", "StatusReport|Create", "StatusReport|Edit", "StatusReport|Publish", "StatusReport|Export", "StatusReport|ManageConfiguration", "Audit|View" },
-            ["tenant.finance-controller"] = new() { "ProjectFinance|View", "Budget|View", "Budget|Create", "Budget|Edit", "Budget|Delete", "BudgetRevision|View", "BudgetRevision|Create", "BudgetRevision|EditDraft", "BudgetRevision|SubmitForReview", "BudgetRevision|Approve", "BudgetRevision|Cancel", "BudgetRevision|Delete", "Cost|View", "Cost|Create", "Cost|Edit", "Cost|Delete", "Commitment|View", "Commitment|Create", "Commitment|Edit", "Commitment|Close", "Commitment|Cancel", "Commitment|Delete", "PaymentObligation|View", "PaymentObligation|Create", "PaymentObligation|Edit", "PaymentObligation|Delete", "PaymentObligationSettlement|Record", "Report|View", "Project|View", "Stakeholders|Read", "Portfolio|View", "Program|View", DocumentPermissions.ViewKey },
+            ["tenant.finance-controller"] = new() { "ProjectFinance|View", "Budget|View", "Budget|Create", "Budget|Edit", "Budget|Delete", "BudgetRevision|View", "BudgetRevision|Create", "BudgetRevision|EditDraft", "BudgetRevision|SubmitForReview", "BudgetRevision|Approve", "BudgetRevision|Cancel", "BudgetRevision|Delete", "Cost|View", "Cost|Create", "Cost|Edit", "Cost|Delete", "PaymentObligation|View", "PaymentObligation|Create", "PaymentObligation|Edit", "PaymentObligation|Delete", "PaymentObligationSettlement|Record", "Report|View", "Project|View", "Stakeholders|Read", "Portfolio|View", "Program|View", DocumentPermissions.ViewKey },
             ["tenant.resource-manager"] = new() { "Resource|View", "Project|View", "Resource|View", "Resource|Assign", "Resource|ViewCostRate", "Resource|EditCostRate", "Project|View", "Stakeholders|Read", "Risk|View", "Planning|View", "WorkItem|View", "TimeTracking|ViewOwn", "TimeTracking|ManageOwn", "TimeTracking|ViewTeam", "TimeTracking|ManageTeam", MeetingPermissions.ViewKey, DocumentPermissions.ViewKey }
         };
 
@@ -2491,7 +2518,7 @@ private static readonly Guid Portfolio1Id = Guid.Parse("a0000001-0000-0000-0000-
         var resolvedRoleIdsBySystemKey = new Dictionary<string, Guid>(StringComparer.Ordinal);
         foreach (var role in roles)
         {
-            var expectedSystemRoleKey = role.SystemRoleKey
+            var expectedSystemRoleKey = role.SystemRoleKey ?? role.RoleKey
                 ?? throw new InvalidOperationException($"Seed role '{role.Id}' has no stable system identity.");
             var existing = existingRoles.FirstOrDefault(r => r.TenantId == role.TenantId
                     && string.Equals(r.SystemRoleKey, expectedSystemRoleKey, StringComparison.Ordinal))
@@ -2501,7 +2528,8 @@ private static readonly Guid Portfolio1Id = Guid.Parse("a0000001-0000-0000-0000-
                 throw new InvalidOperationException($"A conflicting Role already uses the seeded system-role name '{role.Name}' in this Tenant.");
 
             var roleEntity = existing ?? role;
-            roleEntity.AssignSystemRoleKey(expectedSystemRoleKey, role.TenantId);
+            if (role.IsSystem)
+                roleEntity.AssignSystemRoleKey(expectedSystemRoleKey, role.TenantId);
             resolvedRoleIdsBySystemKey.Add(expectedSystemRoleKey, roleEntity.Id);
 
             if (existing is null)

@@ -22,10 +22,16 @@ import {
   useProgramLookup,
 } from "../lib/project-lookups";
 import { useProjectEnumLabels } from "../lib/project-labels";
-import { PROJECT_HEALTHS, PROJECT_PRIORITIES, PROJECT_STATUSES } from "@lib/enums";
+import {
+  projectLifecycleLabel,
+  useProjectLifecycleOptions,
+  type ProjectLifecycleOption,
+} from "../api/project-lifecycle";
+import { PROJECT_HEALTHS, PROJECT_PRIORITIES } from "@lib/enums";
 import { cn, toDateInput } from "@lib/utils";
 import { ApiError, getApiFieldError } from "@api/client";
 import { useAuth } from "@auth/AuthProvider";
+import { managementCacheScopeKey, useManagement } from "@api/management";
 import { hasPermission, Permissions } from "@lib/permissions";
 
 const projectSchema = z
@@ -34,7 +40,9 @@ const projectSchema = z
     code: z.string().trim().max(50, "Code cannot exceed 50 characters").optional().or(z.literal("")),
     description: z.string().trim().optional(),
     programId: z.string().optional(),
-    status: z.enum(PROJECT_STATUSES).default("Initiation"),
+    // Status identity comes from the Reference Data catalog; no frontend enum duplicates it.
+    statusId: z.string().optional(),
+    statusChangeReason: z.string().trim().max(1000).optional(),
     priority: z.enum(PROJECT_PRIORITIES).default("Medium"),
     confidenceLevel: z.enum(PROJECT_HEALTHS).default("Green"),
     category: z.string().optional(),
@@ -100,7 +108,8 @@ function createDefaultValues(defaultCurrency = ""): ProjectFormData {
     code: generateAutoProjectCode(),
     description: "",
     programId: "",
-    status: "Initiation",
+    statusId: undefined,
+    statusChangeReason: undefined,
     priority: "Medium",
     confidenceLevel: "Green",
     category: "",
@@ -124,7 +133,8 @@ function toEditDefaultValues(project: ProjectDto): ProjectFormData {
     code: project.code || "",
     description: project.description ?? "",
     programId: project.programId ?? "",
-    status: (project.status as ProjectFormData["status"]) || "Initiation",
+    statusId: project.statusId ?? undefined,
+    statusChangeReason: undefined,
     priority: (project.priority as ProjectFormData["priority"]) || "Medium",
     confidenceLevel: (project.confidenceLevel as ProjectFormData["confidenceLevel"]) || "Green",
     category: "",
@@ -149,8 +159,10 @@ function FieldError({ id, message }: { id?: string; message?: string }) {
 }
 
 export function ProjectSheet({ open, onOpenChange, project, onCreated, embedded = false, onHandover, canInitiateHandover = false }: ProjectSheetProps) {
-  const { t, formatCurrency } = useI18n();
+  const { t, locale, formatCurrency } = useI18n();
   const { user } = useAuth();
+  const { canMutate, effectiveReadOnly, context: managementContext } = useManagement();
+  const lookupScopeKey = managementCacheScopeKey(user?.id, managementContext);
   const isEdit = !!project;
   const createMutation = useCreateProject();
   const updateMutation = useUpdateProject(project?.publicId ?? "");
@@ -160,8 +172,7 @@ export function ProjectSheet({ open, onOpenChange, project, onCreated, embedded 
 
   const { data: userLookup, isLoading: usersLoading, error: usersError } = useProjectWorkflowUserLookup(open);
   const { data: projectManagers, isLoading: managersLoading, isFetching: managersFetching, error: managersError, refetch: refetchProjectManagers } = useProjectManagerCandidateLookup(open && !isEdit);
-  const { data: portfolioData, error: portfoliosError } = usePortfolioLookup(open);
-  const { data: programData, error: programsError } = useProgramLookup(open);
+  const { data: portfolioData, error: portfoliosError } = usePortfolioLookup(open, lookupScopeKey);
   const { data: departmentUnits, error: departmentsError } = useDepartmentLookup(open);
   const { data: currencies, error: currenciesError } = useProjectCurrencyLookup(open);
 
@@ -169,9 +180,7 @@ export function ProjectSheet({ open, onOpenChange, project, onCreated, embedded 
   const projectManagerOptions = toUserSelectOptions(projectManagers ?? []);
   const managersForbidden = managersError instanceof ApiError && managersError.status === 403;
   const portfolioOptions = (portfolioData?.items ?? []).map((p) => ({ value: p.id, label: p.name }));
-  const programOptions = (programData?.items ?? []).map((p) => ({ value: p.id, label: p.name }));
   const portfolioCurrencyMap = React.useMemo<Record<string, string>>(() => Object.fromEntries((portfolioData?.items ?? []).map((p) => [p.id, p.currency ?? ""])), [portfolioData]);
-  const programLookupMap = React.useMemo(() => Object.fromEntries((programData?.items ?? []).map((p) => [p.id, p])), [programData]);
   const departmentOptions = (departmentUnits ?? []).map((d) => ({ value: d.id, label: d.name }));
   const baseCurrencyCode = currencies?.find((currency) => currency.isBase)?.code ?? "";
   const currentProjectCurrency = project?.currency ?? "";
@@ -187,6 +196,22 @@ export function ProjectSheet({ open, onOpenChange, project, onCreated, embedded 
     resolver: zodResolver(projectSchema) as never,
     defaultValues: isEdit && project ? toEditDefaultValues(project) : createDefaultValues(baseCurrencyCode),
   });
+  const selectedPortfolioId = form.watch("portfolioId");
+  const { data: programData, error: programsError } = useProgramLookup(open, selectedPortfolioId || undefined, lookupScopeKey);
+  const programOptions = (programData?.items ?? []).map((p) => ({ value: p.id, label: p.name }));
+  const programLookupMap = React.useMemo(() => Object.fromEntries((programData?.items ?? []).map((p) => [p.id, p])), [programData]);
+
+  const canReadStatusOptions = Boolean(user && (hasPermission(user.permissions, Permissions.Project.View)
+    || hasPermission(user.permissions, Permissions.Project.Edit)
+    || hasPermission(user.permissions, Permissions.ProjectStatus.Change)));
+  const canChangeStatus = Boolean(canReadStatusOptions && user
+    && hasPermission(user.permissions, Permissions.ProjectStatus.Change)
+    && canMutate && !effectiveReadOnly);
+  const statusOptionsQuery = useProjectLifecycleOptions({
+    enabled: open && isEdit && Boolean(project?.publicId) && canReadStatusOptions,
+    projectId: project?.publicId,
+  });
+
   const selectedProgramId = form.watch("programId");
   const budgetValue = form.watch("budget");
   const canCreateInitialAnnualBudget = !isEdit
@@ -214,6 +239,12 @@ export function ProjectSheet({ open, onOpenChange, project, onCreated, embedded 
 
   const onSubmit = async (data: ProjectFormData) => {
     if (isSubmittingRef.current) return;
+    if (isEdit && canChangeStatus && selectedStatusOption?.requiresReason
+      && selectedStatusOption.value !== currentStatusId
+      && !data.statusChangeReason?.trim()) {
+      form.setError("statusChangeReason", { type: "manual", message: t("projects.lifecycle.statusChangeReasonRequired") });
+      return;
+    }
     if (!isEdit && data.initialAnnualBudgetAmount !== undefined) {
       if (!currencies?.some(currency => currency.code.toUpperCase() === data.currency.trim().toUpperCase())) {
         form.setError("currency", { type: "manual", message: t("projects.financialCurrencyUnavailable") });
@@ -256,7 +287,11 @@ export function ProjectSheet({ open, onOpenChange, project, onCreated, embedded 
           ...base,
           clearSponsor: Boolean(project.sponsorId && !data.sponsorId),
           name: data.name,
-          status: data.status,
+          // Only the canonical Reference Data identity is written. The legacy status
+          // text and the project Phase are deliberately excluded from this payload.
+          ...(canChangeStatus && data.statusId && data.statusId !== currentStatusId
+            ? { statusId: data.statusId, statusChangeReason: data.statusChangeReason?.trim() || undefined }
+            : {}),
           priority: data.priority,
           confidenceLevel: data.confidenceLevel,
         };
@@ -286,6 +321,8 @@ export function ProjectSheet({ open, onOpenChange, project, onCreated, embedded 
       const apiFields = [
         "code",
         "name",
+        "statusId",
+        "statusChangeReason",
         "projectManagerId",
         "startDate",
         "endDate",
@@ -308,9 +345,62 @@ export function ProjectSheet({ open, onOpenChange, project, onCreated, embedded 
     }
   };
 
-  const { statusLabel, priorityLabel, healthLabel } = useProjectEnumLabels();
+  const { priorityLabel, healthLabel } = useProjectEnumLabels();
 
-  const statusOptions = PROJECT_STATUSES.map((value) => ({ value, label: statusLabel(value) }));
+  const catalogStatuses = statusOptionsQuery.data?.statuses ?? [];
+  const statusTransitions = statusOptionsQuery.data?.statusTransitions;
+  const currentStatusId = React.useMemo(() => {
+    if (project?.statusId) return project.statusId;
+    if (!project?.status) return undefined;
+    const key = project.status.replace(/[^a-z0-9]/gi, "").toUpperCase();
+    return catalogStatuses.find((option) =>
+      `${option.code}`.replace(/[^a-z0-9]/gi, "").toUpperCase() === key
+      || option.nameEn.replace(/[^a-z0-9]/gi, "").toUpperCase() === key)?.id;
+  }, [catalogStatuses, project?.status, project?.statusId]);
+
+  React.useEffect(() => {
+    if (!open || !isEdit || !currentStatusId) return;
+    if (form.getValues("statusId") === currentStatusId) return;
+    form.setValue("statusId", currentStatusId);
+  }, [currentStatusId, form, isEdit, open]);
+
+  const statusOptions = React.useMemo(() => {
+    const allowedIds = statusTransitions?.map((transition) => transition.targetStatusId);
+    const options = catalogStatuses
+      .filter((option) => allowedIds
+        ? allowedIds.includes(option.id) || option.id === currentStatusId
+        : true)
+      .filter((option) => option.isActive !== false || option.id === currentStatusId)
+      .slice()
+      .sort((left, right) => left.displayOrder - right.displayOrder)
+      .map((option) => ({
+        value: option.id,
+        label: projectLifecycleLabel(option, locale),
+        requiresReason: statusTransitions?.find((transition) => transition.targetStatusId === option.id)?.requiresReason ?? false,
+      }));
+
+    if (currentStatusId && !options.some((option) => option.value === currentStatusId)) {
+      const currentCatalogStatus = catalogStatuses.find((option) => option.id === currentStatusId);
+      options.unshift({
+        value: currentStatusId,
+        label: projectLifecycleLabel(
+          currentCatalogStatus,
+          locale,
+          project?.statusNameEn || project?.statusNameAr || project?.status,
+        ) || currentStatusId,
+        requiresReason: statusTransitions?.find((transition) => transition.targetStatusId === currentStatusId)?.requiresReason ?? false,
+      });
+    }
+
+    return options;
+  }, [catalogStatuses, currentStatusId, locale, project?.status, project?.statusNameAr, project?.statusNameEn, statusTransitions]);
+
+  const selectedStatusOption = statusOptions.find((option) => option.value === form.watch("statusId"));
+  const currentStatusLabel = projectLifecycleLabel(
+    catalogStatuses.find((option) => option.id === currentStatusId),
+    locale,
+    project?.statusNameEn || project?.statusNameAr || project?.status,
+  );
   const priorityOptions = PROJECT_PRIORITIES.map((value) => ({ value, label: priorityLabel(value) }));
   const confidenceOptions = PROJECT_HEALTHS.map((value) => ({ value, label: healthLabel(value) }));
 
@@ -366,11 +456,49 @@ export function ProjectSheet({ open, onOpenChange, project, onCreated, embedded 
             <div className="grid gap-5 sm:grid-cols-2">
               {isEdit && (
                 <div className="space-y-1.5">
-                  <Label>{t("common.status")}</Label>
-                  <Select value={form.watch("status") ?? "Initiation"} onValueChange={(v) => form.setValue("status", v as ProjectFormData["status"])}>
-                    <SelectTrigger><SelectValue placeholder={t("common.select")} /></SelectTrigger>
-                    <SelectContent>{statusOptions.map((opt) => (<SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>))}</SelectContent>
-                  </Select>
+                  <Label>{t("projects.lifecycle.status")}</Label>
+                  {!canChangeStatus ? (
+                    <Input aria-label={t("projects.lifecycle.status")} value={currentStatusLabel || t("common.notAvailable")} readOnly />
+                  ) : statusOptionsQuery.isLoading ? (
+                    <p role="status" className="text-sm text-muted-foreground">{t("projects.lifecycle.statusLookupLoading")}</p>
+                  ) : statusOptionsQuery.isError ? (
+                    <div role="alert" className="flex items-center justify-between gap-2 rounded-md border border-destructive/20 bg-destructive/10 p-2 text-sm text-destructive">
+                      <span>{t("projects.lifecycle.lookupError")}</span>
+                      <Button type="button" variant="outline" size="sm" onClick={() => void statusOptionsQuery.refetch()}>{t("common.retry")}</Button>
+                    </div>
+                  ) : statusOptions.length === 0 ? (
+                    <p role="status" className="text-sm text-muted-foreground">{t("projects.lifecycle.noStatusesAvailable")}</p>
+                  ) : (
+                    <Select
+                      value={form.watch("statusId") ?? undefined}
+                      onValueChange={(value) => {
+                        form.setValue("statusId", value, { shouldValidate: true });
+                        form.clearErrors("statusChangeReason");
+                      }}
+                    >
+                      <SelectTrigger><SelectValue placeholder={t("projects.lifecycle.chooseStatus")} /></SelectTrigger>
+                      <SelectContent>
+                        {statusOptions.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                  {selectedStatusOption?.requiresReason && selectedStatusOption.value !== currentStatusId ? (
+                    <div className="space-y-1.5">
+                      <Label htmlFor="project-status-change-reason">{t("projects.lifecycle.reason")}</Label>
+                      <Textarea
+                        id="project-status-change-reason"
+                        rows={2}
+                        value={form.watch("statusChangeReason") ?? ""}
+                        onChange={(event) => form.setValue("statusChangeReason", event.target.value, { shouldValidate: true })}
+                        aria-invalid={Boolean(form.formState.errors.statusChangeReason)}
+                        aria-describedby={form.formState.errors.statusChangeReason ? "project-status-change-reason-error" : undefined}
+                      />
+                      <p className="text-xs text-muted-foreground">{t("projects.lifecycle.statusChangeReasonHint")}</p>
+                      <FieldError id="project-status-change-reason-error" message={form.formState.errors.statusChangeReason?.message} />
+                    </div>
+                  ) : null}
                 </div>
               )}
               <div className="space-y-1.5">

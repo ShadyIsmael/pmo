@@ -20,7 +20,7 @@ public sealed class PaymentRequestApproverAssignmentConfiguration : IEntityTypeC
                 "[Requirement] IN (N'Mandatory', N'Optional')");
             table.HasCheckConstraint(
                 "CK_PaymentRequestApproverAssignments_State",
-                "[State] IN (N'Pending', N'Approved', N'Rejected')");
+                "[State] IN (N'Pending', N'Approved', N'Rejected', N'ReturnedForRevision', N'Closed')");
         });
 
         builder.HasKey(item => item.Id);
@@ -46,15 +46,28 @@ public sealed class PaymentRequestApproverAssignmentConfiguration : IEntityTypeC
             .HasPrincipalKey(user => new { user.TenantId, user.Id })
             .OnDelete(DeleteBehavior.Restrict);
 
+        builder.HasOne<ProjectPaymentRequestApprovalCycle>()
+            .WithMany()
+            .HasForeignKey(item => new { item.TenantId, item.ProjectId, item.ApprovalRequestId, item.ApprovalCycleId })
+            .HasPrincipalKey(cycle => new { cycle.TenantId, cycle.ProjectId, cycle.ApprovalRequestId, cycle.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+
         builder.HasIndex(item => new { item.TenantId, item.ApprovalRequestId, item.ApproverUserId })
-            .IsUnique()
+            .IsUnique().HasFilter("[ApprovalCycleId] IS NULL")
             .HasDatabaseName("UX_PaymentRequestApproverAssignments_Request_Approver");
+
+        builder.HasIndex(item => new { item.TenantId, item.ApprovalRequestId, item.ApprovalCycleId, item.ApproverUserId })
+            .IsUnique().HasFilter("[ApprovalCycleId] IS NOT NULL")
+            .HasDatabaseName("UX_PaymentRequestApproverAssignments_Cycle_Approver");
 
         // Parallel checklist members have no sequential order, so multiple NULL
         // positions remain valid. Sequential positions are unique per request.
         builder.HasIndex(item => new { item.TenantId, item.ApprovalRequestId, item.Position })
-            .IsUnique()
-            .HasFilter("[Position] IS NOT NULL")
+            .IsUnique().HasFilter("[Position] IS NOT NULL AND [ApprovalCycleId] IS NULL")
             .HasDatabaseName("UX_PaymentRequestApproverAssignments_Request_Position");
+
+        builder.HasIndex(item => new { item.TenantId, item.ApprovalRequestId, item.ApprovalCycleId, item.Position })
+            .IsUnique().HasFilter("[Position] IS NOT NULL AND [ApprovalCycleId] IS NOT NULL")
+            .HasDatabaseName("UX_PaymentRequestApproverAssignments_Cycle_Position");
     }
 }

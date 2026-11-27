@@ -88,6 +88,11 @@ const published: ProjectStatusReportDto = {
   publishedByNameSnapshot: "Alex Admin",
   budgetAmountSnapshot: 100000,
   actualCostAmountSnapshot: 46000,
+  committedCostAmountSnapshot: 94000,
+  actualPaidSnapshot: 12000,
+  actualPaidDataQualitySnapshot: "Available",
+  outstandingPlannedPaymentsSnapshot: 8000,
+  plannedPaymentsDataQualitySnapshot: "Available",
   forecastCostAmountSnapshot: 94000,
 };
 
@@ -279,12 +284,37 @@ describe("project status report source parity", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "View" })[1]!);
 
     const details = screen.getByRole("dialog", { name: "Status Report Details" });
+    const financialSummary = within(details).getByRole("complementary");
     expect(within(details).getAllByText("$100,000").length).toBeGreaterThanOrEqual(1);
-    expect(within(details).getAllByText("$46,000").length).toBeGreaterThanOrEqual(1);
+    expect(within(financialSummary).getByText("$12,000")).toBeInTheDocument();
+    expect(within(financialSummary).getByText("$8,000")).toBeInTheDocument();
+    expect(within(financialSummary).queryByText("$46,000")).not.toBeInTheDocument();
+    expect(within(financialSummary).queryByText("$94,000")).not.toBeInTheDocument();
     expect(within(details).getByRole("button", { name: "Export PDF" })).toBeInTheDocument();
     expect(within(details).getByRole("button", { name: "Print Report" })).toBeInTheDocument();
     expect(within(details).queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
     expect(within(details).queryByRole("button", { name: "Publish Report" })).not.toBeInTheDocument();
+  });
+
+  it("shows a currency quality message instead of substituting cost values for unavailable Actual Paid", () => {
+    const currencyGap = {
+      ...published,
+      actualPaidSnapshot: undefined,
+      outstandingPlannedPaymentsSnapshot: undefined,
+      actualPaidDataQualitySnapshot: "CurrencyMismatch" as const,
+      plannedPaymentsDataQualitySnapshot: "CurrencyMismatch" as const,
+    };
+    reportMocks.reports = [currencyGap];
+    reportMocks.details = { [currencyGap.id]: currencyGap };
+    renderStatusReports();
+    fireEvent.click(screen.getByRole("button", { name: "View" }));
+
+    const details = screen.getByRole("dialog", { name: "Status Report Details" });
+    const financialSummary = within(details).getByRole("complementary");
+    expect(within(financialSummary).getByText("Actual Paid is unavailable because the project currency or one or more settlement currencies could not be verified.")).toBeInTheDocument();
+    expect(within(financialSummary).getByText("Planned payment balances are unavailable because their currency or financial records could not be verified.")).toBeInTheDocument();
+    expect(within(financialSummary).queryByText("$46,000")).not.toBeInTheDocument();
+    expect(within(financialSummary).getByRole("img", { name: /Actual Paid: —/ })).toBeInTheDocument();
   });
 
   it("renders only the sections frozen into a report configuration", () => {

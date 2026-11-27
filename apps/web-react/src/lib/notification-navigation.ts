@@ -11,8 +11,16 @@ export function resolveNotificationPath(referenceType?: string | null, reference
   if (!referenceType) return null;
   const normalizedType = referenceType.toLowerCase();
   const normalizedNotificationType = notificationType?.toLowerCase();
+  if (normalizedType === "templatedeletionrequest"
+    && ["templatedeletionrequested", "templatedeletionapproved", "templatedeletionrejected"].includes(normalizedNotificationType ?? "")
+    && isPublicGuid(referenceId)) {
+    return `/my-work/approvals?templateDeletionRequestId=${encodeURIComponent(referenceId)}`;
+  }
   if (normalizedType === "project" && normalizedNotificationType === "projectannualbudgetapproval") {
     return getAnnualBudgetProjectSectionPath(referencePublicId ?? "");
+  }
+  if (normalizedType === "project" && normalizedNotificationType === "projectpaymentrequestapproval") {
+    return "/my-work/approvals";
   }
   if (normalizedNotificationType === "meetingminutescomment" || normalizedNotificationType === "meetingminutescommentreply") {
     if (!isPublicGuid(referenceId) || !isPublicGuid(referencePublicId)) return null;

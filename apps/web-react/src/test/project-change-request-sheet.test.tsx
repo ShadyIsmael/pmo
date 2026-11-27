@@ -52,9 +52,9 @@ describe("Project change request side sheet", () => {
 
   it("submits the selected change type and validated financial fields", async () => {
     const { form, onOpenChange } = renderSheet();
-    fireEvent.change(screen.getByRole("combobox", { name: /Change Type/ }), { target: { value: "Baseline" } });
+    fireEvent.change(screen.getByRole("combobox", { name: /Change Type/ }), { target: { value: "BudgetChange" } });
     fireEvent.change(screen.getByLabelText(/Reason/), { target: { value: "  Adjust the delivery baseline  " } });
-    fireEvent.change(screen.getByLabelText("Budget impact amount"), { target: { value: "125.50" } });
+    fireEvent.change(document.getElementById("project-change-budget")!, { target: { value: "125.50" } });
     fireEvent.change(screen.getByLabelText("Justification"), { target: { value: "Approved scope adjustment" } });
     fireEvent.change(screen.getByLabelText(/Impact description/), { target: { value: "No schedule delay" } });
     fireEvent.change(screen.getByLabelText("Attachments"), { target: { value: "baseline-review.pdf" } });
@@ -62,7 +62,7 @@ describe("Project change request side sheet", () => {
 
     await waitFor(() => expect(fixtures.createRequest).toHaveBeenCalledWith({
       projectId: "project-1",
-      type: "Baseline",
+      type: "BudgetChange",
       reason: "Adjust the delivery baseline",
       budgetChangeAmount: 125.5,
       justification: "Approved scope adjustment",

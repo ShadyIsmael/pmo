@@ -1,0 +1,428 @@
+{
+  "created_at": "2026-11-27T13:49:35Z",
+  "critical_path_coverage": null,
+  "dependency_awareness_only": [
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "PaymentObligation",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/PaymentObligation.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "User",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Domain/User.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Meeting",
+      "module": "meetings",
+      "path": "apps/api/src/NEXUS.Modules.Meetings/Domain/Meeting.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Portfolio",
+      "module": "portfolios",
+      "path": "apps/api/src/NEXUS.Modules.Portfolio/Domain/Portfolio.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Program",
+      "module": "portfolios",
+      "path": "apps/api/src/NEXUS.Modules.Portfolio/Domain/Program.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Api",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Api/BaselineController.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Api",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Api/HandoverRequestController.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Api",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Api/MilestoneController.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "PaymentObligationProjectLookupController",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Api/PaymentObligationProjectLookupController.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Api",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Api/PaymentObligationProjectLookupController.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Api",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Api/ProjectBaselineController.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Api",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Api/ProjectChangeRequestController.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Api",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Api/ProjectController.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Api",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Api/ProjectLifecycleCatalogController.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Api",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Api/ProjectPeopleController.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Api",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Api/ProjectPhaseGateController.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Api",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Api/ProjectStakeholderController.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Api",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Api/StakeholderInvitationController.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Api",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Api/StakeholderProjectController.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Api",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Api/TimeEntryController.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Api",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Api/TimerController.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Project",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/Project.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Resource",
+      "module": "resources",
+      "path": "apps/api/src/NEXUS.Modules.ResourceManagement/Domain/Resource.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Risk",
+      "module": "risks",
+      "path": "apps/api/src/NEXUS.Modules.RiskManagement/Domain/Risk.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "WorkItem",
+      "module": "work-items",
+      "path": "apps/api/src/NEXUS.Modules.WorkItems/Domain/WorkItem.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Program",
+      "module": "api",
+      "path": "apps/api/tools/NEXUS.Persistence.DesignTime/Program.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "User",
+      "module": "identity",
+      "path": "packages/shared-types/src/types/identity.ts",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Meeting",
+      "module": "meetings",
+      "path": "packages/shared-types/src/types/meeting.ts",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Portfolio",
+      "module": "portfolios",
+      "path": "packages/shared-types/src/types/portfolio.ts",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Project",
+      "module": "projects",
+      "path": "packages/shared-types/src/types/project.ts",
+      "relation": "REFERENCES_TYPE"
+    }
+  ],
+  "index_updated": false,
+  "limits": [
+    "Router never prevents an agent from manually opening other files; enforce via agent instructions and audit.",
+    "C# and TS relationships are source-text heuristics; compiler-resolved calls and runtime dependency-injection resolution are not proven.",
+    "Unknown/unclassified files may require manual targeted inspection.",
+    "Index sources excluded secrets and build outputs."
+  ],
+  "module_selection_basis": "task-explicit-alias",
+  "nonprimary_modules_not_read_by_router": [
+    "administration",
+    "ai-planning",
+    "api",
+    "approvals",
+    "audit",
+    "cost-management",
+    "documents",
+    "governance",
+    "home",
+    "identity",
+    "integrations",
+    "issues",
+    "management",
+    "meetings",
+    "notifications",
+    "operations",
+    "organization",
+    "persistence",
+    "plugins",
+    "portfolios",
+    "programs",
+    "project-planning",
+    "projects",
+    "reports",
+    "resources",
+    "risks",
+    "security",
+    "stakeholder",
+    "tests",
+    "time",
+    "unclassified",
+    "vendors",
+    "work-items",
+    "workflow"
+  ],
+  "planning_state": "focused",
+  "primary_module": "permissions",
+  "refresh": {
+    "changed_existing": 0,
+    "deleted": 0,
+    "mode": "refresh",
+    "new": 0,
+    "parsed": 0,
+    "unchanged": 1927
+  },
+  "related_tests_candidates": [
+    "apps/api/tests/NEXUS.Api.Tests/Security/CashFlowAuthorizationTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Security/EffectivePermissionResolverTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Security/PermissionAuthorizationContractTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Security/PermissionCatalogArchitectureTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Security/Phase2AuthorizationNegativeTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Security/PlatformSettingsAuthorizationTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Security/TenantRuntimeSettingsAuthorizationTests.cs",
+    "apps/web-react/src/test/permission-catalog-cache.test.tsx"
+  ],
+  "selected_files": [
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          72
+        ]
+      ],
+      "module": "permissions",
+      "path": "apps/api/src/NEXUS.Api/Authorization/WorkflowLookupPolicyRegistration.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 1566,
+      "reasons": [
+        "filename-match:lookup",
+        "path-match:authorization",
+        "primary-module",
+        "symbol-match:WorkflowLookupPolicyRegistration"
+      ],
+      "score": 66,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          10,
+          15
+        ]
+      ],
+      "module": "permissions",
+      "path": "apps/api/src/NEXUS.Api/Authorization/ApiAuthorizationDefaults.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 59,
+      "reasons": [
+        "filename-match:authorization",
+        "primary-module",
+        "symbol-match:ApiAuthorizationDefaults"
+      ],
+      "score": 61,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "test",
+      "line_ranges": [
+        [
+          1,
+          128
+        ]
+      ],
+      "module": "permissions",
+      "path": "apps/api/tests/NEXUS.Api.Tests/Security/CashFlowAuthorizationTests.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 1647,
+      "reasons": [
+        "filename-match:authorization",
+        "primary-module",
+        "symbol-match:CashFlowAuthorizationTests"
+      ],
+      "score": 53,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "test",
+      "line_ranges": [
+        [
+          1,
+          42
+        ]
+      ],
+      "module": "permissions",
+      "path": "apps/api/tests/NEXUS.Api.Tests/Security/PlatformSettingsAuthorizationTests.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 474,
+      "reasons": [
+        "filename-match:authorization",
+        "primary-module",
+        "symbol-match:PlatformSettingsAuthorizationTests"
+      ],
+      "score": 53,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "test",
+      "line_ranges": [
+        [
+          1,
+          93
+        ]
+      ],
+      "module": "permissions",
+      "path": "apps/api/tests/NEXUS.Api.Tests/Security/TenantRuntimeSettingsAuthorizationTests.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 1249,
+      "reasons": [
+        "filename-match:authorization",
+        "primary-module",
+        "symbol-match:TenantRuntimeSettingsAuthorizationTests"
+      ],
+      "score": 53,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "test",
+      "line_ranges": [
+        [
+          223,
+          237
+        ],
+        [
+          602,
+          612
+        ]
+      ],
+      "module": "permissions",
+      "path": "apps/api/tests/NEXUS.Api.Tests/Security/PermissionCatalogArchitectureTests.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 473,
+      "reasons": [
+        "primary-module",
+        "symbol-match:Protected_admin_baseline_contains_approved_portfolio_program_and_handover_keys_but_not_cross_portfolio_scope"
+      ],
+      "score": 41,
+      "token_method": "estimated:chars/3.5"
+    }
+  ],
+  "selection_summary": {
+    "critical_path_coverage_percent": null,
+    "files": 6,
+    "symbols": 23,
+    "tokens": 5468
+  },
+  "snapshot": "20261127T011240-a5eb4bb",
+  "task": "CreateProjectSheet project create Project.Create authorization Portfolio Program selection lookup APIs portfolioId programId OrganizationId ProjectService CreateAsync Pre-Initiation",
+  "token_plan": {
+    "available_source_budget": 9600,
+    "estimation_order": "Critical-path coverage is evaluated before reading-cost calculation and optional file ranking.",
+    "requested_total_budget": 16000,
+    "reserved_non_source_budget": 6400,
+    "source_reading_tokens": 5468,
+    "warning": "An estimate of selected source reading, NOT full task execution or model hidden reasoning. Some counts may be approximate."
+  }
+}

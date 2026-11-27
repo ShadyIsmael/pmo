@@ -40,3 +40,11 @@ Before implementing any feature, workflow, API, or user action:
 
 Runtime permission testing may be deferred to consolidated final UAT, but permission registration, configuration, and backend/frontend enforcement are Sprint requirements. If authorization requirements are unresolved, report the gap instead of implementing unrestricted access. A feature is not implementation-complete until its authorization model and enforcement are complete.
 
+
+<!-- UPI-RULES-START -->
+## UPI architecture-first task routing
+
+Follow all existing repository instructions first. For coding, debugging, refactoring, and architecture tasks, read `docs/architecture/INDEX.md` before searching application source. If it does not exist, initialize it with `tools/upi/upi.ps1 init --root .` on Windows or `python tools/upi/upi.py init --root .` elsewhere. Then route the actual task with `tools/upi/upi.ps1 route --root . --task "<task>" --budget 16000` on Windows or the matching Python command elsewhere. Start with the selected files and symbol ranges in the generated task manifest; expand only when evidence or task requirements justify it. Current source is authoritative. After application-code changes, run `refresh` and `validate`. Indexing may read project source but writes only under `docs/architecture` and must never access or modify a database.
+
+When the user's request is in Arabic or another non-English language, route a concise English equivalent that retains its feature and action terms so they match English source paths and symbols.
+<!-- UPI-RULES-END -->

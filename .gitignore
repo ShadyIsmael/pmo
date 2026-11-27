@@ -70,3 +70,26 @@ Desktop.ini
 # dotnet user-secrets
 **/appsettings.local.json
 **/appsettings.Development.local.json
+
+# Stray portable-tool extraction / recovery runtime artifacts
+b5bf2e54*/
+.recovery-runtime-*/
+
+# Build / publish / test artifacts
+apps/api/src/**/artifacts/
+**/TestResults/
+*.trx
+*.diag
+
+# Legacy migration archives
+docs/development/archives/
+
+# UPI generated snapshot data (regenerable via tools/upi refresh)
+docs/architecture/snapshots/
+
+# IDE (VS)
+.vs/
+*.user
+
+# Stray diff dump at repo root
+/pmo

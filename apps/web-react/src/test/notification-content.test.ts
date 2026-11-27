@@ -9,6 +9,7 @@ const bilingualNotificationTitles = [
   ["MeetingMinutesComment", "New Comment on Meeting Minutes", "\u062a\u0639\u0644\u064a\u0642 \u062c\u062f\u064a\u062f \u0639\u0644\u0649 \u0645\u062d\u0636\u0631 \u0627\u0644\u0627\u062c\u062a\u0645\u0627\u0639"],
   ["MeetingMinutesCommentReply", "New Reply on Meeting Minutes", "\u0631\u062f \u062c\u062f\u064a\u062f \u0639\u0644\u0649 \u062a\u0639\u0644\u064a\u0642 \u0628\u0645\u062d\u0636\u0631 \u0627\u0644\u0627\u062c\u062a\u0645\u0627\u0639"],
   ["ProjectAnnualBudgetApproval", "Annual Budget Approval", "\u0627\u0639\u062a\u0645\u0627\u062f \u0627\u0644\u0645\u064a\u0632\u0627\u0646\u064a\u0629 \u0627\u0644\u0633\u0646\u0648\u064a\u0629 \u0644\u0644\u0645\u0634\u0631\u0648\u0639"],
+  ["ProjectPaymentRequestApproval", "Payment Request Approval Required", "\u0645\u0637\u0644\u0648\u0628 \u0627\u0639\u062a\u0645\u0627\u062f \u0637\u0644\u0628 \u0627\u0644\u062f\u0641\u0639"],
 ] as const;
 
 describe("localized notification content", () => {

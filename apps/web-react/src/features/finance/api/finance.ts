@@ -1,70 +1,82 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@api/client";
 import { endpoints } from "@api/endpoints";
+import { projectKeys } from "@features/projects/api/projects";
 
-export interface PaymentSettlementDto {
+export interface BudgetDto {
   id: string;
-  paymentObligationId: string;
-  idempotencyKey: string;
-  amount: number;
-  currency: string | null;
-  settlementDate: string;
-  paymentReference: string;
-  notes?: string;
-  createdAt: string;
-  rowVersion: string;
-}
-
-export interface PaymentObligationDto {
-  id: string;
-  projectId: string;
-  projectName: string;
-  milestoneId?: string;
-  paymentReference: string;
-  purpose: string;
-  description: string;
-  amount: number;
+  projectId?: string;
+  projectPublicId?: string;
+  name: string;
+  description?: string;
+  category: string;
+  plannedAmount: number;
+  approvedAmount: number;
+  forecastAmount: number;
   currency: string;
-  dueDate: string;
-  notes?: string;
-  settledAmount: number;
-  outstandingAmount: number;
-  settlementProgressStatus: "Not Paid" | "Partially Paid" | "Fully Paid";
-  dueDateStatus: "Upcoming" | "Due" | "Overdue" | "Settled";
-  lifecycleStatus: string;
-  isDue: boolean;
-  isOverdue: boolean;
-  settlements: PaymentSettlementDto[];
-  createdAt: string;
+  fiscalYear: number;
+  fiscalQuarter?: number;
+  status: string;
+  startDate?: string;
+  endDate?: string;
+  createdAt?: string;
   updatedAt?: string;
   rowVersion: string;
 }
 
-export interface CreatePaymentObligationDto {
+export interface CreateBudgetDto {
   projectId: string;
-  milestoneId?: string;
-  paymentReference: string;
-  purpose: string;
+  name: string;
+  description?: string;
+  category: string;
+  plannedAmount: number;
+  approvedAmount: number;
+  forecastAmount: number;
+  currency: string;
+  fiscalYear: number;
+  fiscalQuarter?: number;
+  status: string;
+  startDate?: string;
+  endDate?: string;
+}
+
+export interface CostEntryDto {
+  id: string;
+  budgetId?: string;
+  projectId: string;
+  resourceId?: string;
+  category: string;
+  subCategory?: string;
   description?: string;
   amount: number;
   currency: string;
-  dueDate: string;
-  notes?: string;
+  taxAmount?: number;
+  incurredDate: string;
+  type: string;
+  reference?: string;
+  status: string;
+  vendorName?: string;
+  incurredBy?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  rowVersion: number[];
 }
 
-export interface UpdatePaymentObligationDto extends CreatePaymentObligationDto {
-  rowVersion: string;
-}
-
-export interface RecordPaymentSettlementDto {
-  idempotencyKey: string;
+export interface CreateCostEntryDto {
+  projectId: string;
+  budgetId?: string;
+  category: string;
+  subCategory?: string;
+  description?: string;
   amount: number;
-  settlementDate: string;
-  paymentReference: string;
-  notes?: string;
+  currency: string;
+  taxAmount?: number;
+  incurredDate: string;
+  type: string;
+  reference?: string;
+  vendorName?: string;
+  status: string;
 }
-
-export interface UpdateCommitmentDto extends Omit<CreateCommitmentDto, "projectId"> { rowVersion: string; }
 
 export interface PaymentSettlementDto {
   id: string;
@@ -133,6 +145,45 @@ export interface FinancePagedResult<T> {
   totalPages?: number;
 }
 
+export interface CurrencyFinancialSummary {
+  currency: string;
+  originalApprovedBudget: number;
+  approvedBudget: number;
+  allocatedBudget: number;
+  unallocatedBudget: number;
+  availableBudget: number | null;
+  actualCost: number | null;
+  actualPaid: number | null;
+  forecastAtCompletion: number | null;
+  forecastVariance: number | null;
+  budgetUtilizationPercentage?: number | null;
+  projectCount: number;
+  projectsWithMissingFinancialData: number;
+}
+
+export interface ProjectFinancialBreakdown {
+  projectId: string;
+  projectPublicId: string;
+  projectName: string;
+  currency: string;
+  originalApprovedBudget: number | null;
+  approvedBudget: number | null;
+  allocatedBudget: number;
+  unallocatedBudget: number | null;
+  availableBudget: number | null;
+  actualCost: number | null;
+  actualPaid: number | null;
+  forecastAtCompletion: number | null;
+  forecastVariance: number | null;
+  budgetUtilizationPercentage?: number | null;
+  hasFinancialData: boolean;
+}
+
+export interface GlobalFinancialSummaryDto {
+  byCurrency: CurrencyFinancialSummary[];
+  byProject: ProjectFinancialBreakdown[];
+}
+
 export type FinanceQueryParams = Record<string, string | number | boolean | undefined>;
 
 export const financeKeys = {
@@ -144,34 +195,19 @@ export const financeKeys = {
   paymentSettlements: (id: string) => ["payment-obligations", id, "settlements"] as const,
 };
 
-export function usePaymentObligations(params: FinanceQueryParams = {}, enabled = true) {
+export function useBudgets(params: FinanceQueryParams = {}, enabled = true) {
   return useQuery({
-    queryKey: financeKeys.paymentObligations(params),
-    queryFn: () => api.get<FinancePagedResult<PaymentObligationDto>>(
-      endpoints.paymentObligations.root,
-      { pageSize: 100, ...params },
-    ),
+    queryKey: financeKeys.budgets(params),
+    queryFn: () => api.get<FinancePagedResult<BudgetDto>>(endpoints.budgets.root, { pageSize: 100, ...params }),
     enabled,
-    staleTime: 15_000,
+    staleTime: 30_000,
   });
 }
 
-export function usePaymentSettlements(paymentId: string, enabled = true) {
+export function useCosts(params: FinanceQueryParams = {}, enabled = true) {
   return useQuery({
-    queryKey: financeKeys.paymentSettlements(paymentId),
-    queryFn: () => api.get<FinancePagedResult<PaymentSettlementDto>>(
-      endpoints.paymentObligations.settlements(paymentId),
-      { pageSize: 100 },
-    ),
-    enabled: Boolean(paymentId) && enabled,
-    staleTime: 15_000,
-  });
-}
-
-export function useCommitments(params: FinanceQueryParams = {}, enabled = true) {
-  return useQuery({
-    queryKey: financeKeys.commitments(params),
-    queryFn: () => api.get<FinancePagedResult<PurchaseCommitmentDto>>(endpoints.commitments.root, { pageSize: 100, ...params }),
+    queryKey: financeKeys.costs(params),
+    queryFn: () => api.get<FinancePagedResult<CostEntryDto>>(endpoints.costs.root, { pageSize: 100, ...params }),
     enabled,
     staleTime: 30_000,
   });
@@ -203,14 +239,10 @@ export function useProjectCosts(projectId: string, enabled = true, params: Finan
   return useCosts({ ...params, projectId }, Boolean(projectId) && enabled);
 }
 
-export function useProjectCommitments(projectId: string, enabled = true, params: FinanceQueryParams = {}) {
-  return useCommitments({ ...params, projectId }, Boolean(projectId) && enabled);
-}
-
 export function useCostSummary(enabled = true) {
   return useQuery({
     queryKey: financeKeys.summary,
-    queryFn: () => api.get<{ totalBudget: number; totalActual: number; totalForecast: number; currency: string }>(endpoints.costs.summary),
+    queryFn: () => api.get<GlobalFinancialSummaryDto>(endpoints.costs.summary),
     enabled,
     staleTime: 30_000,
   });
@@ -227,20 +259,25 @@ export function useGlobalFinancialSummary(enabled = true) {
 
 export function useCreateBudget() {
   const client = useQueryClient();
-  const invalidate = async (paymentId?: string) => {
+  return useMutation({
+    mutationFn: (body: CreateBudgetDto) => api.post<BudgetDto>(endpoints.budgets.root, body),
+    onSuccess: () => { void client.invalidateQueries({ queryKey: ["budgets"] }); void client.invalidateQueries({ queryKey: financeKeys.summary }); },
+  });
+}
+
+export function useCostManagementMutations(projectId: string) {
+  const client = useQueryClient();
+  const invalidate = async (...keys: readonly unknown[][]) => {
     await Promise.all([
-      client.invalidateQueries({ queryKey: ["payment-obligations"] }),
-      paymentId
-        ? client.invalidateQueries({ queryKey: financeKeys.paymentSettlements(paymentId) })
-        : Promise.resolve(),
+      ...keys.map((queryKey) => client.invalidateQueries({ queryKey })),
+      client.invalidateQueries({ queryKey: financeKeys.summary }),
+      client.invalidateQueries({ queryKey: projectKeys.overview(projectId) }),
     ]);
   };
-
   return {
-    create: useMutation({
-      mutationFn: (body: CreatePaymentObligationDto) =>
-        api.post<PaymentObligationDto>(endpoints.paymentObligations.root, body),
-      onSuccess: () => invalidate(),
+    createBudget: useMutation({
+      mutationFn: (body: CreateBudgetDto) => api.post<BudgetDto>(endpoints.budgets.root, body),
+      onSuccess: () => invalidate(["budgets"]),
     }),
     updateBudget: useMutation({
       mutationFn: ({ id, body }: { id: string; body: CreateBudgetDto & { rowVersion: string } }) => api.put<BudgetDto>(endpoints.budgets.detail(id), body),
@@ -261,22 +298,6 @@ export function useCreateBudget() {
     deleteCost: useMutation({
       mutationFn: (id: string) => api.delete<void>(endpoints.costs.detail(id)),
       onSuccess: () => invalidate(["costs"]),
-    }),
-    createCommitment: useMutation({
-      mutationFn: (body: CreateCommitmentDto) => api.post<PurchaseCommitmentDto>(endpoints.commitments.root, body),
-      onSuccess: () => invalidate(["commitments"]),
-    }),
-    updateCommitment: useMutation({
-      mutationFn: ({ id, body }: { id: string; body: UpdateCommitmentDto }) => api.put<PurchaseCommitmentDto>(endpoints.commitments.detail(id), body),
-      onSuccess: () => invalidate(["commitments"]),
-    }),
-    closeCommitment: useMutation({
-      mutationFn: ({ id, rowVersion }: { id: string; rowVersion: string }) => api.post<void>(`${endpoints.commitments.close(id)}?rowVersion=${encodeURIComponent(rowVersion)}`),
-      onSuccess: () => invalidate(["commitments"]),
-    }),
-    cancelCommitment: useMutation({
-      mutationFn: ({ id, rowVersion }: { id: string; rowVersion: string }) => api.post<void>(`${endpoints.commitments.cancel(id)}?rowVersion=${encodeURIComponent(rowVersion)}`),
-      onSuccess: () => invalidate(["commitments"]),
     }),
   };
 }
@@ -396,19 +417,25 @@ export function useBudgetRevisionMutations(projectId: string) {
   return {
     create: useMutation({ mutationFn: budgetRevisionApi.create, onSuccess: invalidate }),
     update: useMutation({
-      mutationFn: ({ id, body }: { id: string; body: UpdatePaymentObligationDto }) =>
-        api.put<PaymentObligationDto>(endpoints.paymentObligations.detail(id), body),
-      onSuccess: () => invalidate(),
+      mutationFn: ({ id, body }: { id: string; body: UpdateBudgetRevisionDto }) => budgetRevisionApi.update(id, body),
+      onSuccess: invalidate,
     }),
+    submit: useMutation({
+      mutationFn: ({ id, body }: { id: string; body: { rowVersion: string } }) => budgetRevisionApi.submit(id, body),
+      onSuccess: invalidate,
+    }),
+    approve: useMutation({
+      mutationFn: ({ id, body }: { id: string; body: ReviewBudgetRevisionDto }) => budgetRevisionApi.approve(id, body),
+      onSuccess: invalidate,
+    }),
+    reject: useMutation({
+      mutationFn: ({ id, body }: { id: string; body: ReviewBudgetRevisionDto }) => budgetRevisionApi.reject(id, body),
+      onSuccess: invalidate,
+    }),
+    cancel: useMutation({ mutationFn: (id: string) => budgetRevisionApi.cancel(id), onSuccess: invalidate }),
     delete: useMutation({
-      mutationFn: ({ id, rowVersion }: { id: string; rowVersion: string }) =>
-        api.delete<void>(endpoints.paymentObligations.detail(id), { rowVersion }),
-      onSuccess: () => invalidate(),
-    }),
-    settle: useMutation({
-      mutationFn: ({ id, body }: { id: string; body: RecordPaymentSettlementDto }) =>
-        api.post<PaymentSettlementDto>(endpoints.paymentObligations.settlements(id), body),
-      onSuccess: (_data, variables) => invalidate(variables.id),
+      mutationFn: ({ id, rowVersion }: { id: string; rowVersion: string }) => budgetRevisionApi.delete(id, rowVersion),
+      onSuccess: invalidate,
     }),
   };
 }

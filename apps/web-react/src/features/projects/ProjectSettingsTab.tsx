@@ -8,6 +8,7 @@ import { useManagement } from "@api/management";
 import { useI18n } from "@i18n/messages";
 import { hasPermission, Permissions } from "@lib/permissions";
 import { ProjectAnnualBudgetApprovalSettings } from "./ProjectAnnualBudgetApprovalSettings";
+import { ChangePhaseSettings } from "./ChangePhaseSettings";
 import { ProjectSheet } from "./components/CreateProjectSheet";
 import { ProjectWorkflowSettings } from "./ProjectWorkflowSettings";
 import { useProjectFinancialFoundation, useUpdateProjectFinanceApprovalMode, type ProjectFinancialFoundation } from "./api/project-financials";
@@ -94,6 +95,8 @@ export function ProjectSettingsPanel({
         </CardContent>
       </Card>}
     </section> : null}
+
+    {canViewProjectSettings ? <ChangePhaseSettings projectId={projectId} project={project} presentation="side-sheet" /> : null}
 
     {canViewProjectSettings ? <ProjectWorkflowSettings projectId={projectId} /> : null}
 

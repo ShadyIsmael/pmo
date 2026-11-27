@@ -72,9 +72,16 @@ public class UpdateProjectValidator : AbstractValidator<UpdateProjectDto>
             .MaximumLength(50).WithMessage("Project code cannot exceed 50 characters")
             .When(x => x.Code != null);
 
+        // Legacy Status text is now treated as an opaque compatibility field. The
+        // authoritative status is StatusId, validated against the Reference Data
+        // catalog by ProjectService (tenant/Organization scope, active, transitions).
         RuleFor(x => x.Status)
-            .Must(BeValidStatus).WithMessage("Invalid status value")
+            .MaximumLength(128).WithMessage("Status value is too long")
             .When(x => x.Status != null);
+
+        RuleFor(x => x.StatusChangeReason)
+            .MaximumLength(1000).WithMessage("Status change reason cannot exceed 1000 characters")
+            .When(x => x.StatusChangeReason != null);
 
         RuleFor(x => x.Priority)
             .Must(BeValidPriority).WithMessage("Invalid priority value")

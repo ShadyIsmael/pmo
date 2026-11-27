@@ -2,7 +2,7 @@ import * as React from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { cn, formatDate } from "@lib/utils";
 import {
-  LayoutDashboard, GanttChartSquare, Users, WalletCards, TriangleAlert, Send, CalendarDays, Files, ArrowRightLeft, History, Camera, GitBranch, MoreHorizontal, ChevronRight, Pencil, FilePen, ClipboardList, Settings2,
+  LayoutDashboard, GanttChartSquare, Users, WalletCards, TriangleAlert, Send, CalendarDays, Files, ArrowRightLeft, History, Camera, GitBranch, MoreHorizontal, ChevronRight, Pencil, FilePen, ClipboardList, Settings2, Layers,
 } from "lucide-react";
 import { useI18n } from "@i18n/messages";
 import { Button } from "@components/ui/Button";
@@ -15,10 +15,11 @@ import { useArchiveProject, useReactivateProject, useDeleteProject, type Project
 import { EditProjectSheet } from "./CreateProjectSheet";
 import { useProjectEnumLabels } from "../lib/project-labels";
 import { useManagement } from "@api/management";
-import { hasAnyPermission, hasPermission, Permissions } from "@lib/permissions";
+import { hasPermission, Permissions } from "@lib/permissions";
 import { useAuth } from "@auth/AuthProvider";
 import { toast } from "@hooks/use-toast";
 import { ProjectSettingsPanel } from "../ProjectSettingsTab";
+import { localizedPhaseLabel } from "./ProjectPhaseGateSideSheet";
 
 interface ProjectHeaderProps {
   project: ProjectDto;
@@ -71,20 +72,20 @@ export function ProjectHeader({ project, statusOverride, healthOverride, onChang
   const canEditGeneralSettingsInSheet = Boolean(canViewProjectSettings && user
     && hasPermission(user.permissions, Permissions.ProjectSettings.Edit)
     && canEdit && !effectiveReadOnly);
-  const canViewProjectFinanceWorkspace = Boolean(user && hasAnyPermission(user.permissions, [
-    Permissions.ProjectFinance.View,
-    Permissions.ProjectFinancialFoundation.View,
-    Permissions.ProjectAnnualBudget.View, Permissions.ProjectPaymentRequest.View,
-    Permissions.ProjectSettlement.View, Permissions.PaymentObligation.View, Permissions.ProjectAnnualBudgetClosing.View,
-    Permissions.ProjectFinancialAuditTrail.View, Permissions.ProjectPaymentRequest.Approve,
-    Permissions.ProjectPaymentReversal.Approve,
-  ]));
+  const canViewProjectFinanceWorkspace = Boolean(user && hasPermission(user.permissions, Permissions.ProjectFinance.View));
   const canDelete = Boolean(user && hasPermission(user.permissions, Permissions.Project.Delete) && canMutate);
   const canManageReporting = Boolean(user && hasPermission(user.permissions, Permissions.StatusReport.ManageConfiguration) && canMutate && !effectiveReadOnly);
   const canManageChangeRequests = Boolean(user && hasPermission(user.permissions, Permissions.ChangeRequest.Manage) && canMutate && !effectiveReadOnly);
   const canManageHandovers = canInitiateHandover ?? Boolean(user && hasPermission(user.permissions, Permissions.Handover.Manage) && canMutate && !effectiveReadOnly);
-  const displayStatus = statusOverride || project.status;
+
+  const canonicalStatusLabel = project.statusId
+    ? (locale === "ar" ? project.statusNameAr ?? project.statusNameEn ?? project.status : project.statusNameEn ?? project.statusNameAr ?? project.status)
+    : t("projects.header.statusNotSet");
+  const displayStatus = statusOverride ? statusLabel(statusOverride) : canonicalStatusLabel;
   const displayHealth = healthOverride || project.health || project.ragStatus;
+  const currentPhaseLabel = localizedPhaseLabel(project.phase, project.phaseNameEn, project.phaseNameAr, locale) || t("common.notAvailable");
+  const currentPhaseCode = project.phase?.trim();
+  const showPhaseCode = Boolean(currentPhaseCode && currentPhaseCode.toLocaleLowerCase() !== currentPhaseLabel.toLocaleLowerCase());
 
   async function handleArchive() {
     try {
@@ -122,17 +123,43 @@ export function ProjectHeader({ project, statusOverride, healthOverride, onChang
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <Badge status={displayStatus} className="text-[10px]">{statusLabel(displayStatus)}</Badge>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-medium text-muted-foreground">{t("projects.header.projectStatus")}</span>
+              <Badge status={project.statusId ? (project.status ?? "Active") : "default"} className="text-[10px]">{displayStatus}</Badge>
+            </div>
             {displayHealth ? (
-              <Badge status={displayHealth} className="text-[10px]">
-                <span className="me-1.5 h-1.5 w-1.5 rounded-full bg-current" />
-                {healthStatusLabel(displayHealth)}
-              </Badge>
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-medium text-muted-foreground">{t("projects.header.healthAssessment")}</span>
+                <Badge status={displayHealth} className="text-[10px]">
+                  <span className="me-1.5 h-1.5 w-1.5 rounded-full bg-current" />
+                  {healthStatusLabel(displayHealth)}
+                </Badge>
+              </div>
             ) : null}
-            {project.priority ? <Badge status={project.priority} className="text-[10px]">{priorityLabel(project.priority)}</Badge> : null}
-            {project.portfolioName ? <span className="truncate text-xs text-muted-foreground">{project.portfolioName}</span> : null}
+            {project.priority ? (
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-medium text-muted-foreground">{t("projects.header.priority")}</span>
+                <Badge status={project.priority} className="text-[10px]">{priorityLabel(project.priority)}</Badge>
+              </div>
+            ) : null}
+            {project.portfolioName ? (
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-medium text-muted-foreground">{t("projects.header.portfolio")}</span>
+                <span className="truncate text-xs text-muted-foreground">{project.portfolioName}</span>
+              </div>
+            ) : null}
           </div>
           <h1 className="mt-2 truncate text-2xl font-bold tracking-tight">{project.name}</h1>
+          <div
+            className="mt-2 inline-flex max-w-full flex-wrap items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-1.5 text-sm"
+            role="status"
+            aria-label={`${t("projects.lifecycle.currentPhase")}: ${currentPhaseLabel}`}
+          >
+            <Layers className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+            <span className="text-xs font-medium text-muted-foreground">{t("projects.lifecycle.currentPhase")}</span>
+            <span className="font-semibold text-foreground">{currentPhaseLabel}</span>
+            {showPhaseCode ? <span className="font-mono text-xs text-muted-foreground">({currentPhaseCode})</span> : null}
+          </div>
           <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
             <span className="font-semibold text-foreground">{project.code}</span>
             {project.phase ? ` · ${project.phase}` : ""}

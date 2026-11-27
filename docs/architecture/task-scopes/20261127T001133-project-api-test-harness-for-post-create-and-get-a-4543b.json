@@ -1,0 +1,470 @@
+{
+  "created_at": "2026-11-27T00:11:33Z",
+  "critical_path_coverage": null,
+  "dependency_awareness_only": [
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectPlanning.Domain",
+      "module": "project-planning",
+      "path": "apps/api/src/NEXUS.Modules.ProjectPlanning/Domain/Plan.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectPlanning.Domain",
+      "module": "project-planning",
+      "path": "apps/api/src/NEXUS.Modules.ProjectPlanning/Domain/PlanActivity.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectPlanning.Domain",
+      "module": "project-planning",
+      "path": "apps/api/src/NEXUS.Modules.ProjectPlanning/Domain/PlanAssignment.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectPlanning.Domain",
+      "module": "project-planning",
+      "path": "apps/api/src/NEXUS.Modules.ProjectPlanning/Domain/PlanDeliverable.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectPlanning.Domain",
+      "module": "project-planning",
+      "path": "apps/api/src/NEXUS.Modules.ProjectPlanning/Domain/PlanDependency.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectPlanning.Domain",
+      "module": "project-planning",
+      "path": "apps/api/src/NEXUS.Modules.ProjectPlanning/Domain/PlanImportSession.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectPlanning.Domain",
+      "module": "project-planning",
+      "path": "apps/api/src/NEXUS.Modules.ProjectPlanning/Domain/PlanTextFormat.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectPlanning.Domain",
+      "module": "project-planning",
+      "path": "apps/api/src/NEXUS.Modules.ProjectPlanning/Domain/PlanVersion.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectPlanning.Domain",
+      "module": "project-planning",
+      "path": "apps/api/src/NEXUS.Modules.ProjectPlanning/Domain/PlanWbsNode.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectPlanning.Domain",
+      "module": "project-planning",
+      "path": "apps/api/src/NEXUS.Modules.ProjectPlanning/Domain/PlanningCalendar.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "PlanningTablePreference",
+      "module": "project-planning",
+      "path": "apps/api/src/NEXUS.Modules.ProjectPlanning/Domain/PlanningTablePreference.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectPlanning.Domain",
+      "module": "project-planning",
+      "path": "apps/api/src/NEXUS.Modules.ProjectPlanning/Domain/PlanningTablePreference.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectPlanning.Domain",
+      "module": "project-planning",
+      "path": "apps/api/src/NEXUS.Modules.ProjectPlanning/Domain/ProjectPlanningEnums.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Permission",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Domain/Permission.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Identity.Domain",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Domain/Permission.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Identity.Domain",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Domain/Role.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "User",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Domain/User.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Identity.Domain",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Domain/User.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Identity.Domain",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Domain/UserOrganization.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "UserPermissionOverride",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Domain/UserPermissionOverride.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Identity.Domain",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Domain/UserPermissionOverride.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Identity.Domain",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Domain/UserRole.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Identity.Domain",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Domain/UserSession.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Permission",
+      "module": "shared",
+      "path": "apps/web-react/src/lib/permissions.ts",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Permission",
+      "module": "identity",
+      "path": "packages/shared-types/src/types/identity.ts",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "ProjectId",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/Entities/ProjectBaselineVersion.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "ApprovalMode",
+      "module": "projects",
+      "path": "apps/web-react/src/features/projects/ProjectPaymentRequests.tsx",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "ProjectId",
+      "module": "projects",
+      "path": "modules/projects/ProjectBaselineVersion.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Role",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Domain/Role.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Tenant",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Domain/Tenant.cs",
+      "relation": "REFERENCES_TYPE"
+    }
+  ],
+  "index_updated": false,
+  "limits": [
+    "Router never prevents an agent from manually opening other files; enforce via agent instructions and audit.",
+    "C# and TS relationships are source-text heuristics; compiler-resolved calls and runtime dependency-injection resolution are not proven.",
+    "Unknown/unclassified files may require manual targeted inspection.",
+    "Index sources excluded secrets and build outputs."
+  ],
+  "module_selection_basis": "task-explicit-alias",
+  "nonprimary_modules_not_read_by_router": [
+    "administration",
+    "ai-planning",
+    "api",
+    "approvals",
+    "audit",
+    "cost-management",
+    "documents",
+    "governance",
+    "home",
+    "identity",
+    "integrations",
+    "issues",
+    "management",
+    "meetings",
+    "notifications",
+    "operations",
+    "organization",
+    "permissions",
+    "plugins",
+    "portfolios",
+    "programs",
+    "project-planning",
+    "projects",
+    "reports",
+    "resources",
+    "risks",
+    "security",
+    "stakeholder",
+    "tests",
+    "time",
+    "unclassified",
+    "vendors",
+    "work-items",
+    "workflow"
+  ],
+  "planning_state": "focused",
+  "primary_module": "persistence",
+  "refresh": {
+    "changed_existing": 0,
+    "deleted": 0,
+    "mode": "refresh",
+    "new": 0,
+    "parsed": 0,
+    "unchanged": 1927
+  },
+  "related_tests_candidates": [
+    "apps/api/src/NEXUS.Persistence/Migrations/20261110170000_AddOrganizationDocumentTemplateStorageMetadata.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/DevelopmentWbsActivityOrderSqlServerPersistenceTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/DevelopmentWbsSqlServerPersistenceTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Testing/SqliteTestAppDbContext.cs",
+    "apps/api/tests/NEXUS.Modules.ResourceManagement.Tests/TestDbContext.cs",
+    "apps/web-react/src/test/migration-parity.test.ts"
+  ],
+  "selected_files": [
+    {
+      "approximate": true,
+      "kind": "migration",
+      "line_ranges": [
+        [
+          1,
+          71
+        ]
+      ],
+      "module": "persistence",
+      "path": "apps/api/src/NEXUS.Persistence/Migrations/20261105214717_AddMeetingNotificationPublicIdentifiers.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 653,
+      "reasons": [
+        "filename-match:14",
+        "filename-match:id",
+        "module-mentioned",
+        "primary-module"
+      ],
+      "score": 84,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "migration",
+      "line_ranges": [
+        [
+          1,
+          115
+        ]
+      ],
+      "module": "persistence",
+      "path": "apps/api/src/NEXUS.Persistence/Migrations/20261114232613_SeparateCanonicalRoleIdentityFromSystemClassification.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 1950,
+      "reasons": [
+        "filename-match:14",
+        "filename-match:id",
+        "module-mentioned",
+        "primary-module"
+      ],
+      "score": 84,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "sql",
+      "line_ranges": [
+        [
+          1,
+          53
+        ]
+      ],
+      "module": "persistence",
+      "path": "scripts/database/20261105214717_AddMeetingNotificationPublicIdentifiers.idempotent.sql",
+      "read_mode": "full-file",
+      "reading_tokens": 464,
+      "reasons": [
+        "filename-match:14",
+        "filename-match:id",
+        "module-mentioned",
+        "primary-module"
+      ],
+      "score": 84,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "sql",
+      "line_ranges": [
+        [
+          1,
+          157
+        ]
+      ],
+      "module": "persistence",
+      "path": "scripts/database/inspect-pre-initiation-state.sql",
+      "read_mode": "full-file",
+      "reading_tokens": 1752,
+      "reasons": [
+        "filename-match:initiation",
+        "filename-match:pre",
+        "module-mentioned",
+        "primary-module"
+      ],
+      "score": 84,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "migration",
+      "line_ranges": [
+        [
+          1,
+          229
+        ]
+      ],
+      "module": "persistence",
+      "path": "apps/api/src/NEXUS.Persistence/Migrations/20261029181208_ProjectPaymentRequestPersistence.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 3757,
+      "reasons": [
+        "filename-match:persistence",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:ProjectPaymentRequestPersistence"
+      ],
+      "score": 76,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          18
+        ]
+      ],
+      "module": "persistence",
+      "path": "apps/api/src/NEXUS.Persistence/PhaseGatePersistenceRegistration.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 235,
+      "reasons": [
+        "filename-match:persistence",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:PhaseGatePersistenceRegistration"
+      ],
+      "score": 76,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          21
+        ]
+      ],
+      "module": "persistence",
+      "path": "apps/api/src/NEXUS.Persistence/Configurations/PlanningTablePreferenceConfiguration.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 305,
+      "reasons": [
+        "filename-match:pre",
+        "module-mentioned",
+        "primary-module"
+      ],
+      "score": 72,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          25
+        ]
+      ],
+      "module": "persistence",
+      "path": "apps/api/src/NEXUS.Persistence/Configurations/UserPermissionOverrideConfiguration.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 333,
+      "reasons": [
+        "filename-match:id",
+        "module-mentioned",
+        "primary-module"
+      ],
+      "score": 72,
+      "token_method": "estimated:chars/3.5"
+    }
+  ],
+  "selection_summary": {
+    "critical_path_coverage_percent": null,
+    "files": 8,
+    "symbols": 15,
+    "tokens": 9449
+  },
+  "snapshot": "20261126T220221-d00a29d",
+  "task": "Project API test harness for POST create and GET /api/projects/{id}; actual persistence and reload; existing 14 PreInitiation regression method coverage versus failed UAT",
+  "token_plan": {
+    "available_source_budget": 9600,
+    "estimation_order": "Critical-path coverage is evaluated before reading-cost calculation and optional file ranking.",
+    "requested_total_budget": 16000,
+    "reserved_non_source_budget": 6400,
+    "source_reading_tokens": 9449,
+    "warning": "An estimate of selected source reading, NOT full task execution or model hidden reasoning. Some counts may be approximate."
+  }
+}

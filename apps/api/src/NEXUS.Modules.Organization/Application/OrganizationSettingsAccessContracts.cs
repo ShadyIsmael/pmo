@@ -46,6 +46,7 @@ public interface IOrganizationSettingsAccessService
     Task<IReadOnlyList<Guid>> GetReadableOrganizationIdsAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Guid>> GetManageableOrganizationIdsAsync(CancellationToken cancellationToken = default);
     Task<bool> HasAccessAsync(Guid organizationId, bool manage, CancellationToken cancellationToken = default);
+    Task<bool> HasScopedOrganizationConfigurationAuthorityAsync(Guid organizationId, bool manage, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<OrganizationSettingsGrantDto>> GetGrantsAsync(Guid organizationId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<OrganizationSettingsGrantTargetUserDto>> GetGrantTargetsAsync(CancellationToken cancellationToken = default);
     Task<OrganizationSettingsGrantOperationResult> SaveGrantAsync(

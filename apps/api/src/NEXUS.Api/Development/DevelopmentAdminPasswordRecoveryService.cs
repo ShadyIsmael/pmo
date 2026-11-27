@@ -18,7 +18,6 @@ namespace NEXUS.Api.Development;
 /// </summary>
 public sealed class DevelopmentAdminPasswordRecoveryService
 {
-    private const string AdminEmail = "admin@nexus.com";
     private readonly DbContext _context;
     private readonly IPasswordHasher<User> _passwordHasher;
     private readonly LocalPasswordPolicyOptions _passwordPolicy;
@@ -52,11 +51,13 @@ public sealed class DevelopmentAdminPasswordRecoveryService
 
         var admin = await _context.Set<User>()
             .IgnoreQueryFilters()
-            .SingleOrDefaultAsync(user => user.TenantId == SeedDataProvider.TenantId
-                && user.Email == AdminEmail
+            .SingleOrDefaultAsync(user => user.Id == SeededDevelopmentAdmin.UserId
+                && user.TenantId == SeededDevelopmentAdmin.TenantId
                 && !user.IsDeleted, cancellationToken);
         if (admin is null)
-            throw new InvalidOperationException("The Development tenant Admin account was not found.");
+            throw new InvalidOperationException("The canonical Development seeded Admin account was not found.");
+        if (!string.Equals(admin.Email, SeededDevelopmentAdmin.Email, StringComparison.Ordinal))
+            throw new InvalidOperationException("The canonical Development seeded Admin email does not match the expected account.");
         if (!admin.IsActive || admin.AuthenticationSource != AuthenticationSource.Local)
             throw new InvalidOperationException("The Development tenant Admin account is inactive or does not use local password authentication.");
 

@@ -253,6 +253,7 @@ export function AccountNotificationsPage() {
     ProjectHandover: t("account.notifications.projectHandover"),
     ProgramHandover: t("account.notifications.programHandover"),
     PortfolioHandover: t("account.notifications.portfolioHandover"),
+    ProjectPaymentRequestApproval: t("account.notifications.projectPaymentRequestApproval"),
     PaymentDue: t("account.notifications.paymentDue"),
     PaymentOverdue: t("account.notifications.paymentOverdue"),
   };

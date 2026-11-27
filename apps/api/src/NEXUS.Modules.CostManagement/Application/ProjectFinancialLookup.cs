@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using NEXUS.Modules.CostManagement.Domain;
 using NEXUS.SharedKernel;
@@ -13,11 +14,13 @@ public sealed class ProjectFinancialLookup : IProjectFinancialLookup
 {
     private readonly DbContext _context;
     private readonly IProjectReferenceLookup _projects;
+    private readonly IHttpContextAccessor? _httpContextAccessor;
 
-    public ProjectFinancialLookup(DbContext context, IProjectReferenceLookup projects)
+    public ProjectFinancialLookup(DbContext context, IProjectReferenceLookup projects, IHttpContextAccessor? httpContextAccessor = null)
     {
         _context = context;
         _projects = projects;
+        _httpContextAccessor = httpContextAccessor;
     }
 
     public async Task<ProjectFinancialSummary?> GetAsync(
@@ -46,16 +49,10 @@ public sealed class ProjectFinancialLookup : IProjectFinancialLookup
             .Where(c => c.ProjectId == projectId && !c.IsDeleted)
             .ToListAsync(cancellationToken);
 
-        var commitments = await _context.Set<PurchaseCommitment>()
-            .AsNoTracking()
-            .Where(p => p.ProjectId == projectId && !p.IsDeleted)
-            .ToListAsync(cancellationToken);
-
         var matchingBudgets = budgets.Where(b => NormalizeCurrency(b.Currency) == currency).ToList();
         var matchingCostEntries = costEntries.Where(c => NormalizeCurrency(c.Currency) == currency).ToList();
-        var matchingCommitments = commitments.Where(p => NormalizeCurrency(p.Currency) == currency).ToList();
 
-        var hasMatchingCurrencyData = matchingBudgets.Count > 0 || matchingCostEntries.Count > 0 || matchingCommitments.Count > 0;
+        var hasMatchingCurrencyData = matchingBudgets.Count > 0 || matchingCostEntries.Count > 0;
 
         var matchingBudgetIds = matchingBudgets.Select(b => b.Id).Distinct().ToList();
 
@@ -95,13 +92,27 @@ public sealed class ProjectFinancialLookup : IProjectFinancialLookup
 
         var actualCost = matchingCostEntries.Sum(c => c.Amount);
 
-        var committedCost = matchingCommitments.Where(p => p.Status != "Cancelled" && p.Status != "Closed").Sum(p => p.Amount);
+        // Actual Paid is cash: confirmed PaymentSettlement facts across both ownership rails.
+        // It is never substituted with planned, approved, or incurred-cost amounts. A settlement
+        // whose currency cannot be resolved makes the total incomplete, so it is reported as null.
+        var tenantId = FinancePermissionGuard.TryGetTenantId(_httpContextAccessor?.HttpContext?.User, out var resolvedTenant)
+            ? resolvedTenant
+            : project.TenantId;
+        var settlements = await ActualPaidSettlementCalculator.LoadForProjectAsync(
+            _context, tenantId, projectId, cancellationToken: cancellationToken);
+        var hasUnresolvedSettlementCurrency = ActualPaidSettlementCalculator.HasUnresolvedCurrency(settlements);
+        var actualPaid = hasUnresolvedSettlementCurrency
+            ? (decimal?)null
+            : ActualPaidSettlementCalculator.SumActualPaid(settlements, currency);
+        var netAdjustmentAmount = await ActualPaidSettlementCalculator.SumNetAdjustmentsAsync(
+            _context, tenantId, projectId, currency, cancellationToken: cancellationToken);
+        decimal? netActualPaid = actualPaid.HasValue ? actualPaid.Value + netAdjustmentAmount : null;
 
         var forecastAtCompletion = matchingBudgets.Any(b => b.ForecastAmount > 0m)
             ? matchingBudgets.Sum(b => b.ForecastAmount)
             : (decimal?)null;
 
-        var remainingBudget = approvedBudget - actualCost - committedCost;
+        var remainingBudget = approvedBudget - actualCost;
         var budgetUtilization = approvedBudget.HasValue && approvedBudget.Value != 0m
             ? actualCost / approvedBudget * 100m : (decimal?)null;
         var forecastVariance = approvedBudget.HasValue && forecastAtCompletion.HasValue
@@ -118,14 +129,15 @@ public sealed class ProjectFinancialLookup : IProjectFinancialLookup
             UnallocatedBudget = approvedBudget - allocatedBudget,
             RevisedBudget = revisedBudget,
             ActualCost = actualCost,
-            CommittedCost = committedCost,
+            ActualPaid = actualPaid,
+            GrossActualPaid = actualPaid,
+            NetActualPaid = netActualPaid,
             ForecastAtCompletion = forecastAtCompletion,
             RemainingBudget = remainingBudget,
             BudgetUtilizationPercentage = budgetUtilization,
             ForecastVariance = forecastVariance,
             HasBudgetData = approvedBudget.HasValue,
             HasCostEntryData = costEntries.Count > 0,
-            HasCommitmentData = commitments.Count > 0,
             HasFinancialData = hasMatchingCurrencyData || approvedBudget.HasValue,
             HasPendingRevision = hasPendingRevision
         };

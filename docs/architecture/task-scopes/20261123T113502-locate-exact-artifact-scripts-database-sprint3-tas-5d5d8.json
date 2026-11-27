@@ -1,0 +1,336 @@
+{
+  "created_at": "2026-11-23T11:35:02Z",
+  "critical_path_coverage": null,
+  "dependency_awareness_only": [
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "AssignmentRecoveryController",
+      "module": "governance",
+      "path": "apps/api/src/NEXUS.Api/Governance/AssignmentRecoveryController.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Api.Governance",
+      "module": "governance",
+      "path": "apps/api/src/NEXUS.Api/Governance/AssignmentRecoveryController.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "CreateRecoveryAssignmentDto",
+      "module": "governance",
+      "path": "apps/api/src/NEXUS.Api/Governance/AssignmentRecoveryDtos.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Api.Governance",
+      "module": "governance",
+      "path": "apps/api/src/NEXUS.Api/Governance/AssignmentRecoveryDtos.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "AssignmentRecoveryException",
+      "module": "governance",
+      "path": "apps/api/src/NEXUS.Api/Governance/AssignmentRecoveryService.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Api.Governance",
+      "module": "governance",
+      "path": "apps/api/src/NEXUS.Api/Governance/AssignmentRecoveryService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Audit.Domain",
+      "module": "audit",
+      "path": "apps/api/src/NEXUS.Modules.Audit/Domain/AuditActivity.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "AuditEntry",
+      "module": "audit",
+      "path": "apps/api/src/NEXUS.Modules.Audit/Domain/AuditEntry.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Audit.Domain",
+      "module": "audit",
+      "path": "apps/api/src/NEXUS.Modules.Audit/Domain/AuditEntry.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Statuses",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/BudgetRevision.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Identity.Application",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Application/CurrentUserDto.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Identity.Application",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Application/EffectivePermissionResolver.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Identity.Application",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Application/IAuthenticationService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Identity.Application",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Application/IAuthorizationService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Identity.Application",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Application/IRoleAdministrationService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Identity.Application",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Application/IUserAdministrationService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "IUserEffectivePermissionService",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Application/IUserEffectivePermissionService.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Identity.Application",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Application/IUserEffectivePermissionService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Identity.Application",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Application/IUserRepository.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Identity.Application",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Application/IUserSessionValidator.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Identity.Application",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Application/LocalPasswordPolicyOptions.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Identity.Application",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Application/LoginCommand.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Identity.Application",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Application/LoginResponseDto.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Identity.Application",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Application/PermissionCatalog.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Identity.Application",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Application/ProtectedTenantAdminPolicy.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Identity.Application",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Application/RefreshTokenRequest.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Identity.Application",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Application/RegisterCommand.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Identity.Application",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Application/RoleAdministrationDtos.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Identity.Application",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Application/RoleCategories.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Identity.Application",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Application/SeededDevelopmentAdmin.cs",
+      "relation": "USES_NAMESPACE"
+    }
+  ],
+  "index_updated": false,
+  "limits": [
+    "Router never prevents an agent from manually opening other files; enforce via agent instructions and audit.",
+    "C# and TS relationships are source-text heuristics; compiler-resolved calls and runtime dependency-injection resolution are not proven.",
+    "Unknown/unclassified files may require manual targeted inspection.",
+    "Index sources excluded secrets and build outputs."
+  ],
+  "module_selection_basis": "task-explicit-alias",
+  "nonprimary_modules_not_read_by_router": [
+    "administration",
+    "ai-planning",
+    "api",
+    "approvals",
+    "audit",
+    "cost-management",
+    "documents",
+    "home",
+    "identity",
+    "integrations",
+    "issues",
+    "management",
+    "meetings",
+    "notifications",
+    "operations",
+    "organization",
+    "permissions",
+    "persistence",
+    "plugins",
+    "portfolios",
+    "programs",
+    "project-planning",
+    "projects",
+    "reports",
+    "resources",
+    "risks",
+    "security",
+    "stakeholder",
+    "tests",
+    "time",
+    "unclassified",
+    "vendors",
+    "work-items",
+    "workflow"
+  ],
+  "planning_state": "focused",
+  "primary_module": "governance",
+  "refresh": {
+    "changed_existing": 0,
+    "deleted": 0,
+    "mode": "refresh",
+    "new": 0,
+    "parsed": 0,
+    "unchanged": 1884
+  },
+  "related_tests_candidates": [
+    "apps/api/tests/NEXUS.Api.Tests/Integration/AssignmentRecoveryServiceTests.cs",
+    "apps/web-react/src/test/assignment-recovery.test.tsx",
+    "apps/web-react/src/test/governance-recovery-navigation.test.tsx"
+  ],
+  "selected_files": [
+    {
+      "approximate": true,
+      "kind": "test",
+      "line_ranges": [
+        [
+          19,
+          48
+        ]
+      ],
+      "module": "governance",
+      "path": "apps/web-react/src/test/governance-recovery-navigation.test.tsx",
+      "read_mode": "symbols",
+      "reading_tokens": 327,
+      "reasons": [
+        "filename-match:governance",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:renderGovernance"
+      ],
+      "score": 80,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "test",
+      "line_ranges": [
+        [
+          465,
+          487
+        ]
+      ],
+      "module": "governance",
+      "path": "apps/api/tests/NEXUS.Api.Tests/Integration/AssignmentRecoveryServiceTests.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 398,
+      "reasons": [
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:MissingGovernanceFilter_IncludesAnInactiveDirectManagerEvenWhenHistoryMatches"
+      ],
+      "score": 56,
+      "token_method": "estimated:chars/3.5"
+    }
+  ],
+  "selection_summary": {
+    "critical_path_coverage_percent": null,
+    "files": 2,
+    "symbols": 3,
+    "tokens": 725
+  },
+  "snapshot": "20261123T092540-af21596",
+  "task": "Locate exact artifact scripts/database/Sprint3Task05BRefundExecutionGovernance.sql generated for migration 20261123090738_Sprint3Task05BRefundExecutionGovernance; locate docs/finance/SPRINT-3-CONSOLIDATED-CLOSURE-REPORT.md.",
+  "token_plan": {
+    "available_source_budget": 9600,
+    "estimation_order": "Critical-path coverage is evaluated before reading-cost calculation and optional file ranking.",
+    "requested_total_budget": 16000,
+    "reserved_non_source_budget": 6400,
+    "source_reading_tokens": 725,
+    "warning": "An estimate of selected source reading, NOT full task execution or model hidden reasoning. Some counts may be approximate."
+  }
+}

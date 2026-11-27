@@ -32,6 +32,8 @@ public sealed class PortfolioMetricsDto
 public sealed class PortfolioDto
 {
     public Guid Id { get; set; }
+    public Guid? OrganizationId { get; set; }
+    public string? OrganizationName { get; set; }
     public string Name { get; set; } = "";
     public string Code { get; set; } = "";
     public string? Description { get; set; }
@@ -61,7 +63,7 @@ public sealed class PortfolioLookupDto
     public string Currency { get; set; } = "";
 }
 
-public sealed class SavePortfolioDto
+public class SavePortfolioDto
 {
     public string Name { get; set; } = "";
     public string? Description { get; set; }
@@ -72,4 +74,15 @@ public sealed class SavePortfolioDto
     public string? Priority { get; set; }
     public string? Health { get; set; }
     public string? ConfidenceLevel { get; set; }
+}
+
+public sealed class CreatePortfolioDto : SavePortfolioDto
+{
+    public Guid? OrganizationId { get; set; }
+}
+
+public sealed class PortfolioOrganizationLookupDto
+{
+    public Guid Id { get; set; }
+    public string Name { get; set; } = string.Empty;
 }

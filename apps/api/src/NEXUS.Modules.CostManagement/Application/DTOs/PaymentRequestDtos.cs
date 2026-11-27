@@ -1,3 +1,5 @@
+using NEXUS.Modules.CostManagement.Domain;
+
 namespace NEXUS.Modules.CostManagement.Application.DTOs;
 
 /// <summary>
@@ -8,14 +10,41 @@ public sealed record CreatePaymentRequestDto(
     decimal Amount,
     string Reason,
     Guid? ProjectPlanMilestoneId,
-    Guid? IdempotencyKey = null);
+    Guid? IdempotencyKey = null,
+    Guid? PlannedPaymentInstallmentId = null,
+    Guid? ProjectAnnualBudgetId = null,
+    Guid? ProjectAnnualBudgetLineId = null);
+
+/// <summary>
+/// Creates a one-installment Planned Payment and linked Payment Request as one
+/// coordinated command. Annual funding begins only when SubmitForApproval is true.
+/// </summary>
+public sealed record CreateQuickOneOffPaymentRequestDto(
+    string Description,
+    decimal Amount,
+    string Purpose,
+    DateTime DueDateUtc,
+    Guid? ProjectPlanMilestoneId,
+    Guid? ProjectAnnualBudgetId,
+    Guid? ProjectAnnualBudgetLineId,
+    Guid IdempotencyKey,
+    bool SubmitForApproval = false,
+    string? ApprovalMode = null,
+    IReadOnlyList<PaymentRequestApproverSelectionDto>? Approvers = null);
+
+public sealed record QuickOneOffPaymentRequestResultDto(
+    PlannedPaymentDto PlannedPayment,
+    PlannedPaymentInstallmentDto Installment,
+    ProjectPaymentRequestDetailDto PaymentRequest);
 
 public sealed record UpdatePaymentRequestDto(
     string Title,
     decimal Amount,
     string Reason,
     Guid? ProjectPlanMilestoneId,
-    byte[] RowVersion);
+    byte[] RowVersion,
+    Guid? ProjectAnnualBudgetId = null,
+    Guid? ProjectAnnualBudgetLineId = null);
 
 public sealed record PaymentRequestApproverSelectionDto(
     Guid UserId,
@@ -25,12 +54,14 @@ public sealed record PaymentRequestApproverSelectionDto(
 public sealed record SubmitPaymentRequestDto(
     string ApprovalMode,
     IReadOnlyList<PaymentRequestApproverSelectionDto> Approvers,
-    byte[] RowVersion);
+    byte[] RowVersion,
+    Guid? IdempotencyKey = null);
 
 public sealed record DecidePaymentRequestApprovalDto(
     string Decision,
     string? Comment,
-    byte[] RowVersion);
+    byte[] RowVersion,
+    decimal? ApprovedAmount = null);
 
 public sealed record CancelPaymentRequestDto(byte[] RowVersion);
 
@@ -96,6 +127,44 @@ public sealed record RecordProjectPaymentSettlementDto(
     DateOnly PaymentDate,
     string PaymentReference,
     string? Description);
+
+public sealed record RecordSettlementAdjustmentDto(
+    Guid IdempotencyKey,
+    Guid OriginalSettlementId,
+    decimal Amount,
+    DateOnly EffectiveDate,
+    string Reason,
+    Guid AssignedApproverId = default);
+
+public sealed record DecideSettlementAdjustmentDto(
+    string Decision,
+    string? Comment,
+    byte[] RowVersion);
+
+public sealed record ConfirmSettlementAdjustmentExecutionDto(
+    Guid IdempotencyKey,
+    DateOnly ExecutionDate);
+
+public sealed record SettlementAdjustmentDto(
+    Guid Id,
+    Guid OriginalSettlementId,
+    string AdjustmentType,
+    decimal Amount,
+    string Currency,
+    string Reason,
+    DateTime EffectiveDate,
+    DateTime RecordedAt,
+    string Status = PaymentSettlementAdjustment.Executed,
+    Guid? ApprovalRequestId = null,
+    Guid? AssignedApproverId = null,
+    Guid? ApprovedBy = null,
+    DateTime? ApprovedAtUtc = null,
+    Guid? ExecutionConfirmedBy = null,
+    DateTime? ExecutionConfirmedAtUtc = null,
+    DateTime? ExecutionDate = null,
+    byte[]? RowVersion = null,
+    bool CanDecide = false,
+    bool CanConfirmExecution = false);
 
 public sealed record ProjectPaymentRequestSettlementDto(
     Guid Id,
@@ -169,7 +238,67 @@ public sealed record ProjectPaymentRequestListItemDto(
     bool CanCancel,
     Guid? AnnualBudgetId,
     int? AnnualBudgetFiscalYear,
-    string? AnnualBudgetReference);
+    string? AnnualBudgetReference,
+    Guid? PlannedPaymentInstallmentId = null,
+    Guid? AnnualBudgetLineId = null,
+    string? AnnualBudgetLineName = null,
+    IReadOnlyList<ProjectPaymentRequestApprovalCycleDto>? ApprovalCycles = null);
+
+public sealed record ProjectPaymentRequestApprovalCycleDto(
+    Guid Id,
+    int CycleNumber,
+    DateTime SubmittedAtUtc,
+    DateTime? CompletedAtUtc,
+    string ApprovalMode,
+    string Status,
+    decimal Amount,
+    string Currency,
+    Guid AnnualBudgetId,
+    string AnnualBudgetReference,
+    int FiscalYear,
+    Guid AnnualBudgetLineId,
+    string AnnualBudgetLineName,
+    string RequesterName,
+    string? DecisionComment,
+    IReadOnlyList<PaymentRequestApproverDto> Approvers);
+
+public sealed record ProjectPaymentRequestBudgetLineOptionDto(
+    Guid Id,
+    string Reference,
+    string Description,
+    decimal AuthorizedLimit,
+    decimal ReservedAmount,
+    decimal AvailableAmount);
+
+public sealed record ProjectPaymentRequestAnnualBudgetOptionDto(
+    Guid Id,
+    string Reference,
+    int FiscalYear,
+    string Currency,
+    string Status,
+    decimal AnnualBudgetAmount,
+    decimal ReservedAmount,
+    decimal AvailableAmount,
+    IReadOnlyList<ProjectPaymentRequestBudgetLineOptionDto> Lines);
+
+public sealed record ProjectPaymentRequestFundingOptionsDto(
+    string ProjectCurrency,
+    IReadOnlyList<ProjectPaymentRequestAnnualBudgetOptionDto> Budgets);
+
+public sealed record PendingPaymentRequestApprovalDto(
+    Guid ProjectId,
+    string ProjectName,
+    Guid RequestId,
+    string Reference,
+    string Title,
+    decimal Amount,
+    string Currency,
+    string Status,
+    string RequesterName,
+    DateTime SubmittedAtUtc,
+    string? ApprovalMode,
+    byte[] RowVersion,
+    bool CanDecide);
 
 public sealed record ProjectPaymentRequestBudgetAvailabilityDto(
     Guid? AnnualBudgetId,
@@ -220,7 +349,11 @@ public sealed record ProjectPaymentRequestDetailDto(
     bool CanCancel,
     Guid? AnnualBudgetId,
     int? AnnualBudgetFiscalYear,
-    string? AnnualBudgetReference);
+    string? AnnualBudgetReference,
+    Guid? PlannedPaymentInstallmentId = null,
+    Guid? AnnualBudgetLineId = null,
+    string? AnnualBudgetLineName = null,
+    IReadOnlyList<ProjectPaymentRequestApprovalCycleDto>? ApprovalCycles = null);
 
 public static class PaymentRequestApprovalModes
 {
@@ -244,9 +377,10 @@ public static class PaymentRequestDecisions
 {
     public const string Approved = "Approved";
     public const string Rejected = "Rejected";
+    public const string ReturnedForRevision = "ReturnedForRevision";
 
     public static bool IsValid(string? value) =>
-        value is Approved or Rejected;
+        value is Approved or Rejected or ReturnedForRevision;
 }
 
 public static class PaymentRequestStatuses
@@ -255,6 +389,7 @@ public static class PaymentRequestStatuses
     public const string Pending = "Pending";
     public const string Approved = "Approved";
     public const string Rejected = "Rejected";
+    public const string ReturnedForRevision = "ReturnedForRevision";
     public const string Cancelled = "Cancelled";
     public const string Reversed = "Reversed";
 }

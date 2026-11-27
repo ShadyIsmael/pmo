@@ -10,32 +10,32 @@ namespace NEXUS.Modules.CostManagement.Api;
 [Authorize]
 public sealed class PaymentObligationController(IPaymentObligationService paymentObligationService) : ControllerBase
 {
-    [Authorize(Policy = "Finances.Read")]
+    [Authorize(Policy = "PaymentObligation.View")]
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken) => ToActionResult(await paymentObligationService.GetByIdAsync(id, cancellationToken));
 
-    [Authorize(Policy = "Finances.Read")]
+    [Authorize(Policy = "PaymentObligation.View")]
     [HttpGet]
     public async Task<IActionResult> GetPaged([FromQuery] int page = 1, [FromQuery] int pageSize = 20, [FromQuery] Guid? projectId = null, [FromQuery] Guid? milestoneId = null, [FromQuery] bool? dueOnly = null, CancellationToken cancellationToken = default)
         => Ok(await paymentObligationService.GetPagedAsync(page, pageSize, projectId, milestoneId, dueOnly, cancellationToken));
 
-    [Authorize(Policy = "Finances.Write")]
+    [Authorize(Policy = "PaymentObligation.Create")]
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreatePaymentObligationDto dto, CancellationToken cancellationToken) => ToActionResult(await paymentObligationService.CreateAsync(dto, UserId(), cancellationToken), nameof(GetById));
 
-    [Authorize(Policy = "Finances.Write")]
+    [Authorize(Policy = "PaymentObligation.Edit")]
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdatePaymentObligationDto dto, CancellationToken cancellationToken) => ToActionResult(await paymentObligationService.UpdateAsync(id, dto, UserId(), cancellationToken));
 
-    [Authorize(Policy = "Finances.Write")]
+    [Authorize(Policy = "PaymentObligation.Delete")]
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id, [FromBody] DeleteFinancialRecordDto? dto, CancellationToken cancellationToken) => ToActionResult(await paymentObligationService.DeleteAsync(id, dto?.RowVersion ?? Array.Empty<byte>(), UserId(), cancellationToken));
 
-    [Authorize(Policy = "Finances.Write")]
+    [Authorize(Policy = "PaymentObligationSettlement.Record")]
     [HttpPost("{id:guid}/settlements")]
     public async Task<IActionResult> RegisterSettlement(Guid id, [FromBody] RecordPaymentSettlementDto dto, CancellationToken cancellationToken) => ToActionResult(await paymentObligationService.RegisterSettlementAsync(id, dto, UserId(), cancellationToken));
 
-    [Authorize(Policy = "Finances.Read")]
+    [Authorize(Policy = "PaymentObligation.View")]
     [HttpGet("{id:guid}/settlements")]
     public async Task<IActionResult> GetSettlements(Guid id, [FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken cancellationToken = default) => Ok(await paymentObligationService.GetSettlementsAsync(id, page, pageSize, cancellationToken));
 

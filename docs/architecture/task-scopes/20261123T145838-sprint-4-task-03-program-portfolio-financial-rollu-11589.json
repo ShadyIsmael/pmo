@@ -1,0 +1,393 @@
+{
+  "created_at": "2026-11-23T14:58:38Z",
+  "critical_path_coverage": null,
+  "dependency_awareness_only": [
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Permission",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Domain/Permission.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Role",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Domain/Role.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Baseline",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/Baseline.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Project",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/Project.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Plan",
+      "module": "project-planning",
+      "path": "apps/api/src/NEXUS.Modules.ProjectPlanning/Domain/Plan.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "AppDbContext",
+      "module": "persistence",
+      "path": "apps/api/src/NEXUS.Persistence/AppDbContext.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Persistence",
+      "module": "persistence",
+      "path": "apps/api/src/NEXUS.Persistence/AppDbContext.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Persistence",
+      "module": "persistence",
+      "path": "apps/api/src/NEXUS.Persistence/ApprovedTemplateCatalog.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Persistence",
+      "module": "persistence",
+      "path": "apps/api/src/NEXUS.Persistence/ConfiguredStandardWorkingCalendarInitializer.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Persistence",
+      "module": "persistence",
+      "path": "apps/api/src/NEXUS.Persistence/EfDocumentCategoryReferenceValidator.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Persistence",
+      "module": "persistence",
+      "path": "apps/api/src/NEXUS.Persistence/EfProjectPhaseGateConfigurationReader.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Persistence",
+      "module": "persistence",
+      "path": "apps/api/src/NEXUS.Persistence/EfProjectPhaseGatePhasePairCatalog.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Persistence",
+      "module": "persistence",
+      "path": "apps/api/src/NEXUS.Persistence/EmailNotificationProfileStore.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Persistence",
+      "module": "persistence",
+      "path": "apps/api/src/NEXUS.Persistence/FiscalYearConfigurationChangeGuard.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Persistence",
+      "module": "persistence",
+      "path": "apps/api/src/NEXUS.Persistence/MeetingMinutesAttachmentPolicy.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Persistence",
+      "module": "persistence",
+      "path": "apps/api/src/NEXUS.Persistence/MeetingMinutesAttachmentStorage.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Persistence",
+      "module": "persistence",
+      "path": "apps/api/src/NEXUS.Persistence/MeetingNotificationPublisher.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Persistence",
+      "module": "persistence",
+      "path": "apps/api/src/NEXUS.Persistence/MeetingPublicIdLookup.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Persistence",
+      "module": "persistence",
+      "path": "apps/api/src/NEXUS.Persistence/MeetingReminderScheduler.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Persistence",
+      "module": "persistence",
+      "path": "apps/api/src/NEXUS.Persistence/PhaseGatePersistenceRegistration.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Persistence",
+      "module": "persistence",
+      "path": "apps/api/src/NEXUS.Persistence/ProjectOrganizationLookup.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "SeedDataProvider",
+      "module": "persistence",
+      "path": "apps/api/src/NEXUS.Persistence/SeedDataProvider.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Persistence",
+      "module": "persistence",
+      "path": "apps/api/src/NEXUS.Persistence/SeedDataProvider.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Persistence",
+      "module": "persistence",
+      "path": "apps/api/src/NEXUS.Persistence/WorkItemAssigneeLookup.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Persistence",
+      "module": "persistence",
+      "path": "apps/api/src/NEXUS.Persistence/WorkItemAttachmentStorage.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Persistence",
+      "module": "persistence",
+      "path": "apps/api/src/NEXUS.Persistence/WorkItemCommentAccess.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Persistence",
+      "module": "persistence",
+      "path": "apps/api/src/NEXUS.Persistence/WorkItemCommentAuthorLookup.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Persistence",
+      "module": "persistence",
+      "path": "apps/api/src/NEXUS.Persistence/WorkItemStatusReferenceLookup.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Persistence",
+      "module": "persistence",
+      "path": "apps/api/src/NEXUS.Persistence/WorkItemStatusUsageLookup.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Error",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/Error.cs",
+      "relation": "REFERENCES_TYPE"
+    }
+  ],
+  "index_updated": true,
+  "limits": [
+    "Router never prevents an agent from manually opening other files; enforce via agent instructions and audit.",
+    "C# and TS relationships are source-text heuristics; compiler-resolved calls and runtime dependency-injection resolution are not proven.",
+    "Unknown/unclassified files may require manual targeted inspection.",
+    "Index sources excluded secrets and build outputs."
+  ],
+  "module_selection_basis": "task-explicit-alias",
+  "nonprimary_modules_not_read_by_router": [
+    "administration",
+    "ai-planning",
+    "approvals",
+    "audit",
+    "cost-management",
+    "documents",
+    "governance",
+    "home",
+    "identity",
+    "integrations",
+    "issues",
+    "management",
+    "meetings",
+    "notifications",
+    "operations",
+    "organization",
+    "permissions",
+    "persistence",
+    "plugins",
+    "portfolios",
+    "programs",
+    "project-planning",
+    "projects",
+    "reports",
+    "resources",
+    "risks",
+    "security",
+    "stakeholder",
+    "tests",
+    "time",
+    "unclassified",
+    "vendors",
+    "work-items",
+    "workflow"
+  ],
+  "planning_state": "focused",
+  "primary_module": "api",
+  "refresh": {
+    "changed_existing": 6,
+    "deleted": 0,
+    "mode": "refresh",
+    "new": 3,
+    "parsed": 9,
+    "unchanged": 1878
+  },
+  "related_tests_candidates": [
+    "apps/api/tests/NEXUS.Api.Tests/ApiProblemDetailsTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Security/ApiAuthorizationFallbackTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Unit/HandoverRequestControllerTests.cs",
+    "apps/web-react/src/test/api-error-localization.test.ts",
+    "apps/web-react/src/test/api-query-retry-policy.test.ts"
+  ],
+  "selected_files": [
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          103,
+          104
+        ]
+      ],
+      "module": "api",
+      "path": "apps/api/tools/NEXUS.EFDatabaseGate/Program.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 66,
+      "reasons": [
+        "filename-match:program",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:VerifyExistingBackupAsync"
+      ],
+      "score": 100,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          10
+        ]
+      ],
+      "module": "api",
+      "path": "apps/api/tools/NEXUS.Persistence.DesignTime/Program.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 86,
+      "reasons": [
+        "filename-match:program",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:Program"
+      ],
+      "score": 100,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          144
+        ]
+      ],
+      "module": "api",
+      "path": "apps/web/src/lib/api/endpoints.ts",
+      "read_mode": "full-file",
+      "reading_tokens": 5634,
+      "reasons": [
+        "filename-match:endpoints",
+        "module-mentioned",
+        "primary-module"
+      ],
+      "score": 72,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          182,
+          196
+        ],
+        [
+          198,
+          213
+        ],
+        [
+          215,
+          218
+        ],
+        [
+          269,
+          276
+        ]
+      ],
+      "module": "api",
+      "path": "apps/web/src/lib/api/costs.ts",
+      "read_mode": "symbols",
+      "reading_tokens": 380,
+      "reasons": [
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:CurrencyFinancialSummary"
+      ],
+      "score": 64,
+      "token_method": "estimated:chars/3.5"
+    }
+  ],
+  "selection_summary": {
+    "critical_path_coverage_percent": null,
+    "files": 4,
+    "symbols": 11,
+    "tokens": 6166
+  },
+  "snapshot": "20261123T145702-f17777c",
+  "task": "Sprint 4 Task 03 Program & Portfolio Financial Rollups: identify Program and Portfolio entities, Project hierarchy and ownership paths, Financial Reporting DTOs and Calculator, existing Program/Portfolio reporting services, API endpoints, frontend components and hooks",
+  "token_plan": {
+    "available_source_budget": 9600,
+    "estimation_order": "Critical-path coverage is evaluated before reading-cost calculation and optional file ranking.",
+    "requested_total_budget": 16000,
+    "reserved_non_source_budget": 6400,
+    "source_reading_tokens": 6166,
+    "warning": "An estimate of selected source reading, NOT full task execution or model hidden reasoning. Some counts may be approximate."
+  }
+}

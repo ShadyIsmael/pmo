@@ -1,0 +1,419 @@
+{
+  "created_at": "2026-11-27T00:10:44Z",
+  "critical_path_coverage": null,
+  "dependency_awareness_only": [
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "api/organizations",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Api/OrganizationController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Organization.Domain",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Application/BusinessUnitService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Organization.Domain",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Application/CurrencyService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Organization.Application",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Application/DepartmentService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Organization.Application",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Application/IBusinessUnitService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Organization.Application",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Application/IOrganizationService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Organization.Application",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Application/IOrganizationalUnitService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Organization.Application",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Application/ITenantProvisioningService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Organization.Application",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Application/OrganizationProfileContracts.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Organization.Application",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Application/OrganizationResponseDtos.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Organization.Application",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Application/OrganizationService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Organization.Application",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Application/OrganizationSettingsAccessContracts.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Organization.Application",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Application/OrganizationSettingsAccessService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Organization.Application",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Application/OrganizationalUnitDtos.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Organization.Application",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Application/OrganizationalUnitService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "IPhaseGateConfigurationService",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Application/PhaseGateConfigurationContracts.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Organization.Application",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Application/PhaseGateConfigurationContracts.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Organization.Application",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Application/PhaseGateConfigurationService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Organization.Application",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Application/TenantProvisioningContracts.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Organization.Application",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Application/TenantProvisioningService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Organization.Application",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Application/WorkItemStatusReferenceService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Organization",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Domain/Organization.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Error",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/Error.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Organization",
+      "module": "organization",
+      "path": "packages/shared-types/src/types/organization.ts",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Organization.Domain",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Domain/BusinessUnit.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Organization.Domain",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Domain/ConfigurationSetting.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Organization.Domain",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Domain/CostCentre.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Organization.Domain",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Domain/Currency.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Organization.Domain",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Domain/Department.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Organization.Domain",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Domain/Holiday.cs",
+      "relation": "USES_NAMESPACE"
+    }
+  ],
+  "index_updated": false,
+  "limits": [
+    "Router never prevents an agent from manually opening other files; enforce via agent instructions and audit.",
+    "C# and TS relationships are source-text heuristics; compiler-resolved calls and runtime dependency-injection resolution are not proven.",
+    "Unknown/unclassified files may require manual targeted inspection.",
+    "Index sources excluded secrets and build outputs."
+  ],
+  "module_selection_basis": "task-explicit-alias",
+  "nonprimary_modules_not_read_by_router": [
+    "administration",
+    "ai-planning",
+    "api",
+    "approvals",
+    "audit",
+    "cost-management",
+    "documents",
+    "governance",
+    "home",
+    "identity",
+    "integrations",
+    "issues",
+    "management",
+    "meetings",
+    "notifications",
+    "operations",
+    "permissions",
+    "persistence",
+    "plugins",
+    "portfolios",
+    "programs",
+    "project-planning",
+    "projects",
+    "reports",
+    "resources",
+    "risks",
+    "security",
+    "stakeholder",
+    "tests",
+    "time",
+    "unclassified",
+    "vendors",
+    "work-items",
+    "workflow"
+  ],
+  "planning_state": "focused",
+  "primary_module": "organization",
+  "refresh": {
+    "changed_existing": 0,
+    "deleted": 0,
+    "mode": "refresh",
+    "new": 0,
+    "parsed": 0,
+    "unchanged": 1927
+  },
+  "related_tests_candidates": [
+    "apps/api/tests/NEXUS.Api.Tests/Integration/OrganizationPhaseGateConfigurationTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/OrganizationResponseSerializationTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/OrganizationalUnitManagementTests.cs",
+    "apps/web-react/src/test/organization-flow-card.test.ts",
+    "apps/web-react/src/test/organization-layout-storage.test.ts",
+    "apps/web-react/src/test/organization-module-tabs.test.tsx",
+    "apps/web-react/src/test/organization-table-sorting.test.tsx"
+  ],
+  "selected_files": [
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          116
+        ]
+      ],
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Api/PhaseGateRequirementsController.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 1676,
+      "reasons": [
+        "filename-match:controller",
+        "filename-match:phase",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:PhaseGateRequirementsController"
+      ],
+      "score": 100,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          9,
+          21
+        ],
+        [
+          24,
+          31
+        ],
+        [
+          37,
+          47
+        ]
+      ],
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Domain/OrganizationPhaseGateConfiguration.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 485,
+      "reasons": [
+        "filename-match:organization",
+        "filename-match:phase",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:OrganizationPhaseGateConfiguration"
+      ],
+      "score": 100,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "ui",
+      "line_ranges": [
+        [
+          1,
+          243
+        ]
+      ],
+      "module": "organization",
+      "path": "apps/web-react/src/features/organization/PhaseGateRequirementsCard.tsx",
+      "read_mode": "full-file",
+      "reading_tokens": 5439,
+      "reasons": [
+        "filename-match:phase",
+        "module-mentioned",
+        "path-match:organization",
+        "primary-module",
+        "symbol-match:PhaseGateRequirement"
+      ],
+      "score": 93,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          153
+        ]
+      ],
+      "module": "organization",
+      "path": "apps/web-react/src/features/organization/api/phase-gate-requirements.ts",
+      "read_mode": "full-file",
+      "reading_tokens": 1834,
+      "reasons": [
+        "filename-match:phase",
+        "module-mentioned",
+        "path-match:organization",
+        "primary-module",
+        "symbol-match:PhaseGateRequirementType"
+      ],
+      "score": 93,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          13,
+          18
+        ]
+      ],
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Application/TenantRegistryStatusValidator.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 103,
+      "reasons": [
+        "filename-match:id",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:IsActiveAsync"
+      ],
+      "score": 88,
+      "token_method": "estimated:chars/3.5"
+    }
+  ],
+  "selection_summary": {
+    "critical_path_coverage_percent": null,
+    "files": 5,
+    "symbols": 35,
+    "tokens": 9537
+  },
+  "snapshot": "20261126T220221-d00a29d",
+  "task": "backend ProjectController create project endpoint, ProjectService.CreateAsync and hierarchy owner Organization resolution, EnsurePreInitiationPhaseAsync, ProjectPhaseId persistence, retrieval by public ID and ProjectDto mapping",
+  "token_plan": {
+    "available_source_budget": 9600,
+    "estimation_order": "Critical-path coverage is evaluated before reading-cost calculation and optional file ranking.",
+    "requested_total_budget": 16000,
+    "reserved_non_source_budget": 6400,
+    "source_reading_tokens": 9537,
+    "warning": "An estimate of selected source reading, NOT full task execution or model hidden reasoning. Some counts may be approximate."
+  }
+}

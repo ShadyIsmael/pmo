@@ -18,7 +18,8 @@ public sealed class PaymentObligationConfiguration : IEntityTypeConfiguration<Pa
         builder.Property(item => item.Notes).HasMaxLength(2000);
         builder.Property(item => item.Amount).HasPrecision(19, 4);
         builder.Property(item => item.RowVersion).IsConcurrencyToken();
-        builder.HasAlternateKey(item => new { item.TenantId, item.Id });
+        builder.HasAlternateKey(item => new { item.TenantId, item.ProjectId, item.Id })
+            .HasName("AK_PaymentObligations_Tenant_Project_Id");
         builder.HasIndex(item => new { item.TenantId, item.ProjectId, item.DueDate });
         builder.HasIndex(item => new { item.TenantId, item.ProjectId, item.PaymentReference });
         builder.HasIndex(item => new { item.TenantId, item.MilestoneId });

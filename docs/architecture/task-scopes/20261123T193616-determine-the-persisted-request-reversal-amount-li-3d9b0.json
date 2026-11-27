@@ -1,0 +1,404 @@
+{
+  "created_at": "2026-11-23T19:36:16Z",
+  "critical_path_coverage": null,
+  "dependency_awareness_only": [
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Approvals.Domain",
+      "module": "approvals",
+      "path": "apps/api/src/NEXUS.Modules.Approvals/Application/ApprovalService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "source-call-and-member-type",
+      "evidence": "_approvalService:IApprovalService.CancelAsync at line 86",
+      "module": "approvals",
+      "path": "apps/api/src/NEXUS.Modules.Approvals/Application/IApprovalService.cs",
+      "relation": "CALLS_TYPED_METHOD"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "ApprovalRequest",
+      "module": "approvals",
+      "path": "apps/api/src/NEXUS.Modules.Approvals/Application/IApprovalService.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Approvals.Domain",
+      "module": "approvals",
+      "path": "apps/api/src/NEXUS.Modules.Approvals/Application/IApprovalService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "User",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Domain/User.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Error",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/Error.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Message",
+      "module": "projects",
+      "path": "apps/web-react/src/features/projects/components/PlanningImportSheet.tsx",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "User",
+      "module": "identity",
+      "path": "packages/shared-types/src/types/identity.ts",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "ApprovalRequest",
+      "module": "approvals",
+      "path": "apps/api/src/NEXUS.Modules.Approvals/Domain/ApprovalAction.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Currency",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Domain/Currency.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Status",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/Entities/ProjectBaselineVersion.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/ActualWorkCostLookup.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/ApprovalReviewDto.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/AssignmentRecoveryPermissions.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/BaseDomainEvent.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "BaseEntity",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/BaseEntity.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/BaseEntity.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/BaseValueObject.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/EntityCodeSequence.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/Error.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/IAggregateRoot.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/IApprovalDelegationEligibilityLookup.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/IAuditable.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.SharedKernel",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/ICostUtilizationActivityLookup.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "ApprovalRequest",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectAnnualBudgetApprovalNotificationPublisher.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Approvals.Domain",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectAnnualBudgetApprovalNotificationPublisher.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "ApprovalRequest",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectAnnualBudgetClosingWorkflow.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Approvals.Domain",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectAnnualBudgetClosingWorkflow.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "ApprovalRequest",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectAnnualBudgetWorkflow.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Approvals.Domain",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectAnnualBudgetWorkflow.cs",
+      "relation": "USES_NAMESPACE"
+    }
+  ],
+  "index_updated": false,
+  "limits": [
+    "Router never prevents an agent from manually opening other files; enforce via agent instructions and audit.",
+    "C# and TS relationships are source-text heuristics; compiler-resolved calls and runtime dependency-injection resolution are not proven.",
+    "Unknown/unclassified files may require manual targeted inspection.",
+    "Index sources excluded secrets and build outputs."
+  ],
+  "module_selection_basis": "task-explicit-alias",
+  "nonprimary_modules_not_read_by_router": [
+    "administration",
+    "ai-planning",
+    "api",
+    "audit",
+    "cost-management",
+    "documents",
+    "governance",
+    "home",
+    "identity",
+    "integrations",
+    "issues",
+    "management",
+    "meetings",
+    "notifications",
+    "operations",
+    "organization",
+    "permissions",
+    "persistence",
+    "plugins",
+    "portfolios",
+    "programs",
+    "project-planning",
+    "projects",
+    "reports",
+    "resources",
+    "risks",
+    "security",
+    "stakeholder",
+    "tests",
+    "time",
+    "unclassified",
+    "vendors",
+    "work-items",
+    "workflow"
+  ],
+  "planning_state": "focused",
+  "primary_module": "approvals",
+  "refresh": {
+    "changed_existing": 0,
+    "deleted": 0,
+    "mode": "refresh",
+    "new": 0,
+    "parsed": 0,
+    "unchanged": 1892
+  },
+  "related_tests_candidates": [
+    "apps/api/tests/NEXUS.Api.Tests/Unit/AssignedApprovalScopeMiddlewareTests.cs",
+    "apps/api/tests/NEXUS.Modules.Approvals.Tests/ApprovalRequestDomainTests.cs",
+    "apps/api/tests/NEXUS.Modules.Approvals.Tests/ApprovalServiceMutationTests.cs",
+    "apps/api/tests/NEXUS.Modules.Approvals.Tests/NEXUS.Modules.Approvals.Tests.csproj",
+    "apps/web-react/src/test/approval-navigation.test.ts",
+    "apps/web-react/src/test/approval-review-page.test.tsx"
+  ],
+  "selected_files": [
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          109
+        ]
+      ],
+      "module": "approvals",
+      "path": "apps/api/src/NEXUS.Modules.Approvals/Domain/ApprovalRequest.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 1474,
+      "reasons": [
+        "filename-match:approval",
+        "filename-match:request",
+        "primary-module",
+        "symbol-match:ApprovalRequest"
+      ],
+      "score": 133,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "test",
+      "line_ranges": [
+        [
+          1,
+          107
+        ]
+      ],
+      "module": "approvals",
+      "path": "apps/api/tests/NEXUS.Modules.Approvals.Tests/ApprovalRequestDomainTests.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 1234,
+      "reasons": [
+        "filename-match:approval",
+        "filename-match:request",
+        "primary-module",
+        "symbol-match:ApprovalRequestDomainTests"
+      ],
+      "score": 125,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "test",
+      "line_ranges": [
+        [
+          1,
+          56
+        ]
+      ],
+      "module": "approvals",
+      "path": "apps/api/tests/NEXUS.Api.Tests/Unit/AssignedApprovalScopeMiddlewareTests.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 637,
+      "reasons": [
+        "filename-match:approval",
+        "filename-match:id",
+        "primary-module",
+        "symbol-match:AssignedApprovalScopeMiddlewareTests"
+      ],
+      "score": 65,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          105
+        ]
+      ],
+      "module": "approvals",
+      "path": "apps/api/src/NEXUS.Modules.Approvals/Api/ApprovalController.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 1310,
+      "reasons": [
+        "filename-match:approval",
+        "primary-module",
+        "symbol-match:ApprovalController"
+      ],
+      "score": 61,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          13
+        ]
+      ],
+      "module": "approvals",
+      "path": "apps/api/src/NEXUS.Modules.Approvals/ModuleRegistration/ApprovalsModuleRegistration.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 112,
+      "reasons": [
+        "filename-match:approval",
+        "primary-module",
+        "symbol-match:ApprovalsModuleRegistration"
+      ],
+      "score": 61,
+      "token_method": "estimated:chars/3.5"
+    }
+  ],
+  "selection_summary": {
+    "critical_path_coverage_percent": null,
+    "files": 5,
+    "symbols": 55,
+    "tokens": 4767
+  },
+  "snapshot": "20261123T184406-e63e1bc",
+  "task": "Determine the persisted Request Reversal amount linked to its original Payment Request via ReversesRequestId; map only ProjectPaymentRequestDetail, ApprovalRequest and request reversal amount fields for the cash-flow committed balance.",
+  "token_plan": {
+    "available_source_budget": 4800,
+    "estimation_order": "Critical-path coverage is evaluated before reading-cost calculation and optional file ranking.",
+    "requested_total_budget": 8000,
+    "reserved_non_source_budget": 3200,
+    "source_reading_tokens": 4767,
+    "warning": "An estimate of selected source reading, NOT full task execution or model hidden reasoning. Some counts may be approximate."
+  }
+}

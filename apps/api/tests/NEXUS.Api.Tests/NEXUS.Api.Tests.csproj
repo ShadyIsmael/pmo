@@ -9,6 +9,8 @@
 
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <!-- The runner cannot open its parent process in this environment; keep the documented local override. -->
+    <_MSTestEnableParentProcessQuery>false</_MSTestEnableParentProcessQuery>
     <FocusedProjectPlanningComparison Condition="'$(FocusedProjectPlanningComparison)' == ''">false</FocusedProjectPlanningComparison>
     <FocusedProjectPlanningDependencies Condition="'$(FocusedProjectPlanningDependencies)' == ''">false</FocusedProjectPlanningDependencies>
     <FocusedTeamCode Condition="'$(FocusedTeamCode)' == ''">false</FocusedTeamCode>
@@ -27,9 +29,21 @@
     <FocusedAssignmentRecovery Condition="'$(FocusedAssignmentRecovery)' == ''">false</FocusedAssignmentRecovery>
     <FocusedManagementScope Condition="'$(FocusedManagementScope)' == ''">false</FocusedManagementScope>
     <FocusedPaymentRequestPolicy Condition="'$(FocusedPaymentRequestPolicy)' == ''">false</FocusedPaymentRequestPolicy>
+    <FocusedPaymentRequestApprovalNotifications Condition="'$(FocusedPaymentRequestApprovalNotifications)' == ''">false</FocusedPaymentRequestApprovalNotifications>
     <FocusedFiscalYearConfiguration Condition="'$(FocusedFiscalYearConfiguration)' == ''">false</FocusedFiscalYearConfiguration>
     <FocusedAccountApi Condition="'$(FocusedAccountApi)' == ''">false</FocusedAccountApi>
+    <FocusedDevelopmentAdminRecovery Condition="'$(FocusedDevelopmentAdminRecovery)' == ''">false</FocusedDevelopmentAdminRecovery>
+    <FocusedDocumentCategoryDelete Condition="'$(FocusedDocumentCategoryDelete)' == ''">false</FocusedDocumentCategoryDelete>
     <FocusedMeetingMinutes Condition="'$(FocusedMeetingMinutes)' == ''">false</FocusedMeetingMinutes>
+    <FocusedProjectPhaseDocumentReadiness Condition="'$(FocusedProjectPhaseDocumentReadiness)' == ''">false</FocusedProjectPhaseDocumentReadiness>
+    <FocusedProjectStatusCatalog Condition="'$(FocusedProjectStatusCatalog)' == ''">false</FocusedProjectStatusCatalog>
+    <FocusedTemplateDeletionWorkflow Condition="'$(FocusedTemplateDeletionWorkflow)' == ''">false</FocusedTemplateDeletionWorkflow>
+    <FocusedActualPaidReporting Condition="'$(FocusedActualPaidReporting)' == ''">false</FocusedActualPaidReporting>
+    <FocusedPlannedPayments Condition="'$(FocusedPlannedPayments)' == ''">false</FocusedPlannedPayments>
+    <FocusedCashFlowAggregation Condition="'$(FocusedCashFlowAggregation)' == ''">false</FocusedCashFlowAggregation>
+    <FocusedCashFlow Condition="'$(FocusedCashFlow)' == ''">false</FocusedCashFlow>
+    <FocusedPreInitiationPhase Condition="'$(FocusedPreInitiationPhase)' == ''">false</FocusedPreInitiationPhase>
+    <FocusedPreInitiationApiFlow Condition="'$(FocusedPreInitiationApiFlow)' == ''">false</FocusedPreInitiationApiFlow>
   </PropertyGroup>
 
   <ItemGroup>
@@ -179,6 +193,7 @@
     <Compile Remove="**\*.cs" />
     <Compile Include="Unit\ProjectPublicIdRoutingMiddlewareTests.cs" />
     <Compile Include="Unit\MeetingWorkItemScopeTests.cs" />
+    <Compile Include="Testing\NoOpMeetingNotificationPublisher.cs" />
     <ProjectReference Remove="@(ProjectReference)" />
     <ProjectReference Include="..\..\src\NEXUS.Api\NEXUS.Api.csproj" />
     <ProjectReference Include="..\..\src\NEXUS.Persistence\NEXUS.Persistence.csproj" />
@@ -225,13 +240,14 @@
   <ItemGroup Condition="'$(FocusedUserPermissions)' == 'true'">
     <Compile Remove="**\*.cs" />
     <Compile Include="Integration\UserPermissionAdministrationTests.cs" />
+    <Compile Include="Security\FinancialPermissionDelegationTests.cs" />
     <ProjectReference Remove="@(ProjectReference)" />
     <ProjectReference Include="..\..\src\NEXUS.Modules.Identity\NEXUS.Modules.Identity.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Persistence\NEXUS.Persistence.csproj" />
     <ProjectReference Remove="..\..\src\NEXUS.Api\NEXUS.Api.csproj" />
     <ProjectReference Remove="..\..\src\NEXUS.Modules.RiskManagement\NEXUS.Modules.RiskManagement.csproj" />
     <ProjectReference Remove="..\..\src\NEXUS.Modules.ProjectManagement\NEXUS.Modules.ProjectManagement.csproj" />
     <ProjectReference Remove="..\..\src\NEXUS.Modules.ProjectPlanning\NEXUS.Modules.ProjectPlanning.csproj" />
-    <ProjectReference Remove="..\..\src\NEXUS.Persistence\NEXUS.Persistence.csproj" />
     <ProjectReference Remove="..\..\src\NEXUS.Modules.WorkflowEngine\NEXUS.Modules.WorkflowEngine.csproj" />
   </ItemGroup>
 
@@ -247,6 +263,19 @@
     <ProjectReference Remove="..\..\src\NEXUS.Modules.ProjectPlanning\NEXUS.Modules.ProjectPlanning.csproj" />
     <ProjectReference Remove="..\..\src\NEXUS.Persistence\NEXUS.Persistence.csproj" />
     <ProjectReference Remove="..\..\src\NEXUS.Modules.WorkflowEngine\NEXUS.Modules.WorkflowEngine.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(FocusedDevelopmentAdminRecovery)' == 'true'">
+    <Compile Remove="**\*.cs" />
+    <Compile Include="Integration\UserPermissionAdministrationTests.cs" />
+    <Compile Include="Integration\LocalPasswordLifecycleTests.cs" />
+    <Compile Include="Unit\DevelopmentAdminRecoveryConsoleTests.cs" />
+    <ProjectReference Remove="@(ProjectReference)" />
+    <ProjectReference Include="..\..\src\NEXUS.Api\NEXUS.Api.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.Audit\NEXUS.Modules.Audit.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.Identity\NEXUS.Modules.Identity.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Persistence\NEXUS.Persistence.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.SharedKernel\NEXUS.SharedKernel.csproj" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(FocusedNotifications)' == 'true'">
@@ -300,6 +329,20 @@
     <ProjectReference Include="..\..\src\NEXUS.Modules.CostManagement\NEXUS.Modules.CostManagement.csproj" />
   </ItemGroup>
 
+  <!-- Payment Request approval notification tests run without unrelated API test sources. -->
+  <ItemGroup Condition="'$(FocusedPaymentRequestApprovalNotifications)' == 'true'">
+    <Compile Remove="**\*.cs" />
+    <Compile Include="Finance\ProjectPaymentRequestApprovalNotificationPublisherTests.cs" />
+    <ProjectReference Remove="@(ProjectReference)" />
+    <ProjectReference Include="..\..\src\NEXUS.Api\NEXUS.Api.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Persistence\NEXUS.Persistence.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.Approvals\NEXUS.Modules.Approvals.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.CostManagement\NEXUS.Modules.CostManagement.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.Identity\NEXUS.Modules.Identity.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.Notifications\NEXUS.Modules.Notifications.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.ProjectManagement\NEXUS.Modules.ProjectManagement.csproj" />
+  </ItemGroup>
+
   <!-- Fiscal-year configuration tests use Organization and Persistence directly and avoid the full API/MPP adapter graph. -->
   <ItemGroup Condition="'$(FocusedFiscalYearConfiguration)' == 'true'">
     <Compile Remove="**\*.cs" />
@@ -316,6 +359,147 @@
     <ProjectReference Remove="@(ProjectReference)" />
     <ProjectReference Include="..\..\src\NEXUS.Api\NEXUS.Api.csproj" />
     <ProjectReference Include="..\..\src\NEXUS.Modules.Identity\NEXUS.Modules.Identity.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(FocusedDocumentCategoryDelete)' == 'true'">
+    <Compile Remove="**\*.cs" />
+    <Compile Include="Security\DocumentCategoryAuthorizationContractTests.cs" />
+    <Compile Include="Integration\DocumentCategorySharedScopeTests.cs" />
+    <Compile Include="Integration\DocumentCategoryDeleteTests.cs" />
+    <ProjectReference Remove="@(ProjectReference)" />
+    <ProjectReference Include="..\..\src\NEXUS.Api\NEXUS.Api.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Persistence\NEXUS.Persistence.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.Identity\NEXUS.Modules.Identity.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.ProjectManagement\NEXUS.Modules.ProjectManagement.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.Documents\NEXUS.Modules.Documents.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(FocusedProjectPhaseDocumentReadiness)' == 'true'">
+    <Compile Remove="**\*.cs" />
+    <Compile Include="Integration\ProjectPhaseGateLifecycleTests.cs" />
+    <Compile Include="Security\ProjectPhaseGateAuthorizationBoundaryTests.cs" />
+    <Compile Include="Security\ProjectDocumentTemplateAssociationHistoryTests.cs" />
+    <ProjectReference Remove="@(ProjectReference)" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.Documents\NEXUS.Modules.Documents.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.ProjectManagement\NEXUS.Modules.ProjectManagement.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Persistence\NEXUS.Persistence.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(FocusedProjectStatusCatalog)' == 'true'">
+    <Compile Remove="**\*.cs" />
+    <Compile Include="Integration\ProjectStatusChangeCatalogTests.cs" />
+    <ProjectReference Remove="@(ProjectReference)" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.ProjectManagement\NEXUS.Modules.ProjectManagement.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Persistence\NEXUS.Persistence.csproj" />
+  </ItemGroup>
+
+  <!-- Template deletion tests can be compiled independently of unrelated, concurrent API test failures. -->
+  <ItemGroup Condition="'$(FocusedTemplateDeletionWorkflow)' == 'true'">
+    <Compile Remove="**\*.cs" />
+    <Compile Include="Integration\TemplateDeletionWorkflowTests.cs" />
+  </ItemGroup>
+
+  <!-- Actual Paid reporting tests use the SQLite financial-summary harness and avoid the broken API test graph. -->
+  <ItemGroup Condition="'$(FocusedActualPaidReporting)' == 'true'">
+    <Compile Remove="**\*.cs" />
+    <Compile Include="Integration\ActualPaidReportingTests.cs" />
+    <Compile Include="Integration\ProjectFinancialSummaryPersistenceTests.cs" />
+    <Compile Include="Integration\ProjectStatusReportCurrencyQualityTests.cs" />
+    <ProjectReference Remove="@(ProjectReference)" />
+    <ProjectReference Include="..\..\src\NEXUS.Persistence\NEXUS.Persistence.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.ProjectManagement\NEXUS.Modules.ProjectManagement.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.ProjectPlanning\NEXUS.Modules.ProjectPlanning.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.ResourceManagement\NEXUS.Modules.ResourceManagement.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.CostManagement\NEXUS.Modules.CostManagement.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.WorkItems\NEXUS.Modules.WorkItems.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.WorkflowEngine\NEXUS.Modules.WorkflowEngine.csproj" />
+  </ItemGroup>
+
+  <!-- Sprint 2 Planned Payment foundation tests use a minimal SQLite financial model. -->
+  <ItemGroup Condition="'$(FocusedPlannedPayments)' == 'true'">
+    <Compile Remove="**\*.cs" />
+    <Compile Include="Integration\PlannedPaymentFoundationTests.cs" />
+    <ProjectReference Remove="@(ProjectReference)" />
+    <ProjectReference Include="..\..\src\NEXUS.SharedKernel\NEXUS.SharedKernel.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.Audit\NEXUS.Modules.Audit.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.Approvals\NEXUS.Modules.Approvals.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.Identity\NEXUS.Modules.Identity.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.Organization\NEXUS.Modules.Organization.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.CostManagement\NEXUS.Modules.CostManagement.csproj" />
+  </ItemGroup>
+
+  <!-- Sprint 4 Program/Portfolio financial rollup service tests compile against the API host
+       and persistence graph only, avoiding unrelated pre-existing test-project errors. -->
+  <ItemGroup Condition="'$(FocusedFinancialRollups)' == 'true'">
+    <Compile Remove="**\*.cs" />
+    <Compile Include="ProgramPortfolioFinancialRollupServiceTests.cs" />
+    <ProjectReference Remove="@(ProjectReference)" />
+    <ProjectReference Include="..\..\src\NEXUS.Api\NEXUS.Api.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Persistence\NEXUS.Persistence.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.CostManagement\NEXUS.Modules.CostManagement.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.ProjectManagement\NEXUS.Modules.ProjectManagement.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.Portfolio\NEXUS.Modules.Portfolio.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.Organization\NEXUS.Modules.Organization.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.Identity\NEXUS.Modules.Identity.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.Approvals\NEXUS.Modules.Approvals.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(FocusedCashFlowAggregation)' == 'true'">
+    <Compile Remove="**\*.cs" />
+    <Compile Include="ProgramPortfolioCashFlowAggregationTests.cs" />
+    <ProjectReference Remove="@(ProjectReference)" />
+    <ProjectReference Include="..\..\src\NEXUS.Api\NEXUS.Api.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Persistence\NEXUS.Persistence.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.CostManagement\NEXUS.Modules.CostManagement.csproj" />
+  </ItemGroup>
+
+  <!-- Sprint 5 focused cash-flow calculation, authorization, aggregation, and batch-settlement tests.
+       Compile only the dedicated cash-flow test files against the API host, persistence, cost-management,
+       and identity graphs, avoiding unrelated pre-existing test-project errors. -->
+  <ItemGroup Condition="'$(FocusedCashFlow)' == 'true'">
+    <Compile Remove="**\*.cs" />
+    <Compile Include="CostManagement\CashFlowCalculationTests.cs" />
+    <Compile Include="CostManagement\ActualPaidSettlementCalculatorBatchTests.cs" />
+    <Compile Include="ProgramPortfolioCashFlowAggregationTests.cs" />
+    <Compile Include="Security\CashFlowAuthorizationTests.cs" />
+    <ProjectReference Remove="@(ProjectReference)" />
+    <ProjectReference Include="..\..\src\NEXUS.Api\NEXUS.Api.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Persistence\NEXUS.Persistence.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.CostManagement\NEXUS.Modules.CostManagement.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.Identity\NEXUS.Modules.Identity.csproj" />
+  </ItemGroup>
+
+  <!-- Focused lifecycle provisioning tests avoid rebuilding the locked API host output. -->
+  <ItemGroup Condition="'$(FocusedPreInitiationPhase)' == 'true'">
+    <Compile Remove="**\*.cs" />
+    <Compile Include="Integration\PreInitiationPhaseRecoveryTests.cs" />
+    <Compile Include="Integration\ProjectInitialPhaseAssignmentTests.cs" />
+    <Compile Include="Integration\TenantProvisioningPreInitiationTests.cs" />
+    <Compile Include="Testing\SqliteTestAppDbContext.cs" />
+    <ProjectReference Remove="..\..\src\NEXUS.Api\NEXUS.Api.csproj" />
+    <ProjectReference Remove="..\..\src\NEXUS.Modules.CostManagement\NEXUS.Modules.CostManagement.csproj" />
+    <ProjectReference Remove="..\..\src\NEXUS.Modules.Integrations\NEXUS.Modules.Integrations.csproj" />
+    <ProjectReference Remove="..\..\src\NEXUS.Modules.PluginManagement\NEXUS.Modules.PluginManagement.csproj" />
+    <ProjectReference Remove="..\..\src\NEXUS.Modules.RiskManagement\NEXUS.Modules.RiskManagement.csproj" />
+    <ProjectReference Remove="..\..\src\NEXUS.Modules.ProjectPlanning\NEXUS.Modules.ProjectPlanning.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.Organization\NEXUS.Modules.Organization.csproj" />
+    <ProjectReference Include="..\..\src\NEXUS.Modules.Audit\NEXUS.Modules.Audit.csproj" />
+  </ItemGroup>
+
+  <!-- This regression invokes the real API controller and PublicId middleware while reusing the
+       already-built API dependency set, avoiding a full MPP/IKVM rebuild for this focused test. -->
+  <ItemGroup Condition="'$(FocusedPreInitiationApiFlow)' == 'true'">
+    <Compile Remove="**\*.cs" />
+    <Compile Include="Integration\ProjectInitialPhaseAssignmentTests.cs" />
+    <Compile Include="Testing\SqliteTestAppDbContext.cs" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Remove="@(ProjectReference)" />
+    <Reference Include="..\..\src\NEXUS.Api\bin\Debug\net10.0\NEXUS.Api.dll" />
+    <Reference Include="..\..\src\NEXUS.Api\bin\Debug\net10.0\*.dll"
+               Exclude="..\..\src\NEXUS.Api\bin\Debug\net10.0\NEXUS.Api.dll;..\..\src\NEXUS.Api\bin\Debug\net10.0\NEXUS.Modules.*.dll;..\..\src\NEXUS.Api\bin\Debug\net10.0\NEXUS.Persistence.dll;..\..\src\NEXUS.Api\bin\Debug\net10.0\NEXUS.SharedKernel.dll" />
+    <Reference Include="..\..\src\NEXUS.Modules.*\bin\Debug\net10.0\NEXUS.Modules.*.dll" />
+    <Reference Include="..\..\src\NEXUS.Persistence\bin\Debug\net10.0\NEXUS.Persistence.dll" />
+    <Reference Include="..\..\src\NEXUS.SharedKernel\bin\Debug\net10.0\NEXUS.SharedKernel.dll" />
   </ItemGroup>
 
 </Project>

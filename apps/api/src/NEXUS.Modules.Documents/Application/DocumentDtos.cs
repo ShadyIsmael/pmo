@@ -2,9 +2,35 @@ using Microsoft.AspNetCore.Http;
 
 namespace NEXUS.Modules.Documents.Application;
 
-public sealed record DocumentListQuery(int Page = 1, int PageSize = 20, Guid? ProjectId = null, Guid? CategoryId = null, bool TemplatesOnly = false, bool IncludeArchived = false, string? Search = null);
-public sealed record DocumentCategoryDto(Guid Id, string Name, string? Code, string? Description, int SortOrder);
+public sealed record DocumentListQuery(int Page = 1, int PageSize = 20, Guid? ProjectId = null, Guid? CategoryId = null, bool TemplatesOnly = false, bool IncludeArchived = false, string? Search = null, Guid? OrganizationId = null, string? Status = null, Guid? ForProjectId = null, Guid? LibraryForProjectId = null);
+public sealed record DocumentCategoryDto(
+    Guid Id,
+    string Name,
+    string? Code,
+    string? Description,
+    int SortOrder,
+    Guid? OrganizationId = null,
+    string? NameEn = null,
+    string? NameAr = null,
+    bool IsActive = true);
+public sealed record DocumentCategoryCreateRequest(Guid OrganizationId, string NameEn, string NameAr, string? Description = null);
+public sealed record DocumentCategoryUpdateRequest(string NameEn, string NameAr, string? Description = null);
+public sealed record DocumentCategoryStatusRequest(bool IsActive);
+public sealed record DocumentCategoryOptionDto(Guid Id, string NameEn, string? NameAr);
+public sealed record ManagedDocumentCategoryDto(
+    Guid Id,
+    Guid? OrganizationId,
+    string NameEn,
+    string? NameAr,
+    string? Description,
+    string? Code,
+    bool IsActive,
+    int UsageCount,
+    DateTime CreatedAt,
+    DateTime? UpdatedAt,
+    bool CanManage);
+public sealed record DocumentOrganizationDto(Guid Id, string Name);
 public sealed record DocumentVersionDto(Guid Id, int VersionNumber, string? FileName, long FileSize, string? ContentType, string? ChangeNotes, Guid? UploadedBy, DateTime UploadedAt, bool IsCurrent);
-public sealed record DocumentListItemDto(Guid Id, string Name, string? Description, string? FileName, string? FileType, long? FileSize, string? ContentType, Guid? ProjectId, Guid? CategoryId, string? CategoryName, string? Status, int Version, Guid? OwnerId, bool IsTemplate, bool IsArchived, Guid? SourceTemplateId, int? SourceTemplateVersionNumber, DateTime CreatedAt, DateTime? UpdatedAt);
+public sealed record DocumentListItemDto(Guid Id, string Name, string? Description, string? FileName, string? FileType, long? FileSize, string? ContentType, Guid? ProjectId, Guid? CategoryId, string? CategoryName, string? CategoryNameAr, string? Status, int Version, Guid? OwnerId, bool IsTemplate, bool IsMandatory, bool IsArchived, Guid? SourceTemplateId, int? SourceTemplateVersionNumber, DateTime CreatedAt, DateTime? UpdatedAt, Guid? OrganizationId, string? OrganizationName, Guid? SourceTemplateVersionId);
 public sealed record DocumentDetailDto(DocumentListItemDto Document, IReadOnlyList<DocumentVersionDto> Versions);
-public sealed record DocumentMutationDto(string Name, string? Description, Guid? ProjectId, Guid? CategoryId, bool IsTemplate = false, Guid? SourceTemplateId = null, int? SourceTemplateVersionNumber = null, string? ChangeNotes = null, IFormFile? File = null);
+public sealed record DocumentMutationDto(string Name, string? Description, Guid? ProjectId, Guid? CategoryId, bool IsTemplate = false, bool IsMandatory = false, Guid? SourceTemplateId = null, int? SourceTemplateVersionNumber = null, string? ChangeNotes = null, IFormFile? File = null, Guid? OrganizationId = null, Guid? SourceTemplateVersionId = null);

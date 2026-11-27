@@ -1,0 +1,408 @@
+{
+  "created_at": "2026-11-23T11:34:40Z",
+  "critical_path_coverage": null,
+  "dependency_awareness_only": [
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "AIPlanRequest",
+      "module": "ai-planning",
+      "path": "apps/api/src/NEXUS.Modules.AIPlanning/Domain/AIPlanRequest.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "AIPlanResponse",
+      "module": "ai-planning",
+      "path": "apps/api/src/NEXUS.Modules.AIPlanning/Domain/AIPlanResponse.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "ApprovalAction",
+      "module": "approvals",
+      "path": "apps/api/src/NEXUS.Modules.Approvals/Domain/ApprovalAction.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "ApprovalRequest",
+      "module": "approvals",
+      "path": "apps/api/src/NEXUS.Modules.Approvals/Domain/ApprovalRequest.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Delegation",
+      "module": "approvals",
+      "path": "apps/api/src/NEXUS.Modules.Approvals/Domain/Delegation.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "AuditActivity",
+      "module": "audit",
+      "path": "apps/api/src/NEXUS.Modules.Audit/Domain/AuditActivity.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "AuditEntry",
+      "module": "audit",
+      "path": "apps/api/src/NEXUS.Modules.Audit/Domain/AuditEntry.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Budget",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/Budget.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "BudgetRevision",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/BudgetRevision.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "CostApproval",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/CostApproval.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "CostCategory",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/CostCategory.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "CostEntry",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/CostEntry.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Invoice",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/Invoice.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "PaymentNotificationDispatch",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/PaymentNotificationDispatch.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "PaymentObligation",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/PaymentObligation.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "PaymentRequestApproverAssignment",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/PaymentRequestApproverAssignment.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "PaymentSettlement",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/PaymentSettlement.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "PaymentSettlementAdjustment",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/PaymentSettlementAdjustment.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "PlannedPayment",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/PlannedPayment.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "PlannedPaymentInstallment",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/PlannedPaymentInstallment.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "PlannedPaymentLifetimeReservation",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/PlannedPaymentLifetimeReservation.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "ProjectAnnualBudget",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/ProjectAnnualBudget.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "ProjectAnnualBudgetApprovalApprover",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/ProjectAnnualBudgetApprovalConfiguration.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "ProjectAnnualBudgetClosing",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/ProjectAnnualBudgetClosing.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "ProjectAnnualBudgetLine",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/ProjectAnnualBudgetLine.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "ProjectPaymentRequestApprovalCycle",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/ProjectPaymentRequestApprovalCycle.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "ProjectPaymentRequestDetail",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/ProjectPaymentRequestDetail.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "ProjectPaymentRequestFundingTransfer",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/ProjectPaymentRequestFundingTransfer.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Document",
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Domain/Document.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "DocumentCategory",
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Domain/DocumentCategory.cs",
+      "relation": "REFERENCES_TYPE"
+    }
+  ],
+  "index_updated": false,
+  "limits": [
+    "Router never prevents an agent from manually opening other files; enforce via agent instructions and audit.",
+    "C# and TS relationships are source-text heuristics; compiler-resolved calls and runtime dependency-injection resolution are not proven.",
+    "Unknown/unclassified files may require manual targeted inspection.",
+    "Index sources excluded secrets and build outputs."
+  ],
+  "module_selection_basis": "task-explicit-alias",
+  "nonprimary_modules_not_read_by_router": [
+    "administration",
+    "ai-planning",
+    "api",
+    "approvals",
+    "audit",
+    "cost-management",
+    "documents",
+    "governance",
+    "home",
+    "identity",
+    "integrations",
+    "issues",
+    "management",
+    "meetings",
+    "notifications",
+    "operations",
+    "organization",
+    "permissions",
+    "plugins",
+    "portfolios",
+    "programs",
+    "project-planning",
+    "projects",
+    "reports",
+    "resources",
+    "risks",
+    "security",
+    "stakeholder",
+    "tests",
+    "time",
+    "unclassified",
+    "vendors",
+    "work-items",
+    "workflow"
+  ],
+  "planning_state": "focused",
+  "primary_module": "persistence",
+  "refresh": {
+    "changed_existing": 0,
+    "deleted": 0,
+    "mode": "refresh",
+    "new": 0,
+    "parsed": 0,
+    "unchanged": 1884
+  },
+  "related_tests_candidates": [
+    "apps/api/src/NEXUS.Persistence/Migrations/20261110170000_AddOrganizationDocumentTemplateStorageMetadata.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/DevelopmentWbsActivityOrderSqlServerPersistenceTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/DevelopmentWbsSqlServerPersistenceTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Testing/SqliteTestAppDbContext.cs",
+    "apps/api/tests/NEXUS.Modules.ResourceManagement.Tests/TestDbContext.cs",
+    "apps/web-react/src/test/migration-parity.test.ts"
+  ],
+  "selected_files": [
+    {
+      "approximate": true,
+      "kind": "migration",
+      "line_ranges": [
+        [
+          1,
+          535
+        ]
+      ],
+      "module": "persistence",
+      "path": "scripts/database/financial-migrations-20261030161223-to-20261031000210.idempotent.sql",
+      "read_mode": "full-file",
+      "reading_tokens": 7386,
+      "reasons": [
+        "filename-match:id",
+        "filename-match:migration",
+        "module-mentioned",
+        "path-match:database",
+        "primary-module"
+      ],
+      "score": 118,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "migration",
+      "line_ranges": [
+        [
+          1,
+          45
+        ]
+      ],
+      "module": "persistence",
+      "path": "scripts/database/pending-migration-20261027202734.sql",
+      "read_mode": "full-file",
+      "reading_tokens": 394,
+      "reasons": [
+        "filename-match:migration",
+        "module-mentioned",
+        "path-match:database",
+        "primary-module"
+      ],
+      "score": 106,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "migration",
+      "line_ranges": [
+        [
+          1,
+          21
+        ]
+      ],
+      "module": "persistence",
+      "path": "scripts/database/pending-migration-20261030161223.sql",
+      "read_mode": "full-file",
+      "reading_tokens": 410,
+      "reasons": [
+        "filename-match:migration",
+        "module-mentioned",
+        "path-match:database",
+        "primary-module"
+      ],
+      "score": 106,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "migration",
+      "line_ranges": [
+        [
+          1,
+          101
+        ]
+      ],
+      "module": "persistence",
+      "path": "scripts/database/pending-migration-20261101114229.sql",
+      "read_mode": "full-file",
+      "reading_tokens": 1376,
+      "reasons": [
+        "filename-match:migration",
+        "module-mentioned",
+        "path-match:database",
+        "primary-module"
+      ],
+      "score": 106,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "migration",
+      "line_ranges": [
+        [
+          14,
+          14
+        ]
+      ],
+      "module": "persistence",
+      "path": "apps/api/src/NEXUS.Persistence/Migrations/AppDbContextModelSnapshot.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 18,
+      "reasons": [
+        "filename-match:context",
+        "filename-match:db",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:AppDbContextModelSnapshot"
+      ],
+      "score": 88,
+      "token_method": "estimated:chars/3.5"
+    }
+  ],
+  "selection_summary": {
+    "critical_path_coverage_percent": null,
+    "files": 5,
+    "symbols": 1,
+    "tokens": 9584
+  },
+  "snapshot": "20261123T092540-af21596",
+  "task": "Documented EF Core migration workflow and mandatory Development Database Gate: determine NEXUS.Persistence DbContext, API startup project, migration assembly, appsettings.Development connection; verify SERVERPROPERTY ServerName, DB_NAME, database ID, environment; apply reviewed migration; update docs/finance/SPRINT-3-CONSOLIDATED-CLOSURE-REPORT.md.",
+  "token_plan": {
+    "available_source_budget": 9600,
+    "estimation_order": "Critical-path coverage is evaluated before reading-cost calculation and optional file ranking.",
+    "requested_total_budget": 16000,
+    "reserved_non_source_budget": 6400,
+    "source_reading_tokens": 9584,
+    "warning": "An estimate of selected source reading, NOT full task execution or model hidden reasoning. Some counts may be approximate."
+  }
+}

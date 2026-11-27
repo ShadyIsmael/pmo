@@ -7,4 +7,11 @@ public interface IProjectOrganizationLookup
         Guid tenantId,
         Guid projectId,
         CancellationToken cancellationToken = default);
+
+    Task<Guid?> ResolveOrganizationIdAsync(
+        Guid tenantId,
+        Guid? programId,
+        Guid? portfolioId,
+        Guid? departmentId,
+        CancellationToken cancellationToken = default);
 }

@@ -154,6 +154,60 @@ export interface PendingAnnualBudgetApprovalDto {
   requestedByName: string;
 }
 
+export interface PendingPaymentRequestApprovalDto {
+  projectId: string;
+  projectName: string;
+  requestId: string;
+  reference: string;
+  title: string;
+  amount: number;
+  currency: string;
+  status: string;
+  requesterName: string;
+  submittedAtUtc: string;
+  approvalMode: "Sequential" | "Parallel";
+  rowVersion: string;
+  canDecide: boolean;
+}
+
+const paymentRequestApprovalQueueKey = ["my-work-payment-request-approvals"] as const;
+
+export function usePendingPaymentRequestApprovals(enabled = true) {
+  return useQuery({
+    queryKey: paymentRequestApprovalQueueKey,
+    queryFn: () => api.get<{ items: PendingPaymentRequestApprovalDto[] }>("/api/my-work/payment-request-approvals"),
+    enabled,
+    staleTime: 10_000,
+  });
+}
+
+export function useDecideAssignedPaymentRequest() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: {
+      projectId: string;
+      requestId: string;
+      decision: "Approved" | "Rejected" | "ReturnedForRevision";
+      comment?: string;
+      rowVersion: string;
+    }) => {
+      const { projectId, requestId, ...body } = input;
+      return api.post<unknown>(
+        `/api/projects/${encodeURIComponent(projectId)}/payment-requests/${encodeURIComponent(requestId)}/decisions`, body);
+    },
+    onSuccess: (_result, variables) => {
+      void queryClient.invalidateQueries({ queryKey: paymentRequestApprovalQueueKey });
+      void queryClient.invalidateQueries({ queryKey: ["project-payment-requests", variables.projectId] });
+      void queryClient.invalidateQueries({ queryKey: ["project-payment-request", variables.projectId, variables.requestId] });
+      void queryClient.invalidateQueries({ queryKey: ["project-financial-foundation", variables.projectId] });
+      void queryClient.invalidateQueries({ queryKey: ["project-financial-activity", variables.projectId] });
+      void queryClient.invalidateQueries({ queryKey: ["project-payment-request-funding-options", variables.projectId] });
+      void queryClient.invalidateQueries({ queryKey: ["project-planned-payments", variables.projectId] });
+      void queryClient.invalidateQueries({ queryKey: ["project-planned-payment-budget", variables.projectId] });
+    },
+  });
+}
+
 const pendingAnnualBudgetApprovalSchema = z.array(z.object({
   requestId: z.string().min(1),
   budgetId: z.string().min(1),

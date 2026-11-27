@@ -25,12 +25,34 @@ export const endpoints = {
     categories: "/api/documents/categories",
     versions: (documentId: string) => `${id("/api/documents", documentId)}/versions`,
     archive: (documentId: string) => `${id("/api/documents", documentId)}/archive`,
+    activate: (documentId: string) => `${id("/api/documents", documentId)}/activate`,
     download: (documentId: string) => `${id("/api/documents", documentId)}/download`,
     preview: (documentId: string) => `${id("/api/documents", documentId)}/preview`,
+  },
+  documentCategories: {
+    root: "/api/document-categories",
+    detail: (categoryId: string) => id("/api/document-categories", categoryId),
+    status: (categoryId: string) => `${id("/api/document-categories", categoryId)}/status`,
+    templateOptions: "/api/document-categories/template-options",
+    projectUploadOptions: "/api/document-categories/project-upload-options",
+  },
+  templateDeletionRequests: {
+    root: "/api/template-deletion-requests",
+    inbox: "/api/template-deletion-requests/inbox",
+    detail: (requestId: string) => id("/api/template-deletion-requests", requestId),
+    approve: (requestId: string) => `${id("/api/template-deletion-requests", requestId)}/approve`,
+    reject: (requestId: string) => `${id("/api/template-deletion-requests", requestId)}/reject`,
   },
   projects: {
     root: "/api/projects",
     paymentObligationLookup: "/api/projects/workflow-lookups/payment-obligations",
+    phaseGateReadiness: (projectId: string, targetPhaseId?: string) => {
+      const base = `${id("/api/projects", projectId)}/phase-gate/readiness`;
+      return targetPhaseId ? `${base}?targetPhaseId=${encodeURIComponent(targetPhaseId)}` : base;
+    },
+    phaseGateRequirementDocument: (projectId: string, requirementSnapshotId: string) =>
+      `${id("/api/projects", projectId)}/phase-gate/requirements/${encodeURIComponent(requirementSnapshotId)}/document`,
+    phaseGateChange: (projectId: string) => `${id("/api/projects", projectId)}/phase-gate/change-phase`,
     detail: (v: string) => id("/api/projects", v),
     shell: (v: string) => `${id("/api/projects", v)}/shell`,
     overview: (v: string) => `${id("/api/projects", v)}/overview`,
@@ -57,6 +79,7 @@ export const endpoints = {
   portfolios: {
     root: "/api/portfolios",
     projectLookup: "/api/portfolios/project-lookup",
+    eligibleOrganizations: "/api/portfolios/eligible-organizations",
     detail: (v: string) => id("/api/portfolios", v),
     archive: (v: string) => `${id("/api/portfolios", v)}/archive`,
     reactivate: (v: string) => `${id("/api/portfolios", v)}/reactivate`,
@@ -111,6 +134,13 @@ export const endpoints = {
   },
   organization: {
     directory: "/api/organizations",
+    phaseGateTransitions: (organizationId: string) => `/api/organizations/${encodeURIComponent(organizationId)}/phase-gate-requirements/transitions`,
+    phaseGateRequirements: (organizationId: string, sourcePhaseId: string, targetPhaseId: string) =>
+      `/api/organizations/${encodeURIComponent(organizationId)}/phase-gate-requirements?sourcePhaseId=${encodeURIComponent(sourcePhaseId)}&targetPhaseId=${encodeURIComponent(targetPhaseId)}`,
+    phaseGateRequirementHistory: (organizationId: string, sourcePhaseId: string, targetPhaseId: string) =>
+      `/api/organizations/${encodeURIComponent(organizationId)}/phase-gate-requirements/history?sourcePhaseId=${encodeURIComponent(sourcePhaseId)}&targetPhaseId=${encodeURIComponent(targetPhaseId)}`,
+    phaseGateTemplatesByCategory: (organizationId: string, sourcePhaseId: string, categoryId?: string) =>
+      `/api/organizations/${encodeURIComponent(organizationId)}/phase-gate-requirements/templates-by-category?sourcePhaseId=${encodeURIComponent(sourcePhaseId)}${categoryId ? `&categoryId=${encodeURIComponent(categoryId)}` : ""}`,
     settingsGrantTargets: "/api/organizations/settings-access/users",
     settingsGrants: (id: string) => `/api/organizations/${encodeURIComponent(id)}/settings-access/grants`,
     revokeSettingsGrant: (id: string, userId: string) => `/api/organizations/${encodeURIComponent(id)}/settings-access/grants/${encodeURIComponent(userId)}/revoke`,
@@ -317,7 +347,7 @@ export const endpoints = {
     permissionCatalog: "/api/roles/permissions",
     detail: (v: string) => id("/api/roles", v),
   },
-  currencies: { root: "/api/currencies", detail: (v: string) => id("/api/currencies", v) },
+  currencies: { root: "/api/currencies", projectLookup: "/api/currencies/project-lookup", workflowLookup: "/api/currencies/workflow-lookup", detail: (v: string) => id("/api/currencies", v) },
   budgets: { root: "/api/budgets", detail: (v: string) => id("/api/budgets", v) },
   budgetRevisions: {
     root: "/api/budget-revisions",
@@ -334,12 +364,6 @@ export const endpoints = {
     root: "/api/payment-obligations",
     detail: (v: string) => id("/api/payment-obligations", v),
     settlements: (v: string) => `${id("/api/payment-obligations", v)}/settlements`,
-  },
-  commitments: {
-    root: "/api/commitments",
-    detail: (v: string) => id("/api/commitments", v),
-    close: (v: string) => `${id("/api/commitments", v)}/close`,
-    cancel: (v: string) => `${id("/api/commitments", v)}/cancel`,
   },
   handover: { pending: "/api/handover-requests/pending-for-me" },
   managerHandovers: { pending: "/api/manager-handovers/pending-for-me" },

@@ -14,6 +14,14 @@ public sealed class ProjectPaymentRequestController(
     ProjectPaymentRequestWorkflow workflow,
     IManagementContextAccessor management) : ControllerBase
 {
+    [HttpGet("funding-options")]
+    [Authorize(Policy = "ProjectPaymentRequest.Create")]
+    public async Task<IActionResult> GetFundingOptions(Guid projectId, CancellationToken cancellationToken)
+    {
+        if (!TryGetScope(projectId, out var tenantId, out var actorId)) return ScopeFailure();
+        return ToActionResult(await workflow.GetFundingOptionsAsync(tenantId, projectId, actorId, cancellationToken));
+    }
+
     [HttpGet]
     [Authorize(Policy = "ProjectPaymentRequest.View")]
     public async Task<IActionResult> GetPage(
@@ -69,6 +77,26 @@ public sealed class ProjectPaymentRequestController(
         if (!TryGetScope(projectId, out var tenantId, out var actorId)) return ScopeFailure();
         return ToActionResult(await workflow.GetSettlementsAsync(
             tenantId, projectId, requestId, actorId, page, pageSize, cancellationToken));
+    }
+
+    [HttpGet("settlements/{settlementId:guid}/adjustments")]
+    [Authorize(Policy = "ProjectSettlement.View")]
+    public async Task<IActionResult> GetSettlementAdjustments(
+        Guid projectId, Guid settlementId, CancellationToken cancellationToken)
+    {
+        if (!TryGetScope(projectId, out var tenantId, out _)) return ScopeFailure();
+        return ToActionResult(await workflow.GetSettlementAdjustmentsAsync(
+            tenantId, projectId, settlementId, cancellationToken));
+    }
+
+    [HttpGet("settlement-adjustment-approvers")]
+    [Authorize(Policy = "PaymentSettlement.Record")]
+    public async Task<IActionResult> GetEligibleSettlementAdjustmentApprovers(
+        Guid projectId, CancellationToken cancellationToken)
+    {
+        if (!TryGetScope(projectId, out var tenantId, out var actorId)) return ScopeFailure();
+        return ToActionResult(await workflow.GetEligibleSettlementAdjustmentApproversAsync(
+            tenantId, projectId, actorId, cancellationToken));
     }
 
     [HttpGet("{requestId:guid}/reversals")]
@@ -160,6 +188,56 @@ public sealed class ProjectPaymentRequestController(
             tenantId, projectId, requestId, actorId, ActorName(), dto, cancellationToken));
     }
 
+    [HttpPost("settlements/{settlementId:guid}/refunds")]
+    [Authorize(Policy = "PaymentSettlement.Record")]
+    public async Task<IActionResult> RecordRefund(
+        Guid projectId, Guid settlementId, [FromBody] RecordSettlementAdjustmentDto dto,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetScope(projectId, out var tenantId, out var actorId)) return ScopeFailure();
+        if (management.Current?.EffectiveReadOnly == true) return Forbid();
+        dto = dto with { OriginalSettlementId = settlementId };
+        return ToActionResult(await workflow.RecordRefundAsync(
+            tenantId, projectId, actorId, ActorName(), dto, cancellationToken));
+    }
+
+    [HttpPost("settlements/{settlementId:guid}/corrections")]
+    [Authorize(Policy = "PaymentSettlement.Record")]
+    public async Task<IActionResult> RecordCorrection(
+        Guid projectId, Guid settlementId, [FromBody] RecordSettlementAdjustmentDto dto,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetScope(projectId, out var tenantId, out var actorId)) return ScopeFailure();
+        if (management.Current?.EffectiveReadOnly == true) return Forbid();
+        dto = dto with { OriginalSettlementId = settlementId };
+        return ToActionResult(await workflow.RecordSettlementCorrectionAsync(
+            tenantId, projectId, actorId, ActorName(), dto, cancellationToken));
+    }
+
+    [HttpPost("settlements/{settlementId:guid}/adjustments/{adjustmentId:guid}/decisions")]
+    [Authorize(Policy = "ProjectPaymentReversal.Approve")]
+    public async Task<IActionResult> DecideSettlementAdjustment(
+        Guid projectId, Guid settlementId, Guid adjustmentId,
+        [FromBody] DecideSettlementAdjustmentDto dto, CancellationToken cancellationToken)
+    {
+        if (!TryGetScope(projectId, out var tenantId, out var actorId)) return ScopeFailure();
+        if (management.Current?.EffectiveReadOnly == true) return Forbid();
+        return ToActionResult(await workflow.DecideSettlementAdjustmentAsync(
+            tenantId, projectId, settlementId, adjustmentId, actorId, ActorName(), dto, cancellationToken));
+    }
+
+    [HttpPost("settlements/{settlementId:guid}/adjustments/{adjustmentId:guid}/execution")]
+    [Authorize(Policy = "PaymentSettlement.Record")]
+    public async Task<IActionResult> ConfirmSettlementAdjustmentExecution(
+        Guid projectId, Guid settlementId, Guid adjustmentId,
+        [FromBody] ConfirmSettlementAdjustmentExecutionDto dto, CancellationToken cancellationToken)
+    {
+        if (!TryGetScope(projectId, out var tenantId, out var actorId)) return ScopeFailure();
+        if (management.Current?.EffectiveReadOnly == true) return Forbid();
+        return ToActionResult(await workflow.ConfirmSettlementAdjustmentExecutionAsync(
+            tenantId, projectId, settlementId, adjustmentId, actorId, ActorName(), dto, cancellationToken));
+    }
+
     [HttpPost]
     [Authorize(Policy = "ProjectPaymentRequest.Create")]
     public async Task<IActionResult> Create(Guid projectId, [FromBody] CreatePaymentRequestDto dto, CancellationToken cancellationToken)
@@ -169,6 +247,22 @@ public sealed class ProjectPaymentRequestController(
         var result = await workflow.CreateAsync(tenantId, projectId, actorId, ActorName(), dto, cancellationToken);
         if (result.IsFailure) return ErrorResult(result.Error);
         return CreatedAtAction(nameof(GetById), new { projectId, requestId = result.Value!.Id }, result.Value);
+    }
+
+    [HttpPost("quick-one-off")]
+    [Authorize(Policy = "ProjectPaymentRequest.Create")]
+    public async Task<IActionResult> CreateQuickOneOff(
+        Guid projectId,
+        [FromBody] CreateQuickOneOffPaymentRequestDto dto,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetScope(projectId, out var tenantId, out var actorId)) return ScopeFailure();
+        if (management.Current?.EffectiveReadOnly == true) return Forbid();
+        var result = await workflow.CreateQuickOneOffAsync(
+            tenantId, projectId, actorId, ActorName(), dto, cancellationToken);
+        if (result.IsFailure) return ErrorResult(result.Error);
+        return CreatedAtAction(nameof(GetById),
+            new { projectId, requestId = result.Value!.PaymentRequest.Id }, result.Value);
     }
 
     [HttpPut("{requestId:guid}")]

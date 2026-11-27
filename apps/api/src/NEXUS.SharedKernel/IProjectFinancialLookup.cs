@@ -1,6 +1,21 @@
 namespace NEXUS.SharedKernel;
 
 /// <summary>
+/// Minimal project financial data required for consolidated reporting.
+/// Implemented by the ProjectManagement domain; consumed by CostManagement reporting.
+/// </summary>
+public interface IProjectFinancialData
+{
+    Guid Id { get; }
+    Guid TenantId { get; }
+    string Code { get; }
+    string Name { get; }
+    decimal Budget { get; }
+    string Currency { get; }
+    bool IsDeleted { get; }
+}
+
+/// <summary>
 /// Authoritative financial summary from Cost Management for a given project.
 /// Only aggregated from active/non-deleted records matching the project currency.
 /// </summary>
@@ -14,14 +29,20 @@ public sealed class ProjectFinancialSummary
     public decimal? ApprovedBudget { get; init; }
     public decimal? RevisedBudget { get; init; }
     public decimal? ActualCost { get; init; }
-    public decimal? CommittedCost { get; init; }
+    /// <summary>
+    /// Authoritative cash-based Actual Paid: confirmed <c>PaymentSettlement</c> amounts
+    /// resolved to this Project and currency. Null when no settlement currency can be
+    /// resolved, because an incomplete cash total must never be presented as complete.
+    /// </summary>
+    public decimal? ActualPaid { get; init; }
+    public decimal? GrossActualPaid { get; init; }
+    public decimal? NetActualPaid { get; init; }
     public decimal? ForecastAtCompletion { get; init; }
     public decimal? RemainingBudget { get; init; }
     public decimal? BudgetUtilizationPercentage { get; init; }
     public decimal? ForecastVariance { get; init; }
     public bool HasBudgetData { get; init; }
     public bool HasCostEntryData { get; init; }
-    public bool HasCommitmentData { get; init; }
     public bool HasFinancialData { get; init; }
     public bool HasPendingRevision { get; init; }
 }

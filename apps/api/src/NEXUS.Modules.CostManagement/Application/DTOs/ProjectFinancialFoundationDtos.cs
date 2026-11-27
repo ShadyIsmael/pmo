@@ -9,7 +9,10 @@ public sealed record ProjectFinancialFoundationDto(
     decimal? ActualPaid,
     decimal? OutstandingPaymentBalance,
     string? FinanceApprovalMode,
-    string RowVersion);
+    string RowVersion,
+    decimal? GrossActualPaid,
+    decimal? NetActualPaid,
+    bool IsCurrentProjectManager);
 
 public sealed record UpdateProjectFinanceApprovalConfigurationDto(
     string? Mode,

@@ -81,6 +81,8 @@ describe("notification navigation", () => {
     expect(resolveNotificationPath("Project", projectInternalId, projectPublicId, "ProjectAnnualBudgetApproval"))
       .toBe(`/projects/${projectPublicId}/financials?section=annualBudgets`);
     expect(resolveNotificationPath("Project", projectInternalId, null, "ProjectAnnualBudgetApproval")).toBeNull();
+    expect(resolveNotificationPath("Project", projectInternalId, projectPublicId, "ProjectPaymentRequestApproval"))
+      .toBe("/my-work/approvals");
   });
 
   it("rejects external, unknown, and malformed destinations", () => {

@@ -126,7 +126,7 @@ public sealed class ProjectResourceScopeMiddleware
         if (!contentType.StartsWith("application/json", StringComparison.OrdinalIgnoreCase)
             && !contentType.StartsWith("multipart/form-data", StringComparison.OrdinalIgnoreCase)
             && !contentType.StartsWith("application/x-www-form-urlencoded", StringComparison.OrdinalIgnoreCase)) return false;
-        return path[1].ToLowerInvariant() is "budgets" or "costs" or "commitments" or "budget-revisions" or "work-items" or "documents" or "time-entries" or "meetings" or "risks" or "issues" or "allocations" or "payment-obligations" or "resource-finder";
+        return path[1].ToLowerInvariant() is "budgets" or "costs" or "budget-revisions" or "work-items" or "documents" or "time-entries" or "meetings" or "risks" or "issues" or "allocations" or "payment-obligations" or "resource-finder";
     }
 
     private static bool IsNestedProjectResource(IReadOnlyList<string> path)
@@ -467,7 +467,7 @@ public sealed class ProjectResourceScopeMiddleware
 
         return path[1].ToLowerInvariant() switch
         {
-            "budgets" or "costs" or "commitments" or "budget-revisions" or "baselines" or "milestones" or "risks"
+            "budgets" or "costs" or "budget-revisions" or "baselines" or "milestones" or "risks"
                 or "time-entries" or "work-items" or "documents" or "meetings" or "issues"
                 or "project-change-requests" or "allocations" or "payment-obligations" => id,
             _ => null
@@ -480,7 +480,6 @@ public sealed class ProjectResourceScopeMiddleware
         {
             "budgets" => await db.Set<Budget>().IgnoreQueryFilters().AsNoTracking().Where(item => item.Id == id && item.TenantId == tenantId && !item.IsDeleted).Select(item => new ResourceOwner(item.ProjectId, item.PortfolioId)).FirstOrDefaultAsync(cancellationToken),
             "costs" => await ResolveCostOwnerAsync(db, id, tenantId, cancellationToken),
-            "commitments" => await ResolveCommitmentOwnerAsync(db, id, tenantId, cancellationToken),
             "budget-revisions" => await db.Set<BudgetRevision>().IgnoreQueryFilters().AsNoTracking().Where(item => item.Id == id && item.TenantId == tenantId && !item.IsDeleted).Select(item => new ResourceOwner(item.ProjectId, null)).FirstOrDefaultAsync(cancellationToken),
             "baselines" => await db.Set<Baseline>().IgnoreQueryFilters().AsNoTracking().Where(item => item.Id == id && item.TenantId == tenantId && !item.IsDeleted).Select(item => new ResourceOwner(item.ProjectId, null)).FirstOrDefaultAsync(cancellationToken),
             "milestones" => await db.Set<Milestone>().IgnoreQueryFilters().AsNoTracking().Where(item => item.Id == id && item.TenantId == tenantId && !item.IsDeleted).Select(item => new ResourceOwner(item.ProjectId, null)).FirstOrDefaultAsync(cancellationToken),
@@ -527,19 +526,6 @@ public sealed class ProjectResourceScopeMiddleware
         if (cost.ProjectId.HasValue) return new ResourceOwner(cost.ProjectId, null);
         return cost.BudgetId.HasValue
             ? await ResolveBudgetOwnerAsync(db, cost.BudgetId.Value, tenantId, cancellationToken)
-            : new ResourceOwner(null, null);
-    }
-
-    private static async Task<ResourceOwner?> ResolveCommitmentOwnerAsync(AppDbContext db, Guid commitmentId, Guid tenantId, CancellationToken cancellationToken)
-    {
-        var commitment = await db.Set<PurchaseCommitment>().IgnoreQueryFilters().AsNoTracking()
-            .Where(item => item.Id == commitmentId && item.TenantId == tenantId && !item.IsDeleted)
-            .Select(item => new { item.ProjectId, item.BudgetId })
-            .FirstOrDefaultAsync(cancellationToken);
-        if (commitment is null) return null;
-        if (commitment.ProjectId.HasValue) return new ResourceOwner(commitment.ProjectId, null);
-        return commitment.BudgetId.HasValue
-            ? await ResolveBudgetOwnerAsync(db, commitment.BudgetId.Value, tenantId, cancellationToken)
             : new ResourceOwner(null, null);
     }
 

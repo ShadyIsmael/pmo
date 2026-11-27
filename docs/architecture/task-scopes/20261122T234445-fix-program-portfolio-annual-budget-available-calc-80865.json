@@ -1,0 +1,463 @@
+{
+  "created_at": "2026-11-22T23:44:45Z",
+  "dependency_awareness_only": [
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "User",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Domain/User.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Status",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/Entities/ProjectBaselineVersion.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "api/resources",
+      "module": "resources",
+      "path": "apps/api/src/NEXUS.Modules.ResourceManagement/Api/ResourceCostProfileController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ResourceManagement.Application",
+      "module": "resources",
+      "path": "apps/api/src/NEXUS.Modules.ResourceManagement/Application/CostUtilizationAnalyticsService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ResourceManagement.Application.DTOs",
+      "module": "resources",
+      "path": "apps/api/src/NEXUS.Modules.ResourceManagement/Application/DTOs/AllocationDto.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ResourceManagement.Application.DTOs",
+      "module": "resources",
+      "path": "apps/api/src/NEXUS.Modules.ResourceManagement/Application/DTOs/CapacityDto.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ResourceManagement.Application.DTOs",
+      "module": "resources",
+      "path": "apps/api/src/NEXUS.Modules.ResourceManagement/Application/DTOs/CostUtilizationDtos.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ResourceManagement.Application.DTOs",
+      "module": "resources",
+      "path": "apps/api/src/NEXUS.Modules.ResourceManagement/Application/DTOs/ProjectAllocationOverviewDto.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ResourceManagement.Application.DTOs",
+      "module": "resources",
+      "path": "apps/api/src/NEXUS.Modules.ResourceManagement/Application/DTOs/ResourceCostProfileDto.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "CreateResourceDto",
+      "module": "resources",
+      "path": "apps/api/src/NEXUS.Modules.ResourceManagement/Application/DTOs/ResourceDto.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ResourceManagement.Application.DTOs",
+      "module": "resources",
+      "path": "apps/api/src/NEXUS.Modules.ResourceManagement/Application/DTOs/ResourceDto.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ResourceManagement.Application.DTOs",
+      "module": "resources",
+      "path": "apps/api/src/NEXUS.Modules.ResourceManagement/Application/DTOs/ResourceFinderDto.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ResourceManagement.Application.DTOs",
+      "module": "resources",
+      "path": "apps/api/src/NEXUS.Modules.ResourceManagement/Application/DTOs/ResourceVendorLookupDto.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ResourceManagement.Application.DTOs",
+      "module": "resources",
+      "path": "apps/api/src/NEXUS.Modules.ResourceManagement/Application/DTOs/SkillDto.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ResourceManagement.Application.DTOs",
+      "module": "resources",
+      "path": "apps/api/src/NEXUS.Modules.ResourceManagement/Application/DTOs/TeamDto.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ResourceManagement.Application.DTOs",
+      "module": "resources",
+      "path": "apps/api/src/NEXUS.Modules.ResourceManagement/Application/DTOs/VendorDto.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ResourceManagement.Application",
+      "module": "resources",
+      "path": "apps/api/src/NEXUS.Modules.ResourceManagement/Application/ICapacityService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ResourceManagement.Application",
+      "module": "resources",
+      "path": "apps/api/src/NEXUS.Modules.ResourceManagement/Application/ICostUtilizationAnalyticsService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ResourceManagement.Application",
+      "module": "resources",
+      "path": "apps/api/src/NEXUS.Modules.ResourceManagement/Application/IProjectRoleService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ResourceManagement.Application",
+      "module": "resources",
+      "path": "apps/api/src/NEXUS.Modules.ResourceManagement/Application/IResourceCostProfileService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ResourceManagement.Application",
+      "module": "resources",
+      "path": "apps/api/src/NEXUS.Modules.ResourceManagement/Application/IResourceFinderService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "IResourceService",
+      "module": "resources",
+      "path": "apps/api/src/NEXUS.Modules.ResourceManagement/Application/IResourceService.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ResourceManagement.Application",
+      "module": "resources",
+      "path": "apps/api/src/NEXUS.Modules.ResourceManagement/Application/IResourceService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ResourceManagement.Application",
+      "module": "resources",
+      "path": "apps/api/src/NEXUS.Modules.ResourceManagement/Application/ISkillService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ResourceManagement.Application",
+      "module": "resources",
+      "path": "apps/api/src/NEXUS.Modules.ResourceManagement/Application/ITeamService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ResourceManagement.Application",
+      "module": "resources",
+      "path": "apps/api/src/NEXUS.Modules.ResourceManagement/Application/IVendorCategoryService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ResourceManagement.Application",
+      "module": "resources",
+      "path": "apps/api/src/NEXUS.Modules.ResourceManagement/Application/IVendorService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ResourceManagement.Application",
+      "module": "resources",
+      "path": "apps/api/src/NEXUS.Modules.ResourceManagement/Application/ProjectEvmLaborCostLookup.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ResourceManagement.Application",
+      "module": "resources",
+      "path": "apps/api/src/NEXUS.Modules.ResourceManagement/Application/ProjectRoleService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ResourceManagement.Application",
+      "module": "resources",
+      "path": "apps/api/src/NEXUS.Modules.ResourceManagement/Application/ResourceCostProfileService.cs",
+      "relation": "USES_NAMESPACE"
+    }
+  ],
+  "index_updated": false,
+  "limits": [
+    "Router never prevents an agent from manually opening other files; enforce via agent instructions and audit.",
+    "C# and TS analysis uses conservative heuristics; compiler-resolved references not implemented.",
+    "Unknown/unclassified files may require manual targeted inspection.",
+    "Index sources excluded secrets and build outputs."
+  ],
+  "module_selection_basis": "task-explicit-alias",
+  "nonprimary_modules_not_read_by_router": [
+    "administration",
+    "ai-planning",
+    "api",
+    "approvals",
+    "audit",
+    "cost-management",
+    "documents",
+    "governance",
+    "home",
+    "identity",
+    "integrations",
+    "issues",
+    "management",
+    "meetings",
+    "notifications",
+    "operations",
+    "organization",
+    "permissions",
+    "persistence",
+    "plugins",
+    "portfolios",
+    "programs",
+    "project-planning",
+    "projects",
+    "reports",
+    "risks",
+    "security",
+    "stakeholder",
+    "tests",
+    "time",
+    "unclassified",
+    "vendors",
+    "work-items",
+    "workflow"
+  ],
+  "planning_state": "focused",
+  "primary_module": "resources",
+  "refresh": {
+    "changed_existing": 0,
+    "deleted": 0,
+    "mode": "refresh",
+    "new": 0,
+    "parsed": 0,
+    "unchanged": 1880
+  },
+  "related_tests_candidates": [
+    "apps/web-react/src/test/capacity-page-parity.test.tsx",
+    "apps/web-react/src/test/resource-capacity-parity.test.ts",
+    "apps/web-react/src/test/resource-department-filters.test.tsx",
+    "apps/web-react/src/test/resource-form.test.ts",
+    "apps/web-react/src/test/resources-directory-parity.test.tsx"
+  ],
+  "selected_files": [
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          331
+        ]
+      ],
+      "module": "resources",
+      "path": "apps/api/src/NEXUS.Modules.ResourceManagement/Application/AllocationService.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 4640,
+      "reasons": [
+        "filename-match:allocations",
+        "primary-module",
+        "symbol-match:AllocationService"
+      ],
+      "score": 61,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          17
+        ]
+      ],
+      "module": "resources",
+      "path": "apps/api/src/NEXUS.Modules.ResourceManagement/Application/IAllocationService.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 416,
+      "reasons": [
+        "filename-match:allocations",
+        "primary-module",
+        "symbol-match:IAllocationService"
+      ],
+      "score": 61,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          19
+        ]
+      ],
+      "module": "resources",
+      "path": "apps/api/src/NEXUS.Modules.ResourceManagement/Domain/ResourceRequest.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 212,
+      "reasons": [
+        "filename-match:request",
+        "primary-module",
+        "symbol-match:ResourceRequest"
+      ],
+      "score": 61,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          85,
+          92
+        ],
+        [
+          103,
+          110
+        ],
+        [
+          112,
+          119
+        ],
+        [
+          130,
+          132
+        ]
+      ],
+      "module": "resources",
+      "path": "apps/web-react/src/features/resources/api/allocations.ts",
+      "read_mode": "symbols",
+      "reading_tokens": 367,
+      "reasons": [
+        "filename-match:allocations",
+        "primary-module",
+        "symbol-match:useAllocations"
+      ],
+      "score": 61,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          130,
+          131
+        ]
+      ],
+      "module": "resources",
+      "path": "apps/api/src/NEXUS.Modules.ResourceManagement/Api/ResourceController.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 34,
+      "reasons": [
+        "primary-module",
+        "symbol-match:BadRequest"
+      ],
+      "score": 49,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          909,
+          924
+        ]
+      ],
+      "module": "resources",
+      "path": "apps/api/src/NEXUS.Modules.ResourceManagement/Application/CapacityService.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 175,
+      "reasons": [
+        "primary-module",
+        "symbol-match:CalculateEarliestAvailableDate"
+      ],
+      "score": 49,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          569,
+          580
+        ]
+      ],
+      "module": "resources",
+      "path": "apps/api/src/NEXUS.Modules.ResourceManagement/Application/TeamService.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 180,
+      "reasons": [
+        "primary-module",
+        "symbol-match:DetachPendingCreate"
+      ],
+      "score": 49,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "source",
+      "line_ranges": [
+        [
+          64,
+          77
+        ]
+      ],
+      "module": "resources",
+      "path": "packages/shared-types/src/types/resource.ts",
+      "read_mode": "symbols",
+      "reading_tokens": 96,
+      "reasons": [
+        "primary-module",
+        "symbol-match:ResourceRequest"
+      ],
+      "score": 49,
+      "token_method": "estimated:chars/3.5"
+    }
+  ],
+  "snapshot": "20261122T234254-6f2367f",
+  "task": "Fix Program Portfolio annual budget available calculations to reserve pending payment request allocations",
+  "token_plan": {
+    "available_source_budget": 7200,
+    "requested_total_budget": 12000,
+    "reserved_non_source_budget": 4800,
+    "source_reading_tokens": 6120,
+    "warning": "An estimate of initial source/context reading, NOT full task execution or model hidden reasoning. Some counts may be approximate."
+  }
+}

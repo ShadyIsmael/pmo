@@ -10,6 +10,9 @@ const fixtures = vi.hoisted(() => ({
   create: vi.fn(),
   update: vi.fn(),
   managerCandidates: [{ id: "manager-1", fullName: "Nexus Manager" }],
+  organizationOptions: [{ id: "org-1", name: "NEXUS Group" }],
+  organizationLookupError: null as unknown,
+  organizationLookupRefetch: vi.fn(),
   managerLookupError: null as unknown,
   managerLookupRefetch: vi.fn(),
   permissions: ["Portfolio.Create", "Portfolio.Edit", "Handover.AdminInitiate"],
@@ -25,6 +28,7 @@ const fixtures = vi.hoisted(() => ({
 vi.mock("@features/delivery/api/delivery", () => ({
   useManagedPortfolios: () => ({ data: { items: fixtures.portfolios }, isLoading: false, isError: false }),
   useCreatePortfolio: () => ({ mutateAsync: fixtures.create, isPending: false }),
+  useEligiblePortfolioOrganizations: () => ({ data: fixtures.organizationLookupError ? undefined : fixtures.organizationOptions, isLoading: false, isError: Boolean(fixtures.organizationLookupError), error: fixtures.organizationLookupError, refetch: fixtures.organizationLookupRefetch }),
   useUpdatePortfolio: () => ({ mutateAsync: fixtures.update, isPending: false }),
 }));
 
@@ -52,6 +56,9 @@ describe("portfolio management sheet", () => {
     fixtures.create.mockReset().mockResolvedValue({ id: "portfolio-1" });
     fixtures.update.mockReset().mockResolvedValue({ id: "portfolio-1" });
     fixtures.managerCandidates = [{ id: "manager-1", fullName: "Nexus Manager" }];
+    fixtures.organizationOptions = [{ id: "org-1", name: "NEXUS Group" }];
+    fixtures.organizationLookupError = null;
+    fixtures.organizationLookupRefetch.mockReset();
     fixtures.managerLookupError = null;
     fixtures.managerLookupRefetch.mockReset();
     fixtures.permissions = ["Portfolio.Create", "Portfolio.Edit", "Handover.AdminInitiate"];
@@ -72,11 +79,39 @@ describe("portfolio management sheet", () => {
       ownerId: "manager-1",
       status: "Active",
       currency: "USD",
+      organizationId: "org-1",
     }));
     expect(onOpenChange).toHaveBeenCalledWith(false);
     expect(fixtures.create.mock.calls[0]?.[0]).not.toHaveProperty("resourceId");
   });
 
+
+  it("requires an explicit organization when more than one is eligible", async () => {
+    fixtures.organizationOptions = [
+      { id: "org-1", name: "NEXUS Group" },
+      { id: "org-2", name: "Digital Banking" },
+    ];
+    renderSheet();
+    const organization = screen.getByLabelText("Owning Organization *");
+    expect(organization).toHaveValue("");
+    expect(organization).toBeEnabled();
+    fireEvent.change(organization, { target: { value: "org-2" } });
+    fireEvent.change(screen.getByLabelText("Name *"), { target: { value: "Direct Portfolio" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save Portfolio" }));
+
+    await waitFor(() => expect(fixtures.create).toHaveBeenCalledWith(expect.objectContaining({
+      name: "Direct Portfolio",
+      organizationId: "org-2",
+    })));
+  });
+
+  it("blocks Portfolio creation when no eligible organizations are available", () => {
+    fixtures.organizationOptions = [];
+    renderSheet();
+    expect(screen.getByText("No active organizations are available for this action.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save Portfolio" })).toBeDisabled();
+    expect(fixtures.create).not.toHaveBeenCalled();
+  });
   it("shows localized empty and authorization states for Portfolio Manager candidates", () => {
     fixtures.managerCandidates = [];
     renderSheet();

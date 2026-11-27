@@ -1,0 +1,423 @@
+{
+  "created_at": "2026-11-27T00:12:11Z",
+  "critical_path_coverage": null,
+  "dependency_awareness_only": [
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "DocumentReview",
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Domain/DocumentReview.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "OrganizationPhaseGateConfiguration",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Domain/OrganizationPhaseGateConfiguration.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "ProjectPhaseGateEvidence",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/ProjectPhaseGateEvidence.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "ProjectPhaseGateRequirementSnapshot",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/ProjectPhaseGateRequirementSnapshot.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "DocumentReview",
+      "module": "documents",
+      "path": "packages/shared-types/src/types/document.ts",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "ITemplateDeletionWorkflowService",
+      "module": "api",
+      "path": "apps/api/src/NEXUS.Api/Documents/ITemplateDeletionWorkflowService.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "CreateTemplateDeletionRequest",
+      "module": "api",
+      "path": "apps/api/src/NEXUS.Api/Documents/TemplateDeletionWorkflowContracts.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Error",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/Error.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Result",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/Result.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Message",
+      "module": "projects",
+      "path": "apps/web-react/src/features/projects/components/PlanningImportSheet.tsx",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "MeetingAttendeeDto",
+      "module": "meetings",
+      "path": "apps/api/src/NEXUS.Modules.Meetings/Application/DTOs/MeetingDtos.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "MeetingRecurrenceOccurrencePreview",
+      "module": "meetings",
+      "path": "apps/api/src/NEXUS.Modules.Meetings/Application/DTOs/MeetingRecurrenceDtos.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "MeetingActionItemDto",
+      "module": "meetings",
+      "path": "apps/api/src/NEXUS.Modules.Meetings/Application/DTOs/MeetingWorkspaceDtos.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "MeetingSharingHistoryEntryDto",
+      "module": "meetings",
+      "path": "apps/api/src/NEXUS.Modules.Meetings/Application/MeetingSharingDtos.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "MeetingRecurrenceRule",
+      "module": "meetings",
+      "path": "apps/api/src/NEXUS.Modules.Meetings/Domain/MeetingRecurrence.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "PagedResult",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/PagedResult.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "PagedResult",
+      "module": "api",
+      "path": "apps/web-react/src/api/notifications.ts",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "MeetingDetailDto",
+      "module": "projects",
+      "path": "apps/web-react/src/features/delivery/MeetingSharingDialog.tsx",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "PagedResult",
+      "module": "projects",
+      "path": "apps/web-react/src/features/delivery/api/delivery.ts",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Draft",
+      "module": "projects",
+      "path": "apps/web-react/src/features/projects/PlanningActivityDetailsSheet.tsx",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "PagedResult",
+      "module": "projects",
+      "path": "apps/web-react/src/features/projects/api/projects.ts",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "PagedResult",
+      "module": "resources",
+      "path": "apps/web-react/src/features/resources/api/resources.ts",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "PagedResult",
+      "module": "organization",
+      "path": "apps/web-react/src/features/teams/api/teams.ts",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "PagedResult",
+      "module": "shared",
+      "path": "packages/shared-types/src/types/common.ts",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Issue",
+      "module": "issues",
+      "path": "apps/api/src/NEXUS.Modules.IssueManagement/Domain/Issue.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Team",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Domain/Team.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Resource",
+      "module": "resources",
+      "path": "apps/api/src/NEXUS.Modules.ResourceManagement/Domain/Resource.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "CreateWorkItemCommentDto",
+      "module": "work-items",
+      "path": "apps/api/src/NEXUS.Modules.WorkItems/Application/DTOs/WorkItemDtos.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "WorkItemPriority",
+      "module": "work-items",
+      "path": "apps/api/src/NEXUS.Modules.WorkItems/Domain/WorkItem.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "WorkflowTransitionResult",
+      "module": "workflow",
+      "path": "apps/api/src/NEXUS.Modules.WorkflowEngine/Application/Contracts/WorkflowExecutionContracts.cs",
+      "relation": "REFERENCES_TYPE"
+    }
+  ],
+  "index_updated": false,
+  "limits": [
+    "Router never prevents an agent from manually opening other files; enforce via agent instructions and audit.",
+    "C# and TS relationships are source-text heuristics; compiler-resolved calls and runtime dependency-injection resolution are not proven.",
+    "Unknown/unclassified files may require manual targeted inspection.",
+    "Index sources excluded secrets and build outputs."
+  ],
+  "module_selection_basis": "task-explicit-alias",
+  "nonprimary_modules_not_read_by_router": [
+    "administration",
+    "ai-planning",
+    "approvals",
+    "audit",
+    "cost-management",
+    "documents",
+    "governance",
+    "home",
+    "identity",
+    "integrations",
+    "issues",
+    "management",
+    "meetings",
+    "notifications",
+    "operations",
+    "organization",
+    "permissions",
+    "persistence",
+    "plugins",
+    "portfolios",
+    "programs",
+    "project-planning",
+    "projects",
+    "reports",
+    "resources",
+    "risks",
+    "security",
+    "stakeholder",
+    "tests",
+    "time",
+    "unclassified",
+    "vendors",
+    "work-items",
+    "workflow"
+  ],
+  "planning_state": "focused",
+  "primary_module": "api",
+  "refresh": {
+    "changed_existing": 0,
+    "deleted": 0,
+    "mode": "refresh",
+    "new": 0,
+    "parsed": 0,
+    "unchanged": 1927
+  },
+  "related_tests_candidates": [
+    "apps/api/tests/NEXUS.Api.Tests/ApiProblemDetailsTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Security/ApiAuthorizationFallbackTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Unit/HandoverRequestControllerTests.cs",
+    "apps/web-react/src/test/api-error-localization.test.ts",
+    "apps/web-react/src/test/api-query-retry-policy.test.ts"
+  ],
+  "selected_files": [
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          70
+        ]
+      ],
+      "module": "api",
+      "path": "apps/api/src/NEXUS.Api/Documents/TemplateDeletionRequestController.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 803,
+      "reasons": [
+        "filename-match:controller",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:TemplateDeletionRequestController"
+      ],
+      "score": 76,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          198
+        ]
+      ],
+      "module": "api",
+      "path": "apps/web-react/src/api/meetingsFull.ts",
+      "read_mode": "full-file",
+      "reading_tokens": 7932,
+      "reasons": [
+        "filename-match:full",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:useFullMeetings"
+      ],
+      "score": 76,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          52,
+          52
+        ],
+        [
+          53,
+          53
+        ],
+        [
+          54,
+          54
+        ],
+        [
+          55,
+          55
+        ],
+        [
+          56,
+          56
+        ]
+      ],
+      "module": "api",
+      "path": "apps/web-react/src/api/workItemsFull.ts",
+      "read_mode": "symbols",
+      "reading_tokens": 386,
+      "reasons": [
+        "filename-match:full",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:useFullWorkItems"
+      ],
+      "score": 76,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          23
+        ]
+      ],
+      "module": "api",
+      "path": "apps/api/src/NEXUS.Api/Documents/ITemplateDeletionReferenceValidator.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 251,
+      "reasons": [
+        "filename-match:id",
+        "module-mentioned",
+        "primary-module"
+      ],
+      "score": 72,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          5,
+          5
+        ],
+        [
+          7,
+          7
+        ]
+      ],
+      "module": "api",
+      "path": "apps/api/src/NEXUS.Api/Documents/ITemplateDeletionStorageCleanupProcessor.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 55,
+      "reasons": [
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:ProcessRequestAsync"
+      ],
+      "score": 64,
+      "token_method": "estimated:chars/3.5"
+    }
+  ],
+  "selection_summary": {
+    "critical_path_coverage_percent": null,
+    "files": 5,
+    "symbols": 63,
+    "tokens": 9427
+  },
+  "snapshot": "20261126T220221-d00a29d",
+  "task": "Project creation UI and service trace: CreateProjectSheet, createProject API client, ProjectController, ProjectService.CreateAsync, loading project details by public ID after a full page refresh",
+  "token_plan": {
+    "available_source_budget": 9600,
+    "estimation_order": "Critical-path coverage is evaluated before reading-cost calculation and optional file ranking.",
+    "requested_total_budget": 16000,
+    "reserved_non_source_budget": 6400,
+    "source_reading_tokens": 9427,
+    "warning": "An estimate of selected source reading, NOT full task execution or model hidden reasoning. Some counts may be approximate."
+  }
+}

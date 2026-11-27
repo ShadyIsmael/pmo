@@ -72,7 +72,11 @@ export function ProjectCards({ data, isLoading, isError, onRetry }: ProjectCards
                 <p className="truncate font-semibold">{project.name}</p>
                 <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">{project.code}</p>
               </div>
-              <Badge status={project.status}>{statusLabel(project.status)}</Badge>
+              <Badge status={project.statusId ? (project.status ?? "Active") : "default"}>
+                {project.statusId
+                  ? (locale === "ar" ? project.statusNameAr ?? project.statusNameEn ?? project.status : project.statusNameEn ?? project.statusNameAr ?? project.status)
+                  : t("projects.header.statusNotSet")}
+              </Badge>
             </div>
             <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
               <span className="inline-flex min-w-0 items-center gap-1.5">

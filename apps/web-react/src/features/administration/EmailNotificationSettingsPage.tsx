@@ -494,7 +494,8 @@ function eventLabel(log: EmailNotificationDeliveryLog, t: (key: string) => strin
     : log.eventType === "TestEmail" ? "administration.emailNotifications.eventTestEmail" : "administration.emailNotifications.testEvent");
   const keys: Record<string, string> = {
     ProjectHandover: "eventProjectHandover", ProgramHandover: "eventProgramHandover", PortfolioHandover: "eventPortfolioHandover",
-    ProjectChangeRequest: "eventProjectChangeRequest", PaymentDue: "eventPaymentDue", PaymentOverdue: "eventPaymentOverdue",
+    ProjectChangeRequest: "eventProjectChangeRequest", ProjectPaymentRequestApproval: "eventProjectPaymentRequestApproval",
+    PaymentDue: "eventPaymentDue", PaymentOverdue: "eventPaymentOverdue",
     MeetingReminder: "eventMeetingReminder", MeetingInvitation: "eventMeetingInvitation", MeetingStarted: "eventMeetingStarted",
     MeetingMinutesPublished: "eventMeetingMinutesPublished", MeetingMinutesComment: "eventMeetingMinutesComment",
     MeetingMinutesCommentReply: "eventMeetingMinutesCommentReply", MeetingMinutesShared: "eventMeetingMinutesShared",

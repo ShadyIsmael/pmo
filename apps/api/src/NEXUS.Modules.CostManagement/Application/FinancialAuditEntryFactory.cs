@@ -48,16 +48,6 @@ internal static class FinancialAuditEntryFactory
                     currency = cost.Currency;
                 }
                 break;
-            case "PurchaseCommitment":
-                if (context.Set<PurchaseCommitment>().Local.FirstOrDefault(item => item.Id == entityId) is { } commitment)
-                {
-                    projectId = commitment.ProjectId;
-                    tenantId = commitment.TenantId;
-                    reference = commitment.PurchaseOrderNumber;
-                    amount = commitment.Amount;
-                    currency = commitment.Currency;
-                }
-                break;
             case "BudgetRevision":
                 if (context.Set<BudgetRevision>().Local.FirstOrDefault(item => item.Id == entityId) is { } revision)
                 {

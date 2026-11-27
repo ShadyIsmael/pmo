@@ -16,10 +16,33 @@ namespace NEXUS.Api.Tests.Security;
 public sealed class FinancialPermissionDelegationTests
 {
     [Fact]
-    public async Task Catalog_assignable_metadata_does_not_expose_a_permission_unheld_by_the_actor()
+    public void Financial_action_permissions_use_project_scope_in_the_catalog()
     {
-        const string candidateKey = "CostUtilization.Export";
+        var keys = new[]
+        {
+            "ProjectFinance.View", "ProjectPaymentRequest.View", "ProjectPaymentRequest.Create",
+            "ProjectPaymentRequest.EditDraft", "ProjectPaymentRequest.Submit", "ProjectPaymentRequest.Cancel",
+            "ProjectPaymentRequest.Approve", "PaymentSettlement.Record", "ProjectSettlement.View",
+            "ProjectPaymentReversal.Create", "ProjectPaymentReversal.Approve",
+            "ProjectFinancialAuditTrail.View", "ProjectFinancialFoundation.View",
+            "ProjectFinancialCeiling.ApproveChange"
+        };
+
+        Assert.All(keys, key =>
+        {
+            var definition = PermissionCatalog.ByKey[key];
+            Assert.Equal(PermissionScope.Project, definition.Scope);
+            Assert.False(string.IsNullOrWhiteSpace(definition.LabelEn));
+            Assert.False(string.IsNullOrWhiteSpace(definition.LabelAr));
+        });
+    }
+
+    [Fact]
+    public async Task Project_financial_view_is_available_to_custom_roles_without_granting_it_to_the_actor()
+    {
+        const string candidateKey = "ProjectFinancialFoundation.View";
         var tenantId = Guid.NewGuid();
+        using var trustedTenantContext = TrustedTenantExecutionContext.Enter(tenantId);
         var actorId = Guid.NewGuid();
         var catalogEntry = PermissionCatalog.ByKey[candidateKey];
         Assert.True(catalogEntry.IsActive);
@@ -32,25 +55,77 @@ public sealed class FinancialPermissionDelegationTests
         await db.SaveChangesAsync();
 
         var actorPermissions = new HashSet<string>(
-            ["Roles.View", "Roles.ConfigurePermissions", "Resource.View"],
+            ["Roles.View", "Roles.Create", "Roles.ConfigurePermissions", "Resource.View"],
             StringComparer.Ordinal);
         var service = CreateService(db, tenantId, actorId, actorPermissions);
 
-        var withoutInitialGrant = await service.GetAssignablePermissionsAsync(actorId, tenantId);
-        Assert.True(withoutInitialGrant.IsSuccess);
-        Assert.DoesNotContain(withoutInitialGrant.Value!, permission => permission.Name == candidateKey);
+        var catalog = await service.GetAssignablePermissionsAsync(actorId, tenantId);
+        Assert.True(catalog.IsSuccess);
+        var permission = Assert.Single(catalog.Value!, item => item.Name == candidateKey);
+        Assert.Equal("project-financial-management", permission.ModuleId);
+        Assert.Equal("Project Financial Management", permission.ModuleNameEn);
+        Assert.False(permission.CanDelegate == true);
+        Assert.True(permission.CanDelegateToCustomRole == true);
 
-        actorPermissions.Add(candidateKey);
-        service = CreateService(db, tenantId, actorId, actorPermissions);
-        var withInitialGrant = await service.GetAssignablePermissionsAsync(actorId, tenantId);
-        Assert.True(withInitialGrant.IsSuccess);
-        Assert.Contains(withInitialGrant.Value!, permission => permission.Name == candidateKey && permission.IsAssignable);
+        var created = await service.CreateAsync(new SaveRoleDto
+        {
+            Name = "Project Financial Readers",
+            Category = RoleCategories.Management,
+            PermissionIds = [Guid.Parse(catalogEntry.SeedId)]
+        }, actorId, tenantId);
+
+        Assert.True(created.IsSuccess, created.Error?.Message);
+        Assert.Contains(created.Value!.Permissions, item => item.Name == candidateKey);
+        Assert.DoesNotContain(candidateKey, actorPermissions);
+    }
+
+    [Fact]
+    public async Task Project_finance_open_is_assignable_to_an_authorized_custom_role_without_granting_it_to_the_actor()
+    {
+        const string candidateKey = "ProjectFinance.View";
+        var tenantId = Guid.NewGuid();
+        using var trustedTenantContext = TrustedTenantExecutionContext.Enter(tenantId);
+        var actorId = Guid.NewGuid();
+        var catalogEntry = PermissionCatalog.ByKey[candidateKey];
+        Assert.True(catalogEntry.IsActive);
+        Assert.True(catalogEntry.IsAssignable);
+        Assert.Equal(PermissionScope.Tenant, catalogEntry.Scope);
+        Assert.False(catalogEntry.IsTenantAdminBaseline);
+
+        await using var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        db.Permissions.AddRange(PermissionCatalog.CreateSeedPermissions(tenantId));
+        await db.SaveChangesAsync();
+
+        var actorPermissions = new HashSet<string>(
+            ["Roles.View", "Roles.Create", "Roles.ConfigurePermissions", "TenantAdministration.ManageScope"],
+            StringComparer.Ordinal);
+        var service = CreateService(db, tenantId, actorId, actorPermissions);
+        var catalog = await service.GetAssignablePermissionsAsync(actorId, tenantId);
+        Assert.True(catalog.IsSuccess);
+        var permission = Assert.Single(catalog.Value!, item => item.Name == candidateKey);
+        Assert.Equal("financial-management", permission.ModuleId);
+        Assert.Equal("Project Finance", permission.ScreenNameEn);
+        Assert.Equal("Open Finance", permission.LabelEn);
+        Assert.True(permission.CanDelegateToCustomRole == true);
+
+        var created = await service.CreateAsync(new SaveRoleDto
+        {
+            Name = "Project Finance Readers",
+            Category = RoleCategories.Management,
+            PermissionIds = [Guid.Parse(catalogEntry.SeedId)]
+        }, actorId, tenantId);
+
+        Assert.True(created.IsSuccess, created.Error?.Message);
+        Assert.Contains(created.Value!.Permissions, item => item.Name == candidateKey);
+        Assert.DoesNotContain(candidateKey, actorPermissions);
     }
 
     [Fact]
     public async Task Annual_budget_configuration_can_be_delegated_by_scoped_role_admin_without_granting_it_to_the_actor()
     {
         var tenantId = Guid.NewGuid();
+        using var trustedTenantContext = TrustedTenantExecutionContext.Enter(tenantId);
         var actorId = Guid.NewGuid();
         await using var db = CreateDatabase(tenantId);
 
@@ -86,6 +161,7 @@ public sealed class FinancialPermissionDelegationTests
     public async Task Annual_budget_configuration_delegation_requires_both_role_and_tenant_scope_authority()
     {
         var tenantId = Guid.NewGuid();
+        using var trustedTenantContext = TrustedTenantExecutionContext.Enter(tenantId);
         var actorId = Guid.NewGuid();
         await using var db = CreateDatabase(tenantId);
         var actorPermissions = new HashSet<string>(
@@ -119,6 +195,7 @@ public sealed class FinancialPermissionDelegationTests
     public async Task Direct_active_deny_blocks_bootstrap_delegation_of_the_denied_key(string deniedKey)
     {
         var tenantId = Guid.NewGuid();
+        using var trustedTenantContext = TrustedTenantExecutionContext.Enter(tenantId);
         var actorId = Guid.NewGuid();
         await using var db = CreateDatabase(tenantId);
         var deniedPermission = await db.Permissions.IgnoreQueryFilters().SingleAsync(permission =>
@@ -141,9 +218,15 @@ public sealed class FinancialPermissionDelegationTests
         var catalog = await service.GetAssignablePermissionsAsync(actorId, tenantId);
 
         Assert.True(catalog.IsSuccess);
-        Assert.DoesNotContain(catalog.Value!, permission => permission.Name == deniedKey);
+        var deniedEntry = Assert.Single(catalog.Value!, permission => permission.Name == deniedKey);
+        Assert.False(deniedEntry.CanDelegate == true);
+        Assert.True(deniedEntry.CanDelegateToCustomRole == true);
         if (deniedKey == "ProjectAnnualBudget.View")
-            Assert.DoesNotContain(catalog.Value!, permission => permission.Name == "ProjectAnnualBudget.ManageApprovalConfiguration");
+        {
+            var manageEntry = Assert.Single(catalog.Value!, permission => permission.Name == "ProjectAnnualBudget.ManageApprovalConfiguration");
+            Assert.False(manageEntry.CanDelegate == true);
+            Assert.True(manageEntry.CanDelegateToCustomRole == true);
+        }
     }
 
     private static AppDbContext CreateDatabase(Guid tenantId)

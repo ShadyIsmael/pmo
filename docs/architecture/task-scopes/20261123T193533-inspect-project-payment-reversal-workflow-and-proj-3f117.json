@@ -1,0 +1,414 @@
+{
+  "created_at": "2026-11-23T19:35:33Z",
+  "critical_path_coverage": null,
+  "dependency_awareness_only": [
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "api/projects/{projectId:guid}/workflows",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/PlannedPaymentController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "api/projects/{projectId:guid}/workflows",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectAnnualBudgetClosingController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "api/projects/{projectId:guid}/workflows",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectAnnualBudgetController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "api/projects/{projectId:guid}/workflows",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectAnnualBudgetDraftApprovalConfigurationController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "api/projects/{projectId:guid}/workflows",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectAnnualBudgetLineController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "api/projects/{projectId:guid}/workflows",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectFinancialFoundationController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "api/projects/{projectId:guid}/workflows",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectFinancialReportingController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "api/projects/{projectId:guid}/workflows",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectPaymentRequestController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "api/projects/{projectId:guid}/workflows",
+      "module": "audit",
+      "path": "apps/api/src/NEXUS.Modules.Audit/Api/ProjectAuditController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "api/projects/{projectId:guid}/workflows",
+      "module": "audit",
+      "path": "apps/api/src/NEXUS.Modules.Audit/Api/ProjectFinancialActivityController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "User",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Domain/User.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.WorkflowEngine.Application.Contracts",
+      "module": "workflow",
+      "path": "apps/api/src/NEXUS.Modules.WorkflowEngine/Application/Contracts/WorkflowContracts.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.WorkflowEngine.Application.Contracts",
+      "module": "workflow",
+      "path": "apps/api/src/NEXUS.Modules.WorkflowEngine/Application/Contracts/WorkflowExecutionContracts.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.WorkflowEngine.Application.Contracts",
+      "module": "workflow",
+      "path": "apps/api/src/NEXUS.Modules.WorkflowEngine/Application/Contracts/WorkflowManagementContracts.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.WorkflowEngine.Application.Contracts",
+      "module": "workflow",
+      "path": "apps/api/src/NEXUS.Modules.WorkflowEngine/Application/Contracts/WorkflowManagementDtos.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "source-call-and-member-type",
+      "evidence": "service:IProjectWorkflowConfigurationService.SaveAsync at line 21",
+      "module": "workflow",
+      "path": "apps/api/src/NEXUS.Modules.WorkflowEngine/Application/Services/ProjectWorkflowConfigurationService.cs",
+      "relation": "CALLS_TYPED_METHOD"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "ProjectWorkflowConfigurationDto",
+      "module": "workflow",
+      "path": "apps/api/src/NEXUS.Modules.WorkflowEngine/Application/Services/ProjectWorkflowConfigurationService.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.WorkflowEngine.Application.Contracts",
+      "module": "workflow",
+      "path": "apps/api/src/NEXUS.Modules.WorkflowEngine/Application/Services/ProjectWorkflowConfigurationService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.WorkflowEngine.Application.Contracts",
+      "module": "workflow",
+      "path": "apps/api/src/NEXUS.Modules.WorkflowEngine/Application/Services/WorkflowExecutionService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.WorkflowEngine.Application.Contracts",
+      "module": "workflow",
+      "path": "apps/api/src/NEXUS.Modules.WorkflowEngine/Application/Services/WorkflowInstanceService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.WorkflowEngine.Application.Contracts",
+      "module": "workflow",
+      "path": "apps/api/src/NEXUS.Modules.WorkflowEngine/Application/Services/WorkflowManagementService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.WorkflowEngine.Application.Services",
+      "module": "workflow",
+      "path": "apps/api/src/NEXUS.Modules.WorkflowEngine/Application/Services/WorkflowTransitionQueryService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Error",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/Error.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Result",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/Result.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Message",
+      "module": "projects",
+      "path": "apps/web-react/src/features/projects/components/PlanningImportSheet.tsx",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "User",
+      "module": "identity",
+      "path": "packages/shared-types/src/types/identity.ts",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "ProjectId",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/Entities/ProjectBaselineVersion.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "ProjectWorkflowModes",
+      "module": "workflow",
+      "path": "apps/api/src/NEXUS.Modules.WorkflowEngine/Domain/ProjectWorkflowConfiguration.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.WorkflowEngine.Domain",
+      "module": "workflow",
+      "path": "apps/api/src/NEXUS.Modules.WorkflowEngine/Domain/ProjectWorkflowConfiguration.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.WorkflowEngine.Application.Contracts",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Application/BudgetRevisionService.cs",
+      "relation": "USES_NAMESPACE"
+    }
+  ],
+  "index_updated": false,
+  "limits": [
+    "Router never prevents an agent from manually opening other files; enforce via agent instructions and audit.",
+    "C# and TS relationships are source-text heuristics; compiler-resolved calls and runtime dependency-injection resolution are not proven.",
+    "Unknown/unclassified files may require manual targeted inspection.",
+    "Index sources excluded secrets and build outputs."
+  ],
+  "module_selection_basis": "task-explicit-alias",
+  "nonprimary_modules_not_read_by_router": [
+    "administration",
+    "ai-planning",
+    "api",
+    "approvals",
+    "audit",
+    "cost-management",
+    "documents",
+    "governance",
+    "home",
+    "identity",
+    "integrations",
+    "issues",
+    "management",
+    "meetings",
+    "notifications",
+    "operations",
+    "organization",
+    "permissions",
+    "persistence",
+    "plugins",
+    "portfolios",
+    "programs",
+    "project-planning",
+    "projects",
+    "reports",
+    "resources",
+    "risks",
+    "security",
+    "stakeholder",
+    "tests",
+    "time",
+    "unclassified",
+    "vendors",
+    "work-items"
+  ],
+  "planning_state": "focused",
+  "primary_module": "workflow",
+  "refresh": {
+    "changed_existing": 0,
+    "deleted": 0,
+    "mode": "refresh",
+    "new": 0,
+    "parsed": 0,
+    "unchanged": 1892
+  },
+  "related_tests_candidates": [
+    "apps/api/tests/NEXUS.Api.Tests/Integration/PlanVersionWorkflowServiceTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/TemplateDeletionWorkflowTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Security/WorkflowDefinitionTenantIsolationTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Security/WorkflowTrustedGuardMetadataTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Unit/WorkflowDefinitionValidatorTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Unit/WorkflowExecutionPhase2Tests.cs",
+    "apps/api/tests/NEXUS.Modules.WorkflowEngine.Tests/NEXUS.Modules.WorkflowEngine.Tests.csproj",
+    "apps/web-react/src/test/workflow-designer-parity.test.tsx",
+    "apps/web-react/src/test/workflow-flow-designer-interactions.test.tsx",
+    "apps/web-react/src/test/workflow-list-parity.test.tsx",
+    "apps/web-react/src/test/workflow-query-invalidation.test.tsx"
+  ],
+  "selected_files": [
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          151
+        ]
+      ],
+      "module": "workflow",
+      "path": "apps/api/src/NEXUS.Modules.WorkflowEngine/Application/WorkflowDefinitionValidator.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 2258,
+      "reasons": [
+        "filename-match:id",
+        "filename-match:workflow",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:WorkflowDefinitionValidator"
+      ],
+      "score": 88,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "ui",
+      "line_ranges": [
+        [
+          1,
+          102
+        ]
+      ],
+      "module": "workflow",
+      "path": "apps/web-react/src/features/workflow/WorkflowDetailPage.tsx",
+      "read_mode": "full-file",
+      "reading_tokens": 1580,
+      "reasons": [
+        "filename-match:detail",
+        "filename-match:workflow",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:WorkflowDetailPage"
+      ],
+      "score": 88,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "test",
+      "line_ranges": [
+        [
+          1,
+          96
+        ]
+      ],
+      "module": "workflow",
+      "path": "apps/api/tests/NEXUS.Api.Tests/Unit/WorkflowDefinitionValidatorTests.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 1218,
+      "reasons": [
+        "filename-match:id",
+        "filename-match:workflow",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:WorkflowDefinitionValidatorTests"
+      ],
+      "score": 80,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          32
+        ]
+      ],
+      "module": "workflow",
+      "path": "apps/api/src/NEXUS.Modules.WorkflowEngine/Api/ProjectWorkflowController.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 491,
+      "reasons": [
+        "filename-match:workflow",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:ProjectWorkflowController"
+      ],
+      "score": 76,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          44
+        ]
+      ],
+      "module": "workflow",
+      "path": "apps/api/src/NEXUS.Modules.WorkflowEngine/Application/Contracts/ProjectWorkflowContracts.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 414,
+      "reasons": [
+        "filename-match:workflow",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:ProjectWorkflowConfigurationDto"
+      ],
+      "score": 76,
+      "token_method": "estimated:chars/3.5"
+    }
+  ],
+  "selection_summary": {
+    "critical_path_coverage_percent": null,
+    "files": 5,
+    "symbols": 29,
+    "tokens": 5961
+  },
+  "snapshot": "20261123T184406-e63e1bc",
+  "task": "Inspect ProjectPaymentReversalWorkflow and ProjectPaymentRequestDetail.ReversesRequestId to map approved Request Reversal Amount by original Payment Request for Sprint 5 Committed Unpaid calculation; confirm status and persisted DbSet paths.",
+  "token_plan": {
+    "available_source_budget": 6000,
+    "estimation_order": "Critical-path coverage is evaluated before reading-cost calculation and optional file ranking.",
+    "requested_total_budget": 10000,
+    "reserved_non_source_budget": 4000,
+    "source_reading_tokens": 5961,
+    "warning": "An estimate of selected source reading, NOT full task execution or model hidden reasoning. Some counts may be approximate."
+  }
+}

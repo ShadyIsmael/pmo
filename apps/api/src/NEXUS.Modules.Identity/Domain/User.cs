@@ -18,6 +18,7 @@ public class User : BaseEntity
     public ICollection<UserRole> UserRoles { get; set; } = new List<UserRole>();
     public ICollection<UserSession> Sessions { get; set; } = new List<UserSession>();
     public ICollection<UserPermissionOverride> PermissionOverrides { get; set; } = new List<UserPermissionOverride>();
+    public ICollection<UserOrganization> UserOrganizations { get; set; } = new List<UserOrganization>();
 }
 
 public enum AuthenticationSource

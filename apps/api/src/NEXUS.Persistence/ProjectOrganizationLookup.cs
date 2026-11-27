@@ -21,32 +21,47 @@ public sealed class ProjectOrganizationLookup(AppDbContext context) : IProjectOr
             .SingleOrDefaultAsync(cancellationToken);
         if (project is null) return null;
 
-        Guid? portfolioId = project.PortfolioId;
-        if (project.ProgramId.HasValue)
+        return await ResolveOrganizationIdAsync(
+            tenantId, project.ProgramId, project.PortfolioId, project.DepartmentId, cancellationToken);
+    }
+
+    public async Task<Guid?> ResolveOrganizationIdAsync(
+        Guid tenantId,
+        Guid? programId,
+        Guid? portfolioId,
+        Guid? departmentId,
+        CancellationToken cancellationToken = default)
+    {
+        if (tenantId == Guid.Empty) return null;
+
+        var resolvedPortfolioId = portfolioId;
+        if (programId.HasValue)
         {
-            portfolioId = await context.Programs.IgnoreQueryFilters().AsNoTracking()
-                .Where(item => item.Id == project.ProgramId.Value && item.TenantId == tenantId && !item.IsDeleted)
+            resolvedPortfolioId = await context.Programs.IgnoreQueryFilters().AsNoTracking()
+                .Where(item => item.Id == programId.Value && item.TenantId == tenantId && !item.IsDeleted)
                 .Select(item => (Guid?)item.PortfolioId)
                 .SingleOrDefaultAsync(cancellationToken);
+            if (!resolvedPortfolioId.HasValue) return null;
+            if (portfolioId.HasValue && portfolioId.Value != resolvedPortfolioId.Value) return null;
         }
 
         Guid? organizationId = null;
-        if (portfolioId.HasValue)
+        if (resolvedPortfolioId.HasValue)
         {
             organizationId = await context.Portfolios.IgnoreQueryFilters().AsNoTracking()
-                .Where(item => item.Id == portfolioId.Value && item.TenantId == tenantId && !item.IsDeleted)
+                .Where(item => item.Id == resolvedPortfolioId.Value && item.TenantId == tenantId && !item.IsDeleted)
                 .Select(item => item.OrganizationId)
                 .SingleOrDefaultAsync(cancellationToken);
         }
 
-        if (!organizationId.HasValue && project.DepartmentId.HasValue)
+        if (!organizationId.HasValue && departmentId.HasValue)
         {
             organizationId = await (
                 from department in context.Departments.IgnoreQueryFilters().AsNoTracking()
                 join businessUnit in context.BusinessUnits.IgnoreQueryFilters().AsNoTracking()
                     on new { department.TenantId, department.BusinessUnitId }
                     equals new { businessUnit.TenantId, BusinessUnitId = businessUnit.Id }
-                where department.Id == project.DepartmentId.Value
+                where department.Id == departmentId.Value
                     && department.TenantId == tenantId && !department.IsDeleted && department.IsActive
                     && !businessUnit.IsDeleted && businessUnit.IsActive
                 select (Guid?)businessUnit.OrganizationId)

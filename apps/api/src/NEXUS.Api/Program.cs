@@ -35,6 +35,7 @@ using NEXUS.Modules.Notifications.Application;
 using NEXUS.Modules.Notifications.Infrastructure;
 using NEXUS.Modules.Organization.ModuleRegistration;
 using NEXUS.Modules.Organization.Application;
+using NEXUS.Modules.Organization.Application.Settings;
 using NEXUS.Modules.PluginManagement.ModuleRegistration;
 using NEXUS.Modules.Portfolio.ModuleRegistration;
 using NEXUS.Modules.ProjectManagement.ModuleRegistration;
@@ -48,6 +49,7 @@ using NEXUS.Modules.WorkItems.Application;
 using NEXUS.Modules.WorkItems.ModuleRegistration;
 using NEXUS.Modules.WorkflowEngine.ModuleRegistration;
 using NEXUS.Persistence;
+using NEXUS.Persistence.Audit;
 using NEXUS.Persistence.Lookups;
 using NEXUS.Persistence.Management;
 using NEXUS.SharedKernel;
@@ -58,6 +60,7 @@ using NEXUS.Api.ProgramManagement;
 using NEXUS.Api.PortfolioManagement;
 using NEXUS.Api.Governance;
 using NEXUS.Api.Notifications;
+using NEXUS.Api.Documents;
 using NEXUS.Api.Finance;
 using NEXUS.Api.Account;
 using NEXUS.Api.Development;
@@ -312,12 +315,6 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("Cost.Create", policy => policy.RequireClaim("permission", "Cost.Create"));
     options.AddPolicy("Cost.Edit", policy => policy.RequireClaim("permission", "Cost.Edit"));
     options.AddPolicy("Cost.Delete", policy => policy.RequireClaim("permission", "Cost.Delete"));
-    options.AddPolicy("Commitment.View", policy => policy.RequireClaim("permission", "Commitment.View"));
-    options.AddPolicy("Commitment.Create", policy => policy.RequireClaim("permission", "Commitment.Create"));
-    options.AddPolicy("Commitment.Edit", policy => policy.RequireClaim("permission", "Commitment.Edit"));
-    options.AddPolicy("Commitment.Close", policy => policy.RequireClaim("permission", "Commitment.Close"));
-    options.AddPolicy("Commitment.Cancel", policy => policy.RequireClaim("permission", "Commitment.Cancel"));
-    options.AddPolicy("Commitment.Delete", policy => policy.RequireClaim("permission", "Commitment.Delete"));
     options.AddPolicy("PaymentObligation.View", policy => policy.RequireClaim("permission", "PaymentObligation.View"));
     options.AddPolicy("PaymentObligation.Create", policy => policy.RequireClaim("permission", "PaymentObligation.Create"));
     options.AddPolicy("PaymentObligation.Edit", policy => policy.RequireClaim("permission", "PaymentObligation.Edit"));
@@ -353,6 +350,26 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("Project.Create", policy => policy.RequireClaim("permission", "Project.Create"));
     options.AddPolicy("Project.Edit", policy => policy.RequireClaim("permission", "Project.Edit"));
     options.AddPolicy("Project.Delete", policy => policy.RequireClaim("permission", "Project.Delete"));
+    options.AddPolicy("ProjectLifecycle.OptionsLookup", policy => policy.RequireAssertion(context =>
+        context.User.HasClaim("permission", "Project.Create")
+        || context.User.HasClaim("permission", "Project.Edit")
+        || context.User.HasClaim("permission", "Project.View")
+        || context.User.HasClaim("permission", "StatusReport.View")
+        || context.User.HasClaim("permission", "StatusReport.Create")
+        || context.User.HasClaim("permission", "StatusReport.Edit")
+        || context.User.HasClaim("permission", "StatusReport.Publish")
+        || context.User.HasClaim("permission", "ProjectStatus.Change")
+        || context.User.HasClaim("permission", "ProjectPhase.Change")));
+    options.AddPolicy("ProjectLifecyclePhase.View", policy => policy.RequireClaim("permission", "ProjectLifecyclePhase.View"));
+    options.AddPolicy("ProjectLifecyclePhase.Create", policy => policy.RequireClaim("permission", "ProjectLifecyclePhase.Create"));
+    options.AddPolicy("ProjectLifecyclePhase.Edit", policy => policy.RequireClaim("permission", "ProjectLifecyclePhase.Edit"));
+    options.AddPolicy("ProjectLifecyclePhase.ActivateDeactivate", policy => policy.RequireClaim("permission", "ProjectLifecyclePhase.ActivateDeactivate"));
+    options.AddPolicy("ProjectLifecycleStatus.View", policy => policy.RequireClaim("permission", "ProjectLifecycleStatus.View"));
+    options.AddPolicy("ProjectLifecycleStatus.Create", policy => policy.RequireClaim("permission", "ProjectLifecycleStatus.Create"));
+    options.AddPolicy("ProjectLifecycleStatus.Edit", policy => policy.RequireClaim("permission", "ProjectLifecycleStatus.Edit"));
+    options.AddPolicy("ProjectLifecycleStatus.ActivateDeactivate", policy => policy.RequireClaim("permission", "ProjectLifecycleStatus.ActivateDeactivate"));
+    options.AddPolicy("ProjectStatus.Change", policy => policy.RequireClaim("permission", "ProjectStatus.Change"));
+    options.AddPolicy("ProjectPhase.Change", policy => policy.RequireClaim("permission", "ProjectPhase.Change"));
     options.AddPolicy("StatusReport.View", policy => policy.RequireClaim("permission", "StatusReport.View"));
     options.AddPolicy("StatusReport.Create", policy => policy.RequireClaim("permission", "StatusReport.Create"));
     options.AddPolicy("StatusReport.Edit", policy => policy.RequireClaim("permission", "StatusReport.Edit"));
@@ -412,6 +429,16 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy(DocumentPermissions.Edit, policy => policy.RequireClaim("permission", DocumentPermissions.Edit));
     options.AddPolicy(DocumentPermissions.Archive, policy => policy.RequireClaim("permission", DocumentPermissions.Archive));
     options.AddPolicy(DocumentPermissions.TemplateManage, policy => policy.RequireClaim("permission", DocumentPermissions.TemplateManage));
+    options.AddPolicy(DocumentCategoryPermissions.View, policy => policy.RequireClaim("permission", DocumentCategoryPermissions.View));
+    options.AddPolicy(DocumentCategoryPermissions.Create, policy => policy.RequireClaim("permission", DocumentCategoryPermissions.Create));
+    options.AddPolicy(DocumentCategoryPermissions.Edit, policy => policy.RequireClaim("permission", DocumentCategoryPermissions.Edit));
+    options.AddPolicy(DocumentCategoryPermissions.ActivateDeactivate, policy => policy.RequireClaim("permission", DocumentCategoryPermissions.ActivateDeactivate));
+    options.AddPolicy(DocumentCategoryPermissions.Delete, policy => policy.RequireClaim("permission", DocumentCategoryPermissions.Delete));
+    options.AddPolicy(DocumentCategoryPermissions.TemplateOptionsLookupPolicy, policy =>
+        policy.RequireClaim("permission", DocumentPermissions.Create)
+            .RequireClaim("permission", DocumentPermissions.TemplateManage));
+    options.AddPolicy("OrganizationConfiguration.View", policy => policy.RequireClaim("permission", "OrganizationConfiguration.View"));
+    options.AddPolicy("OrganizationConfiguration.Manage", policy => policy.RequireClaim("permission", "OrganizationConfiguration.Manage"));
     options.AddPolicy("Workflow.View", policy => policy.RequireClaim("permission", "Workflow.View"));
     options.AddPolicy("Workflow.Manage", policy => policy.RequireClaim("permission", "Workflow.Manage"));
     options.AddPolicy("Workflow.Publish", policy => policy.RequireClaim("permission", "Workflow.Publish"));
@@ -428,7 +455,21 @@ builder.Services.AddDbContext<AppDbContext>((serviceProvider, options) =>
     options.AddInterceptors(serviceProvider.GetRequiredService<IntegrationSecretProtectionInterceptor>());
     options.AddInterceptors(serviceProvider.GetRequiredService<EmailNotificationProfileSecretProtectionInterceptor>());
 });
+builder.Services.AddScoped<IAccountService, AccountService>();
 builder.Services.AddScoped<IProjectMilestoneReferenceLookup, ProjectPlanMilestoneLookup>();
+builder.Services.AddScoped<NEXUS.Modules.CostManagement.Application.ICurrentProjectManagerLookup, NEXUS.Persistence.Lookups.CurrentProjectManagerLookup>();
+builder.Services.AddScoped<NEXUS.Modules.CostManagement.Application.IPlannedPaymentService, NEXUS.Modules.CostManagement.Application.PlannedPaymentService>();
+builder.Services.AddScoped<ProjectPaymentRequestWorkflow>();
+builder.Services.AddScoped<ProjectAnnualBudgetLineWorkflow>();
+builder.Services.AddScoped<IProjectAnnualBudgetApprovalNotificationPublisher, ProjectAnnualBudgetApprovalNotificationPublisher>();
+builder.Services.AddScoped<IProjectPaymentRequestApprovalNotificationPublisher, ProjectPaymentRequestApprovalNotificationPublisher>();
+builder.Services.AddScoped<ProjectAnnualBudgetWorkflow>();
+builder.Services.AddScoped<ProjectAnnualBudgetDraftApprovalConfigurationService>();
+builder.Services.AddScoped<IProjectAudienceLookup, ProjectAudienceLookup>();
+builder.Services.AddScoped<IMeetingPublicIdLookup, MeetingPublicIdLookup>();
+builder.Services.AddScoped<IProjectOrganizationLookup, ProjectOrganizationLookup>();
+builder.Services.AddScoped<IUserOrganizationScopeLookup, UserOrganizationScopeLookup>();
+builder.Services.AddScoped<IMeetingNotificationPublisher, MeetingNotificationPublisher>();
 builder.Services.Configure<TimeTrackingOptions>(builder.Configuration.GetSection("TimeTracking"));
 builder.Services.AddScoped<DbContext>(sp => sp.GetRequiredService<AppDbContext>());
 builder.Services.AddScoped<IProjectAuditScopeProvider, ProjectAuditScopeProvider>();
@@ -520,6 +561,7 @@ builder.Services.AddScoped<AssignmentRecoveryService>();
 builder.Services.AddIdentityModule();
 builder.Services.AddScoped<DevelopmentAdminPasswordRecoveryService>();
 builder.Services.AddOrganizationModule();
+builder.Services.AddPhaseGatePersistence();
 builder.Services.AddScoped<IFiscalYearConfigurationChangeGuard, FiscalYearConfigurationChangeGuard>();
 builder.Services.AddPortfolioModule();
 builder.Services.AddProjectManagementModule();
@@ -533,6 +575,7 @@ builder.Services.AddWorkflowEngineModule();
 builder.Services.AddApprovalsModule();
 builder.Services.AddNotificationsModule();
 builder.Services.AddDocumentsModule();
+builder.Services.AddTemplateDeletionWorkflow();
 builder.Services.AddReportingModule();
 builder.Services.AddAuditModule();
 builder.Services.AddIntegrationsModule();
@@ -707,6 +750,12 @@ if (app.Environment.IsDevelopment())
                 || permanentLogin.Value.User.MustChangePassword
                 || permanentLogin.Value.User.TemporaryPasswordExpiresAt is not null)
                 throw new InvalidOperationException("The Admin login with the new permanent password did not complete successfully.");
+
+            var verificationSessionLogout = await authentication.LogoutAsync(
+                permanentLogin.Value.User.Id,
+                permanentLogin.Value.RefreshToken);
+            if (verificationSessionLogout.IsFailure)
+                throw new InvalidOperationException("The password was verified, but the temporary verification session could not be closed.");
 
             Console.WriteLine("Development Admin recovery completed.");
             Console.WriteLine("Temporary-password login: verified; first-login password change: required and completed.");

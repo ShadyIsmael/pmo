@@ -134,6 +134,22 @@ describe("Project workflow user lookups", () => {
     expect(api.get).toHaveBeenCalledWith(endpoints.currencies.projectLookup);
   });
 
+  it("filters the Program lookup by the selected Portfolio and separates cache scope", async () => {
+    const programs = [{ id: "program-1", name: "Program One", portfolioId: "portfolio-1", currency: "USD" }];
+    vi.mocked(api.get).mockResolvedValueOnce({ items: programs });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    const { result } = renderHook(() => useProgramLookup(true, "portfolio-1", "user-1:PortfolioManager:native"), {
+      wrapper: createWrapper(client),
+    });
+
+    await waitFor(() => expect(result.current.data).toEqual({ items: programs }));
+    expect(api.get).toHaveBeenCalledWith(endpoints.programs.projectLookup, {
+      pageSize: 200,
+      portfolioId: "portfolio-1",
+    });
+  });
+
   it("loads other workflow dropdowns from their minimal-purpose endpoints on first render", async () => {
     vi.mocked(api.get).mockResolvedValue([]);
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });

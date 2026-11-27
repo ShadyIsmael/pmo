@@ -33,6 +33,7 @@ import { PortfolioSheet } from "./PortfolioSheet";
 import { ProgramSheet } from "./ProgramSheet";
 import { ManagerHandoverPanel } from "./ManagerHandoverPanel";
 import { FinancialRollupView } from "./FinancialRollupView";
+import { ProgramPortfolioCashFlowView } from "./ProgramPortfolioCashFlowView";
 
 type Tab = "overview" | "programs" | "projects" | "delivery" | "financials" | "risks" | "resources" | "statusReports" | "activity" | "handover";
 
@@ -52,6 +53,11 @@ const TAB_ICONS: Record<Tab, LucideIcon> = {
 const projectTabListClass = "flex h-auto w-full min-w-0 items-center justify-between gap-1 overflow-x-auto overflow-y-hidden rounded-none bg-transparent px-2";
 const projectTabTriggerClass = "flex h-auto shrink-0 items-center whitespace-nowrap rounded-none border-b-2 border-transparent px-3 py-1.5 text-[13px] font-semibold leading-5 text-muted-foreground transition-colors rtl:flex-row-reverse data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:px-3.5 data-[state=active]:py-1.5 data-[state=active]:text-[15px] data-[state=active]:font-semibold data-[state=active]:text-primary data-[state=active]:shadow-none";
 const EMPTY_GUID = "00000000-0000-0000-0000-000000000000";
+
+function currentCalendarPeriod() {
+  const year = new Date().getFullYear();
+  return { from: `${year}-01-01`, to: `${year}-12-31` };
+}
 
 function projectPublicId(reference: unknown): string | undefined {
   if (typeof reference !== "object" || reference === null) return undefined;
@@ -154,6 +160,7 @@ export function ManagedPortfolioDetailPage() {
   if (managementLoading || query.isLoading) return <Loading />;
   if (query.isError || !query.data) return <ErrorState text={t("portfolioManager.loadFailed")} onRetry={() => void query.refetch()} />;
   const data = query.data;
+  const cashFlowPeriod = currentCalendarPeriod();
   const portfolio = data.portfolio;
   const currentManagerId = normalizePortfolioManagerId(portfolioQuery.data?.ownerId ?? portfolio.ownerId);
   const currentManagerName = currentManagerId ? portfolioQuery.data?.ownerName ?? portfolio.ownerName : undefined;
@@ -200,7 +207,10 @@ export function ManagedPortfolioDetailPage() {
       <TabsContent value="programs"><PortfolioPrograms data={data} t={t} page={programsPage} onPage={setProgramsPage} canViewAs={(programId) => canViewAs(MANAGEMENT_PERSPECTIVES.ProgramManager, programId)} onViewAs={viewAsProgram} /></TabsContent>
       <TabsContent value="projects"><PortfolioProjects data={data} t={t} page={projectsPage} onPage={setProjectsPage} canViewAs={(projectId) => canViewAs(MANAGEMENT_PERSPECTIVES.ProjectManager, projectId)} onViewAs={viewAsProject} /></TabsContent>
       <TabsContent value="delivery"><PortfolioDelivery data={data} t={t} formatDate={formatDate} /></TabsContent>
-      {canViewFinancials ? <TabsContent value="financials"><FinancialRollupView kind="Portfolio" id={id} enabled={tab === "financials"} scopeKey={cacheScope} /></TabsContent> : null}
+      {canViewFinancials ? <TabsContent value="financials"><div className="space-y-6">
+        <FinancialRollupView kind="Portfolio" id={id} enabled={tab === "financials"} scopeKey={cacheScope} entityName={portfolio.name} />
+        <ProgramPortfolioCashFlowView entityType="Portfolio" entityId={id} entityName={portfolio.name} initialFrom={cashFlowPeriod.from} initialTo={cashFlowPeriod.to} enabled={tab === "financials"} scopeKey={cacheScope} canExport={canViewFinancials} onOpenProject={projectPublicId => navigate(`/projects/${encodeURIComponent(projectPublicId)}/financials`)} />
+      </div></TabsContent> : null}
       <TabsContent value="risks"><RisksIssues data={data} t={t} formatDate={formatOptionalDate} /></TabsContent>
       <TabsContent value="resources"><Resources data={data} t={t} /></TabsContent>
       <TabsContent value="statusReports"><StatusReports data={data} t={t} formatDate={formatOptionalDate} showSummary /></TabsContent>
@@ -243,6 +253,7 @@ export function ManagedProgramDetailPage() {
   if (managementLoading || query.isLoading) return <Loading />;
   if (query.isError || !query.data) return <ErrorState text={t("programManager.loadFailed")} onRetry={() => void query.refetch()} />;
   const data = query.data;
+  const cashFlowPeriod = currentCalendarPeriod();
   const program = data.program;
   const archiveProgram = async () => {
     if (!await confirm({ description: t("programManager.archiveConfirm"), destructive: true })) return;
@@ -292,7 +303,10 @@ export function ManagedProgramDetailPage() {
       </TabsContent>
       <TabsContent value="projects"><ProgramProjects data={data} t={t} formatDate={formatDate} page={projectsPage} onPage={setProjectsPage} /></TabsContent>
       <TabsContent value="delivery"><ProgramDelivery data={data} t={t} formatDate={formatDate} /></TabsContent>
-      {canViewFinancials ? <TabsContent value="financials"><FinancialRollupView kind="Program" id={id} enabled={tab === "financials"} scopeKey={cacheScope} /></TabsContent> : null}
+      {canViewFinancials ? <TabsContent value="financials"><div className="space-y-6">
+        <FinancialRollupView kind="Program" id={id} enabled={tab === "financials"} scopeKey={cacheScope} entityName={program.name} />
+        <ProgramPortfolioCashFlowView entityType="Program" entityId={id} entityName={program.name} initialFrom={cashFlowPeriod.from} initialTo={cashFlowPeriod.to} enabled={tab === "financials"} scopeKey={cacheScope} canExport={canViewFinancials} onOpenProject={projectPublicId => navigate(`/projects/${encodeURIComponent(projectPublicId)}/financials`)} />
+      </div></TabsContent> : null}
       <TabsContent value="risks"><RisksIssues data={data} t={t} formatDate={formatOptionalDate} /></TabsContent>
       <TabsContent value="resources"><Resources data={data} t={t} /></TabsContent>
       <TabsContent value="statusReports"><StatusReports data={data} t={t} formatDate={formatOptionalDate} /></TabsContent>

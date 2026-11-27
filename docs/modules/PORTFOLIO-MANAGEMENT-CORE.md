@@ -46,3 +46,11 @@ Portfolio Financial Overview is read-only and computed from unique authorized Pr
 ## Manager assignment root-cause report
 
 See [Manager Appointment Independence](MANAGER-ASSIGNMENT-SYSTEM-USERS.md) for the cross-entity candidate rules and findings.
+
+## Organization ownership integrity
+
+Every new Portfolio must be owned by an active Organization in the authenticated creator's eligible scope. `GET /api/portfolios/eligible-organizations` and `POST /api/portfolios` both require `Portfolio.Create`; the lookup returns only eligible Organization IDs and names. The API selects the sole eligible Organization when one exists, requires an explicit selection when multiple exist, and rejects missing, inactive, cross-tenant, or out-of-scope Organizations. No Portfolio ownership change is exposed through ordinary Portfolio edit.
+
+Programs inherit Organization ownership from their required same-tenant Portfolio. Program creation and reassignment reject Portfolios with no active owning Organization. Projects resolve Organization from either their Program's Portfolio or their direct Portfolio; Program/Portfolio disagreement and unresolved ownership are rejected. The contextual Project Portfolio and Program lookups remain authorized by `Project.Create` alone and return only minimal choices from eligible active Organizations; they do not grant Portfolio or Program module browsing.
+
+Project creation provisions and assigns the active Organization-specific default Pre-Initiation phase. Existing ownerless Portfolio records remain excluded from contextual Project choices until an authorized, reviewed remediation is applied. Read-only data audit and the default-preview, approval-gated repair are prepared at `scripts/database/audit-portfolio-organization-ownership.sql` and `scripts/database/remediate-digital-transformation-portfolio-organization.sql`. The SQL audit has not been executed in this agent environment.

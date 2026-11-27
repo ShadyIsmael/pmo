@@ -16,6 +16,9 @@
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.10" />
   </ItemGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="NEXUS.Api.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\NEXUS.Persistence\NEXUS.Persistence.csproj" />
     <ProjectReference Include="..\NEXUS.Modules.Identity\NEXUS.Modules.Identity.csproj" />
     <ProjectReference Include="..\NEXUS.Modules.Organization\NEXUS.Modules.Organization.csproj" />

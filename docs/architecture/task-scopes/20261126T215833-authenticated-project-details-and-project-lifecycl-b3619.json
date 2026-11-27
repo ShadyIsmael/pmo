@@ -1,0 +1,779 @@
+{
+  "created_at": "2026-11-26T21:58:33Z",
+  "critical_path_coverage": null,
+  "dependency_awareness_only": [
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "User",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Domain/User.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Application",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/ActualWorkCostLookup.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Application",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/BaselineService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Application",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/CostUtilizationActivityLookup.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Application",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/IBaselineService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Application",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/IMilestoneService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Application",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/IPaymentObligationProjectLookupService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Application",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/IProjectBaselineService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Application",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/IProjectChangeRequestService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Application",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/IProjectHandoverRequestService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Application",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/IProjectOverviewService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Application",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/IProjectPeopleService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Application",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/IProjectReportingService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Application",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/IProjectService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Application",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/IProjectSnapshotService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Application",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/IProjectStakeholderService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Application",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/IProjectStatusReportService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Application",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/IStakeholderInvitationService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Application",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/IStakeholderProjectReadService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Application",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/ITimeEntryService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Application",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/ITimerService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Application",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/MilestoneService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Application",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/PaymentObligationProjectLookupService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Application",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/ProjectBaselineService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Application",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/ProjectChangeRequestService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Application",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/ProjectChangeRequestWorkflow.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Application",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/ProjectChangeRequestWorkflowService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Application",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/ProjectEvmCalculator.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Application",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/ProjectHandoverRequestService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "ProjectLifecycleCatalogService",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/ProjectLifecycleCatalogService.cs",
+      "relation": "REFERENCES_TYPE"
+    }
+  ],
+  "index_updated": false,
+  "limits": [
+    "Router never prevents an agent from manually opening other files; enforce via agent instructions and audit.",
+    "C# and TS relationships are source-text heuristics; compiler-resolved calls and runtime dependency-injection resolution are not proven.",
+    "Unknown/unclassified files may require manual targeted inspection.",
+    "Index sources excluded secrets and build outputs."
+  ],
+  "module_selection_basis": "task-explicit-alias",
+  "nonprimary_modules_not_read_by_router": [
+    "administration",
+    "ai-planning",
+    "api",
+    "approvals",
+    "audit",
+    "cost-management",
+    "documents",
+    "governance",
+    "home",
+    "identity",
+    "integrations",
+    "issues",
+    "management",
+    "meetings",
+    "notifications",
+    "operations",
+    "organization",
+    "permissions",
+    "persistence",
+    "plugins",
+    "portfolios",
+    "programs",
+    "project-planning",
+    "reports",
+    "resources",
+    "risks",
+    "security",
+    "stakeholder",
+    "tests",
+    "time",
+    "unclassified",
+    "vendors",
+    "work-items",
+    "workflow"
+  ],
+  "planning_state": "focused",
+  "primary_module": "projects",
+  "refresh": {
+    "changed_existing": 0,
+    "deleted": 0,
+    "mode": "refresh",
+    "new": 0,
+    "parsed": 0,
+    "unchanged": 1927
+  },
+  "related_tests_candidates": [
+    "apps/api/tests/NEXUS.Api.Tests/Finance/ProjectAnnualBudgetApprovalNotificationPublisherTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Finance/ProjectAnnualBudgetAssignedInboxTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Finance/ProjectAnnualBudgetCandidateEligibilityTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Finance/ProjectAnnualBudgetDraftApprovalConfigurationTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Finance/ProjectAnnualBudgetLifecycleDeletionTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Finance/ProjectAnnualBudgetWorkflowRecoveryTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Finance/ProjectPaymentRequestApprovalNotificationPublisherTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectBaselineVersionQueryFilterTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectChangeRequestServiceIntegrationTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectEvmCalculatorTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectEvmPersistenceTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectFinancialSummaryPersistenceTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectHandoverLifecyclePersistenceTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectHandoverManagerServiceTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectInitialBaselineTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectInitialPhaseAssignmentTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectLifecycleDocumentCategoryScopeTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectOverviewSignalsTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectPhaseGateHistoryTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectPhaseGateLifecycleTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectReportingPersistenceTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectSponsorMembershipSynchronizerTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectStatusChangeCatalogTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectStatusReportCurrencyQualityTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectStatusReportSnapshotPersistenceTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectStatusReportWorkflowProvisioningTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/ProjectChangeRequestServiceTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Security/ProjectAnnualBudgetAssignedReviewAuthorizationTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Security/ProjectAnnualBudgetRoleCategoryTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Security/ProjectAuditDetailAuthorizationTests.cs"
+  ],
+  "selected_files": [
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          64
+        ]
+      ],
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/ProjectPhaseGateArchivedTemplateReferenceValidator.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 767,
+      "reasons": [
+        "filename-match:id",
+        "filename-match:phase",
+        "primary-module",
+        "symbol-match:ProjectPhaseGateArchivedTemplateReferenceValidator"
+      ],
+      "score": 97,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          9,
+          24
+        ]
+      ],
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/ProjectPhaseGateEvidence.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 213,
+      "reasons": [
+        "filename-match:id",
+        "filename-match:phase",
+        "primary-module",
+        "symbol-match:ProjectPhaseGateEvidence"
+      ],
+      "score": 97,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "test",
+      "line_ranges": [
+        [
+          9,
+          24
+        ]
+      ],
+      "module": "projects",
+      "path": "apps/web-react/src/test/project-lifecycle-phase-code.test.tsx",
+      "read_mode": "symbols",
+      "reading_tokens": 104,
+      "reasons": [
+        "filename-match:lifecycle",
+        "filename-match:phase",
+        "primary-module",
+        "symbol-match:PhaseFixture"
+      ],
+      "score": 89,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          109
+        ]
+      ],
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Api/ProjectPhaseGateController.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 1320,
+      "reasons": [
+        "filename-match:phase",
+        "primary-module",
+        "symbol-match:ProjectPhaseGateController"
+      ],
+      "score": 85,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          3,
+          9
+        ],
+        [
+          11,
+          17
+        ],
+        [
+          28,
+          33
+        ],
+        [
+          35,
+          35
+        ],
+        [
+          62,
+          62
+        ]
+      ],
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/DTOs/ProjectPhaseGateDtos.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 264,
+      "reasons": [
+        "filename-match:phase",
+        "primary-module",
+        "symbol-match:ProjectPhaseGateReadinessStatuses"
+      ],
+      "score": 85,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          42
+        ]
+      ],
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/IProjectPhaseGateReadinessService.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 446,
+      "reasons": [
+        "filename-match:phase",
+        "primary-module",
+        "symbol-match:IProjectPhaseGateReadinessService"
+      ],
+      "score": 85,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          8,
+          22
+        ],
+        [
+          24,
+          24
+        ],
+        [
+          35,
+          35
+        ]
+      ],
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/ProjectPhaseGateConfigurationReader.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 184,
+      "reasons": [
+        "filename-match:phase",
+        "primary-module",
+        "symbol-match:IProjectPhaseGateConfigurationReader"
+      ],
+      "score": 85,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          24,
+          24
+        ],
+        [
+          552,
+          558
+        ],
+        [
+          997,
+          1000
+        ],
+        [
+          1137,
+          1137
+        ],
+        [
+          1145,
+          1145
+        ]
+      ],
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/ProjectPhaseGateReadinessService.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 204,
+      "reasons": [
+        "filename-match:phase",
+        "primary-module",
+        "symbol-match:ProjectPhaseGateReadinessService"
+      ],
+      "score": 85,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          16
+        ]
+      ],
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/ProjectPhase.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 149,
+      "reasons": [
+        "filename-match:phase",
+        "primary-module",
+        "symbol-match:ProjectPhase"
+      ],
+      "score": 85,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          10,
+          26
+        ]
+      ],
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/ProjectPhaseCatalogEntry.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 258,
+      "reasons": [
+        "filename-match:phase",
+        "primary-module",
+        "symbol-match:ProjectPhaseCatalogEntry"
+      ],
+      "score": 85,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          6,
+          16
+        ]
+      ],
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/ProjectPhaseGateRequirementSnapshot.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 143,
+      "reasons": [
+        "filename-match:phase",
+        "primary-module",
+        "symbol-match:ProjectPhaseGateRequirementSnapshot"
+      ],
+      "score": 85,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          9,
+          21
+        ]
+      ],
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/ProjectPhaseGateSnapshot.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 195,
+      "reasons": [
+        "filename-match:phase",
+        "primary-module",
+        "symbol-match:ProjectPhaseGateSnapshot"
+      ],
+      "score": 85,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          6,
+          12
+        ]
+      ],
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/ProjectPhaseTransitionRule.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 72,
+      "reasons": [
+        "filename-match:phase",
+        "primary-module",
+        "symbol-match:ProjectPhaseTransitionRule"
+      ],
+      "score": 85,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          233
+        ]
+      ],
+      "module": "projects",
+      "path": "apps/web-react/src/features/projects/api/project-phase-gates.ts",
+      "read_mode": "full-file",
+      "reading_tokens": 2730,
+      "reasons": [
+        "filename-match:phase",
+        "primary-module",
+        "symbol-match:ProjectPhaseGateReadinessStatus"
+      ],
+      "score": 85,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "test",
+      "line_ranges": [
+        [
+          33,
+          41
+        ]
+      ],
+      "module": "projects",
+      "path": "apps/web-react/src/test/project-annual-budget-lifecycle-invalidation.test.tsx",
+      "read_mode": "symbols",
+      "reading_tokens": 174,
+      "reasons": [
+        "filename-match:id",
+        "filename-match:lifecycle",
+        "primary-module",
+        "symbol-match:LifecycleMutationHarness"
+      ],
+      "score": 65,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          141
+        ]
+      ],
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Api/ProjectLifecycleCatalogController.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 1940,
+      "reasons": [
+        "filename-match:lifecycle",
+        "primary-module",
+        "symbol-match:ProjectLifecycleCatalogController"
+      ],
+      "score": 61,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          9,
+          16
+        ]
+      ],
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/IProjectLifecycleCatalogService.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 76,
+      "reasons": [
+        "filename-match:lifecycle",
+        "primary-module",
+        "symbol-match:IProjectLifecycleCatalogService"
+      ],
+      "score": 61,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          4,
+          17
+        ],
+        [
+          19,
+          19
+        ],
+        [
+          35,
+          35
+        ],
+        [
+          54,
+          54
+        ],
+        [
+          72,
+          72
+        ]
+      ],
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/ProjectLifecycleCatalogContracts.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 307,
+      "reasons": [
+        "filename-match:lifecycle",
+        "primary-module",
+        "symbol-match:ProjectLifecyclePermissions"
+      ],
+      "score": 61,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          3,
+          7
+        ]
+      ],
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/TimeTrackingOptions.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 41,
+      "reasons": [
+        "filename-match:options",
+        "primary-module",
+        "symbol-match:TimeTrackingOptions"
+      ],
+      "score": 61,
+      "token_method": "estimated:chars/3.5"
+    }
+  ],
+  "selection_summary": {
+    "critical_path_coverage_percent": null,
+    "files": 19,
+    "symbols": 80,
+    "tokens": 9587
+  },
+  "snapshot": "20261126T202114-0146d84",
+  "task": "Authenticated Project details and project lifecycle options endpoint phase resolution by Project's owning Organization, ProjectPhaseId and legacy Phase consistency",
+  "token_plan": {
+    "available_source_budget": 9600,
+    "estimation_order": "Critical-path coverage is evaluated before reading-cost calculation and optional file ranking.",
+    "requested_total_budget": 16000,
+    "reserved_non_source_budget": 6400,
+    "source_reading_tokens": 9587,
+    "warning": "An estimate of selected source reading, NOT full task execution or model hidden reasoning. Some counts may be approximate."
+  }
+}

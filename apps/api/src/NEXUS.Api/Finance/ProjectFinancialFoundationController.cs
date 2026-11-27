@@ -49,13 +49,48 @@ public sealed class ProjectFinancialFoundationController : ControllerBase
             .AsNoTracking()
             .ToListAsync(cancellationToken);
 
+        // Actual Paid also includes confirmed settlements recorded against
+        // approved Project Payment Requests, resolved through the shared
+        // settlement calculator so both payment rails report once.
+        var settlementFacts = await ActualPaidSettlementCalculator.LoadForProjectAsync(
+            _db, tenantId, project.Id, ignoreQueryFilters: true, cancellationToken: cancellationToken);
+        var requestSettlements = settlementFacts
+            .Where(item => item.ProjectPaymentRequestId.HasValue)
+            .ToArray();
+
         var currency = NormalizeCurrency(project.Currency);
         var currencyIsValid = currency.Length == 3
             && currency.All(character => character is >= 'A' and <= 'Z')
             && await _db.Set<Currency>().IgnoreQueryFilters().AnyAsync(item => item.Code == currency && !item.IsDeleted, cancellationToken);
         var obligationsMatchProjectCurrency = obligations.All(item =>
             string.Equals(NormalizeCurrency(item.Currency), currency, StringComparison.Ordinal));
-        var financialRecordsAreComparable = currencyIsValid && obligationsMatchProjectCurrency;
+        var requestSettlementsMatchProjectCurrency = requestSettlements.All(item =>
+            string.Equals(NormalizeCurrency(item.Currency), currency, StringComparison.Ordinal));
+        var adjustmentCurrencies = await _db.PaymentSettlementAdjustments.IgnoreQueryFilters().AsNoTracking()
+            .Where(item => item.TenantId == tenantId && item.ProjectId == project.Id && !item.IsDeleted)
+            .Select(item => item.Currency)
+            .ToListAsync(cancellationToken);
+        var adjustmentsMatchProjectCurrency = adjustmentCurrencies.All(item =>
+            string.Equals(NormalizeCurrency(item), currency, StringComparison.Ordinal));
+        var financialRecordsAreComparable = currencyIsValid && obligationsMatchProjectCurrency
+            && requestSettlementsMatchProjectCurrency;
+        var grossActualPaid = financialRecordsAreComparable
+            ? ProjectFinancialBalanceCalculator.CalculateActualPaid(obligations) + requestSettlements.Sum(item => item.Amount)
+            : (decimal?)null;
+        var netAdjustment = adjustmentsMatchProjectCurrency && currencyIsValid
+            ? await ActualPaidSettlementCalculator.SumNetAdjustmentsAsync(
+                _db, tenantId, project.Id, currency, cancellationToken: cancellationToken)
+            : (decimal?)null;
+        decimal? netActualPaid = grossActualPaid.HasValue && netAdjustment.HasValue
+            ? grossActualPaid.Value + netAdjustment.Value
+            : null;
+        var actorId = _management.Current?.UserId;
+        var isCurrentProjectManager = actorId.HasValue
+            && (project.ProjectManagerId == actorId.Value
+                || await _db.ProjectManagerAssignments.IgnoreQueryFilters().AnyAsync(item =>
+                    item.TenantId == tenantId && item.ProjectId == project.Id
+                    && item.ProjectManagerId == actorId.Value && item.IsCurrent && !item.IsDeleted,
+                    cancellationToken));
         // Project.Budget is the lifetime financial ceiling. It is not spendable
         // authority; annual authorization remains in the linked ProjectAnnualBudget.
         // Preserve legacy response fields for compatibility, but do not compute a
@@ -69,10 +104,13 @@ public sealed class ProjectFinancialFoundationController : ControllerBase
             project.Budget,
             approvedPaymentRequestAllocations,
             availableBudget,
-            financialRecordsAreComparable ? ProjectFinancialBalanceCalculator.CalculateActualPaid(obligations) : null,
+            grossActualPaid,
             financialRecordsAreComparable ? ProjectFinancialBalanceCalculator.CalculateOutstandingPaymentBalance(obligations) : null,
             project.FinanceApprovalMode,
-            Convert.ToBase64String(project.RowVersion)));
+            Convert.ToBase64String(project.RowVersion),
+            grossActualPaid,
+            netActualPaid,
+            isCurrentProjectManager));
     }
 
     [HttpPut("approval-configuration")]

@@ -602,6 +602,16 @@ public sealed partial class ProjectPaymentRequestWorkflow
             .Select(item => new { item.Id, item.Amount, item.Currency, item.ProjectPaymentRequestId,
                 item.PaymentObligationId, item.FundingTransferId })
             .ToListAsync(cancellationToken);
+        var settlementObligationIds = settlementRows.Where(item => item.PaymentObligationId.HasValue)
+            .Select(item => item.PaymentObligationId!.Value).Distinct().ToArray();
+        var settlementObligationCurrencies = settlementObligationIds.Length == 0
+            ? new Dictionary<Guid, string>()
+            : await db.Set<PaymentObligation>().IgnoreQueryFilters().AsNoTracking()
+                .Where(item => item.TenantId == tenantId && settlementObligationIds.Contains(item.Id))
+                .ToDictionaryAsync(item => item.Id, item => item.Currency, cancellationToken);
+        var resolvedSettlementCurrencies = settlementRows.ToDictionary(
+            item => item.Id,
+            item => ResolveSettlementCurrency(item.Currency, item.PaymentObligationId, settlementObligationCurrencies));
         if (settlementRows.Any(item => item.PaymentObligationId.HasValue == item.ProjectPaymentRequestId.HasValue
             || (item.FundingTransferId.HasValue && !item.ProjectPaymentRequestId.HasValue)
             || (item.ProjectPaymentRequestId.HasValue && !originalRows.Any(request => request.Request.Id == item.ProjectPaymentRequestId.Value))
@@ -609,10 +619,10 @@ public sealed partial class ProjectPaymentRequestWorkflow
                 && transfer.PaymentRequestId == item.ProjectPaymentRequestId))))
             issues.Add("settlement_parent_or_funding_provenance_invalid");
         if (settlementRows.Any(item => item.Amount <= 0m || !HasMoneyScale(item.Amount)
-            || string.IsNullOrWhiteSpace(item.Currency)
-            || !string.Equals(NormalizeCurrency(item.Currency), NormalizeCurrency(budget.Currency), StringComparison.Ordinal)))
+            || string.IsNullOrWhiteSpace(resolvedSettlementCurrencies[item.Id])
+            || !string.Equals(NormalizeCurrency(resolvedSettlementCurrencies[item.Id]), NormalizeCurrency(budget.Currency), StringComparison.Ordinal)))
             issues.Add("settlement_amount_or_historical_currency_unresolved");
-        var actualPaid = settlementRows.Where(item => item.Amount > 0m && string.Equals(NormalizeCurrency(item.Currency), NormalizeCurrency(budget.Currency), StringComparison.Ordinal))
+        var actualPaid = settlementRows.Where(item => item.Amount > 0m && string.Equals(NormalizeCurrency(resolvedSettlementCurrencies[item.Id]), NormalizeCurrency(budget.Currency), StringComparison.Ordinal))
             .Sum(item => item.Amount);
         var active = allocations.Amount;
         var free = budget.TotalAnnualBudget - active;
@@ -942,6 +952,16 @@ public sealed partial class ProjectPaymentRequestWorkflow
     }
 
     private static bool HasMoneyScale(decimal value) => value < 1_000_000_000_000_000m && decimal.Round(value, 4) == value;
+
+    private static string? ResolveSettlementCurrency(
+        string? settlementCurrency, Guid? paymentObligationId, IReadOnlyDictionary<Guid, string> obligationCurrencies)
+    {
+        if (!string.IsNullOrWhiteSpace(settlementCurrency)) return settlementCurrency;
+        return paymentObligationId.HasValue
+            && obligationCurrencies.TryGetValue(paymentObligationId.Value, out var ownerCurrency)
+                ? ownerCurrency
+                : null;
+    }
 
     private static Guid DeterministicGuid(Guid closingId, Guid requestId)
     {

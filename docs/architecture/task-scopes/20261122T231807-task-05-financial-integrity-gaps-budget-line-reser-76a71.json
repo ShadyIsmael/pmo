@@ -1,0 +1,216 @@
+{
+  "created_at": "2026-11-22T23:18:07Z",
+  "dependency_awareness_only": [
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "PermissionCatalogItemDto",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Application/RoleAdministrationDtos.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Organization",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Domain/Organization.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Tenant",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Domain/Tenant.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Project",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/Project.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "PermissionCatalogItemDto",
+      "module": "administration",
+      "path": "apps/web-react/src/features/administration/RolesPage.tsx",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "verified-static-import",
+      "evidence": "../features/administration/api/admin",
+      "module": "administration",
+      "path": "apps/web-react/src/features/administration/api/admin.ts",
+      "relation": "IMPORTS"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "PermissionOverrideEffect",
+      "module": "administration",
+      "path": "apps/web-react/src/features/administration/api/admin.ts",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Organization",
+      "module": "organization",
+      "path": "packages/shared-types/src/types/organization.ts",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Project",
+      "module": "projects",
+      "path": "packages/shared-types/src/types/project.ts",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "PermissionOverrideEffect",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Domain/UserPermissionOverride.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "verified-static-import",
+      "evidence": "./permission-config",
+      "module": "unclassified",
+      "path": "packages/config/src/index.ts",
+      "relation": "IMPORTS"
+    }
+  ],
+  "index_updated": false,
+  "limits": [
+    "Router never prevents an agent from manually opening other files; enforce via agent instructions and audit.",
+    "C# and TS analysis uses conservative heuristics; compiler-resolved references not implemented.",
+    "Unknown/unclassified files may require manual targeted inspection.",
+    "Index sources excluded secrets and build outputs."
+  ],
+  "module_selection_basis": "task-explicit-alias",
+  "nonprimary_modules_not_read_by_router": [
+    "administration",
+    "ai-planning",
+    "api",
+    "approvals",
+    "audit",
+    "cost-management",
+    "documents",
+    "governance",
+    "home",
+    "identity",
+    "integrations",
+    "issues",
+    "management",
+    "meetings",
+    "notifications",
+    "operations",
+    "organization",
+    "persistence",
+    "plugins",
+    "portfolios",
+    "programs",
+    "project-planning",
+    "projects",
+    "reports",
+    "resources",
+    "risks",
+    "security",
+    "stakeholder",
+    "tests",
+    "time",
+    "unclassified",
+    "vendors",
+    "work-items",
+    "workflow"
+  ],
+  "planning_state": "focused",
+  "primary_module": "permissions",
+  "refresh": {
+    "changed_existing": 0,
+    "deleted": 0,
+    "mode": "refresh",
+    "new": 0,
+    "parsed": 0,
+    "unchanged": 1879
+  },
+  "related_tests_candidates": [
+    "apps/web-react/src/test/permission-catalog-cache.test.tsx",
+    "apps/web-react/src/test/user-permission-overrides.test.ts"
+  ],
+  "selected_files": [
+    {
+      "approximate": true,
+      "kind": "permission",
+      "line_ranges": [
+        [
+          80,
+          80
+        ]
+      ],
+      "module": "permissions",
+      "path": "packages/config/src/permission-config.ts",
+      "read_mode": "symbols",
+      "reading_tokens": 38,
+      "reasons": [
+        "filename-match:permission",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:PermissionCode"
+      ],
+      "score": 76,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "test",
+      "line_ranges": [
+        [
+          11,
+          37
+        ]
+      ],
+      "module": "permissions",
+      "path": "apps/web-react/src/test/permission-catalog-cache.test.tsx",
+      "read_mode": "symbols",
+      "reading_tokens": 264,
+      "reasons": [
+        "filename-match:permission",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:catalogPermission"
+      ],
+      "score": 68,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "test",
+      "line_ranges": [
+        [
+          1,
+          17
+        ]
+      ],
+      "module": "permissions",
+      "path": "apps/web-react/src/test/user-permission-overrides.test.ts",
+      "read_mode": "full-file",
+      "reading_tokens": 201,
+      "reasons": [
+        "filename-match:permission",
+        "module-mentioned",
+        "primary-module"
+      ],
+      "score": 64,
+      "token_method": "estimated:chars/3.5"
+    }
+  ],
+  "snapshot": "20261122T230530-8e78adf",
+  "task": "Task 05 financial integrity gaps: budget line reservations, status report actual paid currency quality, permission scopes, planned payment outstanding reporting and program/portfolio pending request annual availability",
+  "token_plan": {
+    "available_source_budget": 9600,
+    "requested_total_budget": 16000,
+    "reserved_non_source_budget": 6400,
+    "source_reading_tokens": 503,
+    "warning": "An estimate of initial source/context reading, NOT full task execution or model hidden reasoning. Some counts may be approximate."
+  }
+}

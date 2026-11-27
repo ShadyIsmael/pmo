@@ -3,8 +3,10 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using System.Security.Claims;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using NEXUS.Modules.Audit.Application;
 using NEXUS.Modules.Audit.Domain;
+using NEXUS.Modules.CostManagement.Application;
 using NEXUS.Modules.CostManagement.Domain;
 using NEXUS.Modules.Identity.Domain;
 using NEXUS.Modules.IssueManagement.Domain;
@@ -25,6 +27,8 @@ namespace NEXUS.Modules.ProjectManagement.Application;
 public sealed class ProjectStatusReportService : IProjectStatusReportService
 {
     private const int MaxSnapshotItems = 5;
+    private const string ActualPaidDataQualitySnapshotProperty = "ActualPaidDataQualitySnapshot";
+    private const string PlannedPaymentsDataQualitySnapshotProperty = "PlannedPaymentsDataQualitySnapshot";
     private static readonly string[] HealthValues = ["Green", "Amber", "Red"];
 
     private readonly DbContext _context;
@@ -541,8 +545,19 @@ public sealed class ProjectStatusReportService : IProjectStatusReportService
     private async Task CaptureFinancialSnapshotAsync(ProjectStatusReport report, Project project, CancellationToken cancellationToken)
     {
         var currency = project.Currency;
-        var budgets = await _context.Set<Budget>().AsNoTracking().Where(x => x.ProjectId == project.Id && x.Currency == currency).ToListAsync(cancellationToken);
-        var costEntries = await _context.Set<CostEntry>().AsNoTracking().Where(x => x.ProjectId == project.Id && x.Currency == currency).ToListAsync(cancellationToken);
+        var normalizedCurrency = ActualPaidSettlementCalculator.NormalizeCurrency(currency);
+        // Currency is compared case-insensitively and trimmed, matching every other financial
+        // aggregation, so a differently-cased currency code is not silently excluded.
+        var budgets = (await _context.Set<Budget>().AsNoTracking()
+                .Where(x => x.ProjectId == project.Id)
+                .ToListAsync(cancellationToken))
+            .Where(x => ActualPaidSettlementCalculator.NormalizeCurrency(x.Currency) == normalizedCurrency)
+            .ToList();
+        var costEntries = (await _context.Set<CostEntry>().AsNoTracking()
+                .Where(x => x.ProjectId == project.Id)
+                .ToListAsync(cancellationToken))
+            .Where(x => ActualPaidSettlementCalculator.NormalizeCurrency(x.Currency) == normalizedCurrency)
+            .ToList();
         report.CurrencyCodeSnapshot = currency;
         report.BudgetAmountSnapshot = budgets.Count > 0 ? budgets.Sum(x => x.ApprovedAmount) : project.Budget;
         report.ActualCostAmountSnapshot = budgets.Count > 0 ? budgets.Sum(x => x.ActualAmount) : project.ActualCost ?? (costEntries.Count > 0 ? costEntries.Sum(x => x.Amount) : null);
@@ -554,44 +569,77 @@ public sealed class ProjectStatusReportService : IProjectStatusReportService
         var periodTo = report.PeriodTo.Date;
         var periodFrom = report.PeriodFrom.Date;
 
-        var obligations = await _context.Set<PaymentObligation>().AsNoTracking()
-            .Where(item => !item.IsDeleted
-                && item.ProjectId == project.Id
-                && item.Currency == currency)
-            .ToListAsync(cancellationToken);
+        var allObligations = (await _context.Set<PaymentObligation>().AsNoTracking()
+                .Where(item => !item.IsDeleted && item.ProjectId == project.Id)
+                .ToListAsync(cancellationToken));
+        var obligations = allObligations
+            .Where(item => ActualPaidSettlementCalculator.NormalizeCurrency(item.Currency) == normalizedCurrency)
+            .ToList();
+        var hasObligationCurrencyMismatch = allObligations.Any(item =>
+            ActualPaidSettlementCalculator.NormalizeCurrency(item.Currency) != normalizedCurrency);
 
-        var obligationIds = obligations.Select(item => item.Id).ToList();
+        var plannedPayments = await PlannedPaymentReportingCalculator.CalculateAsync(
+            _context, project.TenantId, project.Id, normalizedCurrency,
+            report.PeriodFrom.Date, periodTo, cancellationToken);
 
-        var settlements = await _context.Set<PaymentSettlement>().AsNoTracking()
-            .Where(item => !item.IsDeleted
-                && item.PaymentObligationId.HasValue
-                && obligationIds.Contains(item.PaymentObligationId.Value)
-                && item.SettlementDate.Date <= periodTo)
-            .ToListAsync(cancellationToken);
+        // Actual Paid covers confirmed settlements on both payment rails. Outstanding
+        // cash obligations below keep the legacy and Planned Payment rails distinct;
+        // linked requests are never added again beside their parent installment.
+        var settlementFacts = await ActualPaidSettlementCalculator.LoadForProjectAsync(
+            _context, project.TenantId, project.Id, periodTo: periodTo, cancellationToken: cancellationToken);
+        var projectCurrency = ActualPaidSettlementCalculator.NormalizeCurrency(currency);
 
-        var settledByObligation = settlements
+        // A confirmed settlement whose currency is unresolved, or that uses a currency other
+        // than the Project currency, must not be silently dropped: doing so would understate
+        // Actual Paid while the report still publishes a number. Mirror the project reporting
+        // path and publish no Actual Paid figure until the currency gap is reconciled.
+        var hasUnresolvedCurrency = ActualPaidSettlementCalculator.HasUnresolvedCurrency(settlementFacts);
+        var hasForeignCurrency = ActualPaidSettlementCalculator.HasForeignCurrency(settlementFacts, projectCurrency);
+        var projectCurrencyUnavailable = !IsValidCurrencyCode(projectCurrency);
+        var currencyGap = projectCurrencyUnavailable || hasUnresolvedCurrency || hasForeignCurrency;
+        var matchedSettlements = settlementFacts
+            .Where(item => ActualPaidSettlementCalculator.NormalizeCurrency(item.Currency) == projectCurrency)
+            .ToArray();
+
+        var settledByObligation = matchedSettlements
+            .Where(item => item.PaymentObligationId.HasValue)
             .GroupBy(item => item.PaymentObligationId!.Value)
             .ToDictionary(group => group.Key, group => group.Sum(item => item.Amount));
 
         decimal settled(PaymentObligation o) => settledByObligation.TryGetValue(o.Id, out var amount) ? amount : 0m;
 
-        report.ActualPaidSnapshot = obligations.Sum(item => settled(item));
-        report.OutstandingPlannedPaymentsSnapshot = obligations
+        report.ActualPaidSnapshot = currencyGap
+            ? null
+            : obligations.Sum(item => settled(item))
+                + matchedSettlements.Where(item => item.ProjectPaymentRequestId.HasValue).Sum(item => item.Amount);
+        report.PerformanceSnapshotJson = AddActualPaidDataQualitySnapshot(
+            report.PerformanceSnapshotJson,
+            ClassifyActualPaidDataQuality(projectCurrencyUnavailable, hasUnresolvedCurrency, hasForeignCurrency));
+        var plannedMetricsQuality = projectCurrencyUnavailable || plannedPayments.ProjectCurrencyUnavailable ? "ProjectCurrencyUnavailable"
+            : hasObligationCurrencyMismatch || plannedPayments.HasCurrencyMismatch || hasForeignCurrency ? "CurrencyMismatch"
+            : hasUnresolvedCurrency ? "CurrencyUnresolved"
+            : plannedPayments.HasIntegrityIssue ? "IntegrityIssue"
+            : "Available";
+        var plannedMetricsUnavailable = plannedMetricsQuality is "ProjectCurrencyUnavailable" or "CurrencyMismatch"
+            or "CurrencyUnresolved" or "IntegrityIssue";
+        report.PerformanceSnapshotJson = AddPlannedPaymentDataQualitySnapshot(
+            report.PerformanceSnapshotJson, plannedMetricsQuality);
+        report.OutstandingPlannedPaymentsSnapshot = plannedMetricsUnavailable ? null : obligations
             .Select(item => Math.Max(0m, item.Amount - settled(item)))
             .Where(amount => amount > 0m)
-            .Sum();
-        report.PaymentsDueWithinPeriodSnapshot = obligations
+            .Sum() + plannedPayments.Outstanding;
+        report.PaymentsDueWithinPeriodSnapshot = plannedMetricsUnavailable ? null : obligations
             .Where(item => {
                 var outstanding = Math.Max(0m, item.Amount - settled(item));
                 return outstanding > 0m && item.DueDate.Date >= periodFrom && item.DueDate.Date <= periodTo;
             })
-            .Sum(item => Math.Max(0m, item.Amount - settled(item)));
-        report.RemainingUnpaidAtPeriodEndSnapshot = obligations
+            .Sum(item => Math.Max(0m, item.Amount - settled(item))) + plannedPayments.DueWithinPeriod;
+        report.RemainingUnpaidAtPeriodEndSnapshot = plannedMetricsUnavailable ? null : obligations
             .Where(item => {
                 var outstanding = Math.Max(0m, item.Amount - settled(item));
                 return outstanding > 0m && item.DueDate.Date <= periodTo;
             })
-            .Sum(item => Math.Max(0m, item.Amount - settled(item)));
+            .Sum(item => Math.Max(0m, item.Amount - settled(item))) + plannedPayments.RemainingUnpaidAtPeriodEnd;
     }
 
     private async Task CaptureScheduleSnapshotAsync(ProjectStatusReport report, Guid projectId, CancellationToken cancellationToken)
@@ -858,7 +906,10 @@ public sealed class ProjectStatusReportService : IProjectStatusReportService
         PerformanceSnapshot = DeserializePerformanceSnapshot(x.PerformanceSnapshotJson), CurrencyCodeSnapshot = x.CurrencyCodeSnapshot, BudgetAmountSnapshot = x.BudgetAmountSnapshot,
         ActualCostAmountSnapshot = x.ActualCostAmountSnapshot, CommittedCostAmountSnapshot = x.CommittedCostAmountSnapshot,
         ForecastCostAmountSnapshot = x.ForecastCostAmountSnapshot, CostVarianceAmountSnapshot = x.CostVarianceAmountSnapshot,
-        ActualPaidSnapshot = x.ActualPaidSnapshot, OutstandingPlannedPaymentsSnapshot = x.OutstandingPlannedPaymentsSnapshot,
+        ActualPaidSnapshot = x.ActualPaidSnapshot,
+        ActualPaidDataQualitySnapshot = ReadActualPaidDataQualitySnapshot(x.PerformanceSnapshotJson, x.ActualPaidSnapshot),
+        OutstandingPlannedPaymentsSnapshot = x.OutstandingPlannedPaymentsSnapshot,
+        PlannedPaymentsDataQualitySnapshot = ReadPlannedPaymentsDataQualitySnapshot(x.PerformanceSnapshotJson),
         PaymentsDueWithinPeriodSnapshot = x.PaymentsDueWithinPeriodSnapshot, RemainingUnpaidAtPeriodEndSnapshot = x.RemainingUnpaidAtPeriodEndSnapshot,
         ScheduleVarianceDaysSnapshot = x.ScheduleVarianceDaysSnapshot, ScheduleVariancePercentSnapshot = x.ScheduleVariancePercentSnapshot,
         BaselineIdAtReport = x.BaselineIdAtReport, BaselineNameSnapshot = x.BaselineNameSnapshot, BaselineVersionSnapshot = x.BaselineVersionSnapshot,
@@ -887,6 +938,96 @@ public sealed class ProjectStatusReportService : IProjectStatusReportService
         if (string.IsNullOrWhiteSpace(json)) return null;
         try { return JsonSerializer.Deserialize<ProjectPerformanceDto>(json); }
         catch (JsonException) { return null; }
+    }
+
+    private static string ClassifyActualPaidDataQuality(
+        bool projectCurrencyUnavailable, bool hasUnresolvedCurrency, bool hasForeignCurrency) =>
+        projectCurrencyUnavailable ? "ProjectCurrencyUnavailable"
+        : hasUnresolvedCurrency ? "UnresolvedCurrency"
+        : hasForeignCurrency ? "CurrencyMismatch"
+        : "Available";
+
+    private static bool IsValidCurrencyCode(string? currency)
+    {
+        var normalized = ActualPaidSettlementCalculator.NormalizeCurrency(currency);
+        return normalized.Length == 3 && normalized.All(character => character is >= 'A' and <= 'Z');
+    }
+
+    private static string? AddActualPaidDataQualitySnapshot(string? json, string status)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return json;
+        try
+        {
+            if (JsonNode.Parse(json) is not JsonObject snapshot) return json;
+            snapshot[ActualPaidDataQualitySnapshotProperty] = status;
+            return snapshot.ToJsonString();
+        }
+        catch (JsonException)
+        {
+            return json;
+        }
+    }
+
+    private static string? AddPlannedPaymentDataQualitySnapshot(string? json, string status)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return json;
+        try
+        {
+            if (JsonNode.Parse(json) is not JsonObject snapshot) return json;
+            snapshot[PlannedPaymentsDataQualitySnapshotProperty] = status;
+            return snapshot.ToJsonString();
+        }
+        catch (JsonException)
+        {
+            return json;
+        }
+    }
+
+    private static string ReadPlannedPaymentsDataQualitySnapshot(string? json)
+    {
+        if (!string.IsNullOrWhiteSpace(json))
+        {
+            try
+            {
+                using var document = JsonDocument.Parse(json);
+                if (document.RootElement.ValueKind == JsonValueKind.Object
+                    && document.RootElement.EnumerateObject().FirstOrDefault(property =>
+                        string.Equals(property.Name, PlannedPaymentsDataQualitySnapshotProperty, StringComparison.OrdinalIgnoreCase)) is var property
+                    && property.Value.ValueKind == JsonValueKind.String
+                    && !string.IsNullOrWhiteSpace(property.Value.GetString()))
+                    return property.Value.GetString()!;
+            }
+            catch (JsonException)
+            {
+                // Preserve legacy reports; malformed metadata must not invent completeness.
+            }
+        }
+        return "NotRecorded";
+    }
+
+    private static string ReadActualPaidDataQualitySnapshot(string? json, decimal? actualPaidSnapshot)
+    {
+        if (!string.IsNullOrWhiteSpace(json))
+        {
+            try
+            {
+                using var document = JsonDocument.Parse(json);
+                if (document.RootElement.ValueKind == JsonValueKind.Object
+                    && document.RootElement.EnumerateObject().FirstOrDefault(property =>
+                        string.Equals(property.Name, ActualPaidDataQualitySnapshotProperty, StringComparison.OrdinalIgnoreCase)) is var property
+                    && property.Value.ValueKind == JsonValueKind.String
+                    && !string.IsNullOrWhiteSpace(property.Value.GetString()))
+                    return property.Value.GetString()!;
+            }
+            catch (JsonException)
+            {
+                // Preserve legacy reports; a malformed performance snapshot must not invent a status.
+            }
+        }
+
+        // Older snapshots did not persist currency-quality metadata. A missing value is not
+        // interpreted as zero or as a confirmed project currency.
+        return actualPaidSnapshot.HasValue ? "Available" : "NotRecorded";
     }
 
     private static Guid? ParseUserId(string userId) => Guid.TryParse(userId, out var id) ? id : null;

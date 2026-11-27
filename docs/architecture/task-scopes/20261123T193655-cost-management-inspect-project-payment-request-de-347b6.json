@@ -1,0 +1,542 @@
+{
+  "created_at": "2026-11-23T19:36:55Z",
+  "critical_path_coverage": null,
+  "dependency_awareness_only": [
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Approvals.Domain",
+      "module": "approvals",
+      "path": "apps/api/src/NEXUS.Modules.Approvals/Domain/ApprovalAction.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "ApprovalRequest",
+      "module": "approvals",
+      "path": "apps/api/src/NEXUS.Modules.Approvals/Domain/ApprovalRequest.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Approvals.Domain",
+      "module": "approvals",
+      "path": "apps/api/src/NEXUS.Modules.Approvals/Domain/ApprovalRequest.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Approvals.Domain",
+      "module": "approvals",
+      "path": "apps/api/src/NEXUS.Modules.Approvals/Domain/Delegation.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.CostManagement.Application.DTOs",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Application/DTOs/BudgetRevisionDtos.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.CostManagement.Application.DTOs",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Application/DTOs/CostManagementDtos.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.CostManagement.Application.DTOs",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Application/DTOs/CostSummaryDtos.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.CostManagement.Application.DTOs",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Application/DTOs/FinancialReportingDtos.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.CostManagement.Application.DTOs",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Application/DTOs/PlannedPaymentDtos.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.CostManagement.Application.DTOs",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Application/DTOs/ProjectAnnualBudgetDraftApprovalConfigurationDtos.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.CostManagement.Application.DTOs",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Application/DTOs/ProjectAnnualBudgetDtos.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.CostManagement.Application.DTOs",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Application/DTOs/ProjectAnnualBudgetLineDtos.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.CostManagement.Application.DTOs",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Application/DTOs/ProjectFinancialFoundationDtos.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.CostManagement.Domain",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/Budget.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.CostManagement.Domain",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/BudgetRevision.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.CostManagement.Domain",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/CostApproval.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.CostManagement.Domain",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/CostCategory.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.CostManagement.Domain",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/CostEntry.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.CostManagement.Domain",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/Invoice.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.CostManagement.Domain",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/PaymentObligation.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.CostManagement.Domain",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/PaymentSettlement.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.CostManagement.Domain",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/PaymentSettlementAdjustment.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.CostManagement.Domain",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/PlannedPayment.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.CostManagement.Domain",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/PlannedPaymentInstallment.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.CostManagement.Domain",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/PlannedPaymentLifetimeReservation.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.CostManagement.Domain",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/ProjectAnnualBudget.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.CostManagement.Domain",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/ProjectAnnualBudgetApprovalConfiguration.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.CostManagement.Domain",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/ProjectAnnualBudgetClosing.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.CostManagement.Domain",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/ProjectAnnualBudgetLine.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Notifications.Application",
+      "module": "notifications",
+      "path": "apps/api/src/NEXUS.Modules.Notifications/Application/DeviceTokenDtos.cs",
+      "relation": "USES_NAMESPACE"
+    }
+  ],
+  "index_updated": false,
+  "limits": [
+    "Router never prevents an agent from manually opening other files; enforce via agent instructions and audit.",
+    "C# and TS relationships are source-text heuristics; compiler-resolved calls and runtime dependency-injection resolution are not proven.",
+    "Unknown/unclassified files may require manual targeted inspection.",
+    "Index sources excluded secrets and build outputs."
+  ],
+  "module_selection_basis": "task-explicit-alias",
+  "nonprimary_modules_not_read_by_router": [
+    "administration",
+    "ai-planning",
+    "api",
+    "approvals",
+    "audit",
+    "documents",
+    "governance",
+    "home",
+    "identity",
+    "integrations",
+    "issues",
+    "management",
+    "meetings",
+    "notifications",
+    "operations",
+    "organization",
+    "permissions",
+    "persistence",
+    "plugins",
+    "portfolios",
+    "programs",
+    "project-planning",
+    "projects",
+    "reports",
+    "resources",
+    "risks",
+    "security",
+    "stakeholder",
+    "tests",
+    "time",
+    "unclassified",
+    "vendors",
+    "work-items",
+    "workflow"
+  ],
+  "planning_state": "focused",
+  "primary_module": "cost-management",
+  "refresh": {
+    "changed_existing": 0,
+    "deleted": 0,
+    "mode": "refresh",
+    "new": 0,
+    "parsed": 0,
+    "unchanged": 1892
+  },
+  "related_tests_candidates": [
+    "apps/api/tests/NEXUS.Api.Tests/CostManagement/FinancialDecimalPrecisionMappingTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/CostManagement/P004FinancialDataIntegrityTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/PlannedPaymentFoundationTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/TeamCodeConcurrencyTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/PaymentObligationLifecycleTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Security/CostUtilizationExportAuthorizationTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Security/FinancialApprovalDelegationBoundaryTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Security/FinancialPermissionDelegationTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Unit/FiscalYearConfigurationTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Unit/PaymentRequestWorkflowPolicyTests.cs",
+    "apps/api/tests/NEXUS.Modules.ResourceManagement.Tests/CostUtilizationManagementScopeTests.cs",
+    "apps/api/tests/NEXUS.Modules.ResourceManagement.Tests/CostUtilizationTeamFilterTests.cs",
+    "apps/web-react/src/test/annual-budget-review-details-sheet.test.tsx",
+    "apps/web-react/src/test/cost-utilization-calendar.test.ts",
+    "apps/web-react/src/test/cost-utilization-export-api.test.ts",
+    "apps/web-react/src/test/cost-utilization-export.test.ts",
+    "apps/web-react/src/test/cost-utilization-parity.test.tsx",
+    "apps/web-react/src/test/currency-formatting.test.ts",
+    "apps/web-react/src/test/financial-reporting-export.test.ts",
+    "apps/web-react/src/test/financial-rollup-view.test.tsx",
+    "apps/web-react/src/test/planned-payment-section.test.tsx",
+    "apps/web-react/src/test/planned-payments-project-id.test.tsx",
+    "apps/web-react/src/test/quick-one-off-payment-request.test.tsx",
+    "apps/web-react/src/test/tenant-fiscal-year-settings.test.tsx"
+  ],
+  "selected_files": [
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          97
+        ]
+      ],
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/ProjectPaymentRequestDetail.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 1179,
+      "reasons": [
+        "filename-match:detail",
+        "filename-match:payment",
+        "filename-match:request",
+        "module-mentioned",
+        "path-match:domain",
+        "primary-module",
+        "symbol-match:ProjectPaymentRequestDetail"
+      ],
+      "score": 177,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          10,
+          23
+        ]
+      ],
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/PaymentRequestApproverAssignment.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 194,
+      "reasons": [
+        "filename-match:payment",
+        "filename-match:request",
+        "module-mentioned",
+        "path-match:domain",
+        "primary-module",
+        "symbol-match:PaymentRequestApproverAssignment"
+      ],
+      "score": 153,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          43
+        ]
+      ],
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/ProjectPaymentRequestApprovalCycle.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 550,
+      "reasons": [
+        "filename-match:payment",
+        "filename-match:request",
+        "module-mentioned",
+        "path-match:domain",
+        "primary-module",
+        "symbol-match:ProjectPaymentRequestApprovalCycleStatuses"
+      ],
+      "score": 153,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          9,
+          24
+        ]
+      ],
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/ProjectPaymentRequestFundingTransfer.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 204,
+      "reasons": [
+        "filename-match:payment",
+        "filename-match:request",
+        "module-mentioned",
+        "path-match:domain",
+        "primary-module",
+        "symbol-match:ProjectPaymentRequestFundingTransfer"
+      ],
+      "score": 153,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          107
+        ]
+      ],
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectPaymentRequestApprovalNotificationPublisher.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 1698,
+      "reasons": [
+        "filename-match:payment",
+        "filename-match:request",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:IProjectPaymentRequestApprovalNotificationPublisher"
+      ],
+      "score": 148,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          43
+        ]
+      ],
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectPaymentRequestAssignedApprovalsController.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 522,
+      "reasons": [
+        "filename-match:payment",
+        "filename-match:request",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:ProjectPaymentRequestAssignedApprovalsController"
+      ],
+      "score": 148,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          8,
+          8
+        ],
+        [
+          22,
+          22
+        ],
+        [
+          35,
+          35
+        ],
+        [
+          40,
+          40
+        ],
+        [
+          49,
+          49
+        ]
+      ],
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Application/DTOs/PaymentRequestDtos.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 79,
+      "reasons": [
+        "filename-match:payment",
+        "filename-match:request",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:CreatePaymentRequestDto"
+      ],
+      "score": 148,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "test",
+      "line_ranges": [
+        [
+          55,
+          78
+        ]
+      ],
+      "module": "cost-management",
+      "path": "apps/web-react/src/test/quick-one-off-payment-request.test.tsx",
+      "read_mode": "symbols",
+      "reading_tokens": 218,
+      "reasons": [
+        "filename-match:payment",
+        "filename-match:request",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:renderRequests"
+      ],
+      "score": 140,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          12
+        ]
+      ],
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/PaymentNotificationDispatch.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 115,
+      "reasons": [
+        "filename-match:payment",
+        "module-mentioned",
+        "path-match:domain",
+        "primary-module",
+        "symbol-match:PaymentNotificationDispatch"
+      ],
+      "score": 105,
+      "token_method": "estimated:chars/3.5"
+    }
+  ],
+  "selection_summary": {
+    "critical_path_coverage_percent": null,
+    "files": 9,
+    "symbols": 24,
+    "tokens": 4759
+  },
+  "snapshot": "20261123T184406-e63e1bc",
+  "task": "Cost management: inspect ProjectPaymentRequestDetail.ReversesRequestId and PaymentRequest Reversal Amount persistence fields for cashflow, using ProjectPaymentRequestDetail domain and DbSet.",
+  "token_plan": {
+    "available_source_budget": 4800,
+    "estimation_order": "Critical-path coverage is evaluated before reading-cost calculation and optional file ranking.",
+    "requested_total_budget": 8000,
+    "reserved_non_source_budget": 3200,
+    "source_reading_tokens": 4759,
+    "warning": "An estimate of selected source reading, NOT full task execution or model hidden reasoning. Some counts may be approximate."
+  }
+}

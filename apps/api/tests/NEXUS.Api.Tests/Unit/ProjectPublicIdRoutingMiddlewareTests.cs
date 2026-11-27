@@ -641,6 +641,15 @@ public sealed class ProjectPublicIdRoutingMiddlewareTests
             .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
             .Options;
         var db = new AppDbContext(options);
+        if (projects.FirstOrDefault()?.TenantId is { } seedTenantId)
+        {
+            var seedContext = new DefaultHttpContext
+            {
+                User = new ClaimsPrincipal(new ClaimsIdentity(
+                    [new Claim("tenantId", seedTenantId.ToString("D"))], "test-seed"))
+            };
+            AppDbContext.ConfigureTenantResolution(new HttpContextAccessor { HttpContext = seedContext });
+        }
         db.Projects.AddRange(projects);
         if (plans is not null) db.Plans.AddRange(plans);
         if (budgets is not null) db.Budgets.AddRange(budgets);
@@ -654,7 +663,14 @@ public sealed class ProjectPublicIdRoutingMiddlewareTests
         if (workItems is not null) db.WorkItems.AddRange(workItems);
         if (workItemAttachments is not null) db.WorkItemAttachments.AddRange(workItemAttachments);
         if (projectMembers is not null) db.ProjectMembers.AddRange(projectMembers);
-        db.SaveChanges();
+        try
+        {
+            db.SaveChanges();
+        }
+        finally
+        {
+            AppDbContext.ConfigureTenantResolution(new HttpContextAccessor());
+        }
         return db;
     }
 

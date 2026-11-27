@@ -57,42 +57,10 @@ public sealed class P004FinancialDataIntegrityTests
         Assert.DoesNotContain("GBP", error.Message, StringComparison.OrdinalIgnoreCase);
     }
 
-    [Fact]
-    public async Task BudgetAuthority_Commitment_Rejects_When_Project_Ceiling_Missing()
-    {
-        var options = new DbContextOptionsBuilder<TestDbContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
-            .Options;
-        await using var db = new TestDbContext(options);
-        var projects = new FakeProjectLookup(new ProjectReference(Guid.NewGuid(), "P", "USD", CurrentApprovedProjectBudget: null));
-
-        var error = await BudgetAuthority.ValidateCommitmentAsync(db, projects, projects.Project.Id, null, 100m, CancellationToken.None);
-
-        Assert.NotNull(error);
-        Assert.Contains("ceiling", error!.Message, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Fact]
-    public async Task BudgetAuthority_Commitment_Uses_Normalized_Project_Currency_In_Error()
-    {
-        var options = new DbContextOptionsBuilder<TestDbContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
-            .Options;
-        await using var db = new TestDbContext(options);
-        var projects = new FakeProjectLookup(new ProjectReference(Guid.NewGuid(), "P", "usd", CurrentApprovedProjectBudget: 100m));
-
-        var error = await BudgetAuthority.ValidateCommitmentAsync(db, projects, projects.Project.Id, null, 150m, CancellationToken.None);
-
-        Assert.NotNull(error);
-        Assert.Contains("USD", error!.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("GBP", error.Message, StringComparison.OrdinalIgnoreCase);
-    }
-
     private sealed class TestDbContext(DbContextOptions<TestDbContext> options) : DbContext(options)
     {
         public DbSet<NEXUS.Modules.CostManagement.Domain.Budget> Budgets => Set<NEXUS.Modules.CostManagement.Domain.Budget>();
         public DbSet<NEXUS.Modules.CostManagement.Domain.CostEntry> CostEntries => Set<NEXUS.Modules.CostManagement.Domain.CostEntry>();
-        public DbSet<NEXUS.Modules.CostManagement.Domain.PurchaseCommitment> Commitments => Set<NEXUS.Modules.CostManagement.Domain.PurchaseCommitment>();
     }
 
     private sealed class FakeProjectLookup(ProjectReference project) : IProjectReferenceLookup

@@ -22,7 +22,7 @@ describe("buildProjectChangeRequestInput", () => {
       ok: true,
       value: {
         projectId: "p1",
-        type: "Baseline",
+        type: "BudgetChange",
         reason: "Update delivery baseline",
         budgetChangeAmount: 125.5,
         justification: "Approved scope adjustment",

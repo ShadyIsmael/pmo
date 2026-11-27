@@ -14,6 +14,9 @@ public static class FinancialPermissionPolicyRegistration
             policy.RequireClaim("permission", "ProjectAnnualBudget.Create"));
         options.AddPolicy("ProjectAnnualBudget.EditDraft", policy =>
             policy.RequireClaim("permission", "ProjectAnnualBudget.EditDraft"));
+        options.AddPolicy("ProjectAnnualBudget.EditOrManageLines", policy =>
+            policy.RequireAssertion(context => context.User.HasClaim("permission", "ProjectAnnualBudget.EditDraft")
+                || context.User.HasClaim("permission", "ProjectAnnualBudget.ManageLines")));
         options.AddPolicy("ProjectAnnualBudget.ConfigureDraftApproval", policy =>
             policy.RequireClaim("permission", "ProjectAnnualBudget.ConfigureDraftApproval"));
         options.AddPolicy("ProjectAnnualBudget.SubmitForReview", policy =>

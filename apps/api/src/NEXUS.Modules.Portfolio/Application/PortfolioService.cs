@@ -3,10 +3,12 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using NEXUS.Modules.Identity.Application;
 using NEXUS.Modules.Identity.Domain;
+using NEXUS.Modules.Organization.Domain;
 using NEXUS.Modules.Portfolio.Domain;
 using NEXUS.SharedKernel;
 using NEXUS.SharedKernel.Management;
 using Entity = NEXUS.Modules.Portfolio.Domain.Portfolio;
+using OrganizationEntity = NEXUS.Modules.Organization.Domain.Organization;
 
 namespace NEXUS.Modules.Portfolio.Application;
 
@@ -16,13 +18,20 @@ public sealed class PortfolioService : IPortfolioService
     private readonly IHttpContextAccessor _http;
     private readonly IManagementContextAccessor? _managementContext;
     private readonly IUserEffectivePermissionService? _effectivePermissions;
+    private readonly IUserOrganizationScopeLookup? _organizationScopeLookup;
 
-    public PortfolioService(DbContext db, IHttpContextAccessor http, IManagementContextAccessor? managementContext = null, IUserEffectivePermissionService? effectivePermissions = null)
+    public PortfolioService(
+        DbContext db,
+        IHttpContextAccessor http,
+        IManagementContextAccessor? managementContext = null,
+        IUserEffectivePermissionService? effectivePermissions = null,
+        IUserOrganizationScopeLookup? organizationScopeLookup = null)
     {
         _db = db;
         _http = http;
         _managementContext = managementContext;
         _effectivePermissions = effectivePermissions;
+        _organizationScopeLookup = organizationScopeLookup;
     }
 
     public async Task<Result<PortfolioDto>> GetByIdAsync(Guid id, CancellationToken ct = default)
@@ -54,7 +63,28 @@ public sealed class PortfolioService : IPortfolioService
         if (context is not null && context.TenantId != tenantId)
             return new PagedResult<PortfolioLookupDto>(Array.Empty<PortfolioLookupDto>(), page, pageSize, 0);
 
-        var query = InScope(_db.Set<Entity>().AsNoTracking().Where(item => item.TenantId == tenantId));
+        var managementContext = _managementContext?.Current;
+        IQueryable<Entity> query;
+        if (_http.HttpContext?.User.HasClaim("permission", "Project.Create") == true)
+        {
+            if (managementContext is null || managementContext.TenantId != tenantId)
+                return new PagedResult<PortfolioLookupDto>(Array.Empty<PortfolioLookupDto>(), page, pageSize, 0);
+
+            var organizationIds = await GetAuthorizedProjectOrganizationsAsync(managementContext, ct);
+            if (organizationIds.Count == 0)
+                return new PagedResult<PortfolioLookupDto>(Array.Empty<PortfolioLookupDto>(), page, pageSize, 0);
+
+            query = _db.Set<Entity>().AsNoTracking()
+                .Where(item => item.TenantId == tenantId
+                    && !item.IsDeleted
+                    && item.OrganizationId.HasValue
+                    && organizationIds.Contains(item.OrganizationId.Value));
+        }
+        else
+        {
+            query = InScope(_db.Set<Entity>().AsNoTracking().Where(item => item.TenantId == tenantId));
+        }
+
         if (!string.IsNullOrWhiteSpace(search))
         {
             var term = search.Trim();
@@ -77,12 +107,71 @@ public sealed class PortfolioService : IPortfolioService
         return new PagedResult<PortfolioLookupDto>(items, page, pageSize, total);
     }
 
-    public async Task<Result<PortfolioDto>> CreateAsync(SavePortfolioDto dto, string userId, CancellationToken ct = default)
+    private async Task<HashSet<Guid>> GetAuthorizedProjectOrganizationsAsync(ManagementContext context, CancellationToken ct)
+    {
+        var candidateOrganizationIds = context.Scope.OrganizationIds.ToHashSet();
+        if (_organizationScopeLookup is not null)
+        {
+            var roleOrganizationIds = await _organizationScopeLookup.GetOrganizationIdsAsync(context.UserId, context.TenantId, ct);
+            candidateOrganizationIds.UnionWith(roleOrganizationIds);
+        }
+
+        if (candidateOrganizationIds.Count == 0) return [];
+
+        return await _db.Set<OrganizationEntity>().AsNoTracking()
+            .Where(organization => organization.TenantId == context.TenantId
+                && !organization.IsDeleted
+                && organization.IsActive
+                && candidateOrganizationIds.Contains(organization.Id))
+            .Select(organization => organization.Id)
+            .ToHashSetAsync(ct);
+    }
+
+    public async Task<IReadOnlyList<PortfolioOrganizationLookupDto>> GetEligibleOrganizationsForCreationAsync(CancellationToken ct = default)
+    {
+        var tenantId = TenantId();
+        var context = _managementContext?.Current;
+        if (tenantId == Guid.Empty || context is null || context.TenantId != tenantId) return [];
+
+        var organizationIds = await GetAuthorizedProjectOrganizationsAsync(context, ct);
+        if (organizationIds.Count == 0) return [];
+
+        return await _db.Set<OrganizationEntity>().AsNoTracking()
+            .Where(organization => organization.TenantId == tenantId
+                && !organization.IsDeleted
+                && organization.IsActive
+                && organizationIds.Contains(organization.Id))
+            .OrderBy(organization => organization.Name)
+            .ThenBy(organization => organization.Id)
+            .Select(organization => new PortfolioOrganizationLookupDto
+            {
+                Id = organization.Id,
+                Name = organization.Name
+            })
+            .ToListAsync(ct);
+    }
+
+    public async Task<Result<PortfolioDto>> CreateAsync(CreatePortfolioDto dto, string userId, CancellationToken ct = default)
     {
         var tenantId = TenantId();
         if (tenantId == Guid.Empty || !HasManagementScope(tenantId))
             return Result<PortfolioDto>.Failure(Error.Forbidden("A valid tenant management context is required."));
         var validation = Validate(dto); if (validation is not null) return Result<PortfolioDto>.Failure(validation);
+        var managementContext = _managementContext?.Current;
+        if (managementContext is null || managementContext.TenantId != tenantId)
+            return Result<PortfolioDto>.Failure(Error.Forbidden("A valid Organization-scoped management context is required."));
+
+        var eligibleOrganizations = await GetAuthorizedProjectOrganizationsAsync(managementContext, ct);
+        if (eligibleOrganizations.Count == 0)
+            return Result<PortfolioDto>.Failure(Error.Forbidden("The creator must belong to an active Organization to create a Portfolio."));
+
+        var organizationId = dto.OrganizationId is { } requestedOrganizationId && requestedOrganizationId != Guid.Empty
+            ? requestedOrganizationId
+            : eligibleOrganizations.Count == 1 ? eligibleOrganizations.Single() : Guid.Empty;
+        if (organizationId == Guid.Empty)
+            return Result<PortfolioDto>.Failure(Error.Validation("Select an owning Organization for this Portfolio."));
+        if (!eligibleOrganizations.Contains(organizationId))
+            return Result<PortfolioDto>.Failure(Error.Validation("Select an active Organization within your authorized scope."));
         var ownerId = NormalizeOwnerId(dto.OwnerId);
         if (ownerId.HasValue && !CanAssignPortfolioManager())
             return Result<PortfolioDto>.Failure(Error.Forbidden("Handover.AdminInitiate is required to assign an initial Portfolio Manager."));
@@ -95,7 +184,7 @@ public sealed class PortfolioService : IPortfolioService
                 var next = await NextCodeAsync(ct);
                 var requestedCurrency = NormalizeCurrency(dto.Currency);
                 if (!IsValidCurrency(requestedCurrency)) return Result<PortfolioDto>.Failure(Error.Validation("Currency must be an active configured 3-letter currency code"));
-                var entity = new Entity { TenantId = tenantId, Code = next, Name = dto.Name.Trim(), Description = dto.Description?.Trim(), OwnerId = ownerId, Status = dto.Status, Currency = requestedCurrency, StrategicObjective = dto.StrategicObjective?.Trim(), Priority = dto.Priority?.Trim(), Health = dto.Health?.Trim(), ConfidenceLevel = dto.ConfidenceLevel?.Trim(), CreatedBy = userId };
+                var entity = new Entity { TenantId = tenantId, OrganizationId = organizationId, Code = next, Name = dto.Name.Trim(), Description = dto.Description?.Trim(), OwnerId = ownerId, Status = dto.Status, Currency = requestedCurrency, StrategicObjective = dto.StrategicObjective?.Trim(), Priority = dto.Priority?.Trim(), Health = dto.Health?.Trim(), ConfidenceLevel = dto.ConfidenceLevel?.Trim(), CreatedBy = userId };
                 _db.Set<Entity>().Add(entity); await _db.SaveChangesAsync(ct);
                 if (ownerId.HasValue)
                 {
@@ -178,9 +267,15 @@ public sealed class PortfolioService : IPortfolioService
     private async Task<PortfolioDto> MapAsync(Entity entity, bool includeProjects, CancellationToken ct)
     {
         var owner = await _db.Set<User>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == entity.OwnerId && x.TenantId == entity.TenantId, ct);
+        var organizationName = entity.OrganizationId.HasValue
+            ? await _db.Set<OrganizationEntity>().AsNoTracking()
+                .Where(organization => organization.Id == entity.OrganizationId.Value && organization.TenantId == entity.TenantId)
+                .Select(organization => organization.Name)
+                .FirstOrDefaultAsync(ct)
+            : null;
         var projects = await LoadProjectsAsync(entity.Id, ct);
         var metrics = BuildMetrics(projects);
-        return new PortfolioDto { Id = entity.Id, Name = entity.Name, Code = entity.Code ?? "", Description = entity.Description, Status = entity.Status ?? "Active", OwnerId = entity.OwnerId ?? Guid.Empty, OwnerName = owner?.FullName, OwnerEmail = owner?.Email, Currency = entity.Currency, StartDate = entity.StartDate, EndDate = entity.EndDate, StrategicObjective = entity.StrategicObjective, Priority = entity.Priority, Health = entity.Health, ConfidenceLevel = entity.ConfidenceLevel, Metrics = metrics, Projects = includeProjects ? projects : Array.Empty<PortfolioProjectDto>(), CreatedAt = entity.CreatedAt, UpdatedAt = entity.UpdatedAt, CreatedBy = entity.CreatedBy, UpdatedBy = entity.UpdatedBy };
+        return new PortfolioDto { Id = entity.Id, OrganizationId = entity.OrganizationId, OrganizationName = organizationName, Name = entity.Name, Code = entity.Code ?? "", Description = entity.Description, Status = entity.Status ?? "Active", OwnerId = entity.OwnerId ?? Guid.Empty, OwnerName = owner?.FullName, OwnerEmail = owner?.Email, Currency = entity.Currency, StartDate = entity.StartDate, EndDate = entity.EndDate, StrategicObjective = entity.StrategicObjective, Priority = entity.Priority, Health = entity.Health, ConfidenceLevel = entity.ConfidenceLevel, Metrics = metrics, Projects = includeProjects ? projects : Array.Empty<PortfolioProjectDto>(), CreatedAt = entity.CreatedAt, UpdatedAt = entity.UpdatedAt, CreatedBy = entity.CreatedBy, UpdatedBy = entity.UpdatedBy };
     }
 
     private async Task<List<PortfolioProjectDto>> LoadProjectsAsync(Guid portfolioId, CancellationToken ct)

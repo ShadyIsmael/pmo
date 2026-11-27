@@ -190,7 +190,7 @@ public sealed class PermissionAuthorizationContractTests
         var controllers = new[]
         {
             typeof(BudgetController), typeof(BudgetRevisionController), typeof(CostController),
-            typeof(CommitmentController), typeof(PaymentObligationController)
+            typeof(PaymentObligationController)
         };
 
         foreach (var controller in controllers)

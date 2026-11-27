@@ -298,11 +298,9 @@ public sealed class RoleAdministrationService : IRoleAdministrationService
         if (role.IsSystem && nextPermissions
                 .Select(PermissionKey)
                 .Any(key => BootstrapPermissionDelegationPolicy.Keys.Contains(key)
-                    && !oldPermissionKeys.Contains(key)
-                    && !(ProtectedTenantAdminPolicy.IsProtectedSystemAdminRole(role)
-                        && BootstrapPermissionDelegationPolicy.CanAddToProtectedTenantAdminRole(key))))
+                    && !oldPermissionKeys.Contains(key)))
             return Result<RoleDetailDto>.Failure(Error.Forbidden(
-                "Bootstrap-delegable permissions can be added only to custom roles, except the explicitly configured Annual Budget permissions on the protected tenant Admin role."));
+                "Bootstrap-delegable permissions can be added only to custom roles."));
         if (!await ActorRetainsRoleManagementAsync(actorId, tenantId, role.Id, nextPermissions, cancellationToken))
             return Result<RoleDetailDto>.Failure(Error.Conflict("This change would remove your role-management access. Keep an effective Roles.Create, Roles.EditDetails, Roles.ConfigurePermissions, or Roles.Delete permission assigned to your account."));
 
@@ -518,8 +516,7 @@ public sealed class RoleAdministrationService : IRoleAdministrationService
                 && actorPermissions.Contains(key);
             var canUseBootstrapDelegation = !isAdministrativePermission
                 && bootstrapDelegableKeys.Contains(key)
-                && (!allowProtectedSystemAdminBaseline
-                    || BootstrapPermissionDelegationPolicy.CanAddToProtectedTenantAdminRole(key));
+                && !allowProtectedSystemAdminBaseline;
             if (!canDelegateAdministrative && !canDelegateOrdinary
                 && !canDelegateActorOwnedOrdinary && !canUseBootstrapDelegation)
                 return Result<List<Permission>>.Failure(Error.Forbidden(

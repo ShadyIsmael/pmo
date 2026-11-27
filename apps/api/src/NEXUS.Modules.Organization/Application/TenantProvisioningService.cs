@@ -7,6 +7,7 @@ using NEXUS.Modules.Audit.Domain;
 using NEXUS.Modules.Identity.Application;
 using NEXUS.Modules.Identity.Domain;
 using NEXUS.Modules.Organization.Domain;
+using NEXUS.SharedKernel;
 using OrganizationEntity = NEXUS.Modules.Organization.Domain.Organization;
 
 namespace NEXUS.Modules.Organization.Application;
@@ -16,12 +17,18 @@ public sealed class TenantProvisioningService : ITenantProvisioningService
     private readonly DbContext _context;
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly IAuditService _audit;
+    private readonly IOrganizationLifecycleHandler _lifecycleHandler;
 
-    public TenantProvisioningService(DbContext context, IHttpContextAccessor httpContextAccessor, IAuditService audit)
+    public TenantProvisioningService(
+        DbContext context,
+        IHttpContextAccessor httpContextAccessor,
+        IAuditService audit,
+        IOrganizationLifecycleHandler lifecycleHandler)
     {
         _context = context;
         _httpContextAccessor = httpContextAccessor;
         _audit = audit;
+        _lifecycleHandler = lifecycleHandler;
     }
 
     public async Task<IReadOnlyList<TenantSummary>> GetAllAsync(CancellationToken cancellationToken = default) =>
@@ -123,6 +130,17 @@ public sealed class TenantProvisioningService : ITenantProvisioningService
         try
         {
             await _context.SaveChangesAsync(cancellationToken);
+
+            var phaseProvisioning = await _lifecycleHandler.HandleOrganizationCreatedAsync(
+                tenantId, organization.Id, actorId.Value, cancellationToken);
+            if (phaseProvisioning.IsFailure)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return new TenantProvisioningOperationResult(
+                    TenantProvisioningCode.ValidationFailed,
+                    Error: phaseProvisioning.Error?.Message ?? "The Organization's protected Pre-Initiation phase could not be provisioned.");
+            }
+
             await transaction.CommitAsync(cancellationToken);
         }
         catch (DbUpdateException)

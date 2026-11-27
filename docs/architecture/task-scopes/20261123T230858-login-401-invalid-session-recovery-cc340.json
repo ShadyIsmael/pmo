@@ -1,0 +1,854 @@
+{
+  "created_at": "2026-11-23T23:08:58Z",
+  "critical_path_coverage": null,
+  "dependency_awareness_only": [
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "AuthenticationSource",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Domain/User.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "ProjectId",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/Entities/ProjectBaselineVersion.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Error",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/Error.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Message",
+      "module": "projects",
+      "path": "apps/web-react/src/features/projects/components/PlanningImportSheet.tsx",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "ProjectId",
+      "module": "projects",
+      "path": "modules/projects/ProjectBaselineVersion.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Identity.Domain",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Domain/Permission.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Identity.Domain",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Domain/User.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Identity.Domain",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Domain/UserOrganization.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Identity.Domain",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Domain/UserPermissionOverride.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Identity.Domain",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Domain/UserRole.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Location",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Domain/Location.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Tenant",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Domain/Tenant.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "AuthenticationSource",
+      "module": "shared",
+      "path": "apps/web-react/src/api/client.ts",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Role",
+      "module": "shared",
+      "path": "apps/web-react/src/lib/permissions.ts",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Location",
+      "module": "organization",
+      "path": "packages/shared-types/src/types/organization.ts",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "ProjectStatus",
+      "module": "projects",
+      "path": "packages/shared-types/src/types/project.ts",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Audit.Application",
+      "module": "audit",
+      "path": "apps/api/src/NEXUS.Modules.Audit/Application/AuditFieldRedactor.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Audit.Application",
+      "module": "audit",
+      "path": "apps/api/src/NEXUS.Modules.Audit/Application/AuditService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Audit.Application",
+      "module": "audit",
+      "path": "apps/api/src/NEXUS.Modules.Audit/Application/AuditSources.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Audit.Application",
+      "module": "audit",
+      "path": "apps/api/src/NEXUS.Modules.Audit/Application/AuditTrailContracts.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "source-call-and-member-type",
+      "evidence": "_audit:IAuditService.AppendAsync at line 262",
+      "module": "audit",
+      "path": "apps/api/src/NEXUS.Modules.Audit/Application/IAuditService.cs",
+      "relation": "CALLS_TYPED_METHOD"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "IAuditService",
+      "module": "audit",
+      "path": "apps/api/src/NEXUS.Modules.Audit/Application/IAuditService.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Audit.Application",
+      "module": "audit",
+      "path": "apps/api/src/NEXUS.Modules.Audit/Application/IAuditService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Audit.Application",
+      "module": "audit",
+      "path": "apps/api/src/NEXUS.Modules.Audit/Application/IProjectAuditScopeProvider.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Audit.Domain",
+      "module": "audit",
+      "path": "apps/api/src/NEXUS.Modules.Audit/Domain/AuditActivity.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "AuditEntry",
+      "module": "audit",
+      "path": "apps/api/src/NEXUS.Modules.Audit/Domain/AuditEntry.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "User",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Authorization/FinancialPermissionPolicyRegistration.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "User",
+      "module": "permissions",
+      "path": "apps/api/src/NEXUS.Api/Authorization/WorkflowLookupPolicyRegistration.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Identity.Domain",
+      "module": "administration",
+      "path": "apps/api/src/NEXUS.Api/Development/DevelopmentAdminPasswordRecoveryService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "User",
+      "module": "administration",
+      "path": "apps/api/src/NEXUS.Api/Development/DevelopmentAdminPasswordRecoveryService.cs",
+      "relation": "REFERENCES_TYPE"
+    }
+  ],
+  "index_updated": true,
+  "limits": [
+    "Router never prevents an agent from manually opening other files; enforce via agent instructions and audit.",
+    "C# and TS relationships are source-text heuristics; compiler-resolved calls and runtime dependency-injection resolution are not proven.",
+    "Unknown/unclassified files may require manual targeted inspection.",
+    "Index sources excluded secrets and build outputs."
+  ],
+  "module_selection_basis": "task-explicit-alias",
+  "nonprimary_modules_not_read_by_router": [
+    "administration",
+    "ai-planning",
+    "api",
+    "approvals",
+    "audit",
+    "cost-management",
+    "documents",
+    "governance",
+    "home",
+    "integrations",
+    "issues",
+    "management",
+    "meetings",
+    "notifications",
+    "operations",
+    "organization",
+    "permissions",
+    "persistence",
+    "plugins",
+    "portfolios",
+    "programs",
+    "project-planning",
+    "projects",
+    "reports",
+    "resources",
+    "risks",
+    "security",
+    "stakeholder",
+    "tests",
+    "time",
+    "unclassified",
+    "vendors",
+    "work-items",
+    "workflow"
+  ],
+  "planning_state": "focused",
+  "primary_module": "identity",
+  "refresh": {
+    "changed_existing": 3,
+    "deleted": 0,
+    "mode": "refresh",
+    "new": 0,
+    "parsed": 3,
+    "unchanged": 1912
+  },
+  "related_tests_candidates": [
+    "apps/api/tests/NEXUS.Api.Tests/Integration/UserPermissionAdministrationTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Security/AuthCookieContractTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Security/ProtectedTenantAdminIdentityTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Unit/AccountControllerTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Unit/AuthenticationPipelineTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Unit/DirectoryIdentityMatcherTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Unit/UserRepositoryManagerCandidateTests.cs",
+    "apps/web-react/src/test/account-notification-preferences.test.tsx",
+    "apps/web-react/src/test/account-preferences-parity.test.tsx",
+    "apps/web-react/src/test/account-profile.test.tsx",
+    "apps/web-react/src/test/auth-guard.test.tsx",
+    "apps/web-react/src/test/auth-session-isolation.test.tsx",
+    "apps/web-react/src/test/p0-07-auth-session-contract.test.ts",
+    "apps/web-react/src/test/user-permission-overrides.test.ts"
+  ],
+  "selected_files": [
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          6
+        ]
+      ],
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Application/IUserSessionValidator.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 62,
+      "reasons": [
+        "filename-match:session",
+        "primary-module",
+        "symbol-match:IUserSessionValidator"
+      ],
+      "score": 61,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          3,
+          3
+        ]
+      ],
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Application/LoginCommand.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 24,
+      "reasons": [
+        "filename-match:login",
+        "primary-module",
+        "symbol-match:LoginCommand"
+      ],
+      "score": 61,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          5,
+          13
+        ]
+      ],
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Application/LoginResponseDto.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 108,
+      "reasons": [
+        "filename-match:login",
+        "primary-module",
+        "symbol-match:LoginResponseDto"
+      ],
+      "score": 61,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          16
+        ]
+      ],
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Domain/UserSession.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 156,
+      "reasons": [
+        "filename-match:session",
+        "primary-module",
+        "symbol-match:UserSession"
+      ],
+      "score": 61,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          32
+        ]
+      ],
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Infrastructure/UserSessionValidator.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 345,
+      "reasons": [
+        "filename-match:session",
+        "primary-module",
+        "symbol-match:UserSessionValidator"
+      ],
+      "score": 61,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "test",
+      "line_ranges": [
+        [
+          259,
+          268
+        ]
+      ],
+      "module": "identity",
+      "path": "apps/web-react/src/test/auth-session-isolation.test.tsx",
+      "read_mode": "symbols",
+      "reading_tokens": 120,
+      "reasons": [
+        "filename-match:session",
+        "primary-module",
+        "symbol-match:SessionControls"
+      ],
+      "score": 53,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          40,
+          45
+        ],
+        [
+          48,
+          55
+        ],
+        [
+          58,
+          64
+        ]
+      ],
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Api/Account/AccountController.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 441,
+      "reasons": [
+        "primary-module",
+        "symbol-match:GetSessions"
+      ],
+      "score": 49,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          52,
+          52
+        ],
+        [
+          73,
+          73
+        ]
+      ],
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Api/Account/AccountDtos.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 32,
+      "reasons": [
+        "primary-module",
+        "symbol-match:AccountSessionDto"
+      ],
+      "score": 49,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          279,
+          285
+        ]
+      ],
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Api/Account/AccountService.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 202,
+      "reasons": [
+        "primary-module",
+        "symbol-match:GetSessionsAsync"
+      ],
+      "score": 49,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          10,
+          10
+        ],
+        [
+          11,
+          11
+        ],
+        [
+          12,
+          12
+        ]
+      ],
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Api/Account/IAccountService.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 164,
+      "reasons": [
+        "primary-module",
+        "symbol-match:GetSessionsAsync"
+      ],
+      "score": 49,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          7,
+          7
+        ],
+        [
+          11,
+          11
+        ]
+      ],
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Application/IAuthenticationService.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 67,
+      "reasons": [
+        "primary-module",
+        "symbol-match:LoginAsync"
+      ],
+      "score": 49,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          69,
+          69
+        ]
+      ],
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Application/ProtectedTenantAdminPolicy.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 42,
+      "reasons": [
+        "primary-module",
+        "symbol-match:InvalidOperationException"
+      ],
+      "score": 49,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          27,
+          27
+        ],
+        [
+          35,
+          35
+        ]
+      ],
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Domain/Role.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 72,
+      "reasons": [
+        "primary-module",
+        "symbol-match:InvalidOperationException"
+      ],
+      "score": 49,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          730,
+          730
+        ]
+      ],
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Infrastructure/RoleAdministrationService.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 38,
+      "reasons": [
+        "primary-module",
+        "symbol-match:InvalidOperationException"
+      ],
+      "score": 49,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          116,
+          116
+        ]
+      ],
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Infrastructure/TenantAdminMutationGuard.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 41,
+      "reasons": [
+        "primary-module",
+        "symbol-match:InvalidOperationException"
+      ],
+      "score": 49,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          29,
+          36
+        ],
+        [
+          95,
+          98
+        ],
+        [
+          100,
+          103
+        ]
+      ],
+      "module": "identity",
+      "path": "apps/web-react/src/api/account.ts",
+      "read_mode": "symbols",
+      "reading_tokens": 187,
+      "reasons": [
+        "primary-module",
+        "symbol-match:AccountSession"
+      ],
+      "score": 49,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "ui",
+      "line_ranges": [
+        [
+          63,
+          70
+        ],
+        [
+          76,
+          105
+        ]
+      ],
+      "module": "identity",
+      "path": "apps/web-react/src/auth/AuthProvider.tsx",
+      "read_mode": "symbols",
+      "reading_tokens": 420,
+      "reasons": [
+        "primary-module",
+        "symbol-match:expireSession"
+      ],
+      "score": 49,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "ui",
+      "line_ranges": [
+        [
+          191,
+          197
+        ]
+      ],
+      "module": "identity",
+      "path": "apps/web-react/src/features/account/AccountPages.tsx",
+      "read_mode": "symbols",
+      "reading_tokens": 117,
+      "reasons": [
+        "primary-module",
+        "symbol-match:revokeOtherSessions"
+      ],
+      "score": 49,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "test",
+      "line_ranges": [
+        [
+          1,
+          109
+        ]
+      ],
+      "module": "identity",
+      "path": "apps/web-react/src/test/p0-07-auth-session-contract.test.ts",
+      "read_mode": "full-file",
+      "reading_tokens": 1778,
+      "reasons": [
+        "filename-match:session",
+        "primary-module"
+      ],
+      "score": 49,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "domain",
+      "line_ranges": [
+        [
+          39,
+          43
+        ],
+        [
+          45,
+          48
+        ]
+      ],
+      "module": "identity",
+      "path": "packages/shared-types/src/types/identity.ts",
+      "read_mode": "symbols",
+      "reading_tokens": 50,
+      "reasons": [
+        "primary-module",
+        "symbol-match:LoginRequest"
+      ],
+      "score": 49,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "test",
+      "line_ranges": [
+        [
+          398,
+          427
+        ],
+        [
+          430,
+          464
+        ],
+        [
+          467,
+          477
+        ],
+        [
+          480,
+          493
+        ],
+        [
+          1893,
+          1908
+        ]
+      ],
+      "module": "identity",
+      "path": "apps/api/tests/NEXUS.Api.Tests/Integration/UserPermissionAdministrationTests.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 1400,
+      "reasons": [
+        "primary-module",
+        "symbol-match:Middleware_rejects_revoked_access_token_session"
+      ],
+      "score": 41,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "test",
+      "line_ranges": [
+        [
+          44,
+          72
+        ],
+        [
+          75,
+          93
+        ],
+        [
+          154,
+          185
+        ],
+        [
+          188,
+          205
+        ],
+        [
+          208,
+          232
+        ]
+      ],
+      "module": "identity",
+      "path": "apps/api/tests/NEXUS.Api.Tests/Security/AuthCookieContractTests.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 2141,
+      "reasons": [
+        "primary-module",
+        "symbol-match:Login_sets_a_secure_httponly_host_cookie_and_redacts_refresh_secret_from_json"
+      ],
+      "score": 41,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "test",
+      "line_ranges": [
+        [
+          15,
+          30
+        ],
+        [
+          33,
+          42
+        ],
+        [
+          64,
+          73
+        ]
+      ],
+      "module": "identity",
+      "path": "apps/api/tests/NEXUS.Api.Tests/Unit/AccountControllerTests.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 586,
+      "reasons": [
+        "primary-module",
+        "symbol-match:Get_is_bound_to_the_authenticated_user_tenant_and_session_claims"
+      ],
+      "score": 41,
+      "token_method": "estimated:chars/3.5"
+    }
+  ],
+  "selection_summary": {
+    "critical_path_coverage_percent": null,
+    "files": 23,
+    "symbols": 65,
+    "tokens": 8593
+  },
+  "snapshot": "20261123T230520-4fdc8b8",
+  "task": "Login 401 & Invalid Session Recovery",
+  "token_plan": {
+    "available_source_budget": 9600,
+    "estimation_order": "Critical-path coverage is evaluated before reading-cost calculation and optional file ranking.",
+    "requested_total_budget": 16000,
+    "reserved_non_source_budget": 6400,
+    "source_reading_tokens": 8593,
+    "warning": "An estimate of selected source reading, NOT full task execution or model hidden reasoning. Some counts may be approximate."
+  }
+}

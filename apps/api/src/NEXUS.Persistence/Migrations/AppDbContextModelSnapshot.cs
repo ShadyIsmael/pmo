@@ -236,9 +236,6 @@ namespace NEXUS.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<string>("DraftApprovalConfigurationJson")
-                        .HasColumnType("nvarchar(max)");
-
                     b.Property<string>("Currency")
                         .HasColumnType("nvarchar(max)");
 
@@ -1097,6 +1094,9 @@ namespace NEXUS.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasAlternateKey("TenantId", "ProjectId", "Id")
+                        .HasName("AK_PaymentObligations_Tenant_Project_Id");
+
                     b.HasIndex("TenantId", "MilestoneId");
 
                     b.HasIndex("TenantId", "ProjectId", "DueDate");
@@ -1104,6 +1104,101 @@ namespace NEXUS.Persistence.Migrations
                     b.HasIndex("TenantId", "ProjectId", "PaymentReference");
 
                     b.ToTable("PaymentObligations", (string)null);
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.CostManagement.Domain.PaymentRequestApproverAssignment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ApprovalCycleId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ApprovalRequestId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ApproverUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<int?>("Position")
+                        .HasColumnType("int");
+
+                    b.Property<Guid?>("ProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Requirement")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasAlternateKey("TenantId", "ApprovalRequestId", "Id")
+                        .HasName("AK_PaymentRequestApproverAssignments_Tenant_Request_Id");
+
+                    b.HasIndex("TenantId", "ApproverUserId");
+
+                    b.HasIndex("TenantId", "ApprovalRequestId", "ApproverUserId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_PaymentRequestApproverAssignments_Request_Approver")
+                        .HasFilter("[ApprovalCycleId] IS NULL");
+
+                    b.HasIndex("TenantId", "ApprovalRequestId", "Position")
+                        .IsUnique()
+                        .HasDatabaseName("UX_PaymentRequestApproverAssignments_Request_Position")
+                        .HasFilter("[Position] IS NOT NULL AND [ApprovalCycleId] IS NULL");
+
+                    b.HasIndex("TenantId", "ApprovalRequestId", "ApprovalCycleId", "ApproverUserId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_PaymentRequestApproverAssignments_Cycle_Approver")
+                        .HasFilter("[ApprovalCycleId] IS NOT NULL");
+
+                    b.HasIndex("TenantId", "ApprovalRequestId", "ApprovalCycleId", "Position")
+                        .IsUnique()
+                        .HasDatabaseName("UX_PaymentRequestApproverAssignments_Cycle_Position")
+                        .HasFilter("[Position] IS NOT NULL AND [ApprovalCycleId] IS NOT NULL");
+
+                    b.HasIndex("TenantId", "ProjectId", "ApprovalRequestId", "ApprovalCycleId");
+
+                    b.ToTable("PaymentRequestApproverAssignments", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_PaymentRequestApproverAssignments_Position", "[Position] IS NULL OR [Position] > 0");
+
+                            t.HasCheckConstraint("CK_PaymentRequestApproverAssignments_Requirement", "[Requirement] IN (N'Mandatory', N'Optional')");
+
+                            t.HasCheckConstraint("CK_PaymentRequestApproverAssignments_State", "[State] IN (N'Pending', N'Approved', N'Rejected', N'ReturnedForRevision', N'Closed')");
+                        });
                 });
 
             modelBuilder.Entity("NEXUS.Modules.CostManagement.Domain.PaymentSettlement", b =>
@@ -1123,6 +1218,17 @@ namespace NEXUS.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("Currency")
+                        .HasMaxLength(3)
+                        .HasColumnType("nvarchar(3)");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<Guid?>("FundingTransferId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<Guid>("IdempotencyKey")
                         .HasColumnType("uniqueidentifier");
 
@@ -1133,13 +1239,22 @@ namespace NEXUS.Persistence.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
 
-                    b.Property<Guid>("PaymentObligationId")
+                    b.Property<Guid?>("PaymentObligationId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("PaymentReference")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
+
+                    b.Property<Guid?>("PlannedPaymentInstallmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ProjectPaymentRequestId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
@@ -1160,15 +1275,966 @@ namespace NEXUS.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("PlannedPaymentInstallmentId");
+
                     b.HasIndex("TenantId", "IdempotencyKey")
                         .IsUnique();
 
-                    b.HasIndex("TenantId", "PaymentObligationId", "SettlementDate");
+                    b.HasIndex("TenantId", "ProjectId", "FundingTransferId");
 
-                    b.ToTable("PaymentSettlements", (string)null);
+                    b.HasIndex("TenantId", "ProjectId", "PaymentObligationId", "SettlementDate");
+
+                    b.HasIndex("TenantId", "ProjectId", "ProjectPaymentRequestId", "PaymentReference")
+                        .IsUnique()
+                        .HasDatabaseName("UX_PaymentSettlements_PaymentRequest_Reference")
+                        .HasFilter("[ProjectPaymentRequestId] IS NOT NULL");
+
+                    b.HasIndex("TenantId", "ProjectId", "ProjectPaymentRequestId", "SettlementDate");
+
+                    b.ToTable("PaymentSettlements", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_PaymentSettlements_ExactlyOneOwner", "([PaymentObligationId] IS NOT NULL AND [ProjectPaymentRequestId] IS NULL) OR ([PaymentObligationId] IS NULL AND [ProjectPaymentRequestId] IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_PaymentSettlements_FundingTransferOwner", "[FundingTransferId] IS NULL OR ([ProjectPaymentRequestId] IS NOT NULL AND [PaymentObligationId] IS NULL)");
+
+                            t.HasCheckConstraint("CK_PaymentSettlements_RequestCurrencyDescription", "([ProjectPaymentRequestId] IS NULL) OR ([Currency] IS NOT NULL AND LEN([Currency]) = 3 AND [Description] IS NOT NULL AND LEN(LTRIM(RTRIM([Description]))) > 0)");
+                        });
                 });
 
-            modelBuilder.Entity("NEXUS.Modules.CostManagement.Domain.PurchaseCommitment", b =>
+            modelBuilder.Entity("NEXUS.Modules.CostManagement.Domain.PaymentSettlementAdjustment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("AdjustmentType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<Guid?>("ApprovalRequestId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("ApprovedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("ApprovedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("AssignedApproverId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("nvarchar(3)");
+
+                    b.Property<DateTime>("EffectiveDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("ExecutionConfirmedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("ExecutionConfirmedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("ExecutionDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("ExecutionIdempotencyKey")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("IdempotencyKey")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid>("OriginalSettlementId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("PaymentObligationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("PlannedPaymentInstallmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ProjectPaymentRequestId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<DateTime>("RecordedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("ReplacementSettlementId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .HasColumnType("varbinary(max)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasDefaultValue("Executed");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReplacementSettlementId");
+
+                    b.HasIndex("TenantId", "ApprovalRequestId")
+                        .IsUnique()
+                        .HasFilter("[ApprovalRequestId] IS NOT NULL");
+
+                    b.HasIndex("TenantId", "ExecutionIdempotencyKey")
+                        .IsUnique()
+                        .HasFilter("[ExecutionIdempotencyKey] IS NOT NULL");
+
+                    b.HasIndex("TenantId", "IdempotencyKey")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "ProjectId", "OriginalSettlementId");
+
+                    b.ToTable("PaymentSettlementAdjustments", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_PaymentSettlementAdjustments_Status", "[Status] IN (N'PendingApproval', N'Approved', N'Rejected', N'Executed')");
+                        });
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.CostManagement.Domain.PlannedPayment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("nvarchar(3)");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<DateTime?>("FirstRequestAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("IdempotencyKey")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Reference")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime?>("RegisteredAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("RegisteredBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("RegistrationFingerprint")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid?>("ReplacedByPlannedPaymentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ReplacesPlannedPaymentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("TotalAmount")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<string>("UpdateFingerprint")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid?>("UpdateIdempotencyKey")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasAlternateKey("TenantId", "ProjectId", "Id")
+                        .HasName("AK_PlannedPayments_Tenant_Project_Plan");
+
+                    b.HasIndex("TenantId", "ProjectId", "IdempotencyKey")
+                        .IsUnique()
+                        .HasDatabaseName("UX_PlannedPayments_Tenant_Project_Idempotency")
+                        .HasFilter("[IdempotencyKey] IS NOT NULL");
+
+                    b.HasIndex("TenantId", "ProjectId", "Reference")
+                        .IsUnique()
+                        .HasDatabaseName("UX_PlannedPayments_Tenant_Project_Reference");
+
+                    b.HasIndex("TenantId", "ProjectId", "State")
+                        .HasDatabaseName("IX_PlannedPayments_Tenant_Project_State");
+
+                    b.HasIndex("TenantId", "ProjectId", "UpdateIdempotencyKey")
+                        .IsUnique()
+                        .HasDatabaseName("UX_PlannedPayments_Tenant_Project_UpdateIdempotency")
+                        .HasFilter("[UpdateIdempotencyKey] IS NOT NULL");
+
+                    b.ToTable("PlannedPayments", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_PlannedPayments_Currency", "LEN([Currency]) = 3");
+
+                            t.HasCheckConstraint("CK_PlannedPayments_IdempotencyFingerprint", "([IdempotencyKey] IS NULL AND [RegistrationFingerprint] IS NULL) OR ([IdempotencyKey] IS NOT NULL AND [RegistrationFingerprint] IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_PlannedPayments_State", "[State] IN (N'Registered', N'Locked', N'Replaced', N'Cancelled')");
+
+                            t.HasCheckConstraint("CK_PlannedPayments_TotalAmount", "[TotalAmount] > 0");
+
+                            t.HasCheckConstraint("CK_PlannedPayments_UpdateIdempotencyFingerprint", "([UpdateIdempotencyKey] IS NULL AND [UpdateFingerprint] IS NULL) OR ([UpdateIdempotencyKey] IS NOT NULL AND [UpdateFingerprint] IS NOT NULL)");
+                        });
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.CostManagement.Domain.PlannedPaymentInstallment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("ActualPaid")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<DateTime?>("DueDateUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid?>("PlanActivityId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("PlannedPaymentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<int>("Sequence")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasAlternateKey("TenantId", "ProjectId", "Id")
+                        .HasName("AK_PlannedPaymentInstallments_Tenant_Project_Installment");
+
+                    b.HasIndex("TenantId", "PlanActivityId");
+
+                    b.HasIndex("TenantId", "PlannedPaymentId", "Sequence")
+                        .IsUnique()
+                        .HasDatabaseName("UX_PlannedPaymentInstallments_Plan_Sequence");
+
+                    b.HasIndex("TenantId", "ProjectId", "PlanActivityId")
+                        .HasDatabaseName("IX_PlannedPaymentInstallments_Tenant_Project_Milestone");
+
+                    b.HasIndex("TenantId", "ProjectId", "PlannedPaymentId");
+
+                    b.ToTable("PlannedPaymentInstallments", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_PlannedPaymentInstallments_Amount", "[Amount] > 0");
+
+                            t.HasCheckConstraint("CK_PlannedPaymentInstallments_Sequence", "[Sequence] > 0");
+                        });
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.CostManagement.Domain.PlannedPaymentLifetimeReservation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid>("PlannedPaymentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("ReleasedAmount")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<decimal>("ReservedAmount")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasAlternateKey("TenantId", "ProjectId", "Id")
+                        .HasName("AK_PlannedPaymentLifetimeReservations_Tenant_Project_Reservation");
+
+                    b.HasIndex("TenantId", "PlannedPaymentId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_PlannedPaymentLifetimeReservations_Tenant_Plan");
+
+                    b.HasIndex("TenantId", "ProjectId")
+                        .HasDatabaseName("IX_PlannedPaymentLifetimeReservations_Tenant_Project");
+
+                    b.HasIndex("TenantId", "ProjectId", "PlannedPaymentId")
+                        .IsUnique();
+
+                    b.ToTable("PlannedPaymentLifetimeReservations", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_PlannedPaymentLifetimeReservations_ReleasedAmount", "[ReleasedAmount] >= 0 AND [ReleasedAmount] <= [ReservedAmount]");
+
+                            t.HasCheckConstraint("CK_PlannedPaymentLifetimeReservations_ReservedAmount", "[ReservedAmount] > 0");
+                        });
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.CostManagement.Domain.ProjectAnnualBudget", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("ApprovedAdjustments")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<DateTime?>("ApprovedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("ApprovedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("ApprovedCarryForward")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<decimal>("ApprovedReservedCarryForward")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<DateTime?>("ClosedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("ClosedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ClosedByClosingId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("nvarchar(3)");
+
+                    b.Property<string>("DraftApprovalConfigurationJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("FinancialReference")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int>("FiscalYear")
+                        .HasColumnType("int");
+
+                    b.Property<DateOnly>("FiscalYearEndDate")
+                        .HasColumnType("date");
+
+                    b.Property<DateOnly>("FiscalYearStartDate")
+                        .HasColumnType("date");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<decimal>("NewApprovedFunding")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasAlternateKey("TenantId", "ProjectId", "Id")
+                        .HasName("AK_ProjectAnnualBudgets_Tenant_Project_Id");
+
+                    b.HasIndex("TenantId", "FinancialReference")
+                        .IsUnique()
+                        .HasDatabaseName("UX_ProjectAnnualBudgets_Tenant_FinancialReference");
+
+                    b.HasIndex("TenantId", "FiscalYear")
+                        .HasDatabaseName("IX_ProjectAnnualBudgets_Tenant_FiscalYear");
+
+                    b.HasIndex("TenantId", "ProjectId", "ClosedByClosingId");
+
+                    b.HasIndex("TenantId", "ProjectId", "FiscalYear")
+                        .IsUnique()
+                        .HasDatabaseName("UX_ProjectAnnualBudgets_Tenant_Project_FiscalYear");
+
+                    b.ToTable("ProjectAnnualBudgets", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_ProjectAnnualBudgets_Amounts", "[NewApprovedFunding] >= 0 AND [ApprovedCarryForward] >= 0 AND [ApprovedReservedCarryForward] >= 0 AND [ApprovedReservedCarryForward] <= [ApprovedCarryForward] AND ([NewApprovedFunding] + [ApprovedCarryForward] + [ApprovedAdjustments]) >= 0");
+
+                            t.HasCheckConstraint("CK_ProjectAnnualBudgets_ClosingMetadata", "([ClosedAtUtc] IS NULL AND [ClosedByClosingId] IS NULL AND [ClosedBy] IS NULL) OR ([ClosedAtUtc] IS NOT NULL AND [ClosedByClosingId] IS NOT NULL AND [ClosedBy] IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_ProjectAnnualBudgets_FiscalPeriod", "[FiscalYear] BETWEEN 1900 AND 2200 AND [FiscalYearStartDate] <= [FiscalYearEndDate]");
+
+                            t.HasCheckConstraint("CK_ProjectAnnualBudgets_Status", "[Status] IN (N'Draft', N'Approved')");
+                        });
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.CostManagement.Domain.ProjectAnnualBudgetApprovalApprover", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ApproverUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ConfigurationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<int?>("Position")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "ApproverUserId");
+
+                    b.HasIndex("TenantId", "ConfigurationId", "ApproverUserId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_ProjectAnnualBudgetApprovalApprovers_Configuration_User")
+                        .HasFilter("[IsDeleted] = 0");
+
+                    b.HasIndex("TenantId", "ConfigurationId", "Position")
+                        .HasDatabaseName("IX_ProjectAnnualBudgetApprovalApprovers_Configuration_Position")
+                        .HasFilter("[IsDeleted] = 0 AND [Position] IS NOT NULL");
+
+                    b.HasIndex("TenantId", "ProjectId", "ConfigurationId");
+
+                    b.ToTable("ProjectAnnualBudgetApprovalApprovers", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_ProjectAnnualBudgetApprovalApprovers_Position", "[Position] IS NULL OR [Position] > 0");
+                        });
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.CostManagement.Domain.ProjectAnnualBudgetApprovalConfiguration", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ApprovalMode")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasAlternateKey("TenantId", "ProjectId", "Id")
+                        .HasName("AK_ProjectAnnualBudgetApprovalConfigurations_Tenant_Project_Id");
+
+                    b.HasIndex("TenantId", "ProjectId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_ProjectAnnualBudgetApprovalConfigurations_Tenant_Project")
+                        .HasFilter("[IsDeleted] = 0");
+
+                    b.ToTable("ProjectAnnualBudgetApprovalConfigurations", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_ProjectAnnualBudgetApprovalConfigurations_Mode", "[ApprovalMode] IN (N'Sequential', N'Parallel')");
+                        });
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.CostManagement.Domain.ProjectAnnualBudgetClosing", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("ActualSettlementsInFiscalYear")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<string>("ApprovalMode")
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)");
+
+                    b.Property<Guid?>("ApprovalRequestId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("ApprovedAdjustments")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<decimal>("ApprovedAnnualBudget")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<decimal>("ApprovedFreeCarryForward")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<decimal>("ApprovedPaymentRequestAllocations")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<decimal>("ApprovedReservedCarryForward")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<decimal>("ApprovedReversalReleases")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<bool>("CarryOutstandingCommitments")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("CompletedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("CompletedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("nvarchar(3)");
+
+                    b.Property<Guid?>("DestinationAnnualBudgetId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int?>("DestinationFiscalYear")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("EffectiveActiveAllocations")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<int>("FiscalYear")
+                        .HasColumnType("int");
+
+                    b.Property<DateOnly>("FiscalYearEndDate")
+                        .HasColumnType("date");
+
+                    b.Property<DateOnly>("FiscalYearStartDate")
+                        .HasColumnType("date");
+
+                    b.Property<decimal>("FreeAvailableBudget")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<Guid>("IdempotencyKey")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("IncomingCarryForward")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<int>("IntegrityIssueCount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("IntegrityIssuesJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<decimal>("NewFunding")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<decimal>("NextFiscalYearAdjustments")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<decimal>("NextFiscalYearNewFunding")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<decimal>("NonCarriedFreeBalance")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<decimal>("OutstandingCommitments")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<int>("PendingPaymentRequestCount")
+                        .HasColumnType("int");
+
+                    b.Property<int>("PendingReversalRequestCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("PreparedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("PreparedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("ProposedFreeCarryForward")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("SnapshotFingerprint")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("SnapshotJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("SourceAnnualBudgetId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)");
+
+                    b.Property<DateTime?>("SubmittedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("SubmittedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("TotalUnspentBudget")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<int>("UnresolvedLegacyRequestCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasAlternateKey("TenantId", "ProjectId", "Id")
+                        .HasName("AK_ProjectAnnualBudgetClosings_Tenant_Project_Id");
+
+                    b.HasIndex("TenantId", "ApprovalRequestId");
+
+                    b.HasIndex("TenantId", "ProjectId", "DestinationAnnualBudgetId");
+
+                    b.HasIndex("TenantId", "ProjectId", "FiscalYear")
+                        .IsUnique()
+                        .HasDatabaseName("UX_ProjectAnnualBudgetClosings_Pending_Project_FiscalYear")
+                        .HasFilter("[Status] = N'PendingApproval'");
+
+                    b.HasIndex("TenantId", "ProjectId", "IdempotencyKey")
+                        .IsUnique()
+                        .HasDatabaseName("UX_ProjectAnnualBudgetClosings_Idempotency");
+
+                    b.HasIndex("TenantId", "ProjectId", "SourceAnnualBudgetId");
+
+                    b.HasIndex("TenantId", "ProjectId", "FiscalYear", "Status")
+                        .HasDatabaseName("IX_ProjectAnnualBudgetClosings_Project_FiscalYear_Status");
+
+                    b.ToTable("ProjectAnnualBudgetClosings", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_ProjectAnnualBudgetClosings_CarryForward", "[ProposedFreeCarryForward] >= 0 AND [ApprovedFreeCarryForward] >= 0 AND [ApprovedReservedCarryForward] >= 0 AND [NonCarriedFreeBalance] >= 0");
+
+                            t.HasCheckConstraint("CK_ProjectAnnualBudgetClosings_FiscalPeriod", "[FiscalYear] BETWEEN 1900 AND 2200 AND [FiscalYearStartDate] <= [FiscalYearEndDate]");
+
+                            t.HasCheckConstraint("CK_ProjectAnnualBudgetClosings_Status", "[Status] IN (N'Review', N'PendingApproval', N'Rejected', N'Closed', N'Cancelled')");
+                        });
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.CostManagement.Domain.ProjectAnnualBudgetLine", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("AuthorizedLimit")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid>("ProjectAnnualBudgetId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Reference")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasAlternateKey("TenantId", "ProjectId", "ProjectAnnualBudgetId", "Id")
+                        .HasName("AK_ProjectAnnualBudgetLines_Tenant_Project_Budget_Id");
+
+                    b.HasIndex("TenantId", "Reference")
+                        .IsUnique()
+                        .HasDatabaseName("UX_ProjectAnnualBudgetLines_Tenant_Reference");
+
+                    b.HasIndex("TenantId", "ProjectId", "ProjectAnnualBudgetId", "IsDeleted")
+                        .HasDatabaseName("IX_ProjectAnnualBudgetLines_Tenant_Project_Budget_Active");
+
+                    b.ToTable("ProjectAnnualBudgetLines", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_ProjectAnnualBudgetLines_AuthorizedLimit", "[AuthorizedLimit] > 0");
+
+                            t.HasCheckConstraint("CK_ProjectAnnualBudgetLines_Description", "LEN(LTRIM(RTRIM([Description]))) > 0");
+                        });
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.CostManagement.Domain.ProjectPaymentRequestApprovalCycle", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -1178,10 +2244,34 @@ namespace NEXUS.Persistence.Migrations
                         .HasPrecision(19, 4)
                         .HasColumnType("decimal(19,4)");
 
-                    b.Property<Guid?>("BudgetId")
+                    b.Property<string>("AnnualBudgetLineDescription")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("AnnualBudgetLineReference")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("AnnualBudgetReference")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("ApprovalMode")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)");
+
+                    b.Property<Guid>("ApprovalRequestId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<DateTime>("CommitmentDate")
+                    b.Property<string>("ApproversSnapshotJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("CompletedAtUtc")
                         .HasColumnType("datetime2");
 
                     b.Property<DateTime>("CreatedAt")
@@ -1193,35 +2283,58 @@ namespace NEXUS.Persistence.Migrations
 
                     b.Property<string>("Currency")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(3)
+                        .HasColumnType("nvarchar(3)");
 
-                    b.Property<string>("Description")
-                        .HasColumnType("nvarchar(max)");
+                    b.Property<int>("CycleNumber")
+                        .HasColumnType("int");
 
-                    b.Property<DateTime?>("ExpectedDeliveryDate")
-                        .HasColumnType("datetime2");
+                    b.Property<string>("DecisionComment")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
 
-                    b.Property<decimal?>("InvoicedAmount")
-                        .HasPrecision(19, 4)
-                        .HasColumnType("decimal(19,4)");
+                    b.Property<int>("FiscalYear")
+                        .HasColumnType("int");
 
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
-                    b.Property<Guid?>("ProjectId")
+                    b.Property<Guid>("PlannedPaymentInstallmentId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<string>("PurchaseOrderNumber")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                    b.Property<Guid>("ProjectAnnualBudgetId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ProjectAnnualBudgetLineId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("RequesterId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
                         .IsRequired()
-                        .HasColumnType("varbinary(max)");
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
 
                     b.Property<string>("Status")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("SubmissionFingerprint")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid>("SubmitIdempotencyKey")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("SubmittedAtUtc")
+                        .HasColumnType("datetime2");
 
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uniqueidentifier");
@@ -1232,12 +2345,270 @@ namespace NEXUS.Persistence.Migrations
                     b.Property<string>("UpdatedBy")
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<string>("VendorName")
+                    b.HasKey("Id");
+
+                    b.HasAlternateKey("TenantId", "ProjectId", "ApprovalRequestId", "Id")
+                        .HasName("AK_ProjectPaymentRequestApprovalCycles_Tenant_Project_Request_Id");
+
+                    b.HasIndex("TenantId", "ApprovalRequestId", "CycleNumber")
+                        .IsUnique()
+                        .HasDatabaseName("UX_ProjectPaymentRequestApprovalCycles_Request_Cycle");
+
+                    b.HasIndex("TenantId", "ProjectId", "PlannedPaymentInstallmentId");
+
+                    b.HasIndex("TenantId", "ApprovalRequestId", "Status", "SubmittedAtUtc")
+                        .HasDatabaseName("IX_ProjectPaymentRequestApprovalCycles_Request_Status_Submitted");
+
+                    b.HasIndex("TenantId", "ProjectId", "ApprovalRequestId", "SubmitIdempotencyKey")
+                        .IsUnique()
+                        .HasDatabaseName("UX_ProjectPaymentRequestApprovalCycles_Project_Idempotency");
+
+                    b.HasIndex("TenantId", "ProjectId", "ProjectAnnualBudgetId", "ProjectAnnualBudgetLineId");
+
+                    b.ToTable("ProjectPaymentRequestApprovalCycles", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_ProjectPaymentRequestApprovalCycles_Amounts", "[Amount] > 0 AND [FiscalYear] BETWEEN 1900 AND 2200 AND [Currency] <> N''");
+
+                            t.HasCheckConstraint("CK_ProjectPaymentRequestApprovalCycles_ApprovalMode", "[ApprovalMode] IN (N'Sequential', N'Parallel')");
+
+                            t.HasCheckConstraint("CK_ProjectPaymentRequestApprovalCycles_CycleNumber", "[CycleNumber] > 0");
+
+                            t.HasCheckConstraint("CK_ProjectPaymentRequestApprovalCycles_Status", "[Status] IN (N'Pending', N'Approved', N'Rejected', N'ReturnedForRevision', N'Cancelled')");
+                        });
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.CostManagement.Domain.ProjectPaymentRequestDetail", b =>
+                {
+                    b.Property<Guid>("ApprovalRequestId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int?>("AnnualBudgetFiscalYear")
+                        .HasColumnType("int");
+
+                    b.Property<string>("AnnualBudgetReference")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("ApprovalMode")
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("CreatedFromQuickOneOff")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid?>("CurrentApprovalCycleId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("CurrentApprovalCycleNumber")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
+
+                    b.Property<Guid?>("FundingTransferId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("IdempotencyKey")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("PlanActivityId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("PlannedPaymentInstallmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ProjectAnnualBudgetId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ProjectAnnualBudgetLineId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("RequestFingerprint")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("RequestKind")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)");
+
+                    b.Property<Guid?>("ReversesApprovalRequestId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<DateTime?>("SubmittedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("ApprovalRequestId")
+                        .HasName("PK_ProjectPaymentRequestDetails");
+
+                    b.HasAlternateKey("TenantId", "ApprovalRequestId")
+                        .HasName("AK_ProjectPaymentRequestDetails_TenantId_ApprovalRequestId");
+
+                    b.HasAlternateKey("TenantId", "ProjectId", "ApprovalRequestId")
+                        .HasName("AK_ProjectPaymentRequestDetails_Tenant_Project_Request");
+
+                    b.HasIndex("TenantId", "PlanActivityId");
+
+                    b.HasIndex("TenantId", "ReversesApprovalRequestId")
+                        .HasDatabaseName("IX_ProjectPaymentRequestDetails_ReversesRequest");
+
+                    b.HasIndex("TenantId", "ProjectId", "FundingTransferId");
+
+                    b.HasIndex("TenantId", "ProjectId", "IdempotencyKey")
+                        .IsUnique()
+                        .HasDatabaseName("UX_ProjectPaymentRequestDetails_Project_Idempotency")
+                        .HasFilter("[IdempotencyKey] IS NOT NULL");
+
+                    b.HasIndex("TenantId", "ProjectId", "PlannedPaymentInstallmentId")
+                        .HasDatabaseName("IX_ProjectPaymentRequestDetails_PlannedInstallment");
+
+                    b.HasIndex("TenantId", "ProjectId", "ProjectAnnualBudgetId")
+                        .HasDatabaseName("IX_ProjectPaymentRequestDetails_AnnualBudget");
+
+                    b.HasIndex("TenantId", "ProjectId", "RequestKind")
+                        .HasDatabaseName("IX_ProjectPaymentRequestDetails_Tenant_Project_Kind");
+
+                    b.HasIndex("TenantId", "ProjectId", "ReversesApprovalRequestId");
+
+                    b.HasIndex("TenantId", "ProjectId", "ApprovalRequestId", "CurrentApprovalCycleId");
+
+                    b.HasIndex("TenantId", "ProjectId", "ProjectAnnualBudgetId", "ProjectAnnualBudgetLineId");
+
+                    b.ToTable("ProjectPaymentRequestDetails", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_ProjectPaymentRequestDetails_AnnualBudgetAssociation", "([ProjectAnnualBudgetId] IS NULL AND [AnnualBudgetFiscalYear] IS NULL AND [AnnualBudgetReference] IS NULL) OR ([ProjectAnnualBudgetId] IS NOT NULL AND [AnnualBudgetFiscalYear] BETWEEN 1900 AND 2200 AND [AnnualBudgetReference] IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_ProjectPaymentRequestDetails_AnnualBudgetLineAssociation", "[ProjectAnnualBudgetLineId] IS NULL OR [ProjectAnnualBudgetId] IS NOT NULL");
+
+                            t.HasCheckConstraint("CK_ProjectPaymentRequestDetails_ApprovalCycleNumber", "([CurrentApprovalCycleId] IS NULL AND [CurrentApprovalCycleNumber] = 0) OR ([CurrentApprovalCycleId] IS NOT NULL AND [CurrentApprovalCycleNumber] > 0)");
+
+                            t.HasCheckConstraint("CK_ProjectPaymentRequestDetails_ApprovalMode", "[ApprovalMode] IS NULL OR [ApprovalMode] IN (N'Sequential', N'Parallel')");
+
+                            t.HasCheckConstraint("CK_ProjectPaymentRequestDetails_IdempotencyFingerprint", "([IdempotencyKey] IS NULL AND [RequestFingerprint] IS NULL) OR ([IdempotencyKey] IS NOT NULL AND [RequestFingerprint] IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_ProjectPaymentRequestDetails_RequestKind", "[RequestKind] IN (N'PaymentRequest', N'ReversalRequest')");
+
+                            t.HasCheckConstraint("CK_ProjectPaymentRequestDetails_ReversalReference", "([RequestKind] = N'PaymentRequest' AND [ReversesApprovalRequestId] IS NULL) OR ([RequestKind] = N'ReversalRequest' AND [ReversesApprovalRequestId] IS NOT NULL AND [ReversesApprovalRequestId] <> [ApprovalRequestId])");
+                        });
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.CostManagement.Domain.ProjectPaymentRequestFundingTransfer", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<DateTime>("ApprovedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("ApprovedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ClosingId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("nvarchar(3)");
+
+                    b.Property<Guid>("DestinationAnnualBudgetId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("DestinationFiscalYear")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("IdempotencyKey")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid>("PaymentRequestId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("SourceAnnualBudgetId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("SourceFiscalYear")
+                        .HasColumnType("int");
+
+                    b.Property<Guid?>("SupersedesFundingTransferId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
                         .HasColumnType("nvarchar(max)");
 
                     b.HasKey("Id");
 
-                    b.ToTable("PurchaseCommitments");
+                    b.HasAlternateKey("TenantId", "ProjectId", "Id")
+                        .HasName("AK_ProjectPaymentRequestFundingTransfers_Tenant_Project_Id");
+
+                    b.HasIndex("TenantId", "IdempotencyKey")
+                        .IsUnique()
+                        .HasDatabaseName("UX_ProjectPaymentRequestFundingTransfers_Idempotency");
+
+                    b.HasIndex("TenantId", "ProjectId", "ClosingId");
+
+                    b.HasIndex("TenantId", "ProjectId", "SupersedesFundingTransferId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_ProjectPaymentRequestFundingTransfers_ActiveChainSuccessor")
+                        .HasFilter("[SupersedesFundingTransferId] IS NOT NULL");
+
+                    b.HasIndex("TenantId", "ProjectId", "DestinationAnnualBudgetId", "PaymentRequestId")
+                        .HasDatabaseName("IX_ProjectPaymentRequestFundingTransfers_DestinationBudget_Request");
+
+                    b.HasIndex("TenantId", "ProjectId", "PaymentRequestId", "DestinationFiscalYear")
+                        .IsUnique()
+                        .HasDatabaseName("UX_ProjectPaymentRequestFundingTransfers_Request_DestinationFiscalYear");
+
+                    b.HasIndex("TenantId", "ProjectId", "SourceAnnualBudgetId", "PaymentRequestId")
+                        .HasDatabaseName("IX_ProjectPaymentRequestFundingTransfers_SourceBudget_Request");
+
+                    b.ToTable("ProjectPaymentRequestFundingTransfers", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_ProjectPaymentRequestFundingTransfers_Amount", "[Amount] > 0 AND [SourceFiscalYear] BETWEEN 1900 AND 2199 AND [DestinationFiscalYear] = [SourceFiscalYear] + 1 AND [Currency] <> N''");
+                        });
                 });
 
             modelBuilder.Entity("NEXUS.Modules.Documents.Domain.Document", b =>
@@ -1280,12 +2651,23 @@ namespace NEXUS.Persistence.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
+                    b.Property<bool>("IsDeletionApproved")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<bool>("IsMandatory")
+                        .HasColumnType("bit");
+
                     b.Property<bool>("IsTemplate")
                         .HasColumnType("bit");
 
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid?>("OrganizationId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid?>("OwnerId")
                         .HasColumnType("uniqueidentifier");
@@ -1301,6 +2683,9 @@ namespace NEXUS.Persistence.Migrations
                         .HasColumnType("varbinary(max)");
 
                     b.Property<Guid?>("SourceTemplateId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("SourceTemplateVersionId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<int?>("SourceTemplateVersionNumber")
@@ -1332,7 +2717,11 @@ namespace NEXUS.Persistence.Migrations
 
                     b.HasIndex("CategoryId");
 
+                    b.HasIndex("OrganizationId");
+
                     b.HasIndex("SourceTemplateId");
+
+                    b.HasIndex("SourceTemplateVersionId");
 
                     b.ToTable("Documents");
                 });
@@ -1356,12 +2745,33 @@ namespace NEXUS.Persistence.Migrations
                     b.Property<string>("Description")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
+
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("NameAr")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("NormalizedNameAr")
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)");
+
+                    b.Property<string>("NormalizedNameEn")
+                        .IsRequired()
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)");
+
+                    b.Property<Guid?>("OrganizationId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid?>("ParentId")
                         .HasColumnType("uniqueidentifier");
@@ -1384,7 +2794,17 @@ namespace NEXUS.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("DocumentCategories");
+                    b.HasIndex("TenantId", "OrganizationId", "NormalizedNameAr")
+                        .IsUnique()
+                        .HasDatabaseName("UX_DocumentCategories_Organization_NameAr")
+                        .HasFilter("[OrganizationId] IS NOT NULL AND [IsDeleted] = 0 AND [NormalizedNameAr] IS NOT NULL");
+
+                    b.HasIndex("TenantId", "OrganizationId", "NormalizedNameEn")
+                        .IsUnique()
+                        .HasDatabaseName("UX_DocumentCategories_Organization_NameEn")
+                        .HasFilter("[OrganizationId] IS NOT NULL AND [IsDeleted] = 0");
+
+                    b.ToTable("DocumentCategories", (string)null);
                 });
 
             modelBuilder.Entity("NEXUS.Modules.Documents.Domain.DocumentReview", b =>
@@ -1479,8 +2899,20 @@ namespace NEXUS.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("varbinary(max)");
 
+                    b.Property<string>("Sha256")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("StorageKey")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
                     b.Property<string>("StoragePath")
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("StorageProviderId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uniqueidentifier");
@@ -1505,6 +2937,125 @@ namespace NEXUS.Persistence.Migrations
                     b.HasIndex("DocumentId");
 
                     b.ToTable("DocumentVersions");
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.Documents.Domain.TemplateDeletionRequest", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ApproverId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ApproverName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("DecidedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DecisionComments")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<string>("DeletionType")
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid?>("OwnerOrganizationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("OwnerScope")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<DateTime>("RequestedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("RequesterId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("RequesterName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .HasColumnType("varbinary(max)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("StorageCleanupError")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("StorageCleanupKeysJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("StorageCleanupLastAttemptAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("StorageCleanupStatus")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)");
+
+                    b.Property<Guid>("TemplateId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("TemplateMutationSnapshotHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("TemplateName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "TemplateId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_TemplateDeletionRequests_Tenant_Template_Pending")
+                        .HasFilter("[Status] = N'PendingApproval'");
+
+                    b.HasIndex("TenantId", "RequesterId", "RequestedAt");
+
+                    b.HasIndex("TenantId", "Status", "RequestedAt");
+
+                    b.ToTable("TemplateDeletionRequests", (string)null);
                 });
 
             modelBuilder.Entity("NEXUS.Modules.Identity.Domain.Permission", b =>
@@ -1590,6 +3141,9 @@ namespace NEXUS.Persistence.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
+                    b.Property<bool>("IsLegacyOrganizationOwnershipUnresolved")
+                        .HasColumnType("bit");
+
                     b.Property<bool>("IsSystem")
                         .HasColumnType("bit");
 
@@ -1597,6 +3151,13 @@ namespace NEXUS.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
+
+                    b.Property<Guid?>("OrganizationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("RoleKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
@@ -1621,16 +3182,29 @@ namespace NEXUS.Persistence.Migrations
 
                     b.HasIndex("TenantId", "Name")
                         .IsUnique()
-                        .HasDatabaseName("UX_Roles_Tenant_Name");
+                        .HasDatabaseName("UX_Roles_Tenant_Unowned_Name")
+                        .HasFilter("[OrganizationId] IS NULL AND [IsDeleted] = 0");
+
+                    b.HasIndex("TenantId", "RoleKey")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Roles_Tenant_RoleKey")
+                        .HasFilter("[RoleKey] IS NOT NULL AND [IsDeleted] = 0");
 
                     b.HasIndex("TenantId", "SystemRoleKey")
                         .IsUnique()
                         .HasDatabaseName("UX_Roles_Tenant_SystemRoleKey")
                         .HasFilter("[SystemRoleKey] IS NOT NULL AND [IsDeleted] = 0");
 
+                    b.HasIndex("TenantId", "OrganizationId", "Name")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Roles_Tenant_Organization_Name")
+                        .HasFilter("[OrganizationId] IS NOT NULL AND [IsDeleted] = 0");
+
                     b.ToTable("Roles", null, t =>
                         {
-                            t.HasCheckConstraint("CK_Roles_SystemRoleKeyRequiresSystemRole", "[SystemRoleKey] IS NULL OR [IsSystem] = 1");
+                            t.HasCheckConstraint("CK_Roles_OrganizationOwnershipMatchesRoleKind", "([IsSystem] = 0 AND [SystemRoleKey] IS NULL AND (([OrganizationId] IS NOT NULL AND [IsLegacyOrganizationOwnershipUnresolved] = 0) OR ([OrganizationId] IS NULL AND [IsLegacyOrganizationOwnershipUnresolved] = 1))) OR ([IsSystem] = 1 AND [OrganizationId] IS NULL AND [IsLegacyOrganizationOwnershipUnresolved] = 0 AND [SystemRoleKey] COLLATE Latin1_General_100_BIN2 IN (N'tenant.admin', N'organization.admin'))");
+
+                            t.HasCheckConstraint("CK_Roles_SystemRoleKeyRequiresSystemRole", "([IsSystem] = 0 AND [SystemRoleKey] IS NULL AND ([RoleKey] IS NULL OR [RoleKey] COLLATE Latin1_General_100_BIN2 NOT IN (N'tenant.admin', N'organization.admin'))) OR ([IsSystem] = 1 AND [SystemRoleKey] IS NOT NULL AND [RoleKey] IS NOT NULL AND [SystemRoleKey] COLLATE Latin1_General_100_BIN2 IN (N'tenant.admin', N'organization.admin') AND [RoleKey] COLLATE Latin1_General_100_BIN2 = [SystemRoleKey] COLLATE Latin1_General_100_BIN2)");
                         });
                 });
 
@@ -1725,6 +3299,57 @@ namespace NEXUS.Persistence.Migrations
                     b.HasIndex("TenantId");
 
                     b.ToTable("Users", (string)null);
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.Identity.Domain.UserOrganization", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "OrganizationId", "UserId")
+                        .HasDatabaseName("IX_UserOrganizations_ActiveOrgUser")
+                        .HasFilter("[IsDeleted] = 0");
+
+                    b.HasIndex("TenantId", "UserId", "OrganizationId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_UserOrganizations_ActiveUserOrg")
+                        .HasFilter("[IsDeleted] = 0");
+
+                    b.ToTable("UserOrganizations", (string)null);
                 });
 
             modelBuilder.Entity("NEXUS.Modules.Identity.Domain.UserPermissionOverride", b =>
@@ -5009,6 +6634,224 @@ namespace NEXUS.Persistence.Migrations
                     b.ToTable("Organizations");
                 });
 
+            modelBuilder.Entity("NEXUS.Modules.Organization.Domain.OrganizationPhaseGateConfiguration", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int>("CurrentVersionNumber")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("SourcePhase")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<Guid>("SourcePhaseId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("TargetPhase")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<Guid>("TargetPhaseId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasAlternateKey("TenantId", "Id")
+                        .HasName("AK_OrganizationPhaseGateConfigurations_Tenant_Id");
+
+                    b.HasIndex("TenantId", "SourcePhaseId");
+
+                    b.HasIndex("TenantId", "TargetPhaseId");
+
+                    b.HasIndex("TenantId", "OrganizationId", "SourcePhaseId", "TargetPhaseId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_OrganizationPhaseGateConfigurations_ActiveTransition")
+                        .HasFilter("[IsDeleted] = 0");
+
+                    b.ToTable("OrganizationPhaseGateConfigurations", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_OrganizationPhaseGateConfigurations_CurrentVersionPositive", "[CurrentVersionNumber] >= 1");
+
+                            t.HasCheckConstraint("CK_OrganizationPhaseGateConfigurations_DistinctPhaseIds", "[SourcePhaseId] <> [TargetPhaseId]");
+
+                            t.HasCheckConstraint("CK_OrganizationPhaseGateConfigurations_DistinctPhases", "[SourcePhase] <> [TargetPhase]");
+                        });
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.Organization.Domain.OrganizationPhaseGateConfigurationVersion", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ConfigurationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int>("VersionNumber")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasAlternateKey("TenantId", "Id")
+                        .HasName("AK_OrganizationPhaseGateConfigurationVersions_Tenant_Id");
+
+                    b.HasAlternateKey("TenantId", "ConfigurationId", "Id")
+                        .HasName("AK_OrganizationPhaseGateConfigurationVersions_Tenant_Configuration_Id");
+
+                    b.HasIndex("TenantId", "ConfigurationId", "VersionNumber")
+                        .IsUnique()
+                        .HasDatabaseName("UX_OrganizationPhaseGateConfigurationVersions_Configuration_Version");
+
+                    b.ToTable("OrganizationPhaseGateConfigurationVersions", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_OrganizationPhaseGateConfigurationVersions_VersionPositive", "[VersionNumber] >= 1");
+                        });
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.Organization.Domain.OrganizationPhaseGateRequirement", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Category")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid>("ConfigurationVersionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<string>("RequirementType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("TemplateId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("TemplateName")
+                        .IsRequired()
+                        .HasMaxLength(250)
+                        .HasColumnType("nvarchar(250)");
+
+                    b.Property<Guid>("TemplateVersionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("TemplateVersionLabel")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasAlternateKey("TenantId", "Id")
+                        .HasName("AK_OrganizationPhaseGateRequirements_Tenant_Id");
+
+                    b.HasIndex("TenantId", "ConfigurationVersionId", "TemplateId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_OrganizationPhaseGateRequirements_Version_Template")
+                        .HasFilter("[IsDeleted] = 0");
+
+                    b.HasIndex("TenantId", "TemplateId", "TemplateVersionId");
+
+                    b.ToTable("OrganizationPhaseGateRequirements", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_OrganizationPhaseGateRequirements_RequirementType", "[RequirementType] IN (N'Mandatory', N'Optional')");
+                        });
+                });
+
             modelBuilder.Entity("NEXUS.Modules.Organization.Domain.OrganizationSettingsGrant", b =>
                 {
                     b.Property<Guid>("Id")
@@ -7111,6 +8954,10 @@ namespace NEXUS.Persistence.Migrations
                     b.Property<string>("Notes")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<decimal?>("OriginalProjectBudget")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
                     b.Property<string>("Phase")
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
@@ -7135,6 +8982,12 @@ namespace NEXUS.Persistence.Migrations
                         .HasColumnType("decimal(7,4)");
 
                     b.Property<Guid?>("ProjectManagerId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ProjectPhaseId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ProjectStatusId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("PublicId")
@@ -7164,8 +9017,8 @@ namespace NEXUS.Persistence.Migrations
 
                     b.Property<string>("Status")
                         .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uniqueidentifier");
@@ -7191,6 +9044,10 @@ namespace NEXUS.Persistence.Migrations
                     b.HasIndex("TenantId");
 
                     b.HasIndex("WorkingCalendarId");
+
+                    b.HasIndex("TenantId", "ProjectPhaseId");
+
+                    b.HasIndex("TenantId", "ProjectStatusId");
 
                     b.ToTable("Projects", (string)null);
                 });
@@ -7869,6 +9726,446 @@ namespace NEXUS.Persistence.Migrations
                     b.ToTable("ProjectPhases");
                 });
 
+            modelBuilder.Entity("NEXUS.Modules.ProjectManagement.Domain.ProjectPhaseCatalogEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("DescriptionAr")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<string>("DescriptionEn")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("int");
+
+                    b.Property<Guid?>("DocumentCategoryId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
+
+                    b.Property<bool>("IsContinuousActivity")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<bool>("IsDefault")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<string>("NameAr")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("NameEn")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("NormalizedCode")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<Guid?>("OrganizationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasAlternateKey("TenantId", "Id")
+                        .HasName("AK_ProjectPhaseCatalogEntries_Tenant_Id");
+
+                    b.HasIndex("TenantId", "DocumentCategoryId");
+
+                    b.HasIndex("TenantId", "OrganizationId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_ProjectPhaseCatalogEntries_Scope_Default")
+                        .HasFilter("[IsDeleted] = 0 AND [IsActive] = 1 AND [IsDefault] = 1");
+
+                    b.HasIndex("TenantId", "OrganizationId", "NormalizedCode")
+                        .IsUnique()
+                        .HasDatabaseName("UX_ProjectPhaseCatalogEntries_Scope_Code")
+                        .HasFilter("[IsDeleted] = 0");
+
+                    b.HasIndex("TenantId", "OrganizationId", "IsActive", "DisplayOrder")
+                        .HasDatabaseName("IX_ProjectPhaseCatalogEntries_Scope_Order");
+
+                    b.ToTable("ProjectPhaseCatalogEntries", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_ProjectPhaseCatalogEntries_DisplayOrder", "[DisplayOrder] >= 0");
+                        });
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.ProjectManagement.Domain.ProjectPhaseGateEvidence", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("ComparedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ComplianceFindingsJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ComplianceStatus")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasDefaultValue("PendingValidation");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("DetectedFileType")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<Guid>("DocumentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("DocumentVersionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ExpectedFileType")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("RequirementSnapshotId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("ValidatorVersion")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "OrganizationId");
+
+                    b.HasIndex("TenantId", "ProjectId");
+
+                    b.HasIndex("TenantId", "RequirementSnapshotId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_ProjectPhaseGateEvidence_ActiveRequirement")
+                        .HasFilter("[IsDeleted] = 0");
+
+                    b.HasIndex("TenantId", "DocumentId", "DocumentVersionId");
+
+                    b.ToTable("ProjectPhaseGateEvidence", (string)null);
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.ProjectManagement.Domain.ProjectPhaseGateRequirementSnapshot", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Category")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<string>("RequirementType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("SnapshotId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("SourceRequirementId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("TemplateId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("TemplateName")
+                        .IsRequired()
+                        .HasMaxLength(250)
+                        .HasColumnType("nvarchar(250)");
+
+                    b.Property<Guid>("TemplateVersionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("TemplateVersionLabel")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasAlternateKey("TenantId", "Id")
+                        .HasName("AK_ProjectPhaseGateRequirementSnapshots_Tenant_Id");
+
+                    b.HasIndex("TenantId", "SourceRequirementId");
+
+                    b.HasIndex("TenantId", "SnapshotId", "TemplateId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_ProjectPhaseGateRequirementSnapshots_Snapshot_Template");
+
+                    b.HasIndex("TenantId", "TemplateId", "TemplateVersionId");
+
+                    b.ToTable("ProjectPhaseGateRequirementSnapshots", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_ProjectPhaseGateRequirementSnapshots_RequirementType", "[RequirementType] IN (N'Mandatory', N'Optional')");
+                        });
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.ProjectManagement.Domain.ProjectPhaseGateSnapshot", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ConfigurationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ConfigurationVersionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("ConfigurationVersionNumber")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("SourcePhase")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<Guid>("SourcePhaseId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("TargetPhase")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<Guid>("TargetPhaseId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasAlternateKey("TenantId", "Id")
+                        .HasName("AK_ProjectPhaseGateSnapshots_Tenant_Id");
+
+                    b.HasIndex("TenantId", "OrganizationId");
+
+                    b.HasIndex("TenantId", "SourcePhaseId");
+
+                    b.HasIndex("TenantId", "TargetPhaseId");
+
+                    b.HasIndex("TenantId", "ConfigurationId", "ConfigurationVersionId");
+
+                    b.HasIndex("TenantId", "ProjectId", "OrganizationId", "SourcePhaseId", "TargetPhaseId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_ProjectPhaseGateSnapshots_Project_Transition");
+
+                    b.ToTable("ProjectPhaseGateSnapshots", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_ProjectPhaseGateSnapshots_ConfigurationVersionPositive", "[ConfigurationVersionNumber] >= 1");
+
+                            t.HasCheckConstraint("CK_ProjectPhaseGateSnapshots_DistinctPhases", "[SourcePhaseId] <> [TargetPhaseId]");
+                        });
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.ProjectManagement.Domain.ProjectPhaseTransitionRule", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
+
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<Guid?>("OrganizationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("SourcePhaseId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("TargetPhaseId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "SourcePhaseId");
+
+                    b.HasIndex("TenantId", "TargetPhaseId");
+
+                    b.HasIndex("TenantId", "OrganizationId", "SourcePhaseId", "TargetPhaseId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_ProjectPhaseTransitionRules_Scope_Transition")
+                        .HasFilter("[IsDeleted] = 0");
+
+                    b.ToTable("ProjectPhaseTransitionRules", (string)null);
+                });
+
             modelBuilder.Entity("NEXUS.Modules.ProjectManagement.Domain.ProjectReportingConfiguration", b =>
                 {
                     b.Property<Guid>("Id")
@@ -8369,6 +10666,127 @@ namespace NEXUS.Persistence.Migrations
                         .HasFilter("[IsDeleted] = 0 AND [Status] = 'Active' AND [UserId] IS NOT NULL");
 
                     b.ToTable("ProjectStakeholders", (string)null);
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.ProjectManagement.Domain.ProjectStatusCatalogEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("AttentionLevel")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)")
+                        .HasDefaultValue("None");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("DescriptionAr")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<string>("DescriptionEn")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
+
+                    b.Property<bool>("IsDefault")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<string>("NameAr")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("NameEn")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("NormalizedCode")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<Guid?>("OrganizationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ReportingCategory")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)")
+                        .HasDefaultValue("InProgress");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasAlternateKey("TenantId", "Id")
+                        .HasName("AK_ProjectStatusCatalogEntries_Tenant_Id");
+
+                    b.HasIndex("TenantId", "OrganizationId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_ProjectStatusCatalogEntries_Scope_Default")
+                        .HasFilter("[IsDeleted] = 0 AND [IsActive] = 1 AND [IsDefault] = 1");
+
+                    b.HasIndex("TenantId", "OrganizationId", "NormalizedCode")
+                        .IsUnique()
+                        .HasDatabaseName("UX_ProjectStatusCatalogEntries_Scope_Code")
+                        .HasFilter("[IsDeleted] = 0");
+
+                    b.HasIndex("TenantId", "OrganizationId", "IsActive", "DisplayOrder")
+                        .HasDatabaseName("IX_ProjectStatusCatalogEntries_Scope_Order");
+
+                    b.ToTable("ProjectStatusCatalogEntries", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_ProjectStatusCatalogEntries_AttentionLevel", "[AttentionLevel] IN ('None', 'NeedsAttention', 'Critical')");
+
+                            t.HasCheckConstraint("CK_ProjectStatusCatalogEntries_DisplayOrder", "[DisplayOrder] >= 0");
+
+                            t.HasCheckConstraint("CK_ProjectStatusCatalogEntries_ReportingCategory", "[ReportingCategory] IN ('InProgress', 'Completed', 'Excluded')");
+                        });
                 });
 
             modelBuilder.Entity("NEXUS.Modules.ProjectManagement.Domain.ProjectStatusReport", b =>
@@ -8897,6 +11315,74 @@ namespace NEXUS.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("ProjectStatusReportRiskSnapshots", (string)null);
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.ProjectManagement.Domain.ProjectStatusTransitionRule", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
+
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<Guid?>("OrganizationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("RequiresReason")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("SourceStatusId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("TargetStatusId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "SourceStatusId");
+
+                    b.HasIndex("TenantId", "TargetStatusId");
+
+                    b.HasIndex("TenantId", "OrganizationId", "SourceStatusId", "TargetStatusId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_ProjectStatusTransitionRules_Scope_Transition")
+                        .HasFilter("[IsDeleted] = 0");
+
+                    b.ToTable("ProjectStatusTransitionRules", (string)null);
                 });
 
             modelBuilder.Entity("NEXUS.Modules.ProjectManagement.Domain.StakeholderInvitation", b =>
@@ -12870,16 +15356,375 @@ namespace NEXUS.Persistence.Migrations
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("NEXUS.Modules.CostManagement.Domain.PaymentSettlement", b =>
+            modelBuilder.Entity("NEXUS.Modules.CostManagement.Domain.PaymentRequestApproverAssignment", b =>
                 {
-                    b.HasOne("NEXUS.Modules.CostManagement.Domain.PaymentObligation", "PaymentObligation")
-                        .WithMany("Settlements")
-                        .HasForeignKey("TenantId", "PaymentObligationId")
+                    b.HasOne("NEXUS.Modules.Approvals.Domain.ApprovalRequest", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ApprovalRequestId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("NEXUS.Modules.Identity.Domain.User", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ApproverUserId")
                         .HasPrincipalKey("TenantId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("NEXUS.Modules.CostManagement.Domain.ProjectPaymentRequestApprovalCycle", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ProjectId", "ApprovalRequestId", "ApprovalCycleId")
+                        .HasPrincipalKey("TenantId", "ProjectId", "ApprovalRequestId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.CostManagement.Domain.PaymentSettlement", b =>
+                {
+                    b.HasOne("NEXUS.Modules.CostManagement.Domain.PlannedPaymentInstallment", "PlannedPaymentInstallment")
+                        .WithMany()
+                        .HasForeignKey("PlannedPaymentInstallmentId");
+
+                    b.HasOne("NEXUS.Modules.CostManagement.Domain.ProjectPaymentRequestFundingTransfer", "FundingTransfer")
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ProjectId", "FundingTransferId")
+                        .HasPrincipalKey("TenantId", "ProjectId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("NEXUS.Modules.CostManagement.Domain.PaymentObligation", "PaymentObligation")
+                        .WithMany("Settlements")
+                        .HasForeignKey("TenantId", "ProjectId", "PaymentObligationId")
+                        .HasPrincipalKey("TenantId", "ProjectId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("NEXUS.Modules.CostManagement.Domain.ProjectPaymentRequestDetail", "ProjectPaymentRequestDetail")
+                        .WithMany("Settlements")
+                        .HasForeignKey("TenantId", "ProjectId", "ProjectPaymentRequestId")
+                        .HasPrincipalKey("TenantId", "ProjectId", "ApprovalRequestId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("FundingTransfer");
+
                     b.Navigation("PaymentObligation");
+
+                    b.Navigation("PlannedPaymentInstallment");
+
+                    b.Navigation("ProjectPaymentRequestDetail");
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.CostManagement.Domain.PaymentSettlementAdjustment", b =>
+                {
+                    b.HasOne("NEXUS.Modules.CostManagement.Domain.PaymentSettlement", "ReplacementSettlement")
+                        .WithMany()
+                        .HasForeignKey("ReplacementSettlementId");
+
+                    b.HasOne("NEXUS.Modules.Approvals.Domain.ApprovalRequest", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ApprovalRequestId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("NEXUS.Modules.CostManagement.Domain.PaymentSettlement", "OriginalSettlement")
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ProjectId", "OriginalSettlementId")
+                        .HasPrincipalKey("TenantId", "ProjectId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("OriginalSettlement");
+
+                    b.Navigation("ReplacementSettlement");
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.CostManagement.Domain.PlannedPayment", b =>
+                {
+                    b.HasOne("NEXUS.Modules.ProjectManagement.Domain.Project", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ProjectId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.CostManagement.Domain.PlannedPaymentInstallment", b =>
+                {
+                    b.HasOne("NEXUS.Modules.ProjectPlanning.Domain.PlanActivity", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "PlanActivityId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("NEXUS.Modules.CostManagement.Domain.PlannedPayment", "PlannedPayment")
+                        .WithMany("Installments")
+                        .HasForeignKey("TenantId", "ProjectId", "PlannedPaymentId")
+                        .HasPrincipalKey("TenantId", "ProjectId", "Id")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("PlannedPayment");
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.CostManagement.Domain.PlannedPaymentLifetimeReservation", b =>
+                {
+                    b.HasOne("NEXUS.Modules.CostManagement.Domain.PlannedPayment", "PlannedPayment")
+                        .WithOne("Reservation")
+                        .HasForeignKey("NEXUS.Modules.CostManagement.Domain.PlannedPaymentLifetimeReservation", "TenantId", "ProjectId", "PlannedPaymentId")
+                        .HasPrincipalKey("NEXUS.Modules.CostManagement.Domain.PlannedPayment", "TenantId", "ProjectId", "Id")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("PlannedPayment");
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.CostManagement.Domain.ProjectAnnualBudget", b =>
+                {
+                    b.HasOne("NEXUS.Modules.ProjectManagement.Domain.Project", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ProjectId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("NEXUS.Modules.CostManagement.Domain.ProjectAnnualBudgetClosing", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ProjectId", "ClosedByClosingId")
+                        .HasPrincipalKey("TenantId", "ProjectId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.CostManagement.Domain.ProjectAnnualBudgetApprovalApprover", b =>
+                {
+                    b.HasOne("NEXUS.Modules.Identity.Domain.User", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ApproverUserId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("NEXUS.Modules.CostManagement.Domain.ProjectAnnualBudgetApprovalConfiguration", "Configuration")
+                        .WithMany("Approvers")
+                        .HasForeignKey("TenantId", "ProjectId", "ConfigurationId")
+                        .HasPrincipalKey("TenantId", "ProjectId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Configuration");
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.CostManagement.Domain.ProjectAnnualBudgetApprovalConfiguration", b =>
+                {
+                    b.HasOne("NEXUS.Modules.ProjectManagement.Domain.Project", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ProjectId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.CostManagement.Domain.ProjectAnnualBudgetClosing", b =>
+                {
+                    b.HasOne("NEXUS.Modules.Approvals.Domain.ApprovalRequest", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ApprovalRequestId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("NEXUS.Modules.ProjectManagement.Domain.Project", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ProjectId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("NEXUS.Modules.CostManagement.Domain.ProjectAnnualBudget", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ProjectId", "DestinationAnnualBudgetId")
+                        .HasPrincipalKey("TenantId", "ProjectId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("NEXUS.Modules.CostManagement.Domain.ProjectAnnualBudget", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ProjectId", "SourceAnnualBudgetId")
+                        .HasPrincipalKey("TenantId", "ProjectId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.CostManagement.Domain.ProjectAnnualBudgetLine", b =>
+                {
+                    b.HasOne("NEXUS.Modules.ProjectManagement.Domain.Project", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ProjectId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("NEXUS.Modules.CostManagement.Domain.ProjectAnnualBudget", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ProjectId", "ProjectAnnualBudgetId")
+                        .HasPrincipalKey("TenantId", "ProjectId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.CostManagement.Domain.ProjectPaymentRequestApprovalCycle", b =>
+                {
+                    b.HasOne("NEXUS.Modules.CostManagement.Domain.ProjectPaymentRequestDetail", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ProjectId", "ApprovalRequestId")
+                        .HasPrincipalKey("TenantId", "ProjectId", "ApprovalRequestId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("NEXUS.Modules.CostManagement.Domain.PlannedPaymentInstallment", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ProjectId", "PlannedPaymentInstallmentId")
+                        .HasPrincipalKey("TenantId", "ProjectId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("NEXUS.Modules.CostManagement.Domain.ProjectAnnualBudget", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ProjectId", "ProjectAnnualBudgetId")
+                        .HasPrincipalKey("TenantId", "ProjectId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("NEXUS.Modules.CostManagement.Domain.ProjectAnnualBudgetLine", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ProjectId", "ProjectAnnualBudgetId", "ProjectAnnualBudgetLineId")
+                        .HasPrincipalKey("TenantId", "ProjectId", "ProjectAnnualBudgetId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.CostManagement.Domain.ProjectPaymentRequestDetail", b =>
+                {
+                    b.HasOne("NEXUS.Modules.Approvals.Domain.ApprovalRequest", null)
+                        .WithOne()
+                        .HasForeignKey("NEXUS.Modules.CostManagement.Domain.ProjectPaymentRequestDetail", "TenantId", "ApprovalRequestId")
+                        .HasPrincipalKey("NEXUS.Modules.Approvals.Domain.ApprovalRequest", "TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("NEXUS.Modules.ProjectPlanning.Domain.PlanActivity", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "PlanActivityId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("NEXUS.Modules.ProjectManagement.Domain.Project", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ProjectId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("NEXUS.Modules.CostManagement.Domain.ProjectPaymentRequestFundingTransfer", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ProjectId", "FundingTransferId")
+                        .HasPrincipalKey("TenantId", "ProjectId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("NEXUS.Modules.CostManagement.Domain.PlannedPaymentInstallment", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ProjectId", "PlannedPaymentInstallmentId")
+                        .HasPrincipalKey("TenantId", "ProjectId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("NEXUS.Modules.CostManagement.Domain.ProjectAnnualBudget", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ProjectId", "ProjectAnnualBudgetId")
+                        .HasPrincipalKey("TenantId", "ProjectId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("NEXUS.Modules.CostManagement.Domain.ProjectPaymentRequestDetail", "ReversesRequest")
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ProjectId", "ReversesApprovalRequestId")
+                        .HasPrincipalKey("TenantId", "ProjectId", "ApprovalRequestId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("NEXUS.Modules.CostManagement.Domain.ProjectPaymentRequestApprovalCycle", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ProjectId", "ApprovalRequestId", "CurrentApprovalCycleId")
+                        .HasPrincipalKey("TenantId", "ProjectId", "ApprovalRequestId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("NEXUS.Modules.CostManagement.Domain.ProjectAnnualBudgetLine", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ProjectId", "ProjectAnnualBudgetId", "ProjectAnnualBudgetLineId")
+                        .HasPrincipalKey("TenantId", "ProjectId", "ProjectAnnualBudgetId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("ReversesRequest");
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.CostManagement.Domain.ProjectPaymentRequestFundingTransfer", b =>
+                {
+                    b.HasOne("NEXUS.Modules.ProjectManagement.Domain.Project", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ProjectId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("NEXUS.Modules.CostManagement.Domain.ProjectAnnualBudgetClosing", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ProjectId", "ClosingId")
+                        .HasPrincipalKey("TenantId", "ProjectId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("NEXUS.Modules.CostManagement.Domain.ProjectAnnualBudget", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ProjectId", "DestinationAnnualBudgetId")
+                        .HasPrincipalKey("TenantId", "ProjectId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("NEXUS.Modules.CostManagement.Domain.ProjectPaymentRequestDetail", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ProjectId", "PaymentRequestId")
+                        .HasPrincipalKey("TenantId", "ProjectId", "ApprovalRequestId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("NEXUS.Modules.CostManagement.Domain.ProjectAnnualBudget", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ProjectId", "SourceAnnualBudgetId")
+                        .HasPrincipalKey("TenantId", "ProjectId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("NEXUS.Modules.CostManagement.Domain.ProjectPaymentRequestFundingTransfer", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ProjectId", "SupersedesFundingTransferId")
+                        .HasPrincipalKey("TenantId", "ProjectId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.Documents.Domain.Document", b =>
+                {
+                    b.HasOne("NEXUS.Modules.Organization.Domain.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("NEXUS.Modules.Documents.Domain.DocumentVersion", "SourceTemplateVersion")
+                        .WithMany()
+                        .HasForeignKey("SourceTemplateVersionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("SourceTemplateVersion");
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.Documents.Domain.DocumentCategory", b =>
+                {
+                    b.HasOne("NEXUS.Modules.Organization.Domain.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "OrganizationId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("NEXUS.Modules.Documents.Domain.DocumentReview", b =>
@@ -12902,6 +15747,32 @@ namespace NEXUS.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("Document");
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.Identity.Domain.Role", b =>
+                {
+                    b.HasOne("NEXUS.Modules.Organization.Domain.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "OrganizationId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.Identity.Domain.UserOrganization", b =>
+                {
+                    b.HasOne("NEXUS.Modules.Organization.Domain.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "OrganizationId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("NEXUS.Modules.Identity.Domain.User", null)
+                        .WithMany("UserOrganizations")
+                        .HasForeignKey("TenantId", "UserId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("NEXUS.Modules.Identity.Domain.UserPermissionOverride", b =>
@@ -13234,6 +16105,61 @@ namespace NEXUS.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("NEXUS.Modules.Organization.Domain.OrganizationPhaseGateConfiguration", b =>
+                {
+                    b.HasOne("NEXUS.Modules.Organization.Domain.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "OrganizationId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("NEXUS.Modules.ProjectManagement.Domain.ProjectPhaseCatalogEntry", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "SourcePhaseId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("NEXUS.Modules.ProjectManagement.Domain.ProjectPhaseCatalogEntry", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "TargetPhaseId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.Organization.Domain.OrganizationPhaseGateConfigurationVersion", b =>
+                {
+                    b.HasOne("NEXUS.Modules.Organization.Domain.OrganizationPhaseGateConfiguration", "Configuration")
+                        .WithMany("Versions")
+                        .HasForeignKey("TenantId", "ConfigurationId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Configuration");
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.Organization.Domain.OrganizationPhaseGateRequirement", b =>
+                {
+                    b.HasOne("NEXUS.Modules.Organization.Domain.OrganizationPhaseGateConfigurationVersion", "ConfigurationVersion")
+                        .WithMany("Requirements")
+                        .HasForeignKey("TenantId", "ConfigurationVersionId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("NEXUS.Modules.Documents.Domain.DocumentVersion", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "TemplateId", "TemplateVersionId")
+                        .HasPrincipalKey("TenantId", "DocumentId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("ConfigurationVersion");
+                });
+
             modelBuilder.Entity("NEXUS.Modules.Organization.Domain.OrganizationSettingsGrant", b =>
                 {
                     b.HasOne("NEXUS.Modules.Organization.Domain.Organization", null)
@@ -13516,6 +16442,21 @@ namespace NEXUS.Persistence.Migrations
                     b.Navigation("Project");
                 });
 
+            modelBuilder.Entity("NEXUS.Modules.ProjectManagement.Domain.Project", b =>
+                {
+                    b.HasOne("NEXUS.Modules.ProjectManagement.Domain.ProjectPhaseCatalogEntry", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ProjectPhaseId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("NEXUS.Modules.ProjectManagement.Domain.ProjectStatusCatalogEntry", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ProjectStatusId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
             modelBuilder.Entity("NEXUS.Modules.ProjectManagement.Domain.ProjectChangeRequest", b =>
                 {
                     b.HasOne("NEXUS.Modules.ProjectManagement.Domain.Project", "Project")
@@ -13622,6 +16563,151 @@ namespace NEXUS.Persistence.Migrations
                     b.Navigation("Project");
                 });
 
+            modelBuilder.Entity("NEXUS.Modules.ProjectManagement.Domain.ProjectPhaseCatalogEntry", b =>
+                {
+                    b.HasOne("NEXUS.Modules.Documents.Domain.DocumentCategory", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "DocumentCategoryId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("NEXUS.Modules.Organization.Domain.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "OrganizationId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.ProjectManagement.Domain.ProjectPhaseGateEvidence", b =>
+                {
+                    b.HasOne("NEXUS.Modules.Documents.Domain.Document", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "DocumentId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("NEXUS.Modules.Organization.Domain.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "OrganizationId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("NEXUS.Modules.ProjectManagement.Domain.Project", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ProjectId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("NEXUS.Modules.ProjectManagement.Domain.ProjectPhaseGateRequirementSnapshot", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "RequirementSnapshotId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("NEXUS.Modules.Documents.Domain.DocumentVersion", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "DocumentId", "DocumentVersionId")
+                        .HasPrincipalKey("TenantId", "DocumentId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.ProjectManagement.Domain.ProjectPhaseGateRequirementSnapshot", b =>
+                {
+                    b.HasOne("NEXUS.Modules.ProjectManagement.Domain.ProjectPhaseGateSnapshot", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "SnapshotId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("NEXUS.Modules.Organization.Domain.OrganizationPhaseGateRequirement", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "SourceRequirementId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("NEXUS.Modules.Documents.Domain.DocumentVersion", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "TemplateId", "TemplateVersionId")
+                        .HasPrincipalKey("TenantId", "DocumentId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.ProjectManagement.Domain.ProjectPhaseGateSnapshot", b =>
+                {
+                    b.HasOne("NEXUS.Modules.Organization.Domain.OrganizationPhaseGateConfiguration", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ConfigurationId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("NEXUS.Modules.Organization.Domain.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "OrganizationId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("NEXUS.Modules.ProjectManagement.Domain.Project", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ProjectId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("NEXUS.Modules.ProjectManagement.Domain.ProjectPhaseCatalogEntry", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "SourcePhaseId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("NEXUS.Modules.ProjectManagement.Domain.ProjectPhaseCatalogEntry", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "TargetPhaseId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("NEXUS.Modules.Organization.Domain.OrganizationPhaseGateConfigurationVersion", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ConfigurationId", "ConfigurationVersionId")
+                        .HasPrincipalKey("TenantId", "ConfigurationId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.ProjectManagement.Domain.ProjectPhaseTransitionRule", b =>
+                {
+                    b.HasOne("NEXUS.Modules.Organization.Domain.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "OrganizationId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("NEXUS.Modules.ProjectManagement.Domain.ProjectPhaseCatalogEntry", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "SourcePhaseId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("NEXUS.Modules.ProjectManagement.Domain.ProjectPhaseCatalogEntry", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "TargetPhaseId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("NEXUS.Modules.ProjectManagement.Domain.ProjectReportingConfiguration", b =>
                 {
                     b.HasOne("NEXUS.Modules.ProjectManagement.Domain.Project", null)
@@ -13675,6 +16761,15 @@ namespace NEXUS.Persistence.Migrations
                     b.Navigation("Project");
                 });
 
+            modelBuilder.Entity("NEXUS.Modules.ProjectManagement.Domain.ProjectStatusCatalogEntry", b =>
+                {
+                    b.HasOne("NEXUS.Modules.Organization.Domain.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "OrganizationId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
             modelBuilder.Entity("NEXUS.Modules.ProjectManagement.Domain.ProjectStatusReport", b =>
                 {
                     b.HasOne("NEXUS.Modules.ProjectManagement.Domain.Project", "Project")
@@ -13717,6 +16812,29 @@ namespace NEXUS.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("ProjectStatusReport");
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.ProjectManagement.Domain.ProjectStatusTransitionRule", b =>
+                {
+                    b.HasOne("NEXUS.Modules.Organization.Domain.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "OrganizationId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("NEXUS.Modules.ProjectManagement.Domain.ProjectStatusCatalogEntry", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "SourceStatusId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("NEXUS.Modules.ProjectManagement.Domain.ProjectStatusCatalogEntry", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "TargetStatusId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("NEXUS.Modules.ProjectManagement.Domain.StakeholderInvitation", b =>
@@ -14416,6 +17534,23 @@ namespace NEXUS.Persistence.Migrations
                     b.Navigation("Settlements");
                 });
 
+            modelBuilder.Entity("NEXUS.Modules.CostManagement.Domain.PlannedPayment", b =>
+                {
+                    b.Navigation("Installments");
+
+                    b.Navigation("Reservation");
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.CostManagement.Domain.ProjectAnnualBudgetApprovalConfiguration", b =>
+                {
+                    b.Navigation("Approvers");
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.CostManagement.Domain.ProjectPaymentRequestDetail", b =>
+                {
+                    b.Navigation("Settlements");
+                });
+
             modelBuilder.Entity("NEXUS.Modules.Documents.Domain.Document", b =>
                 {
                     b.Navigation("Reviews");
@@ -14438,6 +17573,8 @@ namespace NEXUS.Persistence.Migrations
                     b.Navigation("PermissionOverrides");
 
                     b.Navigation("Sessions");
+
+                    b.Navigation("UserOrganizations");
 
                     b.Navigation("UserRoles");
                 });
@@ -14489,6 +17626,16 @@ namespace NEXUS.Persistence.Migrations
             modelBuilder.Entity("NEXUS.Modules.Organization.Domain.Organization", b =>
                 {
                     b.Navigation("BusinessUnits");
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.Organization.Domain.OrganizationPhaseGateConfiguration", b =>
+                {
+                    b.Navigation("Versions");
+                });
+
+            modelBuilder.Entity("NEXUS.Modules.Organization.Domain.OrganizationPhaseGateConfigurationVersion", b =>
+                {
+                    b.Navigation("Requirements");
                 });
 
             modelBuilder.Entity("NEXUS.Modules.Organization.Domain.OrganizationalUnit", b =>

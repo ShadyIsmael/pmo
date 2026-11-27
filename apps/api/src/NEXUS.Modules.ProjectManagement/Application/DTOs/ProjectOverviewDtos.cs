@@ -40,14 +40,12 @@ public sealed class ProjectOverviewDto
     public decimal? ApprovedBudget { get; init; }
     public decimal? OriginalApprovedBudget { get; init; }
     public decimal? RevisedBudget { get; init; }
-    public decimal? CommittedCost { get; init; }
     public decimal? ForecastAtCompletion { get; init; }
     public decimal? RemainingBudget { get; init; }
     public decimal? BudgetUtilizationPercentage { get; init; }
     public decimal? ForecastVariance { get; init; }
     public bool HasBudgetData { get; init; }
     public bool HasCostEntryData { get; init; }
-    public bool HasCommitmentData { get; init; }
     public bool HasCostManagementData { get; init; }
     public bool HasPendingRevision { get; init; }
 }

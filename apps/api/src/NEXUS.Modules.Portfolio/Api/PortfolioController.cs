@@ -38,7 +38,22 @@ public class PortfolioController : ControllerBase
     public async Task<IActionResult> GetProjectLookup([FromQuery] int page = 1, [FromQuery] int pageSize = 20, [FromQuery] string? search = null, [FromQuery] string? status = null, CancellationToken cancellationToken = default)
         => Ok(await _portfolioService.GetProjectLookupAsync(page, pageSize, search, status, cancellationToken));
     [Authorize(Policy = "Portfolio.Create")]
-    [HttpPost] public async Task<IActionResult> Create(SavePortfolioDto dto,CancellationToken ct){var r=await _portfolioService.CreateAsync(dto,User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value??"System",ct);return r.IsFailure?Problem(r.Error?.Message,statusCode:r.Error?.StatusCode??400):CreatedAtAction(nameof(GetById),new{id=r.Value!.Id},r.Value);}
+    [HttpGet("eligible-organizations")]
+    public async Task<IActionResult> GetEligibleOrganizations(CancellationToken cancellationToken)
+        => Ok(await _portfolioService.GetEligibleOrganizationsForCreationAsync(cancellationToken));
+
+    [Authorize(Policy = "Portfolio.Create")]
+    [HttpPost]
+    public async Task<IActionResult> Create(CreatePortfolioDto dto, CancellationToken ct)
+    {
+        var result = await _portfolioService.CreateAsync(
+            dto,
+            User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "System",
+            ct);
+        return result.IsFailure
+            ? Problem(result.Error?.Message, statusCode: result.Error?.StatusCode ?? 400)
+            : CreatedAtAction(nameof(GetById), new { id = result.Value!.Id }, result.Value);
+    }
     [Authorize(Policy = "Portfolio.Edit")]
     [HttpPut("{id:guid}")] public async Task<IActionResult> Update(Guid id,SavePortfolioDto dto,CancellationToken ct){var r=await _portfolioService.UpdateAsync(id,dto,User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value??"System",ct);return r.IsFailure?Problem(r.Error?.Message,statusCode:r.Error?.StatusCode??400):Ok(r.Value);}
     [Authorize(Policy = "Portfolio.Archive")]

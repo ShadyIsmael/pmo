@@ -35,6 +35,7 @@ public class AppDbContext : DbContext
     public DbSet<Role> Roles => Set<Role>();
     public DbSet<Permission> Permissions => Set<Permission>();
     public DbSet<UserRole> UserRoles => Set<UserRole>();
+    public DbSet<UserOrganization> UserOrganizations => Set<UserOrganization>();
     public DbSet<UserSession> UserSessions => Set<UserSession>();
     public DbSet<UserPermissionOverride> UserPermissionOverrides => Set<UserPermissionOverride>();
 
@@ -76,6 +77,13 @@ public class AppDbContext : DbContext
     public DbSet<ProjectMember> ProjectMembers => Set<ProjectMember>();
     public DbSet<ProjectMemberRole> ProjectMemberRoles => Set<ProjectMemberRole>();
     public DbSet<ProjectPhase> ProjectPhases => Set<ProjectPhase>();
+    public DbSet<ProjectPhaseCatalogEntry> ProjectPhaseCatalogEntries => Set<ProjectPhaseCatalogEntry>();
+    public DbSet<ProjectStatusCatalogEntry> ProjectStatusCatalogEntries => Set<ProjectStatusCatalogEntry>();
+    public DbSet<ProjectPhaseTransitionRule> ProjectPhaseTransitionRules => Set<ProjectPhaseTransitionRule>();
+    public DbSet<ProjectStatusTransitionRule> ProjectStatusTransitionRules => Set<ProjectStatusTransitionRule>();
+    public DbSet<ProjectPhaseGateSnapshot> ProjectPhaseGateSnapshots => Set<ProjectPhaseGateSnapshot>();
+    public DbSet<ProjectPhaseGateRequirementSnapshot> ProjectPhaseGateRequirementSnapshots => Set<ProjectPhaseGateRequirementSnapshot>();
+    public DbSet<ProjectPhaseGateEvidence> ProjectPhaseGateEvidence => Set<ProjectPhaseGateEvidence>();
     public DbSet<ProjectStakeholder> ProjectStakeholders => Set<ProjectStakeholder>();
     public DbSet<StakeholderInvitation> StakeholderInvitations => Set<StakeholderInvitation>();
     public DbSet<WorkBreakdownStructure> WorkBreakdownStructures => Set<WorkBreakdownStructure>();
@@ -131,6 +139,7 @@ public class AppDbContext : DbContext
 
     public DbSet<Budget> Budgets => Set<Budget>();
     public DbSet<ProjectAnnualBudget> ProjectAnnualBudgets => Set<ProjectAnnualBudget>();
+    public DbSet<ProjectAnnualBudgetLine> ProjectAnnualBudgetLines => Set<ProjectAnnualBudgetLine>();
     public DbSet<ProjectAnnualBudgetClosing> ProjectAnnualBudgetClosings => Set<ProjectAnnualBudgetClosing>();
     public DbSet<ProjectPaymentRequestFundingTransfer> ProjectPaymentRequestFundingTransfers => Set<ProjectPaymentRequestFundingTransfer>();
     public DbSet<BudgetRevision> BudgetRevisions => Set<BudgetRevision>();
@@ -138,10 +147,16 @@ public class AppDbContext : DbContext
     public DbSet<CostCategory> CostCategories => Set<CostCategory>();
     public DbSet<CostApproval> CostApprovals => Set<CostApproval>();
     public DbSet<Invoice> Invoices => Set<Invoice>();
-    public DbSet<PurchaseCommitment> PurchaseCommitments => Set<PurchaseCommitment>();
     public DbSet<PaymentObligation> PaymentObligations => Set<PaymentObligation>();
+    public DbSet<PlannedPayment> PlannedPayments => Set<PlannedPayment>();
+    public DbSet<PlannedPaymentInstallment> PlannedPaymentInstallments => Set<PlannedPaymentInstallment>();
+    public DbSet<PlannedPaymentLifetimeReservation> PlannedPaymentLifetimeReservations => Set<PlannedPaymentLifetimeReservation>();
     public DbSet<PaymentSettlement> PaymentSettlements => Set<PaymentSettlement>();
+    public DbSet<PaymentSettlementAdjustment> PaymentSettlementAdjustments => Set<PaymentSettlementAdjustment>();
     public DbSet<PaymentNotificationDispatch> PaymentNotificationDispatches => Set<PaymentNotificationDispatch>();
+    public DbSet<PaymentRequestApproverAssignment> PaymentRequestApproverAssignments => Set<PaymentRequestApproverAssignment>();
+    public DbSet<ProjectPaymentRequestDetail> ProjectPaymentRequestDetails => Set<ProjectPaymentRequestDetail>();
+    public DbSet<ProjectPaymentRequestApprovalCycle> ProjectPaymentRequestApprovalCycles => Set<ProjectPaymentRequestApprovalCycle>();
 
     public DbSet<Risk> Risks => Set<Risk>();
     public DbSet<RiskAction> RiskActions => Set<RiskAction>();
@@ -194,6 +209,9 @@ public class AppDbContext : DbContext
     public DbSet<DocumentVersion> DocumentVersions => Set<DocumentVersion>();
     public DbSet<DocumentCategory> DocumentCategories => Set<DocumentCategory>();
     public DbSet<DocumentReview> DocumentReviews => Set<DocumentReview>();
+    public DbSet<OrganizationPhaseGateConfiguration> OrganizationPhaseGateConfigurations => Set<OrganizationPhaseGateConfiguration>();
+    public DbSet<OrganizationPhaseGateConfigurationVersion> OrganizationPhaseGateConfigurationVersions => Set<OrganizationPhaseGateConfigurationVersion>();
+    public DbSet<OrganizationPhaseGateRequirement> OrganizationPhaseGateRequirements => Set<OrganizationPhaseGateRequirement>();
 
     public DbSet<ReportDefinition> ReportDefinitions => Set<ReportDefinition>();
     public DbSet<ReportSchedule> ReportSchedules => Set<ReportSchedule>();
@@ -229,8 +247,20 @@ public class AppDbContext : DbContext
     {
         base.OnModelCreating(modelBuilder);
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
+        modelBuilder.Entity<Document>().Property(document => document.IsDeletionApproved).HasDefaultValue(false);
         modelBuilder.Entity<Document>().HasIndex(document => document.CategoryId);
         modelBuilder.Entity<Document>().HasIndex(document => document.SourceTemplateId);
+        modelBuilder.Entity<Document>().HasIndex(document => document.OrganizationId);
+        modelBuilder.Entity<Document>()
+            .HasOne<Organization>()
+            .WithMany()
+            .HasForeignKey(document => document.OrganizationId)
+            .OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<Document>()
+            .HasOne(document => document.SourceTemplateVersion)
+            .WithMany()
+            .HasForeignKey(document => document.SourceTemplateVersionId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         // SQLite has no rowversion type: a byte[] concurrency token configured with
         // IsRowVersion() is store-generated and SQLite never fills it, so inserts would
@@ -459,6 +489,10 @@ public class AppDbContext : DbContext
 
     private static (int precision, int scale) GetDecimalPrecision(string propertyName)
     {
+        if (propertyName is nameof(ProjectAnnualBudgetClosing.ApprovedPaymentRequestAllocations)
+            or nameof(ProjectAnnualBudgetClosing.EffectiveActiveAllocations))
+            return (19, 4);
+
         if (propertyName.Contains("Allocation", StringComparison.OrdinalIgnoreCase) ||
             propertyName.Contains("Percent", StringComparison.OrdinalIgnoreCase) ||
             propertyName.Contains("Utilization", StringComparison.OrdinalIgnoreCase) ||

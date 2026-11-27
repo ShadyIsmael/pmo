@@ -1,0 +1,416 @@
+{
+  "created_at": "2026-11-27T00:11:15Z",
+  "critical_path_coverage": null,
+  "dependency_awareness_only": [
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "WorkflowUserLookupDto",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Application/UserLookupDto.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "MeetingDetailDto",
+      "module": "meetings",
+      "path": "apps/api/src/NEXUS.Modules.Meetings/Application/DTOs/MeetingDtos.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Meeting",
+      "module": "meetings",
+      "path": "apps/api/src/NEXUS.Modules.Meetings/Domain/Meeting.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "ApiError",
+      "module": "shared",
+      "path": "apps/web-react/src/api/client.ts",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "MeetingDetailDto",
+      "module": "api",
+      "path": "apps/web-react/src/api/meetingsFull.ts",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "MeetingDetailDto",
+      "module": "projects",
+      "path": "apps/web-react/src/features/delivery/MeetingSharingDialog.tsx",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "source-import-and-call",
+      "evidence": "validateMeetingDraft",
+      "module": "projects",
+      "path": "apps/web-react/src/features/delivery/meeting-form.ts",
+      "relation": "CALLS_IMPORTED_SYMBOL"
+    },
+    {
+      "confidence": "verified-static-import",
+      "evidence": "./meeting-form",
+      "module": "projects",
+      "path": "apps/web-react/src/features/delivery/meeting-form.ts",
+      "relation": "IMPORTS"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "MeetingAttendeeDraft",
+      "module": "projects",
+      "path": "apps/web-react/src/features/delivery/meeting-form.ts",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "WorkflowUserLookupDto",
+      "module": "projects",
+      "path": "apps/web-react/src/features/projects/lib/project-lookups.ts",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "ApiError",
+      "module": "unclassified",
+      "path": "packages/api-client/src/client.ts",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Meeting",
+      "module": "meetings",
+      "path": "packages/shared-types/src/types/meeting.ts",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "PlanActivityDto",
+      "module": "project-planning",
+      "path": "apps/api/src/NEXUS.Modules.ProjectPlanning/Application/DTOs/PlanActivityDtos.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "PlanWbsNodeDto",
+      "module": "project-planning",
+      "path": "apps/api/src/NEXUS.Modules.ProjectPlanning/Application/DTOs/PlanWbsDtos.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "source-import-and-call",
+      "evidence": "usePlanningFullMutations",
+      "module": "projects",
+      "path": "apps/web-react/src/features/projects/api/planningFull.ts",
+      "relation": "CALLS_IMPORTED_SYMBOL"
+    },
+    {
+      "confidence": "verified-static-import",
+      "evidence": "./planningFull",
+      "module": "projects",
+      "path": "apps/web-react/src/features/projects/api/planningFull.ts",
+      "relation": "IMPORTS"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "PlanActivityDto",
+      "module": "projects",
+      "path": "apps/web-react/src/features/projects/api/planningFull.ts",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Budget",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/Budget.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "CreateProjectChangeRequestDto",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/DTOs/ProjectChangeRequestDtos.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Baseline",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/Baseline.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "verified-static-import",
+      "evidence": "../api/projects",
+      "module": "projects",
+      "path": "apps/web-react/src/features/projects/api/projects.ts",
+      "relation": "IMPORTS"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "CreateProjectChangeRequestDto",
+      "module": "projects",
+      "path": "apps/web-react/src/features/projects/api/projects.ts",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Budget",
+      "module": "cost-management",
+      "path": "packages/shared-types/src/types/cost.ts",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Baseline",
+      "module": "projects",
+      "path": "packages/shared-types/src/types/project.ts",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "verified-static-import",
+      "evidence": "./MeetingCreateSheet",
+      "module": "projects",
+      "path": "apps/web-react/src/features/delivery/MeetingPages.tsx",
+      "relation": "IMPORTS"
+    },
+    {
+      "confidence": "source-import-and-call",
+      "evidence": "formatProjectChangeRequestAmount",
+      "module": "projects",
+      "path": "apps/web-react/src/features/projects/ProjectGovernanceTabs.tsx",
+      "relation": "CALLS_IMPORTED_SYMBOL"
+    },
+    {
+      "confidence": "verified-static-import",
+      "evidence": "./lib/project-change-request-format",
+      "module": "projects",
+      "path": "apps/web-react/src/features/projects/ProjectGovernanceTabs.tsx",
+      "relation": "IMPORTS"
+    },
+    {
+      "confidence": "source-import-and-call",
+      "evidence": "usePlanningTableMutations",
+      "module": "projects",
+      "path": "apps/web-react/src/features/projects/ProjectPlanningTabFull.tsx",
+      "relation": "CALLS_IMPORTED_SYMBOL"
+    },
+    {
+      "confidence": "verified-static-import",
+      "evidence": "./api/planning-table-mutations",
+      "module": "projects",
+      "path": "apps/web-react/src/features/projects/ProjectPlanningTabFull.tsx",
+      "relation": "IMPORTS"
+    },
+    {
+      "confidence": "source-import-and-call",
+      "evidence": "buildProjectChangeRequestInput",
+      "module": "projects",
+      "path": "apps/web-react/src/features/projects/components/ProjectOverviewActionSheets.tsx",
+      "relation": "CALLS_IMPORTED_SYMBOL"
+    }
+  ],
+  "index_updated": false,
+  "limits": [
+    "Router never prevents an agent from manually opening other files; enforce via agent instructions and audit.",
+    "C# and TS relationships are source-text heuristics; compiler-resolved calls and runtime dependency-injection resolution are not proven.",
+    "Unknown/unclassified files may require manual targeted inspection.",
+    "Index sources excluded secrets and build outputs."
+  ],
+  "module_selection_basis": "task-explicit-alias",
+  "nonprimary_modules_not_read_by_router": [
+    "administration",
+    "ai-planning",
+    "api",
+    "approvals",
+    "audit",
+    "cost-management",
+    "documents",
+    "governance",
+    "home",
+    "identity",
+    "integrations",
+    "issues",
+    "management",
+    "meetings",
+    "notifications",
+    "operations",
+    "organization",
+    "permissions",
+    "persistence",
+    "plugins",
+    "portfolios",
+    "programs",
+    "project-planning",
+    "reports",
+    "resources",
+    "risks",
+    "security",
+    "stakeholder",
+    "tests",
+    "time",
+    "unclassified",
+    "vendors",
+    "work-items",
+    "workflow"
+  ],
+  "planning_state": "focused",
+  "primary_module": "projects",
+  "refresh": {
+    "changed_existing": 0,
+    "deleted": 0,
+    "mode": "refresh",
+    "new": 0,
+    "parsed": 0,
+    "unchanged": 1927
+  },
+  "related_tests_candidates": [
+    "apps/api/tests/NEXUS.Api.Tests/Finance/ProjectAnnualBudgetApprovalNotificationPublisherTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Finance/ProjectAnnualBudgetAssignedInboxTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Finance/ProjectAnnualBudgetCandidateEligibilityTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Finance/ProjectAnnualBudgetDraftApprovalConfigurationTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Finance/ProjectAnnualBudgetLifecycleDeletionTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Finance/ProjectAnnualBudgetWorkflowRecoveryTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Finance/ProjectPaymentRequestApprovalNotificationPublisherTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectBaselineVersionQueryFilterTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectChangeRequestServiceIntegrationTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectEvmCalculatorTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectEvmPersistenceTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectFinancialSummaryPersistenceTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectHandoverLifecyclePersistenceTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectHandoverManagerServiceTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectInitialBaselineTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectInitialPhaseAssignmentTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectLifecycleDocumentCategoryScopeTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectOverviewSignalsTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectPhaseGateHistoryTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectPhaseGateLifecycleTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectReportingPersistenceTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectSponsorMembershipSynchronizerTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectStatusChangeCatalogTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectStatusReportCurrencyQualityTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectStatusReportSnapshotPersistenceTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectStatusReportWorkflowProvisioningTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/ProjectChangeRequestServiceTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Security/ProjectAnnualBudgetAssignedReviewAuthorizationTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Security/ProjectAnnualBudgetRoleCategoryTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Security/ProjectAuditDetailAuthorizationTests.cs"
+  ],
+  "selected_files": [
+    {
+      "approximate": true,
+      "kind": "ui",
+      "line_ranges": [
+        [
+          1,
+          173
+        ]
+      ],
+      "module": "projects",
+      "path": "apps/web-react/src/features/delivery/MeetingCreateSheet.tsx",
+      "read_mode": "full-file",
+      "reading_tokens": 4765,
+      "reasons": [
+        "filename-match:sheet",
+        "module-mentioned",
+        "path-match:features",
+        "primary-module",
+        "symbol-match:MeetingCreateSheetProps"
+      ],
+      "score": 81,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          47,
+          127
+        ]
+      ],
+      "module": "projects",
+      "path": "apps/web-react/src/features/projects/api/planning-table-mutations.ts",
+      "read_mode": "symbols",
+      "reading_tokens": 1094,
+      "reasons": [
+        "filename-match:mutation",
+        "module-mentioned",
+        "path-match:features",
+        "primary-module",
+        "symbol-match:usePlanningTableMutations"
+      ],
+      "score": 81,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "source",
+      "line_ranges": [
+        [
+          3,
+          3
+        ],
+        [
+          12,
+          13
+        ]
+      ],
+      "module": "projects",
+      "path": "apps/web-react/src/features/projects/lib/project-change-request-form.ts",
+      "read_mode": "symbols",
+      "reading_tokens": 42,
+      "reasons": [
+        "filename-match:form",
+        "module-mentioned",
+        "path-match:features",
+        "primary-module",
+        "symbol-match:ProjectChangeRequestFormError"
+      ],
+      "score": 81,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "source",
+      "line_ranges": [
+        [
+          1,
+          5
+        ]
+      ],
+      "module": "projects",
+      "path": "apps/web-react/src/features/projects/lib/project-change-request-format.ts",
+      "read_mode": "full-file",
+      "reading_tokens": 90,
+      "reasons": [
+        "filename-match:form",
+        "module-mentioned",
+        "path-match:features",
+        "primary-module",
+        "symbol-match:formatProjectChangeRequestAmount"
+      ],
+      "score": 81,
+      "token_method": "estimated:chars/3.5"
+    }
+  ],
+  "selection_summary": {
+    "critical_path_coverage_percent": null,
+    "files": 4,
+    "symbols": 14,
+    "tokens": 5991
+  },
+  "snapshot": "20261126T220221-d00a29d",
+  "task": "CreateProjectSheet form submit useCreateProject mutation Project API client POST project create payload React features/projects",
+  "token_plan": {
+    "available_source_budget": 6000,
+    "estimation_order": "Critical-path coverage is evaluated before reading-cost calculation and optional file ranking.",
+    "requested_total_budget": 10000,
+    "reserved_non_source_budget": 4000,
+    "source_reading_tokens": 5991,
+    "warning": "An estimate of selected source reading, NOT full task execution or model hidden reasoning. Some counts may be approximate."
+  }
+}

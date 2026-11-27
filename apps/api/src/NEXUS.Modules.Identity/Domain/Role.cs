@@ -11,6 +11,9 @@ public class Role : BaseEntity
     public string? Category { get; set; }
     public bool IsSystem { get; set; }
     public string? SystemRoleKey { get; private set; }
+    public string? RoleKey { get; set; }
+    public Guid? OrganizationId { get; set; }
+    public bool IsLegacyOrganizationOwnershipUnresolved { get; set; }
     public ICollection<UserRole> UserRoles { get; set; } = new List<UserRole>();
     public ICollection<Permission> Permissions { get; set; } = new List<Permission>();
 

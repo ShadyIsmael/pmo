@@ -382,6 +382,7 @@ public sealed class LocalPasswordLifecycleTests : IAsyncLifetime
         adminRole.AssignSystemRoleKey(Role.TenantAdminSystemRoleKey, SeedDataProvider.TenantId);
         var admin = new User
         {
+            Id = SeededDevelopmentAdmin.UserId,
             TenantId = SeedDataProvider.TenantId,
             Email = "admin@nexus.com",
             FirstName = "Alex",
@@ -441,6 +442,20 @@ public sealed class LocalPasswordLifecycleTests : IAsyncLifetime
         Assert.Empty(temporaryLogin.Value.User.Permissions);
         Assert.Empty(temporaryLogin.Value.User.Roles);
 
+        var rejectedShortPermanentPassword = await auth.ChangeInitialPasswordAsync(
+            admin.Id,
+            SeedDataProvider.TenantId,
+            new ChangeInitialPasswordCommand(temporaryPassword, "short"));
+        Assert.True(rejectedShortPermanentPassword.IsFailure);
+        Assert.True((await _context.Users.SingleAsync(user => user.Id == admin.Id)).MustChangePassword);
+
+        var rejectedReusedPassword = await auth.ChangeInitialPasswordAsync(
+            admin.Id,
+            SeedDataProvider.TenantId,
+            new ChangeInitialPasswordCommand(temporaryPassword, temporaryPassword));
+        Assert.True(rejectedReusedPassword.IsFailure);
+        Assert.True((await _context.Users.SingleAsync(user => user.Id == admin.Id)).MustChangePassword);
+
         var changed = await auth.ChangeInitialPasswordAsync(
             admin.Id,
             SeedDataProvider.TenantId,
@@ -453,6 +468,88 @@ public sealed class LocalPasswordLifecycleTests : IAsyncLifetime
         Assert.False(permanentLogin.Value!.PasswordChangeRequired);
         Assert.False(permanentLogin.Value.User.MustChangePassword);
         Assert.Null(permanentLogin.Value.User.TemporaryPasswordExpiresAt);
+    }
+
+    [Fact]
+    public async Task Development_admin_recovery_rejects_noncanonical_user_id_without_changing_the_account()
+    {
+        var user = new User
+        {
+            Id = Guid.NewGuid(),
+            TenantId = SeededDevelopmentAdmin.TenantId,
+            Email = SeededDevelopmentAdmin.Email,
+            FirstName = "Alex",
+            LastName = "Admin",
+            AuthenticationSource = AuthenticationSource.Local,
+            PasswordHash = _hasher.HashPassword(new User(), GenerateTestPassword()),
+            IsActive = true,
+            CreatedBy = "test"
+        };
+        _context.Users.Add(user);
+        await _context.SaveChangesAsync();
+        var originalHash = user.PasswordHash;
+        var recovery = CreateAdminRecoveryService(Environments.Development);
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => recovery.RecoverTemporaryPasswordAsync(GenerateTestPassword()));
+
+        Assert.Contains("canonical Development seeded Admin", error.Message, StringComparison.Ordinal);
+        Assert.Equal(originalHash, user.PasswordHash);
+        Assert.Empty(await _context.AuditEntries.ToListAsync());
+    }
+
+    [Fact]
+    public async Task Development_admin_recovery_rejects_noncanonical_email_without_changing_the_account()
+    {
+        var user = new User
+        {
+            Id = SeededDevelopmentAdmin.UserId,
+            TenantId = SeededDevelopmentAdmin.TenantId,
+            Email = "admin-alias@nexus.com",
+            FirstName = "Alex",
+            LastName = "Admin",
+            AuthenticationSource = AuthenticationSource.Local,
+            PasswordHash = _hasher.HashPassword(new User(), GenerateTestPassword()),
+            IsActive = true,
+            CreatedBy = "test"
+        };
+        _context.Users.Add(user);
+        await _context.SaveChangesAsync();
+        var originalHash = user.PasswordHash;
+        var recovery = CreateAdminRecoveryService(Environments.Development);
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => recovery.RecoverTemporaryPasswordAsync(GenerateTestPassword()));
+
+        Assert.Contains("canonical Development seeded Admin email", error.Message, StringComparison.Ordinal);
+        Assert.Equal(originalHash, user.PasswordHash);
+        Assert.Empty(await _context.AuditEntries.ToListAsync());
+    }
+
+    [Fact]
+    public async Task Development_admin_recovery_is_rejected_outside_development_before_database_access()
+    {
+        var recovery = CreateAdminRecoveryService(Environments.Production);
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => recovery.RecoverTemporaryPasswordAsync(GenerateTestPassword()));
+
+        Assert.Contains("only in the Development environment", error.Message, StringComparison.Ordinal);
+        Assert.Empty(await _context.Users.ToListAsync());
+        Assert.Empty(await _context.AuditEntries.ToListAsync());
+    }
+
+    [Fact]
+    public async Task Development_admin_recovery_enforces_temporary_password_minimum_length()
+    {
+        var recovery = CreateAdminRecoveryService(Environments.Development);
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => recovery.RecoverTemporaryPasswordAsync("short"));
+
+        Assert.Contains("between 12 and 64 characters", error.Message, StringComparison.Ordinal);
+        Assert.Empty(await _context.Users.ToListAsync());
+        Assert.Empty(await _context.AuditEntries.ToListAsync());
     }
 
     [Fact]
@@ -550,6 +647,15 @@ public sealed class LocalPasswordLifecycleTests : IAsyncLifetime
             _audit.Object,
             optionsMonitor ?? CreatePasswordPolicyMonitor(() => selectedPolicy),
             environment ?? CreateEnvironment(Environments.Development));
+    }
+
+    private DevelopmentAdminPasswordRecoveryService CreateAdminRecoveryService(string environmentName)
+    {
+        return new DevelopmentAdminPasswordRecoveryService(
+            _context,
+            _hasher,
+            Options.Create(_policy),
+            CreateEnvironment(environmentName));
     }
 
     private static IOptionsMonitor<LocalPasswordPolicyOptions> CreatePasswordPolicyMonitor(Func<LocalPasswordPolicyOptions> currentValue)

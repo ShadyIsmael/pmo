@@ -1,0 +1,435 @@
+{
+  "created_at": "2026-11-27T00:10:38Z",
+  "critical_path_coverage": null,
+  "dependency_awareness_only": [
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Documents.Application",
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Application/DocumentCategoryPermissions.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Documents.Application",
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Application/DocumentContentTypes.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Documents.Application",
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Application/DocumentDtos.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Documents.Application",
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Application/DocumentFileTypeValidator.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Documents.Application",
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Application/DocumentPermissions.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Documents.Application",
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Application/DocumentService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Documents.Application",
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Application/DocumentTemplateComparison.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Documents.Application",
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Application/DocumentUploadLimits.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "source-class-declaration",
+      "evidence": "ProjectPhaseGateArchivedTemplateReferenceValidator declares IArchivedProjectTemplateReferenceValidator",
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Application/IArchivedProjectTemplateReferenceValidator.cs",
+      "relation": "IMPLEMENTS_INTERFACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "IArchivedProjectTemplateReferenceValidator",
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Application/IArchivedProjectTemplateReferenceValidator.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Documents.Application",
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Application/IArchivedProjectTemplateReferenceValidator.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Documents.Application",
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Application/IDocumentCategoryReferenceValidator.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Documents.Application",
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Application/IDocumentService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Documents.Application",
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Application/IStorageProvider.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Documents.Application",
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Application/TemplateDeletionPermissions.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Document",
+      "module": "documents",
+      "path": "apps/api/src/NEXUS.Modules.Documents/Domain/Document.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Domain",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/Baseline.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Domain",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/CalendarPolicyConstants.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Domain",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/Deliverable.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "ProjectId",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/Entities/ProjectBaselineVersion.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Domain",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/Milestone.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Domain",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/Project.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Domain",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/ProjectChangeRequest.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Domain",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/ProjectChangeRequestApproval.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Domain",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/ProjectHandoverRequest.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Domain",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/ProjectManagerAssignment.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Domain",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/ProjectMember.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Domain",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/ProjectMemberRole.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Domain",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/ProjectPhaseCatalogEntry.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "ProjectPhaseGateRequirementSnapshot",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/ProjectPhaseGateRequirementSnapshot.cs",
+      "relation": "REFERENCES_TYPE"
+    }
+  ],
+  "index_updated": false,
+  "limits": [
+    "Router never prevents an agent from manually opening other files; enforce via agent instructions and audit.",
+    "C# and TS relationships are source-text heuristics; compiler-resolved calls and runtime dependency-injection resolution are not proven.",
+    "Unknown/unclassified files may require manual targeted inspection.",
+    "Index sources excluded secrets and build outputs."
+  ],
+  "module_selection_basis": "task-explicit-alias",
+  "nonprimary_modules_not_read_by_router": [
+    "administration",
+    "ai-planning",
+    "api",
+    "approvals",
+    "audit",
+    "cost-management",
+    "documents",
+    "governance",
+    "home",
+    "identity",
+    "integrations",
+    "issues",
+    "management",
+    "meetings",
+    "notifications",
+    "operations",
+    "organization",
+    "permissions",
+    "persistence",
+    "plugins",
+    "portfolios",
+    "programs",
+    "project-planning",
+    "reports",
+    "resources",
+    "risks",
+    "security",
+    "stakeholder",
+    "tests",
+    "time",
+    "unclassified",
+    "vendors",
+    "work-items",
+    "workflow"
+  ],
+  "planning_state": "focused",
+  "primary_module": "projects",
+  "refresh": {
+    "changed_existing": 0,
+    "deleted": 0,
+    "mode": "refresh",
+    "new": 0,
+    "parsed": 0,
+    "unchanged": 1927
+  },
+  "related_tests_candidates": [
+    "apps/api/tests/NEXUS.Api.Tests/Finance/ProjectAnnualBudgetApprovalNotificationPublisherTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Finance/ProjectAnnualBudgetAssignedInboxTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Finance/ProjectAnnualBudgetCandidateEligibilityTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Finance/ProjectAnnualBudgetDraftApprovalConfigurationTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Finance/ProjectAnnualBudgetLifecycleDeletionTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Finance/ProjectAnnualBudgetWorkflowRecoveryTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Finance/ProjectPaymentRequestApprovalNotificationPublisherTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectBaselineVersionQueryFilterTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectChangeRequestServiceIntegrationTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectEvmCalculatorTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectEvmPersistenceTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectFinancialSummaryPersistenceTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectHandoverLifecyclePersistenceTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectHandoverManagerServiceTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectInitialBaselineTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectInitialPhaseAssignmentTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectLifecycleDocumentCategoryScopeTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectOverviewSignalsTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectPhaseGateHistoryTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectPhaseGateLifecycleTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectReportingPersistenceTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectSponsorMembershipSynchronizerTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectStatusChangeCatalogTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectStatusReportCurrencyQualityTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectStatusReportSnapshotPersistenceTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectStatusReportWorkflowProvisioningTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/ProjectChangeRequestServiceTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Security/ProjectAnnualBudgetAssignedReviewAuthorizationTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Security/ProjectAnnualBudgetRoleCategoryTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Security/ProjectAuditDetailAuthorizationTests.cs"
+  ],
+  "selected_files": [
+    {
+      "approximate": true,
+      "kind": "ui",
+      "line_ranges": [
+        [
+          1,
+          163
+        ]
+      ],
+      "module": "projects",
+      "path": "apps/web-react/src/features/delivery/WorkItemDetailsSideSheetFull.tsx",
+      "read_mode": "full-file",
+      "reading_tokens": 5955,
+      "reasons": [
+        "filename-match:detail",
+        "filename-match:id",
+        "filename-match:sheet",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:WorkItemDetailsSideSheetFull"
+      ],
+      "score": 100,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          64
+        ]
+      ],
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/ProjectPhaseGateArchivedTemplateReferenceValidator.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 767,
+      "reasons": [
+        "filename-match:id",
+        "filename-match:phase",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:ProjectPhaseGateArchivedTemplateReferenceValidator"
+      ],
+      "score": 88,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          9,
+          24
+        ]
+      ],
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/ProjectPhaseGateEvidence.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 213,
+      "reasons": [
+        "filename-match:id",
+        "filename-match:phase",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:ProjectPhaseGateEvidence"
+      ],
+      "score": 88,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "test",
+      "line_ranges": [
+        [
+          29,
+          33
+        ]
+      ],
+      "module": "projects",
+      "path": "apps/web-react/src/test/project-change-request-sheet.test.tsx",
+      "read_mode": "symbols",
+      "reading_tokens": 85,
+      "reasons": [
+        "filename-match:request",
+        "filename-match:sheet",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:renderSheet"
+      ],
+      "score": 80,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          16
+        ]
+      ],
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/ProjectPhase.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 149,
+      "reasons": [
+        "filename-match:phase",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:ProjectPhase"
+      ],
+      "score": 76,
+      "token_method": "estimated:chars/3.5"
+    }
+  ],
+  "selection_summary": {
+    "critical_path_coverage_percent": null,
+    "files": 5,
+    "symbols": 10,
+    "tokens": 7169
+  },
+  "snapshot": "20261126T220221-d00a29d",
+  "task": "React CreateProjectSheet useCreateProject project create request HTTP POST project API project detail page useProjectById phase label resolution on reload",
+  "token_plan": {
+    "available_source_budget": 7200,
+    "estimation_order": "Critical-path coverage is evaluated before reading-cost calculation and optional file ranking.",
+    "requested_total_budget": 12000,
+    "reserved_non_source_budget": 4800,
+    "source_reading_tokens": 7169,
+    "warning": "An estimate of selected source reading, NOT full task execution or model hidden reasoning. Some counts may be approximate."
+  }
+}

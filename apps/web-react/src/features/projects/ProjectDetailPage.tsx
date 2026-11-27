@@ -17,8 +17,14 @@ export function ProjectDetailPage() {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const { t } = useI18n();
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const { canMutate, effectiveReadOnly } = useManagement();
+
+  React.useEffect(() => {
+    if (id) {
+      void refreshUser();
+    }
+  }, [id, refreshUser]);
   const [changeRequestOpen, setChangeRequestOpen] = React.useState(false);
   const [handoverOpen, setHandoverOpen] = React.useState(false);
   const [projectSettingsOpen, setProjectSettingsOpen] = React.useState(false);

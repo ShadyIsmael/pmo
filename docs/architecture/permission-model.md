@@ -24,6 +24,17 @@ Authorization combines three independent questions:
 
 A permission key does not create resource assignments or widen scope. An assigned reviewer can receive one narrowly filtered record through an approval-specific endpoint; that does not grant access to the normal list or unrelated financial records. Normal read and write APIs continue to apply tenant and resource scope.
 
+### Project creation contextual hierarchy lookups
+
+| Project action | Permission | Data returned and scope |
+|---|---|---|
+| Select a Portfolio or Program while creating a Project | `Project.Create` alone is sufficient; the existing contextual lookup policies also retain their source View and Project Edit paths | Dedicated Project lookup endpoints return only minimal selection fields for the authenticated Tenant and Organizations authorized by the user's management scope and Organization-owned role memberships. A Program lookup can be narrowed by the selected Portfolio. |
+| Browse the Portfolio module | `Portfolio.View` | Existing Portfolio list/detail APIs and module routes remain independently protected and scoped. `Project.Create` does not grant module browsing. |
+| Browse the Program module | `Program.View` | Existing Program list/detail APIs and module routes remain independently protected and scoped. `Project.Create` does not grant module browsing. |
+| Create the Project with the selected hierarchy | `Project.Create` | The server verifies the selected Portfolio/Program exists in the Tenant, that a Program belongs to the supplied Portfolio, and that the resulting owning Organization is active and within the actor's authorized Organization scope. A Project may be assigned directly to a Portfolio with no Program; the owning Organization's default Pre-Initiation phase is assigned automatically. |
+
+These contextual lookups do not add permission keys or grant Portfolio/Program module access. General module reads continue to use their independent View permissions.
+
 The authenticated tenant boundary is derived from trusted identity/context. `ManagementScopeResolver` derives Portfolio, Program, Project, and Organization scope from native assignments and explicit tenant-scoped administrative authority. Organization scope is not a substitute for native manager assignment on a record. Cross-Portfolio Program creation requires `Program.Create` plus the explicit `Program.CreateAcrossPortfolios` capability and an eligible Portfolio inside the actor's authorized Tenant/Organization scope. It does not create a lasting manager assignment.
 
 Platform administration is separate from Tenant administration. Tenant-wide management scope requires trusted, explicitly scoped authority (`TenantAdministration.ManageScope`) and remains within that Tenant. Neither the `admin` nor `pmo.admin` role name grants platform or tenant-wide authority by itself; there is no automatic equivalence between those role names.
@@ -34,13 +45,46 @@ Organization settings have their own per-user, per-Organization grants. Platform
 
 Annual Budgets, Payment Requests, Settlements/Reversals, and Fiscal Year Closing have separate canonical screen and action keys. There are no active `finances.read` or `finances.write` aliases or broad OR fallbacks. Each operation authorizes against its definitive action key; related source rollups require every source View permission explicitly.
 
-Project Financial Overview has its own read-only `ProjectFinancialFoundation.View` key at Project scope. Cost Utilization report reads use `Resource.View`; actual cost-rate values remain redacted unless `Resource.ViewCostRate` is effective. Export data is provided by `GET /api/resource-analytics/cost-utilization/export-data` and requires both `Resource.View` and the separate sensitive `CostUtilization.Export` key. Program and Portfolio financial rollups each require the matching parent read (`Program.View` or `Portfolio.View`) plus their separate read key (`ProgramFinancialRollup.View` at Program scope or `PortfolioFinancialRollup.View` at Portfolio scope). Both rollup services filter to the authenticated Tenant and authorized descendant Project scope. These read and export keys do not grant workflow actions and are not added to the protected Admin baseline.
+`ProjectFinance.View` is the canonical **Project Finance → Open Finance** permission for the Project Details Financial Tab and its direct route aliases. It controls tab visibility and entry. Budget, Cost, Commitment, Payment Obligation, and financial action APIs continue to require their own permissions and enforce their existing Tenant/Project scope. `ProjectFinancialFoundation.View` remains a distinct read permission for the financial foundation/settings data flow; `ProjectSettings.View` applies to that settings flow and does not gate opening the Financial Tab.
+
+Project Financial Overview has its own read-only `ProjectFinancialFoundation.View` key at Project scope and appears under the **Project Financial Management** module in Roles & Permissions. Cost Utilization report reads use `Resource.View`; actual cost-rate values remain redacted unless `Resource.ViewCostRate` is effective. Export data is provided by `GET /api/resource-analytics/cost-utilization/export-data` and requires both `Resource.View` and the separate sensitive `CostUtilization.Export` key. Program and Portfolio financial rollups each require the matching parent read (`Program.View` or `Portfolio.View`) plus their separate read key (`ProgramFinancialRollup.View` at Program scope or `PortfolioFinancialRollup.View` at Portfolio scope). Both rollup services filter to the authenticated Tenant and authorized descendant Project scope. These read and export keys do not grant workflow actions and are not added to the protected Admin baseline.
 
 The approved Project lifetime financial ceiling may change only through an approved Project Change Request. Project Edit rejects a changed ceiling, and ordinary Project mapping does not write it. Creating or submitting a CR does not apply its proposed ceiling. Only final approval of a CR containing a ceiling change can apply it; the final assigned reviewer must hold both `ChangeRequest.Approve` and `ProjectFinancialCeiling.ApproveChange`. The workflow rechecks Tenant/Project scope, assignment, separation of duties, that the recorded prior ceiling is still current, financial commitments and annual allocations, and writes an audit event in the approval transaction. No independent ceiling approval path exists.
 
 Persistent Project approval defaults use `ProjectAnnualBudget.ManageApprovalConfiguration`. `ProjectApproval.Override` is separate and applies to one submission subject to the workflow's reason, reviewer eligibility, mandatory stages, and audit controls; it must not update Project Settings.
 
 Project Settings has its own Project-scoped `ProjectSettings.View` and `ProjectSettings.Edit` permissions, grouped under the Project Settings screen. Edit depends on View. The View key opens the Header Side Sheet but does not replace each section's View key. Workflow settings writes require both Project Settings keys and an authorized mutable Project context. Financial approval configuration also retains its section View and `ProjectAnnualBudget.ManageApprovalConfiguration` checks. These Project-scoped keys are outside the dynamic Tenant Admin baseline; the identity seed adds them to the stable `tenant.admin` role. Direct user Deny overrides remain effective, and the Admin grant does not bypass Tenant, Project, section, or read-only checks.
+
+### Sprint 2 Planned Payment foundation
+
+The Planned Payment foundation reuses the existing canonical `PaymentObligation.*` keys; no new permission key, catalog row, role grant, or System Role is introduced. The keys already describe the same planned-payment-obligation capability and are already registered as API policies and exposed in Roles & Permissions with EN/AR labels. Reuse avoids an ungranted parallel key while keeping the existing Active Deny, dependency, scope, and role-administration behavior intact.
+
+| Operation | Required keys | Additional server checks |
+| --- | --- | --- |
+| Open the Planned Payment area in the Financial Tab | `ProjectFinance.View` for the tab and `PaymentObligation.View` for the section | Authenticated user; Management Tenant/Project scope; Active Deny removes access. |
+| Retrieve budget, list, or detail | `PaymentObligation.View` | Project row must exist in the authenticated Tenant and current project scope. |
+| Register a Planned Payment | `PaymentObligation.Create` | Current Project Manager; active same-Tenant actor; writable management context; project-row lock; lifetime-budget availability; configured matching currency. |
+| Amend an unlocked Planned Payment | `PaymentObligation.Edit` | Current Project Manager; row version; project-row lock; no first Payment Request; lifetime-budget availability; matching configured currency. |
+| First Payment Request locks the plan | `ProjectPaymentRequest.Create` on the request path | Linked installment belongs to the same Tenant/Project; no overcommitment; lock and audit are committed in the existing request transaction. No Planned Payment-specific approval permission is added. |
+
+The seeded `tenant.project-manager` role is not automatically granted any additional key. An actor with Project Manager assignment but without the canonical grant can read the Financial Tab shell but cannot load or write Planned Payments; the UI hides the section/action and direct API calls fail closed. Approval remains authorization only: it never creates a lifetime reservation or increases Actual Paid.
+
+### Sprint 2 Payment Request and Budget Line integration
+
+Creating a Payment Request requires `ProjectPaymentRequest.Create`; changing a draft or returned request requires `ProjectPaymentRequest.EditDraft`; submission requires `ProjectPaymentRequest.Submit` and the requester must still be the current Project Manager. Approval requires `ProjectPaymentRequest.Approve`, an exact active assignment in the current immutable cycle, current Project Team eligibility, effective permission, tenant/project scope, and a requester/approver separation check. The assigned approval inbox grants no general Payment Request list access.
+
+Payment Requests require one same-Project Planned Payment installment, one approved/open Annual Budget for the selected fiscal year, and exactly one Budget Line belonging to that budget. Installment, Annual Budget, and Budget Line limits are revalidated under the workflow transaction; approver visibility and line selection never grant authority. A new Project-scoped `ProjectAnnualBudget.ManageLines` key configures lines on approved budgets. Draft lines can use `ProjectAnnualBudget.EditDraft` or `ProjectAnnualBudget.ManageLines`; approved lines require `ProjectAnnualBudget.ManageLines`. This key depends on `ProjectAnnualBudget.View`, is outside the protected Tenant Admin baseline, and is not granted automatically to existing roles. Active Deny and Management Tenant/Project scope continue to apply.
+
+| Operation | Required keys | Additional server checks |
+| --- | --- | --- |
+| Read Annual Budget Lines | `ProjectAnnualBudget.View` | Budget belongs to the authorized Tenant and Project; amounts and active reservations come from persisted records. |
+| Create/update/delete a line on an open Draft budget | `ProjectAnnualBudget.EditDraft` or `ProjectAnnualBudget.ManageLines` | Writable Project scope; no pending budget review/revision; line total cannot exceed the budget; referenced lines cannot be mutated or deleted. |
+| Create/update/delete a line on an open Approved budget | `ProjectAnnualBudget.ManageLines` | Same Tenant/Project and explicit current effective grant; no pending budget review/revision; line total cannot exceed the budget; referenced lines remain immutable. |
+| Create a Payment Request draft | `ProjectPaymentRequest.Create` | Current Project Manager, positive amount, same-Project installment, matching currency and available installment amount; first request locks the plan. |
+| Submit or resubmit | `ProjectPaymentRequest.Submit` | Requester remains current Project Manager; approved/open selected budget and its single line; current eligible configured approvers; Annual Budget, line, and installment availability rechecked atomically. Lifetime reservation is not increased. |
+| Decide an approval | `ProjectPaymentRequest.Approve` | Exact pending assignment, eligible active user, effective permission, current cycle, no self-approval, full amount only; final approval does not increase Actual Paid. |
+
+The user preferences and in-app notification entry identify the assigned project approval step; delivery is idempotent by Tenant, request, cycle, assignment, and recipient. No new financial role or automatic grant is introduced.
 
 ## Project Plan creation and content editing
 

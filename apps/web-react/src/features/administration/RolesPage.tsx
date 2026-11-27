@@ -393,11 +393,11 @@ export function RolesPage() {
     || (draft.description ?? "") !== (roleDetails.data.description ?? "")
     || (draft.category ?? "") !== (roleDetails.data.category ?? "")
     || [...draft.permissionIds].sort().join("|") !== toSaveInput(roleDetails.data, permissionCatalog.data ?? []).permissionIds.sort().join("|")));
-  const financeReadLabel = (permissionCatalog.data ?? []).find((permission) => permission.name === Permissions.ProjectFinancialFoundation.View)
-    ? getPermissionDisplayName((permissionCatalog.data ?? []).find((permission) => permission.name === Permissions.ProjectFinancialFoundation.View)!, locale)
-    : t("administration.areas.roles.financialReadPermission");
-  const canDelegateFinancialRead = (permissionCatalog.data ?? []).some((permission) => permission.name === Permissions.ProjectFinancialFoundation.View && permission.canDelegate === true);
   const catalog = permissionCatalog.data ?? [];
+  const financialReadPermission = catalog.find((permission) => permission.name === Permissions.ProjectFinancialFoundation.View);
+  const financeReadLabel = financialReadPermission
+    ? getPermissionDisplayName(financialReadPermission, locale)
+    : t("administration.areas.roles.financialReadPermission");
   const persistedLegacyCategory = !isCreating && roleDetails.data?.category && !isCanonicalRoleCategory(roleDetails.data.category)
     ? roleDetails.data.category
     : undefined;
@@ -520,7 +520,7 @@ export function RolesPage() {
               <p className="text-xs text-muted-foreground">{t("administration.areas.roles.permissionDependencyHelp")}</p>
               {!canManage ? <p role="note" className="rounded-md border bg-muted/40 p-3 text-sm text-muted-foreground">{t("administration.areas.roles.readOnlyRoleAccess")}</p> : null}
               {canManage && !canConfigurePermissions ? <p role="note" className="rounded-md border bg-muted/40 p-3 text-sm text-muted-foreground">{t("administration.areas.roles.configurePermissionAccessRequired")}</p> : null}
-              {permissionCatalog.data && !canDelegateFinancialRead ? <p role="note" className="text-sm text-muted-foreground">{t("administration.areas.roles.financialPermissionMissing", { permission: financeReadLabel })}</p> : null}
+              {permissionCatalog.data && !financialReadPermission ? <p role="note" className="text-sm text-muted-foreground">{t("administration.areas.roles.financialPermissionMissing", { permission: financeReadLabel })}</p> : null}
               {!canConfigurePermissions ? null : permissionCatalog.isLoading ? <p className="py-5 text-center text-sm text-muted-foreground">{t("common.loading")}</p>
                 : permissionCatalog.isError ? <div className="flex flex-col items-center gap-3 py-5"><p role="alert" className="text-sm text-destructive">{t("administration.areas.roles.permissionCatalogError")}</p><Button type="button" size="sm" variant="outline" onClick={() => void permissionCatalog.refetch()}>{t("common.retry")}</Button></div>
                   : permissionGroups.length === 0 ? <p className="py-5 text-center text-sm text-muted-foreground">{t("administration.areas.roles.noMatchingPermissions")}</p>

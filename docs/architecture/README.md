@@ -1,5 +1,7 @@
 # Architecture Overview
 
+> For task-scoped source maps and the generated dependency index, start at [UPI Architecture Index](INDEX.md). See [UPI usage and limits](UPI-README.md) for refresh behavior and routing commands.
+
 ## Architectural Principles
 
 ### Modular Monolith

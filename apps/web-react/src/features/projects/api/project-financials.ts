@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@api/client";
+import type { PlannedPaymentDto, PlannedPaymentInstallmentDto } from "./planned-payments";
 
 export interface ProjectFinancialFoundation {
   projectId: string;
@@ -8,9 +9,52 @@ export interface ProjectFinancialFoundation {
   approvedPaymentRequestAllocations: number | null;
   availableBudget: number | null;
   actualPaid: number | null;
+  grossActualPaid?: number | null;
+  netActualPaid?: number | null;
+  isCurrentProjectManager?: boolean;
   outstandingPaymentBalance: number | null;
   financeApprovalMode: "Sequential" | "Parallel" | "Both" | null;
   rowVersion: string;
+}
+
+export interface BudgetLineUtilization {
+  budgetLineId: string;
+  reference: string;
+  description: string;
+  authorizedLimit: number;
+  reservedAmount: number;
+  utilizationPercentage: number;
+  hasCurrencyMismatch: boolean;
+}
+
+export interface FinancialReportingDataQuality {
+  hasUnresolvedCurrency: boolean;
+  hasCurrencyMismatch: boolean;
+  projectCurrencyUnavailable: boolean;
+  hasMissingFinancialReferences: boolean;
+  hasIncompleteSettlementHistory: boolean;
+  hasMissingAnnualBudgetAllocations: boolean;
+  details: string[];
+  hasAnyGap: boolean;
+  overallStatus: string;
+}
+
+export interface ProjectFinancialReporting {
+  projectId: string;
+  projectCode: string;
+  projectName: string;
+  currency: string;
+  lifetimeCeiling: number | null;
+  annualApprovedBudget: number | null;
+  lifetimeReserved: number;
+  outstandingCommitments: number;
+  grossActualPaid: number | null;
+  confirmedRefundsAndCorrections: number | null;
+  netActualPaid: number | null;
+  availableLifetimeBudget: number | null;
+  annualBudgetUtilizationPercentage: number | null;
+  budgetLineUtilizations: BudgetLineUtilization[];
+  dataQuality: FinancialReportingDataQuality;
 }
 
 export interface ProjectFinancialActivityEvent {
@@ -61,6 +105,22 @@ export interface PaymentRequestApprover {
   canDecide: boolean;
 }
 
+export interface PaymentRequestApprovalCycle {
+  id: string;
+  cycleNumber: number;
+  submittedAtUtc: string;
+  approvalMode: "Sequential" | "Parallel";
+  status: string;
+  amount: number;
+  currency: string;
+  annualBudgetId: string | null;
+  annualBudgetReference: string | null;
+  annualBudgetLineId: string | null;
+  annualBudgetLineName: string | null;
+  requesterName: string;
+  approvers: PaymentRequestApprover[];
+}
+
 export interface ProjectPaymentRequest {
   id: string;
   projectId: string;
@@ -71,6 +131,7 @@ export interface ProjectPaymentRequest {
   reason: string;
   projectPlanMilestoneId: string | null;
   projectPlanMilestoneName: string | null;
+  plannedPaymentInstallmentId?: string | null;
   status: string;
   requesterId: string;
   requesterName: string;
@@ -87,6 +148,9 @@ export interface ProjectPaymentRequest {
   annualBudgetId: string | null;
   annualBudgetFiscalYear: number | null;
   annualBudgetReference: string | null;
+  annualBudgetLineId?: string | null;
+  annualBudgetLineName?: string | null;
+  approvalCycles?: PaymentRequestApprovalCycle[];
 }
 
 export interface ProjectPaymentRequestListItem extends Omit<ProjectPaymentRequest, "projectId" | "reason" | "projectPlanMilestoneId" | "projectPlanMilestoneName" | "approvers"> {
@@ -119,6 +183,32 @@ export interface ProjectPaymentRequestBudgetAvailability {
   canSubmit: boolean;
 }
 
+export interface ProjectPaymentRequestFundingLine {
+  id: string;
+  reference: string;
+  description: string;
+  authorizedLimit: number;
+  reservedAmount: number;
+  availableAmount: number;
+}
+
+export interface ProjectPaymentRequestFundingBudget {
+  id: string;
+  reference: string;
+  fiscalYear: number;
+  currency: string;
+  status: string;
+  annualBudgetAmount: number;
+  reservedAmount: number;
+  availableAmount: number;
+  lines: ProjectPaymentRequestFundingLine[];
+}
+
+export interface ProjectPaymentRequestFundingOptions {
+  projectCurrency: string | null;
+  budgets: ProjectPaymentRequestFundingBudget[];
+}
+
 export interface ProjectPaymentRequestSettlement {
   id: string;
   paymentRequestId: string;
@@ -132,6 +222,53 @@ export interface ProjectPaymentRequestSettlement {
   description: string | null;
   createdAtUtc: string;
   createdBy: string | null;
+}
+
+export interface SettlementAdjustmentDto {
+  id: string;
+  originalSettlementId: string;
+  adjustmentType: "Refund" | "Correction" | string;
+  amount: number;
+  currency: string;
+  reason: string;
+  effectiveDate: string;
+  recordedAt: string;
+  status: "PendingApproval" | "Approved" | "Rejected" | "Executed" | string;
+  approvalRequestId: string | null;
+  assignedApproverId: string | null;
+  approvedBy: string | null;
+  approvedAtUtc: string | null;
+  executionConfirmedBy: string | null;
+  executionConfirmedAtUtc: string | null;
+  executionDate: string | null;
+  rowVersion: string | null;
+  canDecide: boolean;
+  canConfirmExecution: boolean;
+}
+
+export interface RecordSettlementAdjustmentInput {
+  idempotencyKey: string;
+  originalSettlementId: string;
+  amount: number;
+  effectiveDate: string;
+  reason: string;
+  assignedApproverId: string;
+}
+
+export interface PaymentRequestEligibleApprover {
+  userId: string;
+  displayName: string;
+}
+
+export interface DecideSettlementAdjustmentInput {
+  decision: "Approved" | "Rejected";
+  comment: string | null;
+  rowVersion: string;
+}
+
+export interface ConfirmSettlementAdjustmentExecutionInput {
+  idempotencyKey: string;
+  executionDate: string;
 }
 
 export interface ProjectPaymentRequestSettlementSummary {
@@ -213,8 +350,31 @@ export interface CreatePaymentRequestInput {
   title: string;
   amount: number;
   reason: string;
+  plannedPaymentInstallmentId: string;
+  projectAnnualBudgetId: string;
+  projectAnnualBudgetLineId: string;
   projectPlanMilestoneId?: string;
   idempotencyKey: string;
+}
+
+export interface CreateQuickOneOffPaymentRequestInput {
+  description: string;
+  amount: number;
+  purpose: string;
+  dueDateUtc: string;
+  projectPlanMilestoneId?: string;
+  projectAnnualBudgetId?: string;
+  projectAnnualBudgetLineId?: string;
+  idempotencyKey: string;
+  submitForApproval: boolean;
+  approvalMode?: "Sequential" | "Parallel";
+  approvers?: PaymentRequestApproverSelection[];
+}
+
+export interface QuickOneOffPaymentRequestResult {
+  plannedPayment: PlannedPaymentDto;
+  installment: PlannedPaymentInstallmentDto;
+  paymentRequest: ProjectPaymentRequest;
 }
 
 export interface PaymentRequestApproverSelection {
@@ -227,18 +387,24 @@ const paymentRequestsKey = (projectId: string, status?: string, pageSize = 50) =
   ["project-payment-requests", projectId, status ?? "all", pageSize] as const;
 const paymentRequestKey = (projectId: string, requestId: string) => ["project-payment-request", projectId, requestId] as const;
 const paymentRequestSettlementsKey = (projectId: string, requestId: string) => ["project-payment-request-settlements", projectId, requestId] as const;
+const settlementAdjustmentsKey = (projectId: string, settlementId: string) => ["project-payment-settlement-adjustments", projectId, settlementId] as const;
 const paymentRequestReversalsKey = (projectId: string, requestId: string) => ["project-payment-request-reversals", projectId, requestId] as const;
+const paymentRequestFundingOptionsKey = (projectId: string) => ["project-payment-request-funding-options", projectId] as const;
 
 function invalidateProjectFinance(queryClient: ReturnType<typeof useQueryClient>, projectId: string, requestId?: string) {
   void queryClient.invalidateQueries({ queryKey: ["project-payment-requests", projectId] });
   if (requestId) void queryClient.invalidateQueries({ queryKey: paymentRequestKey(projectId, requestId) });
   if (requestId) void queryClient.invalidateQueries({ queryKey: paymentRequestSettlementsKey(projectId, requestId) });
+  void queryClient.invalidateQueries({ queryKey: ["project-payment-settlement-adjustments", projectId] });
   if (requestId) void queryClient.invalidateQueries({ queryKey: paymentRequestReversalsKey(projectId, requestId) });
   void queryClient.invalidateQueries({ queryKey: foundationKey(projectId) });
   void queryClient.invalidateQueries({ queryKey: ["project-financial-activity", projectId] });
   void queryClient.invalidateQueries({ queryKey: ["project-financial-activity-facets", projectId] });
   void queryClient.invalidateQueries({ queryKey: ["project-annual-budget-closings", projectId] });
   void queryClient.invalidateQueries({ queryKey: ["project-annual-budgets", projectId] });
+  void queryClient.invalidateQueries({ queryKey: paymentRequestFundingOptionsKey(projectId) });
+  void queryClient.invalidateQueries({ queryKey: ["project-planned-payments", projectId] });
+  void queryClient.invalidateQueries({ queryKey: ["project-planned-payment-budget", projectId] });
 }
 
 export function useProjectPaymentRequests(projectId: string, enabled = true, status?: string, pageSize = 50) {
@@ -249,6 +415,16 @@ export function useProjectPaymentRequests(projectId: string, enabled = true, sta
       { page: 1, pageSize, status }),
     enabled: Boolean(projectId) && enabled,
     staleTime: 10_000,
+  });
+}
+
+export function useProjectPaymentRequestFundingOptions(projectId: string, enabled = true) {
+  return useQuery({
+    queryKey: paymentRequestFundingOptionsKey(projectId),
+    queryFn: () => api.get<ProjectPaymentRequestFundingOptions>(
+      `/api/projects/${encodeURIComponent(projectId)}/payment-requests/funding-options`),
+    enabled: Boolean(projectId) && enabled,
+    staleTime: 5_000,
   });
 }
 
@@ -267,6 +443,67 @@ export function useProjectPaymentRequestSettlements(projectId: string, requestId
       `/api/projects/${encodeURIComponent(projectId)}/payment-requests/${encodeURIComponent(requestId!)}/settlements`,
       { page: 1, pageSize: 100 }),
     enabled: Boolean(projectId && requestId) && enabled,
+  });
+}
+
+export function useSettlementAdjustments(projectId: string, settlementId: string, enabled = true) {
+  return useQuery({
+    queryKey: settlementAdjustmentsKey(projectId, settlementId),
+    queryFn: () => api.get<SettlementAdjustmentDto[]>(
+      `/api/projects/${encodeURIComponent(projectId)}/payment-requests/settlements/${encodeURIComponent(settlementId)}/adjustments`),
+    enabled: Boolean(projectId && settlementId) && enabled,
+  });
+}
+
+export function useSettlementAdjustmentApprovers(projectId: string, enabled = true) {
+  return useQuery({
+    queryKey: ["project-payment-settlement-adjustment-approvers", projectId],
+    queryFn: () => api.get<PaymentRequestEligibleApprover[]>(
+      `/api/projects/${encodeURIComponent(projectId)}/payment-requests/settlement-adjustment-approvers`),
+    enabled: Boolean(projectId) && enabled,
+    staleTime: 10_000,
+  });
+}
+
+export function useRecordSettlementAdjustment(projectId: string, adjustmentType: "Refund" | "Correction") {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: RecordSettlementAdjustmentInput) => {
+      const route = adjustmentType === "Refund" ? "refunds" : "corrections";
+      return api.post<SettlementAdjustmentDto>(
+        `/api/projects/${encodeURIComponent(projectId)}/payment-requests/settlements/${encodeURIComponent(input.originalSettlementId)}/${route}`,
+        input);
+    },
+    onSuccess: (adjustment) => {
+      invalidateProjectFinance(queryClient, projectId);
+      void queryClient.invalidateQueries({ queryKey: settlementAdjustmentsKey(projectId, adjustment.originalSettlementId) });
+    },
+  });
+}
+
+export function useDecideSettlementAdjustment(projectId: string, settlementId: string, adjustmentId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: DecideSettlementAdjustmentInput) => api.post<SettlementAdjustmentDto>(
+      `/api/projects/${encodeURIComponent(projectId)}/payment-requests/settlements/${encodeURIComponent(settlementId)}/adjustments/${encodeURIComponent(adjustmentId)}/decisions`,
+      input),
+    onSuccess: () => {
+      invalidateProjectFinance(queryClient, projectId);
+      void queryClient.invalidateQueries({ queryKey: settlementAdjustmentsKey(projectId, settlementId) });
+    },
+  });
+}
+
+export function useConfirmSettlementAdjustmentExecution(projectId: string, settlementId: string, adjustmentId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: ConfirmSettlementAdjustmentExecutionInput) => api.post<SettlementAdjustmentDto>(
+      `/api/projects/${encodeURIComponent(projectId)}/payment-requests/settlements/${encodeURIComponent(settlementId)}/adjustments/${encodeURIComponent(adjustmentId)}/execution`,
+      input),
+    onSuccess: () => {
+      invalidateProjectFinance(queryClient, projectId);
+      void queryClient.invalidateQueries({ queryKey: settlementAdjustmentsKey(projectId, settlementId) });
+    },
   });
 }
 
@@ -396,10 +633,19 @@ export function useCreateProjectPaymentRequest(projectId: string) {
   });
 }
 
+export function useCreateQuickOneOffPaymentRequest(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateQuickOneOffPaymentRequestInput) => api.post<QuickOneOffPaymentRequestResult>(
+      `/api/projects/${encodeURIComponent(projectId)}/payment-requests/quick-one-off`, input),
+    onSuccess: (result) => invalidateProjectFinance(queryClient, projectId, result.paymentRequest.id),
+  });
+}
+
 export function useUpdateProjectPaymentRequest(projectId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: { id: string; title: string; amount: number; reason: string; projectPlanMilestoneId?: string; rowVersion: string }) => {
+    mutationFn: (input: { id: string; title: string; amount: number; reason: string; projectAnnualBudgetId: string; projectAnnualBudgetLineId: string; projectPlanMilestoneId?: string; rowVersion: string }) => {
       const { id, ...body } = input;
       return api.put<ProjectPaymentRequest>(`/api/projects/${encodeURIComponent(projectId)}/payment-requests/${encodeURIComponent(id)}`, body);
     },
@@ -410,7 +656,7 @@ export function useUpdateProjectPaymentRequest(projectId: string) {
 export function useSubmitProjectPaymentRequest(projectId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: { id: string; approvalMode: "Sequential" | "Parallel"; approvers: PaymentRequestApproverSelection[]; rowVersion: string }) => {
+    mutationFn: (input: { id: string; approvalMode: "Sequential" | "Parallel"; approvers: PaymentRequestApproverSelection[]; rowVersion: string; idempotencyKey: string }) => {
       const { id, ...body } = input;
       return api.post<ProjectPaymentRequest>(`/api/projects/${encodeURIComponent(projectId)}/payment-requests/${encodeURIComponent(id)}/submit`, body);
     },
@@ -421,7 +667,7 @@ export function useSubmitProjectPaymentRequest(projectId: string) {
 export function useDecideProjectPaymentRequest(projectId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: { id: string; decision: "Approved" | "Rejected"; comment?: string; rowVersion: string }) => {
+    mutationFn: (input: { id: string; decision: "Approved" | "Rejected" | "ReturnedForRevision"; comment?: string; rowVersion: string }) => {
       const { id, ...body } = input;
       return api.post<ProjectPaymentRequest>(`/api/projects/${encodeURIComponent(projectId)}/payment-requests/${encodeURIComponent(id)}/decisions`, body);
     },
@@ -631,5 +877,32 @@ export function useCancelProjectAnnualBudgetClosing(projectId: string) {
         `/api/projects/${encodeURIComponent(projectId)}/annual-budget-closings/${encodeURIComponent(closingId)}/cancel`, body);
     },
     onSuccess: () => invalidateProjectFinance(queryClient, projectId),
+  });
+}
+
+const financialReportingKey = (projectId: string, periodFrom?: string, periodTo?: string) =>
+  ["project-financial-reporting", projectId, periodFrom ?? "all", periodTo ?? "all"] as const;
+
+export function useProjectFinancialReporting(
+  projectId: string,
+  periodFrom?: Date,
+  periodTo?: Date,
+  enabled = true
+) {
+  return useQuery({
+    queryKey: financialReportingKey(
+      projectId,
+      periodFrom?.toISOString(),
+      periodTo?.toISOString()
+    ),
+    queryFn: () => api.get<ProjectFinancialReporting>(
+      `/api/projects/${encodeURIComponent(projectId)}/financial-reporting`,
+      {
+        periodFrom: periodFrom?.toISOString(),
+        periodTo: periodTo?.toISOString(),
+      }
+    ),
+    enabled: Boolean(projectId) && enabled,
+    staleTime: 30_000,
   });
 }

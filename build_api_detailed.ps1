@@ -1,0 +1,1 @@
+dotnet build apps/api/src/NEXUS.Api/NEXUS.Api.csproj --no-restore -v d 2>&1

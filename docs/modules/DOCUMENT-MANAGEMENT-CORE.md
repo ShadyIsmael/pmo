@@ -1,29 +1,101 @@
 # Document Management Core
 
-NEXUS uses one tenant-scoped document repository. The global Document Centre and the Project Documents tab are two views over the same `Document` and `DocumentVersion` records; project linkage is stored on the document rather than duplicated in a project-specific table.
+NEXUS has one document-management module and one template catalog. **Governance / Document Center is the authoritative place to register and maintain organization-approved templates.** Organization Settings configures phase requirements by referencing template IDs and versions from that catalog; it does not maintain another template catalog. Project Documents remains the project-facing view over the shared document records and can create a project copy from an active template, but it does not create or manage approved templates.
 
-## Runtime contract
+Document Categories taxonomy is managed in **Administration → Reference Data → Document Categories** using the same `DocumentCategory` catalog. The Document Library consumes active categories for folders and filters. Register Approved Template loads active options through `GET /api/document-categories/template-options?organizationId=` using `Document.Create` and `Document.TemplateManage`. Project Document upload sends the route Project PublicId to `GET /api/document-categories/project-upload-options?projectId=`; the API resolves it within the authenticated Tenant to the internal Project ID, then applies `Document.Create` and authenticated Project scope. These minimal upload lookups do not require broad `DocumentCategory.View` listing permission. Both return active, non-deleted categories owned by the selected Organization plus eligible Tenant-shared categories in the authenticated Tenant. The Library does not provide a second category-management surface or catalog. For phase rows mapped to a category in Reference Data, that category's eligible templates define current-phase exit readiness; rows without a category mapping retain the existing pinned Phase Gate requirement path and its exact Template and Version IDs.
 
-- `GET /api/documents` applies search, project, category, template, archive, pagination, tenant, and management-scope filters on the server.
-- `GET /api/documents/{id}`, `/download`, and `/preview` authorize the document before returning metadata or bytes.
-- `POST /api/documents` stores an immutable version-1 object; `POST /api/documents/{id}/versions` stores a new object and advances the current version.
-- `POST /api/documents/{id}/archive` is a non-destructive archive operation.
-- Files are restricted to PDF, Office Open XML, images, TXT, and CSV, with a 25 MB limit.
+## Document and template ownership
 
-The local provider stores opaque relative keys below the configured `Storage:DocumentsRoot`; it rejects rooted paths and traversal outside that root. A future blob provider can implement the same `IStorageProvider` contract without changing the domain or UI.
+- A template is a document record marked as a template and owned by one active Organization within its authenticated Tenant. Tenant identity and the trusted management scope are resolved server-side; an organization ID supplied by a caller is only a selector and never proof of access.
+- An ordinary document or project document retains its existing ownership and project links. Introducing organization-owned templates must not require copying or migrating existing Project Documents.
+- A template ID remains stable as new immutable file versions are uploaded. Each version has its own stable version ID and provider-neutral file metadata. Archiving or deactivating a template does not delete versions or invalidate historical references. Organization Phase Gate requirements pin a template ID and exact version ID.
+- Register Approved Template begins with a required Organization and then a required Document Category. Organization choices come from the caller's active management scope; changing Organization clears the selected Category and reloads active options from the existing category catalog. The API validates the selected Organization against Tenant and management scope and accepts an active Category owned by that Organization or an eligible Tenant-shared Category before storing the file. Project uploads derive Organization from the authorized Project and apply the same category eligibility rule.
+- Project Documents may retain the source template ID and exact source version used for a completed copy. A later template version must not change that historical reference.
+- Templates are selected from the Document Center catalog. A project upload is not a second template registration path.
 
-## Scope and localization
+## API and permission contract
 
-Tenant isolation remains provided by the shared persistence query filters. Document creation also assigns the trusted authenticated tenant to the document and its first version, and validates category references through the tenant-filtered category set. A selected management context further limits project-linked documents, including project-linked templates, to the current `Scope.ProjectIds`; unlinked ordinary documents are visible only to their owner, while unlinked templates are shared within that Tenant. Missing or mismatched tenant/management context fails closed for document records and mutations. The UI uses server results, supports English and Arabic/RTL, and formats numeric counts and file sizes with western digits.
+The API authorizes each document read and mutation, validates the authenticated Tenant and current Organization/Project scope, and returns no local filesystem path or public storage URL.
 
-`ManagementContextMiddleware` rejects all document mutations while the active context is `ReadOnlyViewAs`; the frontend also removes upload, new-version, archive, and template-management controls in that mode. Read actions remain available within the resolved tenant and management scope.
+| Operation | Required canonical permission |
+|---|---|
+| List/search templates and documents; read metadata/categories; preview/download | `Document.View` |
+| Upload ordinary or project document | `Document.Create` |
+| Load project-upload category options | `Document.Create` plus authenticated Project scope |
+| Register an approved template | `Document.Create` and `Document.TemplateManage` |
+| Load template-upload category options | `Document.Create`, `Document.TemplateManage`, and authorized Organization scope |
+| Add a version to an ordinary document | `Document.Edit` |
+| Add a template version or activate/deactivate a template | `Document.Edit` and `Document.TemplateManage` |
+| Archive an ordinary document | `Document.Archive` |
+| Archive a template | `Document.Archive` and `Document.TemplateManage` |
+| Manage categories in Administration → Reference Data | `DocumentCategory.View`, with `DocumentCategory.Create`, `DocumentCategory.Edit`, or `DocumentCategory.ActivateDeactivate` for the matching action |
+| Permanently delete an unused category | `DocumentCategory.Delete` plus `DocumentCategory.View`, within the caller's authorized Tenant/Organization scope |
 
-## Templates
+The document service rechecks the effective permission and explicit deny claims in addition to endpoint policies. All permissions are subject to Active Deny, Tenant isolation, resource-level scope, and applicable management-context restrictions. No role-based authorization fallback is allowed. Existing role grants are preserved; the category deletion permission is not automatically granted to existing roles.
 
-Templates are real document records marked `IsTemplate`. Unlinked templates are shared tenant-wide; a project-linked template remains visible only inside its Project management scope. The library intentionally does not seed fabricated files. An administrator or PMO administrator can upload an actual reusable file and publish it as a template; it then appears in the Templates tab and is downloadable through the same authorized path.
+Category deletion uses `DELETE /api/document-categories/{id}` and has its own high-sensitivity `DocumentCategory.Delete` permission. Roles & Permissions exposes the canonical English/Arabic labels to eligible Tenant and Organization role categories; the permission requires `DocumentCategory.View` and remains part of the protected Tenant Admin baseline. The service only permanently deletes a category after checking current and soft-deleted Documents, Templates, Versions, Project Documents, child categories, project phase catalog assignments, Organization and Project Phase Gate configuration/history snapshots, and phase-gate evidence within the Tenant and applicable Organization boundary. A referenced category returns HTTP 409 with a localized message recommending Deactivate. A successful delete is audited; no document, file, template, version, or historical record is cascade-deleted. The Reference Data list and shared `documents` query family are refreshed so Document Center and Project Documents dropdowns reload.
 
-Project Documents provides `Start from template`: it lists active templates, downloads the selected blank file, and uploads the completed project copy with the authoritative `SourceTemplateId` and `SourceTemplateVersionNumber`. Those fields are immutable after creation, so a later template version does not change an existing project document's historical source.
+## File storage
 
-## Explicit non-scope
+Document metadata and version records remain in SQL Server; file bytes live behind `IStorageProvider`. The provider contract stores a stream under an opaque key and exposes provider identity, open/read, metadata/existence, and deletion operations. Implementations are registered under their provider ID and selected through dependency injection. The Development `LocalStorageProvider` writes outside `wwwroot`, uses server-generated physical names, and calculates length and SHA-256 while streaming. No external File Server is connected by this foundation.
 
-Workflow approvals, e-signature, Office editing, cloud integrations, notifications, retention automation, and a separate Activity/Permissions product area are not part of this foundation.
+| Configuration | Default | Purpose |
+|---|---|---|
+| `Storage:Provider` | `local` | Selects a registered `IStorageProvider` implementation by provider ID. |
+| `Storage:DocumentsRoot` | `{AppContext.BaseDirectory}/App_Data/documents` | Private local root for Development files; it must remain outside `wwwroot`. |
+| `Storage:MaxUploadBytes` | 25 MiB; maximum configurable value 100 MiB | Maximum accepted upload size. |
+
+Each new `DocumentVersion` stores provider ID, opaque key, original filename, content type, length, checksum, ownership, and version/audit data. New writes leave the legacy `StoragePath` fields null; those fields remain available for safe reads of existing rows. No physical local path is persisted for new content. Downloads and previews pass through the authenticated API after authorization; preview is limited to safe supported types and responses use `nosniff`. The local provider rejects rooted/traversal keys and filesystem links and tolerates cleanup of temporary files after a failed write.
+
+New uploads are limited to `.doc`, `.docx`, `.xls`, `.xlsx`, and `.pdf`, with extension/MIME validation and the configured size limit enforced through the shared API service for templates and Project Documents. PDF/OLE signatures and the OOXML package manifest/main part are checked where applicable. Legacy image, TXT, and CSV rows remain readable, but those types are not accepted for new uploads. The served MIME type is derived from the stored safe filename, not trusted from the request. An uploaded template records its file and metadata; upload alone does not attest to an external signature or constitute a new in-system approval workflow. Business approval/signoff remains external.
+
+## Phase Gate integration — Sprint 2 configuration
+
+Organization Settings → Project Lifecycle stores requirements for a phase transition using the existing Document Center catalog. The initial supported transition is Pre-Initiation → Initiation. New or changed requirements can select only an active, unarchived template version owned by the same Tenant and Organization. Each requirement pins the stable Template ID and exact Template Version ID and snapshots the template name, category, and version label for historical display. Each configuration edit appends an immutable configuration version; Mandatory and Optional remain separate requirement types. Archiving or superseding a template does not delete earlier configuration versions or invalidate their pinned references. An unchanged pinned reference can be carried forward with its prior display snapshot.
+
+The Organization API exposes supported transitions, the current configuration, immutable configuration history, and save operations under `/api/organizations/{organizationId}/phase-gate-requirements`. Read access uses `Settings.View` and `Document.View` plus Organization Settings read access. Saves use `Settings.ManageTenantConfiguration` and `Document.View` plus Organization Settings manage access. Tenant/Organization scope, Active Deny, rowversion concurrency, and audit recording are enforced by the configuration service.
+
+Sprint 2 implements Organization configuration only. Project-level document checklists, automatic phase-transition validation, project phase changes, and compliance reporting remain outside this integration. Optional is not a governance waiver or exception. Uploaded templates are assumed to have received any required external business approval; no in-system document approval workflow is introduced.
+
+### Persistence and verification status
+
+The implementation is source-only and has not been deployed to a database. Migration source `20261110180235_AddOrganizationPhaseGateConfiguration` and the EF-generated model snapshot are present, but no SQL script was generated and no migration was applied. Final EF model synchronization remains Deferred/No; the API build, tests, database connection/schema verification, and authenticated runtime UAT are deferred to consolidated verification.
+
+## Localization and existing project documents
+
+The supported UI is `apps/web-react`. Document Center and Project Documents use the shared API-backed document module, English and Arabic labels, RTL-aware layout, theme support, and server-returned operational data. Existing project document upload, version, archive, download, and “Start from template” workflows remain supported through the same authorized service. Template management controls are available only in the Document Center and only when both the operation permission and `Document.TemplateManage` are effective where required.
+
+## Project Lifecycle and Compliance integration - Sprints 3/4
+
+Organization Phase Gate settings continue to be the sole configuration source, and Governance / Document Center remains the sole approved template source. New projects start at the server-owned stable phase code `pre-initiation`; Project Status remains independent and ordinary project updates do not accept a Phase override. Existing project phase values are not backfilled by this implementation.
+
+For a phase without a Reference Data category mapping, the first project readiness request resolves the existing Organization configuration for the project's current/target transition. When it exists, a project-level snapshot pins its configuration ID/version and copies the applicable requirements with stable Template ID/Version ID and display metadata. Later Organization edits do not rewrite an existing project snapshot. With no matching configuration, readiness is `NotConfigured` and no snapshot is stored; the category-backed path is described below.
+
+Project checklist evidence associates one requirement snapshot with an existing project `Document` and an exact `DocumentVersion`. It reuses the existing document service and storage provider. The server validates Tenant, Organization, Project, source Template ID/Version ID, document/version availability, and storage-provider metadata on read and transition submission. Invalid, deleted, inaccessible, or unavailable evidence cannot satisfy a Mandatory requirement. No client-side checkbox or upload flag is authoritative. Readiness remains advisory: missing requirements do not reject a phase transition that passes the existing `Project.View` and `ProjectPhase.Change` authorization, project scope, Active Deny, and concurrency checks. A successful phase change writes transition details to the existing Audit Trail.
+
+Project evidence is assumed to have received any required external business approval before submission. The application does not authenticate external signatures or implement reviewer assignment, approval routing, electronic sign-off, or waiver workflows. Optional requirements remain ordinary configuration and do not represent a governance exception. Successful transition and evidence changes reuse the existing Audit Trail; `ProjectPhase` and `ProjectPhaseGateEvidence` map to the Project Management audit module and have English/Arabic entity labels.
+
+| Action | Canonical permission and scope |
+|---|---|
+| Read readiness/checklist | `Project.View` + `Document.View`, plus authenticated Tenant, Organization/Project, and management scope. |
+| Change project phase | `Project.View` + `ProjectPhase.Change`, project-scoped; server records current-phase readiness and validates the expected Project concurrency token. |
+| Link/unlink evidence | `Project.View` + `Document.Edit` + `Document.View`, with exact project/document/version and Tenant/Organization boundaries. |
+| View missing evidence names or filter by missing template in Program/Portfolio | `Project.View` + `Document.View`, in addition to the existing authorized management dashboard scope. Without both, requirement details are suppressed and a missing-template filter is Forbidden. |
+
+The effective project readiness API is `GET /api/projects/{projectId}/phase-gate/readiness?targetPhase=...`. Evidence is linked or unlinked through `POST` / `DELETE /api/projects/{projectId}/phase-gate/requirements/{requirementSnapshotId}/document`; phase mutation is `POST /api/projects/{projectId}/phase-gate/change-phase` with `targetPhase` and the expected Project version token. These project APIs do not add a template catalog or an alternate document-upload repository.
+
+Program and Portfolio dashboards read readiness in one authorized batch and return project status, current phase, target/configuration snapshot, Mandatory/Optional counts, readiness vs. actual transition status, phase distribution, and paged/filterable project rows. The applicable compliance denominator is Ready + Incomplete + NotConfigured; NotConfigured is not compliant and NotApplicable is excluded. Compliance is `Ready / Applicable`, null when the denominator is zero. Archived and Cancelled projects are excluded. Portfolio aggregation includes authorized projects through its Programs and directly assigned to the Portfolio exactly once.
+
+### Sprint 3/4 schema and verification status
+
+The Sprint 3/4 source is present but is not runtime-verified or Production-ready. Sprint 1 `20261110170000_AddOrganizationDocumentTemplateStorageMetadata`, Sprint 2 `20261110180235_AddOrganizationPhaseGateConfiguration`, and Sprint 3 `20261110190107_AddProjectPhaseGateLifecycle` migration sources remain unapplied. The Sprint 3 source and designer add project snapshots, requirement snapshots, and evidence persistence. No migration was applied. Sprint 1 EF model/snapshot confirmation remains outstanding; API build, backend/storage tests, consolidated React checks, EF synchronization, database schema inspection, and authenticated browser UAT are all Deferred. The Phase Gate v12 procedure document was unavailable in the workspace; no document-control requirements were inferred.
+
+## Current-phase Reference Data readiness (2026-11-18)
+
+For a Project Phase catalog row with a configured `DocumentCategoryId`, the existing Reference Data relationship is the readiness source: the Project's persisted current phase selects its category, and active templates in the Project's Organization with that category become the phase's document requirements. This category-backed path takes precedence over the selected target phase and the older explicit transition-template snapshot for readiness. A phase without a category mapping retains the existing pinned Phase Gate snapshot/evidence behavior.
+
+`Document.IsMandatory` determines whether a category template is mandatory or optional. The category-backed path uses the template's current exact `DocumentVersion.Id`; an uploaded Project Document satisfies it only when its persisted `SourceTemplateId` and `SourceTemplateVersionId` match those identifiers. A populated source version number must also agree. Filenames and display names are never used to match. A valid stored version is required; archived or unavailable uploads do not satisfy a requirement. Repeated category membership cannot duplicate a template requirement.
+
+The category must be active, undeleted, and either Tenant-shared or owned by the Project's Organization. Templates must be active, undeleted, unarchived, and owned by that Organization. Existing document source IDs remain historical facts when a template is later updated or archived; current category readiness does not rewrite those associations. Existing Phase Gate transition snapshots and audit history remain available.
+
+Readiness is evaluated by the backend both for the Change Phase review and when the transition is submitted. Missing mandatory requirements are shown in the existing Change Phase UI with the current phase, satisfied/missing/optional items, and mandatory completion. The previously implemented transition authorization and non-blocking readiness policy remain in force. Readiness is refreshed after document, template/category, and lifecycle configuration mutations. No new requirement administration screen or permission is introduced.

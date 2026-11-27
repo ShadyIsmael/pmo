@@ -6,10 +6,17 @@ export interface ProjectDto {
   id: string;
   publicId: string;
   tenantId: string;
+  rowVersion?: string | null;
   name: string;
   code: string;
   description?: string;
   programId?: string;
+  phaseId?: string | null;
+  phaseNameEn?: string | null;
+  phaseNameAr?: string | null;
+  statusId?: string | null;
+  statusNameEn?: string | null;
+  statusNameAr?: string | null;
   status: string;
   priority: string;
   projectManagerId?: string;
@@ -51,6 +58,15 @@ export interface ProjectSummaryDto {
   name: string;
   code: string;
   status: string;
+  statusId?: string | null;
+  statusNameEn?: string | null;
+  statusNameAr?: string | null;
+  reportingCategory?: "InProgress" | "Completed" | "Excluded" | null;
+  attentionLevel?: "None" | "NeedsAttention" | "Critical" | null;
+  phase?: string | null;
+  phaseId?: string | null;
+  phaseNameEn?: string | null;
+  phaseNameAr?: string | null;
   health: string;
   ragStatus: string;
   progress: number;
@@ -205,6 +221,8 @@ export interface UpdateProjectDto {
   code?: string;
   description?: string;
   programId?: string;
+  statusId?: string;
+  statusChangeReason?: string;
   status?: string;
   priority?: string;
   category?: string;
@@ -282,6 +300,7 @@ export interface ProjectOverviewDto {
   costPerformanceIndexUnavailableReason?: string | null;
   costVarianceUnavailableReason?: string | null;
   approvedBudget?: number | null;
+  currentApprovedProjectBudget?: number | null;
   allocatedBudget?: number | null;
   unallocatedBudget?: number | null;
   originalApprovedBudget?: number | null;
@@ -617,7 +636,9 @@ export interface ProjectStatusReportDto extends ProjectStatusReportListDto {
   baselineNameSnapshot?: string;
   baselineVersionSnapshot?: number;
   actualPaidSnapshot?: number;
+  actualPaidDataQualitySnapshot?: "Available" | "CurrencyUnresolved" | "CurrencyMismatch" | "ProjectCurrencyUnavailable" | "NotRecorded";
   outstandingPlannedPaymentsSnapshot?: number;
+  plannedPaymentsDataQualitySnapshot?: "Available" | "CurrencyMismatch" | "CurrencyUnresolved" | "ProjectCurrencyUnavailable" | "IntegrityIssue" | "NotRecorded";
   paymentsDueWithinPeriodSnapshot?: number;
   remainingUnpaidAtPeriodEndSnapshot?: number;
   risks: ProjectStatusReportRiskSnapshotDto[];
@@ -810,9 +831,9 @@ export interface ProjectChangeRequestDto {
   projectId: string;
   projectPublicId?: string | null;
   projectName: string;
-  number: number;
-  type: "Administrative" | "Baseline";
-  reason: string;
+   number: number;
+   type: "Administrative" | "Baseline" | "BudgetChange";
+   reason: string;
   justification?: string | null;
   impact?: string | null;
   budgetBeforeChange?: number | null;
@@ -876,9 +897,9 @@ export interface ProjectChangeRequestApproverDto { userId: string; fullName: str
 export interface ProjectChangeRequestApprovalOptionsDto { approvers: ProjectChangeRequestApproverDto[]; allowedStrategies: string[]; sponsorUserId?: string | null; policyMessage?: string | null; }
 
 export interface CreateProjectChangeRequestDto {
-  projectId: string;
-  type: "Administrative" | "Baseline";
-  reason: string;
+   projectId: string;
+   type: "Administrative" | "Baseline" | "BudgetChange";
+   reason: string;
   justification?: string | null;
   impact?: string | null;
   budgetChangeAmount?: number | null;

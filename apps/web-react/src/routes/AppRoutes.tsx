@@ -4,7 +4,7 @@ import { AppShell } from "../components/AppShell";
 import { RequireAuth, RequireManagementAuthorization } from "../auth/RequireAuth";
 import { RequirePermission } from "../auth/RequirePermission";
 import { RequireFreshPermission } from "../auth/RequireFreshPermission";
-import { DirectoryAccessPermissions, Permissions, ReferenceDataAccessPermissions } from "../lib/permissions";
+import { DirectoryAccessPermissions, Permissions, ProjectLifecycleCatalogAccessPermissions, ReferenceDataAccessPermissions } from "../lib/permissions";
 import { useI18n } from "../i18n/messages";
 // Eager: migration order 1–6 core (Home, Projects, My Work, Resources, Vendors, Teams)
 import { HomePage } from "../features/home/HomePage";
@@ -56,6 +56,8 @@ const AccessUsersPage = React.lazy(() => import("../features/administration/Acce
 const UserPermissionsPage = React.lazy(() => import("../features/administration/AccessPages").then((m) => ({ default: m.UserPermissionsPage })));
 const RolesPage = React.lazy(() => import("../features/administration/RolesPage").then((m) => ({ default: m.RolesPage })));
 const ReferenceDataPage = React.lazy(() => import("../features/administration/AdminPages").then((m) => ({ default: m.ReferenceDataPage })));
+const DocumentCategoriesPage = React.lazy(() => import("../features/administration/DocumentCategoriesPage").then((m) => ({ default: m.DocumentCategoriesPage })));
+const ProjectLifecycleCatalogPage = React.lazy(() => import("../features/administration/ProjectLifecycleCatalogPage").then((m) => ({ default: m.ProjectLifecycleCatalogPage })));
 const VendorCategoriesPage = React.lazy(() => import("../features/administration/VendorCategoriesPage").then((m) => ({ default: m.VendorCategoriesPage })));
 const ProjectRolesPage = React.lazy(() => import("../features/administration/ProjectRolesPage").then((m) => ({ default: m.ProjectRolesPage })));
 const WorkItemStatusesPage = React.lazy(() => import("../features/administration/WorkItemStatusesPage").then((m) => ({ default: m.WorkItemStatusesPage })));
@@ -134,7 +136,7 @@ export function AppRoutes() {
           <Route path="overview" element={<ProjectOverviewTab />} />
           <Route path="plan" element={<ProjectPlanningTabFull />} />
           <Route path="team" element={<ProjectMembersTab />} />
-          <Route path="financials" element={<ProjectFinanceTab />} />
+          <Route path="financials" element={<Guard permissions={Permissions.ProjectFinance.View}><ProjectFinanceTab /></Guard>} />
           <Route path="settings" element={<RequirePermission permissions={Permissions.ProjectSettings.View}><Navigate to="../overview?openSettings=1" relative="route" replace /></RequirePermission>} />
           <Route path="risks-issues" element={<ProjectRisksTab />} />
           <Route path="status-reports" element={<Guard permissions={Permissions.StatusReport.View}><ProjectStatusReportsTab /></Guard>} />
@@ -146,7 +148,7 @@ export function AppRoutes() {
           <Route path="change-tracker" element={<ProjectChangeTrackerTab />} />
           <Route path="tasks" element={<ProjectTasksTab />} />
           <Route path="risks" element={<ProjectRisksTab />} />
-          <Route path="finance" element={<ProjectFinanceTab />} />
+          <Route path="finance" element={<Guard permissions={Permissions.ProjectFinance.View}><ProjectFinanceTab /></Guard>} />
           <Route path="members" element={<ProjectMembersTab />} />
           <Route path="documents" element={<ProjectDocumentsTab />} />
           <Route path="planning" element={<ProjectPlanningTabFull />} />
@@ -203,11 +205,11 @@ export function AppRoutes() {
         <Route path="/risks-issues/matrix" element={<Guard permissions={Permissions.Risk.View}><Suspended><RiskMatrixPage /></Suspended></Guard>} />
         <Route path="/risks-issues" element={<Navigate to="/risks-issues/risks" replace />} />
 
-        <Route path="/costs" element={<Guard permissions={Permissions.Finances.Read}><Suspended><CostsPage /></Suspended></Guard>} />
-        <Route path="/costs/budgets" element={<Guard permissions={Permissions.Finances.Read}><Suspended><CostsPage /></Suspended></Guard>} />
-        <Route path="/costs/actuals" element={<Guard permissions={Permissions.Finances.Read}><Suspended><CostsPage /></Suspended></Guard>} />
-        <Route path="/costs/payments" element={<Guard permissions={Permissions.Finances.Read}><Suspended><PlannedPaymentsPage /></Suspended></Guard>} />
-        <Route path="/costs/forecasts" element={<Guard permissions={Permissions.Finances.Read}><Suspended><CostsPage /></Suspended></Guard>} />
+        <Route path="/costs" element={<Guard permissions={Permissions.ProjectFinancialFoundation.View}><Suspended><CostsPage /></Suspended></Guard>} />
+        <Route path="/costs/budgets" element={<Guard permissions={Permissions.ProjectAnnualBudget.View}><Suspended><CostsPage /></Suspended></Guard>} />
+        <Route path="/costs/actuals" element={<Guard permissions={Permissions.Cost.View}><Suspended><CostsPage /></Suspended></Guard>} />
+        <Route path="/costs/payments" element={<Guard permissions={Permissions.PaymentObligation.View}><Suspended><PlannedPaymentsPage /></Suspended></Guard>} />
+        <Route path="/costs/forecasts" element={<Guard permissions={Permissions.ProjectFinancialFoundation.View}><Suspended><CostsPage /></Suspended></Guard>} />
 
         <Route path="/documents" element={<Guard permissions={Permissions.Document.View}><Suspended><DocumentsPage /></Suspended></Guard>} />
 
@@ -227,7 +229,9 @@ export function AppRoutes() {
           <Route path="/administration/access/roles" element={<Guard permissions={[Permissions.Roles.View, Permissions.Roles.Create, Permissions.Roles.EditDetails, Permissions.Roles.ConfigurePermissions, Permissions.Roles.Delete, Permissions.Users.View]}><Suspended><RolesPage /></Suspended></Guard>} />
           <Route path="/administration/users" element={<Navigate to="/administration/access/users" replace />} />
           <Route path="/administration/roles" element={<Navigate to="/administration/access/roles" replace />} />
-          <Route path="/administration/reference-data" element={<Guard permissions={ReferenceDataAccessPermissions}><Suspended><ReferenceDataPage /></Suspended></Guard>} />
+          <Route path="/administration/reference-data" element={<Guard permissions={[...ReferenceDataAccessPermissions, Permissions.DocumentCategory.View, ...ProjectLifecycleCatalogAccessPermissions, Permissions.OrganizationConfiguration.View, Permissions.OrganizationConfiguration.Manage]}><Suspended><ReferenceDataPage /></Suspended></Guard>} />
+          <Route path="/administration/reference-data/document-categories" element={<Guard permissions={Permissions.DocumentCategory.View}><Suspended><DocumentCategoriesPage /></Suspended></Guard>} />
+          <Route path="/administration/reference-data/project-lifecycle" element={<Guard permissions={[...ProjectLifecycleCatalogAccessPermissions, Permissions.OrganizationConfiguration.View, Permissions.OrganizationConfiguration.Manage]}><Suspended><ProjectLifecycleCatalogPage /></Suspended></Guard>} />
           <Route path="/administration/reference-data/project-roles" element={<Guard permissions={[...ReferenceDataAccessPermissions, Permissions.Resources.View]}><Suspended><ProjectRolesPage /></Suspended></Guard>} />
           <Route path="/administration/reference-data/vendor-categories" element={<Guard permissions={ReferenceDataAccessPermissions}><Suspended><VendorCategoriesPage /></Suspended></Guard>} />
           <Route path="/administration/reference-data/work-item-statuses" element={<Guard permissions={ReferenceDataAccessPermissions}><Suspended><WorkItemStatusesPage /></Suspended></Guard>} />

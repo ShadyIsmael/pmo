@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using NEXUS.Modules.Audit.Application;
 using NEXUS.Modules.Audit.Domain;
+using NEXUS.Modules.Identity.Application;
 using NEXUS.Modules.Identity.Domain;
 using NEXUS.Modules.Organization.Application.Settings;
 using NEXUS.Modules.Organization.Domain;
@@ -18,15 +19,18 @@ public sealed class OrganizationSettingsAccessService : IOrganizationSettingsAcc
     private readonly DbContext _context;
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly IAuditService _auditService;
+    private readonly IUserEffectivePermissionService _effectivePermissions;
 
     public OrganizationSettingsAccessService(
         DbContext context,
         IHttpContextAccessor httpContextAccessor,
-        IAuditService auditService)
+        IAuditService auditService,
+        IUserEffectivePermissionService effectivePermissions)
     {
         _context = context;
         _httpContextAccessor = httpContextAccessor;
         _auditService = auditService;
+        _effectivePermissions = effectivePermissions;
     }
 
     public async Task<IReadOnlyList<Guid>> GetReadableOrganizationIdsAsync(CancellationToken cancellationToken = default)
@@ -90,6 +94,32 @@ public sealed class OrganizationSettingsAccessService : IOrganizationSettingsAcc
                 .AnyAsync(grant => grant.TenantId == tenantId && grant.OrganizationId == organizationId
                     && grant.UserId == userId && !grant.IsDeleted
                     && (manage ? grant.CanManage : grant.CanRead || grant.CanManage), cancellationToken);
+        }
+        catch (Exception exception) when (IsDatabaseFailure(exception))
+        {
+            throw new SettingsPersistenceUnavailableException("Organization settings access storage is unavailable or its schema has not been deployed.", exception);
+        }
+    }
+
+    public async Task<bool> HasScopedOrganizationConfigurationAuthorityAsync(
+        Guid organizationId,
+        bool manage,
+        CancellationToken cancellationToken = default)
+    {
+        if (organizationId == Guid.Empty || !TryGetActor(out var tenantId, out var userId)) return false;
+        try
+        {
+            var organizationExists = await _context.Set<OrganizationEntity>()
+                .IgnoreQueryFilters()
+                .AnyAsync(organization => organization.Id == organizationId && organization.TenantId == tenantId
+                    && !organization.IsDeleted && organization.IsActive, cancellationToken);
+            if (!organizationExists) return false;
+
+            var effectivePermissions = await _effectivePermissions.GetEffectivePermissionsAsync(userId, tenantId, cancellationToken);
+            if (!effectivePermissions.Contains("OrganizationConfiguration.View")) return false;
+            if (manage && !effectivePermissions.Contains("OrganizationConfiguration.Manage")) return false;
+
+            return await HasAccessAsync(organizationId, manage, cancellationToken);
         }
         catch (Exception exception) when (IsDatabaseFailure(exception))
         {

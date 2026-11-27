@@ -1,0 +1,407 @@
+{
+  "created_at": "2026-11-25T21:02:32Z",
+  "critical_path_coverage": null,
+  "dependency_awareness_only": [
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Api.Authorization",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Authorization/FinancialPermissionPolicyRegistration.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Api.Authorization",
+      "module": "permissions",
+      "path": "apps/api/src/NEXUS.Api/Authorization/WorkflowLookupPolicyRegistration.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "api/projects/{projectId:guid}/cash-flow",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/PlannedPaymentController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Api.Finance",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/PlannedPaymentController.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Api.Finance",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectAnnualBudgetApprovalNotificationPublisher.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Api.Finance",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectAnnualBudgetAssignedApprovalDtos.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Api.Finance",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectAnnualBudgetAssignedApprovalsController.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "api/projects/{projectId:guid}/cash-flow",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectAnnualBudgetClosingController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Api.Finance",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectAnnualBudgetClosingController.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Api.Finance",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectAnnualBudgetClosingWorkflow.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "api/projects/{projectId:guid}/cash-flow",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectAnnualBudgetController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Api.Finance",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectAnnualBudgetController.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "api/projects/{projectId:guid}/cash-flow",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectAnnualBudgetDraftApprovalConfigurationController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Api.Finance",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectAnnualBudgetDraftApprovalConfigurationController.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Api.Finance",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectAnnualBudgetDraftApprovalConfigurationService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "api/projects/{projectId:guid}/cash-flow",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectAnnualBudgetLineController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Api.Finance",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectAnnualBudgetLineController.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Api.Finance",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectAnnualBudgetLineWorkflow.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Api.Finance",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectAnnualBudgetPendingApprovalDto.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Api.Finance",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectAnnualBudgetWorkflow.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "api/projects/{projectId:guid}/cash-flow",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectCashFlowController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "ProjectCashFlowController",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectCashFlowController.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Api.Finance",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectCashFlowController.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Api.Finance",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectCashFlowReader.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "api/projects/{projectId:guid}/cash-flow",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectFinancialFoundationController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Api.Finance",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectFinancialFoundationController.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "api/projects/{projectId:guid}/cash-flow",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectFinancialReportingController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Api.Finance",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectFinancialReportingController.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Api.Finance",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectPaymentRequestApprovalNotificationPublisher.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Api.Finance",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectPaymentRequestAssignedApprovalsController.cs",
+      "relation": "USES_NAMESPACE"
+    }
+  ],
+  "index_updated": false,
+  "limits": [
+    "Router never prevents an agent from manually opening other files; enforce via agent instructions and audit.",
+    "C# and TS relationships are source-text heuristics; compiler-resolved calls and runtime dependency-injection resolution are not proven.",
+    "Unknown/unclassified files may require manual targeted inspection.",
+    "Index sources excluded secrets and build outputs."
+  ],
+  "module_selection_basis": "task-explicit-alias",
+  "nonprimary_modules_not_read_by_router": [
+    "administration",
+    "ai-planning",
+    "api",
+    "approvals",
+    "audit",
+    "cost-management",
+    "documents",
+    "governance",
+    "home",
+    "identity",
+    "integrations",
+    "issues",
+    "management",
+    "meetings",
+    "notifications",
+    "operations",
+    "organization",
+    "persistence",
+    "plugins",
+    "portfolios",
+    "programs",
+    "project-planning",
+    "projects",
+    "reports",
+    "resources",
+    "risks",
+    "security",
+    "stakeholder",
+    "tests",
+    "time",
+    "unclassified",
+    "vendors",
+    "work-items",
+    "workflow"
+  ],
+  "planning_state": "focused",
+  "primary_module": "permissions",
+  "refresh": {
+    "changed_existing": 0,
+    "deleted": 0,
+    "mode": "refresh",
+    "new": 0,
+    "parsed": 0,
+    "unchanged": 1923
+  },
+  "related_tests_candidates": [
+    "apps/api/tests/NEXUS.Api.Tests/Security/CashFlowAuthorizationTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Security/EffectivePermissionResolverTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Security/PermissionAuthorizationContractTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Security/PermissionCatalogArchitectureTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Security/Phase2AuthorizationNegativeTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Security/PlatformSettingsAuthorizationTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Security/TenantRuntimeSettingsAuthorizationTests.cs",
+    "apps/web-react/src/test/permission-catalog-cache.test.tsx"
+  ],
+  "selected_files": [
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          10,
+          15
+        ]
+      ],
+      "module": "permissions",
+      "path": "apps/api/src/NEXUS.Api/Authorization/ApiAuthorizationDefaults.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 59,
+      "reasons": [
+        "filename-match:auth",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:ApiAuthorizationDefaults"
+      ],
+      "score": 76,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "test",
+      "line_ranges": [
+        [
+          1,
+          128
+        ]
+      ],
+      "module": "permissions",
+      "path": "apps/api/tests/NEXUS.Api.Tests/Security/CashFlowAuthorizationTests.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 1647,
+      "reasons": [
+        "filename-match:auth",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:CashFlowAuthorizationTests"
+      ],
+      "score": 68,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "test",
+      "line_ranges": [
+        [
+          1,
+          42
+        ]
+      ],
+      "module": "permissions",
+      "path": "apps/api/tests/NEXUS.Api.Tests/Security/PlatformSettingsAuthorizationTests.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 474,
+      "reasons": [
+        "filename-match:auth",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:PlatformSettingsAuthorizationTests"
+      ],
+      "score": 68,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "test",
+      "line_ranges": [
+        [
+          1,
+          93
+        ]
+      ],
+      "module": "permissions",
+      "path": "apps/api/tests/NEXUS.Api.Tests/Security/TenantRuntimeSettingsAuthorizationTests.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 1249,
+      "reasons": [
+        "filename-match:auth",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:TenantRuntimeSettingsAuthorizationTests"
+      ],
+      "score": 68,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "test",
+      "line_ranges": [
+        [
+          38,
+          48
+        ]
+      ],
+      "module": "permissions",
+      "path": "apps/api/tests/NEXUS.Api.Tests/Security/EffectivePermissionResolverTests.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 151,
+      "reasons": [
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:Protected_admin_baseline_survives_deny_while_deny_wins_for_ordinary_permissions"
+      ],
+      "score": 56,
+      "token_method": "estimated:chars/3.5"
+    }
+  ],
+  "selection_summary": {
+    "critical_path_coverage_percent": null,
+    "files": 5,
+    "symbols": 18,
+    "tokens": 3580
+  },
+  "snapshot": "20261125T190942-cd9ddbb",
+  "task": "Recover admin@nexus.com account: reset Admin password in Development database Shady/NexusPmo using supported ASP.NET Identity password hashing, then verify login through /api/auth/login and check Admin roles and permissions",
+  "token_plan": {
+    "available_source_budget": 9600,
+    "estimation_order": "Critical-path coverage is evaluated before reading-cost calculation and optional file ranking.",
+    "requested_total_budget": 16000,
+    "reserved_non_source_budget": 6400,
+    "source_reading_tokens": 3580,
+    "warning": "An estimate of selected source reading, NOT full task execution or model hidden reasoning. Some counts may be approximate."
+  }
+}

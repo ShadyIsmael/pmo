@@ -58,6 +58,19 @@ export interface ProjectAnnualBudgetPage {
   missingClosingFiscalYear: number | null;
 }
 
+export interface ProjectAnnualBudgetLine {
+  id: string;
+  annualBudgetId: string;
+  reference: string;
+  description: string;
+  authorizedLimit: number;
+  reservedAmount: number;
+  availableAmount: number;
+  currency: string;
+  rowVersion: string;
+  canEdit: boolean;
+}
+
 export interface ProjectAnnualBudgetEligibleApprover {
   userId: string;
   displayName: string;
@@ -120,6 +133,7 @@ export interface CreateProjectAnnualBudgetInput {
 }
 
 const annualBudgetsKey = (projectId: string) => ["project-annual-budgets", projectId] as const;
+const annualBudgetLinesKey = (projectId: string, budgetId: string) => ["project-annual-budget-lines", projectId, budgetId] as const;
 const approvalConfigurationKey = (projectId: string) => ["project-annual-budget-approval-configuration", projectId] as const;
 
 function invalidateAnnualBudgetViews(queryClient: ReturnType<typeof useQueryClient>, projectId: string) {
@@ -141,6 +155,37 @@ export function useProjectAnnualBudgets(projectId: string, enabled = true) {
     queryFn: () => api.get<ProjectAnnualBudgetPage>(`/api/projects/${encodeURIComponent(projectId)}/annual-budgets`),
     enabled: Boolean(projectId) && enabled,
     staleTime: 15_000,
+  });
+}
+
+export function useProjectAnnualBudgetLines(projectId: string, budgetId: string, enabled = true) {
+  return useQuery({
+    queryKey: annualBudgetLinesKey(projectId, budgetId),
+    queryFn: () => api.get<ProjectAnnualBudgetLine[]>(
+      `/api/projects/${encodeURIComponent(projectId)}/annual-budgets/${encodeURIComponent(budgetId)}/lines`),
+    enabled: Boolean(projectId && budgetId) && enabled,
+    staleTime: 15_000,
+  });
+}
+
+export function useSaveProjectAnnualBudgetLine(projectId: string, budgetId: string) {
+  const queryClient = useQueryClient();
+  const refresh = () => Promise.all([
+    queryClient.invalidateQueries({ queryKey: annualBudgetLinesKey(projectId, budgetId) }),
+    queryClient.invalidateQueries({ queryKey: ["project-payment-request-funding-options", projectId] }),
+    queryClient.invalidateQueries({ queryKey: ["project-payment-requests", projectId] }),
+  ]);
+  return useMutation({
+    mutationFn: (input: { id?: string; description: string; authorizedLimit: number; rowVersion?: string }) => {
+      const { id, ...body } = input;
+      return id
+        ? api.put<ProjectAnnualBudgetLine>(
+          `/api/projects/${encodeURIComponent(projectId)}/annual-budgets/${encodeURIComponent(budgetId)}/lines/${encodeURIComponent(id)}`,
+          body)
+        : api.post<ProjectAnnualBudgetLine>(
+          `/api/projects/${encodeURIComponent(projectId)}/annual-budgets/${encodeURIComponent(budgetId)}/lines`, body);
+    },
+    onSuccess: refresh,
   });
 }
 

@@ -7,7 +7,8 @@ public class ProjectChangeRequest : BaseEntity
     public enum ChangeTypes
     {
         Administrative,
-        Baseline
+        Baseline,
+        BudgetChange
     }
 
     public enum Statuses

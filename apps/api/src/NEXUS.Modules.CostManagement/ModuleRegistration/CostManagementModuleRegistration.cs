@@ -11,7 +11,7 @@ public static class CostManagementModuleRegistration
     {
         services.AddScoped<IBudgetService, BudgetService>();
         services.AddScoped<ICostService, CostService>();
-        services.AddScoped<ICommitmentService, CommitmentService>();
+        services.AddScoped<ICostSummaryService, CostSummaryService>();
         services.AddScoped<IPaymentObligationService, PaymentObligationService>();
         services.AddScoped<PaymentDueNotificationService>();
         services.AddHostedService<PaymentDueNotificationScheduler>();

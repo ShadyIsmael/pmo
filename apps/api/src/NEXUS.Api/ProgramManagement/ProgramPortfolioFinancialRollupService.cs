@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using NEXUS.Modules.CostManagement.Application;
 using NEXUS.Api.Finance;
 using NEXUS.Modules.Approvals.Domain;
 using NEXUS.Modules.CostManagement.Application.DTOs;
@@ -30,6 +31,8 @@ public interface IProgramPortfolioFinancialRollupService
 {
     Task<Result<ProgramPortfolioFinancialRollupDto>> GetProgramAsync(Guid programId, int? fiscalYear, int page, int pageSize, CancellationToken cancellationToken);
     Task<Result<ProgramPortfolioFinancialRollupDto>> GetPortfolioAsync(Guid portfolioId, int? fiscalYear, int page, int pageSize, CancellationToken cancellationToken);
+    Task<Result<ProgramPortfolioCashFlowProjectScopeDto>> GetProgramCashFlowProjectScopeAsync(Guid programId, CancellationToken cancellationToken);
+    Task<Result<ProgramPortfolioCashFlowProjectScopeDto>> GetPortfolioCashFlowProjectScopeAsync(Guid portfolioId, CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -51,64 +54,122 @@ public sealed class ProgramPortfolioFinancialRollupService(
     public async Task<Result<ProgramPortfolioFinancialRollupDto>> GetProgramAsync(
         Guid programId, int? fiscalYear, int page, int pageSize, CancellationToken cancellationToken)
     {
-        var context = management.Current;
-        var access = await ValidateReadAsync(context, ProgramView, ProgramPortfolioFinancialRollupAuthorization.ProgramRollupViewPermission, cancellationToken);
-        if (access is not null) return Result<ProgramPortfolioFinancialRollupDto>.Failure(access);
-        if (context is null || (!context.CanReadAllTenantPortfolioProgramData && !context.Scope.ProgramIds.Contains(programId)))
-            return Result<ProgramPortfolioFinancialRollupDto>.Failure(Error.NotFound("Program not found."));
-
-        var program = await db.Set<ProgramEntity>().IgnoreQueryFilters().AsNoTracking()
-            .FirstOrDefaultAsync(item => item.Id == programId && item.TenantId == context.TenantId && !item.IsDeleted, cancellationToken);
-        if (program is null) return Result<ProgramPortfolioFinancialRollupDto>.Failure(Error.NotFound("Program not found."));
-
-        var allProjects = await db.Set<Project>().IgnoreQueryFilters().AsNoTracking()
-            .Where(item => item.TenantId == context.TenantId && item.ProgramId == programId && !item.IsDeleted)
-            .Select(item => new ProjectRow(item.Id, item.PublicId, item.Name, item.ProgramId, item.PortfolioId, item.Currency, item.Status))
-            .ToListAsync(cancellationToken);
-        allProjects = allProjects.Select(item => item with { ProgramName = program.Name }).ToList();
-        var visibleProjects = context.CanReadAllTenantPortfolioProgramData
-            ? allProjects
-            : allProjects.Where(item => context.Scope.ProjectIds.Contains(item.Id)).ToList();
-        return await BuildAsync("Program", programId, context.TenantId, visibleProjects,
-            allProjects.Count != visibleProjects.Count, fiscalYear, page, pageSize, null, cancellationToken);
+        var result = await ResolveProjectScopeAsync("Program", programId, cancellationToken);
+        if (result.IsFailure) return Result<ProgramPortfolioFinancialRollupDto>.Failure(result.Error!);
+        var scope = result.Value!;
+        return await BuildAsync("Program", programId, scope.TenantId, scope.Projects,
+            scope.PartialCoverage, fiscalYear, page, pageSize, null, cancellationToken);
     }
 
     public async Task<Result<ProgramPortfolioFinancialRollupDto>> GetPortfolioAsync(
         Guid portfolioId, int? fiscalYear, int page, int pageSize, CancellationToken cancellationToken)
     {
+        var result = await ResolveProjectScopeAsync("Portfolio", portfolioId, cancellationToken);
+        if (result.IsFailure) return Result<ProgramPortfolioFinancialRollupDto>.Failure(result.Error!);
+        var scope = result.Value!;
+        return await BuildAsync("Portfolio", portfolioId, scope.TenantId, scope.Projects,
+            scope.PartialCoverage, fiscalYear, page, pageSize, scope.PortfolioPrograms, cancellationToken);
+    }
+
+    public Task<Result<ProgramPortfolioCashFlowProjectScopeDto>> GetProgramCashFlowProjectScopeAsync(
+        Guid programId, CancellationToken cancellationToken) =>
+        GetCashFlowProjectScopeAsync("Program", programId, cancellationToken);
+
+    public Task<Result<ProgramPortfolioCashFlowProjectScopeDto>> GetPortfolioCashFlowProjectScopeAsync(
+        Guid portfolioId, CancellationToken cancellationToken) =>
+        GetCashFlowProjectScopeAsync("Portfolio", portfolioId, cancellationToken);
+
+    private async Task<Result<ProgramPortfolioCashFlowProjectScopeDto>> GetCashFlowProjectScopeAsync(
+        string entityType, Guid entityId, CancellationToken cancellationToken)
+    {
+        var result = await ResolveProjectScopeAsync(entityType, entityId, cancellationToken);
+        if (result.IsFailure) return Result<ProgramPortfolioCashFlowProjectScopeDto>.Failure(result.Error!);
+        var scope = result.Value!;
+        return Result<ProgramPortfolioCashFlowProjectScopeDto>.Success(new ProgramPortfolioCashFlowProjectScopeDto(
+            scope.TenantId,
+            scope.PartialCoverage,
+            scope.Projects.Select(project => new ProgramPortfolioCashFlowProjectMembershipDto(
+                project.Id,
+                project.PublicId,
+                project.Name,
+                project.Currency,
+                project.ProgramId,
+                project.ProgramName,
+                project.ProgramId is null)).ToArray()));
+    }
+
+    private async Task<Result<ResolvedProjectScope>> ResolveProjectScopeAsync(
+        string entityType, Guid entityId, CancellationToken cancellationToken)
+    {
         var context = management.Current;
-        var access = await ValidateReadAsync(context, PortfolioView, ProgramPortfolioFinancialRollupAuthorization.PortfolioRollupViewPermission, cancellationToken);
-        if (access is not null) return Result<ProgramPortfolioFinancialRollupDto>.Failure(access);
-        if (context is null || (!context.CanReadAllTenantPortfolioProgramData && !context.Scope.PortfolioIds.Contains(portfolioId)))
-            return Result<ProgramPortfolioFinancialRollupDto>.Failure(Error.NotFound("Portfolio not found."));
+        var isProgram = string.Equals(entityType, "Program", StringComparison.Ordinal);
+        if (!isProgram && !string.Equals(entityType, "Portfolio", StringComparison.Ordinal))
+            return Result<ResolvedProjectScope>.Failure(Error.Validation("The hierarchy entity type is invalid."));
+
+        var parentPermission = isProgram ? ProgramView : PortfolioView;
+        var rollupPermission = isProgram
+            ? ProgramPortfolioFinancialRollupAuthorization.ProgramRollupViewPermission
+            : ProgramPortfolioFinancialRollupAuthorization.PortfolioRollupViewPermission;
+        var access = await ValidateReadAsync(context, parentPermission, rollupPermission, cancellationToken);
+        if (access is not null) return Result<ResolvedProjectScope>.Failure(access);
+
+        if (context is null
+            || (!context.CanReadAllTenantPortfolioProgramData
+                && (isProgram ? !context.Scope.ProgramIds.Contains(entityId) : !context.Scope.PortfolioIds.Contains(entityId))))
+        {
+            return Result<ResolvedProjectScope>.Failure(Error.NotFound(isProgram ? "Program not found." : "Portfolio not found."));
+        }
+
+        if (isProgram)
+        {
+            var program = await db.Set<ProgramEntity>().IgnoreQueryFilters().AsNoTracking()
+                .FirstOrDefaultAsync(item => item.Id == entityId && item.TenantId == context.TenantId && !item.IsDeleted, cancellationToken);
+            if (program is null) return Result<ResolvedProjectScope>.Failure(Error.NotFound("Program not found."));
+
+            var allProjects = await db.Set<Project>().IgnoreQueryFilters().AsNoTracking()
+                .Where(item => item.TenantId == context.TenantId && item.ProgramId == entityId && !item.IsDeleted)
+                .Select(item => new ProjectRow(item.Id, item.PublicId, item.Name, item.ProgramId, item.PortfolioId, item.Currency, item.Status, item.Budget, item.Code))
+                .ToListAsync(cancellationToken);
+            allProjects = allProjects.Select(item => item with { ProgramName = program.Name }).ToList();
+            var visibleProjects = context.CanReadAllTenantPortfolioProgramData
+                ? allProjects
+                : allProjects.Where(item => context.Scope.ProjectIds.Contains(item.Id)).ToList();
+            return Result<ResolvedProjectScope>.Success(new ResolvedProjectScope(
+                context.TenantId,
+                visibleProjects,
+                allProjects.Count != visibleProjects.Count,
+                null));
+        }
 
         var portfolio = await db.Set<Portfolio>().IgnoreQueryFilters().AsNoTracking()
-            .FirstOrDefaultAsync(item => item.Id == portfolioId && item.TenantId == context.TenantId && !item.IsDeleted, cancellationToken);
-        if (portfolio is null) return Result<ProgramPortfolioFinancialRollupDto>.Failure(Error.NotFound("Portfolio not found."));
+            .FirstOrDefaultAsync(item => item.Id == entityId && item.TenantId == context.TenantId && !item.IsDeleted, cancellationToken);
+        if (portfolio is null) return Result<ResolvedProjectScope>.Failure(Error.NotFound("Portfolio not found."));
 
         var programs = await db.Set<ProgramEntity>().IgnoreQueryFilters().AsNoTracking()
-            .Where(item => item.TenantId == context.TenantId && item.PortfolioId == portfolioId && !item.IsDeleted)
+            .Where(item => item.TenantId == context.TenantId && item.PortfolioId == entityId && !item.IsDeleted)
             .OrderBy(item => item.Name).ThenBy(item => item.Id)
             .Select(item => new { item.Id, item.Name })
             .ToListAsync(cancellationToken);
         var programNames = programs.ToDictionary(item => item.Id, item => item.Name);
-        var allProjects = await db.Set<Project>().IgnoreQueryFilters().AsNoTracking()
+        var allPortfolioProjects = await db.Set<Project>().IgnoreQueryFilters().AsNoTracking()
             .Where(item => item.TenantId == context.TenantId && !item.IsDeleted
-                && ((item.PortfolioId == portfolioId && item.ProgramId == null)
+                && ((item.PortfolioId == entityId && item.ProgramId == null)
                     || (item.ProgramId.HasValue && db.Set<ProgramEntity>().IgnoreQueryFilters().Any(program =>
                         program.Id == item.ProgramId.Value && program.TenantId == context.TenantId
-                        && program.PortfolioId == portfolioId && !program.IsDeleted))))
-            .Select(item => new ProjectRow(item.Id, item.PublicId, item.Name, item.ProgramId, item.PortfolioId, item.Currency, item.Status))
+                        && program.PortfolioId == entityId && !program.IsDeleted))))
+            .Select(item => new ProjectRow(item.Id, item.PublicId, item.Name, item.ProgramId, item.PortfolioId, item.Currency, item.Status, item.Budget, item.Code))
             .ToListAsync(cancellationToken);
-        // Current hierarchy is authoritative for this view. Distinct IDs prevent direct/Program links being summed twice.
-        allProjects = allProjects.GroupBy(item => item.Id).Select(group => group.First())
+        // Current hierarchy is authoritative. Distinct IDs prevent direct and Program paths from duplicating a Project.
+        allPortfolioProjects = allPortfolioProjects.GroupBy(item => item.Id).Select(group => group.First())
             .Select(item => item with { ProgramName = item.ProgramId.HasValue ? programNames.GetValueOrDefault(item.ProgramId.Value) : null }).ToList();
-        var visibleProjects = context.CanReadAllTenantPortfolioProgramData
-            ? allProjects
-            : allProjects.Where(item => context.Scope.ProjectIds.Contains(item.Id)).ToList();
-        return await BuildAsync("Portfolio", portfolioId, context.TenantId, visibleProjects,
-            allProjects.Count != visibleProjects.Count, fiscalYear, page, pageSize,
-            programs.Select(item => new PortfolioProgramRow(item.Id, item.Name)).ToArray(), cancellationToken);
+        var visiblePortfolioProjects = context.CanReadAllTenantPortfolioProgramData
+            ? allPortfolioProjects
+            : allPortfolioProjects.Where(item => context.Scope.ProjectIds.Contains(item.Id)).ToList();
+        return Result<ResolvedProjectScope>.Success(new ResolvedProjectScope(
+            context.TenantId,
+            visiblePortfolioProjects,
+            allPortfolioProjects.Count != visiblePortfolioProjects.Count,
+            programs.Select(item => new PortfolioProgramRow(item.Id, item.Name)).ToArray()));
     }
 
     private async Task<Error?> ValidateReadAsync(
@@ -149,8 +210,9 @@ public sealed class ProgramPortfolioFinancialRollupService(
             return Result<ProgramPortfolioFinancialRollupDto>.Failure(Error.Validation("The requested fiscal year is outside the supported calendar range."));
         }
 
-        var rows = await ReadFinancialRowsAsync(tenantId, projects, fiscalYear, cancellationToken);
-        var projectResults = BuildContributions(tenantId, projects, rows, fiscalYear, period, preview.StartMonth);
+        var rows = await ReadFinancialRowsAsync(tenantId, projects, fiscalYear, period, cancellationToken);
+        var lifetimeByProject = await ComputeLifetimeMetricsAsync(tenantId, projects, cancellationToken);
+        var projectResults = BuildContributions(tenantId, projects, rows, fiscalYear, period, preview.StartMonth, lifetimeByProject);
         var validByCurrency = projectResults.Where(item => item.IsAvailable && item.Currency is not null)
             .GroupBy(item => item.Currency!, StringComparer.OrdinalIgnoreCase)
             .OrderBy(group => group.Key)
@@ -197,14 +259,25 @@ public sealed class ProgramPortfolioFinancialRollupService(
     }
 
     private async Task<FinancialRows> ReadFinancialRowsAsync(
-        Guid tenantId, IReadOnlyList<ProjectRow> projects, int fiscalYear, CancellationToken cancellationToken)
+        Guid tenantId, IReadOnlyList<ProjectRow> projects, int fiscalYear, FiscalYearPeriod period,
+        CancellationToken cancellationToken)
     {
         var ids = projects.Select(item => item.Id).Distinct().ToArray();
         var budgets = new List<ProjectAnnualBudget>();
         var paymentDetails = new List<ProjectPaymentRequestDetail>();
         var transfers = new List<ProjectPaymentRequestFundingTransfer>();
         var settlements = new List<PaymentSettlement>();
+        var obligationSettlements = new List<ObligationSettlementFact>();
         var closings = new List<ProjectAnnualBudgetClosing>();
+        var netAdjustmentsByProject = new Dictionary<Guid, decimal>();
+        foreach (var project in projects)
+        {
+            netAdjustmentsByProject[project.Id] = await ActualPaidSettlementCalculator.SumNetAdjustmentsAsync(
+                db, tenantId, project.Id, NormalizeCurrency(project.Currency),
+                periodFrom: period.StartDate.ToDateTime(TimeOnly.MinValue),
+                periodTo: period.EndDate.ToDateTime(TimeOnly.MinValue),
+                cancellationToken: cancellationToken);
+        }
         foreach (var batch in ids.Chunk(800))
         {
             budgets.AddRange(await db.Set<ProjectAnnualBudget>().IgnoreQueryFilters().AsNoTracking()
@@ -220,6 +293,16 @@ public sealed class ProgramPortfolioFinancialRollupService(
                 .Where(item => item.TenantId == tenantId && batch.Contains(item.ProjectId)
                     && item.ProjectPaymentRequestId.HasValue && !item.IsDeleted)
                 .ToListAsync(cancellationToken));
+            obligationSettlements.AddRange(await db.Set<PaymentObligation>().IgnoreQueryFilters().AsNoTracking()
+                .Where(item => item.TenantId == tenantId && batch.Contains(item.ProjectId) && !item.IsDeleted)
+                .Join(db.Set<PaymentSettlement>().IgnoreQueryFilters().AsNoTracking()
+                        .Where(item => item.TenantId == tenantId
+                            && item.PaymentObligationId.HasValue && !item.IsDeleted),
+                    obligation => new { obligation.TenantId, obligation.ProjectId, Id = (Guid?)obligation.Id },
+                    settlement => new { settlement.TenantId, settlement.ProjectId, Id = settlement.PaymentObligationId },
+                    (obligation, settlement) => new ObligationSettlementFact(
+                        obligation.ProjectId, settlement.Amount, settlement.SettlementDate, obligation.Currency))
+                .ToListAsync(cancellationToken));
             closings.AddRange(await db.Set<ProjectAnnualBudgetClosing>().IgnoreQueryFilters().AsNoTracking()
                 .Where(item => item.TenantId == tenantId && batch.Contains(item.ProjectId) && !item.IsDeleted)
                 .ToListAsync(cancellationToken));
@@ -230,12 +313,13 @@ public sealed class ProgramPortfolioFinancialRollupService(
             approvals.AddRange(await db.Set<ApprovalRequest>().IgnoreQueryFilters().AsNoTracking()
                 .Where(item => item.TenantId == tenantId && batch.Contains(item.Id) && !item.IsDeleted)
                 .ToListAsync(cancellationToken));
-        return new FinancialRows(budgets, paymentDetails, transfers, settlements, closings,
-            approvals.ToDictionary(item => item.Id));
+        return new FinancialRows(budgets, paymentDetails, transfers, settlements, obligationSettlements, closings,
+            netAdjustmentsByProject, approvals.ToDictionary(item => item.Id));
     }
 
     private List<FinancialRollupProjectDto> BuildContributions(
-        Guid tenantId, IReadOnlyList<ProjectRow> projects, FinancialRows rows, int fiscalYear, FiscalYearPeriod period, int fiscalYearStartMonth)
+        Guid tenantId, IReadOnlyList<ProjectRow> projects, FinancialRows rows, int fiscalYear, FiscalYearPeriod period, int fiscalYearStartMonth,
+        IReadOnlyDictionary<Guid, ProjectFinancialReportingDto> lifetimeByProject)
     {
         var result = new List<FinancialRollupProjectDto>(projects.Count);
         var budgetsByProject = rows.Budgets.GroupBy(item => item.ProjectId).ToDictionary(group => group.Key, group => group.ToArray());
@@ -256,6 +340,11 @@ public sealed class ProgramPortfolioFinancialRollupService(
             var originDetails = details.Where(item => item.AnnualBudgetFiscalYear == fiscalYear
                 || (budget is not null && item.ProjectAnnualBudgetId == budget.Id)).ToArray();
             var approvedDetails = details.Where(item => rows.Approvals[item.ApprovalRequestId].Status == PaymentRequestStatuses.Approved).ToArray();
+            var activeAllocationDetails = details.Where(item =>
+            {
+                var status = rows.Approvals[item.ApprovalRequestId].Status;
+                return status is PaymentRequestStatuses.Pending or PaymentRequestStatuses.Approved;
+            }).ToArray();
             var projectTransfers = transfersByProject.GetValueOrDefault(project.Id, Array.Empty<ProjectPaymentRequestFundingTransfer>());
             var projectSettlements = settlementsByProject.GetValueOrDefault(project.Id, Array.Empty<PaymentSettlement>())
                 .Where(item => item.ProjectPaymentRequestId.HasValue).ToArray();
@@ -275,7 +364,7 @@ public sealed class ProgramPortfolioFinancialRollupService(
                 || !string.Equals(NormalizeCurrency(budget.Currency), currency, StringComparison.Ordinal)
                 || budget.FiscalYearStartDate != period.StartDate || budget.FiscalYearEndDate != period.EndDate)) gap = true;
 
-            foreach (var requestDetail in approvedDetails)
+            foreach (var requestDetail in activeAllocationDetails)
             {
                 var request = rows.Approvals[requestDetail.ApprovalRequestId];
                 if (request.Amount is not > 0m || string.IsNullOrWhiteSpace(request.Currency)
@@ -394,8 +483,15 @@ public sealed class ProgramPortfolioFinancialRollupService(
                 .Sum(item => rows.Approvals[item.ApprovalRequestId].Amount ?? 0m);
             var releasedAmount = releases.Where(item => FundingBudgetId(item, applicableTransfers) == budget?.Id)
                 .Sum(item => item.Approval.Amount ?? 0m);
-            var sourceAmount = approvedDetails.Where(item => item.ProjectAnnualBudgetId == budget?.Id)
-                .Sum(item => rows.Approvals[item.ApprovalRequestId].Amount ?? 0m);
+            // Pending and Approved requests reserve the same Annual Budget allocation.
+            // Returning/rejecting/cancelling a request removes it from this set, while
+            // approval does not add a second reservation.
+            var sourceAmount = AnnualBudgetRequestReservationCalculator.SumForBudget(
+                details.Select(item => new AnnualBudgetRequestReservation(
+                    item.ProjectAnnualBudgetId,
+                    rows.Approvals[item.ApprovalRequestId].Status,
+                    rows.Approvals[item.ApprovalRequestId].Amount)),
+                budget?.Id);
             var transferIn = applicableTransfers.Where(item => item.DestinationAnnualBudgetId == budget?.Id).Sum(item => item.Amount);
             var transferOut = applicableTransfers.Where(item => item.SourceAnnualBudgetId == budget?.Id).Sum(item => item.Amount);
             var rawEffectiveAllocation = sourceAmount + transferIn - transferOut - releasedAmount;
@@ -447,7 +543,16 @@ public sealed class ProgramPortfolioFinancialRollupService(
             var actualSettlements = validSettlements.Where(item => item.SettlementDate.Date >= period.StartDate.ToDateTime(TimeOnly.MinValue)
                 && item.SettlementDate.Date < period.EndDateExclusive.ToDateTime(TimeOnly.MinValue)
                 && item.Amount > 0m && string.Equals(NormalizeCurrency(item.Currency), currency, StringComparison.Ordinal))
-                .Sum(item => item.Amount);
+                .Sum(item => item.Amount)
+                // Obligation-rail settlements carry no currency of their own; the
+                // owning obligation currency is resolved at load time.
+                + rows.ObligationSettlements
+                    .Where(item => item.ProjectId == project.Id
+                        && item.SettlementDate.Date >= period.StartDate.ToDateTime(TimeOnly.MinValue)
+                        && item.SettlementDate.Date < period.EndDateExclusive.ToDateTime(TimeOnly.MinValue)
+                        && item.Amount > 0m
+                        && string.Equals(NormalizeCurrency(item.Currency), currency, StringComparison.Ordinal))
+                    .Sum(item => item.Amount);
             decimal? approvedBudget = budget?.Status == ProjectAnnualBudgetStatuses.Approved ? budget.TotalAnnualBudget : null;
             decimal? newFunding = budget?.Status == ProjectAnnualBudgetStatuses.Approved ? budget.NewApprovedFunding : null;
             decimal? freeCarry = budget?.Status == ProjectAnnualBudgetStatuses.Approved ? budget.ApprovedFreeCarryForward : null;
@@ -477,6 +582,23 @@ public sealed class ProgramPortfolioFinancialRollupService(
                 totalUnspent = closing.TotalUnspentBudget;
             }
 
+            var grossActualPaid = paidThisYear;
+            decimal? netActualPaid = grossActualPaid.HasValue
+                ? grossActualPaid.Value + rows.NetAdjustmentsByProject.GetValueOrDefault(project.Id)
+                : null;
+
+            // Lifetime ceiling metrics are sourced from the authoritative Task 01 foundation
+            // (FinancialReportingCalculator) so the rollup reuses one financial engine rather
+            // than re-implementing lifetime formulas. They are gated by the same reconciliation
+            // flag as the annual-budget figures and never shown when the project data is in doubt.
+            ProjectFinancialReportingDto? lifetime = lifetimeByProject.TryGetValue(project.Id, out var found) ? found : null;
+            decimal? lifetimeCeiling = gap ? null : lifetime?.LifetimeCeiling;
+            decimal? lifetimeReserved = gap ? null : lifetime?.LifetimeReserved;
+            decimal? outstandingCommitments = gap ? null : lifetime?.OutstandingCommitments;
+            decimal? executedRefundsCorrections = gap ? null : lifetime?.ConfirmedRefundsAndCorrections;
+            decimal? availableLifetimeBudget = gap ? null : lifetime?.AvailableLifetimeBudget;
+            decimal? budgetLineUtilization = gap ? null : AggregateBudgetLineUtilization(lifetime?.BudgetLineUtilizations);
+
             var status = string.IsNullOrWhiteSpace(currency) || !IsValidCurrency(NormalizeCurrency(currency)) ? "InvalidProjectCurrency"
                 : yearBudgets.Length > 1 ? "DuplicateAnnualBudget"
                 : budget is null ? "MissingApprovedAnnualBudget"
@@ -488,6 +610,8 @@ public sealed class ProgramPortfolioFinancialRollupService(
                 status, gap ? null : approvedBudget, gap ? null : newFunding, gap ? null : freeCarry, gap ? null : reservedCarry,
                 gap ? null : adjustments, gap ? null : active, gap ? null : available, gap ? null : totalUnspent, gap ? null : releasedOut,
                 gap ? null : requestApprovedAmount, gap ? null : remaining, gap ? null : paidThisYear,
+                gap ? null : grossActualPaid, gap ? null : netActualPaid,
+                lifetimeCeiling, lifetimeReserved, outstandingCommitments, executedRefundsCorrections, availableLifetimeBudget, budgetLineUtilization,
                 originDetails.Length, draft, pending, approvedOrigin.Length, rejected, notSettled, partialSettled, fullSettled,
                 closing?.Status is ProjectAnnualBudgetClosingStatuses.Review or ProjectAnnualBudgetClosingStatuses.PendingApproval or ProjectAnnualBudgetClosingStatuses.Closed
                     ? closing.Status : "Open", gap ? null : freeCarryOut, gap ? null : reservedCarryOut, gap ? null : nonCarried));
@@ -504,6 +628,14 @@ public sealed class ProgramPortfolioFinancialRollupService(
         projects.Sum(item => item.TotalPaymentRequests), projects.Sum(item => item.DraftRequests), projects.Sum(item => item.PendingApprovalRequests),
         projects.Sum(item => item.ApprovedRequests), projects.Sum(item => item.RejectedRequests), projects.Sum(item => item.ApprovedRequestAmount ?? 0m),
         projects.Sum(item => item.RemainingPayableCommitments ?? 0m), projects.Sum(item => item.ActualSettlementsInFiscalYear ?? 0m),
+        projects.Sum(item => item.GrossActualPaid ?? 0m), projects.Sum(item => item.NetActualPaid ?? 0m),
+        projects.Sum(item => item.LifetimeCeiling ?? 0m), projects.Sum(item => item.LifetimeReserved ?? 0m),
+        projects.Sum(item => item.OutstandingCommitments ?? 0m), projects.Sum(item => item.ExecutedRefundsCorrections ?? 0m),
+        projects.Sum(item => item.AvailableLifetimeBudget ?? 0m),
+        // Budget Line utilization is a ratio of aggregate reserved to aggregate authorized
+        // amounts. Summing per-project percentages is misleading, so the currency-level value
+        // is reported as unavailable (null) while each project keeps its own aggregate ratio.
+        null,
         projects.Sum(item => item.NotSettledRequests), projects.Sum(item => item.PartiallySettledRequests), projects.Sum(item => item.FullySettledRequests),
         projects.Sum(item => item.FreeCarryForward ?? 0m), projects.Sum(item => item.ReservedCarryForward ?? 0m),
         projects.Sum(item => item.NonCarriedBalance ?? 0m));
@@ -528,20 +660,64 @@ public sealed class ProgramPortfolioFinancialRollupService(
             && item.PaymentRequestId == reversal.Detail.ReversesApprovalRequestId)?.DestinationAnnualBudgetId;
     }
 
+    /// <summary>
+    /// Resolves the authoritative lifetime ceiling metrics per project from the Task 01
+    /// <see cref="FinancialReportingCalculator"/>. Lifetime metrics are intentionally not
+    /// fiscal-year scoped (periods are null) so Available Lifetime Budget reflects the full
+    /// project lifetime rather than a single reporting year.
+    /// </summary>
+    private async Task<IReadOnlyDictionary<Guid, ProjectFinancialReportingDto>> ComputeLifetimeMetricsAsync(
+        Guid tenantId, IReadOnlyList<ProjectRow> projects, CancellationToken cancellationToken)
+    {
+        var results = new Dictionary<Guid, ProjectFinancialReportingDto>(projects.Count);
+        foreach (var project in projects)
+        {
+            var data = new RollupProjectFinancialData(
+                project.Id, tenantId, project.Code, project.Name, project.Budget ?? 0m,
+                project.Currency ?? string.Empty, false);
+            results[project.Id] = await FinancialReportingCalculator.CalculateAsync(
+                db, data, reportingPeriodFrom: null, reportingPeriodTo: null, cancellationToken: cancellationToken);
+        }
+        return results;
+    }
+
+    /// <summary>
+    /// Collapses the per-line budget utilization list into a single ratio computed from
+    /// aggregate reserved and authorized amounts. Never an average or sum of percentages.
+    /// </summary>
+    private static decimal? AggregateBudgetLineUtilization(IReadOnlyList<BudgetLineUtilizationDto>? lines)
+    {
+        if (lines is null) return null;
+        var measured = lines.Where(line => line.AuthorizedLimit > 0m).ToArray();
+        if (measured.Length == 0) return null;
+        var authorized = measured.Sum(line => line.AuthorizedLimit);
+        var reserved = measured.Sum(line => line.ReservedAmount);
+        return authorized > 0m ? reserved / authorized * 100m : null;
+    }
+
     private static string NormalizeCurrency(string? currency) => currency?.Trim().ToUpperInvariant() ?? string.Empty;
     private static bool IsValidCurrency(string? currency) => !string.IsNullOrWhiteSpace(currency) && currency.Length == 3 && currency.All(character => character is >= 'A' and <= 'Z');
 
-    private sealed record ProjectRow(Guid Id, Guid PublicId, string Name, Guid? ProgramId, Guid? PortfolioId, string Currency, string Status)
+    private sealed record ProjectRow(Guid Id, Guid PublicId, string Name, Guid? ProgramId, Guid? PortfolioId, string Currency, string Status, decimal? Budget, string Code)
     {
         public string? ProgramName { get; init; }
     }
+    private sealed record ResolvedProjectScope(
+        Guid TenantId,
+        IReadOnlyList<ProjectRow> Projects,
+        bool PartialCoverage,
+        IReadOnlyList<PortfolioProgramRow>? PortfolioPrograms);
     private sealed record PortfolioProgramRow(Guid Id, string Name);
     private sealed record ReversalRow(ProjectPaymentRequestDetail Detail, ApprovalRequest Approval);
+    private sealed record ObligationSettlementFact(Guid ProjectId, decimal Amount, DateTime SettlementDate, string? Currency);
+    private sealed record RollupProjectFinancialData(Guid Id, Guid TenantId, string Code, string Name, decimal Budget, string Currency, bool IsDeleted) : IProjectFinancialData;
     private sealed record FinancialRows(
         IReadOnlyList<ProjectAnnualBudget> Budgets,
         IReadOnlyList<ProjectPaymentRequestDetail> PaymentDetails,
         IReadOnlyList<ProjectPaymentRequestFundingTransfer> Transfers,
         IReadOnlyList<PaymentSettlement> Settlements,
+        IReadOnlyList<ObligationSettlementFact> ObligationSettlements,
         IReadOnlyList<ProjectAnnualBudgetClosing> Closings,
+        IReadOnlyDictionary<Guid, decimal> NetAdjustmentsByProject,
         IReadOnlyDictionary<Guid, ApprovalRequest> Approvals);
 }

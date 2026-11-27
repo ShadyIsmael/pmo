@@ -1,0 +1,614 @@
+{
+  "created_at": "2026-11-27T00:10:54Z",
+  "critical_path_coverage": null,
+  "dependency_awareness_only": [
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "User",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Domain/User.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Integrations.Domain",
+      "module": "integrations",
+      "path": "apps/api/src/NEXUS.Modules.Integrations/Application/DirectoryIdentityMatcher.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Integrations.Domain",
+      "module": "integrations",
+      "path": "apps/api/src/NEXUS.Modules.Integrations/Application/DirectoryIntegrationService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Integrations.Application",
+      "module": "integrations",
+      "path": "apps/api/src/NEXUS.Modules.Integrations/Application/DirectoryPermissions.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Integrations.Domain",
+      "module": "integrations",
+      "path": "apps/api/src/NEXUS.Modules.Integrations/Application/DirectoryPreviewService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "DirectoryProviderTestResult",
+      "module": "integrations",
+      "path": "apps/api/src/NEXUS.Modules.Integrations/Application/DirectoryProviderContracts.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Integrations.Domain",
+      "module": "integrations",
+      "path": "apps/api/src/NEXUS.Modules.Integrations/Application/DirectoryProviderContracts.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Integrations.Domain",
+      "module": "integrations",
+      "path": "apps/api/src/NEXUS.Modules.Integrations/Application/DirectorySynchronizationService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Integrations.Application",
+      "module": "integrations",
+      "path": "apps/api/src/NEXUS.Modules.Integrations/Application/ISyncProvider.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Integrations.Infrastructure",
+      "module": "integrations",
+      "path": "apps/api/src/NEXUS.Modules.Integrations/Infrastructure/DirectoryLdapOptions.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "DirectoryProviderException",
+      "module": "integrations",
+      "path": "apps/api/src/NEXUS.Modules.Integrations/Infrastructure/DirectoryProviderException.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Integrations.Infrastructure",
+      "module": "integrations",
+      "path": "apps/api/src/NEXUS.Modules.Integrations/Infrastructure/DirectoryProviderException.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Integrations.Application",
+      "module": "integrations",
+      "path": "apps/api/src/NEXUS.Modules.Integrations/Infrastructure/EntraDirectoryProvider.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Integrations.Infrastructure",
+      "module": "integrations",
+      "path": "apps/api/src/NEXUS.Modules.Integrations/Infrastructure/LdapDirectoryProvider.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Message",
+      "module": "projects",
+      "path": "apps/web-react/src/features/projects/components/PlanningImportSheet.tsx",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "User",
+      "module": "identity",
+      "path": "packages/shared-types/src/types/identity.ts",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Status",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/Entities/ProjectBaselineVersion.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Scope",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/PreAuthenticationTenantExecutionContext.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Scope",
+      "module": "shared",
+      "path": "apps/api/src/NEXUS.SharedKernel/TrustedTenantExecutionContext.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "DirectoryConnectionDto",
+      "module": "administration",
+      "path": "apps/web-react/src/features/administration/DirectoryIntegrationPage.tsx",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.Integrations.ModuleRegistration",
+      "module": "api",
+      "path": "apps/api/src/NEXUS.Api/Program.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "IDirectoryIntegrationService",
+      "module": "integrations",
+      "path": "apps/api/src/NEXUS.Modules.Integrations/Application/DirectoryIntegrationService.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "source-class-declaration",
+      "evidence": "DirectoryIntegrationService declares IDirectoryIntegrationService",
+      "module": "integrations",
+      "path": "apps/api/src/NEXUS.Modules.Integrations/Application/DirectoryIntegrationService.cs",
+      "relation": "IMPLEMENTS_INTERFACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "DirectoryFieldMappingDto",
+      "module": "integrations",
+      "path": "apps/api/src/NEXUS.Modules.Integrations/Application/DirectoryPreviewService.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "DirectoryFieldMappingDto",
+      "module": "integrations",
+      "path": "apps/api/src/NEXUS.Modules.Integrations/Application/DirectorySynchronizationService.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "IntegrationSync",
+      "module": "integrations",
+      "path": "apps/api/src/NEXUS.Modules.Integrations/Domain/SyncConflict.cs",
+      "relation": "REFERENCES_TYPE"
+    }
+  ],
+  "index_updated": false,
+  "limits": [
+    "Router never prevents an agent from manually opening other files; enforce via agent instructions and audit.",
+    "C# and TS relationships are source-text heuristics; compiler-resolved calls and runtime dependency-injection resolution are not proven.",
+    "Unknown/unclassified files may require manual targeted inspection.",
+    "Index sources excluded secrets and build outputs."
+  ],
+  "module_selection_basis": "task-explicit-alias",
+  "nonprimary_modules_not_read_by_router": [
+    "administration",
+    "ai-planning",
+    "api",
+    "approvals",
+    "audit",
+    "cost-management",
+    "documents",
+    "governance",
+    "home",
+    "identity",
+    "issues",
+    "management",
+    "meetings",
+    "notifications",
+    "operations",
+    "organization",
+    "permissions",
+    "persistence",
+    "plugins",
+    "portfolios",
+    "programs",
+    "project-planning",
+    "projects",
+    "reports",
+    "resources",
+    "risks",
+    "security",
+    "stakeholder",
+    "tests",
+    "time",
+    "unclassified",
+    "vendors",
+    "work-items",
+    "workflow"
+  ],
+  "planning_state": "focused",
+  "primary_module": "integrations",
+  "refresh": {
+    "changed_existing": 0,
+    "deleted": 0,
+    "mode": "refresh",
+    "new": 0,
+    "parsed": 0,
+    "unchanged": 1927
+  },
+  "related_tests_candidates": [
+    "apps/api/tests/NEXUS.Api.Tests/Security/IntegrationConnectionDtoTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Security/IntegrationModuleSecurityRegistrationTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Security/IntegrationTenantIsolationTests.cs",
+    "apps/web-react/src/test/directory-integration-access.test.tsx"
+  ],
+  "selected_files": [
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          162
+        ]
+      ],
+      "module": "integrations",
+      "path": "apps/api/src/NEXUS.Modules.Integrations/Api/DirectoryIntegrationController.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 2934,
+      "reasons": [
+        "filename-match:controller",
+        "filename-match:integration",
+        "primary-module",
+        "symbol-match:DirectoryIntegrationController"
+      ],
+      "score": 73,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          40
+        ]
+      ],
+      "module": "integrations",
+      "path": "apps/api/src/NEXUS.Modules.Integrations/Api/IntegrationController.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 420,
+      "reasons": [
+        "filename-match:controller",
+        "filename-match:integration",
+        "primary-module",
+        "symbol-match:IntegrationController"
+      ],
+      "score": 73,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          7
+        ]
+      ],
+      "module": "integrations",
+      "path": "apps/api/src/NEXUS.Modules.Integrations/Application/DirectoryIntegrationException.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 77,
+      "reasons": [
+        "filename-match:integration",
+        "primary-module",
+        "symbol-match:DirectoryIntegrationException"
+      ],
+      "score": 61,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          25
+        ]
+      ],
+      "module": "integrations",
+      "path": "apps/api/src/NEXUS.Modules.Integrations/Application/IDirectoryIntegrationService.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 1007,
+      "reasons": [
+        "filename-match:integration",
+        "primary-module",
+        "symbol-match:IDirectoryIntegrationService"
+      ],
+      "score": 61,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          9
+        ]
+      ],
+      "module": "integrations",
+      "path": "apps/api/src/NEXUS.Modules.Integrations/Application/IIntegrationService.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 116,
+      "reasons": [
+        "filename-match:integration",
+        "primary-module",
+        "symbol-match:IIntegrationService"
+      ],
+      "score": 61,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          8,
+          21
+        ],
+        [
+          23,
+          33
+        ]
+      ],
+      "module": "integrations",
+      "path": "apps/api/src/NEXUS.Modules.Integrations/Application/IntegrationConnectionDto.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 304,
+      "reasons": [
+        "filename-match:integration",
+        "primary-module",
+        "symbol-match:IntegrationConnectionDto"
+      ],
+      "score": 61,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          109
+        ]
+      ],
+      "module": "integrations",
+      "path": "apps/api/src/NEXUS.Modules.Integrations/Application/IntegrationService.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 1194,
+      "reasons": [
+        "filename-match:integration",
+        "primary-module",
+        "symbol-match:IntegrationService"
+      ],
+      "score": 61,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          18
+        ]
+      ],
+      "module": "integrations",
+      "path": "apps/api/src/NEXUS.Modules.Integrations/Domain/IntegrationConnection.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 190,
+      "reasons": [
+        "filename-match:integration",
+        "primary-module",
+        "symbol-match:IntegrationConnection"
+      ],
+      "score": 61,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          17
+        ]
+      ],
+      "module": "integrations",
+      "path": "apps/api/src/NEXUS.Modules.Integrations/Domain/IntegrationSync.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 186,
+      "reasons": [
+        "filename-match:integration",
+        "primary-module",
+        "symbol-match:IntegrationSync"
+      ],
+      "score": 61,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          13
+        ]
+      ],
+      "module": "integrations",
+      "path": "apps/api/src/NEXUS.Modules.Integrations/Domain/IntegrationWebhook.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 112,
+      "reasons": [
+        "filename-match:integration",
+        "primary-module",
+        "symbol-match:IntegrationWebhook"
+      ],
+      "score": 61,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          21
+        ]
+      ],
+      "module": "integrations",
+      "path": "apps/api/src/NEXUS.Modules.Integrations/Infrastructure/IntegrationRepository.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 171,
+      "reasons": [
+        "filename-match:integration",
+        "primary-module",
+        "symbol-match:IntegrationRepository"
+      ],
+      "score": 61,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          26
+        ]
+      ],
+      "module": "integrations",
+      "path": "apps/api/src/NEXUS.Modules.Integrations/ModuleRegistration/IntegrationsModuleRegistration.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 415,
+      "reasons": [
+        "filename-match:integration",
+        "primary-module",
+        "symbol-match:IntegrationsModuleRegistration"
+      ],
+      "score": 61,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "source",
+      "line_ranges": [
+        [
+          4,
+          15
+        ]
+      ],
+      "module": "integrations",
+      "path": "packages/api-client/src/integrations.ts",
+      "read_mode": "symbols",
+      "reading_tokens": 137,
+      "reasons": [
+        "filename-match:integration",
+        "primary-module",
+        "symbol-match:createIntegrationsApi"
+      ],
+      "score": 61,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "source",
+      "line_ranges": [
+        [
+          3,
+          14
+        ],
+        [
+          16,
+          26
+        ],
+        [
+          28,
+          36
+        ]
+      ],
+      "module": "integrations",
+      "path": "packages/shared-types/src/types/integration.ts",
+      "read_mode": "symbols",
+      "reading_tokens": 253,
+      "reasons": [
+        "filename-match:integration",
+        "primary-module",
+        "symbol-match:IntegrationConnection"
+      ],
+      "score": 61,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          158
+        ]
+      ],
+      "module": "integrations",
+      "path": "apps/api/src/NEXUS.Modules.Integrations/Application/DirectoryIntegrationDtos.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 1700,
+      "reasons": [
+        "filename-match:integration",
+        "primary-module"
+      ],
+      "score": 57,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          24
+        ]
+      ],
+      "module": "integrations",
+      "path": "apps/api/src/NEXUS.Modules.Integrations/NEXUS.Modules.Integrations.csproj",
+      "read_mode": "full-file",
+      "reading_tokens": 349,
+      "reasons": [
+        "filename-match:integration",
+        "primary-module"
+      ],
+      "score": 57,
+      "token_method": "estimated:chars/3.5"
+    }
+  ],
+  "selection_summary": {
+    "critical_path_coverage_percent": null,
+    "files": 16,
+    "symbols": 104,
+    "tokens": 9565
+  },
+  "snapshot": "20261126T220221-d00a29d",
+  "task": "Why 14 Pre-Initiation regression methods missed actual project creation UAT; identify integration-test architecture that exercises ProjectController create endpoint, persisted service creation, and retrieval endpoint after reload",
+  "token_plan": {
+    "available_source_budget": 9600,
+    "estimation_order": "Critical-path coverage is evaluated before reading-cost calculation and optional file ranking.",
+    "requested_total_budget": 16000,
+    "reserved_non_source_budget": 6400,
+    "source_reading_tokens": 9565,
+    "warning": "An estimate of selected source reading, NOT full task execution or model hidden reasoning. Some counts may be approximate."
+  }
+}

@@ -29,16 +29,59 @@ public sealed class PermissionCatalogArchitectureTests
     }
 
     [Fact]
+    public void Template_deletion_permissions_are_grantable_governance_document_center_permissions_outside_the_protected_admin_baseline()
+    {
+        var keys = new[]
+        {
+            "Document.TemplateDeletion.Request",
+            "Document.TemplateDeletion.View",
+            "Document.TemplateDeletion.Approve",
+            "Document.TemplateDeletion.Reject",
+        };
+        var permissions = keys.Select(key => PermissionCatalog.ByKey[key]).ToArray();
+
+        Assert.All(permissions, permission =>
+        {
+            Assert.Equal("governance", permission.ModuleId);
+            Assert.Equal("Governance", permission.ModuleNameEn);
+            Assert.Equal("الحوكمة", permission.ModuleNameAr);
+            Assert.Equal("document-center", permission.ScreenId);
+            Assert.Equal("Document Center", permission.ScreenNameEn);
+            Assert.Equal("مركز المستندات", permission.ScreenNameAr);
+            Assert.Equal(PermissionScope.Tenant, permission.Scope);
+            Assert.True(permission.IsAssignable);
+            Assert.True(permission.IsSensitive);
+            Assert.Equal("High", permission.Sensitivity);
+            Assert.False(permission.IsTenantAdminBaseline);
+            Assert.Equal(RoleCategories.Selectable, permission.AllowedCategories);
+            Assert.DoesNotContain(permission.Key, ProtectedTenantAdminPolicy.MandatoryPermissionKeys);
+        });
+
+        Assert.Equal(PermissionLevel.Action, PermissionCatalog.ByKey[keys[0]].Level);
+        Assert.Equal(PermissionLevel.View, PermissionCatalog.ByKey[keys[1]].Level);
+        Assert.Equal(PermissionLevel.Action, PermissionCatalog.ByKey[keys[2]].Level);
+        Assert.Equal(PermissionLevel.Action, PermissionCatalog.ByKey[keys[3]].Level);
+        Assert.True(PermissionCatalog.ByKey[keys[0]].RequiredPermissionKeys.ToHashSet(StringComparer.Ordinal)
+            .SetEquals([keys[1], "Document.View", "Document.TemplateManage"]));
+        Assert.True(PermissionCatalog.ByKey[keys[1]].RequiredPermissionKeys.ToHashSet(StringComparer.Ordinal)
+            .SetEquals(["Document.View"]));
+        Assert.True(PermissionCatalog.ByKey[keys[2]].RequiredPermissionKeys.ToHashSet(StringComparer.Ordinal)
+            .SetEquals([keys[1], "Document.View"]));
+        Assert.True(PermissionCatalog.ByKey[keys[3]].RequiredPermissionKeys.ToHashSet(StringComparer.Ordinal)
+            .SetEquals([keys[1], "Document.View"]));
+    }
+
+    [Fact]
     public void Catalog_matches_the_active_source_inventory()
     {
         var entries = PermissionCatalog.Entries;
         var activeEntries = entries.Where(item => item.IsActive).ToArray();
 
-        Assert.Equal(172, entries.Count);
-        Assert.Equal(172, entries.Select(item => item.Key).Distinct(StringComparer.Ordinal).Count());
-        Assert.Equal(172, activeEntries.Length);
-        Assert.Equal(46, activeEntries.Count(item => item.Level == PermissionLevel.View));
-        Assert.Equal(126, activeEntries.Count(item => item.Level == PermissionLevel.Action));
+        Assert.Equal(176, entries.Count);
+        Assert.Equal(176, entries.Select(item => item.Key).Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(176, activeEntries.Length);
+        Assert.Equal(47, activeEntries.Count(item => item.Level == PermissionLevel.View));
+        Assert.Equal(129, activeEntries.Count(item => item.Level == PermissionLevel.Action));
         Assert.Empty(entries.Where(item => !item.IsActive));
         Assert.DoesNotContain("Resource.Allocate", PermissionCatalog.ByKey.Keys);
         Assert.DoesNotContain("Resource.ManageRates", PermissionCatalog.ByKey.Keys);
@@ -345,7 +388,10 @@ public sealed class PermissionCatalogArchitectureTests
         var foundation = PermissionCatalog.ByKey["ProjectFinancialFoundation.View"];
         Assert.Equal(PermissionScope.Project, foundation.Scope);
         Assert.Equal(PermissionLevel.View, foundation.Level);
-        Assert.Equal("financial-management", foundation.ModuleId);
+        Assert.Equal("project-financial-management", foundation.ModuleId);
+        Assert.Equal("Project Financial Management", foundation.ModuleNameEn);
+        Assert.Equal("الإدارة المالية للمشاريع", foundation.ModuleNameAr);
+        Assert.Equal("Project Financial Overview", foundation.ScreenNameEn);
         Assert.Equal("financial-overview", foundation.ScreenId);
         Assert.True(foundation.IsAssignable);
         Assert.True(foundation.IsSensitive);
@@ -364,6 +410,24 @@ public sealed class PermissionCatalogArchitectureTests
 
         Assert.DoesNotContain(foundation.Key, ProtectedTenantAdminPolicy.MandatoryPermissionKeys);
         Assert.DoesNotContain(export.Key, ProtectedTenantAdminPolicy.MandatoryPermissionKeys);
+    }
+
+    [Fact]
+    public void Project_finance_open_is_the_existing_assignable_tenant_catalog_permission()
+    {
+        var openFinance = PermissionCatalog.ByKey["ProjectFinance.View"];
+
+        Assert.Equal("ProjectFinance", openFinance.Resource);
+        Assert.Equal("View", openFinance.Action);
+        Assert.Equal(PermissionScope.Tenant, openFinance.Scope);
+        Assert.Equal("financial-management", openFinance.ModuleId);
+        Assert.Equal("Financial Management", openFinance.ModuleNameEn);
+        Assert.Equal("project-finance", openFinance.ScreenId);
+        Assert.Equal("Project Finance", openFinance.ScreenNameEn);
+        Assert.Equal("Open Finance", openFinance.LabelEn);
+        Assert.True(openFinance.IsActive);
+        Assert.True(openFinance.IsAssignable);
+        Assert.False(openFinance.IsTenantAdminBaseline);
     }
 
     [Fact]

@@ -30,7 +30,7 @@ public sealed class PaymentDueNotificationService(
             if (outstanding <= 0m || obligation.DueDate.Date > notificationDate) continue;
             if (!Guid.TryParse(obligation.CreatedBy, out var recipientId)) continue;
             var permissions = await effectivePermissions.GetEffectivePermissionsAsync(recipientId, obligation.TenantId, cancellationToken);
-            if (!permissions.Contains("finances.read") && !permissions.Contains("finances.write")) continue;
+            if (!permissions.Contains("PaymentObligation.View")) continue;
 
             var notificationType = obligation.DueDate.Date < notificationDate
                 ? NotificationTypes.PaymentOverdue

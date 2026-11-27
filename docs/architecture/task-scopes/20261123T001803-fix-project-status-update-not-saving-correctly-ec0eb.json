@@ -1,0 +1,689 @@
+{
+  "created_at": "2026-11-23T00:18:03Z",
+  "critical_path_coverage": {
+    "active": true,
+    "complete": true,
+    "coverage_percent": 100,
+    "covered_steps": 8,
+    "flow_id": "project_status_update",
+    "gate": {
+      "blocks_completion": false,
+      "passed": true,
+      "reason": "All critical steps and required source relationships are indexed."
+    },
+    "missing_relationships": [],
+    "missing_steps": [],
+    "module": "projects",
+    "relationships": [
+      {
+        "confidence": [
+          "source-import-and-call"
+        ],
+        "evidence": [
+          "useUpdateProject"
+        ],
+        "from_step": "frontend-save-handler",
+        "id": "handler-to-client",
+        "relation": "CALLS_IMPORTED_SYMBOL",
+        "required": true,
+        "status": "covered",
+        "to_step": "api-client",
+        "uncertain": false,
+        "uncertainty": null
+      },
+      {
+        "confidence": [
+          "source-method-and-route-match"
+        ],
+        "evidence": [
+          "PUT /api/projects/{var} -> Update"
+        ],
+        "from_step": "api-client",
+        "id": "client-to-endpoint",
+        "relation": "CALLS_API_ENDPOINT",
+        "required": true,
+        "status": "covered",
+        "to_step": "backend-endpoint",
+        "uncertain": false,
+        "uncertainty": null
+      },
+      {
+        "confidence": [
+          "source-call-and-member-type"
+        ],
+        "evidence": [
+          "_projectService:IProjectService.UpdateAsync at line 286"
+        ],
+        "from_step": "backend-endpoint",
+        "id": "endpoint-to-contract",
+        "relation": "CALLS_TYPED_METHOD",
+        "required": true,
+        "status": "covered",
+        "to_step": "service-contract",
+        "uncertain": false,
+        "uncertainty": null
+      },
+      {
+        "confidence": [
+          "source-class-declaration"
+        ],
+        "evidence": [
+          "ProjectService declares IProjectService"
+        ],
+        "from_step": "service-implementation",
+        "id": "implementation-to-contract",
+        "relation": "IMPLEMENTS_INTERFACE",
+        "required": true,
+        "status": "covered",
+        "to_step": "service-contract",
+        "uncertain": true,
+        "uncertainty": "The class declares the interface implementation; runtime dependency-injection resolution is not verified by this module-scoped route."
+      },
+      {
+        "confidence": [
+          "same-method-source-call"
+        ],
+        "evidence": [
+          "UpdateAsync calls SaveChangesAsync at line 537"
+        ],
+        "from_step": "service-implementation",
+        "id": "service-to-persistence",
+        "relation": "PERSISTS_CHANGES",
+        "required": true,
+        "status": "covered",
+        "to_step": "persistence",
+        "uncertain": false,
+        "uncertainty": null
+      }
+    ],
+    "required_steps": 8,
+    "selected_critical_file_count": 7,
+    "selected_critical_files": [
+      "apps/api/src/NEXUS.Modules.ProjectManagement/Application/IProjectService.cs",
+      "apps/api/src/NEXUS.Modules.ProjectManagement/Application/ProjectService.cs",
+      "apps/web-react/src/features/projects/api/projects.ts",
+      "apps/web-react/src/test/project-change-status.test.tsx",
+      "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectStatusChangeCatalogTests.cs",
+      "apps/web-react/src/features/projects/components/CreateProjectSheet.tsx",
+      "apps/api/src/NEXUS.Modules.ProjectManagement/Api/ProjectController.cs"
+    ],
+    "selected_reading_tokens": 5012,
+    "selected_symbol_count": 18,
+    "steps": [
+      {
+        "candidate_files": [
+          "apps/web-react/src/features/projects/components/CreateProjectSheet.tsx"
+        ],
+        "id": "frontend-save-handler",
+        "matched_files": [
+          "apps/web-react/src/features/projects/components/CreateProjectSheet.tsx"
+        ],
+        "missing_evidence": [],
+        "required": true,
+        "status": "covered"
+      },
+      {
+        "candidate_files": [
+          "apps/web-react/src/features/projects/api/projects.ts"
+        ],
+        "id": "api-client",
+        "matched_files": [
+          "apps/web-react/src/features/projects/api/projects.ts"
+        ],
+        "missing_evidence": [],
+        "required": true,
+        "status": "covered"
+      },
+      {
+        "candidate_files": [
+          "apps/api/src/NEXUS.Modules.ProjectManagement/Api/ProjectController.cs"
+        ],
+        "id": "backend-endpoint",
+        "matched_files": [
+          "apps/api/src/NEXUS.Modules.ProjectManagement/Api/ProjectController.cs"
+        ],
+        "missing_evidence": [],
+        "required": true,
+        "status": "covered"
+      },
+      {
+        "candidate_files": [
+          "apps/api/src/NEXUS.Modules.ProjectManagement/Application/IProjectService.cs"
+        ],
+        "id": "service-contract",
+        "matched_files": [
+          "apps/api/src/NEXUS.Modules.ProjectManagement/Application/IProjectService.cs"
+        ],
+        "missing_evidence": [],
+        "required": true,
+        "status": "covered"
+      },
+      {
+        "candidate_files": [
+          "apps/api/src/NEXUS.Modules.ProjectManagement/Application/ProjectService.cs"
+        ],
+        "id": "service-implementation",
+        "matched_files": [
+          "apps/api/src/NEXUS.Modules.ProjectManagement/Application/ProjectService.cs"
+        ],
+        "missing_evidence": [],
+        "required": true,
+        "status": "covered"
+      },
+      {
+        "candidate_files": [
+          "apps/api/src/NEXUS.Modules.ProjectManagement/Application/ProjectService.cs"
+        ],
+        "id": "persistence",
+        "matched_files": [
+          "apps/api/src/NEXUS.Modules.ProjectManagement/Application/ProjectService.cs"
+        ],
+        "missing_evidence": [],
+        "required": true,
+        "status": "covered"
+      },
+      {
+        "candidate_files": [
+          "apps/web-react/src/test/project-change-status.test.tsx"
+        ],
+        "id": "focused-frontend-test",
+        "matched_files": [
+          "apps/web-react/src/test/project-change-status.test.tsx"
+        ],
+        "missing_evidence": [],
+        "required": true,
+        "status": "covered"
+      },
+      {
+        "candidate_files": [
+          "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectStatusChangeCatalogTests.cs"
+        ],
+        "id": "focused-backend-test",
+        "matched_files": [
+          "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectStatusChangeCatalogTests.cs"
+        ],
+        "missing_evidence": [],
+        "required": true,
+        "status": "covered"
+      }
+    ],
+    "title": "Project Status update/save",
+    "unconfirmed_relationships": [
+      "implementation-to-contract"
+    ]
+  },
+  "dependency_awareness_only": [
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "api/projects",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/PlannedPaymentController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "api/projects",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectAnnualBudgetClosingController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "api/projects",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectAnnualBudgetController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "api/projects",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectAnnualBudgetDraftApprovalConfigurationController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "api/projects",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectAnnualBudgetLineController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "api/projects",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectFinancialFoundationController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "api/projects",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Api/Finance/ProjectPaymentRequestController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "api/projects",
+      "module": "audit",
+      "path": "apps/api/src/NEXUS.Modules.Audit/Api/ProjectAuditController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "api/projects",
+      "module": "audit",
+      "path": "apps/api/src/NEXUS.Modules.Audit/Api/ProjectFinancialActivityController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "IAuthorizationService",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Application/IAuthorizationService.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "User",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Modules.Identity/Domain/User.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Team",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Domain/Team.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-route-prefix",
+      "evidence": "api/projects",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Api/PaymentObligationProjectLookupController.cs",
+      "relation": "CALLS_API_ROUTE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Application",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/ActualWorkCostLookup.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Application",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/BaselineService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Application",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/CostUtilizationActivityLookup.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Application.DTOs",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/DTOs/PaymentObligationProjectLookupDto.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Application.DTOs",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/DTOs/ProjectBaselineVersionDto.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Application.DTOs",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/DTOs/ProjectChangeRequestDtos.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "CreateProjectDto",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/DTOs/ProjectDto.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Application.DTOs",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/DTOs/ProjectDto.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "CreateProjectHandoverRequestDto",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/DTOs/ProjectHandoverRequestDtos.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Application.DTOs",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/DTOs/ProjectHandoverRequestDtos.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Application.DTOs",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/DTOs/ProjectOverviewDtos.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Application.DTOs",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/DTOs/ProjectPeopleDtos.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Application.DTOs",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/DTOs/ProjectPhaseGateDtos.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "SaveProjectReportingConfigurationDto",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/DTOs/ProjectReportingDtos.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Application.DTOs",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/DTOs/ProjectReportingDtos.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Application.DTOs",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/DTOs/ProjectSnapshotDtos.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Application.DTOs",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/DTOs/ProjectStakeholderDtos.cs",
+      "relation": "USES_NAMESPACE"
+    }
+  ],
+  "index_updated": false,
+  "limits": [
+    "Router never prevents an agent from manually opening other files; enforce via agent instructions and audit.",
+    "C# and TS relationships are source-text heuristics; compiler-resolved calls and runtime dependency-injection resolution are not proven.",
+    "Unknown/unclassified files may require manual targeted inspection.",
+    "Index sources excluded secrets and build outputs."
+  ],
+  "module_selection_basis": "task-explicit-alias",
+  "nonprimary_modules_not_read_by_router": [
+    "administration",
+    "ai-planning",
+    "api",
+    "approvals",
+    "audit",
+    "cost-management",
+    "documents",
+    "governance",
+    "home",
+    "identity",
+    "integrations",
+    "issues",
+    "management",
+    "meetings",
+    "notifications",
+    "operations",
+    "organization",
+    "permissions",
+    "persistence",
+    "plugins",
+    "portfolios",
+    "programs",
+    "project-planning",
+    "reports",
+    "resources",
+    "risks",
+    "security",
+    "stakeholder",
+    "tests",
+    "time",
+    "unclassified",
+    "vendors",
+    "work-items",
+    "workflow"
+  ],
+  "planning_state": "focused-with-uncertainty",
+  "primary_module": "projects",
+  "refresh": {
+    "changed_existing": 0,
+    "deleted": 0,
+    "mode": "refresh",
+    "new": 0,
+    "parsed": 0,
+    "unchanged": 1882
+  },
+  "related_tests_candidates": [
+    "apps/web-react/src/test/project-change-status.test.tsx",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectStatusChangeCatalogTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectStatusReportCurrencyQualityTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectStatusReportSnapshotPersistenceTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectStatusReportWorkflowProvisioningTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Unit/ProjectStatusReportComparisonTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Unit/ProjectStatusReportDateValidationTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Unit/ProjectStatusReportWorkflowTests.cs",
+    "apps/web-react/src/test/project-status-reports-parity.test.tsx",
+    "apps/web-react/src/test/project-status-report-export.test.ts",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectPhaseGateHistoryTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectPhaseGateLifecycleTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectReportingPersistenceTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Finance/ProjectAnnualBudgetApprovalNotificationPublisherTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Finance/ProjectAnnualBudgetAssignedInboxTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Finance/ProjectAnnualBudgetCandidateEligibilityTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Finance/ProjectAnnualBudgetDraftApprovalConfigurationTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Finance/ProjectAnnualBudgetLifecycleDeletionTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Finance/ProjectAnnualBudgetWorkflowRecoveryTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Finance/ProjectPaymentRequestApprovalNotificationPublisherTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectBaselineVersionQueryFilterTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectChangeRequestServiceIntegrationTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectEvmCalculatorTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectEvmPersistenceTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectFinancialSummaryPersistenceTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectHandoverLifecyclePersistenceTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectHandoverManagerServiceTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectInitialBaselineTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectLifecycleDocumentCategoryScopeTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectOverviewSignalsTests.cs"
+  ],
+  "selected_files": [
+    {
+      "approximate": true,
+      "kind": "ui",
+      "line_ranges": [
+        [
+          159,
+          175
+        ],
+        [
+          288,
+          314
+        ]
+      ],
+      "module": "projects",
+      "path": "apps/web-react/src/features/projects/components/CreateProjectSheet.tsx",
+      "read_mode": "critical-path",
+      "reading_tokens": 670,
+      "reasons": [
+        "critical-path-step:frontend-save-handler",
+        "module-mentioned",
+        "primary-module"
+      ],
+      "score": 1060,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1514,
+          1527
+        ]
+      ],
+      "module": "projects",
+      "path": "apps/web-react/src/features/projects/api/projects.ts",
+      "read_mode": "critical-path",
+      "reading_tokens": 210,
+      "reasons": [
+        "critical-path-step:api-client",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:ProjectStatusReportListDto"
+      ],
+      "score": 1064,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          283,
+          295
+        ]
+      ],
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Api/ProjectController.cs",
+      "read_mode": "critical-path",
+      "reading_tokens": 197,
+      "reasons": [
+        "critical-path-step:backend-endpoint",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:GetStatusReports"
+      ],
+      "score": 1064,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          13,
+          13
+        ]
+      ],
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/IProjectService.cs",
+      "read_mode": "critical-path",
+      "reading_tokens": 39,
+      "reasons": [
+        "critical-path-step:service-contract",
+        "module-mentioned",
+        "primary-module"
+      ],
+      "score": 1060,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          485,
+          557
+        ]
+      ],
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/ProjectService.cs",
+      "read_mode": "critical-path",
+      "reading_tokens": 1279,
+      "reasons": [
+        "critical-path-step:persistence",
+        "critical-path-step:service-implementation",
+        "module-mentioned",
+        "primary-module"
+      ],
+      "score": 1060,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "test",
+      "line_ranges": [
+        [
+          1,
+          196
+        ]
+      ],
+      "module": "projects",
+      "path": "apps/web-react/src/test/project-change-status.test.tsx",
+      "read_mode": "critical-path",
+      "reading_tokens": 2400,
+      "reasons": [
+        "critical-path-step:focused-frontend-test",
+        "filename-match:status",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:statuses"
+      ],
+      "score": 1068,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "test",
+      "line_ranges": [
+        [
+          130,
+          150
+        ]
+      ],
+      "module": "projects",
+      "path": "apps/api/tests/NEXUS.Api.Tests/Integration/ProjectStatusChangeCatalogTests.cs",
+      "read_mode": "critical-path",
+      "reading_tokens": 217,
+      "reasons": [
+        "critical-path-step:focused-backend-test",
+        "filename-match:status",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:ProjectStatusChangeCatalogTests"
+      ],
+      "score": 1068,
+      "token_method": "estimated:chars/3.5"
+    }
+  ],
+  "selection_summary": {
+    "critical_path_coverage_percent": 100,
+    "files": 7,
+    "symbols": 18,
+    "tokens": 5012
+  },
+  "snapshot": "20261123T000905-b97bbe5",
+  "task": "Fix Project Status update not saving correctly",
+  "token_plan": {
+    "available_source_budget": 9600,
+    "estimation_order": "Critical-path coverage is evaluated before reading-cost calculation and optional file ranking.",
+    "requested_total_budget": 16000,
+    "reserved_non_source_budget": 6400,
+    "source_reading_tokens": 5012,
+    "warning": "An estimate of selected source reading, NOT full task execution or model hidden reasoning. Some counts may be approximate."
+  }
+}

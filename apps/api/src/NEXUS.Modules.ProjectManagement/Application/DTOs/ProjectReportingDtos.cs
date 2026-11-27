@@ -162,8 +162,9 @@ public sealed class ProjectFinancialSummaryDto
     public decimal? ApprovedBudget { get; init; }
     public string BudgetStatus { get; init; } = string.Empty;
     public decimal? Expenditure { get; init; }
-    public decimal? CommittedCost { get; init; }
     public decimal? ActualPaid { get; init; }
+    public decimal? GrossActualPaid { get; init; }
+    public decimal? NetActualPaid { get; init; }
     public decimal? OutstandingPlannedPayments { get; init; }
     public decimal? PaymentsDueWithinPeriod { get; init; }
     public decimal? RemainingUnpaidAtPeriodEnd { get; init; }

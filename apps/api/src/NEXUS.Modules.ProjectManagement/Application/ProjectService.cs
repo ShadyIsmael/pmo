@@ -32,8 +32,22 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
     private readonly IProjectPlanProgressLookup? _planProgressLookup;
     private readonly IUserEffectivePermissionService? _effectivePermissions;
     private readonly ITenantFiscalYearService? _tenantFiscalYear;
+    private readonly IProjectLifecycleCatalogService? _lifecycleCatalog;
+    private readonly IProjectOrganizationLookup? _projectOrganizationLookup;
+    private readonly IUserOrganizationScopeLookup? _organizationScopeLookup;
 
-    public ProjectService(DbContext context, IAuditService auditService, IHttpContextAccessor httpContextAccessor, ProjectManagerMembershipSynchronizer membershipSynchronizer, IManagementContextAccessor? managementContext = null, IProjectPlanProgressLookup? planProgressLookup = null, IUserEffectivePermissionService? effectivePermissions = null, ITenantFiscalYearService? tenantFiscalYear = null)
+    public ProjectService(
+        DbContext context,
+        IAuditService auditService,
+        IHttpContextAccessor httpContextAccessor,
+        ProjectManagerMembershipSynchronizer membershipSynchronizer,
+        IManagementContextAccessor? managementContext = null,
+        IProjectPlanProgressLookup? planProgressLookup = null,
+        IUserEffectivePermissionService? effectivePermissions = null,
+        ITenantFiscalYearService? tenantFiscalYear = null,
+        IProjectLifecycleCatalogService? lifecycleCatalog = null,
+        IProjectOrganizationLookup? projectOrganizationLookup = null,
+        IUserOrganizationScopeLookup? organizationScopeLookup = null)
     {
         _context = context;
         _auditService = auditService;
@@ -44,13 +58,16 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
         _planProgressLookup = planProgressLookup;
         _effectivePermissions = effectivePermissions;
         _tenantFiscalYear = tenantFiscalYear;
+        _lifecycleCatalog = lifecycleCatalog;
+        _projectOrganizationLookup = projectOrganizationLookup;
+        _organizationScopeLookup = organizationScopeLookup;
     }
 
     public async Task<ProjectReference?> FindAsync(Guid projectId, CancellationToken cancellationToken = default)
     {
         return await InScope(_context.Set<Project>())
             .Where(project => project.Id == projectId)
-            .Select(project => new ProjectReference(project.Id, project.Name, project.Currency, project.Budget, project.PublicId, project.Code))
+            .Select(project => new ProjectReference(project.Id, project.Name, project.Currency, project.Budget, project.PublicId, project.Code, project.TenantId))
             .FirstOrDefaultAsync(cancellationToken);
     }
 
@@ -67,7 +84,7 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
 
     public async Task<IReadOnlyList<ProjectReference>> GetFinancialReferencesAsync(CancellationToken cancellationToken = default)
         => await InScope(_context.Set<Project>().AsNoTracking())
-            .Select(p => new ProjectReference(p.Id, p.Name, p.Currency, p.Budget, p.PublicId, p.Code)).ToListAsync(cancellationToken);
+            .Select(p => new ProjectReference(p.Id, p.Name, p.Currency, p.Budget, p.PublicId, p.Code, p.TenantId)).ToListAsync(cancellationToken);
 
     public async Task<IReadOnlyDictionary<Guid, ProjectReference>> GetReferencesAsync(IEnumerable<Guid> projectIds, CancellationToken cancellationToken = default)
     {
@@ -75,7 +92,7 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
         if (ids.Length == 0) return new Dictionary<Guid, ProjectReference>();
         return await InScope(_context.Set<Project>().AsNoTracking())
             .Where(project => ids.Contains(project.Id))
-            .Select(project => new ProjectReference(project.Id, project.Name, project.Currency, project.Budget, project.PublicId, project.Code))
+            .Select(project => new ProjectReference(project.Id, project.Name, project.Currency, project.Budget, project.PublicId, project.Code, project.TenantId))
             .ToDictionaryAsync(project => project.Id, cancellationToken);
     }
 
@@ -133,6 +150,8 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
                 Name = p.Name,
                 Code = p.Code,
                 Status = p.Status,
+                Phase = p.Phase,
+                PhaseId = p.ProjectPhaseId,
                 Health = p.Health,
                 RagStatus = p.RagStatus,
                 Progress = p.Progress,
@@ -155,6 +174,9 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
                 WorkingCalendarId = p.WorkingCalendarId
             })
             .ToListAsync(cancellationToken);
+
+        foreach (var summary in summaries)
+            await ResolvePhaseNamesAsync(summary, cancellationToken);
 
         if (_planProgressLookup is not null && summaries.Count > 0)
         {
@@ -208,6 +230,30 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
         project.Code = finalCode;
         project.TenantId = tenantId;
         project.ProjectManagerId = initialProjectManagerId;
+
+        if (_lifecycleCatalog is null || _projectOrganizationLookup is null
+            || !Guid.TryParse(userId, out var phaseActorId) || phaseActorId == Guid.Empty)
+            return Result<ProjectDto>.Failure(Error.Conflict(
+                "Project creation requires the Organization lifecycle provisioning services and an authenticated actor."));
+
+        var owningOrganizationId = await _projectOrganizationLookup.ResolveOrganizationIdAsync(
+            tenantId, project.ProgramId, project.PortfolioId, project.DepartmentId, cancellationToken);
+        if (!owningOrganizationId.HasValue)
+            return Result<ProjectDto>.Failure(Error.Validation(
+                "A Project must resolve to an active owning Organization through its Program, Portfolio, or Department."));
+
+        var phaseProvisioning = await _lifecycleCatalog.EnsurePreInitiationPhaseAsync(
+            tenantId, owningOrganizationId.Value, phaseActorId, cancellationToken);
+        if (phaseProvisioning.IsFailure || phaseProvisioning.Value is null
+            || phaseProvisioning.Value.TenantId != tenantId
+            || phaseProvisioning.Value.OrganizationId != owningOrganizationId.Value
+            || phaseProvisioning.Value.NormalizedCode != "PRE-INITIATION"
+            || !phaseProvisioning.Value.IsActive || !phaseProvisioning.Value.IsDefault
+            || phaseProvisioning.Value.IsDeleted)
+            return Result<ProjectDto>.Failure(phaseProvisioning.Error ?? Error.Conflict(
+                "The owning Organization does not have a valid active default Pre-Initiation phase."));
+        project.ProjectPhaseId = phaseProvisioning.Value.Id;
+        project.Phase = phaseProvisioning.Value.Code;
 
         ProjectAnnualBudget? initialAnnualBudget = null;
         if (dto.InitialAnnualBudgetAmount.HasValue)
@@ -263,10 +309,7 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
             project.WorkingCalendarId = defaultCalendar?.HasValidSchedule == true ? defaultCalendar.Id : null;
         }
 
-        await using var createTransaction = initialAnnualBudget is null
-            ? null
-            : await _context.Database.BeginTransactionAsync(cancellationToken);
-
+        await using var createTransaction = await _context.Database.BeginTransactionAsync(cancellationToken);
         _context.Set<Project>().Add(project);
         await _sponsorMembershipSynchronizer.SynchronizeAsync(project, null, project.SponsorId, userId, cancellationToken);
 
@@ -361,8 +404,7 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
             CreatedBy = userId
         }, cancellationToken);
 
-        if (createTransaction is not null)
-            await createTransaction.CommitAsync(cancellationToken);
+        await createTransaction.CommitAsync(cancellationToken);
 
         var resultDto = project.ToDto();
         await ResolveProjectNamesAsync(resultDto, cancellationToken);
@@ -654,6 +696,48 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
             var department = await _context.Set<Department>().FirstOrDefaultAsync(d => d.Id == dto.DepartmentId.Value, cancellationToken);
             dto.DepartmentName = department?.Name;
         }
+
+        await ResolvePhaseNamesAsync(dto, cancellationToken);
+    }
+
+    private async Task ResolvePhaseNamesAsync(ProjectDto dto, CancellationToken cancellationToken)
+    {
+        if (!dto.PhaseId.HasValue || _projectOrganizationLookup is null) return;
+        var organizationId = await _projectOrganizationLookup.ResolveOrganizationIdAsync(
+            dto.TenantId, dto.Id, cancellationToken);
+        if (!organizationId.HasValue) return;
+
+        var phase = await _context.Set<ProjectPhaseCatalogEntry>().AsNoTracking()
+            .FirstOrDefaultAsync(item => item.Id == dto.PhaseId.Value
+                && item.TenantId == dto.TenantId
+                && item.OrganizationId == organizationId.Value
+                && !item.IsDeleted,
+                cancellationToken);
+        if (phase is null) return;
+
+        dto.Phase ??= phase.Code;
+        dto.PhaseNameEn = phase.NameEn;
+        dto.PhaseNameAr = phase.NameAr;
+    }
+
+    private async Task ResolvePhaseNamesAsync(ProjectSummaryDto summary, CancellationToken cancellationToken)
+    {
+        if (!summary.PhaseId.HasValue || _projectOrganizationLookup is null) return;
+        var organizationId = await _projectOrganizationLookup.ResolveOrganizationIdAsync(
+            GetCurrentTenantId(), summary.Id, cancellationToken);
+        if (!organizationId.HasValue) return;
+
+        var phase = await _context.Set<ProjectPhaseCatalogEntry>().AsNoTracking()
+            .FirstOrDefaultAsync(item => item.Id == summary.PhaseId.Value
+                && item.TenantId == GetCurrentTenantId()
+                && item.OrganizationId == organizationId.Value
+                && !item.IsDeleted,
+                cancellationToken);
+        if (phase is null) return;
+
+        summary.Phase ??= phase.Code;
+        summary.PhaseNameEn = phase.NameEn;
+        summary.PhaseNameAr = phase.NameAr;
     }
 
     private async Task<(Error? Error, Guid? PortfolioId, string? Currency)> ResolveHierarchyAsync(Guid? programId, Guid? portfolioId, string? requestedCurrency, CancellationToken ct, Project? existing = null)
@@ -672,7 +756,7 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
                 .AnyAsync(x => x.Id == program.PortfolioId && x.TenantId == tenant && !x.IsDeleted, ct);
             if (!programPortfolioExists) return (Error.Validation("Program Portfolio must exist in the current tenant"), null, null);
             var hierarchyChanged = existing is null || existing.ProgramId != program.Id || existing.PortfolioId != program.PortfolioId;
-            if (hierarchyChanged && !HasHierarchyAssignmentScope(program.Id, program.PortfolioId))
+            if (hierarchyChanged && !await HasHierarchyAssignmentScopeAsync(program.Id, program.PortfolioId, existing is null, ct))
                 return (Error.NotFound(), null, null);
             resolvedPortfolio = program.PortfolioId;
             var currency = string.IsNullOrWhiteSpace(requestedCurrency) ? (existing?.Currency ?? program.Currency) : requestedCurrency.Trim().ToUpperInvariant();
@@ -684,7 +768,7 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
             var portfolio = await _context.Set<PortfolioEntity>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == portfolioId.Value && !x.IsDeleted, ct);
             if (portfolio is null || portfolio.TenantId != tenant) return (Error.Validation("Portfolio must exist in the current tenant"), null, null);
             var hierarchyChanged = existing is null || existing.ProgramId.HasValue || existing.PortfolioId != portfolio.Id;
-            if (hierarchyChanged && !HasHierarchyAssignmentScope(null, portfolio.Id))
+            if (hierarchyChanged && !await HasHierarchyAssignmentScopeAsync(null, portfolio.Id, existing is null, ct))
                 return (Error.NotFound(), null, null);
             var currency = string.IsNullOrWhiteSpace(requestedCurrency) ? (existing?.Currency ?? portfolio.Currency) : requestedCurrency.Trim().ToUpperInvariant();
             if (!await IsValidCurrencyAsync(currency, ct)) return (Error.Validation("Currency must be an active configured currency"), null, null);
@@ -705,21 +789,50 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
         return (null, existing?.PortfolioId, standaloneCurrency);
     }
 
-    private bool HasHierarchyAssignmentScope(Guid? programId, Guid? portfolioId)
+    private async Task<bool> HasHierarchyAssignmentScopeAsync(
+        Guid? programId,
+        Guid? portfolioId,
+        bool isProjectCreation,
+        CancellationToken cancellationToken)
     {
         var context = _managementContext?.Current;
         if (context is null) return _httpContextAccessor.HttpContext is null;
         if (programId.HasValue)
         {
-            return context.SelectedPerspective is (ManagementPerspective.ProgramManager or ManagementPerspective.PortfolioManager)
-                && context.Scope.ProgramIds.Contains(programId.Value);
+            if (context.SelectedPerspective is (ManagementPerspective.ProgramManager or ManagementPerspective.PortfolioManager)
+                && context.Scope.ProgramIds.Contains(programId.Value))
+                return true;
         }
-        if (portfolioId.HasValue)
+        else if (portfolioId.HasValue)
         {
-            return context.SelectedPerspective == ManagementPerspective.PortfolioManager
-                && context.Scope.PortfolioIds.Contains(portfolioId.Value);
+            if (context.SelectedPerspective == ManagementPerspective.PortfolioManager
+                && context.Scope.PortfolioIds.Contains(portfolioId.Value))
+                return true;
         }
-        return true;
+        else
+        {
+            return true;
+        }
+
+        var httpContext = _httpContextAccessor.HttpContext;
+        var principal = httpContext?.User;
+        if (!isProjectCreation
+            || principal?.HasClaim("permission", "Project.Create") != true
+            || context.TenantId != GetCurrentTenantId()
+            || !Guid.TryParse(principal.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var actorId)
+            || actorId != context.UserId
+            || _projectOrganizationLookup is null)
+            return false;
+
+        var organizationId = await _projectOrganizationLookup.ResolveOrganizationIdAsync(
+            context.TenantId, programId, portfolioId, departmentId: null, cancellationToken: cancellationToken);
+        if (!organizationId.HasValue) return false;
+        if (context.Scope.OrganizationIds.Contains(organizationId.Value)) return true;
+        if (_organizationScopeLookup is null) return false;
+
+        var organizationIds = await _organizationScopeLookup.GetOrganizationIdsAsync(
+            context.UserId, context.TenantId, cancellationToken);
+        return organizationIds.Contains(organizationId.Value);
     }
 
     private async Task<bool> HasFinancialHistoryAsync(Project project, CancellationToken cancellationToken)
@@ -739,8 +852,6 @@ public class ProjectService : IProjectService, IProjectReferenceLookup, IProject
             || await _context.Set<Budget>().IgnoreQueryFilters().AnyAsync(item =>
                    item.TenantId == tenantId && item.ProjectId == projectId && !item.IsDeleted, cancellationToken)
             || await _context.Set<CostEntry>().IgnoreQueryFilters().AnyAsync(item =>
-                   item.TenantId == tenantId && item.ProjectId == projectId && !item.IsDeleted, cancellationToken)
-            || await _context.Set<PurchaseCommitment>().IgnoreQueryFilters().AnyAsync(item =>
                    item.TenantId == tenantId && item.ProjectId == projectId && !item.IsDeleted, cancellationToken)
             || await _context.Set<PaymentObligation>().IgnoreQueryFilters().AnyAsync(item =>
                    item.TenantId == tenantId && item.ProjectId == projectId && !item.IsDeleted, cancellationToken)

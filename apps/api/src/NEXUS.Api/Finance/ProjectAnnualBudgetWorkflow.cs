@@ -889,6 +889,11 @@ public sealed class ProjectAnnualBudgetWorkflow(
             tenantId, project, dto.NewApprovedFunding + dto.ApprovedAdjustments, item.Id, null, cancellationToken);
         if (ceilingError is not null)
             return Result<ProjectAnnualBudgetItemDto>.Failure(ceilingError);
+        var lineLimitError = await ValidateBudgetLineLimitsAsync(
+            tenantId, projectId, item.Id, dto.NewApprovedFunding + item.ApprovedCarryForward + dto.ApprovedAdjustments,
+            cancellationToken);
+        if (lineLimitError is not null)
+            return Result<ProjectAnnualBudgetItemDto>.Failure(lineLimitError);
 
         var before = Snapshot(item);
         if (item.NewApprovedFunding == dto.NewApprovedFunding
@@ -1520,6 +1525,10 @@ public sealed class ProjectAnnualBudgetWorkflow(
             return Result<ProjectAnnualBudgetItemDto>.Failure(Error.Conflict("Reserved carry forward must be a non-negative subset of approved carry forward."));
         if (item.ApprovedCarryForward > 0m && !await HasClosedCarryForwardSourceAsync(tenantId, projectId, item.Id, cancellationToken))
             return Result<ProjectAnnualBudgetItemDto>.Failure(Error.Conflict("Carry forward cannot be submitted without the corresponding completed Project year-end closing."));
+        var lineLimitError = await ValidateBudgetLineLimitsAsync(
+            tenantId, projectId, item.Id, item.TotalAnnualBudget, cancellationToken);
+        if (lineLimitError is not null)
+            return Result<ProjectAnnualBudgetItemDto>.Failure(lineLimitError);
         var existingReview = await db.ApprovalRequests.IgnoreQueryFilters().AnyAsync(request => request.TenantId == tenantId
             && !request.IsDeleted && request.EntityType == EntityType && request.EntityId == item.Id
             && request.Type == ReviewApprovalType && request.Status == PaymentRequestStatuses.Pending, cancellationToken);
@@ -1735,6 +1744,11 @@ public sealed class ProjectAnnualBudgetWorkflow(
         var ceilingError = await ValidateCeilingCapacityAsync(tenantId, project, proposedAllocation, item.Id, null, cancellationToken);
         if (ceilingError is not null)
             return Result<ProjectAnnualBudgetItemDto>.Failure(ceilingError);
+        var lineLimitError = await ValidateBudgetLineLimitsAsync(
+            tenantId, projectId, item.Id, dto.NewApprovedFunding + item.ApprovedCarryForward + dto.ApprovedAdjustments,
+            cancellationToken);
+        if (lineLimitError is not null)
+            return Result<ProjectAnnualBudgetItemDto>.Failure(lineLimitError);
 
         var ordered = plan.Approvers;
         var proposal = new AnnualBudgetRevisionProposal(dto.NewApprovedFunding, dto.ApprovedAdjustments, dto.Reason.Trim());
@@ -1912,6 +1926,10 @@ public sealed class ProjectAnnualBudgetWorkflow(
                     var ceilingError = await ValidateCeilingCapacityAsync(tenantId, project,
                         proposal.NewApprovedFunding + proposal.ApprovedAdjustments, item.Id, approval.Id, cancellationToken);
                     if (ceilingError is not null) return Result<ProjectAnnualBudgetItemDto>.Failure(ceilingError);
+                    var lineLimitError = await ValidateBudgetLineLimitsAsync(tenantId, projectId, item.Id,
+                        proposal.NewApprovedFunding + item.ApprovedCarryForward + proposal.ApprovedAdjustments,
+                        cancellationToken);
+                    if (lineLimitError is not null) return Result<ProjectAnnualBudgetItemDto>.Failure(lineLimitError);
                     var before = Snapshot(item);
                     item.NewApprovedFunding = proposal.NewApprovedFunding;
                     item.ApprovedAdjustments = proposal.ApprovedAdjustments;
@@ -1929,6 +1947,9 @@ public sealed class ProjectAnnualBudgetWorkflow(
                     var ceilingError = await ValidateCeilingCapacityAsync(tenantId, project,
                         item.NewApprovedFunding + item.ApprovedAdjustments, item.Id, approval.Id, cancellationToken);
                     if (ceilingError is not null) return Result<ProjectAnnualBudgetItemDto>.Failure(ceilingError);
+                    var lineLimitError = await ValidateBudgetLineLimitsAsync(
+                        tenantId, projectId, item.Id, item.TotalAnnualBudget, cancellationToken);
+                    if (lineLimitError is not null) return Result<ProjectAnnualBudgetItemDto>.Failure(lineLimitError);
                     var before = Snapshot(item);
                     item.Status = ProjectAnnualBudgetStatuses.Approved;
                     item.ApprovedBy = actorId;
@@ -2048,6 +2069,18 @@ public sealed class ProjectAnnualBudgetWorkflow(
         if (approved + pendingReservation + proposedAllocation > project.Budget.Value)
             return Error.Conflict("The approved and submitted Annual Budget allocations would exceed the Project lifetime financial ceiling. Reduce this allocation or submit an approved ceiling revision first.");
         return null;
+    }
+
+    private async Task<Error?> ValidateBudgetLineLimitsAsync(
+        Guid tenantId, Guid projectId, Guid budgetId, decimal proposedAnnualTotal, CancellationToken cancellationToken)
+    {
+        var lineTotal = await db.ProjectAnnualBudgetLines.IgnoreQueryFilters().AsNoTracking()
+            .Where(line => line.TenantId == tenantId && line.ProjectId == projectId
+                && line.ProjectAnnualBudgetId == budgetId && !line.IsDeleted)
+            .SumAsync(line => (decimal?)line.AuthorizedLimit, cancellationToken) ?? 0m;
+        return lineTotal <= proposedAnnualTotal
+            ? null
+            : Error.Conflict("The Annual Budget total cannot be reduced below the combined authorized Budget Line limits.");
     }
 
     private async Task<Error?> ValidateFiscalYearOpeningAsync(

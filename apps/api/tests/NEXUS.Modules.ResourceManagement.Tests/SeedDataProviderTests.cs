@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using System.Data;
 using NEXUS.Modules.Identity.Application;
 using NEXUS.Modules.Identity.Domain;
 using NEXUS.Modules.Organization.Application.Settings;
@@ -34,6 +35,19 @@ public class SeedDataProviderTests : IDisposable
         Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", _originalEnvironment);
         Environment.SetEnvironmentVariable("NEXUS_ADMIN_BOOTSTRAP_PASSWORD", _originalBootstrapPassword);
         Environment.SetEnvironmentVariable("NEXUS_RESET_PROJECT_SEED", _originalProjectSeedReset);
+    }
+
+    [Fact]
+    public void ReadDevelopmentDatabaseId_ConvertsSmallIntReaderValue()
+    {
+        var table = new DataTable();
+        table.Columns.Add("DatabaseId", typeof(short));
+        table.Rows.Add((short) 23);
+
+        using var reader = table.CreateDataReader();
+        reader.Read().Should().BeTrue();
+
+        SeedDataProvider.ReadDevelopmentDatabaseId(reader, 0).Should().Be(23);
     }
 
     [Fact]
@@ -778,7 +792,6 @@ public class SeedDataProviderTests : IDisposable
             secondPass.PaymentRequestApproverAssignments,
             secondPass.CostEntries,
             secondPass.CostApprovals,
-            secondPass.PurchaseCommitments,
             secondPass.Invoices,
             secondPass.PaymentObligations,
             secondPass.PaymentSettlements,
@@ -941,7 +954,6 @@ public class SeedDataProviderTests : IDisposable
         await context.PaymentRequestApproverAssignments.IgnoreQueryFilters().CountAsync(),
         await context.CostEntries.IgnoreQueryFilters().CountAsync(),
         await context.CostApprovals.IgnoreQueryFilters().CountAsync(),
-        await context.PurchaseCommitments.IgnoreQueryFilters().CountAsync(),
         await context.Invoices.IgnoreQueryFilters().CountAsync(),
         await context.PaymentObligations.IgnoreQueryFilters().CountAsync(),
         await context.PaymentSettlements.IgnoreQueryFilters().CountAsync(),
@@ -986,7 +998,6 @@ public class SeedDataProviderTests : IDisposable
         int PaymentRequestApproverAssignments,
         int CostEntries,
         int CostApprovals,
-        int PurchaseCommitments,
         int Invoices,
         int PaymentObligations,
         int PaymentSettlements,

@@ -195,16 +195,16 @@ public sealed class ProjectOverviewService : IProjectOverviewService
             CurrentApprovedProjectBudget = budget,
             AllocatedBudget = financialSummary?.AllocatedBudget ?? 0,
             UnallocatedBudget = budget - (financialSummary?.AllocatedBudget ?? 0),
-            OriginalApprovedBudget = financialSummary?.OriginalApprovedBudget,
+            // Original lifetime budget is captured at project creation and never changes; the financial
+            // summary value is only a fallback for legacy projects created before the baseline field existed.
+            OriginalApprovedBudget = project.OriginalProjectBudget ?? financialSummary?.OriginalApprovedBudget,
             RevisedBudget = financialSummary?.RevisedBudget,
-            CommittedCost = financialSummary?.CommittedCost,
             ForecastAtCompletion = financialSummary?.ForecastAtCompletion,
             RemainingBudget = financialSummary?.RemainingBudget,
             BudgetUtilizationPercentage = financialSummary?.BudgetUtilizationPercentage,
             ForecastVariance = financialSummary?.ForecastVariance,
             HasBudgetData = financialSummary?.HasBudgetData == true,
             HasCostEntryData = financialSummary?.HasCostEntryData == true,
-            HasCommitmentData = financialSummary?.HasCommitmentData == true,
             HasCostManagementData = financialSummary?.HasFinancialData == true,
             HasPendingRevision = financialSummary?.HasPendingRevision == true
         });

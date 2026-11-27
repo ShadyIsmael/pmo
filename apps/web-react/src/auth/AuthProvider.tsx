@@ -1,12 +1,30 @@
 import * as React from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { api, clearTokens, getClientSessionId, getSessionGeneration, hasSession, SessionChangedError, setTokens, syncStoredSession, type CurrentUser } from "../api/client";
+import { ApiError, api, clearTokens, getClientSessionId, getSessionGeneration, hasSession, SessionChangedError, setTokens, syncStoredSession, type CurrentUser } from "../api/client";
 import { createSessionQueryClient } from "../api/queryClient";
 import { deactivateRegisteredPushDevice, reconcileRegisteredPushDevice } from "../lib/firebase-messaging";
 
 export type AuthStatus = "loading" | "authenticating" | "initializing" | "authenticated" | "unauthenticated";
 interface AuthContextValue { status: AuthStatus; user: CurrentUser | null; sessionId: string | null; isAuthenticated: boolean; login: (email: string, password: string) => Promise<CurrentUser>; logout: () => Promise<void>; refreshUser: () => Promise<void>; }
 const AuthContext = React.createContext<AuthContextValue | null>(null);
+const AUTH_INITIALIZATION_TIMEOUT_MS = 15_000;
+
+type SessionRestorationResult = { ok: true; user: CurrentUser } | { ok: false; error: unknown };
+interface SessionRestorationAttempt {
+  generation: number;
+  sessionId: string;
+  promise: Promise<SessionRestorationResult>;
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timeout = window.setTimeout(() => reject(new Error("Authentication verification timed out.")), timeoutMs);
+    promise.then(
+      (value) => { window.clearTimeout(timeout); resolve(value); },
+      (error: unknown) => { window.clearTimeout(timeout); reject(error); },
+    );
+  });
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = React.useState<AuthStatus>("loading");
@@ -18,6 +36,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const queryClientRef = React.useRef(queryClient);
   const transitionId = React.useRef(0);
   const authorizationRefreshSession = React.useRef<string | null>(null);
+  const restorationPromise = React.useRef<SessionRestorationAttempt | null>(null);
+  const knownInvalidSession = React.useRef(false);
 
   const resetSessionCache = React.useCallback(() => {
     void queryClientRef.current.cancelQueries();
@@ -28,19 +48,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const initializeCurrentSession = React.useCallback(async (expectedTransition: number, expectedGeneration: number, expectedSessionId: string) => {
-    try {
-      const nextUser = await api.getMe();
-      if (transitionId.current !== expectedTransition || getSessionGeneration() !== expectedGeneration || getClientSessionId() !== expectedSessionId) return;
-      setUser(nextUser);
-      setSessionId(expectedSessionId);
-      setStatus("authenticated");
-    } catch (error) {
-      if (transitionId.current !== expectedTransition || error instanceof SessionChangedError) return;
-      if (getSessionGeneration() === expectedGeneration && getClientSessionId() === expectedSessionId) clearTokens();
+    // Strict Mode can invoke this twice. Share the request for this exact session,
+    // but let each caller commit the result if it is still the current transition.
+    let attempt = restorationPromise.current;
+    if (!attempt || attempt.generation !== expectedGeneration || attempt.sessionId !== expectedSessionId) {
+      const promise = withTimeout(api.getMe(), AUTH_INITIALIZATION_TIMEOUT_MS)
+        .then((user): SessionRestorationResult => ({ ok: true, user }))
+        .catch((error: unknown): SessionRestorationResult => ({ ok: false, error }));
+      attempt = { generation: expectedGeneration, sessionId: expectedSessionId, promise };
+      restorationPromise.current = attempt;
+      const completedAttempt = attempt;
+      void promise.then(() => {
+        if (restorationPromise.current === completedAttempt) restorationPromise.current = null;
+      });
+    }
+
+    const result = await attempt.promise;
+    if (transitionId.current !== expectedTransition
+      || getSessionGeneration() !== expectedGeneration
+      || getClientSessionId() !== expectedSessionId) return;
+
+    if (!result.ok) {
+      // A current-session failure (401, unavailable API, or timeout) must end
+      // initialization. clearTokens also aborts the outstanding authenticated request.
+      clearTokens();
       setUser(null);
       setSessionId(null);
       setStatus("unauthenticated");
+      knownInvalidSession.current = true;
+      return;
     }
+
+    setUser(result.user);
+    setSessionId(expectedSessionId);
+    setStatus("authenticated");
+    knownInvalidSession.current = false;
   }, []);
 
   React.useEffect(() => {
@@ -62,6 +104,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     const expireSession = () => {
       ++transitionId.current;
+      restorationPromise.current = null;
       clearTokens();
       setUser(null);
       setSessionId(null);
@@ -75,16 +118,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     const synchronizeSession = () => {
       if (!syncStoredSession()) {
-        if (statusRef.current === "authenticated" && hasSession()) {
+        if (statusRef.current === "authenticated" && hasSession() && !knownInvalidSession.current) {
           const expectedSessionId = getClientSessionId();
           const expectedGeneration = getSessionGeneration();
           void api.getMe().then((nextUser) => {
             if (statusRef.current === "authenticated"
               && getSessionGeneration() === expectedGeneration
               && getClientSessionId() === expectedSessionId) setUser(nextUser);
-          }).catch(() => {
+          }).catch((error) => {
             // A transient refresh failure leaves the current view intact; authenticated API
             // requests still resolve current permissions on the server.
+            if (error instanceof ApiError && error.status === 401) knownInvalidSession.current = true;
           });
         }
         return;
@@ -121,7 +165,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = React.useCallback(async (email: string, password: string) => {
     const operation = ++transitionId.current;
+    restorationPromise.current = null;
     clearTokens();
+    knownInvalidSession.current = false;
     resetSessionCache();
     setUser(null);
     setSessionId(null);
@@ -134,7 +180,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       resetSessionCache();
       setSessionId(nextSessionId);
       setStatus("initializing");
-      const currentUser = await api.getMe();
+      const currentUser = await withTimeout(api.getMe(), AUTH_INITIALIZATION_TIMEOUT_MS);
       if (transitionId.current !== operation || getSessionGeneration() !== generation || getClientSessionId() !== nextSessionId) throw new SessionChangedError();
       setUser(currentUser);
       setStatus("authenticated");
@@ -153,6 +199,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = React.useCallback(async () => {
     ++transitionId.current;
+    restorationPromise.current = null;
     const revoke = api.logout((accessToken) => deactivateRegisteredPushDevice(accessToken));
     clearTokens();
     resetSessionCache();

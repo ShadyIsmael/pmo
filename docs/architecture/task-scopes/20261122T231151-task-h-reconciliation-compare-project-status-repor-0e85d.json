@@ -1,0 +1,503 @@
+{
+  "created_at": "2026-11-22T23:11:51Z",
+  "dependency_awareness_only": [
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Domain",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/Baseline.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Domain",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/CalendarPolicyConstants.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Domain",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/Deliverable.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "ProjectId",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/Entities/ProjectBaselineVersion.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Domain",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/Milestone.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Domain",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/Project.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Domain",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/ProjectChangeRequest.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Domain",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/ProjectChangeRequestApproval.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Domain",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/ProjectHandoverRequest.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Domain",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/ProjectManagerAssignment.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Domain",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/ProjectMember.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Domain",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/ProjectMemberRole.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Domain",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/ProjectPhase.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Domain",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/ProjectPhaseCatalogEntry.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Domain",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/ProjectPhaseGateEvidence.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Domain",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/ProjectPhaseGateRequirementSnapshot.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Domain",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/ProjectPhaseGateSnapshot.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Domain",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/ProjectPhaseTransitionRule.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Domain",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/ProjectReportingConfiguration.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Domain",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/ProjectSchedule.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Domain",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/ProjectSnapshot.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Domain",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/ProjectStakeholder.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Domain",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/ProjectStatusCatalogEntry.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Domain",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/ProjectStatusReport.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Domain",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/ProjectStatusReportSnapshots.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Domain",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/ProjectStatusTransitionRule.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Domain",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/StakeholderInvitation.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "TimeEntry",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/TimeEntry.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Domain",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/TimeEntry.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.ProjectManagement.Domain",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/TimerSegment.cs",
+      "relation": "USES_NAMESPACE"
+    }
+  ],
+  "index_updated": false,
+  "limits": [
+    "Router never prevents an agent from manually opening other files; enforce via agent instructions and audit.",
+    "C# and TS analysis uses conservative heuristics; compiler-resolved references not implemented.",
+    "Unknown/unclassified files may require manual targeted inspection.",
+    "Index sources excluded secrets and build outputs."
+  ],
+  "module_selection_basis": "task-explicit-alias",
+  "nonprimary_modules_not_read_by_router": [
+    "administration",
+    "ai-planning",
+    "api",
+    "approvals",
+    "audit",
+    "cost-management",
+    "documents",
+    "governance",
+    "home",
+    "identity",
+    "integrations",
+    "issues",
+    "management",
+    "meetings",
+    "notifications",
+    "operations",
+    "organization",
+    "permissions",
+    "persistence",
+    "plugins",
+    "portfolios",
+    "programs",
+    "project-planning",
+    "reports",
+    "resources",
+    "risks",
+    "security",
+    "stakeholder",
+    "tests",
+    "time",
+    "unclassified",
+    "vendors",
+    "work-items",
+    "workflow"
+  ],
+  "planning_state": "focused",
+  "primary_module": "projects",
+  "refresh": {
+    "changed_existing": 0,
+    "deleted": 0,
+    "mode": "refresh",
+    "new": 0,
+    "parsed": 0,
+    "unchanged": 1879
+  },
+  "related_tests_candidates": [
+    "apps/web-react/src/test/project-annual-budget-lifecycle-invalidation.test.tsx",
+    "apps/web-react/src/test/project-annual-budget-workspace-recovery.test.tsx",
+    "apps/web-react/src/test/project-annual-budget-workspace-ux.test.tsx",
+    "apps/web-react/src/test/project-board-parity.test.tsx",
+    "apps/web-react/src/test/project-change-request-form.test.ts",
+    "apps/web-react/src/test/project-change-request-format.test.ts",
+    "apps/web-react/src/test/project-change-request-sheet.test.tsx",
+    "apps/web-react/src/test/project-change-status.test.tsx",
+    "apps/web-react/src/test/project-change-tracker-permissions.test.tsx",
+    "apps/web-react/src/test/project-create-sheet-initial-budget.test.tsx",
+    "apps/web-react/src/test/project-detail.test.tsx",
+    "apps/web-react/src/test/project-finance-overview-permissions.test.tsx",
+    "apps/web-react/src/test/project-finance-workspace.test.tsx",
+    "apps/web-react/src/test/project-gantt-parity.test.tsx",
+    "apps/web-react/src/test/project-handover-manager-options.test.ts",
+    "apps/web-react/src/test/project-history-tab.test.tsx",
+    "apps/web-react/src/test/project-lifecycle-phase-code.test.tsx",
+    "apps/web-react/src/test/project-meeting-form.test.ts",
+    "apps/web-react/src/test/project-meetings-tab-parity.test.tsx",
+    "apps/web-react/src/test/project-member-rules.test.ts",
+    "apps/web-react/src/test/project-members-table.test.tsx",
+    "apps/web-react/src/test/project-overview-loading.test.tsx",
+    "apps/web-react/src/test/project-overview-source-parity.test.tsx",
+    "apps/web-react/src/test/project-phase-gate-side-sheet.test.tsx",
+    "apps/web-react/src/test/project-portfolio-program-localization.test.tsx",
+    "apps/web-react/src/test/project-reporting-configuration-query.test.tsx",
+    "apps/web-react/src/test/project-reporting-configuration-safety.test.ts",
+    "apps/web-react/src/test/project-risks-parity.test.tsx",
+    "apps/web-react/src/test/project-settings-navigation.test.tsx",
+    "apps/web-react/src/test/project-settings-permissions.test.tsx"
+  ],
+  "selected_files": [
+    {
+      "approximate": true,
+      "kind": "ui",
+      "line_ranges": [
+        [
+          1,
+          163
+        ]
+      ],
+      "module": "projects",
+      "path": "apps/web-react/src/features/delivery/FinancialRollupView.tsx",
+      "read_mode": "full-file",
+      "reading_tokens": 3943,
+      "reasons": [
+        "filename-match:financial",
+        "filename-match:rollup",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:CurrencyGroup"
+      ],
+      "score": 112,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          49
+        ]
+      ],
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/ProjectStatusReportingSemantics.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 454,
+      "reasons": [
+        "filename-match:report",
+        "filename-match:reporting",
+        "filename-match:status",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:ProjectStatusReportingCategories"
+      ],
+      "score": 100,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          5,
+          18
+        ],
+        [
+          20,
+          30
+        ],
+        [
+          32,
+          38
+        ],
+        [
+          40,
+          44
+        ],
+        [
+          46,
+          54
+        ]
+      ],
+      "module": "projects",
+      "path": "apps/web-react/src/features/projects/api/project-financials.ts",
+      "read_mode": "symbols",
+      "reading_tokens": 388,
+      "reasons": [
+        "filename-match:financial",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:ProjectFinancialFoundation"
+      ],
+      "score": 100,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          104
+        ]
+      ],
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/ActualWorkCostLookup.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 1286,
+      "reasons": [
+        "filename-match:actual",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:ActualWorkCostLookup"
+      ],
+      "score": 88,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          3,
+          11
+        ],
+        [
+          13,
+          19
+        ],
+        [
+          21,
+          37
+        ],
+        [
+          39,
+          51
+        ],
+        [
+          53,
+          57
+        ]
+      ],
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/DTOs/ProjectReportingDtos.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 674,
+      "reasons": [
+        "filename-match:report",
+        "filename-match:reporting",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:SaveProjectReportingConfigurationDto"
+      ],
+      "score": 88,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          13
+        ]
+      ],
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Application/IProjectReportingService.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 314,
+      "reasons": [
+        "filename-match:report",
+        "filename-match:reporting",
+        "module-mentioned",
+        "primary-module",
+        "symbol-match:IProjectReportingService"
+      ],
+      "score": 88,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "source",
+      "line_ranges": [
+        [
+          1,
+          18
+        ]
+      ],
+      "module": "projects",
+      "path": "apps/web-react/src/features/projects/lib/project-reporting-configuration.ts",
+      "read_mode": "full-file",
+      "reading_tokens": 139,
+      "reasons": [
+        "filename-match:report",
+        "filename-match:reporting",
+        "module-mentioned",
+        "primary-module"
+      ],
+      "score": 84,
+      "token_method": "estimated:chars/3.5"
+    }
+  ],
+  "snapshot": "20261122T230530-8e78adf",
+  "task": "Task H reconciliation: compare ProjectStatusReport financial measures, ProjectReportingService financial summary and Actual Paid, and ProgramPortfolioFinancialRollupService against TARGET_FINANCIAL_OPERATING_MODEL. Check outstanding/planned commitments, gross/net Actual Paid, currency grouping, both settlement rails.",
+  "token_plan": {
+    "available_source_budget": 7200,
+    "requested_total_budget": 12000,
+    "reserved_non_source_budget": 4800,
+    "source_reading_tokens": 7198,
+    "warning": "An estimate of initial source/context reading, NOT full task execution or model hidden reasoning. Some counts may be approximate."
+  }
+}

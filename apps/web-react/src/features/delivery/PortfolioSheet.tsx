@@ -9,9 +9,11 @@ import { SearchableSelect } from "@components/ui/SearchableSelect";
 import { Textarea } from "@components/ui/Textarea";
 import { toUserSelectOptions, usePortfolioWorkflowManagerLookup, useWorkflowCurrencyLookup } from "@features/projects/lib/project-lookups";
 import { useI18n } from "@i18n/messages";
-import { useCreatePortfolio, useUpdatePortfolio, type PortfolioDto, type SavePortfolioDto } from "./api/delivery";
+import { useCreatePortfolio, useEligiblePortfolioOrganizations, useUpdatePortfolio, type PortfolioDto, type SavePortfolioDto } from "./api/delivery";
 
-const blankForm = (): SavePortfolioDto => ({ name: "", description: "", ownerId: "", status: "Active", currency: "", strategicObjective: "", priority: "" });
+type PortfolioForm = SavePortfolioDto & { organizationId: string };
+
+const blankForm = (): PortfolioForm => ({ name: "", description: "", organizationId: "", ownerId: "", status: "Active", currency: "", strategicObjective: "", priority: "" });
 
 export function PortfolioSheet({ open, onOpenChange, portfolio, canSave, canAssignInitialManager }: {
   open: boolean;
@@ -21,10 +23,12 @@ export function PortfolioSheet({ open, onOpenChange, portfolio, canSave, canAssi
   canAssignInitialManager: boolean;
 }) {
   const { t } = useI18n();
-  const [form, setForm] = React.useState<SavePortfolioDto>(blankForm);
+  const [form, setForm] = React.useState<PortfolioForm>(blankForm);
   const [error, setError] = React.useState("");
   const [apiError, setApiError] = React.useState<unknown>(null);
   const hasAssignedOwner = Boolean(portfolio?.ownerId && portfolio.ownerId !== "00000000-0000-0000-0000-000000000000");
+  const organizationsQuery = useEligiblePortfolioOrganizations(open && canSave && !portfolio);
+  const organizationOptions = organizationsQuery.data ?? [];
   const usersQuery = usePortfolioWorkflowManagerLookup(open && canAssignInitialManager && (!portfolio || !hasAssignedOwner));
   const currenciesQuery = useWorkflowCurrencyLookup(open && canSave);
   const create = useCreatePortfolio();
@@ -41,6 +45,7 @@ export function PortfolioSheet({ open, onOpenChange, portfolio, canSave, canAssi
     setForm(portfolio ? {
       name: portfolio.name,
       description: portfolio.description ?? "",
+      organizationId: portfolio.organizationId ?? "",
       ownerId: portfolio.ownerId && portfolio.ownerId !== "00000000-0000-0000-0000-000000000000" ? portfolio.ownerId : "",
       status: portfolio.status === "Archived" ? "Archived" : "Active",
       currency: portfolio.currency ?? "",
@@ -52,6 +57,19 @@ export function PortfolioSheet({ open, onOpenChange, portfolio, canSave, canAssi
   }, [open, portfolio]);
 
   const userOptions = toUserSelectOptions(usersQuery.data);
+  const canSaveOrganization = Boolean(portfolio) || (!organizationsQuery.isLoading && !organizationsQuery.isError && organizationOptions.length > 0
+    && (organizationOptions.length === 1 || organizationOptions.some((organization) => organization.id === form.organizationId)));
+  React.useEffect(() => {
+    if (!open || portfolio || organizationsQuery.isLoading || organizationsQuery.isError) return;
+    setForm((current) => {
+      const organizationId = organizationOptions.length === 1
+        ? organizationOptions[0].id
+        : organizationOptions.some((organization) => organization.id === current.organizationId)
+          ? current.organizationId
+          : "";
+      return current.organizationId === organizationId ? current : { ...current, organizationId };
+    });
+  }, [open, portfolio, organizationsQuery.isLoading, organizationsQuery.isError, organizationOptions]);
   const currencyOptions = React.useMemo(() => currenciesQuery.data ?? [], [currenciesQuery.data]);
   const selectedCurrency = form.currency?.trim().toUpperCase() ?? "";
   const selectedCurrencyIsConfigured = currencyOptions.some((currency) => currency.code.toUpperCase() === selectedCurrency);
@@ -86,6 +104,11 @@ export function PortfolioSheet({ open, onOpenChange, portfolio, canSave, canAssi
       setError(t("portfolioManager.endDateAfterStartDate"));
       return;
     }
+    const organizationId = organizationOptions.length === 1 ? organizationOptions[0].id : form.organizationId;
+    if (!portfolio && !organizationOptions.some((organization) => organization.id === organizationId)) {
+      setError(t("portfolioManager.organizationRequired"));
+      return;
+    }
     const currency = form.currency?.trim().toUpperCase() ?? "";
     const currencyIsConfigured = currencyOptions.some((item) => item.code.toUpperCase() === currency);
     const currencyIsUnchanged = Boolean(portfolio?.currency && portfolio.currency.trim().toUpperCase() === currency);
@@ -94,17 +117,17 @@ export function PortfolioSheet({ open, onOpenChange, portfolio, canSave, canAssi
       return;
     }
     const payload: SavePortfolioDto = {
-      ...form,
-      ownerId: hasAssignedOwner ? portfolio?.ownerId : form.ownerId || undefined,
       name: form.name.trim(),
       description: form.description ?? "",
+      ownerId: hasAssignedOwner ? portfolio?.ownerId : form.ownerId || undefined,
+      status: form.status,
       currency,
       strategicObjective: form.strategicObjective?.trim() ? form.strategicObjective.trim() : undefined,
       priority: form.priority?.trim() ? form.priority.trim() : undefined,
     };
     try {
       if (portfolio) await update.mutateAsync({ id: portfolio.id, dto: payload });
-      else await create.mutateAsync(payload);
+      else await create.mutateAsync({ ...payload, organizationId });
       handleOpenChange(false);
     } catch (reason) {
       setApiError(reason);
@@ -118,7 +141,21 @@ export function PortfolioSheet({ open, onOpenChange, portfolio, canSave, canAssi
         {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
         <div><Label htmlFor="portfolio-name">{t("portfolioManager.portfolioName")} *</Label><Input id="portfolio-name" className="mt-2" value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} required aria-invalid={Boolean(getApiFieldError(apiError, "name"))} aria-describedby={getApiFieldError(apiError, "name") ? "portfolio-name-error" : undefined} /><ApiFieldError id="portfolio-name-error" error={apiError} fieldName="name" /></div>
         <div><Label>{t("portfolioManager.code")}</Label><p className="mt-2 rounded-md border bg-muted px-3 py-2 text-sm text-muted-foreground">{portfolio?.code || t("portfolioManager.generatedPortfolioCode")}</p></div>
-        <div><Label htmlFor="portfolio-description">{t("portfolioManager.description")}</Label><Textarea id="portfolio-description" className="mt-2" value={form.description ?? ""} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} /></div>
+        {!portfolio ? <div>
+          <Label htmlFor="portfolio-organization">{t("portfolioManager.owningOrganization")} *</Label>
+          <select id="portfolio-organization" className="input-field mt-2" value={form.organizationId} required
+            disabled={isPending || organizationsQuery.isLoading || organizationsQuery.isError || organizationOptions.length === 0 || organizationOptions.length === 1}
+            aria-invalid={Boolean(getApiFieldError(apiError, "organizationId"))}
+            aria-describedby={getApiFieldError(apiError, "organizationId") ? "portfolio-organization-error" : undefined}
+            onChange={(event) => setForm((current) => ({ ...current, organizationId: event.target.value }))}>
+            <option value="">{t("portfolioManager.selectOwningOrganization")}</option>
+            {organizationOptions.map((organization) => <option key={organization.id} value={organization.id}>{organization.name}</option>)}
+          </select>
+          <ApiFieldError id="portfolio-organization-error" error={apiError} fieldName="organizationId" />
+          {organizationsQuery.isLoading ? <p role="status" className="mt-1 text-xs text-muted-foreground">{t("common.loading")}</p> : null}
+          {organizationsQuery.isError ? <div role="alert" className="mt-1 flex flex-wrap items-center justify-between gap-2 text-xs text-destructive"><span>{organizationsQuery.error instanceof ApiError && organizationsQuery.error.status === 403 ? t("portfolioManager.organizationLookupAccessDenied") : t("common.errorLoading")}</span><Button type="button" size="sm" variant="outline" onClick={() => void organizationsQuery.refetch()}>{t("common.retry")}</Button></div> : null}
+          {!organizationsQuery.isLoading && !organizationsQuery.isError && organizationOptions.length === 0 ? <p role="status" className="mt-1 text-xs text-muted-foreground">{t("portfolioManager.noEligibleOrganizations")}</p> : null}
+        </div> : null}<div><Label htmlFor="portfolio-description">{t("portfolioManager.description")}</Label><Textarea id="portfolio-description" className="mt-2" value={form.description ?? ""} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} /></div>
         <div>
           <Label>{t("portfolioManager.owner")}</Label>
           {hasAssignedOwner
@@ -148,7 +185,7 @@ export function PortfolioSheet({ open, onOpenChange, portfolio, canSave, canAssi
       </SideSheetBody>
       <SideSheetFooter>
         <Button type="button" variant="outline" onClick={() => handleOpenChange(false)} disabled={isPending}>{t("common.cancel")}</Button>
-        <Button type="submit" disabled={isPending || !canSave || !canSaveCurrency}>{isPending ? t("portfolioManager.saving") : t("portfolioManager.savePortfolio")}</Button>
+        <Button type="submit" disabled={isPending || !canSave || !canSaveCurrency || !canSaveOrganization}>{isPending ? t("portfolioManager.saving") : t("portfolioManager.savePortfolio")}</Button>
       </SideSheetFooter>
     </form>
   </SideSheet>;

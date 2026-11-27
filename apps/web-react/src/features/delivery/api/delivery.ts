@@ -24,8 +24,10 @@ export interface DocumentDto {
   sourceTemplateId?: string;
   updatedAt?: string;
 }
-export interface PortfolioDto { id: string; name: string; code?: string; description?: string; status?: string; ownerId?: string; ownerName?: string; currency?: string; startDate?: string; endDate?: string; strategicObjective?: string; priority?: string; health?: string; confidenceLevel?: string; createdAt?: string; updatedAt?: string; }
+export interface PortfolioDto { id: string; name: string; code?: string; description?: string; status?: string; organizationId?: string; organizationName?: string; ownerId?: string; ownerName?: string; currency?: string; startDate?: string; endDate?: string; strategicObjective?: string; priority?: string; health?: string; confidenceLevel?: string; createdAt?: string; updatedAt?: string; }
+export interface PortfolioOrganizationOption { id: string; name: string; }
 export type SavePortfolioDto = { name: string; description?: string; ownerId?: string; status: "Active" | "Archived"; currency?: string; startDate?: string; endDate?: string; strategicObjective?: string; priority?: string };
+export type CreatePortfolioDto = SavePortfolioDto & { organizationId?: string };
 export interface ProgramDto {
   id: string; name: string; code?: string; description?: string; status?: string;
   portfolioId?: string; portfolioName?: string; programManagerId?: string;
@@ -63,8 +65,11 @@ export interface ProgramPortfolioFinancialRollup {
     effectiveActiveAllocations: number; availableAnnualBudget: number; totalUnspentBudget: number; approvedReversalReleases: number;
     totalPaymentRequests: number; draftRequests: number; pendingApprovalRequests: number; approvedRequests: number;
     rejectedRequests: number; approvedRequestAmount: number; remainingPayableCommitments: number;
-    actualSettlementsInFiscalYear: number; notSettledRequests: number; partiallySettledRequests: number;
-    fullySettledRequests: number; freeCarryForward: number; reservedCarryForward: number; nonCarriedBalance: number;
+    actualSettlementsInFiscalYear: number; grossActualPaid: number; netActualPaid: number;
+    lifetimeCeiling: number; lifetimeReserved: number; outstandingCommitments: number;
+    executedRefundsCorrections: number; availableLifetimeBudget: number; budgetLineUtilization: number | null;
+    notSettledRequests: number; partiallySettledRequests: number; fullySettledRequests: number;
+    freeCarryForward: number; reservedCarryForward: number; nonCarriedBalance: number;
   }[];
   programBreakdowns: { programId: string | null; name: string; isDirectProjectGroup: boolean; projectCount: number; currencyGroups: ProgramPortfolioFinancialRollup["currencyGroups"] }[];
   projects: {
@@ -73,6 +78,9 @@ export interface ProgramPortfolioFinancialRollup {
     approvedFreeCarryForward: number | null; approvedReservedCarryForward: number | null; approvedAdjustments: number | null;
     effectiveActiveAllocations: number | null; availableAnnualBudget: number | null; totalUnspentBudget: number | null; approvedReversalReleases: number | null;
     approvedRequestAmount: number | null; remainingPayableCommitments: number | null; actualSettlementsInFiscalYear: number | null;
+    grossActualPaid: number | null; netActualPaid: number | null;
+    lifetimeCeiling: number | null; lifetimeReserved: number | null; outstandingCommitments: number | null;
+    executedRefundsCorrections: number | null; availableLifetimeBudget: number | null; budgetLineUtilization: number | null;
     totalPaymentRequests: number; draftRequests: number; pendingApprovalRequests: number; approvedRequests: number;
     rejectedRequests: number; notSettledRequests: number; partiallySettledRequests: number; fullySettledRequests: number;
     closingStatus: string; freeCarryForward: number | null; reservedCarryForward: number | null; nonCarriedBalance: number | null;
@@ -158,9 +166,18 @@ function usePortfolioCacheInvalidation() {
   };
 }
 
+export function useEligiblePortfolioOrganizations(enabled = true) {
+  return useQuery({
+    queryKey: ["portfolios", "eligible-organizations"],
+    queryFn: () => api.get<PortfolioOrganizationOption[]>(endpoints.portfolios.eligibleOrganizations),
+    enabled,
+    staleTime: 0,
+    refetchOnMount: "always",
+  });
+}
 export function useCreatePortfolio() {
   const invalidate = usePortfolioCacheInvalidation();
-  return useMutation({ mutationFn: (dto: SavePortfolioDto) => api.post<PortfolioDto>(endpoints.portfolios.root, dto), onSuccess: invalidate });
+  return useMutation({ mutationFn: (dto: CreatePortfolioDto) => api.post<PortfolioDto>(endpoints.portfolios.root, dto), onSuccess: invalidate });
 }
 
 export function useUpdatePortfolio() {

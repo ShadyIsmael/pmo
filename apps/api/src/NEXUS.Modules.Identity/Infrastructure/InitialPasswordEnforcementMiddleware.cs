@@ -75,7 +75,11 @@ public sealed class InitialPasswordEnforcementMiddleware
 
         var tokenPasswordChangedAt = context.User.FindFirstValue("pwdts");
         var expectedVersion = state.PasswordChangedAt?.Ticks ?? 0;
-        var isLegacyUnversionedToken = expectedVersion == 0 && tokenPasswordChangedAt is null;
+        // A token is "legacy unversioned" when the DB has no PasswordChangedAt
+        // AND the token either lacks the pwdts claim entirely or has pwdts="0".
+        var isLegacyUnversionedToken = expectedVersion == 0
+                                         && (tokenPasswordChangedAt is null
+                                             || tokenPasswordChangedAt == "0");
         if (!isLegacyUnversionedToken
             && (!long.TryParse(tokenPasswordChangedAt, NumberStyles.None, CultureInfo.InvariantCulture, out var tokenVersion)
                 || tokenVersion != expectedVersion))

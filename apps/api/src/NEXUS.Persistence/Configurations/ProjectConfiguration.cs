@@ -12,7 +12,7 @@ public class ProjectConfiguration : IEntityTypeConfiguration<Project>
         builder.HasKey(p => p.Id);
         builder.Property(p => p.Name).HasMaxLength(300).IsRequired();
         builder.Property(p => p.Code).HasMaxLength(50);
-        builder.Property(p => p.Status).HasMaxLength(50);
+        builder.Property(p => p.Status).HasMaxLength(64);
         builder.Property(p => p.Priority).HasMaxLength(50);
         builder.Property(p => p.Health).HasMaxLength(50);
         builder.Property(p => p.ConfidenceLevel).HasMaxLength(50);
@@ -26,6 +26,18 @@ public class ProjectConfiguration : IEntityTypeConfiguration<Project>
         builder.HasIndex(p => p.ProjectManagerId);
         builder.Property(p => p.WorkingCalendarId).HasColumnType("uniqueidentifier");
         builder.HasIndex(p => p.WorkingCalendarId);
+        builder.HasIndex(p => new { p.TenantId, p.ProjectPhaseId });
+        builder.HasIndex(p => new { p.TenantId, p.ProjectStatusId });
+        builder.HasOne<NEXUS.Modules.ProjectManagement.Domain.ProjectPhaseCatalogEntry>()
+            .WithMany()
+            .HasForeignKey(p => new { p.TenantId, p.ProjectPhaseId })
+            .HasPrincipalKey(entry => new { entry.TenantId, entry.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<NEXUS.Modules.ProjectManagement.Domain.ProjectStatusCatalogEntry>()
+            .WithMany()
+            .HasForeignKey(p => new { p.TenantId, p.ProjectStatusId })
+            .HasPrincipalKey(entry => new { entry.TenantId, entry.Id })
+            .OnDelete(DeleteBehavior.Restrict);
         builder.Property(p => p.RowVersion).IsRowVersion();
     }
 }

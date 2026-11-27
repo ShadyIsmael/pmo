@@ -17,6 +17,15 @@ public sealed class ProjectPaymentRequestDetail : ITenantEntity
     public Guid? PlanActivityId { get; set; }
 
     /// <summary>
+    /// Target Planned Payment installment this request draws from. Null is retained
+    /// for historical requests created before the unified Planned Payment rail.
+    /// </summary>
+    public Guid? PlannedPaymentInstallmentId { get; set; }
+
+    /// <summary>Budget Line for new requests; null is retained for historical records.</summary>
+    public Guid? ProjectAnnualBudgetLineId { get; set; }
+
+    /// <summary>
     /// Immutable annual budget association for requests created after annual budget
     /// integration. Null is retained only for pre-integration historical requests.
     /// </summary>
@@ -31,7 +40,17 @@ public sealed class ProjectPaymentRequestDetail : ITenantEntity
     /// <summary>Null while draft; frozen to Sequential or Parallel on submission.</summary>
     public string? ApprovalMode { get; set; }
 
+    /// <summary>The current immutable submission cycle; zero/null are legacy or Draft state.</summary>
+    public Guid? CurrentApprovalCycleId { get; set; }
+    public int CurrentApprovalCycleNumber { get; set; }
+
     public string RequestKind { get; set; } = ProjectPaymentRequestKinds.PaymentRequest;
+    /// <summary>
+    /// True only when this Payment Request was created by the atomic Quick One-off
+    /// operation and therefore owns the auto-created Plan if no other request or
+    /// settlement depends on its installment.
+    /// </summary>
+    public bool CreatedFromQuickOneOff { get; set; }
     public Guid? ReversesApprovalRequestId { get; set; }
     public ProjectPaymentRequestDetail? ReversesRequest { get; set; }
 
@@ -73,4 +92,6 @@ public static class PaymentRequestAssignmentStates
     public const string Pending = "Pending";
     public const string Approved = "Approved";
     public const string Rejected = "Rejected";
+    public const string ReturnedForRevision = "ReturnedForRevision";
+    public const string Closed = "Closed";
 }

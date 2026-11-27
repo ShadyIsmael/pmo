@@ -197,10 +197,17 @@ internal static class EfDatabaseGate
             .AddEnvironmentVariables()
             .Build();
 
-        var runtimeConnectionString =
-            runtimeConfiguration.GetConnectionString("DefaultConnection") ?? DevelopmentFallback;
-        var supplied = new SqlConnectionStringBuilder(suppliedConnectionString);
-        var configured = new SqlConnectionStringBuilder(runtimeConnectionString);
+        var configuredOverride = Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection");
+        if (configuredOverride is not null && string.IsNullOrWhiteSpace(configuredOverride))
+            throw new InvalidOperationException(
+                "ConnectionStrings__DefaultConnection is set to an empty value in this process, which overrides the API Development configuration and leaves the endpoint empty. " +
+                "Remove that variable or set it to the active Development connection string. No connection was opened.");
+
+        var runtimeConnectionString = runtimeConfiguration.GetConnectionString("DefaultConnection");
+        if (string.IsNullOrWhiteSpace(runtimeConnectionString))
+            runtimeConnectionString = DevelopmentFallback;
+        var supplied = ParseConnectionString(suppliedConnectionString, "supplied NEXUS_EF_DEVELOPMENT_CONNECTION_STRING");
+        var configured = ParseConnectionString(runtimeConnectionString, "effective API Development connection (ConnectionStrings__DefaultConnection or appsettings.Development.json)");
         if (!SameEndpoint(supplied.DataSource, configured.DataSource) ||
             !SameEndpoint(supplied.InitialCatalog, configured.InitialCatalog))
         {
@@ -1523,6 +1530,24 @@ internal static class EfDatabaseGate
 
     private static bool SameEndpoint(string left, string right) =>
         string.Equals(left.Trim(), right.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    private static SqlConnectionStringBuilder ParseConnectionString(string? value, string source)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            throw new InvalidOperationException(
+                $"The {source} is empty. Provide a valid SQL Server connection string in 'Server=<server>;Database=<database>;Integrated Security=True;TrustServerCertificate=True' format. No connection was opened.");
+        try
+        {
+            return new SqlConnectionStringBuilder(value);
+        }
+        catch (ArgumentException ex)
+        {
+            // The ArgumentException message carries only the parse index; it never contains the connection string value.
+            throw new InvalidOperationException(
+                $"The {source} is not a valid 'key=value;key=value' connection string ({ex.Message}). The supplied value was not printed. " +
+                "Approved Development Windows Authentication example: Server=Shady;Database=NexusPmo;Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=true. No connection was opened.");
+        }
+    }
 
     private static SqlException? FindSqlException(Exception? exception)
     {

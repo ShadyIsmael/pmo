@@ -11,8 +11,10 @@ import { SideSheet, SideSheetBody, SideSheetFooter } from "@components/ui/SideSh
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@components/ui/Table";
 import { useI18n } from "@i18n/messages";
 import { useAuth } from "@auth/AuthProvider";
+import { hasPermission, Permissions } from "@lib/permissions";
 import { Textarea } from "@components/ui/Textarea";
 import { useProjectAnnualBudgetClosings, useProjectPaymentRequests, type PaymentRequestApproverSelection } from "./api/project-financials";
+import { ProjectAnnualBudgetLines } from "./ProjectAnnualBudgetLines";
 import {
   useCreateProjectAnnualBudget,
   useDeleteProjectAnnualBudgetDraft,
@@ -630,6 +632,11 @@ export function ProjectAnnualBudgetWorkspace({
                 </div>
               </div>
               {selected.submittedAtUtc ? <p className="text-xs text-muted-foreground">{t("projects.annualBudgetSubmitted")} · {formatDate(selected.submittedAtUtc)}</p> : null}
+              <ProjectAnnualBudgetLines projectId={projectId} budget={selected}
+                canManage={Boolean(user && (selected.status === "Draft"
+                  ? canEdit && selected.canEdit || hasPermission(user.permissions, Permissions.ProjectAnnualBudget.ManageLines)
+                  : hasPermission(user.permissions, Permissions.ProjectAnnualBudget.ManageLines)))}
+                enabled={enabled} />
               {canApprove && selected.canReview ? <div className="space-y-2 rounded-md border bg-muted/20 p-3">
                 <Label htmlFor="annual-budget-return-reason">{t("projects.annualBudgetReason")}</Label>
                 <Textarea id="annual-budget-return-reason" value={returnReason} onChange={event => setReturnReason(event.target.value)} rows={2} placeholder={t("projects.annualBudgetRevisionReason")} />

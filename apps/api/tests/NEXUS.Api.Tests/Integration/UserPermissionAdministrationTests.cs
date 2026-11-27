@@ -1451,7 +1451,7 @@ public sealed class UserPermissionAdministrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Authorized_role_admin_can_delegate_and_revoke_project_settings_without_bypassing_user_deny()
+    public async Task Authorized_role_admin_can_delegate_and_revoke_project_settings_and_financial_tab_without_bypassing_user_deny()
     {
         var (actor, actorRole) = AddUserWithRole(_tenantId, "delegation-admin");
         var roleView = AddPermission(_tenantId, "Roles", "View");
@@ -1463,6 +1463,7 @@ public sealed class UserPermissionAdministrationTests : IAsyncLifetime
         var projectSettingsView = AddPermission(_tenantId, "ProjectSettings", "View");
         var projectSettingsEdit = AddPermission(_tenantId, "ProjectSettings", "Edit");
         var financialFoundationView = AddPermission(_tenantId, "ProjectFinancialFoundation", "View");
+        var projectFinanceView = AddPermission(_tenantId, "ProjectFinance", "View");
         var costUtilizationExport = AddPermission(_tenantId, "CostUtilization", "Export");
         var programRollupView = AddPermission(_tenantId, "ProgramFinancialRollup", "View");
         var portfolioRollupView = AddPermission(_tenantId, "PortfolioFinancialRollup", "View");
@@ -1492,11 +1493,12 @@ public sealed class UserPermissionAdministrationTests : IAsyncLifetime
             Name = "Project Settings Delegate",
             Description = "Delegated project settings access",
             Category = RoleCategories.Management,
-            PermissionIds = [projectSettingsView.Id, projectSettingsEdit.Id, financialFoundationView.Id]
+            PermissionIds = [projectSettingsView.Id, projectSettingsEdit.Id, financialFoundationView.Id, projectFinanceView.Id]
         }, actor.Id, _tenantId);
         Assert.True(created.IsSuccess, created.Error?.Message);
         Assert.Contains(created.Value!.Permissions, item => item.Name == "ProjectSettings.Edit");
         Assert.Contains(created.Value.Permissions, item => item.Name == "ProjectFinancialFoundation.View");
+        Assert.Contains(created.Value.Permissions, item => item.Name == "ProjectFinance.View");
 
         var recipient = new User
         {
@@ -1521,6 +1523,7 @@ public sealed class UserPermissionAdministrationTests : IAsyncLifetime
         Assert.Contains("ProjectSettings.View", recipientEffective);
         Assert.Contains("ProjectSettings.Edit", recipientEffective);
         Assert.Contains("ProjectFinancialFoundation.View", recipientEffective);
+        Assert.Contains("ProjectFinance.View", recipientEffective);
 
         _context.UserPermissionOverrides.Add(new UserPermissionOverride
         {
@@ -1530,10 +1533,28 @@ public sealed class UserPermissionAdministrationTests : IAsyncLifetime
             Effect = PermissionOverrideEffect.Deny,
             CreatedBy = "test"
         });
+        _context.UserPermissionOverrides.Add(new UserPermissionOverride
+        {
+            TenantId = _tenantId,
+            UserId = recipient.Id,
+            PermissionId = financialFoundationView.Id,
+            Effect = PermissionOverrideEffect.Deny,
+            CreatedBy = "test"
+        });
+        _context.UserPermissionOverrides.Add(new UserPermissionOverride
+        {
+            TenantId = _tenantId,
+            UserId = recipient.Id,
+            PermissionId = projectFinanceView.Id,
+            Effect = PermissionOverrideEffect.Deny,
+            CreatedBy = "test"
+        });
         await _context.SaveChangesAsync();
         recipientEffective = await effectivePermissions.GetEffectivePermissionsAsync(recipient.Id, _tenantId);
         Assert.Contains("ProjectSettings.View", recipientEffective);
         Assert.DoesNotContain("ProjectSettings.Edit", recipientEffective);
+        Assert.DoesNotContain("ProjectFinancialFoundation.View", recipientEffective);
+        Assert.DoesNotContain("ProjectFinance.View", recipientEffective);
 
         var updated = await service.UpdateAsync(created.Value.Id, new SaveRoleDto
         {
@@ -1546,11 +1567,13 @@ public sealed class UserPermissionAdministrationTests : IAsyncLifetime
         Assert.Contains(updated.Value!.Permissions, item => item.Name == "ProjectSettings.View");
         Assert.DoesNotContain(updated.Value.Permissions, item => item.Name == "ProjectSettings.Edit");
         Assert.DoesNotContain(updated.Value.Permissions, item => item.Name == "ProjectFinancialFoundation.View");
+        Assert.DoesNotContain(updated.Value.Permissions, item => item.Name == "ProjectFinance.View");
 
         recipientEffective = await effectivePermissions.GetEffectivePermissionsAsync(recipient.Id, _tenantId);
         Assert.Contains("ProjectSettings.View", recipientEffective);
         Assert.DoesNotContain("ProjectSettings.Edit", recipientEffective);
         Assert.DoesNotContain("ProjectFinancialFoundation.View", recipientEffective);
+        Assert.DoesNotContain("ProjectFinance.View", recipientEffective);
         Assert.Equal(2, await _context.AuditEntries.CountAsync(entry => entry.EntityType == "Role" && entry.EntityId == created.Value.Id));
     }
 

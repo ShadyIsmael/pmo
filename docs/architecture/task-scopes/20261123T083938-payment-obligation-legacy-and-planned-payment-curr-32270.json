@@ -1,0 +1,447 @@
+{
+  "created_at": "2026-11-23T08:39:38Z",
+  "critical_path_coverage": null,
+  "dependency_awareness_only": [
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.CostManagement.Domain",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/Budget.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.CostManagement.Domain",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/BudgetRevision.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.CostManagement.Domain",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/CostApproval.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.CostManagement.Domain",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/CostCategory.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.CostManagement.Domain",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/CostEntry.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.CostManagement.Domain",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/Invoice.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.CostManagement.Domain",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/PaymentNotificationDispatch.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "PaymentObligation",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/PaymentObligation.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.CostManagement.Domain",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/PaymentObligation.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.CostManagement.Domain",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/PaymentRequestApproverAssignment.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.CostManagement.Domain",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/PaymentSettlement.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.CostManagement.Domain",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/PaymentSettlementAdjustment.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.CostManagement.Domain",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/PlannedPayment.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.CostManagement.Domain",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/PlannedPaymentInstallment.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.CostManagement.Domain",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/PlannedPaymentLifetimeReservation.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.CostManagement.Domain",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/ProjectAnnualBudget.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.CostManagement.Domain",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/ProjectAnnualBudgetApprovalConfiguration.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.CostManagement.Domain",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/ProjectAnnualBudgetClosing.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.CostManagement.Domain",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/ProjectAnnualBudgetLine.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.CostManagement.Domain",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/ProjectPaymentRequestApprovalCycle.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.CostManagement.Domain",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/ProjectPaymentRequestDetail.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Modules.CostManagement.Domain",
+      "module": "cost-management",
+      "path": "apps/api/src/NEXUS.Modules.CostManagement/Domain/ProjectPaymentRequestFundingTransfer.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Currency",
+      "module": "organization",
+      "path": "apps/api/src/NEXUS.Modules.Organization/Domain/Currency.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "ProjectId",
+      "module": "projects",
+      "path": "apps/api/src/NEXUS.Modules.ProjectManagement/Domain/Entities/ProjectBaselineVersion.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "ProjectId",
+      "module": "projects",
+      "path": "modules/projects/ProjectBaselineVersion.cs",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-token-match",
+      "evidence": "Currency",
+      "module": "organization",
+      "path": "packages/shared-types/src/types/organization.ts",
+      "relation": "REFERENCES_TYPE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Persistence",
+      "module": "identity",
+      "path": "apps/api/src/NEXUS.Api/Account/AccountService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Persistence",
+      "module": "administration",
+      "path": "apps/api/src/NEXUS.Api/Development/DevelopmentAdminPasswordRecoveryService.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Persistence",
+      "module": "api",
+      "path": "apps/api/src/NEXUS.Api/Documents/EfTemplateDeletionReferenceValidator.cs",
+      "relation": "USES_NAMESPACE"
+    },
+    {
+      "confidence": "inferred-namespace",
+      "evidence": "NEXUS.Persistence",
+      "module": "api",
+      "path": "apps/api/src/NEXUS.Api/Documents/TemplateDeletionApproverResolver.cs",
+      "relation": "USES_NAMESPACE"
+    }
+  ],
+  "index_updated": false,
+  "limits": [
+    "Router never prevents an agent from manually opening other files; enforce via agent instructions and audit.",
+    "C# and TS relationships are source-text heuristics; compiler-resolved calls and runtime dependency-injection resolution are not proven.",
+    "Unknown/unclassified files may require manual targeted inspection.",
+    "Index sources excluded secrets and build outputs."
+  ],
+  "module_selection_basis": "task-explicit-alias",
+  "nonprimary_modules_not_read_by_router": [
+    "administration",
+    "ai-planning",
+    "api",
+    "approvals",
+    "audit",
+    "cost-management",
+    "documents",
+    "governance",
+    "home",
+    "identity",
+    "integrations",
+    "issues",
+    "management",
+    "meetings",
+    "notifications",
+    "operations",
+    "organization",
+    "permissions",
+    "plugins",
+    "portfolios",
+    "programs",
+    "project-planning",
+    "projects",
+    "reports",
+    "resources",
+    "risks",
+    "security",
+    "stakeholder",
+    "tests",
+    "time",
+    "unclassified",
+    "vendors",
+    "work-items",
+    "workflow"
+  ],
+  "planning_state": "focused",
+  "primary_module": "persistence",
+  "refresh": {
+    "changed_existing": 0,
+    "deleted": 0,
+    "mode": "refresh",
+    "new": 0,
+    "parsed": 0,
+    "unchanged": 1882
+  },
+  "related_tests_candidates": [
+    "apps/api/src/NEXUS.Persistence/Migrations/20261110170000_AddOrganizationDocumentTemplateStorageMetadata.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/DevelopmentWbsActivityOrderSqlServerPersistenceTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Integration/DevelopmentWbsSqlServerPersistenceTests.cs",
+    "apps/api/tests/NEXUS.Api.Tests/Testing/SqliteTestAppDbContext.cs",
+    "apps/api/tests/NEXUS.Modules.ResourceManagement.Tests/TestDbContext.cs",
+    "apps/web-react/src/test/migration-parity.test.ts"
+  ],
+  "selected_files": [
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          41
+        ]
+      ],
+      "module": "persistence",
+      "path": "apps/api/src/NEXUS.Persistence/Configurations/PlannedPaymentLifetimeReservationConfiguration.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 582,
+      "reasons": [
+        "filename-match:payment",
+        "filename-match:planned",
+        "filename-match:reservation",
+        "primary-module",
+        "symbol-match:PlannedPaymentLifetimeReservationConfiguration"
+      ],
+      "score": 97,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          28
+        ]
+      ],
+      "module": "persistence",
+      "path": "apps/api/src/NEXUS.Persistence/Configurations/PaymentObligationConfiguration.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 432,
+      "reasons": [
+        "filename-match:obligation",
+        "filename-match:payment",
+        "primary-module",
+        "symbol-match:PaymentObligationConfiguration"
+      ],
+      "score": 85,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          69
+        ]
+      ],
+      "module": "persistence",
+      "path": "apps/api/src/NEXUS.Persistence/Configurations/PlannedPaymentConfiguration.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 1049,
+      "reasons": [
+        "filename-match:payment",
+        "filename-match:planned",
+        "primary-module",
+        "symbol-match:PlannedPaymentConfiguration"
+      ],
+      "score": 85,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          1,
+          49
+        ]
+      ],
+      "module": "persistence",
+      "path": "apps/api/src/NEXUS.Persistence/Configurations/PlannedPaymentInstallmentConfiguration.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 645,
+      "reasons": [
+        "filename-match:payment",
+        "filename-match:planned",
+        "primary-module",
+        "symbol-match:PlannedPaymentInstallmentConfiguration"
+      ],
+      "score": 85,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "migration",
+      "line_ranges": [
+        [
+          1,
+          238
+        ]
+      ],
+      "module": "persistence",
+      "path": "apps/api/src/NEXUS.Persistence/Migrations/20261122003656_Sprint2AddPlannedPaymentFoundation.cs",
+      "read_mode": "full-file",
+      "reading_tokens": 4268,
+      "reasons": [
+        "filename-match:payment",
+        "filename-match:planned",
+        "primary-module",
+        "symbol-match:Sprint2AddPlannedPaymentFoundation"
+      ],
+      "score": 85,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "migration",
+      "line_ranges": [
+        [
+          1,
+          9
+        ]
+      ],
+      "module": "persistence",
+      "path": "migration_script.sql",
+      "read_mode": "full-file",
+      "reading_tokens": 84,
+      "reasons": [
+        "filename-match:migration",
+        "primary-module"
+      ],
+      "score": 57,
+      "token_method": "estimated:chars/3.5"
+    },
+    {
+      "approximate": true,
+      "kind": "api",
+      "line_ranges": [
+        [
+          253,
+          260
+        ]
+      ],
+      "module": "persistence",
+      "path": "apps/api/src/NEXUS.Persistence/MeetingReminderScheduler.cs",
+      "read_mode": "symbols",
+      "reading_tokens": 137,
+      "reasons": [
+        "primary-module",
+        "symbol-match:IsCurrentInvite"
+      ],
+      "score": 49,
+      "token_method": "estimated:chars/3.5"
+    }
+  ],
+  "selection_summary": {
+    "critical_path_coverage_percent": null,
+    "files": 7,
+    "symbols": 13,
+    "tokens": 7197
+  },
+  "snapshot": "20261123T000905-b97bbe5",
+  "task": "PaymentObligation legacy and PlannedPayment current commitment balances reservation rollups Actual Paid reconciliation and migration cutover: detect inactive legacy paths and double counting",
+  "token_plan": {
+    "available_source_budget": 7200,
+    "estimation_order": "Critical-path coverage is evaluated before reading-cost calculation and optional file ranking.",
+    "requested_total_budget": 12000,
+    "reserved_non_source_budget": 4800,
+    "source_reading_tokens": 7197,
+    "warning": "An estimate of selected source reading, NOT full task execution or model hidden reasoning. Some counts may be approximate."
+  }
+}

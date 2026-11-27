@@ -304,4 +304,30 @@ describe("authenticated session isolation", () => {
 
     logoutRequest.resolve(new Response(null, { status: 204 }));
   });
+
+  it("does not repeat /api/auth/me on focus after an invalid session", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const requestUrl = String(input);
+      if (requestUrl.endsWith("/api/auth/csrf")) return response({ csrfToken: "csrf-token" });
+      if (requestUrl.endsWith("/api/auth/refresh")) return response({ error: "refresh failed" }, 401);
+      if (requestUrl.endsWith("/api/auth/me")) return response({ error: "Unauthorized" }, 401);
+      throw new Error(`Unexpected API request: ${requestUrl}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    // Simulate a page reload with a stored session but no valid access token in memory
+    setTokens("stored-access-token");
+
+    render(<AuthProvider><div data-testid="app">loading</div></AuthProvider>);
+
+    // Restoration should call /api/auth/me exactly once (Strict Mode single-flight)
+    const meCalls = fetchMock.mock.calls.filter(([input]) => String(input).endsWith("/api/auth/me"));
+    await waitFor(() => expect(meCalls.length).toBe(1));
+    expect(meCalls.length).toBe(1);
+
+    // Focus / timer should not trigger another /api/auth/me when the session is known invalid
+    fireEvent.focus(window);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).endsWith("/api/auth/me")).length).toBe(1);
+  });
 });

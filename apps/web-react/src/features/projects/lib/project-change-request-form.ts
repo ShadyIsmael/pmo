@@ -22,29 +22,51 @@ export function buildProjectChangeRequestInput(
   const reason = String(formData.get("reason") ?? "").trim();
   if (!reason) return { ok: false, error: "changeReasonRequired" };
 
-  const budgetChangeText = String(formData.get("budgetChangeAmount") ?? "").trim();
-  const budgetChangeAmount = budgetChangeText ? Number(budgetChangeText) : null;
-  if (budgetChangeAmount !== null && !Number.isFinite(budgetChangeAmount)) {
-    return { ok: false, error: "budgetChangeAmountInvalid" };
-  }
-  if (budgetChangeAmount !== null) {
-    if (budgetChangeAmount === 0) return { ok: false, error: "budgetChangeAmountZero" };
+  const typeRaw = String(formData.get("type") ?? "Administrative");
+  const directionRaw = String(formData.get("budgetDirection") ?? "").trim();
+  const magnitudeText = String(formData.get("budgetChangeAmount") ?? "").trim();
+
+  // A provided financial amount always denotes a Budget Change request, even if the
+  // caller did not explicitly pick the BudgetChange type (legacy/backward compatible).
+  const hasAmountInput = magnitudeText !== "" || directionRaw === "increase" || directionRaw === "decrease";
+  let type: "Administrative" | "Baseline" | "BudgetChange";
+  if (typeRaw === "BudgetChange") type = "BudgetChange";
+  else if (typeRaw === "Baseline" && !hasAmountInput) type = "Baseline";
+  else if (typeRaw === "Baseline") type = "BudgetChange";
+  else type = hasAmountInput ? "BudgetChange" : "Administrative";
+
+  let budgetChangeAmount: number | null = null;
+  if (type === "BudgetChange") {
+    let signed: number;
+    if (directionRaw === "increase" || directionRaw === "decrease") {
+      if (!magnitudeText) return { ok: false, error: "budgetChangeAmountInvalid" };
+      const mag = Number(magnitudeText);
+      if (!Number.isFinite(mag)) return { ok: false, error: "budgetChangeAmountInvalid" };
+      signed = directionRaw === "decrease" ? -mag : mag;
+    } else {
+      // backward compat: signed value provided
+      if (!magnitudeText) return { ok: false, error: "budgetChangeAmountInvalid" };
+      signed = Number(magnitudeText);
+      if (!Number.isFinite(signed)) return { ok: false, error: "budgetChangeAmountInvalid" };
+    }
+    const textForPrecision = magnitudeText;
+    if (signed === 0) return { ok: false, error: "budgetChangeAmountZero" };
     if (!Number.isFinite(projectBudget)) return { ok: false, error: "budgetChangeAmountCeilingRequired" };
-    if (hasMoreThanTwoDecimalPlaces(budgetChangeText)) return { ok: false, error: "budgetChangeAmountPrecision" };
-    if ((projectBudget as number) + budgetChangeAmount < 0) return { ok: false, error: "budgetChangeAmountResultNegative" };
+    if (hasMoreThanTwoDecimalPlaces(textForPrecision)) return { ok: false, error: "budgetChangeAmountPrecision" };
+    if ((projectBudget as number) + signed < 0) return { ok: false, error: "budgetChangeAmountResultNegative" };
     if (!String(formData.get("justification") ?? "").trim()) {
       return { ok: false, error: "budgetChangeAmountJustificationRequired" };
     }
+    budgetChangeAmount = signed;
   }
 
   const optionalText = (name: string) => String(formData.get(name) ?? "").trim() || null;
-  const type = String(formData.get("type") ?? "Administrative");
 
   return {
     ok: true,
     value: {
       projectId,
-      type: type === "Baseline" ? "Baseline" : "Administrative",
+      type,
       reason,
       budgetChangeAmount,
       justification: optionalText("justification"),
