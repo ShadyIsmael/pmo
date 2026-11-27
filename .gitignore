@@ -93,3 +93,7 @@ docs/architecture/snapshots/
 
 # Stray diff dump at repo root
 /pmo
+
+# Python bytecode cache
+__pycache__/
+*.pyc
