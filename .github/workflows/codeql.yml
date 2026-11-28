@@ -41,7 +41,7 @@ jobs:
         run: dotnet build apps/api/src/NEXUS.Api/NEXUS.Api.csproj --configuration Release
 
       - name: Analyze without repository code-scanning upload
-        uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4
+        uses: github/codeql-action/analyze@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4
         with:
           category: /language:csharp
           upload: never
@@ -78,7 +78,7 @@ jobs:
           config-file: .github/codeql/codeql-config.yml
 
       - name: Analyze without repository code-scanning upload
-        uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4
+        uses: github/codeql-action/analyze@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4
         with:
           category: /language:javascript-typescript
           upload: never
